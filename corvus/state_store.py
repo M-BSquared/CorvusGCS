@@ -220,6 +220,14 @@ class VehicleStateStore:
             # Metres, -1 = the receiver does not say.
             "gps_h_acc": -1.0,
             "gps_v_acc": -1.0,
+            # The receiver's own altitude above sea level in metres, as
+            # opposed to altitude_amsl which is the autopilot's blended
+            # estimate. None = no 3D fix, so nothing to report.
+            "gps_altitude": None,
+            # Metres to the ground from the downward distance sensor, or None
+            # when there is none, it is out of range, or it went quiet. Only
+            # requested from the vehicle when the operator switches it on.
+            "rangefinder_distance": None,
             # The autopilot's own verdict on the receiver from SYS_STATUS:
             # "ok", "fault", or "" when it does not report one.
             "gps_health": "",
@@ -651,6 +659,7 @@ class VehicleStateStore:
             # would let a calibration keep measuring the last frame that ever
             # arrived and write it to the vehicle as an endpoint.
             self._data["rc_live"] = False
+            self._data["rangefinder_distance"] = None
             # Keep link_connection/link_error so the UI can show the last
             # connection + last error after a disconnect; the mavlink agent
             # overrides link_status to "reconnecting" when about to retry.

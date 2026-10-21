@@ -489,6 +489,43 @@ function testSettingTheOptionsLaterNeverClears() {
   assert.equal(map.getTrack().length, 0, "the startup read with the switch on clears");
 }
 
+function pastColorsOf() {
+  return map._pastGeometry().features.map((f) => f.properties.color);
+}
+
+function testEarlierFlightsShareOneToneUnlessTheRainbowIsOn() {
+  const saved = { ui: Corvus.ui, fleet: Corvus.fleet };
+  Corvus.ui = { token: (_name, fallback) => fallback };
+  Corvus.fleet = { tint: (c) => `tint(${c})`, rainbowTone: (i) => `rainbow${i}` };
+  try {
+    map._resetTrackState();
+    map._updateTrack({ armed: false, position: north(0), boot_ms: 1000 });
+    flyFlight(0, 5, 2000);
+    flyFlight(10, 5, 20000);
+    flyFlight(20, 5, 40000);
+    flyFlight(30, 4, 60000);
+    assert.equal(pastColorsOf().length, 3);
+    assert.equal(new Set(pastColorsOf()).size, 1, "off by default: one lighter tone for all");
+    assert.equal(map.isTrackRainbow(), false);
+
+    map.setTrackOptions({ rainbow: true });
+    assert.deepEqual(pastColorsOf(), ["rainbow0", "rainbow1", "rainbow2"],
+      "on: a tone of its own per earlier flight, oldest first");
+    assert.equal(map.isTrackRainbow(), true);
+
+    map.setTrackOptions({ rainbow: true, earlierFlights: false });
+    assert.equal(new Set(pastColorsOf()).size, 1, "without their own colour the rainbow does not act");
+    assert.equal(map.isTrackRainbow(), false);
+
+    map.setTrackOptions({ earlierFlights: true });
+    assert.equal(new Set(pastColorsOf()).size, 1, "turned off again: one tone");
+  } finally {
+    Corvus.ui = saved.ui;
+    Corvus.fleet = saved.fleet;
+    map._resetTrackState();
+  }
+}
+
 function testClearTrackDiscardsEveryFlight() {
   map._resetTrackState();
   map._updateTrack({ armed: false, position: north(0), boot_ms: 1000 });
@@ -1032,6 +1069,7 @@ const tests = [
   testARebootKeepsTheTrackByDefault,
   testARebootClearsTheTrackWhenAskedTo,
   testSettingTheOptionsLaterNeverClears,
+  testEarlierFlightsShareOneToneUnlessTheRainbowIsOn,
   testClearTrackDiscardsEveryFlight,
   testTheTrackSurvivesARestart,
   testPlanRouteHookExists,

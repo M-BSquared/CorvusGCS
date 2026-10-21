@@ -118,6 +118,19 @@ def test_gps_raw_int_publishes_accuracy_and_vdop() -> None:
     assert snap["gps_v_acc"] == 1.5
 
 
+def test_gps_raw_int_publishes_altitude_only_with_a_3d_fix() -> None:
+    bridge, store = _bridge()
+    assert store.get_snapshot()["gps_altitude"] is None
+    fix3d = mav2.MAVLink_gps_raw_int_message(
+        0, 3, 0, 0, 512_400, 80, 140, 0, 0, 14, 0, 900, 1500, 0, 0, 0)
+    bridge._dispatch(fix3d)
+    assert store.get_snapshot()["gps_altitude"] == 512.4
+    fix2d = mav2.MAVLink_gps_raw_int_message(
+        0, 2, 0, 0, 512_400, 80, 140, 0, 0, 14, 0, 900, 1500, 0, 0, 0)
+    bridge._dispatch(fix2d)
+    assert store.get_snapshot()["gps_altitude"] is None
+
+
 def test_accuracy_zero_means_not_reported() -> None:
     assert _gps_accuracy_m(0) == -1
     assert _gps_accuracy_m(None) == -1

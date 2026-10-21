@@ -84,6 +84,29 @@ def test_qt_translations_and_foreign_locales_go(tmp_path):
     assert (site / "PySide6" / "QtCore.abi3.so").is_file()
 
 
+def test_the_devtools_pack_goes_and_the_web_engine_resources_stay(tmp_path):
+    site = fake_site(tmp_path)
+    resources = site / "PySide6" / "Qt" / "resources"
+    for name in ("qtwebengine_resources.pak", "qtwebengine_devtools_resources.pak", "icudtl.dat",
+                 "v8_context_snapshot.bin"):
+        write(resources / name)
+    bt.trim(site, log=lambda _line: None)
+    assert sorted(p.name for p in resources.iterdir()) == [
+        "icudtl.dat", "qtwebengine_resources.pak", "v8_context_snapshot.bin"]
+
+
+def test_only_the_build_architecture_keeps_its_v8_snapshot(tmp_path):
+    site = fake_site(tmp_path)
+    resources = site / "PySide6" / "Qt" / "lib" / "QtWebEngineCore.framework" / "Versions" / "A" / "Resources"
+    for arch in ("arm64", "x86_64"):
+        write(resources / f"v8_context_snapshot.{arch}.bin")
+    removed = bt.plan(site, arch="arm64").remove
+    assert resources / "v8_context_snapshot.x86_64.bin" in removed
+    assert resources / "v8_context_snapshot.arm64.bin" not in removed
+    # A host whose own snapshot is not there keeps every one, rather than none.
+    assert not any("v8_context" in p.name for p in bt.plan(site, arch="riscv64").remove)
+
+
 def test_dry_run_changes_nothing(tmp_path):
     site = fake_site(tmp_path)
     before = sorted(str(p) for p in site.rglob("*"))

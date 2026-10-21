@@ -1762,6 +1762,62 @@ async function testTheChecklistCardStopsListeningOnRepaintAndTeardown() {
   }
 }
 
+// A plain form card can carry a one-press preset: the button writes its
+// values in order, the page re-reads, and the fields stay editable.
+function landingDoc() {
+  const doc = safetyDoc();
+  doc.sections.unshift({
+    id: "landing", title: "Landing", kind: "fields", hint: "How it lands.",
+    fields: [
+      { param: "MPC_Z_V_AUTO_DN", label: "Descent speed", kind: "number", value: 1.5,
+        unit: "m/s", step: 0.1, min: 0.5, max: 4 },
+      { param: "MPC_LAND_SPEED", label: "Landing speed", kind: "number", value: 0.7,
+        unit: "m/s", step: 0.1, min: 0.6 },
+    ],
+    actions: [{
+      id: "fast", label: "Fast landing", hint: "Faster and still safe.",
+      writes: [{ param: "MPC_Z_V_AUTO_DN", value: 2.5 }, { param: "MPC_LAND_SPEED", value: 1 }],
+    }],
+  });
+  return doc;
+}
+
+async function testAFormCardPresetListsItsValuesAndWritesThemInOrder() {
+  const { container, fake } = await openWith(landingDoc());
+  const block = findOneByClass(container, "safety-action");
+  assert.ok(block, "the card shows the preset block");
+  const rows = findByClass(block, "safety-preset-write");
+  assert.deepEqual(rows.map((r) => r.dataset.param), ["MPC_Z_V_AUTO_DN", "MPC_LAND_SPEED"]);
+  assert.ok(control(container, "MPC_LAND_SPEED"), "the value stays an editable field");
+
+  fire(findOneByClass(container, "safety-action-apply"), "click");
+  await flushMicrotasks();
+  assert.deepEqual(fake.writes(), [
+    { name: "MPC_Z_V_AUTO_DN", value: 2.5 },
+    { name: "MPC_LAND_SPEED", value: 1 },
+  ]);
+  assert.ok(fake.requests.filter((u) => u === "/api/safety").length >= 2,
+    "the page re-reads what the vehicle now holds");
+}
+
+async function testAFormCardPresetStopsAtTheFirstRefusalAndSaysSo() {
+  const { container, fake } = await openWith(landingDoc(), { rejectFrom: 2 });
+  fire(findOneByClass(container, "safety-action-apply"), "click");
+  await flushMicrotasks();
+  assert.equal(fake.writes().length, 2, "the refused write is the last attempt");
+  const status = findByClass(findOneByClass(container, "safety-action"), "params-row-status")[0];
+  assert.equal(status.className, "params-row-status err");
+  assert.match(status.textContent, /armed/);
+}
+
+async function testAFormCardPresetIsGatedWhileArmed() {
+  const { container, fake } = await openWith(landingDoc(), {
+    state: { armed: true, connected: true },
+  });
+  assert.equal(findOneByClass(container, "safety-action-apply").disabled, true);
+  assert.equal(fake.writes().length, 0);
+}
+
 async function main() {
   const tests = [
     testCheckValuesConfirmsWhatWasSetAndRedrawsFromTheVehicle,
@@ -1835,6 +1891,9 @@ async function main() {
     testTheChecklistCardFollowsChangesMadeElsewhere,
     testTheChecklistCardStaysLiveWhileArmed,
     testTheChecklistCardStopsListeningOnRepaintAndTeardown,
+    testAFormCardPresetListsItsValuesAndWritesThemInOrder,
+    testAFormCardPresetStopsAtTheFirstRefusalAndSaysSo,
+    testAFormCardPresetIsGatedWhileArmed,
   ];
   for (const t of tests) {
     // The added-parameter list is persisted, so it would otherwise leak from

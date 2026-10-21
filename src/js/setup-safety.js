@@ -279,6 +279,9 @@ Corvus.setupSafety = (function () {
         card.dataset.section = section.id || "";
         card.appendChild(S.sectionTitle(section.title || ""));
         if (section.hint) card.appendChild(S.el("div", "field-hint", section.hint));
+        (section.actions || []).forEach((action) => {
+          card.appendChild(actionBlock(state, section, action));
+        });
         const fields = section.fields || [];
         if (fields.length) card.appendChild(fieldGrid(state, fields));
         cards.push({ el: card, weight: formWeight(section) });
@@ -377,7 +380,9 @@ Corvus.setupSafety = (function () {
 
   /** Roughly how many lines a form card takes: title and hint, then each field and its hint. */
   function formWeight(section) {
-    return 2 + (section.fields || []).reduce((sum, f) => sum + (f.hint ? 2 : 1), 0);
+    const actions = (section.actions || []).reduce(
+      (sum, a) => sum + 3 + (a.writes || []).length, 0);
+    return 2 + actions + (section.fields || []).reduce((sum, f) => sum + (f.hint ? 2 : 1), 0);
   }
 
   /** A toggle section is a sensor; a plain form section is part of the envelope. */
@@ -1332,6 +1337,70 @@ Corvus.setupSafety = (function () {
   /** A plain form section: one labelled control per field. */
   function fieldGrid(state, fields) {
     return S.paramFieldGrid(state, fields, { prefix: "safety" });
+  }
+
+  /**
+   * A one-press preset on a plain form card: the button, the values it writes,
+   * and the result. The values stay editable in the fields below, so this only
+   * sets a starting point. Each field is labelled with its unit in the list so
+   * the numbers read the same as in the form.
+   */
+  function actionBlock(state, section, action) {
+    const block = S.el("div", "safety-action");
+    block.dataset.action = action.id || "";
+    const fields = {};
+    (section.fields || []).forEach((f) => { fields[f.param] = f; });
+    const writes = (action.writes || []).map((w) => {
+      const f = fields[w.param] || {};
+      const label = (f.label || "") + (f.unit ? " (" + f.unit + ")" : "");
+      return { param: w.param, value: w.value, label };
+    });
+    if (action.hint) block.appendChild(S.el("p", "safety-preset-note", action.hint));
+    if (writes.length) block.appendChild(writeTable({ writes }, null));
+
+    const bar = S.el("div", "safety-preset-actions");
+    const status = S.el("span", "params-row-status safety-preset-status", "");
+    const key = String(section.id) + ":" + String(action.id);
+    const button = Corvus.ui.button({
+      variant: "primary", size: "sm", icon: "check-check",
+      label: action.label || "Apply",
+      className: "safety-action-apply",
+      onClick: () => applyAction(state, key, action, writes, status).catch(() => {}),
+    });
+    button.dataset.action = action.id || "";
+    registerControl(state, button, () => {
+      button.disabled = state.armed || !writes.length;
+    });
+    bar.appendChild(button);
+    bar.appendChild(status);
+    block.appendChild(bar);
+    const last = (state.actionStatus || {})[key];
+    if (last) setFieldStatus(status, last.cls, last.text);
+    S.refreshIcons();
+    return block;
+  }
+
+  /** Write an action's values in order, then re-read so the fields show what the vehicle holds. */
+  async function applyAction(state, key, action, writes, status) {
+    if (state.armed) throw new Error("cannot apply while armed");
+    const remember = (cls, text) => {
+      state.actionStatus = state.actionStatus || {};
+      state.actionStatus[key] = { cls, text };
+      setFieldStatus(status, cls, text);
+    };
+    remember("pending", "applying…");
+    try {
+      await runWrites(state, writes.map((w) => ({ name: w.param, value: Number(w.value) })));
+    } catch (err) {
+      const msg = (err && err.message) || "write failed";
+      remember("err", msg);
+      notify("critical", `Could not apply ${action.label}: ${msg}`);
+      load(state);
+      throw err;
+    }
+    remember("ok", "applied");
+    notify("info", `${action.label} written`);
+    load(state);
   }
 
   /** Preset status, remembered so the repaint after the write keeps showing it. */

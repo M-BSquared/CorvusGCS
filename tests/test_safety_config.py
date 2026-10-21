@@ -322,7 +322,7 @@ def test_reading_every_parameter_at_once_never_raises() -> None:
     """A vehicle that answers for the whole superset must still build cleanly."""
     doc = safety_config.build({n: 1.0 for n in safety_config.param_names()})
     assert {s["id"] for s in doc["sections"]} == {
-        "limits", "geofence", "rtl", "failsafe", "rangefinder", "flow",
+        "limits", "geofence", "rtl", "landing", "failsafe", "rangefinder", "flow",
     }
 
 
@@ -706,3 +706,57 @@ def test_the_benewake_presets_say_what_px4_really_reads() -> None:
     for pid in ("benewake-tfmini-s", "benewake-tfmini-plus", "benewake-tf03"):
         assert "0.4 to 12 m" in presets[pid]["summary"]
         assert ("SENS_TFMINI_HW", 1.0) in _writes(presets[pid]["writes"])
+
+
+# ---- landing ----
+
+def _with_landing(**overrides: float) -> dict[str, float]:
+    values = _safe()
+    values.update({
+        "MPC_Z_V_AUTO_DN": 1.5, "MPC_Z_VEL_MAX_DN": 1.5, "MPC_LAND_ALT1": 10.0,
+        "MPC_LAND_ALT2": 5.0, "MPC_LAND_SPEED": 0.7, "MPC_LAND_ALT3": 1.0,
+        "MPC_LAND_CRWL": 0.3,
+    })
+    values.update(overrides)
+    return values
+
+
+def test_the_landing_card_shows_the_descent_profile_with_units() -> None:
+    landing = _sections(safety_config.build(_with_landing()))["landing"]
+    fields = _fields(landing)
+    assert list(fields) == list(safety_config.LANDING_PARAMS)
+    assert fields["MPC_Z_V_AUTO_DN"]["unit"] == "m/s"
+    assert fields["MPC_LAND_ALT1"]["unit"] == "m"
+    assert fields["MPC_LAND_SPEED"]["min"] == 0.6
+
+
+def test_every_landing_parameter_is_read_with_the_page() -> None:
+    assert set(safety_config.LANDING_PARAMS) <= set(safety_config.param_names())
+
+
+def test_no_landing_card_without_a_landing_parameter() -> None:
+    assert "landing" not in _sections(safety_config.build(_safe()))
+
+
+def test_fast_landing_stays_inside_the_firmware_limits_and_orders_the_heights() -> None:
+    fields = _fields(_sections(safety_config.build(_with_landing()))["landing"])
+    fast = safety_config.FAST_LANDING
+    assert set(fast) == set(safety_config.LANDING_PARAMS)
+    for name, value in fast.items():
+        assert fields[name].get("min", float("-inf")) <= value <= fields[name].get("max", float("inf")), name
+    assert fast["MPC_LAND_ALT1"] > fast["MPC_LAND_ALT2"] > fast["MPC_LAND_ALT3"]
+    assert fast["MPC_Z_VEL_MAX_DN"] >= fast["MPC_Z_V_AUTO_DN"]
+    assert fast["MPC_LAND_SPEED"] < fast["MPC_Z_V_AUTO_DN"]
+    assert fast["MPC_LAND_CRWL"] <= fast["MPC_LAND_SPEED"]
+
+
+def test_the_fast_landing_action_writes_only_what_the_firmware_has() -> None:
+    values = _with_landing()
+    del values["MPC_LAND_CRWL"], values["MPC_LAND_ALT3"]
+    landing = _sections(safety_config.build(values))["landing"]
+    (action,) = landing["actions"]
+    assert action["id"] == "fast"
+    assert [w["param"] for w in action["writes"]] == [
+        "MPC_Z_V_AUTO_DN", "MPC_Z_VEL_MAX_DN", "MPC_LAND_ALT1", "MPC_LAND_ALT2",
+        "MPC_LAND_SPEED"]
+    assert all(w["value"] == safety_config.FAST_LANDING[w["param"]] for w in action["writes"])

@@ -124,14 +124,26 @@ global.document = {
   addEventListener: () => {},
   removeEventListener: () => {},
   activeElement: null,
+  documentElement: (() => {
+    const attrs = {};
+    return {
+      setAttribute: (k, v) => { attrs[k] = String(v); },
+      getAttribute: (k) => (k in attrs ? attrs[k] : null),
+      removeAttribute: (k) => { delete attrs[k]; },
+    };
+  })(),
 };
 
+const posts = [];
 let stateSubscriber = null;
 let state = {};
 global.Corvus.telemetry = {
   subscribe: (fn) => { stateSubscriber = fn; },
   getState: () => state,
-  postAction: () => Promise.resolve({ ok: true }),
+  postAction: (url, body) => {
+    if (url === "/api/rangefinder/stream") posts.push([url, body.enabled]);
+    return Promise.resolve({ ok: true });
+  },
 };
 
 require("./../src/js/ui.js");
@@ -173,7 +185,6 @@ test("relative shows the altitude above home and says so", () => {
   assert.equal(Corvus.topbar.setAltitudeRef("relative"), "relative");
   assert.equal(altValue(), "37", "the live bar redraws without a new frame");
   assert.equal(altSub(), "m REL");
-  assert.equal(altBlock().title, "Altitude relative to home");
   assert.equal(stored["corvus.topbarAltitude"], "relative");
 });
 
@@ -191,7 +202,6 @@ test("an unknown reference falls back to AMSL", () => {
     assert.equal(Corvus.topbar.setAltitudeRef(bad), "amsl", String(bad));
   }
   assert.equal(altSub(), "m AMSL");
-  assert.equal(altBlock().title, "Altitude above mean sea level");
 });
 
 test("the caption follows the length unit", () => {
@@ -200,6 +210,46 @@ test("the caption follows the length unit", () => {
   assert.equal(altSub(), "ft REL");
   Corvus.units.set({ length: "m" });
   Corvus.topbar.setAltitudeRef("amsl");
+});
+
+const frame = (connected) => ({
+  connected, armed: false, boot_ms: 1000, warnings: [], vehicle_type: "QUAD",
+  autopilot: "PX4", mode: "HOLD", battery_percent: 80, battery_voltage: 16.2,
+  gps_fix: "3D_FIX", altitude_amsl: 512, altitude_agl: 37, groundspeed: 0, vspeed: 0,
+});
+
+test("the distance sensor is not requested unless Settings asks", () => {
+  assert.equal(Corvus.topbar.rangefinderShown(), false);
+  assert.deepEqual(posts, []);
+});
+
+test("switching it on while connected asks once, switching off hands it back", () => {
+  assert.equal(Corvus.topbar.setRangefinder(true), true);
+  assert.deepEqual(posts, [["/api/rangefinder/stream", true]]);
+  stateSubscriber(frame(true));
+  stateSubscriber(frame(true));
+  assert.equal(posts.length, 1, "once per connection, not once per frame");
+  Corvus.topbar.setRangefinder(false);
+  assert.deepEqual(posts[1], ["/api/rangefinder/stream", false]);
+});
+
+test("a new connection asks again, a dead one asks nothing", () => {
+  posts.length = 0;
+  Corvus.topbar.setRangefinder(true);
+  posts.length = 0;
+  stateSubscriber(frame(false));
+  assert.equal(posts.length, 0);
+  stateSubscriber(frame(true));
+  assert.deepEqual(posts, [["/api/rangefinder/stream", true]]);
+});
+
+test("a hidden altitude block does not keep the sensor streaming", () => {
+  posts.length = 0;
+  Corvus.topbar.setBlockShown("altitude", false);
+  assert.deepEqual(posts, [["/api/rangefinder/stream", false]]);
+  Corvus.topbar.setBlockShown("altitude", true);
+  assert.deepEqual(posts[1], ["/api/rangefinder/stream", true]);
+  Corvus.topbar.setRangefinder(false);
 });
 
 let failed = 0;

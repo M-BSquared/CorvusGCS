@@ -56,7 +56,7 @@ def test_last_flag_sorts_a_language_to_the_end(tmp_path):
     _write(tmp_path, "fr", "French", {"A": "B"})
     codes = [r["code"] for r in languages.discover(None, str(tmp_path))]
     assert codes == ["en", "fr", "de", "aa"]
-    assert all("last" not in r for r in languages.discover(None, str(tmp_path)))
+    assert [r["last"] for r in languages.discover(None, str(tmp_path))] == [False, False, False, True]
 
 
 def _plugin_lang(root: Path, plugin: str, code: str, strings: Any) -> None:

@@ -12,7 +12,7 @@ OpenCode is configured here as a primary **orchestrator** that decomposes
 work and delegates to specialists. Role-specific duties live in
 `.opencode/agents/*.md`; the cross-cutting invariants below apply to all of
 them. References to "Orchestrator" and "Review-Agent" in this file mean those
-agents.
+agents. An agent's name is its file name: `backend` is `.opencode/agents/backend.md`.
 
 - `orchestrator` (primary) — decomposes requirements, assigns subtasks,
   enforces invariants, owns the release `VERSION` bump, and commits completed
@@ -23,25 +23,36 @@ agents.
   and the flight-stack dialect layer (`corvus/autopilot.py`) that keeps PX4 and
   ArduPilot differences in one place.
 - `gui` — web UI, desktop app wrapper, lifecycle/shutdown path.
-- `map` — map engine, GIS transforms, offline tile cache, DEM.
-- `perf` — frame-rate/latency optimization, leak hunting.
+- `map` — map engine, GIS transforms, offline tile cache, DEM, buildings.
+- `plugins` — the plugins in `plugins/`, the plugin registry and the
+  `Corvus.plugins` API a plugin sees.
+- `i18n` — interface language files, the loader and `tools/i18n.py`.
+- `perf` — frame-rate/latency optimization, leak hunting; measures before and
+  after.
 - `doc` — code/architecture/user documentation only; never changes logic.
   Owns docstrings, the user manual, the offline install guide, and the deep
   API reference.
-- `readme` — GitHub-facing README and marketing copy. Owns the top-level
-  `README.md`: badges (including "Vibecoded"), screenshots, plain-language
-  project description, quick start, and the "developed with the Universität
-  der Bundeswehr München" attribution (see *Conventions* for the exact wording
-  rule). Promotes Corvus GCS (CGCS); never hardcodes a version.
+- `readme` — GitHub-facing README, the project website and the artwork. Owns
+  the top-level `README.md`: badges (including "Vibe Coded"), screenshots,
+  plain-language project description, quick start, and the "developed with the
+  Universität der Bundeswehr München" attribution (see *Conventions* for the
+  exact wording rule). Also `docs/index.html`, `script.js`, `style.css` and
+  `docs/assets/`. Promotes Corvus GCS (CGCS); never hardcodes a version.
 - `build` — packaging/distribution for every supported platform. Owns
-  `build-appimage.sh` (Linux AppImage) and `build-macos-app.sh` (macOS `.app`
-  bundle + optional `.dmg`), and produces reproducible, self-contained
-  artifacts after every major change; never hardcodes a version.
+  `build-appimage.sh` (Linux AppImage), `build-macos-app.sh` (macOS `.app`
+  bundle + optional `.dmg`), `build-windows.ps1` (Windows zip), the bundle
+  tools under `tools/` and `pyproject.toml`, and produces reproducible,
+  self-contained artifacts after every major change; never hardcodes a
+  version.
 - `devops` — CI/CD and release automation. Owns the CI pipeline
-  (`.github/workflows/build.yml` on GitHub, the only CI) and the release
-  pipeline (tag -> AppImage + macOS `.app` + Windows zip -> GitHub Release); automates the build after every
-  major change; never hardcodes a version.
+  (`.github/workflows/build.yml` on GitHub, the only CI), `release.sh` and the
+  release pipeline (tag -> AppImage + macOS `.app` + Windows zip -> GitHub
+  Release); automates the build after every major change; never hardcodes a
+  version.
 - `review` — final safety/reliability audit and test authoring.
+- `verify` — runs the real app against a simulated aircraft (`tools/scene.py`,
+  sandboxed servers), reports what it saw, and makes the README and website
+  pictures. Edits no product code.
 
 ## Product
 
@@ -138,10 +149,13 @@ Shared packaging invariants — a violation of any of these is a build bug:
 - **Only what runs.** After the Qt trim, `tools/bundle_trim.py` takes out
   every pymavlink dialect but `all` (which `corvus/app.py` pins through
   `MAVLINK_DIALECT`), lxml, pip, Qt translations, Chromium locales but
-  `en-US` and `de`, and the framework copies pip writes where macOS expects
+  `en-US` and `de`, Chromium's DevTools pack, the other architecture's V8
+  snapshot, and the framework copies pip writes where macOS expects
   symlinks. It fails the build if the `all` dialect or `en-US.pak` is gone.
-  Code that loads another dialect, a `QTranslator` or lxml has to change
-  that tool in the same commit.
+  Code that loads another dialect, a `QTranslator`, lxml or opens the web
+  inspector has to change that tool in the same commit. `tools/qt_bundle.py`
+  keeps a PySide6 Python module only when Python loads it; the Qt libraries
+  QtWebEngine links stay without theirs.
 - **Offline at runtime.** The build may download wheels and packaging tools
   once; the *running* app must never need the network.
 - **Layout contract.** `VERSION`, `corvus/`, `src/`, and `assets/` stay

@@ -121,11 +121,17 @@
 
 /* The launch button takes the row; a long label truncates rather than
    wrapping the row onto two lines. */
-.schw-launch {
+.btn.schw-launch {
   flex: 1;
-  font-size: 14px;
+  font-size: 12px;
   min-width: 0;
   justify-content: flex-start;
+  /* One height whatever the button holds: the arrow into the terminal is 22px
+     and a background button has none, which made those rows shorter. */
+  box-sizing: border-box;
+  height: 36px;
+  padding-top: 0;
+  padding-bottom: 0;
 }
 .schw-launch > span:not(.schw-where) {
   min-width: 0;
@@ -147,6 +153,86 @@
 }
 .schw-row:hover .schw-row-tools,
 .schw-row-tools:focus-within { opacity: 1; }
+
+/* A button with a colour of its own: the fill and the label colour that
+   reads on it come from the two properties the script sets. Without them the
+   button is the app's primary, in the theme's colour. */
+.btn.schw-launch[data-color],
+.btn.schw-launch[data-color]:hover {
+  background: var(--schw-color);
+  color: var(--schw-on);
+}
+.btn.schw-launch[data-color]:hover { filter: brightness(1.1); }
+
+/* The colour chips in the editor: round, the chosen one ringed. */
+/* Two even rows of five: the panel is narrow, and a strip that wrapped
+   would leave the last chip alone on a line. */
+.schw-colors {
+  display: grid;
+  grid-template-columns: repeat(5, 24px);
+  justify-content: start;
+  gap: 10px;
+}
+.schw-chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid rgb(255 255 255 / 0.92);
+  box-shadow: 0 0 0 1px rgb(var(--tint-rgb) / 0.12);
+  cursor: pointer;
+  transition: transform 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.schw-chip:hover { transform: scale(1.1); }
+.schw-chip.is-selected { box-shadow: 0 0 0 2px var(--accent-bright); }
+.schw-chip:focus-visible { outline: 2px solid var(--accent-bright); outline-offset: 2px; }
+.schw-chip-custom {
+  background: conic-gradient(#e0572b, #d98a00, #2e9e4f, #2f6fed, #8e4fd6, #e0572b);
+  color: #fff;
+}
+.schw-chip-custom i, .schw-chip-custom svg { width: 12px; height: 12px; filter: drop-shadow(0 0 1px rgb(0 0 0 / 0.6)); }
+.schw-chip-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+/* The grip in edit mode: drag a row up or down by it. The grabbed row is
+   carried by a transform while the others close up, so it is drawn on top and
+   the gesture is not also a text selection. */
+.schw-grip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 22px;
+  height: 28px;
+  margin-left: -4px;
+  border-radius: var(--radius-btn);
+  color: var(--text-3);
+  cursor: grab;
+  touch-action: none;
+}
+.schw-grip:hover { color: var(--text-1); }
+.schw-grip:focus-visible { outline: 2px solid var(--accent-bright); outline-offset: -2px; }
+.schw-shelf.is-reordering { user-select: none; -webkit-user-select: none; }
+.schw-shelf.is-reordering,
+.schw-shelf.is-reordering .schw-grip { cursor: grabbing; }
+.schw-row.is-dragging {
+  position: relative;
+  z-index: 2;
+  background: var(--surface-2);
+  box-shadow: var(--shadow-pop);
+}
+.schw-shelf.is-reordering .schw-row-tools { opacity: 0; }
 
 /* Local or SSH: the segment's own icon, pinned to the button's far end and
    a little quieter than the label, so it reads as a property of the button
@@ -350,14 +436,15 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .schw-chip,
   .schw-row-tools,
   .schw-seg-opt,
   .schw-comp { transition: none; }
 }
 
-/* The status under the companion strip: a slim one-liner, never a block. */
+/* The status under the shelf card: a slim one-liner, never a block. */
 .schw-status {
-  margin: 0 0 8px;
+  margin: 10px 0 0;
   padding: 3px 10px;
   font-size: 11.5px;
   line-height: 1.35;
@@ -365,6 +452,8 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+.schw-comp-form .schw-status { margin: 0; }
 
 .schw-confirm { display: flex; flex-direction: column; gap: 8px; }
 .schw-confirm-line { margin: 0; font-size: 13px; line-height: 1.5; color: var(--text-2); }

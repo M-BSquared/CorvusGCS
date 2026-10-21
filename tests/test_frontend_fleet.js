@@ -84,6 +84,12 @@ assert.equal(fleet.tint("#000000", 0.5), "#808080");
 assert.equal(fleet.tint("#2F7DF6", 0), "#2F7DF6");
 assert.equal(fleet.tint("#2F7DF6", 1), "#FFFFFF");
 
+const tones = [0, 1, 2, 3, 4, 5, 6, 7].map((i) => fleet.rainbowTone(i));
+assert.ok(tones.every((c) => /^#[0-9A-F]{6}$/.test(c)), "every tone is a hex colour");
+assert.equal(new Set(tones).size, tones.length, "no two of the first flights share a tone");
+assert.equal(fleet.rainbowTone(3), tones[3], "the same flight always gets the same tone");
+assert.equal(fleet.rainbowTone(-1), tones[0], "a bad index reads as the first");
+
 const el = elementStub();
 fleet.paintElement(el, "#1FA971");
 assert.equal(el.style.props["--vehicle"], "#1FA971");
@@ -236,6 +242,19 @@ mf._restore();
 assert.equal(mf._tracks().get("main:5").past.length, 1, "the tracks survive a restart");
 mf.clearTracks();
 assert.equal(store.has("corvus.map.fleetTracks"), false);
+
+// The rainbow gives each earlier flight of another vehicle a tone of its own.
+{
+  mf.stashTrack("main:6", { current: [[1, 1], [2, 2]], past: [[[3, 3], [4, 4]], [[5, 5], [6, 6]]] });
+  const pastColors = () => mf._geometry().features
+    .filter((f) => f.properties.past === 1).map((f) => f.properties.color);
+  assert.equal(new Set(pastColors()).size, 1, "one tone for all earlier flights by default");
+  map.setTrackOptions({ rainbow: true });
+  assert.deepEqual(pastColors(), [fleet.rainbowTone(0), fleet.rainbowTone(1)]);
+  map.setTrackOptions({ rainbow: false });
+  assert.equal(new Set(pastColors()).size, 1);
+  mf.clearTracks();
+}
 
 // The paths are redrawn when something drawn changed, not on every snapshot:
 // in 3D each setData re-renders the line into every terrain tile's texture.

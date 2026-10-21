@@ -17,6 +17,12 @@
 * **Chromium locales.** QtWebEngine ships 53 locale packs for its own context
   menus and form messages. Chromium falls back to ``en-US`` when the system
   locale has no pack, so that one is required and stays, with ``de``.
+* **Chromium DevTools.** ``qtwebengine_devtools_resources.pak`` (12 MB) is
+  the web inspector, which Corvus never opens: it sets no remote debugging
+  port and shows no native context menu to inspect from.
+* **The other architecture's V8 snapshot (macOS).** The framework carries
+  ``v8_context_snapshot.arm64.bin`` and ``.x86_64.bin``; a bundle built for
+  one architecture reads only its own.
 * **Type stubs.** PySide6's ``.pyi`` files are for editors.
 * **Duplicated frameworks (macOS).** A wheel cannot hold a symlink, so pip
   writes ``X.framework/Resources`` and ``Helpers`` out as full copies of
@@ -39,6 +45,7 @@ from __future__ import annotations
 import argparse
 import filecmp
 import os
+import platform
 import shutil
 import sys
 from collections.abc import Callable, Iterator
@@ -52,6 +59,12 @@ MAVLINK_DIALECTS: frozenset[str] = frozenset({"all"})
 KEEP_LOCALES: frozenset[str] = frozenset({"en-US", "de"})
 
 DROP_PACKAGES: tuple[str, ...] = ("lxml", "pip")
+
+DEVTOOLS_PAK = "qtwebengine_devtools_resources.pak"
+
+# The architecture the bundle is built for; every build script builds for
+# the host it runs on.
+HOST_ARCH = platform.machine()
 
 
 class TrimError(RuntimeError):
@@ -111,8 +124,17 @@ def plan_packages(root: Path) -> list[Path]:
     return out
 
 
-def plan_qt_data(root: Path) -> list[Path]:
-    """Qt translations, Chromium locale packs not kept, PySide6 type stubs."""
+def _foreign_snapshots(folder: Path, files: list[str], arch: str) -> list[Path]:
+    """V8 snapshots for another architecture, when this one's is beside them."""
+    if f"v8_context_snapshot.{arch}.bin" not in files:
+        return []
+    return [folder / f for f in sorted(files)
+            if f.startswith("v8_context_snapshot.") and f.endswith(".bin")
+            and f != f"v8_context_snapshot.{arch}.bin" and f.count(".") == 2]
+
+
+def plan_qt_data(root: Path, arch: str = HOST_ARCH) -> list[Path]:
+    """Qt translations, Chromium locales and DevTools, foreign V8 snapshots, type stubs."""
     out: list[Path] = []
     pyside = root / "PySide6"
     if not pyside.is_dir():
@@ -125,6 +147,9 @@ def plan_qt_data(root: Path) -> list[Path]:
                     if f.endswith(".pak") and f[:-4] not in KEEP_LOCALES]
         elif here.name == "translations":
             out += [here / f for f in sorted(files) if f.endswith(".qm")]
+        if DEVTOOLS_PAK in files and not (here / DEVTOOLS_PAK).is_symlink():
+            out.append(here / DEVTOOLS_PAK)
+        out += [f for f in _foreign_snapshots(here, files, arch) if not f.is_symlink()]
     return out
 
 
@@ -165,10 +190,10 @@ def plan_frameworks(root: Path) -> list[tuple[Path, str]]:
     return out
 
 
-def plan(root: Path) -> Plan:
+def plan(root: Path, arch: str = HOST_ARCH) -> Plan:
     """Decide what goes under *root*. Touches nothing."""
     result = Plan()
-    result.remove = sorted(set(plan_dialects(root) + plan_packages(root) + plan_qt_data(root)))
+    result.remove = sorted(set(plan_dialects(root) + plan_packages(root) + plan_qt_data(root, arch)))
     result.link = plan_frameworks(root)
     return result
 

@@ -118,8 +118,12 @@ class CorvusConfig:
     "compass_nose_up": false, "solid_terminals": false,
     "corvus_title_bar": false,
     "topbar_altitude": "amsl",
-    "track_earlier_flights": true, "track_clear_on_restart": false,
-    "flight_hud": true, "hud_square": false, "console_tab": true, "ssh_tab": true,
+    "topbar_show_altitude": true, "topbar_show_groundspeed": true,
+    "topbar_show_vspeed": true, "topbar_show_rangefinder": false,
+    "track_earlier_flights": true, "track_rainbow": false,
+    "track_clear_on_restart": false,
+    "flight_hud": true, "hud_square": false, "measure_tool": true,
+    "console_tab": true, "ssh_tab": true,
     "plugin_tabs": false, "units": {"length":
     "m", "distance": "km", "speed": "ms", "temperature": "c"}}`` — the multiplier
     the frontend puts on every length in the UI, which cut of the mark the
@@ -622,6 +626,16 @@ def _coerce_ui(raw: Any) -> dict[str, Any] | None:
     ``"amsl"`` (above mean sea level) or ``"relative"`` (above home). Any
     other value is dropped, and absent reads as AMSL.
 
+    ``topbar_show_altitude``, ``topbar_show_groundspeed`` and
+    ``topbar_show_vspeed`` show or hide those three blocks of the top bar. On
+    unless turned off, like ``flight_hud``: a config that has never been asked
+    must not take a reading away from the operator.
+
+    ``topbar_show_rangefinder`` adds the downward distance sensor's reading to
+    the altitude card. Off unless asked for, and that is more than cosmetic:
+    while it is off the station never requests the sensor's message from the
+    vehicle, so the link carries nothing for it.
+
     ``mission_page`` puts the Mission planner in the left rail under HOME. Off
     unless asked for: a station flown by hand has no use for a route editor,
     and a rail entry that leads somewhere the operator never goes is one more
@@ -667,6 +681,11 @@ def _coerce_ui(raw: Any) -> dict[str, Any] | None:
     second, quieter colour, so the flight in progress stands out from the ones
     before it. On unless turned off, so its absent key reads as true.
 
+    ``track_rainbow`` gives each earlier flight a faded colour of its own
+    instead of the one quieter colour, so flights over the same ground can be
+    told apart. Off unless asked for, and it only acts while
+    ``track_earlier_flights`` is on.
+
     ``track_clear_on_restart`` discards the flown track when the app starts
     and when the autopilot reboots. Off unless asked for: the track is kept
     until the operator clears it with the button on the map.
@@ -675,6 +694,10 @@ def _coerce_ui(raw: Any) -> dict[str, Any] | None:
     readouts) on the Home map. On unless turned off, like
     ``track_earlier_flights``: a config that has never been asked must not
     take the instruments away.
+
+    ``measure_tool`` puts the distance tool's ruler button in the Home map's
+    control rail. On unless turned off, like ``flight_hud``: a config that has
+    never been asked must not take a button away.
 
     ``hud_square`` gives the flight HUD square corners instead of the rounded
     top the window has by default. Off unless asked for. It changes only the
@@ -711,8 +734,11 @@ def _coerce_ui(raw: Any) -> dict[str, Any] | None:
     for key in ("inverted_app_icon", "app_icon_backplate", "topbar_status_dots",
                 "mission_page", "notification_marks", "flight_bar_shrink",
                 "compass_nose_up", "windows_in_app", "solid_terminals", "corvus_title_bar",
-                "track_earlier_flights", "track_clear_on_restart", "flight_hud", "hud_square",
-                "console_tab", "ssh_tab", "plugin_tabs"):
+                "track_earlier_flights", "track_rainbow", "track_clear_on_restart",
+                "flight_hud", "hud_square",
+                "topbar_show_altitude", "topbar_show_groundspeed", "topbar_show_vspeed",
+                "topbar_show_rangefinder",
+                "measure_tool", "console_tab", "ssh_tab", "plugin_tabs"):
         if isinstance(raw.get(key), bool):
             out[key] = raw[key]
     return out or None

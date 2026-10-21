@@ -281,6 +281,28 @@ class ControlRoutes:
         error = self.mavlink.get_last_command_error() or "motor stop failed"
         self._send_json({"ok": False, "error": error}, 503)
 
+    @route("POST", "/api/rangefinder/stream")
+    def _api_rangefinder_stream(self, payload: dict) -> None:
+        """Start or stop the DISTANCE_SENSOR stream behind the altitude card.
+
+        Called by the top bar only while Settings has the distance sensor
+        switched on, so a station that never asks costs the link nothing.
+        Read-only, and safe while armed.
+        """
+        enabled = payload.get("enabled")
+        if not isinstance(enabled, bool):
+            self._send_json({"ok": False, "error": "enabled must be boolean"}, 400)
+            return
+        if self.mavlink is None:
+            self._send_json({"ok": False, "error": "not connected"}, 503)
+            return
+        if self.mavlink.set_rangefinder_stream(enabled):
+            self._send_json({"ok": True, "enabled": enabled})
+            return
+        error = self.mavlink.get_last_command_error() or "distance sensor request failed"
+        status = 503 if "not connected" in error else 409
+        self._send_json({"ok": False, "error": error}, status)
+
     @route("POST", "/api/rc/stream")
     def _api_rc_stream(self, payload: dict) -> None:
         """Enable/disable the high-rate RC_CHANNELS stream on demand.

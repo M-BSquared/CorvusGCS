@@ -160,10 +160,11 @@ Corvus.mapFleet = (function () {
     tracks.forEach((t, id) => {
       if (id === owner) return;
       const color = trackColor(id);
-      const past = Corvus.fleet.tint(color, 0.45);
-      t.past.forEach((f) => {
+      const plain = Corvus.fleet.tint(color, 0.45);
+      const rainbow = Corvus.map && Corvus.map.isTrackRainbow && Corvus.map.isTrackRainbow();
+      t.past.forEach((f, i) => {
         if (f.length >= 2) {
-          features.push({ type: "Feature", properties: { color: past, past: 1 },
+          features.push({ type: "Feature", properties: { color: rainbow ? Corvus.fleet.rainbowTone(i) : plain, past: 1 },
             geometry: { type: "LineString", coordinates: f } });
         }
       });
@@ -394,7 +395,7 @@ Corvus.mapFleet = (function () {
   restore();
 
   return {
-    attach, stashTrack, takeTrack, clearTracks, hasTracks, forget,
+    attach, stashTrack, takeTrack, clearTracks, hasTracks, forget, repaint: paint,
     // test hooks
     _record: record,
     _onSnapshot: (snapshot) => onSnapshot(snapshot),

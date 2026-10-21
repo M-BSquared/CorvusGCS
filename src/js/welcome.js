@@ -232,10 +232,10 @@ Corvus.welcome = (function () {
       /* The same list Settings offers. Applied at once, so the rest of the
          setup is read in it; written with everything else on Finish. */
       function languageField() {
-        if (!Corvus.i18n || Corvus.i18n.available().length < 2) return null;
+        if (!Corvus.i18n || Corvus.i18n.options(true).length < 2) return null;
         const select = Corvus.ui.select({
           ariaLabel: "Language",
-          options: Corvus.i18n.options(),
+          options: Corvus.i18n.options(true),
           value: choices.language,
           onChange: (code) => {
             Corvus.i18n.use(code).then((now) => {

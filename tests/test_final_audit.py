@@ -189,6 +189,7 @@ _EXPECTED_POST = {
     "/api/mavlink/shell/close",
     "/api/rc/calibrate",
     "/api/rc/stream",
+    "/api/rangefinder/stream",
     "/api/tuning/stream",
     "/api/tiles/download",
     "/api/tiles/cancel",

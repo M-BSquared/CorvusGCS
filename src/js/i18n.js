@@ -471,8 +471,8 @@ Corvus.i18n = (function () {
    * ("Deutsch (German)"), so somebody who lands in a language they cannot read
    * can still find theirs.
    */
-  function options() {
-    return languages.map((l) => ({
+  function options(forSetup) {
+    return languages.filter((l) => !(forSetup && l.last)).map((l) => ({
       value: l.code,
       label: l.name !== l.native_name ? l.native_name + " (" + l.name + ")" : l.native_name,
     }));

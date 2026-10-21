@@ -468,9 +468,10 @@ def test_flight_bar_shrink_is_kept_only_as_a_genuine_boolean(tmp_path) -> None:
     assert load_config(str(p)).ui == {"flight_bar_shrink": False, "mission_page": True}
 
 
-@pytest.mark.parametrize("key", ["track_earlier_flights", "track_clear_on_restart"])
+@pytest.mark.parametrize(
+    "key", ["track_earlier_flights", "track_rainbow", "track_clear_on_restart"])
 def test_track_switches_are_kept_only_as_genuine_booleans(tmp_path, key) -> None:
-    """The two track switches: a real boolean round-trips, anything else is
+    """The track switches: a real boolean round-trips, anything else is
     dropped so the frontend falls back to its default (earlier flights in their
     own colour, the track kept across restarts)."""
     p = tmp_path / "c.json"
@@ -825,3 +826,37 @@ def test_hud_square_is_kept_only_as_a_genuine_boolean(tmp_path) -> None:
     for value in (True, False):
         p.write_text(json.dumps({"ui": {"hud_square": value}}), encoding="utf-8")
         assert load_config(str(p)).ui == {"hud_square": value}
+
+
+def test_measure_tool_is_kept_only_as_a_genuine_boolean(tmp_path) -> None:
+    p = tmp_path / "config.json"
+    p.write_text(json.dumps({"ui": {"measure_tool": "false"}}), encoding="utf-8")
+    assert (load_config(str(p)).ui or {}).get("measure_tool") is None
+    for value in (True, False):
+        p.write_text(json.dumps({"ui": {"measure_tool": value}}), encoding="utf-8")
+        assert load_config(str(p)).ui == {"measure_tool": value}
+
+
+def test_topbar_blocks_are_shown_unless_switched_off(tmp_path) -> None:
+    """Altitude, groundspeed and climb rate stay on the bar by default."""
+    p = tmp_path / "c.json"
+    keys = ("topbar_show_altitude", "topbar_show_groundspeed", "topbar_show_vspeed")
+    p.write_text(json.dumps({}), encoding="utf-8")
+    assert all((load_config(str(p)).ui or {}).get(k) is None for k in keys)
+    p.write_text(json.dumps({"ui": {k: "no" for k in keys}}), encoding="utf-8")
+    assert load_config(str(p)).ui is None
+    p.write_text(json.dumps({"ui": {"topbar_show_altitude": False,
+                                    "topbar_show_vspeed": True}}), encoding="utf-8")
+    assert load_config(str(p)).ui == {"topbar_show_altitude": False,
+                                      "topbar_show_vspeed": True}
+
+
+def test_topbar_rangefinder_is_kept_only_as_a_boolean(tmp_path) -> None:
+    """Off unless the config says true: an absent key never asks the vehicle."""
+    p = tmp_path / "c.json"
+    p.write_text(json.dumps({}), encoding="utf-8")
+    assert (load_config(str(p)).ui or {}).get("topbar_show_rangefinder") is None
+    p.write_text(json.dumps({"ui": {"topbar_show_rangefinder": "yes"}}), encoding="utf-8")
+    assert load_config(str(p)).ui is None
+    p.write_text(json.dumps({"ui": {"topbar_show_rangefinder": True}}), encoding="utf-8")
+    assert load_config(str(p)).ui == {"topbar_show_rangefinder": True}

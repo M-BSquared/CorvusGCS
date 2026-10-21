@@ -25,10 +25,12 @@ Corvus.map = (function () {
   // The flown vehicle's colour from the vehicle list, "" for the theme's own.
   let vehicleColor = "";
   let vehicleLabelEl = null;
-  // Settings (ui.track_earlier_flights / ui.track_clear_on_restart), applied
-  // by app.js once the config lands. Earlier flights get their own colour
-  // unless turned off; the track outlives a restart unless asked otherwise.
+  // Settings (ui.track_earlier_flights / ui.track_rainbow /
+  // ui.track_clear_on_restart), applied by app.js once the config lands.
+  // Earlier flights get their own colour unless turned off, and a colour each
+  // when the rainbow is on; the track outlives a restart unless asked otherwise.
   let trackEarlierFlights = true;
+  let trackRainbow = false;
   let trackClearOnRestart = false;
   let started = false;
   let firstFix = true;
@@ -489,7 +491,7 @@ Corvus.map = (function () {
       source: "vehicle-path-past",
       type: "line",
       layout: { "line-cap": "round", "line-join": "round" },
-      paint: { "line-width": 9, "line-blur": 7, "line-opacity": 0.18 },
+      paint: { "line-color": ["get", "color"], "line-width": 9, "line-blur": 7, "line-opacity": 0.18 },
     });
     map.addLayer({
       id: "path-past-casing",
@@ -503,7 +505,7 @@ Corvus.map = (function () {
       source: "vehicle-path-past",
       type: "line",
       layout: { "line-cap": "round", "line-join": "round" },
-      paint: { "line-width": 2.2, "line-opacity": 0.85 },
+      paint: { "line-color": ["get", "color"], "line-width": 2.2, "line-opacity": 0.85 },
     });
     pastSource = map.getSource("vehicle-path-past");
     map.addSource("vehicle-path", { type: "geojson", data: currentGeometry() });
@@ -678,9 +680,28 @@ Corvus.map = (function () {
     };
   }
 
+  /**
+   * The colour each earlier flight is drawn in, oldest first. One tone for
+   * all of them, or a tone of its own each when the rainbow is on, so that
+   * flights drawn over the same ground can still be told apart.
+   */
+  function pastColors() {
+    const track = vehicleColor || Corvus.ui.token("--track", "#E4322F");
+    if (!trackEarlierFlights) return pastFlights.map(() => track);
+    const fleet = Corvus.fleet;
+    if (trackRainbow && fleet && fleet.rainbowTone) return pastFlights.map((_f, i) => fleet.rainbowTone(i));
+    const tone = vehicleColor && fleet
+      ? fleet.tint(vehicleColor, 0.45) : Corvus.ui.token("--track-past", "#E88A7E");
+    return pastFlights.map(() => tone);
+  }
+
   function pastGeometry() {
+    const colors = pastColors();
     return {
-      type: "Feature", geometry: { type: "MultiLineString", coordinates: pastFlights }, properties: {},
+      type: "FeatureCollection",
+      features: pastFlights.map((coordinates, i) => ({
+        type: "Feature", geometry: { type: "LineString", coordinates }, properties: { color: colors[i] },
+      })),
     };
   }
 
@@ -900,13 +921,14 @@ Corvus.map = (function () {
   }
 
   /**
-   * Apply the two track settings. *startup* is true for the config read when
+   * Apply the three track settings. *startup* is true for the config read when
    * the app starts, the one moment "clear on restart" means discarding what
    * the last session left.
    */
   function setTrackOptions(opts, startup) {
     const o = opts || {};
     trackEarlierFlights = o.earlierFlights !== false;
+    trackRainbow = o.rainbow === true;
     trackClearOnRestart = o.clearOnRestart === true;
     if (startup && trackClearOnRestart) clearTrack();
     repaintTrack();
@@ -1063,9 +1085,6 @@ Corvus.map = (function () {
   function repaintTrack() {
     if (!map) return;
     const track = vehicleColor || Corvus.ui.token("--track", "#E4322F");
-    const pastTone = vehicleColor && Corvus.fleet
-      ? Corvus.fleet.tint(vehicleColor, 0.45) : Corvus.ui.token("--track-past", "#E88A7E");
-    const past = trackEarlierFlights ? pastTone : track;
     // The casing is the page background, not black: on the light theme a black
     // outline would be heavier than the track it is meant to support.
     const casing = Corvus.ui.token("--bg", "#0B0E12");
@@ -1075,9 +1094,9 @@ Corvus.map = (function () {
     set("path-glow", "line-color", track);
     set("path-casing", "line-color", casing);
     set("path-line", "line-color", track);
-    set("path-past-glow", "line-color", past);
     set("path-past-casing", "line-color", casing);
-    set("path-past-line", "line-color", past);
+    paintPast();
+    if (Corvus.mapFleet && Corvus.mapFleet.repaint) Corvus.mapFleet.repaint();
     // The sky is literal colours too, and it exists only while 3D is on.
     if (threeD) setSky(true);
   }
@@ -1286,6 +1305,7 @@ Corvus.map = (function () {
   function pickPoint(onPick, opts) {
     if (!map || !started) return null;
     setWaypointMode(false);
+    stopMeasure();
     closeContextMenu();
     return Corvus.mapOverlays.pickPoint(onPick, opts);
   }
@@ -1416,6 +1436,7 @@ Corvus.map = (function () {
       { id: "layers", icon: "layers", title: "Map layers" },
       { id: "regions", icon: "frame", title: "Show downloaded areas" },
       { id: "three", icon: "box", title: "3D mode" },
+      { id: "measure", icon: "ruler", title: "Measure a distance (click two points)" },
       { id: "divider", group: "video" },
       { id: "video", icon: "video", title: "Camera windows (set up under Setup, Video)" },
     ];
@@ -1461,6 +1482,8 @@ Corvus.map = (function () {
         // one you meant — it lives in the panel that appears on hover.
         set3D(!threeD);
         persistThreeD();
+      } else if (act === "measure") {
+        toggleMeasure();
       } else if (act === "video" && Corvus.videoWindows) {
         pressCameraButton();
       }
@@ -1469,6 +1492,35 @@ Corvus.map = (function () {
     wireCameraButton(container);
 
     wireThreeDPanel(container.querySelector('[data-act="three"]'));
+
+    if (Corvus.mapMeasure) {
+      Corvus.mapMeasure.attach(map, (on) => {
+        const b = container.querySelector('[data-act="measure"]');
+        if (b) b.classList.toggle("active", on);
+      });
+    }
+  }
+
+  /** Measuring and planning both own the click, so turning one on ends the other. */
+  function toggleMeasure() {
+    if (!Corvus.mapMeasure) return;
+    if (!Corvus.mapMeasure.isActive()) {
+      setWaypointMode(false);
+      Corvus.mapOverlays.cancelPick();
+      closeContextMenu();
+    }
+    Corvus.mapMeasure.toggle();
+  }
+
+  function stopMeasure() {
+    if (Corvus.mapMeasure && Corvus.mapMeasure.isActive()) Corvus.mapMeasure.setActive(false);
+  }
+
+  /** Show or hide the rail's ruler. Hiding it also ends a measurement. */
+  function setMeasureTool(on) {
+    const b = controlsEl && controlsEl.querySelector('[data-act="measure"]');
+    if (!on) stopMeasure();
+    if (b) b.hidden = !on;
   }
 
   /**
@@ -2089,9 +2141,9 @@ Corvus.map = (function () {
       label: "Buildings",
       control: threeDPicker.el,
       className: "field-switch",
-      hint: "Extruded OpenStreetMap buildings, fetched once per area and "
-        + "then kept for offline use. Terrain relief is always on in 3D "
-        + "wherever elevation data is available.",
+      hint: "OpenStreetMap buildings, kept for offline use. Relief is "
+        + "always shown. Own elevation profiles, GeoTIFF and surface "
+        + "model (DOM) data can be added in the settings.",
     });
     surface.appendChild(field);
 
@@ -3219,8 +3271,12 @@ Corvus.map = (function () {
      genuine click, never at the end of a pan, so dragging the map stays
      drag-only. Planning mode owns the click while it is on (a click there
      places a waypoint), so the menu stands down rather than competing. */
+  function measuring() {
+    return !!Corvus.mapMeasure && Corvus.mapMeasure.isActive();
+  }
+
   function onMapClick(e) {
-    if (waypointMode || Corvus.mapOverlays.isPicking() || !e || !e.lngLat) return;
+    if (waypointMode || measuring() || Corvus.mapOverlays.isPicking() || !e || !e.lngLat) return;
     openContextMenu(e.lngLat);
   }
 
@@ -3228,7 +3284,7 @@ Corvus.map = (function () {
      operators will try first. Outside planning mode there is no browser menu
      worth keeping over the canvas. */
   function onMapRightClick(e) {
-    if (waypointMode || Corvus.mapOverlays.isPicking() || !e || !e.lngLat) return;
+    if (waypointMode || measuring() || Corvus.mapOverlays.isPicking() || !e || !e.lngLat) return;
     if (e.preventDefault) e.preventDefault();
     openContextMenu(e.lngLat);
   }
@@ -3244,6 +3300,7 @@ Corvus.map = (function () {
     if (!map || !started) return;   // planning needs a loaded map
     waypointMode = enabled;
     if (enabled) {
+      stopMeasure();
       // Planning takes the click over; a menu left open would be acting on a
       // point the operator can no longer see themselves choosing.
       closeContextMenu();
@@ -5365,6 +5422,7 @@ Corvus.map = (function () {
     // the fit it always answers to. Off unless Settings asks; app.js applies
     // the config's answer once that fetch lands.
     setFlightBarShrink,
+    setMeasureTool,
     // test hook: the rule as pure arithmetic — the room a map column of a
     // given width gives the bar (the second argument standing in for
     // .map-topleft), or null for "nothing measurable here".
@@ -5451,6 +5509,8 @@ Corvus.map = (function () {
     trackOwner: () => trackOwner,
     updateTrackControl,
     getEarlierFlights: () => pastFlights.map((f) => f.map((c) => c.slice())),
+    isTrackRainbow: () => trackRainbow && trackEarlierFlights,
+    _pastGeometry: pastGeometry,
     // Settings' two track switches; app.js applies the config's answer with
     // startup = true once that fetch lands.
     setTrackOptions,
@@ -5565,6 +5625,7 @@ Corvus.map = (function () {
       lastArmed = null;
       trackOwner = null;
       trackEarlierFlights = true;
+      trackRainbow = false;
       trackClearOnRestart = false;
       if (trackSaveTimer !== null) window.clearTimeout(trackSaveTimer);
       trackSaveTimer = null;

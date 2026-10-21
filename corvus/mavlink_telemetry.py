@@ -617,6 +617,32 @@ class TelemetryMixin:
                 mavutil.mavlink.MAVLINK_MSG_ID_VIBRATION, interval_us,
             )
 
+    def set_rangefinder_stream(self, enabled: bool) -> bool:
+        """Ask for (or hand back) the DISTANCE_SENSOR stream the top bar shows.
+
+        Lean, like :meth:`set_vibration_stream`: nothing is requested until the
+        operator turns the reading on in Settings, and turning it off hands the
+        rate back to the firmware's own. Read-only telemetry, so safe while
+        armed. A vehicle without a distance sensor simply never answers.
+        """
+        with self._operation_lock:
+            self._set_command_error("")
+            if not self._connection_ready():
+                self._set_command_error("not connected")
+                self._store.update(rangefinder_distance=None)
+                return False
+            requested: int | None = None
+            if enabled:
+                requested = 1_000_000 if self._is_slow_link() else 500_000
+            interval_us = self._stream_interval_us(
+                mavutil.mavlink.MAVLINK_MSG_ID_DISTANCE_SENSOR, requested)
+            ok = self.set_message_interval(
+                mavutil.mavlink.MAVLINK_MSG_ID_DISTANCE_SENSOR, interval_us)
+            if not enabled:
+                self._rangefinder_seen = None
+                self._store.update(rangefinder_distance=None)
+            return ok
+
     def set_rc_stream(self, enabled: bool, rate_hz: int = 20) -> bool:
         """Raise (or restore) the RC_CHANNELS rate the Radio Control page needs.
 

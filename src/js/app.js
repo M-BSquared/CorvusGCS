@@ -695,6 +695,14 @@ Corvus.app = (function () {
       // The ALTITUDE block's reference. AMSL unless the config asks for the
       // altitude above home.
       Corvus.topbar.setAltitudeRef(cfg.ui && cfg.ui.topbar_altitude);
+      // Altitude, groundspeed and climb rate are on the bar unless the config
+      // takes them off.
+      Corvus.topbar.setBlockShown("altitude", !(cfg.ui && cfg.ui.topbar_show_altitude === false));
+      Corvus.topbar.setBlockShown("groundspeed", !(cfg.ui && cfg.ui.topbar_show_groundspeed === false));
+      Corvus.topbar.setBlockShown("vspeed", !(cfg.ui && cfg.ui.topbar_show_vspeed === false));
+      // The distance sensor row of the altitude card. Off unless the config
+      // switches it on, and only then is the sensor requested from the vehicle.
+      Corvus.topbar.setRangefinder(!!(cfg.ui && cfg.ui.topbar_show_rangefinder === true));
       // The severity marks on notifications. Off unless the config says
       // otherwise, like the control switches above: the icon and its colour
       // already carry the level, so an absent key leaves the marks off rather
@@ -712,6 +720,7 @@ Corvus.app = (function () {
       // unless the config asks for it to go on every restart.
       Corvus.map.setTrackOptions({
         earlierFlights: !(cfg.ui && cfg.ui.track_earlier_flights === false),
+        rainbow: !!(cfg.ui && cfg.ui.track_rainbow),
         clearOnRestart: !!(cfg.ui && cfg.ui.track_clear_on_restart),
       }, true);
       // The flight compass is north up unless the config locks it nose up.
@@ -719,6 +728,8 @@ Corvus.app = (function () {
       // The flight HUD is on the Home map unless the config takes it off.
       Corvus.hudPanel.setShown(!(cfg.ui && cfg.ui.flight_hud === false));
       Corvus.hudPanel.setSquare(!!(cfg.ui && cfg.ui.hud_square));
+      // The ruler in the map's control rail is there unless the config takes it away.
+      Corvus.map.setMeasureTool(!(cfg.ui && cfg.ui.measure_tool === false));
       // The optional Mission entry in the left rail. Off unless the config
       // asks for it, and asked for here rather than inside sidenav.init()
       // because the rail is built before this fetch can land — the rail

@@ -587,6 +587,7 @@
 .safety-preset-write-value.pending { font-style: italic; font-weight: 500; color: var(--text-3); }
 .safety-preset-write-why { font-size: 11px; color: var(--text-3); }
 .safety-preset-missing { font-size: 11px; color: var(--warning); }
+.safety-action { display: flex; flex-direction: column; gap: 8px; }
 .safety-preset-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 
 /* ----- Parameters the operator adds themselves -----

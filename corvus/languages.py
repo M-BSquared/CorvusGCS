@@ -247,7 +247,7 @@ def _all(user_dir: str | None, bundled_dir: str | None) -> dict[str, dict[str, A
     found.update(_scan(user_dir, "user"))
     if DEFAULT_CODE not in found:
         found[DEFAULT_CODE] = {"code": DEFAULT_CODE, "name": "English",
-                               "native_name": "English", "source": "builtin", "strings": {}}
+                               "native_name": "English", "last": False, "source": "builtin", "strings": {}}
     return found
 
 
@@ -255,12 +255,12 @@ def discover(user_dir: str | None = None, bundled_dir: str | None = None) -> lis
     """The installed languages, English first, then by name; a file whose
     ``meta`` has ``"last": true`` (a joke or experimental language) sorts to the end.
 
-    Each entry carries ``code``, ``name``, ``native_name``, ``source``
+    Each entry carries ``code``, ``name``, ``native_name``, ``last``, ``source``
     (``builtin``, ``bundled`` or ``user``) and ``count``, the number of texts
     it translates. The strings themselves are fetched per language.
     """
     found = _all(user_dir, bundled_dir)
-    rows = [{**{k: v for k, v in e.items() if k not in ("strings", "last")}, "count": len(e["strings"])}
+    rows = [{**{k: v for k, v in e.items() if k != "strings"}, "count": len(e["strings"])}
             for e in found.values()]
     rows.sort(key=lambda r: (r["code"] != DEFAULT_CODE, found[r["code"]].get("last", False),
                              r["name"].lower(), r["code"]))

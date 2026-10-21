@@ -124,8 +124,92 @@ test("Corvus's drain estimate when the autopilot has none", () => {
   assert.ok(d.notes.some((n) => /drain/.test(n)));
 });
 
+const ALTITUDE = {
+  connected: true, altitude_amsl: 512.4, altitude_agl: 37.2, gps_altitude: 509.8,
+};
+
+test("nothing to say about altitude while disconnected", () => {
+  assert.equal(detail("altitude", { connected: false }), null);
+});
+
+test("Altitude card: AMSL, above home and the receiver's own altitude, no prose", () => {
+  const d = detail("altitude", ALTITUDE);
+  assert.equal(d.title, "Altitude");
+  assert.equal(row(d, "AMSL")[1], "512 m");
+  assert.equal(row(d, "Above home")[1], "37 m");
+  assert.equal(row(d, "GPS")[1], "510 m");
+  assert.equal(d.notes.length, 0);
+});
+
+test("Altitude card leaves GPS out without a 3D fix", () => {
+  for (const none of [null, undefined, "x"]) {
+    assert.equal(row(detail("altitude", { ...ALTITUDE, gps_altitude: none }), "GPS"), undefined);
+  }
+  assert.equal(row(detail("altitude", { ...ALTITUDE, gps_altitude: 0 }), "GPS")[1], "0 m");
+});
+
+test("the distance sensor row exists only when Settings asks for it", () => {
+  const withSensor = { ...ALTITUDE, rangefinder_distance: 4.27 };
+  assert.equal(row(detail("altitude", withSensor), "Distance sensor"), undefined);
+  Corvus.topbar.setRangefinder(true);
+  assert.equal(row(detail("altitude", withSensor), "Distance sensor")[1], "4.27 m");
+  assert.equal(row(detail("altitude", { ...withSensor, rangefinder_distance: 23.4 }),
+    "Distance sensor")[1], "23.4 m");
+  assert.deepEqual(row(detail("altitude", { ...ALTITUDE, rangefinder_distance: null }), "Distance sensor"),
+    ["Distance sensor", "no reading", "muted"]);
+  Corvus.topbar.setRangefinder(false);
+  assert.equal(row(detail("altitude", withSensor), "Distance sensor"), undefined);
+});
+
+const FLIGHT = { connected: true, armed: false, vehicle_id: 1, boot_ms: 1000, groundspeed: 0 };
+const feed = (patch) => { const s = { ...FLIGHT, ...patch }; Corvus.topbar.trackTopSpeed(s); return s; };
+const top = (s) => row(detail("groundspeed", s), "Top speed")[1];
+
+test("groundspeed card: nothing while disconnected", () => {
+  assert.equal(detail("groundspeed", { connected: false }), null);
+});
+
+test("groundspeed card keeps the highest speed of the flight", () => {
+  feed({});
+  feed({ armed: true, groundspeed: 4 });
+  feed({ armed: true, groundspeed: 12.5 });
+  const s = feed({ armed: true, groundspeed: 7 });
+  assert.equal(top(s), Corvus.units.formatSpeed(12.5));
+});
+
+test("groundspeed card still shows the top speed after landing", () => {
+  const s = feed({ armed: false, groundspeed: 0 });
+  assert.equal(top(s), Corvus.units.formatSpeed(12.5));
+});
+
+test("arming again starts a new flight", () => {
+  feed({ armed: true, groundspeed: 3 });
+  const s = feed({ armed: true, groundspeed: 2 });
+  assert.equal(top(s), Corvus.units.formatSpeed(3));
+});
+
+test("a link that drops and returns mid-flight keeps the top speed", () => {
+  feed({ armed: true, groundspeed: 9 });
+  feed({ connected: false, armed: false, groundspeed: 0 });
+  const s = feed({ armed: true, groundspeed: 1 });
+  assert.equal(top(s), Corvus.units.formatSpeed(9));
+});
+
+test("an autopilot reboot starts over", () => {
+  const s = feed({ armed: false, boot_ms: 50, groundspeed: 0 });
+  assert.equal(top(s), Corvus.units.formatSpeed(0));
+});
+
+test("each vehicle keeps its own top speed", () => {
+  feed({ vehicle_id: 2, armed: true, groundspeed: 5 });
+  feed({ vehicle_id: 3, armed: true, groundspeed: 20 });
+  assert.equal(top(feed({ vehicle_id: 2, armed: true, groundspeed: 1 })), Corvus.units.formatSpeed(5));
+});
+
 test("no dashes in the prose", () => {
-  const all = [detail("gps", { ...GPS, gps_jamming: "mitigated" }),
+  const all = [detail("groundspeed", feed({ vehicle_id: 9 })),
+detail("gps", { ...GPS, gps_jamming: "mitigated" }),
+    detail("altitude", ALTITUDE),
     detail("battery", { ...BATTERY, armed: true, battery_endurance_est: 100,
       battery_cell_voltages: [3.8, 3.82] })];
   all.forEach((d) => {

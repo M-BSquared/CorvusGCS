@@ -83,6 +83,21 @@ Corvus.topbar = (function () {
     relative: { field: "altitude_agl", caption: "REL", title: "Altitude relative to home" },
   };
   let altitudeReference = "amsl";
+  // Which of the optional readouts are taken off the bar. Everything is shown
+  // unless the operator hides it, so the stored value is the list of hidden
+  // blocks and an empty or missing one means "all shown". Written as an
+  // attribute on <html> because the hiding is CSS (main.css, data-topbar-hidden),
+  // cached in localStorage so the first frame is right before the config lands.
+  const HIDDEN_KEY = "corvus.topbarHidden";
+  const HIDEABLE = ["altitude", "groundspeed", "vspeed"];
+  // The distance sensor row of the altitude card. Off by default and asked of
+  // the vehicle only while it is on, so a station that never wants it never
+  // spends a byte of the link on it. Deliberately not cached in localStorage:
+  // a cached "on" would ask the vehicle before the config has said so.
+  let rangefinderWanted = false;
+  let rangefinderAsked = false;
+  let rangefinderRetryAt = 0;
+  const RANGEFINDER_RETRY_MS = 15000;
   const localNotifications = new Map();
   const dismissedNotifications = new Set();
   const readNotifications = new Set();
@@ -449,7 +464,7 @@ Corvus.topbar = (function () {
     return changed;
   }
 
-  /* ---------------- hover cards: GPS and Battery ----------------
+  /* ---------------- hover cards: GPS, Battery, Altitude and Groundspeed ----------------
      The bar has room for one number per block. The cards behind GPS and
      Battery hold the rest of what an operator asks before trusting that
      number: how many satellites and how good the geometry is, whether the
@@ -569,6 +584,67 @@ Corvus.topbar = (function () {
     return null;
   }
 
+  /** The altitudes an operator compares: the autopilot's estimate above sea
+   *  level, the height over the take-off point, what the receiver alone says,
+   *  and, only when Settings asks for it, the downward distance sensor. */
+  function altitudeDetail(state) {
+    if (!state.connected) return null;
+    const units = Corvus.units;
+    const rows = [
+      ["AMSL", units.formatLength(state.altitude_amsl), ""],
+      ["Above home", units.formatLength(state.altitude_agl), ""],
+    ];
+    if (typeof state.gps_altitude === "number" && isFinite(state.gps_altitude)) {
+      rows.push(["GPS", units.formatLength(state.gps_altitude), ""]);
+    }
+    if (rangefinderWanted) {
+      const d = state.rangefinder_distance;
+      const known = typeof d === "number" && isFinite(d);
+      rows.push(["Distance sensor", known ? units.formatLength(d, { digits: d < 10 ? 2 : 1 }) : "no reading",
+        known ? "" : "muted"]);
+    }
+    return { title: "Altitude", rows, notes: [] };
+  }
+
+  /* The highest groundspeed of the flight, per vehicle. A flight starts when
+     the vehicle arms and the figure stays after the landing, so the operator
+     can still read it once the motors are off. A fresh link on a disarmed
+     vehicle, or an autopilot reboot, starts over; a link that drops and
+     returns mid-flight does not, because the flight is still the same one. A
+     page opened on a vehicle that is already flying can only know the speeds
+     it has seen. */
+  const topSpeeds = new Map();
+
+  function trackTopSpeed(state) {
+    const key = state.vehicle_id ?? 0;
+    let rec = topSpeeds.get(key);
+    if (!rec) {
+      rec = { max: 0, connected: false, armed: false, bootMs: 0 };
+      topSpeeds.set(key, rec);
+    }
+    const connected = !!state.connected;
+    const armed = !!state.armed;
+    const bootMs = Number(state.boot_ms) || 0;
+    const rebooted = rec.bootMs > 0 && bootMs > 0 && bootMs < rec.bootMs;
+    if (connected) {
+      const freshLink = !rec.connected && !armed;
+      const justArmed = rec.connected && !rec.armed && armed;
+      if (freshLink || justArmed || rebooted) rec.max = 0;
+      const v = Number(state.groundspeed);
+      if (isFinite(v) && v > rec.max) rec.max = v;
+      if (bootMs > 0) rec.bootMs = bootMs;
+    }
+    rec.connected = connected;
+    rec.armed = armed;
+  }
+
+  function groundspeedDetail(state) {
+    if (!state.connected) return null;
+    const rec = topSpeeds.get(state.vehicle_id ?? 0);
+    const rows = [["Top speed", Corvus.units.formatSpeed(rec ? rec.max : 0), ""]];
+    return { title: "Groundspeed", rows, notes: ["Highest groundspeed since the vehicle was last armed."] };
+  }
+
   function batteryDetail(state) {
     if (!state.connected) return null;
     const rows = [];
@@ -611,7 +687,7 @@ Corvus.topbar = (function () {
     return { title: "Battery", rows, notes };
   }
 
-  const DETAILS = { gps: gpsDetail, battery: batteryDetail };
+  const DETAILS = { gps: gpsDetail, battery: batteryDetail, altitude: altitudeDetail, groundspeed: groundspeedDetail };
 
   function detailBody(detail) {
     const body = document.createElement("div");
@@ -658,7 +734,7 @@ Corvus.topbar = (function () {
     entry.handle.setContent({ title: detail.title, body: detailBody(detail) });
   }
 
-  function attachDetail(root, key) {
+  function attachDetail(root, key, className) {
     if (!Corvus.ui || typeof Corvus.ui.popover !== "function") return;
     root.tabIndex = 0;
     root.classList.add("has-detail");
@@ -669,7 +745,7 @@ Corvus.topbar = (function () {
     root.addEventListener("pointerenter", fill);
     root.addEventListener("focus", fill);
     root.addEventListener("click", fill);
-    const handle = Corvus.ui.popover(root, { className: "tb-pop" });
+    const handle = Corvus.ui.popover(root, { className: className || "tb-pop" });
     detailPops[key] = { handle, signature: "" };
   }
 
@@ -694,8 +770,8 @@ Corvus.topbar = (function () {
       { key: "armed", label: "Status", value: ready.value, short: ready.short || ready.value, sub: ready.sub || "", cls: ready.cls, dot: ready.cls, tone: ready.tone, title: ready.title, priority: "high" },
       { key: "gps", label: "GPS", value: state.connected ? "GPS" : "—", sub: gpsSub, cls: gpsCls, dot: gpsCls, detail: true, priority: "high" },
       { key: "battery", label: "Battery", value: state.connected ? `${state.battery_voltage.toFixed(1)} V` : "—", sub: state.connected ? `${battPct}%` : "", cls: battCls, dot: battCls, detail: true, priority: "high" },
-      { key: "altitude", label: "Altitude", value: state.connected ? units.formatLength(state[alt.field], { bare: true }) : "—", sub: `${units.lengthSymbol()} ${alt.caption}`, title: alt.title, priority: "mid" },
-      { key: "groundspeed", label: "Groundspeed", value: state.connected ? units.formatSpeed(state.groundspeed, { bare: true }) : "—", sub: units.speedSymbol(), priority: "mid" },
+      { key: "altitude", label: "Altitude", value: state.connected ? units.formatLength(state[alt.field], { bare: true }) : "—", sub: `${units.lengthSymbol()} ${alt.caption}`, detail: true, priority: "mid" },
+      { key: "groundspeed", label: "Groundspeed", value: state.connected ? units.formatSpeed(state.groundspeed, { bare: true }) : "—", sub: units.speedSymbol(), detail: true, priority: "mid" },
       { key: "vspeed", label: "Vertical speed", value: state.connected ? units.formatSpeed(state.vspeed, { bare: true, signed: true }) : "—", sub: units.speedSymbol(), priority: "mid" },
       { key: "warnings", type: "warnings", label: "Notifications", value: notifications.count, level: notifications.level, priority: "high" },
     ];
@@ -746,6 +822,73 @@ Corvus.topbar = (function () {
     try { localStorage.setItem(ALT_REF_KEY, v); } catch (_e) {}
     if (topBarBuilt && lastState) updateTopBarValues(lastState);
     return v;
+  }
+
+  /**
+   * Show or hide one of the optional readouts: "altitude", "groundspeed" or
+   * "vspeed". Anything else is ignored. Returns whether the block is shown
+   * afterwards, so a caller can undo itself with the return value.
+   */
+  function setBlockShown(key, on) {
+    if (!HIDEABLE.includes(key)) return true;
+    const hidden = new Set(hiddenBlocks());
+    if (on) hidden.delete(key); else hidden.add(key);
+    const list = HIDEABLE.filter((k) => hidden.has(k)).join(" ");
+    try {
+      if (list) document.documentElement.setAttribute("data-topbar-hidden", list);
+      else document.documentElement.removeAttribute("data-topbar-hidden");
+    } catch (_e) {}
+    try { localStorage.setItem(HIDDEN_KEY, list); } catch (_e) {}
+    if (key === "altitude" && lastState) syncRangefinder(lastState);
+    return !!on;
+  }
+
+  function hiddenBlocks() {
+    let raw = "";
+    try { raw = document.documentElement.getAttribute("data-topbar-hidden") || ""; } catch (_e) {}
+    return raw.split(/\s+/).filter((k) => HIDEABLE.includes(k));
+  }
+
+  /**
+   * Show the distance sensor in the altitude card (Settings). Starts or stops
+   * the vehicle's DISTANCE_SENSOR stream to match. Returns the state applied.
+   */
+  function setRangefinder(on) {
+    rangefinderWanted = on === true;
+    if (lastState) syncRangefinder(lastState);
+    return rangefinderWanted;
+  }
+
+  function rangefinderShown() { return rangefinderWanted; }
+
+  /** Ask for the stream, or hand it back, once per connection and change of
+   *  mind. Nothing is sent while the altitude block is off the bar: its card
+   *  could not be opened to read it. */
+  function syncRangefinder(state) {
+    if (!state || !state.connected) { rangefinderAsked = false; return; }
+    const want = rangefinderWanted && blockShown("altitude");
+    if (want === rangefinderAsked) return;
+    if (want && Date.now() < rangefinderRetryAt) return;
+    if (!Corvus.telemetry || typeof Corvus.telemetry.postAction !== "function") return;
+    rangefinderAsked = want;
+    Promise.resolve(Corvus.telemetry.postAction("/api/rangefinder/stream", { enabled: want }))
+      .catch(() => {
+        if (!want) return;
+        rangefinderAsked = false;
+        rangefinderRetryAt = Date.now() + RANGEFINDER_RETRY_MS;
+      });
+  }
+
+  /** Whether the named readout is on the bar. */
+  function blockShown(key) { return !hiddenBlocks().includes(key); }
+
+  /** Apply the locally cached choice (called before the config fetch lands).
+   *  Absent storage means everything is shown. */
+  function applySavedHiddenBlocks() {
+    let raw = "";
+    try { raw = localStorage.getItem(HIDDEN_KEY) || ""; } catch (_e) {}
+    const hidden = raw.split(/\s+/);
+    HIDEABLE.forEach((k) => setBlockShown(k, !hidden.includes(k)));
   }
 
   /** The altitude reference the ALTITUDE block currently shows. */
@@ -955,7 +1098,7 @@ Corvus.topbar = (function () {
           dot: root.querySelector(".tb-dot"),
           value: root.querySelector(".tb-value"),
         };
-        if (b.detail) attachDetail(root, b.key);
+        if (b.detail) attachDetail(root, b.key, b.key === "altitude" || b.key === "groundspeed" ? "tb-pop tb-pop-narrow" : "tb-pop");
       });
       topBarBuilt = true;
       wireVehicleBlock();
@@ -1486,7 +1629,9 @@ Corvus.topbar = (function () {
 
   function handleTelemetryState(state) {
     lastState = state;
+    trackTopSpeed(state);
     syncRemoteWarnings(state);
+    syncRangefinder(state);
     applyLifecycleMilestones(state);
     applyReadiness(state);
     renderTopBar(state);
@@ -1504,6 +1649,7 @@ Corvus.topbar = (function () {
     applySavedStatusDots();
     applySavedNotificationMarks();
     applySavedAltitudeRef();
+    applySavedHiddenBlocks();
 
     Corvus.telemetry.subscribe(handleTelemetryState);
     // The captions under ALTITUDE and the speeds are static between frames, so
@@ -1541,13 +1687,18 @@ Corvus.topbar = (function () {
     statusDots,
     setAltitudeRef,
     altitudeRef,
+    setBlockShown,
+    blockShown,
+    setRangefinder,
+    rangefinderShown,
     setNotificationMarks,
     notificationMarks,
     notifyError: showCmdError,
     // What the bar calls an airframe ("Quadcopter"), for the Mission page's
     // aircraft picker, so the two never name the same aircraft differently.
     vehicleTypeLabel,
-    // The rows behind the GPS and Battery cards, for the tests.
+    // The rows behind the GPS, Battery, Altitude and Groundspeed cards, for the tests.
+    trackTopSpeed,
     detail: (key, state) => (DETAILS[key] ? DETAILS[key](state || {}) : null),
     beginCommand: (key) => commandDedupe.begin(key),
     succeedCommand: (attempt) => commandDedupe.succeeded(attempt),

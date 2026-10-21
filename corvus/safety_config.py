@@ -595,6 +595,8 @@ def param_names() -> list[str]:
         # Return to launch
         "RTL_TYPE", "RTL_RETURN_ALT", "RTL_DESCEND_ALT", "RTL_CONE_ANG",
         "RTL_MIN_DIST", "RTL_LAND_DELAY", "RTL_LOITER_RAD",
+        # Landing
+        *LANDING_PARAMS,
         # Failsafe actions
         "NAV_RCL_ACT", "COM_RC_LOSS_T", "NAV_DLL_ACT", "COM_DL_LOSS_T",
         "COM_LOW_BAT_ACT", "COM_POSCTL_NAVL", "COM_ACT_FAIL_ACT", "COM_QC_ACT",
@@ -625,6 +627,33 @@ def param_names() -> list[str]:
     for param, _label in RANGEFINDER_CAN_DRIVERS + FLOW_CAN_DRIVERS:
         names.append(param)
     return names
+
+
+# The descent profile of an automatic landing, and the one preset for it.
+# The land phase (FlightTaskAuto::_prepareLandSetpoints, identical in 1.16 to
+# 1.18) descends at MPC_Z_VEL_MAX_DN above MPC_LAND_ALT1, slows linearly with
+# height to MPC_LAND_SPEED at ALT2, and creeps at MPC_LAND_CRWL below ALT3 when
+# a distance sensor reports the height. MPC_Z_V_AUTO_DN is the speed of the
+# automatic descent before the land phase; the preset writes both.
+LANDING_PARAMS: tuple[str, ...] = (
+    "MPC_Z_V_AUTO_DN", "MPC_Z_VEL_MAX_DN", "MPC_LAND_ALT1", "MPC_LAND_ALT2",
+    "MPC_LAND_SPEED", "MPC_LAND_ALT3", "MPC_LAND_CRWL",
+)
+
+# Tuned for the Holybro X500 and X650 (about 2 to 3 kg, 10 to 12 inch props):
+# 2.5 m/s stays well clear of the vortex ring region for that disc loading, and
+# the slowdown from 2.5 to 1.0 m/s is spread over 6 m, a deceleration of about
+# 0.4 m/s2 that the altitude loop holds without a thrust spike. The firmware
+# defaults are 1.5 / 1.5 / 10 / 5 / 0.7 / 1 / 0.3.
+FAST_LANDING: dict[str, float] = {
+    "MPC_Z_V_AUTO_DN": 2.5,
+    "MPC_Z_VEL_MAX_DN": 2.5,
+    "MPC_LAND_ALT1": 12.0,
+    "MPC_LAND_ALT2": 6.0,
+    "MPC_LAND_SPEED": 1.0,
+    "MPC_LAND_ALT3": 2.0,
+    "MPC_LAND_CRWL": 0.5,
+}
 
 
 # What the mission planner needs of a Return, as against what this page shows
@@ -790,6 +819,53 @@ def _rtl_section(values: dict[str, float]) -> dict[str, Any] | None:
         "id": "rtl", "title": "Return to Launch", "kind": "fields", "fields": fields,
         "hint": "The path home, flown on an RTL command and by every failsafe whose action "
                 "is Return.",
+    }
+
+
+def _landing_section(values: dict[str, float]) -> dict[str, Any] | None:
+    """The Landing card: how fast the vehicle descends and where it slows down.
+
+    The ``actions`` list carries the Fast landing preset, restricted to the
+    parameters this firmware answered for, so a build that lacks one never
+    receives a write for it.
+    """
+    fields = _present([
+        _number("MPC_Z_V_AUTO_DN", "Descent speed", values, unit="m/s", step=0.1, min=0.5,
+                max=4, hint="Speed of automatic descents before the landing itself, such "
+                            "as the descent after a return. Firmware default 1.5."),
+        _number("MPC_Z_VEL_MAX_DN", "Maximum descent speed", values, unit="m/s", step=0.1,
+                min=0.5, max=4, hint="Speed of the landing above the slowdown height. Also caps "
+                                     "every other descent, manual ones too. Firmware "
+                                     "default 1.5."),
+        _number("MPC_LAND_ALT1", "Slowdown starts at", values, unit="m", step=1, min=0,
+                max=122, hint="Height where the descent starts to slow down. Must be above "
+                              "the next height. Firmware default 10."),
+        _number("MPC_LAND_ALT2", "Landing speed from", values, unit="m", step=1, min=0,
+                max=122, hint="Height below which it descends at the landing speed. "
+                              "Firmware default 5."),
+        _number("MPC_LAND_SPEED", "Landing speed", values, unit="m/s", step=0.1, min=0.6,
+                hint="Descent speed down to the ground. Firmware default 0.7."),
+        _number("MPC_LAND_ALT3", "Crawl below", values, unit="m", step=0.5, min=0, max=122,
+                hint="Height of the last, slowest step. Used only with a distance sensor. "
+                     "Firmware default 1."),
+        _number("MPC_LAND_CRWL", "Crawl speed", values, unit="m/s", step=0.1, min=0.1,
+                hint="Descent speed in the last step. Firmware default 0.3."),
+    ])
+    if not fields:
+        return None
+    writes = [{"param": f["param"], "value": FAST_LANDING[f["param"]]}
+              for f in fields if f["param"] in FAST_LANDING]
+    return {
+        "id": "landing", "title": "Landing", "kind": "fields", "fields": fields,
+        "hint": "How fast the vehicle may descend when it lands on its own (Land, Return "
+                "and a mission landing), and the heights where it slows down. Below the "
+                "slowdown it holds the landing speed until touchdown.",
+        "actions": [{
+            "id": "fast", "label": "Fast landing", "writes": writes,
+            "hint": "Faster descent that still brakes early. Tuned for the Holybro X500 "
+                    "and X650. The values are written to the vehicle and stay editable "
+                    "below.",
+        }],
     }
 
 
@@ -1402,6 +1478,7 @@ def build(values: dict[str, float],
         _limits_section(values),
         _geofence_section(values),
         _rtl_section(values),
+        _landing_section(values),
         _failsafe_section(values),
         _rangefinder_section(values),
         _flow_section(values),

@@ -264,7 +264,7 @@
    edge lines up with the caption. In a popover this narrow that reserved
    column is most of the line, so the hint takes the full width instead — the
    switch is one line up, with nothing beside the text to line up with. */
-.three-d-popover .field-switch > .field-hint { padding-right: 0; }
+.three-d-popover .field-switch > .field-hint { padding-right: 0; font-weight: 500; }
 .layer-group {
   font-size: 9.5px; font-weight: 600; letter-spacing: 0.9px;
   color: var(--text-3); text-transform: uppercase;
@@ -899,6 +899,25 @@
 @media (prefers-reduced-motion: reduce) {
   .region-label.downloading .region-label-meta { animation: none !important; }
 }
+
+/* The distance tool's label (js/map-measure.js). A DOM marker for the same
+   reason as the region label, on its own chip because it is read against
+   imagery of any colour. */
+.map-measure-label {
+  display: flex; align-items: baseline; gap: 6px;
+  padding: 3px 8px;
+  border-radius: var(--radius-btn);
+  background: rgb(var(--glass-rgb) / 0.85);
+  border: 1px solid rgb(var(--tint-rgb) / 0.1);
+  box-shadow: var(--shadow-soft);
+  color: var(--text-1);
+  font-family: var(--sans);
+  font-size: 12px; font-weight: 600; line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.map-measure-label small { color: var(--text-2); font-size: 11px; font-weight: 500; }
 
 /* A plugin's text on the Home map (api.map.drawText). A DOM marker for the
    same reason as the region label. The colour is the plugin's, and is read

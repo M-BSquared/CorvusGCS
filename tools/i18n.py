@@ -140,10 +140,12 @@ def cmd_check(args: argparse.Namespace) -> int:
     return 1 if failed else 0
 
 
-def write(path: Path, name: str | None, native: str | None, strings: dict[str, str]) -> None:
+def write(path: Path, name: str | None, native: str | None, strings: dict[str, str],
+          last: bool = False) -> None:
     body: dict = {"strings": {k: strings[k] for k in sorted(strings, key=lambda s: (s.lower(), s))}}
     if name is not None:
-        body = {"meta": {"name": name, "native_name": native}, **body}
+        meta = {"name": name, "native_name": native, **({"last": True} if last else {})}
+        body = {"meta": meta, **body}
     path.write_text(json.dumps(body, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
@@ -171,7 +173,8 @@ def cmd_fmt(args: argparse.Namespace) -> int:
         data = load_raw(p)
         meta = data.get("meta", {})
         write(p, str(meta.get("name", p.stem)), str(meta.get("native_name", meta.get("name", p.stem))),
-              {k: v for k, v in data.get("strings", {}).items() if isinstance(v, str)})
+              {k: v for k, v in data.get("strings", {}).items() if isinstance(v, str)},
+              last=meta.get("last") is True)
         print("formatted", p.name)
     for group in plugin_files().values():
         for p in group:

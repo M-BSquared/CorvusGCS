@@ -395,6 +395,47 @@ def _sensor_health(msg, bit: int) -> str:
     return "ok" if health & bit else "fault"
 
 
+# MAV_SENSOR_ROTATION_PITCH_270: the sensor that looks straight down, the only
+# one whose reading is a height. A forward or side sensor is an obstacle range.
+_DOWNWARD_ORIENTATION = 25
+# A distance sensor that stops sending must not keep showing its last reading.
+_RANGEFINDER_STALE_S = 3.0
+
+
+def _rangefinder_distance_m(msg) -> float | None:
+    """DISTANCE_SENSOR current_distance (cm) -> metres, None unless usable.
+
+    Only the downward sensor counts, and only inside its own min/max: a
+    reading at or beyond max_distance is "nothing in range", not a distance.
+    """
+    try:
+        if int(msg.orientation) != _DOWNWARD_ORIENTATION:
+            return None
+        current = int(msg.current_distance)
+        low = int(getattr(msg, "min_distance", 0) or 0)
+        high = int(getattr(msg, "max_distance", 0) or 0)
+    except (AttributeError, TypeError, ValueError):
+        return None
+    if current < low or (high > 0 and current >= high):
+        return None
+    return round(current / 100.0, 2)
+
+
+def _gps_altitude_m(msg) -> float | None:
+    """GPS_RAW_INT alt (mm AMSL) -> metres, None without a 3D fix.
+
+    The field is meaningless below a 3D fix (receivers send 0 or a stale
+    value), and a 0 m reading that is not real would sit next to a true
+    altitude in the top bar's card as if it were a measurement.
+    """
+    try:
+        if int(getattr(msg, "fix_type", 0) or 0) < 3:
+            return None
+        return round(int(msg.alt) / 1000.0, 1)
+    except (AttributeError, TypeError, ValueError):
+        return None
+
+
 def _gps_accuracy_m(raw) -> float:
     """GPS_RAW_INT h_acc/v_acc (mm) -> metres, -1 when not reported.
 
@@ -532,6 +573,7 @@ class MavlinkBridge(
         self._statustext_chunks: dict[tuple[int, int, int], dict[str, Any]] = {}
         self._home_alt_amsl: float | None = None
         self._position_home_alt_amsl: float | None = None
+        self._rangefinder_seen: float | None = None
         self._command_context = threading.local()
         self._reconnect_attempt: int = 1
         # Per-connection-cycle warn-once guard for a late heartbeat (A3).
@@ -2516,6 +2558,10 @@ class MavlinkBridge(
             # heartbeat landed (A1).
             self._hb_times.append(self._store.heartbeat())
             self._publish_heartbeat_jitter()
+            if (self._rangefinder_seen is not None
+                    and time.monotonic() - self._rangefinder_seen > _RANGEFINDER_STALE_S):
+                self._rangefinder_seen = None
+                self._store.update(rangefinder_distance=None)
             if self._degraded_warned:
                 # The heartbeat is back before the drop timeout. Without this
                 # the link read "degraded" until the next reconnect, and a
@@ -2584,6 +2630,10 @@ class MavlinkBridge(
                 vy=round(float(getattr(msg, "vy", 0) or 0) / 100.0, 2),
                 vz=round(float(getattr(msg, "vz", 0) or 0) / 100.0, 2),
             )
+        elif name == "DISTANCE_SENSOR":
+            if int(getattr(msg, "orientation", -1)) == _DOWNWARD_ORIENTATION:
+                self._rangefinder_seen = time.monotonic()
+                self._store.update(rangefinder_distance=_rangefinder_distance_m(msg))
         elif name == "ATTITUDE":
             self._store.update(
                 roll=round(math.degrees(msg.roll), 1),
@@ -2610,6 +2660,7 @@ class MavlinkBridge(
                 gps_hdop=round(hdop, 1), gps_vdop=round(vdop, 1),
                 gps_h_acc=_gps_accuracy_m(getattr(msg, "h_acc", 0)),
                 gps_v_acc=_gps_accuracy_m(getattr(msg, "v_acc", 0)),
+                gps_altitude=_gps_altitude_m(msg),
             )
         elif name == "SYS_STATUS":
             voltage = msg.voltage_battery / 1000.0 if msg.voltage_battery != 65535 else 0

@@ -240,6 +240,28 @@
   draw a Return item the way it will actually be flown.
 </p>
 
+<h2 id="landing">Landing</h2>
+<p>
+  How fast a PX4 multicopter descends when it lands on its own (Land, Return
+  and a mission landing), and where it slows down. Above <em>Slowdown starts
+  at</em> it sinks at the maximum descent speed; down to <em>Landing speed from</em> it
+  slows steadily to the landing speed, and holds that until touchdown. With a
+  distance sensor the last stretch, below <em>Crawl below</em>, runs at the
+  crawl speed. The descent speed is for the automatic descent before the landing
+  starts, for example after a return, and the maximum descent speed caps it,
+  so keep the maximum at or above it.
+</p>
+<p>
+  <strong>Fast landing</strong> writes a tuned set in one press: 2.5 m/s
+  descent, slowing from 12 m to 6 m, 1.0 m/s landing speed, and a 0.5 m/s crawl
+  below 2 m. It is chosen for the Holybro X500 and X650, a good deal faster than
+  the firmware defaults (1.5 m/s, 10 m to 5 m, 0.7 m/s) and still braking early.
+  Every value stays editable in the fields below the button. It is refused
+  while armed, like any other parameter write. Try it first in open space at
+  low altitude, and use heavier or lighter airframes with more care: the values
+  are not a measurement of your aircraft.
+</p>
+
 <h2 id="failsafes">Failsafe actions</h2>
 <p>
   One action for every loss the autopilot can detect: RC, data link, position,
@@ -400,6 +422,7 @@
     <li><a href="#limits">Limits</a></li>
     <li><a href="#geofence">Geofence</a></li>
     <li><a href="#return">Return to launch</a></li>
+    <li><a href="#landing">Landing</a></li>
     <li><a href="#failsafes">Failsafe actions</a></li>
     <li><a href="#sensors">Distance sensor and optical flow</a></li>
     <li><a href="#checklist">Preflight checklist</a></li>

@@ -265,7 +265,8 @@ echo ">>> Trimming PySide6 to the Qt modules Corvus loads ..."
 "$PYBIN" "$REPO_DIR/tools/qt_bundle.py" prune "$SITE_PKGS"
 # The rest the wheels bring and Corvus never reads: every pymavlink dialect
 # but `all`, lxml, pip, Qt translations, Chromium locales but en-US and de,
-# and the framework copies pip wrote out where the layout wants symlinks.
+# Chromium's DevTools, the other architecture's V8 snapshot, and the framework
+# copies pip wrote out where the layout wants symlinks.
 echo ">>> Trimming what the app never loads ..."
 "$PYBIN" "$REPO_DIR/tools/bundle_trim.py" "$SITE_PKGS"
 rm -f "$PYROOT"/bin/pip "$PYROOT"/bin/pip3 "$PYROOT"/bin/pip3.*

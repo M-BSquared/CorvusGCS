@@ -382,6 +382,7 @@ Corvus.sidenav = (function () {
     // interface the cards above them decide.
     body.appendChild(flightBarCard(cfg));
     body.appendChild(flightHudCard(cfg));
+    body.appendChild(mapToolsCard(cfg));
     body.appendChild(compassCard(cfg));
     body.appendChild(topBarCard(cfg));
     body.appendChild(notificationsCard(cfg));
@@ -693,6 +694,7 @@ Corvus.sidenav = (function () {
     const ui = cfg.ui || {};
     const options = {
       earlierFlights: ui.track_earlier_flights !== false,
+      rainbow: ui.track_rainbow === true,
       clearOnRestart: ui.track_clear_on_restart === true,
     };
     const apply = (patch) => Corvus.map.setTrackOptions(Object.assign(options, patch));
@@ -718,6 +720,30 @@ Corvus.sidenav = (function () {
             "the track of the flights before turns a lighter red, so the " +
             "flight in progress stands out. Off: every flight is drawn in " +
             "the same red.",
+    }));
+
+    const rainbow = Corvus.ui.toggle({
+      id: "settingsTrackRainbow",
+      value: options.rainbow,
+      ariaLabel: "Rainbow colours for earlier flights",
+      onChange: (next) => {
+        apply({ rainbow: next });
+        return postConfig({ ui: { track_rainbow: next } }, { strict: true })
+          .catch((error) => {
+            apply({ rainbow: !next });
+            throw error;
+          });
+      },
+    });
+    card.appendChild(Corvus.ui.field({
+      label: "Rainbow colours for earlier flights",
+      control: rainbow.el,
+      className: "field-switch",
+      hint: "Off (the default): every earlier flight has the same lighter " +
+            "red. On: each earlier flight gets a colour of its own, still " +
+            "faded, so flights over the same ground can be told apart. The " +
+            "flight in progress keeps the aircraft's colour. Needs earlier " +
+            "flights in their own colour.",
     }));
 
     const clear = Corvus.ui.toggle({
@@ -799,6 +825,41 @@ Corvus.sidenav = (function () {
       hint: "Off (the default), the window has a rounded top. On, all four " +
             "corners are square. The bar with the pin and size buttons " +
             "stays where it is.",
+    }));
+    return card;
+  }
+
+  // The distance tool's button in the Home map's control rail. On by default,
+  // so an absent key reads as shown. Same contract as the switches around it:
+  // live at once, persist awaited, a refused POST puts the button back. Turning
+  // it off while a measurement is on the map ends the measurement.
+  function mapToolsCard(cfg) {
+    const card = Corvus.ui.card({ title: "Map tools" });
+    const on = !((cfg.ui || {}).measure_tool === false);
+    Corvus.map.setMeasureTool(on);
+
+    const sw = Corvus.ui.toggle({
+      id: "settingsMeasureTool",
+      value: on,
+      ariaLabel: "Show the distance tool",
+      onChange: (next) => {
+        Corvus.map.setMeasureTool(next);
+        return postConfig({ ui: { measure_tool: next } }, { strict: true })
+          .catch((error) => {
+            Corvus.map.setMeasureTool(!next);
+            throw error;
+          });
+      },
+    });
+    card.appendChild(Corvus.ui.field({
+      label: "Show the distance tool",
+      control: sw.el,
+      className: "field-switch",
+      hint: "On (the default), the ruler button sits in the map's right-hand " +
+            "bar. Press it, click a start and an end point, and the map shows " +
+            "the distance and heading between them. Escape or a right click " +
+            "clears the line, and a second one turns the tool off. Off, the " +
+            "button is gone.",
     }));
     return card;
   }
@@ -904,6 +965,47 @@ Corvus.sidenav = (function () {
             "height above mean sea level. Relative is height above the home " +
             "position, usually where the aircraft took off.",
     }));
+
+    // Altitude, groundspeed and climb rate are on the bar unless hidden; the
+    // distance sensor is off unless asked for, and only then requested from the
+    // vehicle. Same contract as the switches above: live at once, persist
+    // awaited, a refused POST puts the bar back.
+    const topbar = Corvus.topbar;
+    const shownUnlessOff = (key) => (cfg.ui || {})[key] !== false;
+    [
+      ["topbar_show_altitude", "settingsTopbarAltitude", "Show altitude",
+        "Shows the ALTITUDE block in the top bar. Hover over it for the height above sea level, above home and the GPS altitude. On by default.",
+        shownUnlessOff("topbar_show_altitude"), (on) => topbar.setBlockShown("altitude", on)],
+      ["topbar_show_rangefinder", "settingsTopbarRangefinder", "Show distance sensor",
+        "Adds the reading of a downward distance sensor to the altitude card. Off by default: while it is off, Corvus does not ask the vehicle for it.",
+        (cfg.ui || {}).topbar_show_rangefinder === true, (on) => topbar.setRangefinder(on)],
+      ["topbar_show_groundspeed", "settingsTopbarGroundspeed", "Show groundspeed",
+        "Shows the GROUNDSPEED block in the top bar. On by default.",
+        shownUnlessOff("topbar_show_groundspeed"), (on) => topbar.setBlockShown("groundspeed", on)],
+      ["topbar_show_vspeed", "settingsTopbarVspeed", "Show climb rate",
+        "Shows the VERTICAL SPEED block, the climb or sink rate, in the top bar. On by default.",
+        shownUnlessOff("topbar_show_vspeed"), (on) => topbar.setBlockShown("vspeed", on)],
+    ].forEach(([key, id, label, hint, initial, apply]) => {
+      const toggle = Corvus.ui.toggle({
+        id,
+        value: apply(initial),
+        ariaLabel: label,
+        onChange: (next) => {
+          apply(next);
+          return postConfig({ ui: { [key]: next } }, { strict: true })
+            .catch((error) => {
+              apply(!next);
+              throw error;
+            });
+        },
+      });
+      card.appendChild(Corvus.ui.field({
+        label,
+        control: toggle.el,
+        className: "field-switch",
+        hint,
+      }));
+    });
     return card;
   }
 

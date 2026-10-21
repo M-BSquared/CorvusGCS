@@ -144,6 +144,20 @@ def test_library_keys_and_their_modules():
 
 # ---- a Linux wheel, in small ------------------------------------------------
 
+# The PySide6 modules each module imports when it loads, as the real binaries
+# name them.
+_IMPORTS = {
+    "QtWebEngineWidgets": ("QtCore", "QtWidgets", "QtWebEngineCore", "QtPrintSupport"),
+    "QtWebEngineCore": ("QtCore", "QtGui", "QtNetwork", "QtWebChannel", "QtPrintSupport"),
+    "QtPrintSupport": ("QtCore", "QtGui", "QtWidgets"),
+    "QtQuick": ("QtCore", "QtQml"),
+}
+
+
+def _imports_of(module: str) -> bytes:
+    return b"".join(f"PySide6.{m}\0".encode() for m in _IMPORTS.get(module, ()))
+
+
 def linux_site(tmp_path: Path) -> Path:
     """The layout of the PySide6 Linux wheels, with the links that matter."""
     site = tmp_path / "site-packages"
@@ -157,9 +171,11 @@ def linux_site(tmp_path: Path) -> Path:
         "QtWebChannel": ["libQt6WebChannel.so.6"], "QtWebEngineCore": ["libQt6WebEngineCore.so.6"],
         "QtWebEngineWidgets": ["libQt6WebEngineWidgets.so.6"],
         "QtPrintSupport": ["libQt6PrintSupport.so.6"], "Qt3DCore": ["libQt63DCore.so.6"],
-        "QtCharts": ["libQt6Charts.so.6"],
+        "QtCharts": ["libQt6Charts.so.6"], "QtQuick": ["libQt6Quick.so.6"],
+        "QtQml": ["libQt6Qml.so.6"],
     }.items():
-        _write(py / f"{module}.abi3.so", elf("libpyside6.abi3.so.6.11", *links, "libc.so.6"))
+        _write(py / f"{module}.abi3.so", elf("libpyside6.abi3.so.6.11", *links, "libc.so.6")
+               + _imports_of(module))
         _write(py / f"{module}.pyi", "")
     _write(py / "libpyside6.abi3.so.6.11", elf("libshiboken6.abi3.so.6.11", "libQt6Core.so.6"))
     _write(py / "libpyside6qml.abi3.so.6.11", elf("libQt6Qml.so.6"))
@@ -215,11 +231,15 @@ def test_the_linux_trim_keeps_what_the_app_loads(tmp_path):
     for gone in ("libQt63DCore.so.6", "libQt6Charts.so.6", "libQt6Designer.so.6",
                  "libQt6VirtualKeyboard.so.6", "libavcodec.so.61", "libavcodec.so"):
         assert lib + gone not in left, gone
-    # A kept Qt library keeps its Python module: QtWebEngineWidgets imports
-    # QtPrintSupport when it loads.
-    assert "QtPrintSupport" in decided.modules
+    # QtWebEngineWidgets imports QtPrintSupport when it loads, so that module
+    # stays. QtQuick and QtQml stay as libraries QtWebEngine links, but
+    # nothing imports their Python modules.
+    assert decided.modules == set(qb.MODULES) | {"QtPrintSupport"}
     assert "PySide6/QtPrintSupport.abi3.so" in left
     assert "PySide6/QtPrintSupport.pyi" in left
+    for gone in ("QtQuick", "QtQml"):
+        assert f"PySide6/{gone}.abi3.so" not in left, gone
+        assert f"PySide6/{gone}.pyi" not in left, gone
     assert "PySide6/Qt3DCore.abi3.so" not in left
     assert "PySide6/QtCharts.pyi" not in left
     # PySide6's QML glue is linked only by the QtQml and QtQuick modules, and
@@ -290,9 +310,10 @@ def macos_site(tmp_path: Path) -> Path:
     site = tmp_path / "site-packages"
     py, qt = site / "PySide6", site / "PySide6" / "Qt"
     lib = qt / "lib"
-    for module in qb.MODULES + ("QtPrintSupport", "QtCharts"):
+    for module in qb.MODULES + ("QtPrintSupport", "QtCharts", "QtQuick", "QtPdf"):
         _write(py / f"{module}.abi3.so",
-               fat(macho("@rpath/libpyside6.abi3.6.11.dylib", _fw(module), "/usr/lib/libc++.1.dylib")))
+               fat(macho("@rpath/libpyside6.abi3.6.11.dylib", _fw(module), "/usr/lib/libc++.1.dylib"))
+               + _imports_of(module))
     _write(py / "libpyside6.abi3.6.11.dylib", macho(_fw("QtCore")))
     _write(py / "Designer.app" / "Contents" / "MacOS" / "Designer", macho(_fw("QtDesigner")))
     _write(site / "shiboken6" / "libshiboken6.abi3.6.11.dylib", macho("/usr/lib/libSystem.B.dylib"))
@@ -332,6 +353,8 @@ def test_the_macos_trim_follows_frameworks_and_the_helper_app(tmp_path):
         assert not any(p.startswith(lib + gone) for p in left), gone
     assert "PySide6/QtCharts.abi3.so" not in left
     assert "PySide6/QtPrintSupport.abi3.so" in left
+    assert "PySide6/QtQuick.abi3.so" not in left
+    assert "PySide6/QtPdf.abi3.so" not in left
     assert not any(p.startswith("PySide6/Designer.app") for p in left)
     assert "PySide6/Qt/libexec/rcc" not in left
     assert "PySide6/Qt/plugins/imageformats/libqpdf.dylib" in left

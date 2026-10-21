@@ -425,8 +425,8 @@ function testNormalize() {
     ],
   });
   assert.deepEqual(list, [
-    { id: "a", label: "Here", target: "local", connection: "", directory: "~/x", command: "./x", mode: "terminal", restart: false },
-    { id: "b", label: "./y", target: "ssh", connection: "ground", directory: "", command: "./y", mode: "background", restart: false },
+    { id: "a", label: "Here", target: "local", connection: "", directory: "~/x", command: "./x", mode: "terminal", restart: false, color: "" },
+    { id: "b", label: "./y", target: "ssh", connection: "ground", directory: "", command: "./y", mode: "background", restart: false, color: "" },
   ], "a button here names no connection; the SSH Launcher's detach still means background");
   assert.deepEqual(S.normalizeButtons(undefined), []);
   const many = [];
@@ -669,6 +669,93 @@ async function testThePencilsAppearOnlyInEditMode() {
   click(h.tool("Edit buttons"));
   assert.equal(h.tool("Edit Ground logger"), undefined, "hidden again");
   S.destroy(h.container);
+}
+
+/* A button's colour is picked in its editor, saved with it, and painted on
+   the shelf; the default is no colour at all, so the theme's own shows. */
+async function testButtonColourIsPickedAndSaved() {
+  const h = mount({ saved: { buttons: [LOCAL_BUTTON, SSH_BUTTON] } });
+  await flushMicrotasks();
+  assert.equal(h.shelf()[0].dataset.color, undefined, "default: the theme's colour");
+  click(editTool(h, "Ground logger"));
+  const chips = querySel(h.container.children, ".schw-chip").filter((c) => c.tagName === "BUTTON");
+  assert.equal(chips.length, S.BUTTON_COLORS.length + 1, "the theme's chip and the presets");
+  assert.equal(chips[0].getAttribute("aria-checked"), "true", "the default is the chosen one");
+  click(chips[2]);
+  assert.equal(chips[2].getAttribute("aria-checked"), "true");
+  assert.equal(chips[0].getAttribute("aria-checked"), "false");
+  click(h.byLabel("Save")[0]);
+  await flushMicrotasks();
+  assert.equal(h.savedNow().buttons[0].color, S.BUTTON_COLORS[1]);
+  assert.equal(h.savedNow().buttons[1].color, "", "the other keeps the theme's colour");
+  assert.equal(h.shelf()[0].dataset.color, S.BUTTON_COLORS[1], "painted on the shelf");
+  assert.equal(h.shelf()[1].dataset.color, undefined);
+
+  click(editTool(h, "Ground logger"));
+  click(querySel(h.container.children, ".schw-chip").filter((c) => c.tagName === "BUTTON")[0]);
+  click(h.byLabel("Save")[0]);
+  await flushMicrotasks();
+  assert.equal(h.savedNow().buttons[0].color, "", "back to the default");
+  S.destroy(h.container);
+}
+
+function testColourHelpers() {
+  assert.equal(S.coerceColor("#2f6fed"), "#2F6FED");
+  assert.equal(S.coerceColor(" #2F6FED "), "#2F6FED");
+  for (const bad of ["", null, undefined, "red", "#fff", "#12345G", "2F6FED", "url(x)"]) {
+    assert.equal(S.coerceColor(bad), "", `${bad} is not a colour`);
+  }
+  assert.equal(S.coerceButton({ command: "x", color: "#d62b4a" }).color, "#D62B4A");
+  assert.equal(S.coerceButton({ command: "x", color: "javascript:1" }).color, "");
+  assert.equal(S.readableOn("#000000"), "#FFFFFF");
+  assert.equal(S.readableOn("#FFFFFF"), "#111111");
+  assert.equal(S.readableOn("nope"), "");
+  S.BUTTON_COLORS.forEach((c) => assert.equal(S.coerceColor(c), c, `${c} is well formed`));
+  S.BUTTON_COLORS.forEach((c) => assert.equal(S.readableOn(c), "#FFFFFF", `${c} reads with a white label`));
+}
+
+/* Edit mode puts a grip on every row; the arrow keys on it move the button
+   and the new order is saved. The grips are gone again outside edit mode, and
+   a shelf of one has nothing to move. */
+async function testButtonsMoveByTheirGrip() {
+  const h = mount({ saved: { buttons: [LOCAL_BUTTON, SSH_BUTTON, LOCAL_BACKGROUND] } });
+  await flushMicrotasks();
+  const grips = () => h.container.children.flatMap((c) => querySel([c], ".schw-grip"));
+  assert.equal(grips().length, 0, "no grips outside edit mode");
+  click(h.tool("Edit buttons"));
+  assert.equal(grips().length, 3, "one per row in edit mode");
+
+  const key = (grip, k) => grip._listeners.keydown[0]({ key: k, preventDefault() {} });
+  key(grips()[0], "ArrowDown");
+  assert.deepEqual(h.savedNow().buttons.map((b) => b.id), ["s", "l", "k"]);
+  assert.deepEqual(h.shelf().map((b) => b.getAttribute("aria-label")),
+    ["Launch Start mission", "Launch Ground logger", "Launch Tile server"], "the shelf follows");
+
+  key(grips()[0], "ArrowUp");
+  assert.deepEqual(h.savedNow().buttons.map((b) => b.id), ["s", "l", "k"], "the top one stays on top");
+
+  click(h.tool("Edit buttons"));
+  assert.equal(grips().length, 0, "gone again");
+  S.destroy(h.container);
+
+  const one = mount({ saved: { buttons: [LOCAL_BUTTON] } });
+  await flushMicrotasks();
+  click(one.tool("Edit buttons"));
+  assert.equal(one.container.children.flatMap((c) => querySel([c], ".schw-grip")).length, 0,
+    "a shelf of one has nothing to move");
+  S.destroy(one.container);
+}
+
+function testMoveButton() {
+  const list = [{ id: "a" }, { id: "b" }, { id: "c" }];
+  const ids = (l) => l.map((b) => b.id).join("");
+  assert.equal(ids(S.moveButton(list, "a", 2)), "bca");
+  assert.equal(ids(S.moveButton(list, "c", 0)), "cab");
+  assert.equal(ids(S.moveButton(list, "b", 1)), "abc");
+  assert.equal(ids(S.moveButton(list, "x", 1)), "abc", "unknown id");
+  assert.equal(ids(S.moveButton(list, "a", 3)), "abc", "slot past the end");
+  assert.equal(ids(S.moveButton(list, "a", -1)), "abc", "negative slot");
+  assert.equal(ids(list), "abc", "the input is not changed");
 }
 
 /* The arrow before the first press opens the terminal and its connection,
@@ -1135,6 +1222,7 @@ async function testARunningRowStopsInsteadOfEditing() {
     assert.ok(editTool(h, label), "stopped, the pencil is back");
     assert.equal(h.tool(`Stop ${label}`), undefined);
     assert.equal(h.status().textContent, `${label} stopped`);
+    assert.ok(h.status().classList.contains("err"), "a stop is shown in red");
     assert.ok(h.consoleLines.some((l) => l.line === `schwalby (${where}): stopped ${label}` && l.level === "info"));
   }
   S.destroy(h.container);
@@ -1537,6 +1625,10 @@ async function run() {
   await testTheArrowConnectsBeforeTheFirstPress();
   await testTheArrowLivesInsideTheLaunchButton();
   await testThePencilsAppearOnlyInEditMode();
+  await testButtonsMoveByTheirGrip();
+  await testButtonColourIsPickedAndSaved();
+  testColourHelpers();
+  testMoveButton();
   await testLocalBackgroundButtonRunsHere();
   await testALocalFailureLandsOnItsRow();
   await testARefusedLocalShellSaysWhy();

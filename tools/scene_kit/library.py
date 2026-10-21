@@ -611,7 +611,7 @@ _register(Scene(
     asset="assets/screenshot_german.jpg",
     web="flight-german",
     title="The interface in German",
-    caption="English, German, French and Drachensprech, one file each. The map, "
+    caption="English, German and French, one file each. The map, "
             "the instruments and every page follow the language you pick.",
     theme="light",
     language="de",

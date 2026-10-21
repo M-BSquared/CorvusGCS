@@ -142,10 +142,18 @@ input, textarea, [contenteditable="true"], pre, code, .selectable,
   outline: 2px solid var(--accent-bright); outline-offset: -2px;
 }
 
-/* The GPS and Battery cards (Corvus.topbar gpsDetail / batteryDetail): a two
+/* The readouts Settings > Appearance > Top bar can take off the bar. All shown
+   by default; Corvus.topbar.setBlockShown writes the hidden ones on <html>. */
+:root[data-topbar-hidden~="altitude"] .tb-block[data-block="altitude"],
+:root[data-topbar-hidden~="groundspeed"] .tb-block[data-block="groundspeed"],
+:root[data-topbar-hidden~="vspeed"] .tb-block[data-block="vspeed"] { display: none; }
+
+/* The GPS, Battery and Altitude cards (Corvus.topbar gpsDetail / batteryDetail / altitudeDetail): a two
    column list, labels muted and left, values right aligned in tabular
    figures so a column of numbers lines up as it changes. */
 .ui-popover.tb-pop { max-width: min(300px, calc(100 * var(--vw) - 16px)); min-width: 230px; }
+.ui-popover.tb-pop.tb-pop-narrow { min-width: 150px; }
+.tb-pop-narrow .tb-pop-grid { column-gap: 20px; }
 .tb-pop-body { display: flex; flex-direction: column; gap: 6px; }
 .tb-pop-grid {
   display: grid; grid-template-columns: auto auto; column-gap: 16px; row-gap: 3px;

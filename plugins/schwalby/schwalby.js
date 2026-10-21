@@ -39,7 +39,7 @@ window.Corvus = window.Corvus || {};
  *     cannot be shut down cleanly between flights.
  *
  * The shelf is the plugin's state: a list of {id, label, target, connection,
- * directory, command, mode, restart}, saved through api.saveSettings into Schwalby's
+ * directory, command, mode, restart, color}, saved through api.saveSettings into Schwalby's
  * own config file (~/.corvus/plugins/schwalby/config.json), apart from the
  * app's config. Copying that file to another ground station gives it the same
  * shelf. A button there that names an SSH connection the station does not have
@@ -78,10 +78,21 @@ Corvus.pluginSchwalby = (function () {
   const MAX_BUTTONS = 12;
   const LAUNCH_ICON_PX = 16;
 
+  // How far a press on a row's grip has to travel before it is a drag, and
+  // how close to the shelf's ends it scrolls the page.
+  const DRAG_SLOP_PX = 4;
+
   // How often the shelf asks which of its sessions are still up. There is no
   // push for this, and the answer is what decides whether a button's arrow
   // leads anywhere. Only while the shelf is the visible view.
   const LIVE_POLL_MS = 4000;
+
+  // The colours offered besides the theme's own. Mid tones, so the label stays
+  // readable on every one of them; anything else comes from the custom chip.
+  const BUTTON_COLORS = [
+    "#2F6FED", "#0F9D8A", "#2E9E4F", "#D98A00", "#E0572B", "#D62B4A", "#8E4FD6", "#5B6770",
+  ];
+  const COLOR_RE = /^#[0-9a-f]{6}$/i;
 
   const MODE_TERMINAL = "terminal";
   const MODE_BACKGROUND = "background";
@@ -269,6 +280,59 @@ Corvus.pluginSchwalby = (function () {
   }
 
   /**
+   * A saved button colour as #RRGGBB in upper case, or "" for the theme's own.
+   *
+   * Pure, and exported for the test suite.
+   *
+   * @param {*} raw
+   * @returns {string}
+   */
+  function coerceColor(raw) {
+    const v = String(raw == null ? "" : raw).trim();
+    return COLOR_RE.test(v) ? v.toUpperCase() : "";
+  }
+
+  /**
+   * The label colour that reads on a button of *hex*: white on a dark fill,
+   * near black on a light one.
+   *
+   * Pure, and exported for the test suite.
+   *
+   * @param {string} hex #RRGGBB
+   * @returns {string}
+   */
+  function readableOn(hex) {
+    const c = coerceColor(hex);
+    if (!c) return "";
+    const lin = (i) => {
+      const v = parseInt(c.slice(i, i + 2), 16) / 255;
+      return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+    };
+    const luminance = 0.2126 * lin(1) + 0.7152 * lin(3) + 0.0722 * lin(5);
+    return luminance > 0.4 ? "#111111" : "#FFFFFF";
+  }
+
+  /**
+   * The shelf with one button moved to a new place. The slot is where the
+   * button ends up in the returned list; an unknown id or a slot outside the
+   * list leaves the order as it was.
+   *
+   * Pure, and exported for the test suite.
+   *
+   * @param {Object[]} list the buttons in shelf order
+   * @param {string} id the button to move
+   * @param {number} slot its new index
+   * @returns {Object[]} a new list
+   */
+  function moveButton(list, id, slot) {
+    const out = (list || []).slice();
+    const from = out.findIndex((b) => b && b.id === id);
+    if (from < 0 || !(slot >= 0 && slot < out.length)) return out;
+    out.splice(slot, 0, out.splice(from, 1)[0]);
+    return out;
+  }
+
+  /**
    * Coerce one saved entry into a complete button, or null to drop it. This
    * reads a JSON file an operator may have edited, so a half-written entry
    * costs that button and not the shelf.
@@ -296,6 +360,7 @@ Corvus.pluginSchwalby = (function () {
       command,
       mode: coerceMode(raw),
       restart: raw.restart === true,
+      color: coerceColor(raw.color),
     };
   }
 
@@ -663,6 +728,7 @@ Corvus.pluginSchwalby = (function () {
     const closing = Object.create(null); // session name -> its disconnect in flight
     const opening = Object.create(null); // session name -> the arrow's connect in flight
     let pollTimer = null;
+    let rowDrag = null;           // the row being dragged by its grip, or null
     let cancelled = false;        // set by destroy(); gates every late callback
 
     let companion = normalizeCompanion(
@@ -692,9 +758,9 @@ Corvus.pluginSchwalby = (function () {
     output.hidden = true;
 
     containerEl.appendChild(companionEl);
-    containerEl.appendChild(status.el);
     containerEl.appendChild(shelfEl);
     containerEl.appendChild(editorEl);
+    containerEl.appendChild(status.el);
     containerEl.appendChild(output);
 
     function isLocal(entry) { return !!entry && entry.target === TARGET_LOCAL; }
@@ -1307,10 +1373,10 @@ Corvus.pluginSchwalby = (function () {
         const changed = watched.some((b) => !!live[sessionName(b)] !== !!next[sessionName(b)]);
         live = next;
         if (companionSession) paintCompanion();
-        if (changed && editing === null) renderShelf();
+        if (changed && editing === null && !rowDrag) renderShelf();
       }).catch(() => {
         if (cancelled) return;
-        if (Object.keys(live).length) { live = {}; if (editing === null) renderShelf(); }
+        if (Object.keys(live).length) { live = {}; if (editing === null && !rowDrag) renderShelf(); }
       });
     }
 
@@ -1325,6 +1391,7 @@ Corvus.pluginSchwalby = (function () {
     // ---- the shelf ----------------------------------------------------------
 
     function renderShelf() {
+      endRowDrag();
       editing = null;
       repaintTarget = null;
       ui.clear(editorEl);
@@ -1362,6 +1429,7 @@ Corvus.pluginSchwalby = (function () {
           command: "",
           mode: MODE_TERMINAL,
           restart: false,
+          color: last ? last.color : "",
         }, true),
       });
       let editToggle = null;
@@ -1410,6 +1478,7 @@ Corvus.pluginSchwalby = (function () {
     function shelfRow(entry) {
       const row = document.createElement("div");
       row.className = "schw-row";
+      row.dataset.id = entry.id;
       const running = !!live[sessionName(entry)];
       const stopping = !!closing[sessionName(entry)];
       if (running) row.classList.add("schw-running");
@@ -1429,6 +1498,12 @@ Corvus.pluginSchwalby = (function () {
           : (previewLine(entry) || entry.command),
         onClick: () => launch(entry, launchBtn),
       });
+
+      if (entry.color) {
+        launchBtn.dataset.color = entry.color;
+        launchBtn.style.setProperty("--schw-color", entry.color);
+        launchBtn.style.setProperty("--schw-on", readableOn(entry.color));
+      }
 
       // Where it runs, as the segment's own icon at the far end of the
       // button: read at a glance, and it costs the label no width until the
@@ -1513,11 +1588,205 @@ Corvus.pluginSchwalby = (function () {
         }));
       }
 
+      if (editMode && buttons.length > 1) row.appendChild(gripFor(entry, row));
       row.appendChild(launchBtn);
       // An empty tools box would still cost its gap and shorten the button, so
       // the bar's right edge would no longer line up with the controls below.
       if (tools.children.length) row.appendChild(tools);
       return row;
+    }
+
+    // ---- moving a button -----------------------------------------------------
+
+    /** The grip at a row's left edge in edit mode: drag it up or down, or
+     *  focus it and press the arrow keys. */
+    function gripFor(entry, row) {
+      const grip = document.createElement("span");
+      grip.className = "schw-grip";
+      grip.setAttribute("role", "button");
+      grip.setAttribute("tabindex", "0");
+      grip.setAttribute("aria-label", `Move ${entry.label}`);
+      grip.title = "Drag to move up or down";
+      grip.appendChild(ui.icon("grip-vertical", 15));
+      grip.addEventListener("pointerdown", (e) => armRowDrag(e, entry, row, grip));
+      grip.addEventListener("keydown", (e) => {
+        const step = { ArrowUp: -1, ArrowDown: 1 }[e.key];
+        if (!step) return;
+        e.preventDefault();
+        const at = buttons.findIndex((b) => b.id === entry.id);
+        commitOrder(entry.id, at + step, true);
+      });
+      return grip;
+    }
+
+    /** Save a new order and repaint; the grip keeps focus after a key move. */
+    function commitOrder(id, slot, refocus) {
+      const next = moveButton(buttons, id, slot);
+      if (next.every((b, i) => b === buttons[i])) return;
+      buttons = next;
+      persist();
+      renderShelf();
+      if (!refocus) return;
+      const row = Array.from(shelfEl.querySelectorAll(".schw-row")).find((r) => r.dataset.id === id);
+      const grip = row && row.querySelector(".schw-grip");
+      if (grip && typeof grip.focus === "function") grip.focus();
+    }
+
+    function rowList() { return shelfEl.querySelector(".schw-shelf"); }
+
+    /** A press on a grip. Arms a drag; nothing moves until it has travelled. */
+    function armRowDrag(event, entry, row, grip) {
+      if (rowDrag || (event.button != null && event.button !== 0)) return;
+      const list = rowList();
+      if (!list) return;
+      // The shelf sits under the interface scale's CSS zoom: pointer and rect
+      // values are scaled, a transform is not, so all of it is divided back.
+      const k = (ui && typeof ui.uiScale === "function") ? ui.uiScale() : 1;
+      rowDrag = {
+        id: entry.id, row, grip, list, k,
+        pointerId: event.pointerId,
+        startY: event.clientY / k,
+        y: event.clientY / k,
+        grab: 0,
+        shift: 0,
+        active: false,
+      };
+      grip.addEventListener("pointermove", onRowMove);
+      grip.addEventListener("pointerup", onRowUp);
+      grip.addEventListener("pointercancel", onRowCancel);
+    }
+
+    function rowTop(el) { return el.getBoundingClientRect().top / rowDrag.k; }
+
+    function onRowMove(event) {
+      const d = rowDrag;
+      if (!d || event.pointerId !== d.pointerId) return;
+      d.y = event.clientY / d.k;
+      if (!d.active) {
+        if (Math.abs(d.y - d.startY) < DRAG_SLOP_PX) return;
+        d.active = true;
+        d.grab = d.startY - rowTop(d.row);
+        try { d.grip.setPointerCapture(d.pointerId); } catch (_e) { /* never captured */ }
+        d.list.classList.add("is-reordering");
+        d.row.classList.add("is-dragging");
+      }
+      event.preventDefault();
+      placeRow();
+    }
+
+    /** Carry the row under the pointer, and let the rows it passes close up
+     *  behind it. Re-measured on every sample, so the transform is added back
+     *  to whatever the row's rect says rather than accumulated blind. */
+    function placeRow() {
+      const d = rowDrag;
+      const rows = Array.prototype.slice.call(d.list.children);
+      const at = rows.indexOf(d.row);
+      if (at < 0) return;
+      const height = d.row.offsetHeight;
+      const box = d.list.getBoundingClientRect();
+      const wanted = Math.min(Math.max(d.y - d.grab, box.top / d.k), box.bottom / d.k - height);
+      const centre = wanted + height / 2;
+      let slot = 0;
+      rows.forEach((el) => {
+        if (el === d.row) return;
+        const r = el.getBoundingClientRect();
+        if ((r.top + r.height / 2) / d.k < centre) slot += 1;
+      });
+      if (slot !== at) {
+        const others = rows.filter((el) => el !== d.row);
+        d.list.insertBefore(d.row, others[slot] || null);
+      }
+      d.shift += wanted - rowTop(d.row);
+      d.row.style.transform = `translateY(${Math.round(d.shift)}px)`;
+    }
+
+    function onRowUp(event) {
+      const d = rowDrag;
+      if (!d || event.pointerId !== d.pointerId) return;
+      const slot = d.active ? Array.prototype.indexOf.call(d.list.children, d.row) : -1;
+      const id = d.id;
+      endRowDrag();
+      if (slot >= 0) commitOrder(id, slot, false);
+    }
+
+    function onRowCancel() {
+      if (!rowDrag) return;
+      endRowDrag();
+      renderShelf();
+    }
+
+    /** Take the drag apart, committing nothing. */
+    function endRowDrag() {
+      const d = rowDrag;
+      if (!d) return;
+      rowDrag = null;
+      try { d.grip.releasePointerCapture(d.pointerId); } catch (_e) { /* never captured */ }
+      d.grip.removeEventListener("pointermove", onRowMove);
+      d.grip.removeEventListener("pointerup", onRowUp);
+      d.grip.removeEventListener("pointercancel", onRowCancel);
+      d.list.classList.remove("is-reordering");
+      d.row.classList.remove("is-dragging");
+      d.row.style.transform = "";
+    }
+
+    // ---- the colour of a button ----------------------------------------------
+
+    function themeAccent() {
+      return (ui && typeof ui.token === "function") ? ui.token("--accent", "#2F6FED") : "#2F6FED";
+    }
+
+    /** The row of chips in the editor: the theme's own first, then the
+     *  presets, then one that opens the system colour picker. */
+    function colorStrip(draft) {
+      const strip = document.createElement("div");
+      strip.className = "schw-colors";
+      strip.setAttribute("role", "radiogroup");
+      strip.setAttribute("aria-label", "Button colour");
+      const chips = [];
+
+      function paint() {
+        const current = coerceColor(draft.color);
+        chips.forEach((chip) => {
+          const on = chip.value === current;
+          chip.el.classList.toggle("is-selected", on);
+          chip.el.setAttribute("aria-checked", on ? "true" : "false");
+        });
+        custom.classList.toggle("is-selected", !!current && !BUTTON_COLORS.includes(current));
+      }
+
+      function pick(value) {
+        draft.color = value;
+        paint();
+      }
+
+      [""].concat(BUTTON_COLORS).forEach((value) => {
+        const el = document.createElement("button");
+        el.type = "button";
+        el.className = "schw-chip" + (value ? "" : " is-theme");
+        el.setAttribute("role", "radio");
+        el.title = value ? value : "Default, the theme colour";
+        el.setAttribute("aria-label", value ? `Colour ${value}` : "Default colour");
+        el.style.background = value || themeAccent();
+        el.addEventListener("click", () => pick(value));
+        strip.appendChild(el);
+        chips.push({ el, value });
+      });
+
+      const custom = document.createElement("label");
+      custom.className = "schw-chip schw-chip-custom";
+      custom.title = "Pick any colour";
+      const input = document.createElement("input");
+      input.type = "color";
+      input.className = "schw-chip-input";
+      input.setAttribute("aria-label", "Custom colour");
+      input.value = coerceColor(draft.color).toLowerCase() || "#2f6fed";
+      input.addEventListener("input", () => pick(coerceColor(input.value)));
+      custom.appendChild(ui.icon("pipette", 12));
+      custom.appendChild(input);
+      strip.appendChild(custom);
+
+      paint();
+      return strip;
     }
 
     // ---- the editor ---------------------------------------------------------
@@ -1603,6 +1872,12 @@ Corvus.pluginSchwalby = (function () {
           onInput: (v) => { draft.label = v; },
         }),
         hint: "What the button says. Leave empty to use the command itself.",
+      }));
+
+      card.appendChild(ui.field({
+        label: "Colour",
+        control: colorStrip(draft),
+        hint: "Default follows the theme. Pick another to tell this button apart on the shelf.",
       }));
 
       function isSsh() { return draft.target === TARGET_SSH; }
@@ -2138,7 +2413,7 @@ Corvus.pluginSchwalby = (function () {
           failed(entry, "Could not reach the backend to stop it");
           return false;
         }
-        status.show(`${entry.label} stopped`, "ok");
+        status.show(`${entry.label} stopped`, "err");
         api.console(consoleLine(entry, `stopped ${entry.label}`), "info");
         return true;
       });
@@ -2247,6 +2522,7 @@ Corvus.pluginSchwalby = (function () {
 
     containerEl._schwDestroy = function () {
       cancelled = true;
+      endRowDrag();
       stopPolling();
       stopProbing();
       if (companionDialog) companionDialog.close();
@@ -2264,7 +2540,7 @@ Corvus.pluginSchwalby = (function () {
   return {
     init, destroy,
     previewLine, terminalLine, sshSummary, localSummary, normalizeButtons, missingConnections,
-    coerceButton, coerceMode, restarts, coerceTarget, sessionName, derivedName,
+    coerceButton, coerceMode, restarts, moveButton, coerceColor, readableOn, BUTTON_COLORS, coerceTarget, sessionName, derivedName,
     newConnectionError, newConnectionBody, segment,
     hostError, normalizeCompanion, companionEntry, COMPANION_ID, companionState, probeWaitMs,
     MAX_BUTTONS, LIVE_POLL_MS, MODE_TERMINAL, MODE_BACKGROUND, NEW_CONNECTION,

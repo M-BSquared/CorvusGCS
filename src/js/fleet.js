@@ -175,6 +175,29 @@ Corvus.fleet = (function () {
     }).join("").toUpperCase();
   }
 
+  /** "#RRGGBB" for a hue (degrees), saturation and lightness (0 to 1). */
+  function hslHex(hue, sat, light) {
+    const a = sat * Math.min(light, 1 - light);
+    const channel = (n) => {
+      const k = (n + hue / 30) % 12;
+      const v = light - a * Math.max(-1, Math.min(k - 3, 9 - k, 1));
+      return Math.round(v * 255).toString(16).padStart(2, "0");
+    };
+    return ("#" + channel(0) + channel(8) + channel(4)).toUpperCase();
+  }
+
+  /**
+   * The tone of the earlier flight at *index*, oldest first. Consecutive
+   * flights step round the colour wheel by the golden angle, so neighbours
+   * are always far apart however many there are, and the hue is pulled
+   * toward white like the plain earlier-flight tone, so it stays quieter
+   * than the flight in progress.
+   */
+  function rainbowTone(index) {
+    const hue = (200 + Math.max(0, Math.floor(Number(index) || 0)) * 137.508) % 360;
+    return tint(hslHex(hue, 0.8, 0.55), 0.3);
+  }
+
   /** What a vehicle with no colour of its own is drawn in: the theme's. */
   function themeColor() {
     return (Corvus.ui && Corvus.ui.token) ? Corvus.ui.token("--vehicle", "#D62B26") : "#D62B26";
@@ -722,7 +745,7 @@ Corvus.fleet = (function () {
     select, rename, setColor, addLink, removeLink, removeVehicle, openDialog,
     // The links list, for Settings: {el, render, refreshPorts}.
     buildLinksPanel,
-    rgbTriplet, tint, paintElement, themeColor,
+    rgbTriplet, tint, rainbowTone, paintElement, themeColor,
     // test hook: feed a snapshot as if the stream had delivered it.
     _take: take,
   };

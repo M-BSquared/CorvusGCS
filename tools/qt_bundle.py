@@ -11,9 +11,14 @@ libraries. The starting points are the Python modules ``corvus/app.py``
 imports, the Qt plugin folders a widget application with a web view loads
 from, and QtWebEngine's helper process. Every library they link is kept, and
 every library those link, to the end. A Qt release that adds a dependency is
-followed without an edit here; a module nothing links is dropped. A kept Qt
-library keeps its Python module too, because PySide6 modules import each other
-at load time (``QtWebEngineWidgets`` imports ``QtPrintSupport``).
+followed without an edit here; a module nothing links is dropped.
+
+A Python module is kept only when Python loads it: one ``corvus/app.py``
+imports, or one a kept module imports at load time (``QtWebEngineWidgets``
+imports ``QtPrintSupport``). Each module names those as ``PySide6.Qt…``
+strings inside its binary, which is where they are read from. A Qt library
+QtWebEngine links (QtQuick, QtOpenGL, QtPdf) stays, but its Python module
+does not: nothing imports it, and QtOpenGL's alone is 10 MB.
 
 The last step reads every binary left in the bundle and fails when one of them
 links a library that was taken out. A trimmed bundle that would not load is a
@@ -264,6 +269,14 @@ class Plan:
     removed_keys: set[str] = field(default_factory=set)
 
 
+_BINDING_IMPORT = re.compile(rb"PySide6\.(Qt[A-Za-z0-9]+)(?![A-Za-z0-9_.])")
+
+
+def binding_imports(module_file: Path) -> set[str]:
+    """The PySide6 modules a PySide6 module imports when it loads."""
+    return {m.decode() for m in _BINDING_IMPORT.findall(module_file.read_bytes())}
+
+
 def _tool_entry(entry: Path) -> bool:
     """A Qt tool at the top of the PySide6 package: designer, Linguist.app and so on."""
     if entry.is_dir():
@@ -273,7 +286,8 @@ def _tool_entry(entry: Path) -> bool:
     return bool(binary_kind(entry))
 
 
-def plan(site: Path, deps: Callable[[Path], list[str]] = binary_deps) -> Plan:
+def plan(site: Path, deps: Callable[[Path], list[str]] = binary_deps,
+         imports: Callable[[Path], set[str]] = binding_imports) -> Plan:
     """Decide what of PySide6 under *site* stays. Touches nothing."""
     pyside = site / "PySide6"
     qt = pyside / "Qt"
@@ -283,7 +297,13 @@ def plan(site: Path, deps: Callable[[Path], list[str]] = binary_deps) -> Plan:
 
     libraries = library_index(site)
     result = Plan(modules=set(MODULES))
-    seeds: list[Path] = [pyside / f"{m}{MODULE_SUFFIX}" for m in MODULES]
+    waiting = list(MODULES)
+    while waiting:
+        for module in imports(pyside / f"{waiting.pop()}{MODULE_SUFFIX}"):
+            if module not in result.modules and (pyside / f"{module}{MODULE_SUFFIX}").is_file():
+                result.modules.add(module)
+                waiting.append(module)
+    seeds: list[Path] = [pyside / f"{m}{MODULE_SUFFIX}" for m in sorted(result.modules)]
     seeds += _binaries(site / "shiboken6")
     plugins = qt / "plugins"
     dropped_plugins: list[Path] = []
@@ -315,11 +335,6 @@ def plan(site: Path, deps: Callable[[Path], list[str]] = binary_deps) -> Plan:
                 continue
             result.libraries.add(key)
             todo += _binaries(libraries[key])
-            module = module_for(key)
-            module_file = pyside / f"{module}{MODULE_SUFFIX}"
-            if module and module not in result.modules and module_file.is_file():
-                result.modules.add(module)
-                todo.append(module_file)
 
     remove: list[Path] = []
     for key, path in libraries.items():
