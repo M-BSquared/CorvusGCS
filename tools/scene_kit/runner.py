@@ -36,7 +36,8 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
+from collections.abc import Callable
 
 from . import recipe as recipe_mod
 from .library import CHATTER, Scene
@@ -351,7 +352,7 @@ class SceneRunner:
             # named stays, whatever is in it.
             shutil.rmtree(self.sandbox, ignore_errors=True)
 
-    def __enter__(self) -> "SceneRunner":
+    def __enter__(self) -> SceneRunner:
         self.start()
         return self
 

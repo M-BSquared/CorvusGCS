@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import Callable, Iterable
+from collections.abc import Callable, Iterable
 
 # Neubiberg: the test site the README's imagery is from, and the frontend's own
 # default map centre (src/js/map.js). [lat, lon] here — the human order; the

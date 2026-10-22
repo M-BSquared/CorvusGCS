@@ -262,7 +262,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     if scene.notes:
         print(f"note       {scene.notes}")
     deadline = time.monotonic() + args.seconds if args.seconds else None
-    print(f"holding    {'for %d s' % args.seconds if args.seconds else 'until Ctrl-C'}"
+    print(f"holding    {f'for {args.seconds:.0f} s' if args.seconds else 'until Ctrl-C'}"
           f" — the aircraft keeps flying, so the track keeps growing")
     try:
         while not stopping and (deadline is None or time.monotonic() < deadline):

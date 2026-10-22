@@ -171,6 +171,13 @@ def _packbits_decode(data: bytes) -> bytes:
 class _Tiff:
     def __init__(self, path: str) -> None:
         self.fh = open(path, "rb")
+        try:
+            self._open()
+        except BaseException:
+            self.fh.close()
+            raise
+
+    def _open(self) -> None:
         head = self.fh.read(16)
         if head[:2] == b"II":
             self.bo = "<"

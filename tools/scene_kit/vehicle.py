@@ -41,7 +41,8 @@ import threading
 import time
 import zlib
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any
+from collections.abc import Callable
 
 # PX4 speaks MAVLink 2; so must we, or signing, the long message ids and the
 # 18-channel RC message are all off the table. Set before pymavlink is imported,
@@ -292,7 +293,7 @@ class SimVehicle:
             except Exception:  # noqa: BLE001 - teardown must not raise
                 pass
 
-    def __enter__(self) -> "SimVehicle":
+    def __enter__(self) -> SimVehicle:
         self.start()
         return self
 

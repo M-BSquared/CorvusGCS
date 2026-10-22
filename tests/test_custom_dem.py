@@ -297,6 +297,23 @@ def test_geotiff_jpeg_compression_is_named(tmp_path) -> None:
         read_grid(str(path))
 
 
+def test_a_file_refused_as_tiff_is_closed(tmp_path, monkeypatch) -> None:
+    from corvus import dem_import
+    opened = []
+
+    def tracking_open(*args, **kwargs):
+        fh = open(*args, **kwargs)
+        opened.append(fh)
+        return fh
+
+    monkeypatch.setattr(dem_import, "open", tracking_open, raising=False)
+    path = tmp_path / "junk.tif"
+    path.write_bytes(b"XX" + bytes(30))
+    with pytest.raises(DemImportError, match="not a TIFF"):
+        dem_import.read_geotiff(str(path))
+    assert opened and all(fh.closed for fh in opened)
+
+
 def test_xyz_grid_any_order_with_header(tmp_path) -> None:
     path = tmp_path / "tile.txt"
     lines = ["X Y Z"]

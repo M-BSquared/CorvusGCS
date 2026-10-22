@@ -111,8 +111,12 @@ class TlogWriter:
             self._note_failure("tlog header write failed")
         with self._file_lock:
             if self._file is not None and not self._file.closed:
+                # A flush that fails on a full disk must not skip the close.
                 try:
                     self._file.flush()
+                except Exception:
+                    pass
+                try:
                     self._file.close()
                 except Exception:
                     pass

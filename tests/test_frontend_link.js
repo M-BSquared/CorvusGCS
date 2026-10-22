@@ -630,6 +630,31 @@ function testMapRateCapsOnlyMapAnimators() {
   anim.setMapRate(60);
 }
 
+// A map animator that had settled and gets a new target a moment later, on a
+// display faster than the map rate, is still stepped: the frame that comes
+// too soon must not end the loop before the one that draws it.
+function testMapRateStepsASettledAnimatorWokenEarly() {
+  const anim = Corvus.anim;
+  anim._reset();
+  rafQueue.length = 0;
+  let target = 0, shown = 0;
+  anim.add({ map: true, step: () => { shown = target; return false; } });
+  anim.wake();
+  rafQueue.shift().cb(1000);
+  assert.equal(rafQueue.length, 0, "settled, the loop stops");
+  target = 5;
+  anim.wake();
+  let t = 1000 + 1000 / 120;
+  while (rafQueue.length && t < 1100) {
+    rafQueue.shift().cb(t);
+    t += 1000 / 120;
+  }
+  assert.equal(shown, 5, "the new target is drawn on the next frame the map rate allows");
+  assert.equal(rafQueue.length, 0, "and the loop stops again once it is");
+  anim._reset();
+  rafQueue.length = 0;
+}
+
 function testSharedLoopMultipleAnimators() {
   const anim = Corvus.anim;
   anim._reset();
@@ -758,6 +783,7 @@ function run() {
   testSharedLoopLifecycle();
   testSharedLoopMultipleAnimators();
   testMapRateCapsOnlyMapAnimators();
+  testMapRateStepsASettledAnimatorWokenEarly();
   console.log("frontend link + interpolation tests passed");
 }
 

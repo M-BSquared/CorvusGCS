@@ -204,6 +204,9 @@ def linux_site(tmp_path: Path) -> Path:
            elf("libQt6Gui.so.6"))
     _write(qt / "plugins" / "platforminputcontexts" / "libqtvirtualkeyboardplugin.so",
            elf("libQt6VirtualKeyboard.so.6"))
+    # PySide6 6.12 ships this plugin without the libQt6Pdf it links.
+    _write(qt / "plugins" / "imageformats" / "libqpdf.so", elf("libQt6Pdf.so.6", "libQt6Gui.so.6"))
+    _write(qt / "plugins" / "imageformats" / "libqjpeg.so", elf("libQt6Gui.so.6"))
     _write(qt / "plugins" / "sceneparsers" / "libassimpsceneimport.so", elf("libQt63DCore.so.6"))
     _write(qt / "plugins" / "multimedia" / "libffmpegmediaplugin.so", elf("libavcodec.so.61"))
     _write(qt / "libexec" / "QtWebEngineProcess", elf("libQt6WebEngineCore.so.6"))
@@ -260,6 +263,8 @@ def test_the_linux_trim_keeps_the_web_engine_and_drops_the_tools(tmp_path):
     assert "PySide6/Qt/plugins/platforms/libqxcb.so" in left
     assert "PySide6/Qt/plugins/platforminputcontexts/libcomposeplatforminputcontextplugin.so" in left
     assert "PySide6/Qt/plugins/platforminputcontexts/libqtvirtualkeyboardplugin.so" not in left
+    assert "PySide6/Qt/plugins/imageformats/libqjpeg.so" in left
+    assert "PySide6/Qt/plugins/imageformats/libqpdf.so" not in left
     assert not any(p.startswith(("PySide6/Qt/plugins/sceneparsers", "PySide6/Qt/plugins/multimedia"))
                    for p in left)
     assert not any(p.startswith(("PySide6/Qt/qml", "PySide6/Qt/metatypes", "PySide6/include",
@@ -346,10 +351,11 @@ def test_the_macos_trim_follows_frameworks_and_the_helper_app(tmp_path):
     left = _left(site)
     lib = "PySide6/Qt/lib/"
     for kept in ("QtCore", "QtQml", "QtQuick", "QtQuickWidgets", "QtPositioning",
-                 "QtPrintSupport", "QtPdf", "QtSvg", "QtWebEngineCore"):
+                 "QtPrintSupport", "QtSvg", "QtWebEngineCore"):
         assert f"{lib}{kept}.framework/Versions/A/{kept}" in left, kept
     assert f"{lib}QtWebEngineCore.framework/Helpers/QtWebEngineProcess.app/Contents/MacOS/QtWebEngineProcess" in left
-    for gone in ("QtCharts.framework", "QtDesigner.framework", "libavcodec.61.dylib"):
+    for gone in ("QtCharts.framework", "QtDesigner.framework", "QtPdf.framework",
+                 "libavcodec.61.dylib"):
         assert not any(p.startswith(lib + gone) for p in left), gone
     assert "PySide6/QtCharts.abi3.so" not in left
     assert "PySide6/QtPrintSupport.abi3.so" in left
@@ -357,5 +363,5 @@ def test_the_macos_trim_follows_frameworks_and_the_helper_app(tmp_path):
     assert "PySide6/QtPdf.abi3.so" not in left
     assert not any(p.startswith("PySide6/Designer.app") for p in left)
     assert "PySide6/Qt/libexec/rcc" not in left
-    assert "PySide6/Qt/plugins/imageformats/libqpdf.dylib" in left
+    assert "PySide6/Qt/plugins/imageformats/libqpdf.dylib" not in left
     assert decided.modules >= set(qb.MODULES)

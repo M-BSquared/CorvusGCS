@@ -47,8 +47,8 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
           cache: pip
@@ -69,8 +69,8 @@ jobs:
   test-windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
           cache: pip
@@ -93,8 +93,8 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
           cache: pip
@@ -110,10 +110,10 @@ jobs:
   frontend:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
-          node-version: '20'
+          node-version: '24'
       - name: Run frontend tests
         # tests/*.js and every plugin's tests/*.js. The runner fails when it
         # finds nothing at all, so a broken pattern cannot pass by running
@@ -128,11 +128,11 @@ jobs:
     needs: [test, frontend]
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       # ubuntu-22.04's system python3 is 3.10; the AppImage bundles whatever
       # python3 is first on PATH, and build-appimage.sh refuses anything below
       # the 3.12 floor pyproject.toml declares. setup-python puts 3.12 there.
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
       - name: Install build dependencies
@@ -160,7 +160,7 @@ jobs:
       - name: Read version
         id: ver
         run: echo "version=$(cat VERSION)" >> "$GITHUB_OUTPUT"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: Corvus_GCS-${{ steps.ver.outputs.version }}-x86_64-AppImage
           # The .lock beside it is the exact resolved dependency set this
@@ -188,7 +188,7 @@ jobs:
     needs: [test, frontend]
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Ensure a framework CPython
         # build-macos-app.sh requires a framework build (conda and some tool-cache
         # pythons are not relocatable into a .app) that runs as the host's own
@@ -214,7 +214,7 @@ jobs:
         # pip, codesign and hdiutil write their reasons to build/*.log, not to
         # the job log, so without these a failed build names no cause.
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: macos-build-logs-${{ github.run_attempt }}
           path: build/*.log
@@ -228,7 +228,7 @@ jobs:
         run: |
           echo "version=$(cat VERSION)" >> "$GITHUB_OUTPUT"
           echo "arch=$(uname -m)" >> "$GITHUB_OUTPUT"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: Corvus_GCS-${{ steps.ver.outputs.version }}-macOS-${{ steps.ver.outputs.arch }}
           # See the AppImage job: the .lock is what this artifact's
@@ -247,8 +247,8 @@ jobs:
     needs: [test-windows, frontend]
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
       - name: Build the Windows app
@@ -258,7 +258,7 @@ jobs:
         id: ver
         shell: bash
         run: echo "version=$(cat VERSION)" >> "$GITHUB_OUTPUT"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: Corvus_GCS-${{ steps.ver.outputs.version }}-windows-x64
           # See the AppImage job: the .lock is what this artifact's
@@ -277,8 +277,8 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v7
         with:
           path: artifacts
           merge-multiple: true

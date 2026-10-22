@@ -500,7 +500,7 @@ _UI_UNITS: dict[str, tuple[str, ...]] = {
 _UI_TOPBAR_ALTITUDE = ("amsl", "relative")
 
 # How many times a second the aircraft move on the map (see src/js/anim.js).
-# Absent means 30.
+# Absent means 60.
 _UI_MAP_ANIMATION_RATES = (30, 60)
 
 

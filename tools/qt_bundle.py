@@ -17,7 +17,7 @@ A Python module is kept only when Python loads it: one ``corvus/app.py``
 imports, or one a kept module imports at load time (``QtWebEngineWidgets``
 imports ``QtPrintSupport``). Each module names those as ``PySide6.Qt…``
 strings inside its binary, which is where they are read from. A Qt library
-QtWebEngine links (QtQuick, QtOpenGL, QtPdf) stays, but its Python module
+QtWebEngine links (QtQuick, QtOpenGL) stays, but its Python module
 does not: nothing imports it, and QtOpenGL's alone is 10 MB.
 
 The last step reads every binary left in the bundle and fails when one of them
@@ -63,7 +63,9 @@ PLUGIN_DIRS: frozenset[str] = frozenset({
 # Plugins in a kept folder that are left out anyway. The virtual keyboard is a
 # QML keyboard for touch screens without one, only ever loaded on request
 # (QT_IM_MODULE=qtvirtualkeyboard), and it would pull its own libraries in.
-DROP_PLUGINS: tuple[str, ...] = ("virtualkeyboard",)
+# The PDF image format reads PDF files as pictures, which Corvus never does;
+# since 6.12 the PySide6 wheels ship the plugin without the QtPdf it links.
+DROP_PLUGINS: tuple[str, ...] = ("virtualkeyboard", "qpdf")
 
 # The one program in Qt's libexec a running app starts.
 LIBEXEC_KEEP: frozenset[str] = frozenset({"QtWebEngineProcess", "qt.conf"})

@@ -291,7 +291,7 @@ class Scene:
             "items": items,
         }
 
-    def with_overrides(self, overrides: dict[str, Any]) -> "Scene":
+    def with_overrides(self, overrides: dict[str, Any]) -> Scene:
         """A copy of this scene with *overrides* applied — the ``--set`` path."""
         known = {f.name for f in self.__dataclass_fields__.values()}  # type: ignore[attr-defined]
         bad = set(overrides) - known

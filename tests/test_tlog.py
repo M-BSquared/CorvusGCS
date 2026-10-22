@@ -132,6 +132,34 @@ def test_stop_drains_and_closes(tmp_path) -> None:
     assert body.count(frame) == 100
 
 
+def test_stop_closes_even_when_the_last_flush_fails(tmp_path) -> None:
+    """A full disk that fails the final flush must not leak the descriptor."""
+    writer = TlogWriter(str(tmp_path / "full.tlog"))
+    writer.write_frame(b"\xfe" * 8)
+    writer._thread.join(timeout=0.1)
+    real = writer._file
+
+    class FullDisk:
+        closed = False
+
+        def write(self, _data: bytes) -> None:
+            raise OSError(28, "No space left on device")
+
+        def flush(self) -> None:
+            raise OSError(28, "No space left on device")
+
+        def close(self) -> None:
+            self.closed = True
+            real.close()
+
+    full = FullDisk()
+    with writer._file_lock:
+        writer._file = full
+    writer.stop()
+    assert full.closed
+    assert real.closed
+
+
 def test_stop_is_idempotent(tmp_path) -> None:
     """Calling stop() multiple times is safe and does not raise."""
     path = tmp_path / "idem.tlog"

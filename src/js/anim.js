@@ -69,7 +69,9 @@ Corvus.anim = (function () {
         const last = mapLast.get(a);
         const since = last ? t - last.t : -1;
         if (since >= 0 && since < mapInterval) {
-          if (last.moving) alive = true;
+          // Kept alive even when it had settled: a wake() since may have given
+          // it a new target, which would otherwise wait for the next wake.
+          alive = true;
           continue;
         }
         if (since >= 0) stepDt = Math.min(since / 1000, 0.05);

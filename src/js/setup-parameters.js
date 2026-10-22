@@ -280,7 +280,7 @@ Corvus.setupParameters = (function () {
    * are counted as skipped.
    */
   function parseParamFile(text, fileName) {
-    const body = String(text == null ? "" : text).replace(/^﻿/, "").trim();
+    const body = String(text == null ? "" : text).replace(/^\uFEFF/, "").trim();
     const isJson = /\.json$/i.test(fileName || "") || body[0] === "{";
     if (isJson) {
       let doc;
