@@ -25,11 +25,30 @@ import time
 from typing import Any
 from collections.abc import Callable
 
-import paramiko
-
 from .paths import corvus_path
 
 logger = logging.getLogger("corvus.ssh")
+
+
+class _LazyParamiko:
+    """paramiko, imported the first time anything in it is used.
+
+    paramiko brings cryptography, bcrypt and PyNaCl with it: about 50 ms and
+    several MB on every start, for a station that may never open an SSH
+    connection. The server imports this module at start-up, so the import
+    waits for the first connect instead.
+    """
+
+    _module: Any = None
+
+    def __getattr__(self, name: str) -> Any:
+        if _LazyParamiko._module is None:
+            import paramiko as module
+            _LazyParamiko._module = module
+        return getattr(_LazyParamiko._module, name)
+
+
+paramiko: Any = _LazyParamiko()
 
 # How much recent shell output a session keeps for replay to a subscriber that
 # attaches after the fact. One screenful of a scrolling build log is a few KB;
@@ -70,27 +89,48 @@ def strict_host_keys() -> bool:
     return (os.environ.get(HOST_KEY_POLICY_ENV) or "").strip().lower() == "strict"
 
 
-class _RememberAndWarnPolicy(paramiko.AutoAddPolicy):
-    """Accept an unknown host key, but say so and write it down.
+_policy_class: type | None = None
 
-    The warning is the point: an auto-accepted key is a decision made on the
-    operator's behalf, and the log is where it gets recorded.
+
+def _remember_and_warn_policy() -> type:
+    """The missing-key policy class, built on first use.
+
+    It subclasses paramiko's AutoAddPolicy, so defining it at module level
+    would import paramiko with this module (see _LazyParamiko).
     """
+    global _policy_class
+    if _policy_class is None:
+        class _RememberAndWarnPolicy(paramiko.AutoAddPolicy):
+            """Accept an unknown host key, but say so and write it down.
 
-    def missing_host_key(self, client: Any, hostname: str, key: Any) -> None:
-        fingerprint = ""
-        try:
-            fingerprint = key.get_fingerprint().hex()
-        except Exception:  # noqa: BLE001 - the warning matters more than the hex
-            pass
-        logger.warning(
-            "accepting a new SSH host key for %s (%s %s) without verification; "
-            "it is remembered in %s, and a different key from this host will be "
-            "refused from now on. Set %s=strict to refuse unknown hosts instead.",
-            hostname, key.get_name(), fingerprint, known_hosts_path(),
-            HOST_KEY_POLICY_ENV,
-        )
-        super().missing_host_key(client, hostname, key)
+            The warning is the point: an auto-accepted key is a decision made
+            on the operator's behalf, and the log is where it gets recorded.
+            """
+
+            def missing_host_key(self, client: Any, hostname: str, key: Any) -> None:
+                fingerprint = ""
+                try:
+                    fingerprint = key.get_fingerprint().hex()
+                except Exception:  # noqa: BLE001 - the warning matters more than the hex
+                    pass
+                logger.warning(
+                    "accepting a new SSH host key for %s (%s %s) without verification; "
+                    "it is remembered in %s, and a different key from this host will be "
+                    "refused from now on. Set %s=strict to refuse unknown hosts instead.",
+                    hostname, key.get_name(), fingerprint, known_hosts_path(),
+                    HOST_KEY_POLICY_ENV,
+                )
+                super().missing_host_key(client, hostname, key)
+
+        _policy_class = _RememberAndWarnPolicy
+    return _policy_class
+
+
+def __getattr__(name: str) -> Any:
+    """``_RememberAndWarnPolicy`` by its old name, built when first asked for."""
+    if name == "_RememberAndWarnPolicy":
+        return _remember_and_warn_policy()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def _new_client() -> paramiko.SSHClient:
@@ -122,7 +162,7 @@ def _new_client() -> paramiko.SSHClient:
     except OSError:
         logger.debug("could not read the Corvus known_hosts at %s", path)
     client.set_missing_host_key_policy(
-        paramiko.RejectPolicy() if strict_host_keys() else _RememberAndWarnPolicy()
+        paramiko.RejectPolicy() if strict_host_keys() else _remember_and_warn_policy()()
     )
     return client
 

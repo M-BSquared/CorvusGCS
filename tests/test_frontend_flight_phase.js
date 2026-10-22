@@ -20,7 +20,7 @@ global.Corvus = {};
 global.document = { addEventListener: () => {}, getElementById: () => null };
 
 require("./../src/js/app.js");
-const { flightPhase } = Corvus.app;
+const { flightPhase, singleButtonRole } = Corvus.app;
 
 const ON_GROUND = 1;
 const IN_AIR = 2;
@@ -59,12 +59,27 @@ function testTheHeightGuessNeverGreysLand() {
   assert.equal(flightPhase({ connected: true, armed: true }), "");
 }
 
+function testTheOneButtonIsTakeoffOnTheGroundAndLandInTheAir() {
+  assert.equal(singleButtonRole(null), "takeoff");
+  assert.equal(singleButtonRole({ connected: true, armed: false, landed_state: 0 }), "takeoff");
+  assert.equal(singleButtonRole({ connected: true, armed: true, landed_state: ON_GROUND }), "takeoff");
+  for (const landed of [IN_AIR, TAKEOFF, LANDING]) {
+    assert.equal(singleButtonRole({ connected: true, armed: true, landed_state: landed }), "land");
+  }
+}
+
+function testAnArmedVehicleOfUnknownPhaseGetsLandNotTheTakeoffCard() {
+  assert.equal(singleButtonRole({ connected: true, armed: true, landed_state: 0, altitude_agl: 0.4 }), "land");
+}
+
 const tests = [
   testNothingIsGreyedWithoutAVehicle,
   testTheAutopilotsLandedStateDecides,
   testAVehicleClimbingOutCanStillLand,
   testADisarmedVehicleIsOnTheGround,
   testTheHeightGuessNeverGreysLand,
+  testTheOneButtonIsTakeoffOnTheGroundAndLandInTheAir,
+  testAnArmedVehicleOfUnknownPhaseGetsLandNotTheTakeoffCard,
 ];
 let failed = 0;
 for (const t of tests) {

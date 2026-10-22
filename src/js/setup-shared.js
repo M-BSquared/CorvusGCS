@@ -129,8 +129,8 @@ Corvus.setupShared = (function () {
     return Object.assign({}, theme, {
       margin: { l: 44, r: 8, t: 6, b: 26 },
       showlegend: false,
-      xaxis: Object.assign({}, theme.xaxis, { title: "Time (s)" }),
-      yaxis: Object.assign({}, theme.yaxis, { title: unit }),
+      xaxis: Object.assign({}, theme.xaxis, { title: { text: "Time (s)" } }),
+      yaxis: Object.assign({}, theme.yaxis, { title: { text: unit } }),
     });
   }
 

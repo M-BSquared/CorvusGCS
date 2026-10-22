@@ -62,16 +62,19 @@ function extract(src) {
 // ---------------------------------------------------------------------------
 const PLOTLY_FIX = `
 Re-apply it like this. In src/vendor/plotly-basic.min.js find Plotly's
-calcInverseTransform, which reads:
+calcInverseTransform. In 4.1.2 it reads (the minifier's names change from
+release to release; the shape does not):
 
-  function se(e){var t=e._fullLayout,r=e.getBoundingClientRect();
-    if(!o.equalDomRects(r,t._lastBBox)){
-      var n=t._invTransform=o.inverseTransformMatrix(o.getFullTransformMatrix(e));
-      t._invScaleX=Math.sqrt(...),t._invScaleY=Math.sqrt(...),t._lastBBox=r}}
+  function S0e(e){var r=e._fullLayout,t=e.getBoundingClientRect();
+    if(!ar.equalDomRects(t,r._lastBBox)){
+      var a=r._invTransform=ar.inverseTransformMatrix(ar.getFullTransformMatrix(e));
+      r._invScaleX=Math.sqrt(...),r._invScaleY=Math.sqrt(...),r._lastBBox=t}}
 
-and insert, immediately after the line that assigns \`n\`:
+and insert, immediately after the statement that assigns the matrix (\`a\`
+above; use whatever name that release gives it, and the function's own
+argument for \`e\`):
 
-  ${OPEN}var cvz=e.currentCSSZoom;if(typeof cvz==="number"&&isFinite(cvz)&&cvz>0&&cvz!==1)for(var cvi=0;cvi<n.length;cvi++)for(var cvj=0;cvj<3&&cvj<n[cvi].length;cvj++)n[cvi][cvj]/=cvz;${CLOSE}
+  ${OPEN}var cvz=e.currentCSSZoom;if(typeof cvz==="number"&&isFinite(cvz)&&cvz>0&&cvz!==1)for(var cvi=0;cvi<a.length;cvi++)for(var cvj=0;cvj<3&&cvj<a[cvi].length;cvj++)a[cvi][cvj]/=cvz;${CLOSE}
 
 The names are long on purpose so they cannot collide with the minifier's.
 Only columns 0..2 are touched: column 3 is the translation, and the offset
@@ -108,9 +111,20 @@ is why one edit fixes hover and drag together.
     "only the linear columns (0..2) are scaled — column 3 is the translation, and " +
     "the offset handed in is already relative to the graph div.\n" + PLOTLY_FIX);
 
+  // The matrix and the element under the names this release's minifier gave
+  // them, read from the statement the patch follows.
+  const head = around.slice(0, around.indexOf(OPEN));
+  const assigned = /var (\w+)=\w+\._invTransform=\w+\.inverseTransformMatrix\(\w+\.getFullTransformMatrix\((\w+)\)\);$/
+    .exec(head);
+  assert.ok(assigned,
+    "the patch must follow the statement that builds the inverse matrix.\n" + PLOTLY_FIX);
+  const [, matrix, element] = assigned;
+  assert.ok(new RegExp(`${element}\\.currentCSSZoom`).test(patch),
+    `the patch must read the zoom of the graph div, \`${element}\` here.\n` + PLOTLY_FIX);
+
   // The arithmetic, lifted out and run, so the loop bounds are checked rather
   // than trusted.
-  const correct = new Function("n", "e", patch + "return n;");
+  const correct = new Function(matrix, element, patch + `return ${matrix};`);
   {
     const m = [[1, 0, 0, 7], [0, 1, 0, 9], [0, 0, 1, 0], [0, 0, 0, 1]];
     const out = correct(m.map((r) => r.slice()), { currentCSSZoom: 1.5 });

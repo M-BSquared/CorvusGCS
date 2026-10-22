@@ -45,6 +45,10 @@ def chromium_flags(platform: str = sys.platform) -> list[str]:
       is what keeps MapLibre initialising on a machine with no usable driver:
       a VM, a remote session, an old laptop with a broken EGL stack.
     * ``--enable-webgl`` — MapLibre is WebGL; without it there is no map.
+    * ``--disable-pinch`` — a trackpad pinch or Ctrl + wheel would zoom the
+      whole page like a website and push the sidebar off screen. The size of
+      the interface is the scale setting; the map zooms through its own wheel
+      and pinch handling, which this switch does not touch.
     * ``--disable-gpu-sandbox``, on Linux only. The GPU process sandbox is a
       real boundary, and this frontend is the thing that loads operator-
       supplied plugins out of ``~/.corvus/plugins`` — so it is not a boundary
@@ -75,7 +79,7 @@ def chromium_flags(platform: str = sys.platform) -> list[str]:
     flags = ["--ignore-gpu-blocklist"]
     if platform.startswith("linux"):
         flags += ["--disable-gpu-sandbox"]
-    flags += ["--enable-unsafe-swiftshader", "--enable-webgl"]
+    flags += ["--enable-unsafe-swiftshader", "--enable-webgl", "--disable-pinch"]
     return flags
 
 
@@ -439,7 +443,10 @@ def external_url(url: str) -> bool:
         return False
 
 
-def stays_on_top(pinned: bool, app_active: bool) -> bool:
+POPOUT_MOVE_QUIET_MS = 300
+
+
+def stays_on_top(pinned: bool, app_active: bool, moving: bool = False) -> bool:
     """Whether a pop-out window is raised above every other window right now.
 
     The pin keeps a window above the Corvus window, not above everything: a
@@ -447,8 +454,14 @@ def stays_on_top(pinned: bool, app_active: bool) -> bool:
     window is held on top only while Corvus is the active application; with
     another program in front it is an ordinary window its windows can cover,
     and it is on top again the moment Corvus is.
+
+    ``moving``: the window is being dragged. Some window managers (Muffin on
+    Cinnamon) report the application as inactive for the length of a move; the
+    window would drop behind the Corvus window and be gone until it is let go
+    of. A window under the pointer is not one another program covers, so it
+    stays where it is.
     """
-    return bool(pinned) and bool(app_active)
+    return bool(pinned) and (bool(app_active) or bool(moving))
 
 
 def window_support(platform_name: str) -> dict[str, bool]:
@@ -476,7 +489,7 @@ def window_support(platform_name: str) -> dict[str, bool]:
 
 
 # Qt 6.9 gave this bit a second name, ExpandedClientAreaHint, which PySide6
-# 6.11 does not export yet; it knows it only by its older one,
+# exports from 6.12 on; older ones know it only as
 # MaximizeUsingFullscreenGeometryHint. On macOS it runs the window's content
 # under the title bar, and NoTitleBarBackgroundHint makes that bar see-through.
 QT_EXPANDED_CLIENT_AREA = 0x00400000
@@ -829,7 +842,7 @@ def main() -> int:
         if not support["pin"]:
             return
         active = app_active()
-        want = stays_on_top(holder.pinned, active)
+        want = stays_on_top(holder.pinned, active, holder.moving)
         if want != bool(holder.windowFlags() & Qt.WindowType.WindowStaysOnTopHint):
             set_on_top(holder, want)
             if not want and not active:
@@ -865,6 +878,12 @@ def main() -> int:
             self.key = ""
             self.normal = None      # the geometry before a maximize
             self.pinned = False     # the pin in its bar (see apply_pin)
+            self.moving = False     # moved a moment ago (see moveEvent)
+            self.want = None        # where it opens, re-applied as it is shown
+            self.settled = QTimer(self)
+            self.settled.setSingleShot(True)
+            self.settled.setInterval(POPOUT_MOVE_QUIET_MS)
+            self.settled.timeout.connect(self._stopped_moving)
             self.blur = 0           # the blur behind it (MacBlur), while frosted
             self.frame = popout_frame(False, platform_name)
             self.page = None        # its PopoutPage, to tell it the frame changed
@@ -883,6 +902,17 @@ def main() -> int:
                 mac.hide_title(int(self.winId()))
             except Exception:  # noqa: BLE001 - a doubled name beats no window
                 logger.debug("could not hide a window's own title", exc_info=True)
+
+        def moveEvent(self, event):  # noqa: N802 - Qt's name
+            super().moveEvent(event)
+            if self.pinned:
+                self.moving = True
+                self.settled.start()
+
+        def _stopped_moving(self) -> None:
+            """No move for a moment: the pin goes by the app's state again."""
+            self.moving = False
+            apply_pin(self)
 
         def showEvent(self, event):  # noqa: N802 - Qt's name
             super().showEvent(event)
@@ -1213,6 +1243,11 @@ def main() -> int:
             return open_popout(self.profile())
 
     def show_popout(holder) -> None:
+        # A window not yet shown loses the size it was given to the web view's
+        # own (100 x 30), so it is given again as it is shown.
+        if holder.want is not None:
+            holder.setGeometry(holder.want)
+            holder.want = None
         if not holder.isVisible():
             holder.show()
             holder.raise_()
@@ -1301,8 +1336,10 @@ def main() -> int:
                     holder.activateWindow()
                 return
             rect = popout_last.get(key) or self._rect(left, top, width, height)
-            holder.setGeometry(*popout_geometry(
-                (rect.x(), rect.y(), rect.width(), rect.height()), screen_area_at(rect.center())))
+            where = popout_geometry(
+                (rect.x(), rect.y(), rect.width(), rect.height()), screen_area_at(rect.center()))
+            holder.setGeometry(*where)
+            holder.want = QRect(*where)
 
         @Slot(str, str, int, int, int, int)
         def detachWindow(self, key: str, query: str, left: int, top: int,
@@ -1314,6 +1351,7 @@ def main() -> int:
             if holder is None:
                 return
             holder.setGeometry(self._rect(left, top, width, height))
+            holder.want = holder.geometry()
             self._grabs.pop(key, None)
             if win is not None:
                 try:

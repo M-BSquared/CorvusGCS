@@ -195,8 +195,11 @@ Corvus.instruments = (function () {
     // over-travels its scale while easing.
     const pPitch = Math.max(-30, Math.min(30, pitch));
     const pRoll = Math.max(-60, Math.min(60, roll));
-    setAttr(adiInner, "transform", `rotate(${-pRoll}) translate(0 ${(pPitch * PPD).toFixed(1)})`);
-    setAttr(adiRollScale, "transform", `rotate(${-pRoll})`);
+    // A tenth of a degree is under a fifth of a pixel at the ball's edge;
+    // full precision made every easing frame a new value, and a new frame.
+    const r = (-pRoll).toFixed(1);
+    setAttr(adiInner, "transform", `rotate(${r}) translate(0 ${(pPitch * PPD).toFixed(1)})`);
+    setAttr(adiRollScale, "transform", `rotate(${r})`);
     if (attitudeValue) {
       const ps = pitch >= 0 ? "+" : "";
       const rs = roll >= 0 ? "+" : "";
@@ -268,7 +271,7 @@ Corvus.instruments = (function () {
   function buildFlightTelemetry() {
     const cells = [
       { label: "ALT AMSL", key: "altAmsl", cls: "" },
-      { label: "AGL", key: "agl", cls: "" },
+      { label: "FLIGHT TIME", key: "flightTime", cls: "" },
       { label: "GS", key: "gs", cls: "nav" },
       { label: "V/S", key: "vs", cls: "" },
       { label: "HDG", key: "hdg", cls: "nav" },
@@ -287,18 +290,58 @@ Corvus.instruments = (function () {
     cells.forEach((c) => { ftCells[c.key] = ftGrid.querySelector(`[data-ft="${c.key}"]`); });
   }
 
+  /* MAV_LANDED_STATE values, and the height above home that counts as airborne
+     when the firmware never publishes EXTENDED_SYS_STATE. Same rule as the top
+     bar's FLYING state. */
+  const LANDED_ON_GROUND = 1, LANDED_IN_AIR = 2, LANDED_TAKEOFF = 3, LANDED_LANDING = 4;
+  const AIRBORNE_FALLBACK_M = 1.5;
+  let flightStart = null;
+  let flightEnd = null;
+
+  function isAirborne(s) {
+    const landed = s.landed_state;
+    if (landed === LANDED_IN_AIR || landed === LANDED_TAKEOFF || landed === LANDED_LANDING) return true;
+    if (landed === LANDED_ON_GROUND) return false;
+    return Number(s.altitude_agl || 0) > AIRBORNE_FALLBACK_M;
+  }
+
+  /** Seconds in the air this flight. Starts at take-off, stops at touchdown
+   *  or disarm, and the last flight stays shown until the next take-off. */
+  function flightSeconds(s, now) {
+    if (s.armed && isAirborne(s)) {
+      if (flightStart === null || flightEnd !== null) {
+        flightStart = now;
+        flightEnd = null;
+      }
+    } else if (flightStart !== null && flightEnd === null && (!s.armed || s.landed_state === LANDED_ON_GROUND)) {
+      flightEnd = now;
+    }
+    if (flightStart === null) return 0;
+    return Math.max(0, ((flightEnd === null ? now : flightEnd) - flightStart) / 1000);
+  }
+
+  function formatClock(seconds) {
+    const t = Math.floor(seconds);
+    const h = Math.floor(t / 3600);
+    const m = Math.floor((t % 3600) / 60);
+    const sec = String(t % 60).padStart(2, "0");
+    return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${sec}` : `${m}:${sec}`;
+  }
+
   function updateFlightTelemetry(s) {
     const set = (k, v) => {
       const n = ftCells[k];
       if (n) setText(n, v);
     };
     if (!s.connected) {
-      ["altAmsl", "agl", "gs", "vs", "hdg", "sats"].forEach((k) => set(k, "\u2014"));
+      ["altAmsl", "flightTime", "gs", "vs", "hdg", "sats"].forEach((k) => set(k, "\u2014"));
+      flightStart = null;
+      flightEnd = null;
       return;
     }
     const u = Corvus.units;
     set("altAmsl", u.formatLength(s.altitude_amsl));
-    set("agl", u.formatLength(s.altitude_agl));
+    set("flightTime", formatClock(flightSeconds(s, Date.now())));
     set("gs", u.formatSpeed(s.groundspeed));
     set("vs", u.formatSpeed(s.vspeed, { signed: true }));
     set("hdg", `${String(Math.round(s.heading)).padStart(3, "0")}\u00B0`);

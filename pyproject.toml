@@ -44,16 +44,17 @@ headless = [
 ]
 # The desktop app: what every packaged build ships. PySide6 (LGPL v3), not
 # PyQt6 (GPL v3), because the GPL does not combine with the Sustainable Use
-# License. Essentials carries QtCore/Gui/Widgets, Addons QtWebEngine and
-# QtWebChannel. 6.11 keeps the Qt, and so the Chromium, the app was tested on.
-# Below 6.12 because 6.12 moved QtWebEngine out of Addons into a wheel of its
-# own (PySide6-WebEngine): installed from these two, it has no web view, and
-# every fresh build or venv got an app that cannot start. Moving to 6.12 means
-# adding that wheel here and testing the new Chromium, in one change.
+# License. Essentials carries QtCore/Gui/Widgets/Network, Addons QtWebChannel
+# and QtPositioning, and WebEngine QtWebEngineCore/Widgets: since 6.12 the web
+# view is a wheel of its own, and without it the app has no window. Its
+# version carries the Chromium major as a fourth part (6.12.0.140), which the
+# 6.12 range below still matches. The ceiling keeps the Qt, and so the
+# Chromium, the app was tested on; the next minor is moved to in one change.
 app = [
     { include-group = "headless" },
-    "PySide6-Essentials>=6.11,<6.12",
-    "PySide6-Addons>=6.11,<6.12",
+    "PySide6-Essentials>=6.12,<6.13",
+    "PySide6-Addons>=6.12,<6.13",
+    "PySide6-WebEngine>=6.12,<6.13",
 ]
 # The CI test jobs.
 test = [

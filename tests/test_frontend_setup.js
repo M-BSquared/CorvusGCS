@@ -276,6 +276,13 @@ function fakePlotly(opts) {
   };
 }
 
+/** The traces Plotly was last handed for one chart. Every loop's graphs are on
+ *  the page, so "the last call" is whichever graph happened to draw last. */
+function lastDraw(plot, chartId) {
+  const calls = plot.reactCalls.filter((c) => c.gd.dataset.chart === chartId);
+  return calls[calls.length - 1].data;
+}
+
 /**
  * Build a fake Corvus.telemetry with spies. `subscribe` captures the callback
  * (does NOT auto-fire — tests drive it via getSubCb) and returns an unsub spy.
@@ -469,13 +476,13 @@ async function testTeardownRunsOnSwap() {
   clock = 1000;
   const container = await openTuning(fake);
 
-  assert.equal(plot.reactCalls.length, 1, "the loop's chart is initialised");
+  assert.equal(plot.reactCalls.length, 2, "every loop's chart is initialised");
   assert.equal(fake.unsubCalls, 1, "grid unsub fired on openView");
 
   // Click back → teardown runs: grid + tuning unsub, one Plotly.purge.
   fire(findOneByClass(container, "setup-back"), "click");
   assert.equal(fake.unsubCalls, 2, "grid + tuning unsub on back");
-  assert.equal(plot.purgeCalls.length, 1, "Plotly.purge called exactly once per chart on back");
+  assert.equal(plot.purgeCalls.length, 2, "Plotly.purge called exactly once per chart on back");
   delete window.Plotly;
 }
 
@@ -487,12 +494,12 @@ async function testReRenderTearsDownActiveSubPage() {
   const fake = makeFakeTelemetry({ state: { connected: true, armed: false } });
   clock = 1000;
   const container = await openTuning(fake);
-  assert.equal(plot.reactCalls.length, 1);
+  assert.equal(plot.reactCalls.length, 2);
 
   // Re-render (left-nav re-entry) → teardown of the tuning sub-page.
   Corvus.setup.render(container);
   assert.equal(fake.unsubCalls, 2, "unsub on re-render");
-  assert.equal(plot.purgeCalls.length, 1, "purge on re-render");
+  assert.equal(plot.purgeCalls.length, 2, "purge on re-render");
   assert.ok(findOneByClass(container, "setup-tiles"), "tile grid restored on re-render");
   delete window.Plotly;
 }
@@ -1856,7 +1863,9 @@ async function testReadinessStripReflectsLinkAndArmedState() {
 // pinned below.
 // ===========================================================================
 
-/** A multicopter tuning description: two controller groups plus the autotune. */
+/** A multicopter tuning description: two controller groups plus the autotune.
+ *  `tune` is how the autotune reaches each loop: the rate loop is tuned by the
+ *  run, the velocity loop by no autotune at all. */
 function tuningDoc(overrides) {
   return Object.assign({
     connected: true,
@@ -1865,6 +1874,7 @@ function tuningDoc(overrides) {
       {
         id: "rate", title: "Rate Controller", kind: "fields",
         hint: "The innermost loop.",
+        tune: { mode: "run", text: "Tunes the roll, pitch and yaw rate gains." },
         charts: [{
           id: "rollrate", title: "Roll rate", unit: "deg/s",
           actual: "rollspeed", setpoint: "rollspeed_sp",
@@ -1879,6 +1889,7 @@ function tuningDoc(overrides) {
       {
         id: "velocity", title: "Velocity Controller", kind: "fields",
         hint: "PX4 has no autotune for it.",
+        tune: { mode: "manual", text: "PX4 has no autotune for this loop." },
         charts: [{ id: "vx", title: "Velocity north", unit: "m/s", actual: "vx", setpoint: "vx_sp" }],
         sections: [{
           id: "horizontal", title: "Horizontal velocity", fields: [
@@ -1891,6 +1902,9 @@ function tuningDoc(overrides) {
         label: "Multicopter autotune", family: "MC", enabled: true,
         enable_param: "MC_AT_EN",
         hint: "PX4 tunes in flight.",
+        progress: true,
+        running_text: "The autopilot is exciting each axis in turn.",
+        done_text: "The tune finished. Land and disarm to apply the gains.",
         steps: ["Take off and hold a hover.", "Start the tune and let go."],
         charts: [],
         sections: [{
@@ -1933,18 +1947,69 @@ function tabs(container) {
 function startBtn(container) { return buttonByLabel(container, "Start autotune"); }
 function stopBtn(container) { return buttonByLabel(container, "Stop autotune"); }
 
-async function testTuningRendersOneTabPerControlLoop() {
+function loops(container) {
+  return findByClass(container, "tune-loop").map((l) => l.dataset.loop);
+}
+
+async function testTuningRendersEveryLoopOnOnePage() {
   const fake = makeFakeTelemetry({ state: DISARMED });
   const container = await openTuning(fake);
 
-  assert.deepEqual(tabs(container), ["rate", "velocity", "autotune"],
-    "one tab per loop the firmware reported, innermost first");
-  assert.equal(findByClass(container, "tune-tab")[0].className.includes("active"), true,
-    "the innermost loop is the one opened first");
-  // Only the active group's fields are mounted — four pages of gains at once
-  // is the flat list this page exists to replace.
+  assert.deepEqual(tabs(container), ["rate", "velocity"],
+    "the strip lists each loop the firmware reported, innermost first");
+  assert.deepEqual(loops(container).filter((id) => id !== "autotune"), ["rate", "velocity"],
+    "and every one of them is on the page at once");
+  // The fields of every loop are mounted together: the page scrolls from the
+  // rate loop to the velocity loop instead of hiding one behind a tab.
   assert.deepEqual(findByClass(container, "tune-field").map((f) => f.dataset.param),
-    ["MC_ROLLRATE_P", "MC_ROLLRATE_D"]);
+    ["MC_ROLLRATE_P", "MC_ROLLRATE_D", "MPC_XY_VEL_P_ACC", "MC_AT_EN"]);
+  assert.deepEqual(findByClass(container, "tune-chart").map((c) => c.dataset.chart),
+    ["rollrate", "vx"], "and so is every loop's graph");
+}
+
+async function testEveryLoopHasItsOwnTuneButtonBesideIt() {
+  const fake = makeFakeTelemetry({ state: FLYING });
+  const container = await openTuning(fake);
+
+  const sides = findByClass(container, "tune-side");
+  assert.deepEqual(sides.map((s) => s.dataset.loop), ["rate", "velocity"],
+    "one tune panel per controller");
+  const rate = buttonByLabel(sides[0], "Start autotune");
+  assert.ok(rate && !rate.disabled, "the loop the autotune tunes has a live button");
+  assert.ok(textOf(sides[0]).includes("roll, pitch and yaw rate"), "and says what it tunes");
+
+  const velocity = buttonByLabel(sides[1], "No autotune");
+  assert.ok(velocity && velocity.disabled,
+    "a loop no autotune covers is greyed, not left out");
+  assert.ok(textOf(sides[1]).includes("no autotune for this loop"),
+    "with the reason on it");
+  assert.equal(buttonByLabel(sides[1], "Start autotune"), undefined);
+}
+
+async function testALoopTunedTogetherWithAnotherStartsThatRunAndSaysSo() {
+  const doc = tuningDoc();
+  doc.groups.splice(1, 0, {
+    id: "attitude", title: "Attitude Controller", kind: "fields", hint: "",
+    tune: { mode: "with", with: "rate", text: "PX4 sets the attitude gains in the same run as the rate controller." },
+    charts: [],
+    sections: [{ id: "gains", title: "Attitude gains", fields: [
+      { param: "MC_ROLL_P", label: "Roll P", kind: "number", value: 6.5, step: 0.001, min: 0 },
+    ] }],
+  });
+  const fake = makeFakeTelemetry({ state: FLYING });
+  const container = await openTuning(fake, doc);
+
+  const side = findByClass(container, "tune-side").filter((e) => e.dataset.loop === "attitude")[0];
+  const button = buttonByLabel(side, "Start autotune");
+  assert.ok(button && !button.disabled, "the attitude controller has its own button");
+  assert.ok(textOf(side).includes("same run as the rate controller"),
+    "which says it starts the run the rate controller is tuned in");
+
+  fire(button, "click");
+  await flushMicrotasks();
+  const start = fake.postCalls.find((c) => c.url === "/api/autotune");
+  assert.deepEqual(start.payload, { axis: "all", enabled: true },
+    "it is one run on the vehicle, however it was started");
 }
 
 async function testEveryLoopIsEditableByHandNotJustAutotuned() {
@@ -1953,9 +2018,9 @@ async function testEveryLoopIsEditableByHandNotJustAutotuned() {
 
   // The velocity controller has no autotune in PX4 at all, so if it is not
   // editable here it is not tunable from Corvus at all.
-  fire(findByClass(container, "tune-tab")[1], "click");
-  const input = findByClass(container, "tune-input")[0];
-  assert.equal(input.dataset.param, "MPC_XY_VEL_P_ACC");
+  const input = findByClass(container, "tune-input")
+    .filter((i) => i.dataset.param === "MPC_XY_VEL_P_ACC")[0];
+  assert.ok(input, "the velocity gain is on the page");
 
   input.value = "2.4";
   fire(input, "change");
@@ -1984,8 +2049,8 @@ async function testTuningCheckValuesConfirmsAGainAndRedrawsFresh() {
   const check = findOneByClass(container, "tune-check");
   assert.ok(check && !check.disabled, "Check values is offered once the gains are read");
 
-  fire(findByClass(container, "tune-tab")[1], "click");
-  const input = findByClass(container, "tune-input")[0];
+  const input = findByClass(container, "tune-input")
+    .filter((i) => i.dataset.param === "MPC_XY_VEL_P_ACC")[0];
   input.value = "2.4";
   fire(input, "change");
   await flushMicrotasks();
@@ -1999,23 +2064,28 @@ async function testTuningCheckValuesConfirmsAGainAndRedrawsFresh() {
     "every loop is read back, not only the tab on screen");
   assert.ok(fake.requests.includes("/api/tuning?fresh=1"), "the redraw asks the vehicle");
   assert.ok(findOneByClass(container, "tune-check-card"), "the outcome is shown");
-  assert.equal(findByClass(container, "tune-tab").filter((t) => t.className.includes("active"))[0]
-    .dataset.group, "velocity", "the operator stays on the loop they were checking");
+  assert.ok(findByClass(container, "tune-input")
+    .some((i) => i.dataset.param === "MPC_XY_VEL_P_ACC"),
+  "the page is redrawn with every loop still on it");
 }
 
-async function testSwitchingTabsSwapsTheFieldsAndTheCharts() {
+async function testTheTabStripJumpsToALoopWithoutHidingTheOthers() {
   window.Plotly = fakePlotly();
   const fake = makeFakeTelemetry({ state: DISARMED });
   const container = await openTuning(fake);
 
+  const jumps = [];
+  findByClass(container, "tune-loop").forEach((block) => {
+    block.scrollIntoView = (opts) => jumps.push([block.dataset.loop, opts.block]);
+  });
   fire(findByClass(container, "tune-tab")[1], "click");
-  assert.deepEqual(findByClass(container, "tune-field").map((f) => f.dataset.param),
-    ["MPC_XY_VEL_P_ACC"], "the rate fields are gone, the velocity ones are up");
-  assert.deepEqual(findByClass(container, "tune-chart").map((c) => c.dataset.chart),
-    ["vx"], "and the chart follows the loop");
+
+  assert.deepEqual(jumps, [["velocity", "start"]], "the page scrolls to the loop");
   assert.deepEqual(
     findByClass(container, "tune-tab").map((t) => t.className.includes("active")),
-    [false, true, false], "exactly one tab is active");
+    [false, true], "the tab names the loop in view");
+  assert.equal(findByClass(container, "tune-chart").length, 2,
+    "and nothing was swapped out: the rate graph is still there");
   delete window.Plotly;
 }
 
@@ -2025,7 +2095,6 @@ async function testAutotuneIsOfferedInFlightNotOnTheGround() {
   // the old page disabled the button on exactly the state that works.
   const fake = makeFakeTelemetry({ state: DISARMED });
   const container = await openTuning(fake);
-  fire(findByClass(container, "tune-tab")[2], "click");
 
   const gate = findOneByClass(container, "tune-gate");
   assert.ok(startBtn(container).disabled, "a disarmed vehicle cannot be autotuned");
@@ -2048,7 +2117,6 @@ async function testAnUnreportedLandedStateDoesNotLockTheAutotuneOut() {
   // ground". The backend applies the same rule; PX4 stays the authority.
   const fake = makeFakeTelemetry({ state: DISARMED });
   const container = await openTuning(fake);
-  fire(findByClass(container, "tune-tab")[2], "click");
 
   fake.getSubCb()({ connected: true, armed: true, landed_state: 0, warnings: [] });
   assert.ok(!startBtn(container).disabled,
@@ -2058,7 +2126,6 @@ async function testAnUnreportedLandedStateDoesNotLockTheAutotuneOut() {
 async function testStartingAndStoppingTheAutotune() {
   const fake = makeFakeTelemetry({ state: FLYING });
   const container = await openTuning(fake);
-  fire(findByClass(container, "tune-tab")[2], "click");
 
   fire(startBtn(container), "click");
   await flushMicrotasks();
@@ -2085,7 +2152,6 @@ async function testStartingAndStoppingTheAutotune() {
 async function testAFinishedAutotuneRereadsTheGainsItWrote() {
   const fake = makeFakeTelemetry({ state: FLYING });
   const container = await openTuning(fake);
-  fire(findByClass(container, "tune-tab")[2], "click");
   const before = fake.requests.filter((u) => u === "/api/tuning").length;
 
   fake.getSubCb()(Object.assign({}, FLYING, { autotune_state: "running", autotune_progress: 90 }));
@@ -2121,7 +2187,6 @@ async function testTheAutotuneAxesAreChosenBesideTheStartButton() {
   // pitch on the next flight. They sit in the card that starts the tune.
   const fake = makeFakeTelemetry({ state: DISARMED });
   const container = await openTuning(fake, selectableAxesDoc(1));
-  fire(findByClass(container, "tune-tab")[2], "click");
 
   const card = findOneByClass(container, "tune-autotune");
   assert.ok(findOneByClass(card, "tune-axes"), "the axis row is in the autotune card");
@@ -2144,7 +2209,6 @@ async function testTheAutotuneAxesAreChosenBesideTheStartButton() {
 async function testAnEmptyAxisSelectionBlocksTheStart() {
   const fake = makeFakeTelemetry({ state: DISARMED });
   const container = await openTuning(fake, selectableAxesDoc(1));
-  fire(findByClass(container, "tune-tab")[2], "click");
 
   const roll = axisBox(container, "AUTOTUNE_AXES", 0);
   roll.checked = false;
@@ -2175,7 +2239,6 @@ async function testAFixedAxisSetIsShownWithItsReason() {
   };
   const fake = makeFakeTelemetry({ state: FLYING });
   const container = await openTuning(fake, doc);
-  fire(findByClass(container, "tune-tab")[2], "click");
 
   const row = findOneByClass(container, "tune-axes-fixed");
   assert.ok(row, "the fixed row is rendered");
@@ -2191,14 +2254,87 @@ async function testAnAutotuneModuleThatIsOffIsCalledOut() {
   doc.groups[2].enabled = false;
   const fake = makeFakeTelemetry({ state: FLYING });
   const container = await openTuning(fake, doc);
-  fire(findByClass(container, "tune-tab")[2], "click");
 
   const warning = findOneByClass(container, "tune-module-warning");
   assert.ok(!warning.hidden, "a compiled-in but switched-off module is stated");
-  assert.ok(warning.textContent.includes("reboot"), "including the reboot it needs");
+  assert.ok(textOf(warning).includes("reboot"), "including the reboot it needs");
+  assert.ok(buttonByLabel(warning, "Reboot autopilot"), "with the button that does it");
+  assert.ok(startBtn(container).disabled, "and no tune is offered until it has happened");
 }
 
-async function testAFirmwareWithoutAnAutotuneOffersNoAutotuneTab() {
+async function testSwitchingTheModuleOnAsksForARebootAndHoldsTheStart() {
+  const doc = tuningDoc();
+  doc.groups[2].enabled = false;
+  const fake = makeFakeTelemetry({ state: DISARMED });
+  const container = await openTuning(fake, doc);
+  const warning = findOneByClass(container, "tune-module-warning");
+  assert.ok(textOf(warning).includes("switched off"));
+
+  const select = findByClass(container, "tune-select")
+    .filter((e) => e.dataset.param === "MC_AT_EN")[0];
+  select.value = "1";
+  fire(select, "change");
+  await flushMicrotasks();
+
+  assert.ok(!warning.hidden, "the notice stays: the module only starts after a restart");
+  assert.ok(textOf(warning).includes("was switched on"),
+    "and now says the module was switched on and needs the reboot");
+  fake.getSubCb()(FLYING);
+  assert.ok(startBtn(container).disabled, "no tune starts before the autopilot restarts");
+
+  // A vehicle that dropped off the link has most likely restarted.
+  fake.getSubCb()(OFFLINE);
+  fake.getSubCb()(FLYING);
+  assert.ok(warning.hidden, "once it is back the notice is gone");
+  assert.ok(!startBtn(container).disabled, "and the tune is offered");
+}
+
+async function testTheStatusCardShowsProgressAndSaysWhatIsHappening() {
+  const fake = makeFakeTelemetry({ state: FLYING });
+  const container = await openTuning(fake);
+  const message = findOneByClass(container, "tune-message");
+  const percent = findOneByClass(container, "tune-progress-percent");
+  const bar = findOneByClass(container, "tune-progress");
+  const fill = findOneByClass(container, "calib-progress-fill");
+  const sideStatus = findByClass(container, "tune-side-status")[0];
+
+  assert.ok(textOf(message).includes("No tune is running"), "idle says so");
+  assert.equal(fill.style.width, "0%", "the bar is there from the start, empty");
+
+  fake.getSubCb()(Object.assign({}, FLYING, { autotune_state: "running", autotune_progress: 40 }));
+  assert.equal(textOf(percent), "40%", "the figure is the autopilot's own");
+  assert.equal(fill.style.width, "40%");
+  assert.ok(textOf(message).includes("exciting each axis"), "and the line says what it is doing");
+  assert.equal(textOf(sideStatus), "Tuning 40%", "the controller panel follows the run");
+  assert.ok(!bar.className.includes("is-indeterminate"));
+
+  fake.getSubCb()(Object.assign({}, FLYING, { autotune_state: "done", autotune_progress: 100 }));
+  assert.equal(fill.style.width, "100%");
+  assert.ok(textOf(message).includes("Land and disarm to apply"),
+    "a finished tune says what to do next");
+  assert.equal(textOf(sideStatus), "Complete");
+
+  fake.getSubCb()(Object.assign({}, FLYING, { autotune_state: "failed", autotune_progress: 0 }));
+  assert.ok(textOf(message).includes("did not finish"), "a failed one says so");
+  assert.ok(textOf(message).includes("reboot"), "and names the reboot that may be missing");
+}
+
+async function testARunWithoutAProgressFigureDoesNotInventOne() {
+  // ArduPilot's autotune is a flight mode that narrates over the console.
+  const doc = tuningDoc();
+  doc.groups[2].progress = false;
+  const fake = makeFakeTelemetry({ state: FLYING });
+  const container = await openTuning(fake, doc);
+
+  fake.getSubCb()(Object.assign({}, FLYING, { autotune_state: "running", autotune_progress: 0 }));
+  const bar = findOneByClass(container, "tune-progress");
+  assert.ok(bar.className.includes("is-indeterminate"), "the bar shows activity, not a share");
+  assert.equal(textOf(findOneByClass(container, "tune-progress-percent")), "",
+    "no percentage is claimed");
+  assert.equal(textOf(findByClass(container, "tune-side-status")[0]), "Tuning");
+}
+
+async function testAFirmwareWithoutAnAutotuneOffersNoStartButton() {
   const doc = tuningDoc();
   doc.groups = doc.groups.slice(0, 2);
   const fake = makeFakeTelemetry({ state: FLYING });
@@ -2266,7 +2402,7 @@ async function testChartsPlotTheSetpointBesideTheResponse() {
   clock = 1000;
   const container = await openTuning(fake);
 
-  assert.equal(findByClass(container, "tune-chart").length, 1, "one chart for this loop");
+  assert.equal(findByClass(container, "tune-chart").length, 2, "one chart per loop, all on the page");
   const before = plot.reactCalls.length;
   assert.ok(before >= 1, "the chart is initialised");
 
@@ -2279,14 +2415,14 @@ async function testChartsPlotTheSetpointBesideTheResponse() {
   clock = 1000 + 150;
   cb(Object.assign({}, DISARMED,
     { setpoints_live: true, rollspeed: 12, rollspeed_sp: 15 }));
-  const drawn = plot.reactCalls[plot.reactCalls.length - 1].data;
+  const drawn = lastDraw(plot, "rollrate");
   assert.equal(drawn.length, 2, "two traces: what was asked for, and what happened");
   assert.ok(drawn[0].y.includes(12), "the response trace carries the measured rate");
   assert.ok(drawn[1].y.includes(15), "the setpoint trace carries the commanded rate");
   assert.equal(drawn[1].line.dash, "dot", "the setpoint is drawn as the reference");
 
   fire(findOneByClass(container, "setup-back"), "click");
-  assert.equal(plot.purgeCalls.length, 1, "Plotly.purge exactly once per chart on teardown");
+  assert.equal(plot.purgeCalls.length, 2, "Plotly.purge exactly once per chart on teardown");
   delete window.Plotly;
 }
 
@@ -2306,10 +2442,10 @@ async function testEveryRedrawHandsPlotlyFreshArrays() {
 
   clock = 1000 + 150;
   cb(sample(10));
-  const first = plot.reactCalls[plot.reactCalls.length - 1].data;
+  const first = lastDraw(plot, "rollrate");
   clock = 1000 + 300;
   cb(sample(20));
-  const second = plot.reactCalls[plot.reactCalls.length - 1].data;
+  const second = lastDraw(plot, "rollrate");
 
   assert.notEqual(first, second, "the second sample redrew");
   first.forEach((trace, i) => {
@@ -2322,6 +2458,53 @@ async function testEveryRedrawHandsPlotlyFreshArrays() {
   assert.deepEqual(first[1].y, [11]);
   assert.deepEqual(second[0].y, [10, 20], "the new draw carries both samples");
   assert.deepEqual(second[1].y, [11, 21]);
+  delete window.Plotly;
+}
+
+async function testAGraphScrolledOutOfViewIsBufferedButNotRedrawn() {
+  // Every loop's graphs share one page now. Ten live Plotly passes ten times a
+  // second would cost more than the tune is worth, so only graphs in view draw.
+  const plot = fakePlotly();
+  window.Plotly = plot;
+  const observed = [];
+  let notify = null;
+  window.IntersectionObserver = function (cb) {
+    notify = cb;
+    this.observe = (el) => observed.push(el);
+    this.disconnect = () => {};
+  };
+  const fake = makeFakeTelemetry({ state: DISARMED });
+  clock = 1000;
+  await openTuning(fake);
+  assert.equal(observed.length, 2, "every graph is watched");
+
+  notify([{ target: observed[1], isIntersecting: false }]);
+  const velocityDraws = () => plot.reactCalls.filter((c) => c.gd.dataset.chart === "vx").length;
+  const before = velocityDraws();
+  clock = 1000 + 150;
+  fake.getSubCb()(Object.assign({}, DISARMED, { setpoints_live: true, vx: 3, vx_sp: 4 }));
+  assert.equal(velocityDraws(), before, "a graph out of view is not redrawn");
+
+  notify([{ target: observed[1], isIntersecting: true }]);
+  assert.equal(velocityDraws(), before + 1, "it draws as soon as it scrolls into view");
+  assert.ok(lastDraw(plot, "vx")[0].y.includes(3), "with what arrived while it was away");
+  delete window.IntersectionObserver;
+  delete window.Plotly;
+}
+
+async function testTheTracesSurviveAReloadOfTheGains() {
+  const plot = fakePlotly();
+  window.Plotly = plot;
+  const fake = makeFakeTelemetry({ state: DISARMED });
+  clock = 1000;
+  const container = await openTuning(fake);
+  clock = 1000 + 150;
+  fake.getSubCb()(Object.assign({}, DISARMED, { setpoints_live: true, rollspeed: 7, rollspeed_sp: 8 }));
+
+  fire(buttonByLabel(container, "Reload"), "click");
+  for (let i = 0; i < 4; i += 1) await flushMicrotasks();
+  assert.ok(lastDraw(plot, "rollrate")[0].y.includes(7),
+    "a finished tune re-reads the gains without wiping the run it just recorded");
   delete window.Plotly;
 }
 
@@ -2339,7 +2522,7 @@ async function testAFirmwareThatSendsNoSetpointDrawsNoSetpointTrace() {
   clock = 1000 + 150;
   cb(Object.assign({}, DISARMED, { setpoints_live: false, rollspeed: 12 }));
 
-  const drawn = plot.reactCalls[plot.reactCalls.length - 1].data;
+  const drawn = lastDraw(plot, "rollrate");
   assert.equal(drawn.length, 1, "the response is drawn alone rather than against a fiction");
   delete window.Plotly;
 }
@@ -2375,8 +2558,8 @@ async function testAChartTornDownMidRedrawDoesNotThrow() {
   clock = 1000;
   const container = await openTuning(fake);
 
-  // Switch tabs repeatedly: each swap purges the previous group's chart while
-  // its react is still in flight.
+  // Jump between loops, then leave while the graphs are still being drawn: the
+  // purge must not meet a redraw that is still in flight.
   fire(findByClass(container, "tune-tab")[1], "click");
   fire(findByClass(container, "tune-tab")[0], "click");
   fire(findOneByClass(container, "setup-back"), "click");
@@ -3725,10 +3908,12 @@ async function run() {
   await withReset(testCalibrationArmedGating);
   await withReset(testReadinessStripReflectsLinkAndArmedState);
 
-  await withReset(testTuningRendersOneTabPerControlLoop);
+  await withReset(testTuningRendersEveryLoopOnOnePage);
   await withReset(testTuningCheckValuesConfirmsAGainAndRedrawsFresh);
   await withReset(testEveryLoopIsEditableByHandNotJustAutotuned);
-  await withReset(testSwitchingTabsSwapsTheFieldsAndTheCharts);
+  await withReset(testTheTabStripJumpsToALoopWithoutHidingTheOthers);
+  await withReset(testEveryLoopHasItsOwnTuneButtonBesideIt);
+  await withReset(testALoopTunedTogetherWithAnotherStartsThatRunAndSaysSo);
   await withReset(testAutotuneIsOfferedInFlightNotOnTheGround);
   await withReset(testAnUnreportedLandedStateDoesNotLockTheAutotuneOut);
   await withReset(testStartingAndStoppingTheAutotune);
@@ -3737,13 +3922,18 @@ async function run() {
   await withReset(testAnEmptyAxisSelectionBlocksTheStart);
   await withReset(testAFixedAxisSetIsShownWithItsReason);
   await withReset(testAnAutotuneModuleThatIsOffIsCalledOut);
-  await withReset(testAFirmwareWithoutAnAutotuneOffersNoAutotuneTab);
+  await withReset(testSwitchingTheModuleOnAsksForARebootAndHoldsTheStart);
+  await withReset(testTheStatusCardShowsProgressAndSaysWhatIsHappening);
+  await withReset(testARunWithoutAProgressFigureDoesNotInventOne);
+  await withReset(testAFirmwareWithoutAnAutotuneOffersNoStartButton);
   await withReset(testGainsAreReadOnlyWhileArmed);
   await withReset(testTuningDisconnectedRendersAnExplanationNotAnError);
   await withReset(testTuningChipsSitInTheTitleRow);
 
   await withReset(testChartsPlotTheSetpointBesideTheResponse);
   await withReset(testEveryRedrawHandsPlotlyFreshArrays);
+  await withReset(testAGraphScrolledOutOfViewIsBufferedButNotRedrawn);
+  await withReset(testTheTracesSurviveAReloadOfTheGains);
   await withReset(testAFirmwareThatSendsNoSetpointDrawsNoSetpointTrace);
   await withReset(testTheSetpointStreamIsRaisedWhileOpenAndHandedBackOnLeaving);
   await withReset(testAChartTornDownMidRedrawDoesNotThrow);

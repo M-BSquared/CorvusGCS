@@ -526,6 +526,7 @@
   .calib-cue svg,
   .calib-log-summary::after,
   .autotune-live-dot,
+  .tune-progress.is-indeterminate .calib-progress-fill,
   .tune-tab,
   .link-kind,
   .link-card-caret,

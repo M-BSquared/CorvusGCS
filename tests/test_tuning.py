@@ -618,3 +618,69 @@ def test_the_tuning_stream_is_not_refused_while_armed() -> None:
 
     assert bridge.set_tuning_stream(True, 20) is True
     assert "armed" not in bridge.get_last_command_error()
+
+
+# ---------------------------------------------------------------------------
+# Schema: how the autotune reaches each controller (the button beside it)
+# ---------------------------------------------------------------------------
+
+def _tune_modes(doc: dict[str, Any]) -> dict[str, str]:
+    return {g["id"]: g["tune"]["mode"] for g in doc["groups"] if g["kind"] == "fields"}
+
+
+def test_a_multicopter_autotune_tunes_rate_and_attitude_in_one_run() -> None:
+    doc = tuning_config.build(_multicopter_values())
+    assert _tune_modes(doc) == {
+        "rate": "run", "attitude": "with", "velocity": "manual", "position": "manual",
+    }
+    attitude = _groups(doc)["attitude"]["tune"]
+    assert attitude["with"] == "rate", "the attitude button names the run it starts"
+
+
+def test_a_loop_no_autotune_covers_says_why_instead_of_vanishing() -> None:
+    doc = tuning_config.build(_multicopter_values())
+    for loop in ("velocity", "position"):
+        text = _groups(doc)[loop]["tune"]["text"]
+        assert "no autotune" in text.lower()
+
+
+def test_the_fixed_wing_autotune_does_not_claim_the_attitude_loop() -> None:
+    doc = tuning_config.build(_fixedwing_values())
+    assert _tune_modes(doc)["rate"] == "run"
+    assert _tune_modes(doc)["attitude"] == "manual"
+
+
+def test_without_an_autotune_module_every_loop_is_manual() -> None:
+    values = {k: v for k, v in _multicopter_values().items() if not k.startswith("MC_AT_")}
+    doc = tuning_config.build(values)
+    assert set(_tune_modes(doc).values()) == {"manual"}
+    assert all("no autotune" in g["tune"]["text"].lower() for g in doc["groups"])
+
+
+def test_the_autotune_group_reports_progress_and_what_a_finished_tune_means() -> None:
+    values = _multicopter_values()
+    group = _groups(tuning_config.build(values))["autotune"]
+    assert group["progress"] is True
+    assert group["running_text"]
+    assert group["charts"] == [], "the graphs sit beside each loop, not in the run card"
+
+    values["MC_AT_APPLY"] = 0
+    never = _groups(tuning_config.build(values))["autotune"]["done_text"]
+    assert "not applied" in never, "an apply setting of Never changes nothing"
+    values["MC_AT_APPLY"] = 2
+    now = _groups(tuning_config.build(values))["autotune"]["done_text"]
+    assert "already active" in now
+    values["MC_AT_APPLY"] = 1
+    after = _groups(tuning_config.build(values))["autotune"]["done_text"]
+    assert "Land and disarm" in after
+
+
+def test_the_tune_texts_use_no_dashes() -> None:
+    for values in (_multicopter_values(), _fixedwing_values()):
+        doc = tuning_config.build(values)
+        texts = [g["tune"]["text"] for g in doc["groups"] if g["kind"] == "fields"]
+        auto = _groups(doc).get("autotune")
+        if auto:
+            texts += [auto["running_text"], auto["done_text"]]
+        for text in texts:
+            assert "—" not in text and "–" not in text and " - " not in text

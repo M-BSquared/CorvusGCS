@@ -177,6 +177,28 @@ def test_siblings_meet_without_a_step() -> None:
         assert abs(edge_w - edge_e) <= 10.01, (row, edge_w, edge_e)
 
 
+def test_siblings_decode_their_ancestor_once(monkeypatch) -> None:
+    """A 3D view cuts up to sixteen tiles from one coarse ancestor, and
+    decoding it was most of each cut's cost."""
+    png = _png(_grid(lambda c, r: 500 + 2.0 * c + r))
+    real = dem_tiles.decode
+    calls = []
+    monkeypatch.setattr(dem_tiles, "decode", lambda data: calls.append(1) or real(data))
+    dem_tiles._shared_decoded.clear()
+    tiles = [dem_tiles.overzoom(png, 2, i, j) for i in range(4) for j in range(4)]
+    assert len(calls) == 1
+    assert all(tiles)
+    assert dem_tiles.heights(png, "terrarium") is not None
+    assert len(calls) == 1, "the surroundings of a custom model read the same grid"
+
+
+def test_the_shared_decode_memory_is_bounded() -> None:
+    dem_tiles._shared_decoded.clear()
+    for k in range(dem_tiles.DECODED_CACHE_SIZE + 5):
+        dem_tiles.overzoom(_png(_grid(lambda c, r, k=k: float(k))), 1, 0, 0)
+    assert len(dem_tiles._shared_decoded) == dem_tiles.DECODED_CACHE_SIZE
+
+
 def test_overzoom_rejects_an_offset_outside_the_ancestor() -> None:
     png = _png(_grid(lambda c, r: 0.0))
     assert dem_tiles.overzoom(png, 1, 2, 0) is None

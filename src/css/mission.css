@@ -51,9 +51,7 @@
 /* The planner's trash. It is .track-clear — literally the Home map's
    clear-track button, in the Home map's corner, at the Home map's weight —
    because it is the same kind of control: the one press on this map that
-   throws the work away. Only the hover colour differs, and only because what
-   it deletes is the amber plan rather than the red flown track. */
-.mission-plan-clear:hover { color: var(--plan); }
+   throws the work away. It takes the same red hover as the Home map's. */
 
 .mission-map { position: absolute; inset: 0; }
 /* A tool is armed: the next click on the map places something, and the cursor

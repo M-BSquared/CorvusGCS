@@ -344,3 +344,25 @@ def test_a_large_paste_is_sent_whole():
     text = "ä" * 70000
     session.send(text)
     assert b"".join(channel.sent) == text.encode("utf-8")
+
+
+def test_starting_the_server_does_not_import_paramiko() -> None:
+    """paramiko, and cryptography, bcrypt and PyNaCl behind it, wait for the first SSH connect.
+
+    They cost about 50 ms and several MB on every start of a station that may
+    never open an SSH connection. A top-level ``import paramiko`` anywhere on
+    the server's import path brings that back.
+    """
+    import subprocess
+    import sys
+    probe = ("import sys, corvus.server; "
+             "print(sorted(m for m in ('paramiko', 'cryptography', 'nacl', 'bcrypt') if m in sys.modules))")
+    out = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True, check=True,
+                         cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    assert out.stdout.strip() == "[]", out.stdout
+
+
+def test_the_lazy_paramiko_is_the_real_one_once_used() -> None:
+    assert ssh_bridge.paramiko.SSHClient is paramiko.SSHClient
+    assert issubclass(ssh_bridge._RememberAndWarnPolicy, paramiko.AutoAddPolicy)
+    assert ssh_bridge._RememberAndWarnPolicy is ssh_bridge._remember_and_warn_policy()

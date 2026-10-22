@@ -170,6 +170,31 @@ def decode(data: bytes) -> _Grid | None:
     return _Grid(width, height, values)
 
 
+_shared_lock = threading.Lock()
+_shared_decoded: OrderedDict[bytes, _Grid] = OrderedDict()
+
+
+def _decode_shared(data: bytes) -> _Grid | None:
+    """decode(), remembered by the PNG's bytes.
+
+    One coarse tile is the ancestor of every finer one cut from it, up to
+    sixteen at the zooms a 3D view asks for, and decoding it is most of what
+    cutting each of them costs. The grid is shared, so callers only read it.
+    """
+    with _shared_lock:
+        grid = _shared_decoded.get(data)
+        if grid is not None:
+            _shared_decoded.move_to_end(data)
+            return grid
+    grid = decode(data)
+    if grid is not None:
+        with _shared_lock:
+            _shared_decoded[data] = grid
+            while len(_shared_decoded) > DECODED_CACHE_SIZE:
+                _shared_decoded.popitem(last=False)
+    return grid
+
+
 def _chunk(kind: bytes, body: bytes) -> bytes:
     return (struct.pack(">I", len(body)) + kind + body
             + struct.pack(">I", zlib.crc32(kind + body) & 0xFFFFFFFF))
@@ -248,7 +273,12 @@ def _resample_float(grid: _Grid, dz: int, sub_x: int, sub_y: int,
 
 def _pack(values: list[float]) -> array:
     top = (1 << 24) - 1
-    return array(_U32, (min(top, max(0, int(v + 0.5))) for v in values))
+    # Clamped only when something is out of range, which real ground never
+    # is: a min and a max per pixel were half the cost of every tile.
+    ints = [int(v + 0.5) for v in values]
+    if ints and (min(ints) < 0 or max(ints) > top):
+        ints = [0 if i < 0 else top if i > top else i for i in ints]
+    return array(_U32, ints)
 
 
 def resample(grid: _Grid, dz: int, sub_x: int, sub_y: int) -> array:
@@ -349,7 +379,7 @@ def transcode(png: bytes, from_encoding: str, to_encoding: str, size: int) -> by
     """
     if from_encoding not in ENCODINGS or to_encoding not in ENCODINGS or size < 2:
         return None
-    grid = decode(png)
+    grid = _decode_shared(png)
     if grid is None:
         return None
     values = _resample_float(grid, 0, 0, 0, size, size)
@@ -371,7 +401,7 @@ def heights(png: bytes, encoding: str, dz: int = 0, sub_x: int = 0, sub_y: int =
     """
     if encoding not in ENCODINGS:
         return None
-    grid = decode(png)
+    grid = _decode_shared(png)
     if grid is None:
         return None
     values = _resample_float(grid, dz, sub_x, sub_y, size, size)
@@ -389,7 +419,7 @@ def overzoom(ancestor_png: bytes, dz: int, sub_x: int, sub_y: int) -> bytes | No
     """One-shot: derive a child tile from an ancestor PNG. None if unreadable."""
     if dz < 1 or not (0 <= sub_x < (1 << dz)) or not (0 <= sub_y < (1 << dz)):
         return None
-    grid = decode(ancestor_png)
+    grid = _decode_shared(ancestor_png)
     if grid is None:
         return None
     return encode(grid.width, grid.height, resample(grid, dz, sub_x, sub_y))

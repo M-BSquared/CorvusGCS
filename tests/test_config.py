@@ -440,6 +440,19 @@ def test_notification_marks_is_kept_only_as_a_genuine_boolean(tmp_path) -> None:
     assert load_config(str(p)).ui == {"notification_marks": True}
 
 
+def test_takeoff_land_split_is_kept_only_as_a_genuine_boolean(tmp_path) -> None:
+    """The one-button bar is the default, so only a real ``True`` splits it."""
+    p = tmp_path / "c.json"
+    p.write_text(json.dumps({}), encoding="utf-8")
+    assert (load_config(str(p)).ui or {}).get("takeoff_land_split") is None
+    p.write_text(json.dumps({"ui": {"takeoff_land_split": "true"}}), encoding="utf-8")
+    assert (load_config(str(p)).ui or {}).get("takeoff_land_split") is None
+    p.write_text(json.dumps({"ui": {"takeoff_land_split": True}}), encoding="utf-8")
+    assert load_config(str(p)).ui == {"takeoff_land_split": True}
+    p.write_text(json.dumps({"ui": {"takeoff_land_split": False}}), encoding="utf-8")
+    assert load_config(str(p)).ui == {"takeoff_land_split": False}
+
+
 def test_flight_bar_shrink_is_kept_only_as_a_genuine_boolean(tmp_path) -> None:
     """Opt-in, like ``mission_page``, and a genuine boolean or nothing.
 
@@ -469,7 +482,7 @@ def test_flight_bar_shrink_is_kept_only_as_a_genuine_boolean(tmp_path) -> None:
 
 
 @pytest.mark.parametrize(
-    "key", ["track_earlier_flights", "track_rainbow", "track_clear_on_restart"])
+    "key", ["track_earlier_flights", "track_rainbow", "track_clear_on_restart", "track_in_air"])
 def test_track_switches_are_kept_only_as_genuine_booleans(tmp_path, key) -> None:
     """The track switches: a real boolean round-trips, anything else is
     dropped so the frontend falls back to its default (earlier flights in their
@@ -817,6 +830,17 @@ def test_corvus_title_bar_is_kept_only_as_a_genuine_boolean(tmp_path) -> None:
     assert (load_config(str(p)).ui or {}).get("corvus_title_bar") is None
     p.write_text(json.dumps({"ui": {"corvus_title_bar": True}}), encoding="utf-8")
     assert load_config(str(p)).ui == {"corvus_title_bar": True}
+
+
+def test_map_animation_rate_is_kept_only_as_30_or_60(tmp_path) -> None:
+    p = tmp_path / "config.json"
+    for value in (30, 60, 60.0):
+        p.write_text(json.dumps({"ui": {"map_animation_rate": value}}), encoding="utf-8")
+        assert load_config(str(p)).ui == {"map_animation_rate": int(value)}
+    # Anything else reads as absent, which the frontend takes as 30.
+    for value in (45, 0, -60, "60", True, None, [60]):
+        p.write_text(json.dumps({"ui": {"map_animation_rate": value}}), encoding="utf-8")
+        assert (load_config(str(p)).ui or {}).get("map_animation_rate") is None, value
 
 
 def test_hud_square_is_kept_only_as_a_genuine_boolean(tmp_path) -> None:

@@ -113,7 +113,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 7px 0;
+  padding: 5px 0;
   border-bottom: 1px solid var(--border-soft);
 }
 .schw-row:first-child { padding-top: 0; }
@@ -123,13 +123,13 @@
    wrapping the row onto two lines. */
 .btn.schw-launch {
   flex: 1;
-  font-size: 12px;
+  font-size: 11px;
   min-width: 0;
   justify-content: flex-start;
   /* One height whatever the button holds: the arrow into the terminal is 22px
      and a background button has none, which made those rows shorter. */
   box-sizing: border-box;
-  height: 36px;
+  height: 32px;
   padding-top: 0;
   padding-bottom: 0;
 }
@@ -165,13 +165,13 @@
 .btn.schw-launch[data-color]:hover { filter: brightness(1.1); }
 
 /* The colour chips in the editor: round, the chosen one ringed. */
-/* Two even rows of five: the panel is narrow, and a strip that wrapped
-   would leave the last chip alone on a line. */
+/* One row: the chips share the panel's width and shrink with it, so the
+   strip never wraps. */
 .schw-colors {
   display: grid;
-  grid-template-columns: repeat(5, 24px);
-  justify-content: start;
-  gap: 10px;
+  grid-template-columns: repeat(9, minmax(0, 24px));
+  justify-content: space-between;
+  gap: 4px;
 }
 .schw-chip {
   position: relative;
@@ -179,8 +179,8 @@
   align-items: center;
   justify-content: center;
   box-sizing: border-box;
-  width: 24px;
-  height: 24px;
+  width: 100%;
+  aspect-ratio: 1;
   padding: 0;
   border-radius: 50%;
   border: 2px solid rgb(255 255 255 / 0.92);
@@ -191,19 +191,6 @@
 .schw-chip:hover { transform: scale(1.1); }
 .schw-chip.is-selected { box-shadow: 0 0 0 2px var(--accent-bright); }
 .schw-chip:focus-visible { outline: 2px solid var(--accent-bright); outline-offset: 2px; }
-.schw-chip-custom {
-  background: conic-gradient(#e0572b, #d98a00, #2e9e4f, #2f6fed, #8e4fd6, #e0572b);
-  color: #fff;
-}
-.schw-chip-custom i, .schw-chip-custom svg { width: 12px; height: 12px; filter: drop-shadow(0 0 1px rgb(0 0 0 / 0.6)); }
-.schw-chip-input {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  opacity: 0;
-  cursor: pointer;
-}
 
 /* The grip in edit mode: drag a row up or down by it. The grabbed row is
    carried by a transform while the others close up, so it is drawn on top and
@@ -267,8 +254,8 @@
   align-items: center;
   justify-content: center;
   flex: 0 0 auto;
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
   margin-right: -4px;
   border-radius: var(--radius-btn);
   background: transparent;

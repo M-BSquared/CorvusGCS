@@ -34,7 +34,42 @@ Corvus.termWindows = (function () {
   // theme (js/popout-page.js): "0" is solid, anything else frosted.
   const FROSTED_KEY = "corvus.frostedTerminals";
 
+  // A new terminal opens at this many characters, not at the 640x400 every
+  // other floating window gets: that frame holds a different grid with each
+  // font, bar and padding. The frame around the grid is the bar (34px), the
+  // border, the body's padding and the scrollbar, measured with the window open.
+  const COLS = 80;
+  const ROWS = 20;
+  const FALLBACK_CELL = { w: 7.2, h: 19 };
+  const FRAME_W = 21;
+  const FRAME_H = 42;
+
   function keyOf(name) { return "term:" + name; }
+
+  /** One character cell of the terminal's font, in the page's own pixels. */
+  function cellSize() {
+    try {
+      const probe = document.createElement("span");
+      probe.style.cssText = "position:absolute;visibility:hidden;white-space:pre;"
+        + "font:12px JetBrains Mono, ui-monospace, monospace";
+      probe.textContent = "W".repeat(20);
+      document.body.appendChild(probe);
+      const w = probe.offsetWidth / 20;
+      const h = Math.floor(probe.offsetHeight * 1.2);
+      probe.remove();
+      if (w > 0 && h > 0) return { w, h };
+    } catch (_e) {}
+    return FALLBACK_CELL;
+  }
+
+  /** The frame size, {w, h}, that holds a COLS x ROWS terminal. */
+  function defaultSize() {
+    const cell = cellSize();
+    return {
+      w: Math.ceil(COLS * cell.w) + FRAME_W + 1,
+      h: ROWS * cell.h + FRAME_H + 1,
+    };
+  }
 
   function popouts() {
     return (window.Corvus && Corvus.popouts) || null;
@@ -177,7 +212,7 @@ Corvus.termWindows = (function () {
     // The desktop app's default: a window of its own at once, where the frame
     // would have opened. A window coming back into the app (`at`) is a frame.
     if (po && !o.at && po.opensOutside()
-        && po.openNative(outSpec(s), F.placement(keyOf(s.name)))) {
+        && po.openNative(outSpec(s), F.placement(keyOf(s.name), defaultSize()))) {
       return true;
     }
 
@@ -187,6 +222,7 @@ Corvus.termWindows = (function () {
       key: keyOf(s.name),
       kind: KIND,
       at: o.at || null,
+      size: defaultSize(),
       title,
       subtitle: addressOf(s),
       icon: "square-terminal",

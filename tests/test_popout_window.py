@@ -108,6 +108,15 @@ def test_a_pinned_window_is_above_corvus_and_not_above_other_programs() -> None:
     assert not app.stays_on_top(pinned=False, app_active=True)
 
 
+def test_a_pinned_window_stays_on_top_while_it_is_being_moved() -> None:
+    """Muffin (Cinnamon) reports the app inactive for the length of a move; the
+    pin must not drop the window behind Corvus for that, or it is invisible
+    until it is let go of."""
+    assert app.stays_on_top(pinned=True, app_active=False, moving=True)
+    assert not app.stays_on_top(pinned=True, app_active=False, moving=False)
+    assert not app.stays_on_top(pinned=False, app_active=False, moving=True)
+
+
 # ---------------------------------------------------------------------------
 # The platforms: what a window out of the app can do, and how it is moved
 # ---------------------------------------------------------------------------

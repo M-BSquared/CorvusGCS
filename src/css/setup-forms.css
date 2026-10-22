@@ -883,3 +883,57 @@
 :where(:root[data-vw~="max-720"]) .btn.rid-suggest { grid-column: 1; }
 :where(:root[data-vw~="max-720"]) .rid-status-row { grid-template-columns: auto 1fr; }
 :where(:root[data-vw~="max-720"]) .rid-status-label { display: none; }
+
+/* ----- Landing card -----
+   The descent drawn from its own fields, then the fields as a dense grid with
+   the label over the control: seven rows of label, input and hint was the
+   tallest card on the page for what is seven numbers. */
+.safety-landing { gap: 8px; container-type: inline-size; }
+.safety-landing-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+  padding-bottom: var(--space-8); margin-bottom: 4px; border-bottom: 1px solid var(--border-soft);
+}
+.safety-landing-title { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.safety-landing-title .page-section-title { margin: 0; padding: 0; border: 0; }
+.safety-landing-head .safety-action { flex-direction: row; align-items: center; gap: 8px; }
+.safety-landing-zones { display: flex; flex-direction: column; gap: 6px; padding-top: 4px; }
+.slz {
+  display: grid; align-items: center; gap: 0 5px; min-height: 58px;
+  grid-template-columns: minmax(0, 1fr) 14px 8px 66px minmax(0, 1fr);
+}
+.slz > .slz-bar, .slz > .slz-span { align-self: stretch; }
+.slz .safety-landing-grid { padding: 0; }
+.slz .slz-end { grid-column: 5; justify-self: start; width: min(100%, 150px); grid-template-columns: minmax(0, 1fr); }
+.slz .slz-speeds { grid-column: 1; justify-self: end; width: min(100%, 150px); grid-template-columns: minmax(0, 1fr); }
+.slz-span-cell { grid-column: 4; display: flex; justify-content: flex-start; align-items: center; gap: 4px; min-width: 0; }
+.slz-span { grid-column: 3; border: 1.5px solid var(--text-3); border-left: 0; border-radius: 0 6px 6px 0; margin: 3px 0; }
+.slz-bar { grid-column: 2; border-radius: 7px; background: var(--accent); }
+.slz-brake .slz-bar { background: linear-gradient(var(--accent), color-mix(in srgb, var(--accent) 40%, transparent)); }
+.slz-land .slz-bar { background: color-mix(in srgb, var(--accent) 40%, transparent); }
+.slz-crawl .slz-bar {
+  position: relative;
+  background: repeating-linear-gradient(color-mix(in srgb, var(--accent) 60%, transparent) 0 3px, transparent 3px 6px);
+}
+.slz-crawl .slz-bar::after {
+  content: ""; position: absolute; left: -3px; right: -3px; bottom: -4px;
+  height: 2px; border-radius: 2px; background: var(--text-2);
+}
+.slz-span-text { font: 600 11.5px var(--mono); color: var(--text-1); white-space: nowrap; }
+@container (max-width: 340px) {
+  .slz { grid-template-columns: 14px 8px 66px minmax(0, 1fr); row-gap: 6px; padding: 4px 0; }
+  .slz > .slz-bar { grid-column: 1; grid-row: 1 / span 2; }
+  .slz > .slz-span { grid-column: 2; grid-row: 1 / span 2; }
+  .slz > .slz-span-cell { grid-column: 3; grid-row: 1 / span 2; }
+  .slz .slz-speeds, .slz .slz-end { grid-column: 4; justify-self: stretch; width: auto; }
+  .slz .slz-speeds { grid-row: 1; }
+  .slz .slz-end { grid-row: 2; }
+}
+.safety-landing-grid { display: grid; gap: 8px; }
+.safety-landing-grid .pform-field {
+  display: flex; flex-direction: column; align-items: stretch; justify-content: flex-end; gap: 3px;
+  padding: 0; border-bottom: 0;
+}
+.safety-landing-grid .field-label-row { min-width: 0; flex-wrap: wrap; gap: 0 6px; }
+.safety-landing-grid .pform-field-label { font-size: 11px; color: var(--text-2); }
+.safety-landing-grid .field-input.pform-input { width: 100%; min-width: 0; max-width: 96px; }
+.safety-landing-grid .pform-field-control { gap: 6px; }

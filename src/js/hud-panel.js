@@ -14,7 +14,7 @@ window.Corvus = window.Corvus || {};
               thumb on a trackpad while the aircraft is airborne
     compact   same readouts, smaller: instruments shrink and the telemetry grid
               tightens, for when the map matters more than the numbers
-    readouts  fold away ONLY the ALT AMSL / AGL / GS / V/S / HDG / SAT grid and
+    readouts  fold away ONLY the ALT AMSL / FLIGHT TIME / GS / V/S / HDG / SAT grid and
               keep the two dials, for the operator flying off the compass and
               horizon with the numbers already on the top bar
     collapse  everything folds away and the panel becomes a small control pill

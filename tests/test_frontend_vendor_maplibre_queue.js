@@ -1,32 +1,30 @@
 "use strict";
 
 /**
- * The patch this repository carries against the vendored MapLibre's image
- * request queue, and the reason it has to stay.
+ * The image request queue bug Corvus once patched in the vendored MapLibre,
+ * and the upstream fix that retired the patch.
  *
- * MapLibre 5.24's raster source builds its tile request like this:
+ * MapLibre 5.24's raster source built its tile request like this:
  *
  *   tile.abortController = new AbortController;
  *   getImage(yield transformRequest(url), tile.abortController, ...)
  *
- * The arguments are evaluated in order, so `tile.abortController` is read
- * AFTER the request transform resolves. A tile aborted in between (a pan, a
- * zoom, 3D tilting the camera) has had its controller deleted by abortTile,
- * and the request is queued with none. The queue then reads
- * `item.abortController.signal` and throws. That throw lands inside whichever
- * getImage call happened to run the queue next, which rejects THAT call: an
- * unrelated tile, often an elevation tile, is marked errored and never asked
- * for again. On screen that is imagery with holes in it and terrain with
- * square pits where a DEM tile silently failed, plus a console full of
- * "Cannot read properties of undefined (reading 'signal')".
+ * The arguments are evaluated in order, so `tile.abortController` was read
+ * AFTER the request transform resolved. A tile aborted in between (a pan, a
+ * zoom, 3D tilting the camera) had had its controller deleted by abortTile,
+ * and the request was queued with none. The queue then read
+ * `item.abortController.signal` and threw, inside whichever getImage call ran
+ * the queue next: an unrelated tile, often an elevation tile, was marked
+ * errored and never asked for again. Imagery with holes in it, terrain with
+ * square pits, and "Cannot read properties of undefined (reading 'signal')".
  *
- * The patch treats a queued request without a controller as what it is, an
- * aborted one, which the queue already knows how to skip.
- *
- * A vendored file gets replaced wholesale on an upgrade and this patch goes
- * with it. If this fails after an upgrade, first check whether the new
- * MapLibre still reads the controller after the await; if it does, re-apply
- * the edit printed below rather than deleting the test.
+ * Corvus carried CORVUS-QUEUE-PATCH against that until MapLibre fixed it
+ * upstream (6.1, maplibre-gl-js#8004): the raster and raster-dem sources now
+ * hand the controller to transformAndGetImage, which holds it as a parameter
+ * across the await and checks it for an abort before queueing. The queue loop
+ * itself still reads the controller unguarded, so the fix lives entirely in
+ * the call sites. This file checks they still look that way, so an upgrade
+ * that brings the late read back fails here instead of in the field.
  *
  * Run:
  *   node tests/test_frontend_vendor_maplibre_queue.js
@@ -36,58 +34,49 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 
-const FILE = path.join(__dirname, "..", "src", "vendor", "maplibre-gl.min.js");
+const FILE = path.join(__dirname, "..", "src", "vendor", "maplibre-gl.mjs");
 const src = fs.readFileSync(FILE, "utf8");
 
-const OPEN = "/*CORVUS-QUEUE-PATCH*/";
-const CLOSE = "/*CORVUS-QUEUE-PATCH-END*/";
-
-const FIX = `
-Re-apply it like this. In src/vendor/maplibre-gl.min.js find the image
-request queue's processing loop, which reads:
-
-  for(let t=o;t<e&&i.length>0;t++){const e=i.shift();e.abortController.signal.aborted?t--:s(e);}
-
-and replace the condition so it reads:
-
-  ${OPEN}(!e.abortController||e.abortController.signal.aborted)${CLOSE}?t--:s(e);
+const HINT = `
+If this fails after an upgrade, look at how the raster and raster-dem
+sources' loadTile build their image request. When the tile's controller is
+read only after an await (as an argument to getImage evaluated after
+transformRequest resolves), the old crash is back: guard the image queue's
+processing loop so a queued request without a controller is skipped like an
+aborted one, mark the edit CORVUS-QUEUE-PATCH, and test it here.
 `;
 
 let passed = 0;
 function check(name, fn) { fn(); passed++; console.log("  ok  " + name); }
 
-console.log("vendor/maplibre-gl.min.js — image queue patch");
+console.log("vendor/maplibre-gl.mjs — image queue");
 
-check("the patch is in place", () => {
-  const a = src.indexOf(OPEN);
-  const b = src.indexOf(CLOSE);
-  assert.ok(a >= 0 && b > a, "CORVUS-QUEUE-PATCH is missing." + FIX);
-  const body = src.slice(a + OPEN.length, b);
-  assert.equal(body, "(!e.abortController||e.abortController.signal.aborted)",
-    "CORVUS-QUEUE-PATCH was changed." + FIX);
+check("no CORVUS-QUEUE-PATCH is left behind in the upstream build", () => {
+  assert.ok(!src.includes("CORVUS-QUEUE-PATCH"),
+    "the vendored MapLibre carries a queue patch this test no longer checks.");
 });
 
-check("the unguarded read is gone", () => {
-  assert.ok(!src.includes("const e=i.shift();e.abortController.signal.aborted"),
-    "the queue still reads the controller unguarded." + FIX);
+check("both tile sources hand their controller over before the await", () => {
+  const sites = src.match(
+    /\.abortController=new AbortController;try\{let \w+=await \w+\.transformAndGetImage\(this\.map\._requestManager,\w+,`Tile`,\w+\.abortController,/g,
+  ) || [];
+  assert.equal(sites.length, 2,
+    "expected the raster and the raster-dem source to pass the tile's controller " +
+    "straight into transformAndGetImage." + HINT);
 });
 
-check("the patched loop still skips aborted requests and runs the rest", () => {
-  // The loop body, lifted out and run against a queue holding one request of
-  // each kind: the controller-less one must be skipped like an aborted one,
-  // not thrown on, and the live one after it must still start.
-  const a = src.indexOf(OPEN);
-  const loopStart = src.lastIndexOf("for(let t=o;", a);
-  const loopEnd = src.indexOf("}", src.indexOf(CLOSE)) + 1;
-  const loop = src.slice(loopStart, loopEnd);
-  const started = [];
-  const run = new Function("o", "e", "i", "s", loop);
-  run(0, 4, [
-    { name: "aborted mid-transform" },
-    { name: "aborted", abortController: { signal: { aborted: true } } },
-    { name: "live", abortController: { signal: { aborted: false } } },
-  ], (item) => started.push(item.name));
-  assert.deepEqual(started, ["live"]);
+check("transformAndGetImage keeps the controller it was given across the await", () => {
+  const fn = /async function (\w+)\((\w+),(\w+),(\w+),(\w+),[^)]*\)\{let (\w+)=await \2\.transformRequest\(\3,\4\);return \w+\(\5\.signal\),\w+\.getImage\(\6,\5,/.exec(src);
+  assert.ok(fn,
+    "transformAndGetImage no longer reads: await transformRequest, check the " +
+    "controller it was handed, then queue with that same controller." + HINT);
+  assert.ok(src.includes(`.transformAndGetImage=${fn[1]},`),
+    "the function checked above is not the exported transformAndGetImage." + HINT);
+});
+
+check("no source reads a tile's controller after awaiting the transform", () => {
+  assert.ok(!/getImage\((?:yield|await) [^,]*transformRequest\([^)]*\),\w+\.abortController/.test(src),
+    "a getImage call reads the tile's controller after the transform resolved." + HINT);
 });
 
 console.log(`\n${passed} checks passed`);

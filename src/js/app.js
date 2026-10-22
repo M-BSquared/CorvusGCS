@@ -98,9 +98,32 @@ Corvus.app = (function () {
     return Number(s.altitude_agl) > AIRBORNE_FALLBACK_M ? "air" : "";
   }
 
+  /* What the one TAKEOFF / LAND button does when the two are not shown apart:
+     "land" while the vehicle is flying, "takeoff" on the ground and with
+     nothing connected. An armed vehicle whose phase cannot be told (see
+     flightPhase) gets LAND too: landing something already down is harmless,
+     and a takeoff card over something that may be hovering is not. */
+  function singleButtonRole(s) {
+    const phase = flightPhase(s);
+    if (phase === "air") return "land";
+    if (phase === "" && s && s.connected && s.armed) return "land";
+    return "takeoff";
+  }
+
   // Idempotency guard for the flight-mode selector: only repopulate when the
   // mode list returned by the backend actually changes (or once per connect).
   let loadedModesSignature = "";
+
+  let splitWanted = false;
+  let applyTakeoffLandSplit = () => {};
+
+  /* Settings' switch, and the config's on load. Off (the default) the bar has
+     one button that is TAKEOFF on the ground and LAND in the air; on, the two
+     stand side by side as before. */
+  function setTakeoffLandSplit(on) {
+    splitWanted = on === true;
+    applyTakeoffLandSplit(splitWanted);
+  }
 
   function initFlightActions() {
     const btnArm = document.getElementById("btnArm");
@@ -108,19 +131,74 @@ Corvus.app = (function () {
     const btnLand = document.getElementById("btnLand");
     const btnRTL = document.getElementById("btnRTL");
 
-    /* In the air TAKEOFF is greyed, on the ground LAND is (see flightPhase).
-       A button with a command in flight is left alone: setBusy holds it
-       disabled until the answer, and clearing that would allow a second
-       press. */
+    let shownGround = null;
+    let split = false;
+    let singleRole = "takeoff";
+    let lastState = null;
+
+    /* Split: in the air TAKEOFF is greyed, on the ground LAND is (see
+       flightPhase). Single: the one button turns into LAND in the air and the
+       takeoff card is closed with it. A button with a command in flight is
+       left alone: setBusy holds it disabled until the answer, and clearing
+       that would allow a second press. */
     function showFlightPhase(s) {
-      const phase = flightPhase(s);
-      offer(btnTakeoff, phase !== "air", "Takeoff", "Takeoff: already in the air");
-      offer(btnLand, phase !== "ground", "Land", "Land: on the ground");
-      if (phase === "air") {
+      lastState = s;
+      if (split) {
+        const phase = flightPhase(s);
+        offer(btnTakeoff, phase !== "air", "Takeoff", "Takeoff: already in the air");
+        offer(btnLand, phase !== "ground", "Land", "Land: on the ground");
+        if (phase === "air") {
+          const panel = document.getElementById("takeoffPanel");
+          if (!panel.hidden) panel.hidden = true;
+        }
+        return;
+      }
+      showSingleRole(singleButtonRole(s));
+      offer(btnTakeoff, true, singleRole === "land" ? "Land" : "Takeoff", "");
+    }
+
+    function setButtonIcon(button, name) {
+      const old = button.querySelector("svg, i");
+      const next = Corvus.ui.icon(name, "auto");
+      if (old) old.replaceWith(next);
+      else button.insertBefore(next, button.firstChild);
+      Corvus.ui.refreshIcons();
+    }
+
+    let shownRole = "takeoff";
+    function showSingleRole(role) {
+      singleRole = role;
+      if (role === "land") {
         const panel = document.getElementById("takeoffPanel");
         if (!panel.hidden) panel.hidden = true;
       }
+      if (role === shownRole) return;
+      shownRole = role;
+      const caption = btnTakeoff.querySelector("span");
+      if (caption) caption.textContent = role === "land" ? "LAND" : "TAKEOFF";
+      setButtonIcon(btnTakeoff, role === "land" ? "arrow-down" : "arrow-up");
     }
+
+    function showButtons() {
+      btnTakeoff.hidden = shownGround === true;
+      btnLand.hidden = shownGround === true || !split;
+    }
+
+    applyTakeoffLandSplit = (on) => {
+      if (on === split) return;
+      split = on;
+      if (split) {
+        delete btnTakeoff.dataset.captions;
+        showSingleRole("takeoff");
+      } else {
+        btnTakeoff.dataset.captions = "TAKEOFF|LAND";
+      }
+      showButtons();
+      showFlightPhase(lastState || Corvus.telemetry.getState());
+    };
+    btnTakeoff.dataset.captions = "TAKEOFF|LAND";
+    btnLand.hidden = true;
+    if (splitWanted) applyTakeoffLandSplit(true);
 
     /* Runs on every telemetry frame; only a real change is written, since an
        unchanged one still costs the bar a style pass. */
@@ -141,12 +219,10 @@ Corvus.app = (function () {
        TAKEOFF, LAND and every altitude. Worded from the telemetry snapshot so
        the bar changes on the heartbeat that names the vehicle. */
     const isGround = () => !!(Corvus.capabilities && Corvus.capabilities.isGround());
-    let shownGround = null;
     function adaptToVehicle(ground) {
       if (ground === shownGround) return;
       shownGround = ground;
-      btnTakeoff.hidden = ground;
-      btnLand.hidden = ground;
+      showButtons();
       if (ground) {
         document.getElementById("takeoffPanel").hidden = true;
       }
@@ -226,6 +302,10 @@ Corvus.app = (function () {
     const takeoffUnit = document.getElementById("takeoffAltUnit");
 
     btnTakeoff.addEventListener("click", () => {
+      if (!split && singleRole === "land") {
+        land(btnTakeoff);
+        return;
+      }
       const panel = document.getElementById("takeoffPanel");
       if (panel.hidden) {
         openFlightCard("takeoffPanel");
@@ -313,9 +393,9 @@ Corvus.app = (function () {
       }
     });
 
-    btnLand.addEventListener("click", async () => {
+    async function land(button) {
       const attempt = Corvus.topbar.beginCommand("land");
-      Corvus.ui.setBusy(btnLand, true);
+      Corvus.ui.setBusy(button, true);
       try {
         await Corvus.telemetry.postAction("/api/mavlink/land", {});
         Corvus.topbar.succeedCommand(attempt);
@@ -323,9 +403,10 @@ Corvus.app = (function () {
         Corvus.topbar.failCommand(attempt);
         Corvus.topbar.notifyError(error.message || "Land rejected", attempt);
       } finally {
-        Corvus.ui.setBusy(btnLand, false);
+        Corvus.ui.setBusy(button, false);
       }
-    });
+    }
+    btnLand.addEventListener("click", () => land(btnLand));
 
     btnRTL.addEventListener("click", async () => {
       const attempt = Corvus.topbar.beginCommand("rtl");
@@ -715,6 +796,8 @@ Corvus.app = (function () {
       // config that has never been asked must not shrink a bar nobody asked to
       // shrink.
       Corvus.map.setFlightBarShrink(!!(cfg.ui && cfg.ui.flight_bar_shrink));
+      // One TAKEOFF / LAND button unless the config asks for two.
+      setTakeoffLandSplit(!!(cfg.ui && cfg.ui.takeoff_land_split));
       // The flown track. Earlier flights get their own colour unless the
       // config turns that off, and the track the last session left is kept
       // unless the config asks for it to go on every restart.
@@ -722,7 +805,11 @@ Corvus.app = (function () {
         earlierFlights: !(cfg.ui && cfg.ui.track_earlier_flights === false),
         rainbow: !!(cfg.ui && cfg.ui.track_rainbow),
         clearOnRestart: !!(cfg.ui && cfg.ui.track_clear_on_restart),
+        inAir: !(cfg.ui && cfg.ui.track_in_air === false),
       }, true);
+      // The aircraft on the map move 60 times a second unless the config asks
+      // for 30 (see anim.js). The instruments are not capped either way.
+      Corvus.anim.setMapRate(cfg.ui && cfg.ui.map_animation_rate);
       // The flight compass is north up unless the config locks it nose up.
       Corvus.instruments.setNoseUp(!!(cfg.ui && cfg.ui.compass_nose_up));
       // The flight HUD is on the Home map unless the config takes it off.
@@ -832,6 +919,8 @@ Corvus.app = (function () {
     refreshModesFromData,
     showVehicleMode,
     flightPhase,
+    singleButtonRole,
+    setTakeoffLandSplit,
     altitudeFromEntry,
     entryIsClear,
     altitudeToPosition,

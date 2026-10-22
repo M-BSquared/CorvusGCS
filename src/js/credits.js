@@ -29,24 +29,23 @@ Corvus.credits = (function () {
   const LIBRARIES = [
     {
       name: "MapLibre GL JS",
-      version: "5.24.0",
+      version: "6.15.0",
       license: "BSD 3-Clause",
       copyright: "Copyright MapLibre contributors; portions Mapbox, Inc.",
-      role: "Renders the map, its markers and the downloaded-area overlay. " +
-            "Carries a small local patch (tile request queue).",
+      role: "Renders the map, its markers and the downloaded-area overlay.",
       url: "https://maplibre.org/",
     },
     {
       name: "Plotly.js (basic)",
-      version: "2.35.2",
+      version: "4.1.2",
       license: "MIT",
-      copyright: "Copyright 2012 to 2024 Plotly, Inc. Bundles d3 (BSD 3-Clause, Mike Bostock) and other MIT/BSD components.",
+      copyright: "Copyright 2012 to 2026 Plotly, Inc. Bundles d3 (BSD 3-Clause, Mike Bostock) and other MIT/BSD components.",
       role: "Draws the autotune and vibration graphs. Carries a small local patch (pointer position under interface scale).",
       url: "https://plotly.com/javascript/",
     },
     {
       name: "Lucide",
-      version: "0.544.0",
+      version: "1.61.0",
       license: "ISC",
       copyright: "Copyright Lucide Contributors; portions Cole Bemis (Feather, MIT).",
       role: "The icon set used throughout the interface.",

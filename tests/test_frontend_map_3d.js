@@ -605,6 +605,68 @@ check("the height readout sits beside the aircraft, not on it", () => {
   assert.ok(isFinite(map._heightLabelPosition(air, base, NaN).x));
 });
 
+// ---------------------------------------------------------------------------
+// The flown track at its height
+// ---------------------------------------------------------------------------
+
+function recordingSink() {
+  const calls = [];
+  return { calls, moveTo: (x, y) => calls.push(["M", x, y]), lineTo: (x, y) => calls.push(["L", x, y]) };
+}
+
+/** flatMatrix with screen y driven by height: clip y = 2*y - 1 + z * k. */
+function heightMatrix(k) {
+  const m = flatMatrix();
+  m[9] = k;
+  return m;
+}
+
+check("the 3D track lands where projectAltitude puts the same points", () => {
+  const coords = [[0, 0, 0], [0.001, 0, 30], [0.002, 0.001, 60]];
+  const m = heightMatrix(1e6);
+  const sink = recordingSink();
+  assert.equal(map._traceTrack3D(sink, m, coords, 100, 800, 600), 3);
+  coords.forEach((c, i) => {
+    const at = map._projectAltitude(m, c[0], c[1], 100 + c[2], 800, 600);
+    assert.ok(Math.abs(sink.calls[i][1] - at.x) < 1e-6, `x of point ${i}`);
+    assert.ok(Math.abs(sink.calls[i][2] - at.y) < 1e-6, `y of point ${i}`);
+  });
+  assert.deepEqual(sink.calls.map((c) => c[0]), ["M", "L", "L"]);
+});
+
+check("a higher point is drawn higher on screen", () => {
+  const sink = recordingSink();
+  map._traceTrack3D(sink, heightMatrix(1e6), [[0, 0, 0], [0, 0, 50]], 0, 800, 600);
+  assert.ok(sink.calls[1][2] < sink.calls[0][2], "50 m up is above the ground point");
+});
+
+check("a point without a height or behind the camera breaks the line", () => {
+  const sink = recordingSink();
+  const coords = [[0, 0, 10], [0.001, 0, 10], [0.002, 0], [0.003, 0, 10], [0.004, 0, 10]];
+  assert.equal(map._traceTrack3D(sink, flatMatrix(), coords, 0, 800, 600), 4);
+  assert.deepEqual(sink.calls.map((c) => c[0]), ["M", "L", "M", "L"],
+    "an old point with no height is a gap, not a dive to sea level");
+  const behind = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, -1];
+  const none = recordingSink();
+  assert.equal(map._traceTrack3D(none, behind, coords, 0, 800, 600), 0);
+  assert.deepEqual(none.calls, []);
+});
+
+check("the leader line is hidden by attribute, never by a .hidden field", () => {
+  // It is an SVG element, and SVG has no `hidden` property: assigning one
+  // set a field the stylesheet never saw, and the dashed line stayed on the
+  // map after a landing and after switching back to 2D.
+  const src = require("node:fs").readFileSync(
+    path.join(__dirname, "..", "src", "js", "map.js"), "utf8");
+  assert.doesNotMatch(src, /veh3dLeadEl\.hidden\s*=/);
+});
+
+check("the home marker lies flat on the ground in 3D", () => {
+  const src = require("node:fs").readFileSync(
+    path.join(__dirname, "..", "src", "js", "map.js"), "utf8");
+  assert.match(src, /buildHomeMarker\(\), anchor: "center", pitchAlignment: "map"/);
+});
+
 check("choosing a mode without a map is a no-op, not a crash", () => {
   // The rail is built before the style loads, so the menu can be opened and
   // a row pressed before there is anything to apply it to.
@@ -616,6 +678,18 @@ check("set3D without a map is a no-op, not a crash", () => {
   // The rail is built before the style loads, so the button exists before
   // there is anything for it to act on.
   assert.equal(map.set3D(true), false);
+});
+
+check("the camera transform is found where each MapLibre keeps it", () => {
+  // MapLibre 6 took map.transform away and kept it at map._camera.transform.
+  // Without it, viewSize() fell back to clientWidth and forced a layout on
+  // every telemetry sample, and nothing behind the globe was hidden.
+  const v5 = { width: 800 };
+  const v6 = { width: 900 };
+  assert.equal(map._transformOf({ transform: v5 }), v5, "MapLibre 5");
+  assert.equal(map._transformOf({ _camera: { transform: v6 } }), v6, "MapLibre 6");
+  assert.equal(map._transformOf({}), null, "neither: the callers' own fallbacks");
+  assert.equal(map._transformOf(null), null);
 });
 
 console.log(`\n${passed} assertions passed`);

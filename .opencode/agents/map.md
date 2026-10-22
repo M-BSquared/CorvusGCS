@@ -62,11 +62,13 @@ is the `gui` agent's.
   dialog fills that cache. Licensed sources are keyed by the user's own key
   (`tests/test_map_tokens.py`, `test_map_sources.py`); a key is never written
   into the repo, the bundle or a log.
-- **Vendored MapLibre carries patches.** `CORVUS-ZOOM-PATCH` (interface scale
-  hit testing) and `CORVUS-QUEUE-PATCH` (an aborted tile request marking an
-  unrelated tile failed). Replacing `src/vendor/maplibre-gl.min.js` drops them;
-  `tests/test_frontend_vendor_maplibre_queue.js` and `test_frontend_vendor_zoom.js`
-  fail and print the edit to re-apply. Run them after any vendor change.
+- **Vendored MapLibre is an ES module, unpatched.** `src/vendor/maplibre-gl.mjs`
+  and its worker `maplibre-gl-worker.mjs` come in through the one module
+  script in `index.html`, which sets `window.maplibregl`. The image queue bug
+  that `CORVUS-QUEUE-PATCH` once fixed is fixed upstream since 6.1;
+  `tests/test_frontend_vendor_maplibre_queue.js` checks the call sites still
+  hand the controller over before the await. Run it, and
+  `test_frontend_vendor_zoom.js` for Plotly and xterm, after any vendor change.
 - **Transforms are exact.** WGS84, UTM and local NED conversions are checked
   against known points, not only round trips. Altitude references are named
   in the code (AMSL, relative to home, above terrain, above ground); the

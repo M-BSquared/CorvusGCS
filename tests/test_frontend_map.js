@@ -336,6 +336,97 @@ function testTheJitterGateIsAFewDecimetres() {
   assert.equal(map._recordTrackPoint([8.5, 47.3 + 0.0000045]), true, "~0.5 m is movement");
 }
 
+function testTheHeightRidesAlongAsAThirdCoordinate() {
+  // The 3D track draws each point at its height above home. Without a height
+  // the point stays two numbers, as it always was.
+  map._resetTrackState();
+  map._recordTrackPoint([8.5, 47.3], undefined, 12.34);
+  assert.deepEqual(map.getTrack()[0], [8.5, 47.3, 12.3], "rounded to a decimetre");
+  map._resetTrackState();
+  map._recordTrackPoint([8.5, 47.3], undefined, null);
+  map._recordTrackPoint([8.5, 47.301], undefined, NaN);
+  assert.ok(map.getTrack().every((c) => c.length === 2), "no height, no third number");
+}
+
+function testAClimbInPlaceIsRecorded() {
+  // A vertical climb moves nowhere on the ground, so a flat jitter gate would
+  // drop every sample and the 3D track would cut a diagonal from the ground
+  // to wherever the aircraft first moved sideways.
+  map._resetTrackState();
+  map._recordTrackPoint([8.5, 47.3], undefined, 0);
+  for (let h = 1; h <= 30; h++) map._recordTrackPoint([8.5, 47.3], undefined, h);
+  const track = map.getTrack();
+  assert.equal(track[track.length - 1][2], 30, "the line reaches the aircraft's height");
+  assert.equal(track.length, 2, "a straight climb is one segment, like a straight leg");
+  // Then sideways at 30 m: the corner at the top of the climb is kept.
+  for (let i = 1; i <= 20; i++) map._recordTrackPoint([8.5, 47.3 + i * 0.0001], undefined, 30);
+  const after = map.getTrack();
+  assert.equal(after.length, 3, "climb, then leg");
+  assert.equal(after[1][2], 30, "the corner sits at the top of the climb");
+  assert.ok(Math.abs(after[1][1] - 47.3) < 1e-9, "directly above the start");
+}
+
+function testBaroNoiseInAHoverDoesNotGrowTheTrack() {
+  map._resetTrackState();
+  map._recordTrackPoint([8.5, 47.3], undefined, 20);
+  for (let i = 0; i < 200; i++) {
+    map._recordTrackPoint([8.5, 47.3], undefined, 20 + (i % 2 ? 0.6 : -0.6));
+  }
+  assert.equal(map.getTrack().length, 1, "a hover on a noisy baro is still one point");
+}
+
+function testALegAtOneHeightIsTwoPointsWithHeight() {
+  map._resetTrackState();
+  map._recordTrackPoint([8.5, 47.3], undefined, 40);
+  for (let i = 1; i <= 50; i++) {
+    map._recordTrackPoint([8.5, 47.3 + i * 0.0001], undefined, 40 + (i % 2 ? 0.3 : -0.3));
+  }
+  assert.equal(map.getTrack().length, 2, "height noise does not cut a straight leg");
+}
+
+/** Metres east and north of [8.5, 47.3], as a track point. */
+function at(east, north) {
+  return [8.5 + east / (111319.49 * Math.cos(47.3 * Math.PI / 180)), 47.3 + north / 111319.49];
+}
+
+function metresFromCentre(c) {
+  const e = (c[0] - 8.5) * 111319.49 * Math.cos(47.3 * Math.PI / 180);
+  const n = (c[1] - 47.3) * 111319.49;
+  return Math.hypot(e, n);
+}
+
+function testACurveIsDrawnAsACurve() {
+  // Recorded points every 8 m on a 30 m orbit, the spacing the recorder
+  // leaves there. Drawn straight, the chords sit up to 27 cm inside the
+  // circle; drawn as a curve, a few centimetres.
+  const R = 30, step = 8 / R;
+  const recorded = [];
+  for (let a = 0; a <= Math.PI; a += step) recorded.push(at(R * Math.cos(a), R * Math.sin(a)));
+  const drawn = map._smoothTrack(recorded);
+  assert.ok(drawn.length > recorded.length * 4, "points every metre and a half or so");
+  const inner = drawn.slice(drawn.length / 4 | 0, drawn.length * 3 / 4 | 0);
+  const worst = Math.max(...inner.map((c) => Math.abs(metresFromCentre(c) - R)));
+  assert.ok(worst < 0.05, `within 5 cm of the circle, was ${worst.toFixed(3)} m`);
+  recorded.forEach((c) => assert.ok(drawn.includes(c), "every recorded point is drawn"));
+}
+
+function testStraightLegsAndCornersStayAsFlown() {
+  const leg = [at(0, 0), at(0, 300), at(0, 600)];
+  assert.equal(map._smoothTrack(leg).length, 3, "a straight line gains nothing");
+  const corner = [at(0, 0), at(0, 10), at(10, 10), at(10, 20)];
+  assert.deepEqual(map._smoothTrack(corner), corner, "a right angle stays a corner");
+  const long = [at(0, 0), at(0, 50), at(10, 100)];
+  assert.equal(map._smoothTrack(long).length, 3, "a long leg is not bent");
+}
+
+function testTheDrawnCurveCarriesTheHeight() {
+  const R = 30;
+  const recorded = [0, 0.3, 0.6, 0.9].map((a, i) => [...at(R * Math.cos(a), R * Math.sin(a)), 10 * i]);
+  const drawn = map._smoothTrack(recorded);
+  assert.ok(drawn.every((c) => c.length === 3), "every drawn point has a height");
+  for (let i = 1; i < drawn.length; i++) assert.ok(drawn[i][2] >= drawn[i - 1][2], "and it climbs as recorded");
+}
+
 function orbitTrack(hAcc) {
   // An orbit of 30 m radius sampled every metre.
   map._resetTrackState();
@@ -489,6 +580,20 @@ function testSettingTheOptionsLaterNeverClears() {
   assert.equal(map.getTrack().length, 0, "the startup read with the switch on clears");
 }
 
+function testTheTrackInTheAirIsOnUnlessTurnedOff() {
+  // A config that has never been asked keeps the 3D line: only a real
+  // false takes it away, and the track itself is untouched either way.
+  map._resetTrackState();
+  flyFlight(0, 5, 1000);
+  map.setTrackOptions({});
+  assert.equal(map._trackInAir(), true, "absent reads as on");
+  map.setTrackOptions({ inAir: false });
+  assert.equal(map._trackInAir(), false);
+  assert.equal(map.getTrack().length, 5, "turning it off discards nothing");
+  map.setTrackOptions({ inAir: true });
+  assert.equal(map._trackInAir(), true);
+}
+
 function pastColorsOf() {
   return map._pastGeometry().features.map((f) => f.properties.color);
 }
@@ -558,6 +663,14 @@ function testTheTrackSurvivesARestart() {
     assert.ok(Math.abs(lng - north(10)[0]) < 1e-7 && Math.abs(lat - north(10)[1]) < 1e-7);
     map.clearTrack();
     assert.equal(store.has("corvus.map.track"), false, "clearing removes the saved track too");
+    map._resetTrackState();
+    map._recordTrackPoint(north(0), undefined, 25.04);
+    map._recordTrackPoint(north(20), undefined, 25.04);
+    map._saveTrack();
+    map._resetTrackState();
+    map._restoreTrack();
+    assert.equal(map.getTrack()[1][2], 25, "the height survives the restart");
+    map.clearTrack();
     store.set("corvus.map.track", "{not json");
     map._restoreTrack();
     assert.deepEqual(map.getTrack(), [], "a damaged entry is ignored");
@@ -1057,6 +1170,14 @@ const tests = [
   testSlowDriftIsStillRecorded,
   testAStraightLegIsTwoPointsHoweverLong,
   testTheJitterGateIsAFewDecimetres,
+  testACurveIsDrawnAsACurve,
+  testStraightLegsAndCornersStayAsFlown,
+  testTheDrawnCurveCarriesTheHeight,
+  testTheHeightRidesAlongAsAThirdCoordinate,
+  testTheTrackInTheAirIsOnUnlessTurnedOff,
+  testAClimbInPlaceIsRecorded,
+  testBaroNoiseInAHoverDoesNotGrowTheTrack,
+  testALegAtOneHeightIsTwoPointsWithHeight,
   testATurnKeepsItsShape,
   testTheToleranceFollowsThePositionAccuracy,
   testClearTrackEmptiesIt,

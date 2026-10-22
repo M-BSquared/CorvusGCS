@@ -573,8 +573,18 @@
      lazy.js is still defined before analysis.js asks for it, and app.js still
      registers its DOMContentLoaded handler before that event fires. The
      inline theme script in <head> stays eager deliberately — it has to run
-     before the stylesheets paint anything. -->
-<script src="vendor/maplibre-gl.min.js" defer></script>
+     before the stylesheets paint anything.
+
+     MapLibre 6 ships only as an ES module, so it comes in through a module
+     script that puts it back on window.maplibregl, where map.js and the
+     plugins look for it. A module script is deferred by nature and runs in
+     the same document-ordered queue as the tags below it, so the global
+     exists before map.js runs. Its worker, vendor/maplibre-gl-worker.mjs, is
+     found next to the module by MapLibre itself. -->
+<script type="module">
+  import * as maplibregl from "./vendor/maplibre-gl.mjs";
+  window.maplibregl = maplibregl;
+</script>
 <script src="vendor/lucide.min.js" defer></script>
 <script src="js/lazy.js" defer></script>
 <script src="js/events.js" defer></script>

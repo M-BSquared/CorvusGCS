@@ -196,7 +196,7 @@ function testReadoutsFoldWithoutTakingTheDialsWithThem() {
   const body = panel.querySelector(".hud-body");
 
   fire(actionBtn(panel, "Hide the readouts"), "click");
-  assert.equal(telemetry.hidden, true, "the ALT AMSL / AGL / ... grid folds");
+  assert.equal(telemetry.hidden, true, "the ALT AMSL / FLIGHT TIME / ... grid folds");
   assert.equal(instruments.hidden, false, "the compass and horizon stay");
   assert.equal(body.hidden, false, "this is not the whole-panel collapse");
   assert.ok(panel.classList.contains("is-readouts-off"));

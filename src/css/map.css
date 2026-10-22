@@ -759,6 +759,9 @@
   transition: none;
 }
 .veh3d { transform-origin: 50% 50%; }
+
+/* The flown track at its height, under the aircraft and its leader line. */
+.track3d { position: absolute; top: 0; left: 0; pointer-events: none; }
 .veh3d[hidden], .veh3d-shadow[hidden], .veh3d-lead[hidden], .veh3d-alt[hidden] {
   display: none !important;
 }
@@ -840,14 +843,16 @@
    corner itself and must never be covered. */
 .track-clear {
   position: absolute;
-  /* Centred on the folded attribution disc below it, which is 25px wide
-     (15px icon, 4px padding, 1px border): half the 3px difference in. */
-  left: calc(var(--map-rail-inset, 14px) + 1.5px);
+  /* The same 25px disc as the folded attribution control below it (15px icon,
+     4px padding, 1px border), so the two stack flush on one left edge. */
+  left: var(--map-rail-inset, 14px);
   bottom: calc(var(--map-rail-inset, 14px) + 30px);
   z-index: var(--z-map-chrome);
-  width: 22px; height: 22px;
+  box-sizing: border-box;
+  width: 25px; height: 25px;
+  padding: 0;
   display: grid; place-items: center;
-  border-radius: 6px;
+  border-radius: 50%;
   background: rgb(var(--glass-rgb) / 0.75);
   backdrop-filter: var(--blur-fine);
   -webkit-backdrop-filter: var(--blur-fine);
@@ -856,14 +861,15 @@
   opacity: 0.85;
   transition: opacity 140ms, color 140ms, background 140ms;
 }
-.track-clear:hover {
+.track-clear:hover, .icon-btn.track-clear:hover {
   opacity: 1;
-  color: var(--track);
-  background: rgb(var(--glass-rgb) / 0.75);
+  color: var(--critical);
+  background: color-mix(in srgb, var(--critical) 14%, rgb(var(--glass-rgb) / 0.75));
+  border-color: color-mix(in srgb, var(--critical) 45%, transparent);
 }
 .track-clear:focus-visible { opacity: 1; outline: 2px solid var(--accent-bright); outline-offset: 2px; }
 .track-clear[hidden] { display: none; }
-.track-clear i, .track-clear svg { width: 12px; height: 12px; }
+.track-clear i, .track-clear svg { width: 14px; height: 14px; }
 @media (prefers-reduced-motion: reduce) {
   .track-clear { transition: none; }
 }

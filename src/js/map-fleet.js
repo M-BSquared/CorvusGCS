@@ -55,7 +55,8 @@ Corvus.mapFleet = (function () {
 
   function validFlight(f) {
     return Array.isArray(f) && f.every((c) =>
-      Array.isArray(c) && c.length === 2 && isFinite(c[0]) && isFinite(c[1]));
+      Array.isArray(c) && (c.length === 2 || (c.length === 3 && isFinite(c[2])))
+      && isFinite(c[0]) && isFinite(c[1]));
   }
 
   function storage() {
@@ -86,7 +87,9 @@ Corvus.mapFleet = (function () {
     saveTimer = null;
     const s = storage();
     if (!s) return;
-    const round = (f) => f.map((c) => [+c[0].toFixed(7), +c[1].toFixed(7)]);
+    const round = (f) => f.map((c) => (c.length > 2
+      ? [+c[0].toFixed(7), +c[1].toFixed(7), +c[2].toFixed(1)]
+      : [+c[0].toFixed(7), +c[1].toFixed(7)]));
     const out = {};
     tracks.forEach((t, id) => {
       if (t.current.length < 2 && !t.past.length) return;
@@ -242,12 +245,17 @@ Corvus.mapFleet = (function () {
   function renderMarker(m) {
     m.marker.setLngLat([m.display.lng, m.display.lat]);
     const body = m.el.querySelector(".v-body");
-    if (body) body.style.transform = `rotate(${m.display.heading}deg)`;
+    // A tenth of a degree, and only on a change: an unchanged or invisible
+    // write still makes a new frame to composite (see map.js).
+    const rotate = `rotate(${m.display.heading.toFixed(1)}deg)`;
+    if (body && body.style.transform !== rotate) body.style.transform = rotate;
   }
 
   function ensureAnimator() {
     if (animator || !Corvus.anim) return;
     animator = {
+      // Stepped at the map rate, like the flown aircraft (see anim.js).
+      map: true,
       step(dt) {
         let moving = false;
         markers.forEach((m) => {

@@ -188,6 +188,10 @@ const fakeMap = {
   removeLayer(id) { style.layers = style.layers.filter((l) => l.id !== id); },
   getLayer: (id) => style.layers.find((l) => l.id === id),
   setPaintProperty() {},
+  setLayoutProperty(id, prop, value) {
+    const layer = style.layers.find((l) => l.id === id);
+    if (layer) layer.layout = Object.assign({}, layer.layout, { [prop]: value });
+  },
   setTerrain(spec) {
     if (spec && !style.sources.has(spec.source)) throw new Error("no such source");
     style.terrain = spec || null;
@@ -222,8 +226,16 @@ const fakeMap = {
 };
 const painted = {};
 
+let parallelTiles = null;
 global.maplibregl = {
-  Map: function () { return fakeMap; },
+  setMaxParallelImageRequests(n) { parallelTiles = n; },
+  Map: function (opts) {
+    // The first style, as MapLibre would load it.
+    const first = (opts && opts.style) || { sources: {}, layers: [] };
+    for (const [id, spec] of Object.entries(first.sources)) style.sources.set(id, spec);
+    for (const layer of first.layers) style.layers.push(JSON.parse(JSON.stringify(layer)));
+    return fakeMap;
+  },
   AttributionControl: function () { return {}; },
   Marker: function () {
     return {
@@ -286,6 +298,11 @@ async function reset() {
   console.log("map.js — 3D terrain wiring");
   map._setTerrainSpec(DEM);
 
+  await check("tile requests queue in the browser, where a cached tile does not wait", async () => {
+    assert.ok(parallelTiles >= 64,
+      "behind MapLibre's own 16 the terrain's cached fallback waited for slow tiles");
+  });
+
   await check("the terrain-only 3D still has the relief, shaded", async () => {
     await reset();
     map.set3DMode("simple");
@@ -296,14 +313,51 @@ async function reset() {
     assert.ok(!hasLayer("buildings-3d"), "no buildings were asked for");
   });
 
+  await check("ground waiting for its imagery is plain ground, not a hole", async () => {
+    const ids = layerIds();
+    assert.ok(hasLayer("terrain-ground"),
+      "a 3D tile without imagery was drawn transparent: white or black holes after a pan");
+    assert.equal(style.layers.find((l) => l.id === "terrain-ground").type, "background");
+    if (ids.includes("base")) {
+      assert.ok(ids.indexOf("terrain-ground") < ids.indexOf("base"), "under the imagery");
+    }
+    assert.ok(ids.indexOf("terrain-ground") < ids.indexOf("terrain-hillshade"),
+      "the relief shading shows on it");
+    const coarse = style.sources.get("ground-imagery");
+    assert.ok(coarse && coarse.maxzoom <= 14,
+      "a coarse copy of the imagery stands in while the detail loads");
+    assert.equal(style.layers.find((l) => l.id === "terrain-ground-imagery").layout.visibility,
+      "visible");
+    const order = [...style.sources.keys()];
+    assert.ok(order.indexOf("ground-imagery") < order.indexOf("base"),
+      "added first, so its few tiles are asked for before the detail's many");
+    assert.ok(ids.indexOf("terrain-ground") < ids.indexOf("terrain-ground-imagery"));
+    if (ids.includes("base")) {
+      assert.ok(ids.indexOf("terrain-ground-imagery") < ids.indexOf("base"),
+        "the detail draws over it");
+      assert.deepEqual(coarse.tiles, style.sources.get("base").tiles,
+        "the same URLs as the base layer, so nothing is fetched twice");
+    }
+  });
+
   await check("the shading has its own source, never the terrain's", async () => {
     const shade = style.layers.find((l) => l.id === "terrain-hillshade");
     assert.notEqual(shade.source, "terrain",
       "MapLibre renders the mesh from a coarser DEM and warns when one source serves both");
     const spec = style.sources.get(shade.source);
     assert.equal(spec.type, "raster-dem");
-    assert.equal(spec.tileSize, 256, "terrarium tiles are 256 px; 512 would halve every height");
     assert.equal(spec.encoding, "terrarium");
+  });
+
+  await check("the shading reads the very tiles the terrain reads, not a second set", async () => {
+    const shade = style.sources.get(style.layers.find((l) => l.id === "terrain-hillshade").source);
+    const dem = style.sources.get("terrain");
+    assert.deepEqual(shade.tiles, dem.tiles);
+    assert.equal(dem.tileSize, 256, "terrarium tiles are 256 px");
+    assert.equal(shade.tileSize, 512,
+      "MapLibre asks a terrain source one zoom coarser, so the shading is declared at " +
+      "twice the size to ask for the same tiles; at 256 it fetched a second set one zoom " +
+      "deeper and the imagery waited behind them");
   });
 
   await check("the shading sits under every overlay", async () => {
@@ -371,6 +425,9 @@ async function reset() {
     assert.equal(style.terrain, null);
     assert.equal(style.projection, "mercator");
     assert.ok(!hasLayer("terrain-hillshade"));
+    assert.ok(!hasLayer("terrain-ground"), "the flat map keeps its own background");
+    assert.equal(style.layers.find((l) => l.id === "terrain-ground-imagery").layout.visibility,
+      "none", "hidden, so the flat map asks for none of its tiles");
     assert.ok(!hasLayer("buildings-3d"));
     assert.ok(!style.sources.has("terrain"));
     assert.ok(![...style.sources.keys()].some((id) => id.startsWith("terrain")),
@@ -409,7 +466,7 @@ async function reset() {
     assert.equal(map._terrainFor([], "maptiler", "terrain"), null);
   });
 
-  await check("a 512 px model is declared at 512, to both of its sources", async () => {
+  await check("a 512 px model is declared at 512, and its shading at twice that", async () => {
     await reset();
     map._setTerrainSpec(MAPTILER);
     map.set3DMode("simple");
@@ -417,7 +474,8 @@ async function reset() {
     assert.equal(style.sources.get("maptiler_terrain").tileSize, 512,
       "declared at 256 every height would be doubled");
     assert.equal(style.sources.get("maptiler_terrain").encoding, "mapbox");
-    assert.equal(style.sources.get("maptiler_terrain-shade").tileSize, 512);
+    assert.equal(style.sources.get("maptiler_terrain-shade").tileSize, 1024,
+      "the shading follows the terrain's tiles at twice the declared size");
     await reset();
     assert.ok(![...style.sources.keys()].some((id) => id.includes("terrain")),
       "the keyed model's sources go too");
@@ -708,22 +766,90 @@ async function reset() {
     zoom = 13;
   });
 
-  await check("the side view starts on the press, not after the elevation probe", async () => {
-    await reset();
-    const calls = [];
+  // Records the tilt and the terrain attach in the order they happen.
+  const recordSwitch = (calls) => {
     const realEase = fakeMap.easeTo;
     const realTerrain = fakeMap.setTerrain;
     fakeMap.easeTo = (opts) => { if (opts && opts.pitch !== undefined) calls.push("tilt"); realEase(opts); };
     fakeMap.setTerrain = (spec) => { if (spec) calls.push("terrain"); realTerrain(spec); };
+    return () => { fakeMap.easeTo = realEase; fakeMap.setTerrain = realTerrain; };
+  };
+
+  await check("the shading goes on at the press, and loads the terrain's tiles", async () => {
+    await reset();
+    fakeMap.isSourceLoaded = () => false;
     try {
       map.set3DMode("simple");
-      assert.deepEqual(calls, ["tilt"],
-        "the tilt is synchronous with the press; the probe can take its whole timeout");
-      await settle();
-      assert.deepEqual(calls, ["tilt", "terrain"], "and the relief follows");
+      assert.ok(hasLayer("terrain-hillshade"), "the press answers at once");
+      assert.equal(style.terrain, null, "the terrain waits for the tiles the shading loads");
     } finally {
-      fakeMap.easeTo = realEase;
-      fakeMap.setTerrain = realTerrain;
+      delete fakeMap.isSourceLoaded;
+    }
+  });
+
+  await check("tiles in hand: the relief is attached first and the tilt shows it", async () => {
+    await reset();
+    const calls = [];
+    const restore = recordSwitch(calls);
+    try {
+      map.set3DMode("simple");
+      await settle();
+      assert.deepEqual(calls, ["terrain", "tilt"],
+        "attached under a camera looking straight down the relief barely shows, and " +
+        "the tilt then brings it into view rather than dropping it in at full tilt");
+    } finally {
+      restore();
+    }
+  });
+
+  await check("tiles not in hand: the tilt does not wait for them for long", async () => {
+    await reset();
+    const calls = [];
+    const restore = recordSwitch(calls);
+    fakeMap.isSourceLoaded = () => false;
+    try {
+      map.set3DMode("simple");
+      await settle();
+      assert.deepEqual(calls, []);
+      await new Promise((resolve) => setTimeout(resolve, 650));
+      assert.deepEqual(calls, ["tilt"], "the button's answer is not held by a slow tile");
+      assert.equal(style.terrain, null, "and the terrain still waits for its tiles");
+      fakeMap.isSourceLoaded = () => true;
+      await new Promise((resolve) => setTimeout(resolve, 120));
+      assert.deepEqual(calls, ["tilt", "terrain"], "it is attached once they are in");
+    } finally {
+      delete fakeMap.isSourceLoaded;
+      restore();
+    }
+  });
+
+  await check("tiles that never come do not keep the terrain away", async () => {
+    await reset();
+    fakeMap.isSourceLoaded = () => false;
+    try {
+      map.set3DMode("simple");
+      await new Promise((resolve) => setTimeout(resolve, 3200));
+      assert.ok(style.terrain, "attached with what it has after the wait is up");
+      assert.equal(pitch, 60);
+    } finally {
+      delete fakeMap.isSourceLoaded;
+    }
+  });
+
+  await check("leaving 3D while the tiles load takes the shading and the tilt too", async () => {
+    await reset();
+    fakeMap.isSourceLoaded = () => false;
+    try {
+      map.set3DMode("simple");
+      await settle();
+      map.set3DMode("off");
+      await new Promise((resolve) => setTimeout(resolve, 650));
+      assert.ok(!hasLayer("terrain-hillshade"), "no shading left on the flat map");
+      assert.ok(![...style.sources.keys()].some((id) => id.includes("terrain")));
+      assert.equal(style.terrain, null);
+      assert.equal(pitch, 0, "the waiting tilt was dropped with the mode");
+    } finally {
+      delete fakeMap.isSourceLoaded;
     }
   });
 
@@ -771,6 +897,88 @@ async function reset() {
       assert.equal(pitch, 0);
     } finally {
       fakeMap.isEasing = () => false;
+    }
+  });
+
+  await check("a tile that failed is asked for again, twice at most, until it loads", async () => {
+    const refreshed = [];
+    const tile = { state: "errored", tileID: { key: "k1", canonical: { z: 17, x: 5, y: 9 } } };
+    const ok = { state: "loaded", tileID: { key: "k2", canonical: { z: 17, x: 6, y: 9 } } };
+    fakeMap.refreshTiles = () => { throw new Error("marks a failed raster tile expired: a blank map"); };
+    fakeMap.style = { tileManagers: { base: {
+      _inViewTiles: { getAllTiles: () => [tile, ok] },
+      _removeTile: (key) => refreshed.push(`base ${key === "k1" ? "17/5/9" : key}`),
+    } } };
+    const idle = () => (mapEvents.idle || []).forEach((cb) => cb({}));
+    useManualTimers();
+    try {
+      for (let i = 0; i < 4; i++) { idle(); await runTimers(1); }
+      assert.deepEqual(refreshed, ["base 17/5/9", "base 17/5/9"],
+        "MapLibre gives up on a tile after one failure (and says nothing on a 404), " +
+        "which left it blurry until the map was moved; a tile not coming is not asked for forever");
+      (mapEvents.data || []).forEach((cb) => cb({ sourceId: "base", tile }));
+      idle(); await runTimers(1);
+      assert.equal(refreshed.length, 3, "once it has loaded, a later failure gets its retries again");
+      tile.state = "loaded";
+      idle(); await runTimers(1);
+      assert.equal(refreshed.length, 3, "everything loaded: nothing is asked for");
+      fakeMap.style = {};
+      idle(); await runTimers(1);
+      assert.equal(refreshed.length, 3, "a MapLibre that keeps its tiles elsewhere costs the retries, not the map");
+    } finally {
+      restoreTimers();
+      delete fakeMap.refreshTiles;
+      delete fakeMap.style;
+    }
+  });
+
+  await check("above a sparse source's complete level a 404 is no data, not a failure", async () => {
+    await reset();
+    map._setTerrainSpec(Object.assign({}, DEM, { sparse_above: 12 }));
+    map.set3DMode("simple");
+    await settle();
+    const refreshed = [];
+    const fine = { state: "errored", tileID: { canonical: { z: 14, x: 1, y: 1 } } };
+    const coarse = { state: "errored", tileID: { canonical: { z: 11, x: 1, y: 1 } } };
+    const managerOf = (id, tiles) => ({
+      _inViewTiles: { getAllTiles: () => tiles },
+      _removeTile: (key) => refreshed.push(`${id} ${key}`),
+    });
+    fine.tileID.key = 14;
+    coarse.tileID.key = 11;
+    fakeMap.style = { tileManagers: {
+      terrain: managerOf("terrain", [fine, coarse]),
+      "terrain-shade": managerOf("terrain-shade", [fine]),
+    } };
+    useManualTimers();
+    try {
+      (mapEvents.idle || []).forEach((cb) => cb({})); await runTimers(1);
+      assert.deepEqual(refreshed, ["terrain 11"],
+        "Copernicus has no tiles above zoom 12 outside national models: asking again buys the same 404");
+      map._setTerrainSpec(Object.assign({}, DEM, { sparse_above: null }));
+      refreshed.length = 0;
+      fine.state = "errored";
+      (mapEvents.idle || []).forEach((cb) => cb({})); await runTimers(1);
+      assert.ok(refreshed.includes("terrain 14"),
+        "the backend sends null for a complete source, and Number(null) is 0: nothing was retried");
+    } finally {
+      restoreTimers();
+      delete fakeMap.refreshTiles;
+      delete fakeMap.style;
+      map._setTerrainSpec(DEM);
+    }
+  });
+
+  await check("a new elevation model under a tilted camera is not kept flat for its tiles", async () => {
+    await reset();
+    fakeMap.isSourceLoaded = () => false;
+    try {
+      pitch = 60;
+      map.set3DMode("simple");
+      await settle();
+      assert.ok(style.terrain, "already tilted, the ground comes up on the coarse fallback at once");
+    } finally {
+      delete fakeMap.isSourceLoaded;
     }
   });
 

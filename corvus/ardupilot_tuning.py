@@ -36,7 +36,7 @@ from __future__ import annotations
 from typing import Any
 
 from .param_fields import bitmask, enum, number, present
-from .tuning_config import AXES_HINT
+from .tuning_config import AXES_HINT, TUNE_NONE_TEXT, _tune
 
 # A field table row is (parameter, label, unit, hint) — same tuple the PX4
 # module uses, so the two read the same way side by side.
@@ -333,6 +333,50 @@ PLANE_AUTOTUNE_STEPS: list[str] = [
 ]
 
 
+COPTER_RUNNING_TEXT = (
+    "ArduPilot is tuning in AUTOTUNE mode, one axis at a time, and reports "
+    "progress in the console rather than as a percentage. Keep the sticks "
+    "centred: a nudge only pauses the tune. When the console says it is "
+    "complete, land with the mode still AUTOTUNE and disarm to keep the gains."
+)
+
+PLANE_RUNNING_TEXT = (
+    "ArduPilot is learning in AUTOTUNE mode from your own stick inputs and "
+    "reports in the console rather than as a percentage. Fly full roll and "
+    "pitch movements. The gains are saved as they are learned; switch out of "
+    "AUTOTUNE when the response feels right."
+)
+
+
+def _attach_tune(groups: list[dict[str, Any]], vehicle: str,
+                 has_autotune: bool) -> None:
+    """Add a ``tune`` entry to every controller group, as
+    :func:`corvus.tuning_config._attach_tune` does for PX4."""
+    for group in groups:
+        if group["kind"] != "fields":
+            continue
+        loop = group["id"]
+        if not has_autotune:
+            group["tune"] = _tune("manual", TUNE_NONE_TEXT)
+        elif loop == "rate":
+            group["tune"] = _tune(
+                "run",
+                "Tunes the rate gains of the chosen axes in AUTOTUNE mode. It "
+                "needs a stable hover." if vehicle == "copter" else
+                "Tunes the rate gains from your own stick inputs in AUTOTUNE "
+                "mode.")
+        elif loop == "attitude" and vehicle == "copter":
+            group["tune"] = _tune(
+                "with",
+                "ArduPilot tunes the angle P gains in the same run as the rate "
+                "controller, so this starts that run.", "rate")
+        else:
+            group["tune"] = _tune(
+                "manual",
+                "ArduPilot has no autotune for this loop. Set the gains by "
+                "hand, on the ground.")
+
+
 def param_names() -> list[str]:
     """Every parameter this page may need, across Copter, Plane and Rover."""
     names: list[str] = []
@@ -472,10 +516,15 @@ def _autotune_group(values: dict[str, float],
         "enabled": True,
         "enable_param": None,
         "axes": axes,
+        "progress": False,
+        "running_text": (PLANE_RUNNING_TEXT if vehicle == "plane"
+                         else COPTER_RUNNING_TEXT),
+        "done_text": (PLANE_RUNNING_TEXT if vehicle == "plane"
+                      else COPTER_RUNNING_TEXT),
         "steps": list(steps),
         "sections": ([{"id": "settings", "title": "Autotune settings",
                        "fields": settings}] if settings else []),
-        "charts": _charts(RATE_CHARTS),
+        "charts": [],
     }
 
 
@@ -494,4 +543,5 @@ def build(values: dict[str, float], vehicle: str = "copter") -> dict[str, Any]:
         _position_group(values),
         _autotune_group(values, vehicle),
     ) if g is not None]
+    _attach_tune(groups, vehicle, any(g["kind"] == "autotune" for g in groups))
     return {"groups": groups, "received": len(values), "stack": "ardupilot"}

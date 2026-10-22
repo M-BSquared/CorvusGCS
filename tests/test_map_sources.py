@@ -452,19 +452,27 @@ def test_index_html_loads_vendored_maplibre() -> None:
     html = pathlib.Path(__file__).resolve().parent.parent / "src" / "index.html"
     text = html.read_text(encoding="utf-8")
     assert 'vendor/maplibre-gl.css' in text, "index.html must load vendored maplibre CSS"
-    assert 'vendor/maplibre-gl.min.js' in text, "index.html must load vendored maplibre JS"
+    assert 'from "./vendor/maplibre-gl.mjs"' in text, "index.html must load vendored maplibre JS"
     assert "unpkg.com/maplibre" not in text, "index.html still loads maplibre from a CDN"
 
 
 def test_vendored_maplibre_is_a_real_bundle() -> None:
-    """The vendored JS is a genuine MapLibre UMD bundle, not a 404/error page."""
+    """The vendored JS is a genuine MapLibre ES module build, not a 404/error page.
+
+    MapLibre 6 ships only as ES modules: the main module and the worker it
+    starts from the file next to it. Both have to be here, or the map loads
+    and then never draws a tile.
+    """
     import pathlib
-    js = pathlib.Path(__file__).resolve().parent.parent / "src" / "vendor" / "maplibre-gl.min.js"
-    text = js.read_text(encoding="utf-8")
+    vendor = pathlib.Path(__file__).resolve().parent.parent / "src" / "vendor"
+    text = (vendor / "maplibre-gl.mjs").read_text(encoding="utf-8")
     assert "MapLibre GL JS" in text, "vendored maplibre missing license header"
     assert "@license" in text, "vendored maplibre missing license tag"
-    assert "global.maplibregl = factory()" in text, "vendored maplibre missing UMD export"
-    assert "return maplibregl" in text, "vendored maplibre missing factory return"
+    assert re.search(r"export\{[^}]*\bas Map\b", text), "vendored maplibre does not export Map"
+    assert "`maplibre-gl-worker.mjs`" in text, "vendored maplibre no longer names its worker file"
+    worker = (vendor / "maplibre-gl-worker.mjs").read_text(encoding="utf-8")
+    assert "MapLibre GL JS" in worker, "vendored maplibre worker missing or not a MapLibre build"
+    assert not (vendor / "maplibre-gl.min.js").exists(), "the MapLibre 5 UMD bundle is still vendored"
 
     css = pathlib.Path(__file__).resolve().parent.parent / "src" / "vendor" / "maplibre-gl.css"
     css_text = css.read_text(encoding="utf-8")

@@ -587,6 +587,49 @@ function testSharedLoopLifecycle() {
 // Shared rAF loop: a single loop drives multiple animators; cancels only when
 // ALL are settled; a new target re-wakes it.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Shared rAF loop: the map rate (Settings, Appearance, Map) caps what is drawn
+// on the map, and nothing else.
+// ---------------------------------------------------------------------------
+function testMapRateCapsOnlyMapAnimators() {
+  const anim = Corvus.anim;
+  // Steps in one second of a map animator and of an instrument, neither of
+  // which ever settles, on a display that draws every *frameMs*.
+  const stepsPerSecond = (frameMs) => {
+    anim._reset();
+    const steps = { map: 0, ui: 0 };
+    const onMap = { map: true, step: () => { steps.map++; return true; } };
+    const instrument = { step: () => { steps.ui++; return true; } };
+    anim.add(onMap);
+    anim.add(instrument);
+    anim.wake();
+    let t = 1000;
+    while (rafQueue.length && t < 2000) {
+      const { cb } = rafQueue.shift();
+      cb(t);
+      t += frameMs;
+    }
+    anim._reset();
+    rafQueue.length = 0;
+    return steps;
+  };
+  // One either way: whether the second's last frame lands just inside it.
+  const about = (got, want, why) => assert.ok(Math.abs(got - want) <= 1, `${why}: ${got} steps, not ${want}`);
+  assert.equal(anim.mapRate(), 60, "60 Hz unless the operator asks for 30");
+  let s = stepsPerSecond(1000 / 60);
+  about(s.map, 60, "the map: every frame of a 60 Hz display");
+  about(s.ui, 60, "the instruments: every frame, as before");
+  s = stepsPerSecond(1000 / 120);
+  about(s.map, 60, "the map: every second frame of a 120 Hz display");
+  about(s.ui, 120, "the instruments keep the display's rate");
+  assert.equal(anim.setMapRate(30), 30);
+  about(stepsPerSecond(1000 / 60).map, 30, "every second frame at 30 Hz");
+  about(stepsPerSecond(1000 / 120).map, 30, "every fourth frame of a 120 Hz display at 30 Hz");
+  assert.equal(anim.setMapRate(45), 60, "a rate nobody offers is the default");
+  assert.equal(anim.setMapRate("30"), 30, "the value as a config file may carry it");
+  anim.setMapRate(60);
+}
+
 function testSharedLoopMultipleAnimators() {
   const anim = Corvus.anim;
   anim._reset();
@@ -714,6 +757,7 @@ function run() {
   testReducedMotionSnaps();
   testSharedLoopLifecycle();
   testSharedLoopMultipleAnimators();
+  testMapRateCapsOnlyMapAnimators();
   console.log("frontend link + interpolation tests passed");
 }
 

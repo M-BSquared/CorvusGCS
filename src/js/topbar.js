@@ -576,24 +576,155 @@ Corvus.topbar = (function () {
   function endurance(state) {
     if (!state.armed) return null;
     const fc = Number(state.battery_time_remaining) || 0;
-    if (fc > 0) return { value: flightTime(fc), note: "Time to empty, as the autopilot estimates it." };
+    if (fc > 0) return { value: flightTime(fc) };
     const est = Number(state.battery_endurance_est);
-    if (est >= 0) {
-      return { value: flightTime(est), note: "Time to empty at the drain of the last few minutes." };
-    }
+    if (est >= 0) return { value: flightTime(est) };
     return null;
   }
 
+  /* Height of the ground under the vehicle, for the AGL row. Read from the
+     same elevation model the map uses (Corvus.map.getTerrainSpec), so it
+     works with 3D off and without any new endpoint. The tile is fetched once
+     and decoded in the page; a position that stays in the same DEM pixel
+     asks nothing new. */
+  const GROUND_ZOOM = 13;
+  const GROUND_TILES_MAX = 12;
+  const groundTiles = new Map();
+  const ground = { key: "", homeKey: "", vehicle: null, value: null, home: null };
+
+  function decodeElevation(r, g, b, encoding) {
+    if (encoding === "mapbox") return (r * 65536 + g * 256 + b) * 0.1 - 10000;
+    return (r * 256 + g + b / 256) - 32768;
+  }
+
+  /** Tile and pixel fraction of a point at one zoom, slippy-map scheme. */
+  function groundTileAt(lng, lat, zoom) {
+    const scale = Math.pow(2, zoom);
+    const x = ((lng + 180) / 360) * scale;
+    const rad = lat * Math.PI / 180;
+    const y = ((1 - Math.log(Math.tan(rad) + 1 / Math.cos(rad)) / Math.PI) / 2) * scale;
+    return { x: Math.floor(x), y: Math.floor(y), fx: x - Math.floor(x), fy: y - Math.floor(y) };
+  }
+
+  function loadGroundTile(spec, zoom, x, y) {
+    const key = `${spec.id}/${zoom}/${x}/${y}`;
+    if (groundTiles.has(key)) return groundTiles.get(key);
+    while (groundTiles.size >= GROUND_TILES_MAX) groundTiles.delete(groundTiles.keys().next().value);
+    const pending = new Promise((resolve) => {
+      if (typeof Image !== "function") { resolve(null); return; }
+      const image = new Image();
+      image.onload = () => {
+        try {
+          const size = image.naturalWidth || 256;
+          const canvas = document.createElement("canvas");
+          canvas.width = size;
+          canvas.height = size;
+          const context = canvas.getContext("2d", { willReadFrequently: true });
+          context.drawImage(image, 0, 0, size, size);
+          resolve({ size, data: context.getImageData(0, 0, size, size).data });
+        } catch (_error) {
+          resolve(null);
+        }
+      };
+      image.onerror = () => resolve(null);
+      image.src = `/api/tiles/${spec.id}/${zoom}/${x}/${y}.png`;
+    });
+    groundTiles.set(key, pending);
+    // A tile that did not come is asked for again at the next new position.
+    pending.then((tile) => { if (!tile && groundTiles.get(key) === pending) groundTiles.delete(key); });
+    return pending;
+  }
+
+  /** DEM height at one point, in metres, or null. */
+  function sampleGround(spec, lng, lat) {
+    const zoom = Math.min(GROUND_ZOOM, Number(spec.maxzoom) || GROUND_ZOOM);
+    const tile = groundTileAt(lng, lat, zoom);
+    return loadGroundTile(spec, zoom, tile.x, tile.y).then((tex) => {
+      if (!tex) return null;
+      const px = Math.min(tex.size - 1, Math.floor(tile.fx * tex.size));
+      const py = Math.min(tex.size - 1, Math.floor(tile.fy * tex.size));
+      const o = (py * tex.size + px) * 4;
+      const value = decodeElevation(tex.data[o], tex.data[o + 1], tex.data[o + 2], spec.encoding);
+      return isFinite(value) ? value : null;
+    });
+  }
+
+  function fixOf(pos) {
+    const lng = pos ? Number(pos[0]) : NaN;
+    const lat = pos ? Number(pos[1]) : NaN;
+    return isFinite(lng) && isFinite(lat) && !(lng === 0 && lat === 0) ? [lng, lat] : null;
+  }
+
+  function trackGround(state) {
+    const vehicle = state.vehicle_id ?? 0;
+    const spec = Corvus.map && typeof Corvus.map.getTerrainSpec === "function" ? Corvus.map.getTerrainSpec() : null;
+    const here = fixOf(state.position);
+    if (!state.connected || !spec || !here) {
+      ground.key = "";
+      ground.homeKey = "";
+      ground.value = null;
+      ground.home = null;
+      return;
+    }
+    ground.vehicle = vehicle;
+    const cell = (pt) => `${spec.id}|${pt[0].toFixed(4)}|${pt[1].toFixed(4)}`;
+    const key = `${vehicle}|${cell(here)}`;
+    if (key !== ground.key) {
+      ground.key = key;
+      sampleGround(spec, here[0], here[1]).then((value) => {
+        if (ground.key !== key) return;
+        ground.value = value;
+        refreshAltitudeCard();
+      });
+    }
+    const home = fixOf(state.home);
+    const homeKey = home ? `${vehicle}|${cell(home)}` : "";
+    if (homeKey !== ground.homeKey) {
+      ground.homeKey = homeKey;
+      ground.home = null;
+      if (home) {
+        sampleGround(spec, home[0], home[1]).then((value) => {
+          if (ground.homeKey !== homeKey) return;
+          ground.home = value;
+          refreshAltitudeCard();
+        });
+      }
+    }
+  }
+
+  function refreshAltitudeCard() {
+    if (lastState && detailPops.altitude && detailPops.altitude.handle.isOpen()) {
+      refreshDetail("altitude", lastState, false);
+    }
+  }
+
+  /** Height over the ground below. Measured from the take-off point when its
+   *  ground height is known (the relative altitude is the autopilot's most
+   *  accurate figure, and the map draws the aircraft the same way); the
+   *  autopilot's own AMSL is the fallback, since a bare GNSS or barometer
+   *  altitude carries metres of error. */
+  function aglRow(state) {
+    if (ground.value === null || ground.vehicle !== (state.vehicle_id ?? 0)) return null;
+    const rel = Number(state.altitude_agl);
+    const amsl = Number(state.altitude_amsl);
+    let height;
+    if (ground.home !== null && isFinite(rel)) height = rel + ground.home - ground.value;
+    else if (isFinite(amsl)) height = amsl - ground.value;
+    else return null;
+    return ["AGL", Corvus.units.formatLength(Math.max(0, height)), ""];
+  }
+
   /** The altitudes an operator compares: the autopilot's estimate above sea
-   *  level, the height over the take-off point, what the receiver alone says,
-   *  and, only when Settings asks for it, the downward distance sensor. */
+   *  level, the height over the ground below, the height over the take-off
+   *  point, what the receiver alone says, and, only when Settings asks for
+   *  it, the downward distance sensor. */
   function altitudeDetail(state) {
     if (!state.connected) return null;
     const units = Corvus.units;
-    const rows = [
-      ["AMSL", units.formatLength(state.altitude_amsl), ""],
-      ["Above home", units.formatLength(state.altitude_agl), ""],
-    ];
+    const rows = [["AMSL", units.formatLength(state.altitude_amsl), ""]];
+    const agl = aglRow(state);
+    if (agl) rows.push(agl);
+    rows.push(["Above home", units.formatLength(state.altitude_agl), ""]);
     if (typeof state.gps_altitude === "number" && isFinite(state.gps_altitude)) {
       rows.push(["GPS", units.formatLength(state.gps_altitude), ""]);
     }
@@ -606,7 +737,7 @@ Corvus.topbar = (function () {
     return { title: "Altitude", rows, notes: [] };
   }
 
-  /* The highest groundspeed of the flight, per vehicle. A flight starts when
+  /* The highest groundspeed, climb rate and sink rate of the flight, per vehicle. A flight starts when
      the vehicle arms and the figure stays after the landing, so the operator
      can still read it once the motors are off. A fresh link on a disarmed
      vehicle, or an autopilot reboot, starts over; a link that drops and
@@ -619,7 +750,7 @@ Corvus.topbar = (function () {
     const key = state.vehicle_id ?? 0;
     let rec = topSpeeds.get(key);
     if (!rec) {
-      rec = { max: 0, connected: false, armed: false, bootMs: 0 };
+      rec = { max: 0, climb: 0, sink: 0, connected: false, armed: false, bootMs: 0 };
       topSpeeds.set(key, rec);
     }
     const connected = !!state.connected;
@@ -629,9 +760,14 @@ Corvus.topbar = (function () {
     if (connected) {
       const freshLink = !rec.connected && !armed;
       const justArmed = rec.connected && !rec.armed && armed;
-      if (freshLink || justArmed || rebooted) rec.max = 0;
+      if (freshLink || justArmed || rebooted) { rec.max = 0; rec.climb = 0; rec.sink = 0; }
       const v = Number(state.groundspeed);
       if (isFinite(v) && v > rec.max) rec.max = v;
+      const vs = Number(state.vspeed);
+      if (isFinite(vs)) {
+        if (vs > rec.climb) rec.climb = vs;
+        if (-vs > rec.sink) rec.sink = -vs;
+      }
       if (bootMs > 0) rec.bootMs = bootMs;
     }
     rec.connected = connected;
@@ -642,7 +778,17 @@ Corvus.topbar = (function () {
     if (!state.connected) return null;
     const rec = topSpeeds.get(state.vehicle_id ?? 0);
     const rows = [["Top speed", Corvus.units.formatSpeed(rec ? rec.max : 0), ""]];
-    return { title: "Groundspeed", rows, notes: ["Highest groundspeed since the vehicle was last armed."] };
+    return { title: "Groundspeed", rows, notes: [] };
+  }
+
+  function vspeedDetail(state) {
+    if (!state.connected) return null;
+    const rec = topSpeeds.get(state.vehicle_id ?? 0);
+    const rows = [
+      ["Top climb rate", Corvus.units.formatSpeed(rec ? rec.climb : 0), ""],
+      ["Top sink rate", Corvus.units.formatSpeed(rec ? rec.sink : 0), ""],
+    ];
+    return { title: "Vertical speed", rows, notes: [] };
   }
 
   function batteryDetail(state) {
@@ -680,14 +826,10 @@ Corvus.topbar = (function () {
     const other = usingEstimate ? Number(state.battery_percent_fc) : Number(state.battery_percent_est);
     rows.push([usingEstimate ? "Autopilot says" : "Cell voltage says",
       other >= 0 ? `${Math.round(other)}%` : "no reading", "muted"]);
-    const notes = [usingEstimate
-      ? "Remaining is read from the cell voltage."
-      : "Remaining is the autopilot's own figure."];
-    if (time) notes.push(time.note);
-    return { title: "Battery", rows, notes };
+    return { title: "Battery", rows, notes: [] };
   }
 
-  const DETAILS = { gps: gpsDetail, battery: batteryDetail, altitude: altitudeDetail, groundspeed: groundspeedDetail };
+  const DETAILS = { gps: gpsDetail, battery: batteryDetail, altitude: altitudeDetail, groundspeed: groundspeedDetail, vspeed: vspeedDetail };
 
   function detailBody(detail) {
     const body = document.createElement("div");
@@ -772,7 +914,7 @@ Corvus.topbar = (function () {
       { key: "battery", label: "Battery", value: state.connected ? `${state.battery_voltage.toFixed(1)} V` : "—", sub: state.connected ? `${battPct}%` : "", cls: battCls, dot: battCls, detail: true, priority: "high" },
       { key: "altitude", label: "Altitude", value: state.connected ? units.formatLength(state[alt.field], { bare: true }) : "—", sub: `${units.lengthSymbol()} ${alt.caption}`, detail: true, priority: "mid" },
       { key: "groundspeed", label: "Groundspeed", value: state.connected ? units.formatSpeed(state.groundspeed, { bare: true }) : "—", sub: units.speedSymbol(), detail: true, priority: "mid" },
-      { key: "vspeed", label: "Vertical speed", value: state.connected ? units.formatSpeed(state.vspeed, { bare: true, signed: true }) : "—", sub: units.speedSymbol(), priority: "mid" },
+      { key: "vspeed", label: "Vertical speed", value: state.connected ? units.formatSpeed(state.vspeed, { bare: true, signed: true }) : "—", sub: units.speedSymbol(), detail: true, priority: "mid" },
       { key: "warnings", type: "warnings", label: "Notifications", value: notifications.count, level: notifications.level, priority: "high" },
     ];
   }
@@ -1098,7 +1240,7 @@ Corvus.topbar = (function () {
           dot: root.querySelector(".tb-dot"),
           value: root.querySelector(".tb-value"),
         };
-        if (b.detail) attachDetail(root, b.key, b.key === "altitude" || b.key === "groundspeed" ? "tb-pop tb-pop-narrow" : "tb-pop");
+        if (b.detail) attachDetail(root, b.key, b.key === "altitude" || b.key === "groundspeed" || b.key === "vspeed" ? "tb-pop tb-pop-narrow" : b.key === "battery" || b.key === "gps" ? "tb-pop tb-pop-tight" : "tb-pop");
       });
       topBarBuilt = true;
       wireVehicleBlock();
@@ -1630,6 +1772,7 @@ Corvus.topbar = (function () {
   function handleTelemetryState(state) {
     lastState = state;
     trackTopSpeed(state);
+    trackGround(state);
     syncRemoteWarnings(state);
     syncRangefinder(state);
     applyLifecycleMilestones(state);
@@ -1699,6 +1842,11 @@ Corvus.topbar = (function () {
     vehicleTypeLabel,
     // The rows behind the GPS, Battery, Altitude and Groundspeed cards, for the tests.
     trackTopSpeed,
+    decodeElevation,
+    groundTileAt,
+    setGroundElevation: (vehicleId, metres, homeMetres = null) => {
+      ground.vehicle = vehicleId; ground.value = metres; ground.home = homeMetres;
+    },
     detail: (key, state) => (DETAILS[key] ? DETAILS[key](state || {}) : null),
     beginCommand: (key) => commandDedupe.begin(key),
     succeedCommand: (attempt) => commandDedupe.succeeded(attempt),

@@ -4,14 +4,20 @@ window.Corvus = window.Corvus || {};
 /**
  * Corvus.setupTuning — the PID Tuning sub-page of the Setup page.
  *
- * The control cascade, one tab per loop, innermost first — the way PX4 is
- * built and the way QGroundControl presents it:
+ * The control cascade, one block per loop on a single page, innermost first —
+ * the way PX4 is built and the way QGroundControl presents it:
  *
  *   Rate Controller       the loop that decides how the aircraft feels
  *   Attitude Controller   angle error to rate setpoint
  *   Velocity Controller   the loop behind a drifting hover (multicopter)
  *   Position Controller   position error to velocity setpoint (multicopter)
- *   Autotune              PX4's own tune: preconditions, axes, settings, and the run
+ *
+ * Each block holds the loop's live graphs and gains on the left and its own
+ * tune button on the right. The autotune itself is one run on the vehicle: a
+ * block that is tuned by it starts that run, a block that is tuned together
+ * with another says so on its button, and a block no autotune covers shows a
+ * greyed button with the reason. The status card above the blocks carries the
+ * run's progress, what the autopilot is doing, and whether a reboot is needed.
  *
  * This page replaces the "PID Tuning" band that used to sit at the bottom of
  * the Calibration page, which was one button and three read-only graphs. That
@@ -62,6 +68,23 @@ Corvus.setupTuning = (function () {
    *  enough that a step response is visible, slow enough to stay polite on a
    *  telemetry radio. */
   const STREAM_HZ = 20;
+
+  /** Written to the vehicle with the autotune module switched on: the module
+   *  only starts at boot, so nothing runs until the autopilot restarts. */
+  const REBOOT_TEXT_OFF =
+    "The autotune module is switched off on this autopilot. Switch it on in "
+    + "the autotune settings below, then reboot the autopilot before starting a tune.";
+  const REBOOT_TEXT_PENDING =
+    "The autotune module was switched on. Reboot the autopilot now: it only "
+    + "starts after a restart.";
+
+  const DEFAULT_RUNNING_TEXT =
+    "The autopilot is tuning. Keep your hands off the sticks unless the vehicle misbehaves.";
+  const DEFAULT_DONE_TEXT =
+    "The tune finished. Test the new gains gently before flying normally.";
+  const FAILED_TEXT =
+    "The tune did not finish. The console has the autopilot's reason. If the module "
+    + "was only just switched on, reboot the autopilot and try again.";
 
   const AUTOTUNE_PHASE_TEXT = {
     "": "Idle",
@@ -123,8 +146,8 @@ Corvus.setupTuning = (function () {
       host, tabs, banner, reloadBtn, actionsStatus,
       armed: false, connected: false, landed: 0,
       loading: false, destroyed: false, controls: [],
-      groups: [], activeId: null,
-      charts: null, autotune: null,
+      groups: [], restartPending: false,
+      charts: null, autotune: null, savedBufs: {},
       snapshot: {},
       linkChip, flightChip,
       reduced: S.reducedMotion(),
@@ -248,6 +271,7 @@ Corvus.setupTuning = (function () {
     purgeCharts(state);
     state.groups = Array.isArray(doc.groups) ? doc.groups : [];
     state.controls = [];
+    state.autotune = null;
     Corvus.ui.clear(state.tabs);
     state.host.innerHTML = "";
 
@@ -263,55 +287,27 @@ Corvus.setupTuning = (function () {
       return;
     }
 
-    // Keep the operator on the tab they were reading across a reload; a reload
-    // that silently jumps back to Roll loses the axis they were working on.
-    if (!state.groups.some((g) => g.id === state.activeId)) {
-      state.activeId = state.groups[0].id;
-    }
+    state.charts = newChartSet(state);
+    const autotune = state.groups.find((g) => g.kind === "autotune") || null;
+    const loops = state.groups.filter((g) => g.kind !== "autotune");
 
-    state.groups.forEach((group) => {
+    if (state.check) state.host.appendChild(S.checkCard(state.check, "tune"));
+    if (autotune) buildAutotune(state, autotune).forEach((el) => state.host.appendChild(el));
+
+    loops.forEach((group) => {
       const tab = document.createElement("button");
       tab.type = "button";
       tab.className = "tune-tab";
       tab.dataset.group = group.id;
-      tab.setAttribute("role", "tab");
       tab.textContent = group.title || group.id;
-      tab.addEventListener("click", () => selectGroup(state, group.id));
+      tab.addEventListener("click", () => jumpToLoop(state, group.id));
       state.tabs.appendChild(tab);
+      state.host.appendChild(buildLoop(state, group));
     });
-
-    selectGroup(state, state.activeId);
-  }
-
-  function selectGroup(state, groupId) {
-    const group = state.groups.find((g) => g.id === groupId);
-    if (!group) return;
-    state.activeId = groupId;
-    purgeCharts(state);
-    state.controls = [];
-    state.autotune = null;
-    state.host.innerHTML = "";
-
-    Array.prototype.forEach.call(state.tabs.children, (tab) => {
-      const active = tab.dataset.group === groupId;
-      tab.classList.toggle("active", active);
-      tab.setAttribute("aria-selected", active ? "true" : "false");
-    });
-
-    if (state.check) state.host.appendChild(S.checkCard(state.check, "tune"));
-    if (group.hint) state.host.appendChild(S.el("div", "tune-hint", group.hint));
-    if (group.kind === "autotune") state.host.appendChild(buildAutotune(state, group));
-    if (group.charts && group.charts.length) {
-      state.host.appendChild(buildCharts(state, group));
+    if (autotune) {
+      const settings = buildAutotuneSettings(state, autotune);
+      if (settings) state.host.appendChild(settings);
     }
-
-    (group.sections || []).forEach((section) => {
-      const card = S.el("div", "page-card tune-card");
-      card.dataset.section = section.id || "";
-      card.appendChild(S.sectionTitle(section.title || ""));
-      card.appendChild(S.paramFieldGrid(state, section.fields || [], { prefix: "tune" }));
-      state.host.appendChild(card);
-    });
 
     applyArmed(state, state.armed);
     if (state.autotune) state.autotune.paint();
@@ -320,14 +316,79 @@ Corvus.setupTuning = (function () {
     redrawAll(state);
   }
 
+  /** The tab strip is a jump list: every loop is on the page already. */
+  function jumpToLoop(state, groupId) {
+    Array.prototype.forEach.call(state.tabs.children, (tab) => {
+      const active = tab.dataset.group === groupId;
+      tab.classList.toggle("active", active);
+      tab.setAttribute("aria-current", active ? "true" : "false");
+    });
+    const block = findLoop(state, groupId);
+    if (block && typeof block.scrollIntoView === "function") {
+      block.scrollIntoView({ behavior: state.reduced ? "auto" : "smooth", block: "start" });
+    }
+  }
+
+  function findLoop(state, groupId) {
+    return Array.prototype.find.call(state.host.children,
+      (child) => child.dataset && child.dataset.loop === groupId) || null;
+  }
+
+  /** One controller: its graphs and gains on the left, its tune button on the right. */
+  function buildLoop(state, group) {
+    const block = S.el("section", "tune-loop");
+    block.dataset.loop = group.id;
+    block.appendChild(S.el("h3", "tune-loop-title", group.title || group.id));
+    if (group.hint) block.appendChild(S.el("div", "tune-hint", group.hint));
+
+    const body = S.el("div", "tune-loop-body");
+    const main = S.el("div", "tune-loop-main");
+    if (group.charts && group.charts.length) main.appendChild(buildCharts(state, group));
+    (group.sections || []).forEach((section) => {
+      const card = S.el("div", "page-card tune-card");
+      card.dataset.section = section.id || "";
+      card.appendChild(S.sectionTitle(section.title || ""));
+      card.appendChild(S.paramFieldGrid(state, section.fields || [], { prefix: "tune" }));
+      main.appendChild(card);
+    });
+    body.appendChild(main);
+    body.appendChild(buildTuneSide(state, group));
+    block.appendChild(body);
+    return block;
+  }
+
   /* ================================================================== */
   /* Charts: setpoint against response                                   */
   /* ================================================================== */
 
+  function newChartSet(state) {
+    const set = {
+      charts: [], config: S.plotlyConfig(state.reduced),
+      lastRedraw: 0, unsubTheme: null, observer: null,
+    };
+    // Plotly holds the colors it was handed, so a theme switch has to force a
+    // redraw. Released in purgeCharts along with the graphs themselves.
+    set.unsubTheme = Corvus.ui.onThemeChange(() => redrawAll(state));
+    // Every loop's graphs are on one page now; a graph scrolled out of view is
+    // still buffered but not redrawn, so ten live graphs do not cost ten
+    // Plotly passes ten times a second.
+    if (typeof window !== "undefined" && typeof window.IntersectionObserver === "function") {
+      set.observer = new window.IntersectionObserver((records) => {
+        records.forEach((record) => {
+          const entry = set.charts.find((c) => c.chart === record.target);
+          if (!entry) return;
+          entry.visible = !!record.isIntersecting;
+          if (entry.visible) redraw(state, entry);
+        });
+      });
+    }
+    return set;
+  }
+
   function buildCharts(state, group) {
     const wrap = S.el("div", "tune-charts");
-    const config = S.plotlyConfig(state.reduced);
-    const charts = (group.charts || []).map((spec) => {
+    const set = state.charts;
+    (group.charts || []).forEach((spec) => {
       const host = S.el("div", "tune-chart-host");
       const head = S.el("div", "tune-chart-head");
       head.appendChild(S.el("span", "tune-chart-title", spec.title || ""));
@@ -340,16 +401,15 @@ Corvus.setupTuning = (function () {
       chart.dataset.chart = spec.id || "";
       host.appendChild(chart);
       wrap.appendChild(host);
-      return {
-        spec, chart, live, dead: false,
-        buf: { t: [], sp: [], actual: [] },
-      };
+      // A reload re-reads the gains and rebuilds the page; the traces of the
+      // run that just finished are what the operator wants to look at next,
+      // so they are carried over.
+      const buf = state.savedBufs[spec.id] || { t: [], sp: [], actual: [] };
+      delete state.savedBufs[spec.id];
+      const entry = { spec, chart, live, dead: false, visible: true, buf };
+      set.charts.push(entry);
+      if (set.observer) set.observer.observe(chart);
     });
-
-    state.charts = { charts, config, lastRedraw: 0, unsubTheme: null };
-    // Plotly holds the colors it was handed, so a theme switch has to force a
-    // redraw. Released in purgeCharts along with the graphs themselves.
-    state.charts.unsubTheme = Corvus.ui.onThemeChange(() => redrawAll(state));
     return wrap;
   }
 
@@ -383,7 +443,7 @@ Corvus.setupTuning = (function () {
      set has already been purged is never redrawn in the first place. */
   function redraw(state, entry) {
     if (typeof window === "undefined") return;
-    if (!state.charts || entry.dead) return;
+    if (!state.charts || entry.dead || !entry.visible) return;
     // Plotly is fetched on first use (js/lazy.js). This runs at ~10 Hz off
     // live telemetry, so the guard has to be the cheap synchronous one and
     // the re-entry has to re-check `entry.dead`: a tab switch purges the
@@ -418,6 +478,9 @@ Corvus.setupTuning = (function () {
     if (state.charts.unsubTheme) {
       try { state.charts.unsubTheme(); } catch (_e) {}
     }
+    if (state.charts.observer) {
+      try { state.charts.observer.disconnect(); } catch (_e) {}
+    }
     // Marked before the purge, not after: a redraw queued for this frame must
     // not reach a graph that is about to be torn out from under it.
     state.charts.charts.forEach((entry) => { entry.dead = true; });
@@ -426,7 +489,7 @@ Corvus.setupTuning = (function () {
         try { window.Plotly.purge(entry.chart); } catch (_e) {}
       });
     }
-    state.charts.charts.forEach((entry) => { entry.buf = { t: [], sp: [], actual: [] }; });
+    state.charts.charts.forEach((entry) => { state.savedBufs[entry.spec.id] = entry.buf; });
     state.charts = null;
   }
 
@@ -454,7 +517,14 @@ Corvus.setupTuning = (function () {
   /* Autotune                                                            */
   /* ================================================================== */
 
+  /**
+   * The run, as two cards: a slim strip that stays in view while the operator
+   * scrolls from one loop's graphs to the next (progress, what the autopilot is
+   * doing, anything blocking the start), and below it the card of what is set
+   * before a tune (axes, the steps). Returned as a pair, in page order.
+   */
   function buildAutotune(state, group) {
+    const strip = S.el("div", "page-card tune-run");
     const card = S.el("div", "page-card tune-autotune");
 
     const head = S.el("div", "tune-autotune-head");
@@ -462,10 +532,53 @@ Corvus.setupTuning = (function () {
     const phase = S.el("span", "calib-phase tune-autotune-phase");
     phase.dataset.phase = "";
     head.appendChild(phase);
-    card.appendChild(head);
+    strip.appendChild(head);
+
+    // The run, in one place: how far it is, and what the autopilot is doing.
+    // The buttons are beside each controller below; this is what they start.
+    const barRow = S.el("div", "tune-progress-row");
+    const bar = S.el("div", "calib-progress tune-progress");
+    const fill = S.el("div", "calib-progress-fill");
+    bar.appendChild(fill);
+    bar.setAttribute("role", "progressbar");
+    bar.setAttribute("aria-valuemin", "0");
+    bar.setAttribute("aria-valuemax", "100");
+    barRow.appendChild(bar);
+    const percent = S.el("span", "tune-progress-percent");
+    const elapsed = S.el("span", "tune-progress-elapsed");
+    barRow.appendChild(percent);
+    barRow.appendChild(elapsed);
+    strip.appendChild(barRow);
+
+    const message = S.el("div", "tune-message");
+    message.setAttribute("role", "status");
+    message.setAttribute("aria-live", "polite");
+    strip.appendChild(message);
+
+    // A reboot is asked for in words and offered as a button, so an operator
+    // who has just switched the module on is not left to find the command.
+    const reboot = S.el("div", "params-banner tune-module-warning");
+    reboot.hidden = true;
+    const rebootText = S.el("span", "tune-module-warning-text");
+    reboot.appendChild(rebootText);
+    const rebootBtn = S.rebootButton({
+      size: "sm",
+      onRebooted: () => { state.restartPending = false; paintSoon(state); },
+    });
+    reboot.appendChild(rebootBtn);
+    strip.appendChild(reboot);
+
+    const gate = S.el("div", "params-banner setup-armed-banner tune-gate");
+    gate.hidden = true;
+    strip.appendChild(gate);
+
+    const axes = buildAutotuneAxes(state, group.axes);
+    if (axes) card.appendChild(axes);
 
     // The preconditions, before the aircraft leaves the ground rather than
     // after PX4 has refused with a result code that names none of them.
+    const details = S.el("details", "tune-steps-box");
+    details.appendChild(S.el("summary", "tune-steps-summary", "Before you start"));
     const steps = S.el("ol", "tune-steps");
     (group.steps || []).forEach((line) => {
       const item = document.createElement("li");
@@ -473,51 +586,103 @@ Corvus.setupTuning = (function () {
       item.textContent = line;
       steps.appendChild(item);
     });
-    card.appendChild(steps);
+    details.appendChild(steps);
+    card.appendChild(details);
 
-    const axes = buildAutotuneAxes(state, group.axes);
-    if (axes) card.appendChild(axes);
+    const axesField = group.axes && group.axes.selectable ? group.axes.field : null;
+    const ctx = {
+      group, phase, bar, fill, percent, elapsed, message, gate, reboot, rebootText,
+      rebootBtn, axesField, sides: [], busy: false, runStart: 0,
+    };
+    ctx.paint = () => paintAutotune(state, ctx);
+    state.autotune = ctx;
+    return [strip, card];
+  }
 
-    const moduleWarning = S.el("div", "params-banner tune-module-warning");
-    moduleWarning.hidden = group.enabled !== false;
-    moduleWarning.textContent =
-      "The autotune module is switched off on this autopilot. Turn it on below, "
-      + "then reboot the autopilot before starting a tune.";
-    card.appendChild(moduleWarning);
+  /** The autotune's own settings, below the loops: they are written like any
+   *  gain, so they sit with the gains rather than with the run. */
+  function buildAutotuneSettings(state, group) {
+    const sections = group.sections || [];
+    if (!sections.length) return null;
+    const wrap = S.el("section", "tune-loop tune-loop-settings");
+    wrap.dataset.loop = group.id;
+    sections.forEach((section) => {
+      const card = S.el("div", "page-card tune-card");
+      card.dataset.section = section.id || "";
+      card.appendChild(S.sectionTitle(section.title || ""));
+      card.appendChild(S.paramFieldGrid(state, section.fields || [], {
+        prefix: "tune",
+        onApplied: (field) => onSettingApplied(state, group, field),
+      }));
+      wrap.appendChild(card);
+    });
+    return wrap;
+  }
 
-    const bar = S.el("div", "calib-progress tune-progress");
-    const fill = S.el("div", "calib-progress-fill");
-    bar.appendChild(fill);
-    bar.hidden = true;
-    card.appendChild(bar);
+  /** The module is read at boot, so switching it on changes nothing until the
+   *  autopilot restarts; the page says so and holds the start back until then. */
+  function onSettingApplied(state, group, field) {
+    if (group.enable_param && field.param === group.enable_param) {
+      if (Number(field.value) === 1) {
+        if (!group.enabled) state.restartPending = true;
+        group.enabled = true;
+      } else {
+        group.enabled = false;
+        state.restartPending = false;
+      }
+    }
+    paintSoon(state);
+  }
 
-    const gate = S.el("div", "params-banner setup-armed-banner tune-gate");
-    gate.hidden = true;
-    card.appendChild(gate);
+  function paintSoon(state) {
+    if (state.autotune) state.autotune.paint();
+  }
 
+  /**
+   * The tune button beside one controller.
+   *
+   * The autotune is one run on the vehicle, so what a button does depends on
+   * how the firmware covers the loop (`group.tune`, from the schema): `run`
+   * starts the tune of this loop, `with` starts the run this loop is tuned in
+   * and says so, `manual` is a loop no autotune covers, greyed with the reason.
+   */
+  function buildTuneSide(state, group) {
+    const tune = group.tune || { mode: "manual", text: "" };
+    const side = S.el("aside", "page-card tune-side");
+    side.dataset.loop = group.id;
+    side.dataset.mode = tune.mode;
+    side.appendChild(S.sectionTitle("Autotune"));
+
+    const status = S.el("div", "tune-side-status");
+    side.appendChild(status);
+
+    const ctx = state.autotune;
+    const tunable = tune.mode !== "manual" && !!ctx;
     const startBtn = Corvus.ui.button({
-      variant: "primary", icon: "play", label: "Start autotune",
+      variant: "primary", icon: tunable ? "play" : "ban",
+      label: tunable ? "Start autotune" : "No autotune",
       onClick: () => runAutotune(state, true),
     });
     const stopBtn = Corvus.ui.button({
       variant: "danger", icon: "octagon-x", label: "Stop autotune",
       onClick: () => runAutotune(state, false),
     });
+    stopBtn.hidden = true;
     const row = Corvus.ui.actions([startBtn, stopBtn]);
     row.classList.add("tune-autotune-actions");
-    card.appendChild(row);
+    side.appendChild(row);
+    side.appendChild(S.el("div", "tune-side-note", tune.text || ""));
 
-    const axesField = group.axes && group.axes.selectable ? group.axes.field : null;
-    const ctx = {
-      phase, bar, fill, gate, startBtn, stopBtn, moduleWarning, axesField, busy: false,
-    };
-    ctx.paint = () => paintAutotune(state, ctx);
-    state.autotune = ctx;
-
-    // One registry entry for the pair: they are gated together, on the
-    // opposite condition to every other control on the page.
-    registerControl(state, startBtn, ctx.paint);
-    return card;
+    if (tunable) {
+      const entry = { group, tune, status, startBtn, stopBtn };
+      ctx.sides.push(entry);
+      // Gated on the opposite condition to every gain: in flight, not on the ground.
+      registerControl(state, startBtn, ctx.paint);
+    } else {
+      startBtn.disabled = true;
+      status.textContent = "Set by hand";
+    }
+    return side;
   }
 
   /**
@@ -534,7 +699,7 @@ Corvus.setupTuning = (function () {
     if (spec.selectable && spec.field) {
       const grid = S.paramFieldGrid(state, [spec.field], {
         prefix: "tune",
-        onApplied: () => { if (state.autotune) state.autotune.paint(); },
+        onApplied: () => paintSoon(state),
       });
       grid.classList.add("tune-axes");
       return grid;
@@ -574,49 +739,102 @@ Corvus.setupTuning = (function () {
     return offered !== 0 && (value & offered) === 0;
   }
 
+  /** "0:42", "12:05". */
+  function clock(seconds) {
+    const s = Math.max(0, Math.floor(seconds));
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  }
+
+  /** The reboot the autotune is waiting for, or "" when none is. */
+  function rebootReason(state, ctx) {
+    if (state.restartPending) return REBOOT_TEXT_PENDING;
+    if (ctx.group.enabled === false && ctx.group.enable_param) return REBOOT_TEXT_OFF;
+    return "";
+  }
+
+  /** Why the tune cannot start right now, or "" when it can. The gate names the
+   *  missing precondition: "cannot autotune" would tell an operator standing in
+   *  a field nothing they can act on. */
+  function gateText(state, ctx, noAxis) {
+    if (!state.connected) return "No link to the vehicle. Connect before autotuning.";
+    if (noAxis) {
+      // Before the flight checks: the boxes only take a write on the ground,
+      // so "take off first" would send the operator up to find this out.
+      return state.armed
+        ? "No axis is selected. Land and disarm to tick at least one."
+        : "No axis is selected. Tick at least one above before taking off.";
+    }
+    if (!state.armed) return "The autotune runs in flight. Arm the vehicle and take off first.";
+    if (state.landed === 1) {
+      return "The vehicle is still on the ground. Hold a stable hover, then start the tune.";
+    }
+    return "";
+  }
+
   function paintAutotune(state, ctx) {
     const phase = String(state.snapshot.autotune_state || "");
     const running = phase === "running";
-    const progress = Number(state.snapshot.autotune_progress) || 0;
+    const hasProgress = ctx.group.progress !== false;
+    const progress = Math.max(0, Math.min(100, Number(state.snapshot.autotune_progress) || 0));
     const flying = isFlying(state);
     const noAxis = noAxisSelected(ctx.axesField);
+    const reason = rebootReason(state, ctx);
+
+    if (running && !ctx.runStart) ctx.runStart = Date.now();
+    if (!running) ctx.runStart = 0;
 
     ctx.phase.dataset.phase = phase || "idle";
     ctx.phase.textContent = AUTOTUNE_PHASE_TEXT[phase] || phase;
 
-    ctx.bar.hidden = !running && phase !== "done";
-    ctx.fill.style.width = Math.max(0, Math.min(100, running ? progress : 100)) + "%";
+    // Without a progress figure (ArduPilot narrates in the console) a number
+    // would be invented, so the bar says "running" without claiming a share.
+    const indeterminate = running && !hasProgress;
+    const share = running ? (hasProgress ? progress : 100) : (phase === "done" ? 100 : 0);
+    ctx.fill.style.width = share + "%";
     ctx.bar.dataset.phase = phase;
+    ctx.bar.classList.toggle("is-indeterminate", indeterminate);
+    ctx.bar.setAttribute("aria-valuenow", String(indeterminate ? 0 : share));
+    ctx.bar.setAttribute("aria-valuetext", indeterminate ? "Tuning" : share + "%");
+    ctx.percent.textContent = running && hasProgress ? progress + "%" : "";
+    ctx.elapsed.textContent = running && ctx.runStart
+      ? clock((Date.now() - ctx.runStart) / 1000) + " elapsed" : "";
 
-    ctx.startBtn.hidden = running;
-    ctx.startBtn.disabled = ctx.busy || !flying || noAxis;
-    ctx.stopBtn.hidden = !running;
-    ctx.stopBtn.disabled = ctx.busy || !state.connected;
+    ctx.reboot.hidden = !reason;
+    ctx.rebootText.textContent = reason;
+    ctx.rebootBtn.disabled = state.armed || !state.connected;
 
-    // The gate names the missing precondition. "Cannot autotune" would tell an
-    // operator standing in a field nothing they can act on.
-    let text = "";
-    if (!state.connected) {
-      text = "No link to the vehicle. Connect before autotuning.";
-    } else if (noAxis) {
-      // Before the flight checks: the boxes only take a write on the ground,
-      // so "take off first" would send the operator up to find this out.
-      text = state.armed
-        ? "No axis is selected. Land and disarm to tick at least one."
-        : "No axis is selected. Tick at least one above before taking off.";
-    } else if (!state.armed) {
-      text = "The autotune runs in flight. Arm the vehicle and take off first.";
-    } else if (state.landed === 1) {
-      text = "The vehicle is still on the ground. Hold a stable hover, then start the tune.";
-    }
-    ctx.gate.hidden = !text || running;
-    ctx.gate.textContent = text;
+    const gate = reason ? "" : gateText(state, ctx, noAxis);
+    ctx.gate.hidden = !gate || running;
+    ctx.gate.textContent = gate;
+
+    let line;
+    if (running) line = ctx.group.running_text || DEFAULT_RUNNING_TEXT;
+    else if (phase === "done") line = ctx.group.done_text || DEFAULT_DONE_TEXT;
+    else if (phase === "failed") line = FAILED_TEXT;
+    else line = "No tune is running.";
+    ctx.message.textContent = line;
+    ctx.message.dataset.phase = phase || "idle";
+
+    const startable = !ctx.busy && flying && !noAxis && !reason;
+    ctx.sides.forEach((side) => {
+      side.startBtn.hidden = running;
+      side.startBtn.disabled = !startable;
+      side.stopBtn.hidden = !running;
+      side.stopBtn.disabled = ctx.busy || !state.connected;
+      let text = "";
+      if (running) text = hasProgress ? `Tuning ${progress}%` : "Tuning";
+      else if (phase === "done") text = "Complete";
+      else if (phase === "failed") text = "Failed";
+      side.status.textContent = text;
+      side.status.dataset.phase = phase || "idle";
+    });
   }
 
   async function runAutotune(state, enable) {
     const ctx = state.autotune;
     if (!ctx || ctx.busy) return;
-    if (enable && (!isFlying(state) || noAxisSelected(ctx.axesField))) return;
+    if (enable && (!isFlying(state) || noAxisSelected(ctx.axesField)
+        || rebootReason(state, ctx))) return;
     ctx.busy = true;
     ctx.paint();
     try {
@@ -629,8 +847,8 @@ Corvus.setupTuning = (function () {
     } finally {
       ctx.busy = false;
       ctx.paint();
-      // A finished tune writes new gains to the vehicle; the fields on the
-      // other tabs would otherwise still show the ones it replaced.
+      // A finished tune writes new gains to the vehicle; the fields would
+      // otherwise still show the ones it replaced.
       if (!enable) load(state);
     }
   }
@@ -649,6 +867,10 @@ Corvus.setupTuning = (function () {
     paintReady(state);
     S.reloadOnLink(state, s, () => load(state));
 
+    // A vehicle that dropped off the link has most likely restarted, which is
+    // all the pending reboot was waiting for. A notice that outlived it would
+    // keep the start button locked for a module that is already running.
+    if (!state.connected) state.restartPending = false;
     if (wasArmed !== state.armed) applyArmed(state, state.armed);
     if (state.autotune) state.autotune.paint();
 

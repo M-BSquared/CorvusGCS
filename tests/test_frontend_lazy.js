@@ -150,7 +150,11 @@ async function testTheHeavyBundlesAreNotInTheEagerScriptList() {
     "xterm is ~300 KB and belongs to the SSH terminal");
   // maplibre IS the first paint and lucide swaps the icons on every screen,
   // including the first, so both stay eager.
-  assert.match(joined, /maplibre-gl\.min\.js/);
+  // MapLibre 6 is an ES module: its tag is the one module script, which runs
+  // in the same document-ordered queue as the deferred tags.
+  assert.match(html, /<script type="module">\s*import \* as maplibregl from "\.\/vendor\/maplibre-gl\.mjs";\s*window\.maplibregl = maplibregl;\s*<\/script>/);
+  assert.ok(html.indexOf("vendor/maplibre-gl.mjs") < html.indexOf('src="js/map.js"'),
+    "maplibre has to be on window before map.js runs");
   assert.match(joined, /lucide\.min\.js/);
   // And the loader itself has to be defined before anything that asks for it.
   const lazyAt = joined.indexOf("js/lazy.js");

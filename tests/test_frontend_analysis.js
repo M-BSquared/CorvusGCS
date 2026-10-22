@@ -1319,7 +1319,7 @@ async function testTheGroundTrackGetsNoTimeBands() {
   // The track's x axis is metres east, so a time span drawn across it would be
   // meaningless — and its axes must stay equal or the shape is wrong.
   assert.ok(!(layout.shapes || []).length, "no mode bands on a non-time plot");
-  assert.equal(layout.xaxis.title, "East (m)");
+  assert.equal(layout.xaxis.title.text, "East (m)", "Plotly 3 and later draw no title given as a bare string");
   assert.equal(layout.yaxis.scaleanchor, "x");
   destroy();
 }

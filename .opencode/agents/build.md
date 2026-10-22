@@ -84,8 +84,9 @@ relocated interpreter, and excludes the never imported `QtQml`, `QtQuick` and
   pymavlink, paramiko, pyserial. No system Python, conda or Qt on the target.
 - **PySide6, never PyQt6.** PyQt6 is GPL and does not combine with the
   Sustainable Use License. The LGPL texts in `assets/licenses/` travel in every
-  bundle. PySide6 stays below 6.12 until the separate WebEngine wheel is added
-  and tested in one change (see the comment in `pyproject.toml`).
+  bundle. Since 6.12 QtWebEngine is its own wheel, `PySide6-WebEngine`; the
+  three Qt wheels share one range in `pyproject.toml` and move to the next
+  minor together, tested in one change.
 - **Only what runs.** `tools/qt_bundle.py` keeps what the imported Qt modules,
   plugins and QtWebEngine link and fails when something would miss a library;
   a new Qt import in `corvus/app.py` goes into its `MODULES`.

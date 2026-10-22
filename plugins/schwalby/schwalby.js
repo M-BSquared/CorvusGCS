@@ -1736,7 +1736,7 @@ Corvus.pluginSchwalby = (function () {
     }
 
     /** The row of chips in the editor: the theme's own first, then the
-     *  presets, then one that opens the system colour picker. */
+     *  presets. */
     function colorStrip(draft) {
       const strip = document.createElement("div");
       strip.className = "schw-colors";
@@ -1751,7 +1751,6 @@ Corvus.pluginSchwalby = (function () {
           chip.el.classList.toggle("is-selected", on);
           chip.el.setAttribute("aria-checked", on ? "true" : "false");
         });
-        custom.classList.toggle("is-selected", !!current && !BUTTON_COLORS.includes(current));
       }
 
       function pick(value) {
@@ -1771,19 +1770,6 @@ Corvus.pluginSchwalby = (function () {
         strip.appendChild(el);
         chips.push({ el, value });
       });
-
-      const custom = document.createElement("label");
-      custom.className = "schw-chip schw-chip-custom";
-      custom.title = "Pick any colour";
-      const input = document.createElement("input");
-      input.type = "color";
-      input.className = "schw-chip-input";
-      input.setAttribute("aria-label", "Custom colour");
-      input.value = coerceColor(draft.color).toLowerCase() || "#2f6fed";
-      input.addEventListener("input", () => pick(coerceColor(input.value)));
-      custom.appendChild(ui.icon("pipette", 12));
-      custom.appendChild(input);
-      strip.appendChild(custom);
 
       paint();
       return strip;

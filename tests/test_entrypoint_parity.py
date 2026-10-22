@@ -431,3 +431,11 @@ def test_no_launcher_sets_qtwebengine_chromium_flags_itself():
     for script in ("build-appimage.sh", "build-macos-app.sh"):
         text = (root / script).read_text(encoding="utf-8")
         assert "export QTWEBENGINE_CHROMIUM_FLAGS" not in text, script
+
+
+@pytest.mark.parametrize("platform", ["linux", "darwin", "win32"])
+def test_chromium_flags_turn_page_pinch_zoom_off(platform):
+    """The interface size is the scale setting, not a browser zoom."""
+    from corvus.app import chromium_flags
+
+    assert "--disable-pinch" in chromium_flags(platform)

@@ -115,13 +115,14 @@ class CorvusConfig:
     "inverted_app_icon": false, "app_icon_backplate": false,
     "topbar_status_dots": false, "mission_page": false,
     "notification_marks": false, "flight_bar_shrink": false,
-    "compass_nose_up": false, "solid_terminals": false,
+    "takeoff_land_split": false,
+    "compass_nose_up": false, "map_animation_rate": 60, "solid_terminals": false,
     "corvus_title_bar": false,
     "topbar_altitude": "amsl",
     "topbar_show_altitude": true, "topbar_show_groundspeed": true,
     "topbar_show_vspeed": true, "topbar_show_rangefinder": false,
     "track_earlier_flights": true, "track_rainbow": false,
-    "track_clear_on_restart": false,
+    "track_clear_on_restart": false, "track_in_air": true,
     "flight_hud": true, "hud_square": false, "measure_tool": true,
     "console_tab": true, "ssh_tab": true,
     "plugin_tabs": false, "units": {"length":
@@ -498,6 +499,10 @@ _UI_UNITS: dict[str, tuple[str, ...]] = {
 # The altitude the top bar's ALTITUDE block reads (see src/js/topbar.js).
 _UI_TOPBAR_ALTITUDE = ("amsl", "relative")
 
+# How many times a second the aircraft move on the map (see src/js/anim.js).
+# Absent means 30.
+_UI_MAP_ANIMATION_RATES = (30, 60)
+
 
 _FORWARD_PORT_MIN = 1
 _FORWARD_PORT_MAX = 65535
@@ -654,9 +659,20 @@ def _coerce_ui(raw: Any) -> dict[str, Any] | None:
     rule, at the same size, as the Mission planner's tool bar — and trading
     the labels for map earlier than that is a preference, not a default.
 
+    ``takeoff_land_split`` shows TAKEOFF and LAND as two buttons on the flight
+    bar. Off unless asked for: the bar then has one button that is TAKEOFF on
+    the ground and LAND in the air, and the takeoff card opens only from it as
+    TAKEOFF.
+
     ``compass_nose_up`` locks the flight compass nose up: the rose turns and
     the needle stays pointing at the top. Off unless asked for: north up is
     the default because it reads the same way as the map under it.
+
+    ``map_animation_rate`` is how many times a second the aircraft on the
+    map move, with the 3D height line, shadow and readout: 30 or 60, kept
+    only as one of those numbers. Absent means 60. 30 costs a field laptop
+    about a third less CPU in 3D. The flight instruments and the rest of the
+    interface are not affected, and neither is moving the map by hand.
 
     ``windows_in_app`` keeps camera and terminal windows inside the Corvus
     window, where a drag past its edge takes one out into a window of its own.
@@ -689,6 +705,11 @@ def _coerce_ui(raw: Any) -> dict[str, Any] | None:
     ``track_clear_on_restart`` discards the flown track when the app starts
     and when the autopilot reboots. Off unless asked for: the track is kept
     until the operator clears it with the button on the map.
+
+    ``track_in_air`` draws the flown track a second time in 3D, as a thin
+    line at the height it was flown, above the one on the ground. On unless
+    turned off, like ``track_earlier_flights``; off leaves only the track on
+    the ground.
 
     ``flight_hud`` puts the flight HUD (compass, attitude indicator and
     readouts) on the Home map. On unless turned off, like
@@ -726,6 +747,9 @@ def _coerce_ui(raw: Any) -> dict[str, Any] | None:
             out["units"] = kept
     if raw.get("topbar_altitude") in _UI_TOPBAR_ALTITUDE:
         out["topbar_altitude"] = raw["topbar_altitude"]
+    rate = raw.get("map_animation_rate")
+    if not isinstance(rate, bool) and isinstance(rate, (int, float)) and rate in _UI_MAP_ANIMATION_RATES:
+        out["map_animation_rate"] = int(rate)
     value = raw.get("scale")
     if not isinstance(value, bool) and isinstance(value, (int, float)):
         scale = float(value)
@@ -733,9 +757,10 @@ def _coerce_ui(raw: Any) -> dict[str, Any] | None:
             out["scale"] = min(max(scale, _UI_SCALE_MIN), _UI_SCALE_MAX)
     for key in ("inverted_app_icon", "app_icon_backplate", "topbar_status_dots",
                 "mission_page", "notification_marks", "flight_bar_shrink",
+                "takeoff_land_split",
                 "compass_nose_up", "windows_in_app", "solid_terminals", "corvus_title_bar",
                 "track_earlier_flights", "track_rainbow", "track_clear_on_restart",
-                "flight_hud", "hud_square",
+                "track_in_air", "flight_hud", "hud_square",
                 "topbar_show_altitude", "topbar_show_groundspeed", "topbar_show_vspeed",
                 "topbar_show_rangefinder",
                 "measure_tool", "console_tab", "ssh_tab", "plugin_tabs"):

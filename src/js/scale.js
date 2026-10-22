@@ -157,6 +157,14 @@ Corvus.scale = (function () {
     return normalize(n);
   }
 
+  // A pinch or Ctrl + wheel would zoom the page itself; the map still gets the
+  // event, since this neither stops it nor reads it.
+  if (typeof document.addEventListener === "function") {
+    document.addEventListener("wheel", (e) => {
+      if (e.ctrlKey) e.preventDefault();
+    }, { passive: false, capture: true });
+  }
+
   return {
     setScale, applySaved, get, normalize, fromConfig,
     STEPS, BREAKPOINTS, DEFAULT, MIN, MAX,

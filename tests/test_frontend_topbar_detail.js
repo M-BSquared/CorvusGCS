@@ -115,13 +115,13 @@ test("no flight time while armed without an estimate", () => {
 test("the autopilot's time left wins over Corvus's", () => {
   const d = detail("battery", { ...BATTERY, armed: true, battery_time_remaining: 725, battery_endurance_est: 300 });
   assert.equal(row(d, "Flight time left")[1], "about 12 min");
-  assert.ok(d.notes.some((n) => /autopilot estimates/.test(n)));
+  assert.equal(d.notes.length, 0);
 });
 
 test("Corvus's drain estimate when the autopilot has none", () => {
   const d = detail("battery", { ...BATTERY, armed: true, battery_endurance_est: 3900 });
   assert.equal(row(d, "Flight time left")[1], "about 1 h 05 min");
-  assert.ok(d.notes.some((n) => /drain/.test(n)));
+  assert.equal(d.notes.length, 0);
 });
 
 const ALTITUDE = {
@@ -146,6 +146,42 @@ test("Altitude card leaves GPS out without a 3D fix", () => {
     assert.equal(row(detail("altitude", { ...ALTITUDE, gps_altitude: none }), "GPS"), undefined);
   }
   assert.equal(row(detail("altitude", { ...ALTITUDE, gps_altitude: 0 }), "GPS")[1], "0 m");
+});
+
+test("AGL is the height over the ground under the vehicle, never below zero", () => {
+  Corvus.topbar.setGroundElevation(0, 480);
+  assert.equal(row(detail("altitude", ALTITUDE), "AGL")[1], "32 m");
+  Corvus.topbar.setGroundElevation(0, 530);
+  assert.equal(row(detail("altitude", ALTITUDE), "AGL")[1], "0 m");
+  assert.equal(row(detail("altitude", ALTITUDE), "Above home")[1], "37 m");
+});
+
+test("AGL counts from the take-off ground when it is known, not from the autopilot's AMSL", () => {
+  Corvus.topbar.setGroundElevation(0, 520, 500);
+  assert.equal(row(detail("altitude", ALTITUDE), "AGL")[1], "17 m");
+  Corvus.topbar.setGroundElevation(0, 480, 500);
+  assert.equal(row(detail("altitude", ALTITUDE), "AGL")[1], "57 m");
+  Corvus.topbar.setGroundElevation(0, null);
+});
+
+test("AGL is left out without ground data or for another vehicle", () => {
+  Corvus.topbar.setGroundElevation(0, null);
+  assert.equal(row(detail("altitude", ALTITUDE), "AGL"), undefined);
+  Corvus.topbar.setGroundElevation(4, 480);
+  assert.equal(row(detail("altitude", ALTITUDE), "AGL"), undefined);
+  Corvus.topbar.setGroundElevation(0, null);
+});
+
+test("DEM pixels decode in both encodings", () => {
+  assert.equal(Corvus.topbar.decodeElevation(128, 0, 0, "terrarium"), 0);
+  assert.equal(Corvus.topbar.decodeElevation(129, 244, 0, "terrarium"), 500);
+  assert.equal(Math.round(Corvus.topbar.decodeElevation(1, 134, 160, "mapbox")), 0);
+});
+
+test("the tile under a point is the slippy-map one", () => {
+  const t = Corvus.topbar.groundTileAt(0, 0, 1);
+  assert.deepEqual([t.x, t.y], [1, 1]);
+  assert.equal(Corvus.topbar.groundTileAt(-180, 0, 0).fx, 0);
 });
 
 test("the distance sensor row exists only when Settings asks for it", () => {
@@ -206,6 +242,12 @@ test("each vehicle keeps its own top speed", () => {
   assert.equal(top(feed({ vehicle_id: 2, armed: true, groundspeed: 1 })), Corvus.units.formatSpeed(5));
 });
 
+test("groundspeed card is one row with no note under it", () => {
+  const d = detail("groundspeed", feed({ vehicle_id: 11 }));
+  assert.equal(d.rows.length, 1);
+  assert.equal(d.notes.length, 0);
+});
+
 test("no dashes in the prose", () => {
   const all = [detail("groundspeed", feed({ vehicle_id: 9 })),
 detail("gps", { ...GPS, gps_jamming: "mitigated" }),
@@ -216,6 +258,34 @@ detail("gps", { ...GPS, gps_jamming: "mitigated" }),
     const text = d.rows.map((r) => r[0] + " " + r[1]).concat(d.notes).join("\n");
     assert.ok(!/—|–| - /.test(text), text);
   });
+});
+
+const climbRows = (s) => {
+  const d = detail("vspeed", s);
+  return [row(d, "Top climb rate")[1], row(d, "Top sink rate")[1]];
+};
+
+test("vertical speed card: nothing while disconnected", () => {
+  assert.equal(detail("vspeed", { connected: false }), null);
+});
+
+test("vertical speed card keeps the best climb and the worst sink of the flight", () => {
+  feed({ vehicle_id: 21, armed: false, vspeed: 0 });
+  feed({ vehicle_id: 21, armed: true, vspeed: 2 });
+  feed({ vehicle_id: 21, armed: true, vspeed: 5.5 });
+  feed({ vehicle_id: 21, armed: true, vspeed: -3 });
+  const s = feed({ vehicle_id: 21, armed: true, vspeed: -1 });
+  const [climb, sink] = climbRows(s);
+  assert.equal(climb, Corvus.units.formatSpeed(5.5));
+  assert.equal(sink, Corvus.units.formatSpeed(3));
+});
+
+test("a new arming starts the climb and sink records over", () => {
+  feed({ vehicle_id: 22, armed: true, vspeed: 4 });
+  feed({ vehicle_id: 22, armed: false, vspeed: 0 });
+  const s = feed({ vehicle_id: 22, armed: true, vspeed: 1 });
+  assert.equal(climbRows(s)[0], Corvus.units.formatSpeed(1));
+  assert.equal(climbRows(s)[1], Corvus.units.formatSpeed(0));
 });
 
 let failed = 0;

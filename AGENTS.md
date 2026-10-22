@@ -92,12 +92,14 @@ all child processes (e.g. MAVLink bridges) and guarantees clean teardown.
   every chart (`plotly-basic.min.js`) and every terminal selection
   (`xterm.js`) answers the pointer in the wrong place above 100%. Replacing
   either file drops its patch; `tests/test_frontend_vendor_zoom.js` fails when
-  that happens and prints the exact edit to re-apply. `maplibre-gl.min.js`
-  carries one more, `CORVUS-QUEUE-PATCH`: MapLibre 5.24 queues an image
-  request without its AbortController when the tile is aborted mid-request,
-  and the queue then throws inside an unrelated tile's request, marking that
-  tile (often an elevation tile) failed for good.
-  `tests/test_frontend_vendor_maplibre_queue.js` guards it the same way.
+  that happens and prints the exact edit to re-apply. MapLibre 6 ships only
+  as ES modules: `maplibre-gl.mjs` plus the `maplibre-gl-worker.mjs` it starts
+  from beside it, loaded by one module script in `index.html` that puts it on
+  `window.maplibregl`. It is unpatched: the image queue crash Corvus once
+  patched (`CORVUS-QUEUE-PATCH`, an aborted tile request marking an unrelated
+  tile failed for good) is fixed upstream since 6.1, and
+  `tests/test_frontend_vendor_maplibre_queue.js` fails if an upgrade brings
+  the late controller read back.
 
 ## Platforms & packaging
 

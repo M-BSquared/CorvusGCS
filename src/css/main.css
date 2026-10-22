@@ -154,6 +154,8 @@ input, textarea, [contenteditable="true"], pre, code, .selectable,
 .ui-popover.tb-pop { max-width: min(300px, calc(100 * var(--vw) - 16px)); min-width: 230px; }
 .ui-popover.tb-pop.tb-pop-narrow { min-width: 150px; }
 .tb-pop-narrow .tb-pop-grid { column-gap: 20px; }
+.ui-popover.tb-pop.tb-pop-tight { min-width: 0; }
+.tb-pop-tight .tb-pop-grid { column-gap: 10px; }
 .tb-pop-body { display: flex; flex-direction: column; gap: 6px; }
 .tb-pop-grid {
   display: grid; grid-template-columns: auto auto; column-gap: 16px; row-gap: 3px;

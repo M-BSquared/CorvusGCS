@@ -51,8 +51,9 @@ INSTALLERS = {
 # adding it to pyproject.toml fails, which is the point.
 EXPECTED_RUNTIME = {
     "pymavlink", "paramiko", "pyserial", "PySide6-Essentials", "PySide6-Addons",
+    "PySide6-WebEngine",
 }
-QT = {"PySide6-Essentials", "PySide6-Addons"}
+QT = {"PySide6-Essentials", "PySide6-Addons", "PySide6-WebEngine"}
 
 
 def _groups() -> dict:
@@ -240,16 +241,16 @@ def test_builds_write_into_dist_not_the_repo_root() -> None:
     assert "/dist/" in gitignore
 
 
-def test_qt_stays_below_the_release_that_split_out_webengine() -> None:
+def test_the_qt_wheels_move_together_and_include_webengine() -> None:
     """PySide6 6.12 ships QtWebEngine as its own wheel, PySide6-WebEngine.
 
     With only Essentials and Addons named, 6.12 installs without a web view:
     the macOS and Linux builds stop at the Qt trim, and the Windows build and a
-    fresh run.sh venv produce an app that dies on its first import. Either the
-    ceiling stays or the WebEngine wheel joins the group.
+    fresh run.sh venv produce an app that dies on its first import. The three
+    wheels also share one range, so pip cannot pair a WebEngine built for one
+    Qt with the Essentials of another.
     """
     app = _group("app")
-    if "PySide6-WebEngine" in app:
-        return
-    for package in QT:
-        assert "<6.12" in app[package], f"{package} needs <6.12 without PySide6-WebEngine"
+    assert "PySide6-WebEngine" in app, "6.12 and later have no web view without PySide6-WebEngine"
+    ranges = {re.sub(r"^[\w-]+", "", app[package]) for package in QT}
+    assert len(ranges) == 1, f"the Qt wheels name different ranges: {ranges}"

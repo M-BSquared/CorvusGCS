@@ -1625,12 +1625,12 @@ Corvus.analysis = (function () {
       });
       // Not every plot is against time: the ground track is north over east.
       if (plot.xlabel) {
-        layout.xaxis = Object.assign({}, layout.xaxis, { title: plot.xlabel });
+        layout.xaxis = Object.assign({}, layout.xaxis, { title: { text: plot.xlabel } });
       }
       // And where both axes are a distance, "m" on the y axis says nothing the
       // x axis has not already said.
       if (plot.ylabel) {
-        layout.yaxis = Object.assign({}, layout.yaxis, { title: plot.ylabel });
+        layout.yaxis = Object.assign({}, layout.yaxis, { title: { text: plot.ylabel } });
       }
       // A track drawn on unequal axes is a track of a different shape.
       if (plot.equal) {

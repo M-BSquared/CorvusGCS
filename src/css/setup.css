@@ -454,10 +454,11 @@
 :where(:root[data-vw~="max-720"]) .calib-stage-figure { max-width: 280px; margin: 0 auto; }
 
 /* ----- PID TUNING -----
-   One tab per loop of the control cascade. The tab strip is the page's whole
-   navigation, so it is the one piece of chrome here that is allowed to be
-   loud: the operator has to be able to tell at a glance which controller they
-   are editing, because the four look alike and the consequences do not. */
+   Every loop of the control cascade is on one page, innermost first. The tab
+   strip jumps between them, so it is the one piece of chrome here that is
+   allowed to be loud: the operator has to be able to tell at a glance which
+   controller they are editing, because the four look alike and the
+   consequences do not. */
 .tune-tabs {
   display: flex; flex-wrap: wrap; gap: 2px;
   border-bottom: 1px solid var(--border); margin-bottom: 14px;
@@ -474,6 +475,22 @@
 .tune-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
 
 .tune-panel { display: flex; flex-direction: column; gap: 14px; }
+
+/* One controller: graphs and gains on the left, its tune button on the right. */
+.tune-loop { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; scroll-margin-top: 12px; }
+.tune-loop-title { margin: 0; font-size: 15px; font-weight: 650; color: var(--text-1); }
+.tune-loop-body {
+  display: grid; grid-template-columns: minmax(0, 1fr) 270px;
+  gap: 14px; align-items: start;
+}
+.tune-loop-main { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.tune-loop-settings { gap: 12px; }
+.tune-side { position: sticky; top: 12px; display: flex; flex-direction: column; gap: 10px; }
+.tune-side-status { font-size: 12px; font-weight: 650; color: var(--text-2); min-height: 1.4em; }
+.tune-side-status[data-phase="running"] { color: var(--nav); }
+.tune-side-status[data-phase="done"] { color: var(--healthy); }
+.tune-side-status[data-phase="failed"] { color: var(--critical); }
+.tune-side-note { font-size: 11.5px; line-height: 1.5; color: var(--text-3); }
 .tune-card { display: flex; flex-direction: column; gap: 10px; }
 /* Each group leads with what its loop actually does. Four pages of gains with
    no such line is how an operator ends up tuning the wrong controller. */
@@ -524,6 +541,31 @@
    flight and answers a premature attempt with a bare result code, so the
    preconditions have to be readable before the aircraft leaves the ground. */
 .tune-autotune { display: flex; flex-direction: column; gap: 11px; }
+/* The run stays in view while the operator scrolls from one loop's graphs to
+   the next: the bar and the message are what they watch during a tune. */
+.tune-run { display: flex; flex-direction: column; gap: 9px; }
+@media (min-height: 760px) {
+  .tune-run { position: sticky; top: 0; z-index: 4; box-shadow: 0 6px 14px -10px rgba(0, 0, 0, 0.35); }
+  .tune-loop { scroll-margin-top: 120px; }
+}
+.tune-progress-row { display: flex; align-items: center; gap: 10px; }
+.tune-progress-row .tune-progress { flex: 1; margin: 0; height: 8px; }
+.tune-progress-percent {
+  min-width: 36px; text-align: right; font-size: 12px; font-weight: 650;
+  color: var(--text-1); font-variant-numeric: tabular-nums;
+}
+.tune-progress-elapsed { font-size: 11px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.tune-progress.is-indeterminate .calib-progress-fill {
+  width: 35% !important; transition: none; animation: tuneSweep 1.5s ease-in-out infinite;
+}
+@keyframes tuneSweep { 0% { margin-left: -35%; } 100% { margin-left: 100%; } }
+.tune-message { font-size: 12.5px; line-height: 1.55; color: var(--text-2); }
+.tune-message[data-phase="failed"] { color: var(--critical); }
+.tune-message[data-phase="done"] { color: var(--healthy); }
+.tune-module-warning { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.tune-module-warning-text { flex: 1 1 240px; }
+.tune-steps-summary { cursor: pointer; font-size: 12px; font-weight: 600; color: var(--text-2); }
+.tune-steps-box[open] .tune-steps { margin-top: 8px; }
 .tune-autotune-head { display: flex; align-items: center; gap: 10px; }
 .tune-autotune-label { font-size: 13px; font-weight: 650; color: var(--text-1); }
 .tune-autotune-phase { margin-left: auto; }
@@ -540,6 +582,8 @@
    above is written after the .pform-field collapse, at the same
    specificity. */
 :where(:root[data-vw~="max-720"]) .tune-field { grid-template-columns: 1fr; }
+:where(:root[data-vw~="max-720"]) .tune-loop-body { grid-template-columns: minmax(0, 1fr); }
+:where(:root[data-vw~="max-720"]) .tune-side { position: static; order: -1; }
 :where(:root[data-vw~="max-720"]) .field-select.tune-select { max-width: none; }
 
 /* ----- PARAMETERS ----- */

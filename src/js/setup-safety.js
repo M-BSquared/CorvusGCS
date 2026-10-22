@@ -275,6 +275,10 @@ Corvus.setupSafety = (function () {
     } else {
       sections.filter((s) => !isSensorSection(s) && !isGeofenceSection(s)).forEach((section) => {
         if (fence && section.id === "rtl") cards.push(fence);
+        if (section.id === "landing") {
+          cards.push({ el: landingCard(state, section), weight: 9 });
+          return;
+        }
         const card = S.el("div", "page-card safety-card");
         card.dataset.section = section.id || "";
         card.appendChild(S.sectionTitle(section.title || ""));
@@ -1345,7 +1349,7 @@ Corvus.setupSafety = (function () {
    * sets a starting point. Each field is labelled with its unit in the list so
    * the numbers read the same as in the form.
    */
-  function actionBlock(state, section, action) {
+  function actionBlock(state, section, action, compact) {
     const block = S.el("div", "safety-action");
     block.dataset.action = action.id || "";
     const fields = {};
@@ -1355,8 +1359,10 @@ Corvus.setupSafety = (function () {
       const label = (f.label || "") + (f.unit ? " (" + f.unit + ")" : "");
       return { param: w.param, value: w.value, label };
     });
-    if (action.hint) block.appendChild(S.el("p", "safety-preset-note", action.hint));
-    if (writes.length) block.appendChild(writeTable({ writes }, null));
+    if (!compact) {
+      if (action.hint) block.appendChild(S.el("p", "safety-preset-note", action.hint));
+      if (writes.length) block.appendChild(writeTable({ writes }, null));
+    }
 
     const bar = S.el("div", "safety-preset-actions");
     const status = S.el("span", "params-row-status safety-preset-status", "");
@@ -1368,6 +1374,10 @@ Corvus.setupSafety = (function () {
       onClick: () => applyAction(state, key, action, writes, status).catch(() => {}),
     });
     button.dataset.action = action.id || "";
+    if (compact) {
+      button.title = [action.hint || "", writes.map(
+        (w) => w.label + " " + S.formatNumber(w.value)).join(", ")].filter(Boolean).join(" ");
+    }
     registerControl(state, button, () => {
       button.disabled = state.armed || !writes.length;
     });
@@ -1378,6 +1388,117 @@ Corvus.setupSafety = (function () {
     if (last) setFieldStatus(status, last.cls, last.text);
     S.refreshIcons();
     return block;
+  }
+
+  /**
+   * The Landing card: the descent as one vertical bar read from the top down,
+   * with the fields that set each stretch beside it. A bracket per stretch
+   * shows how many metres it spans, worked out from the height fields as they
+   * are typed, so the heights read as lengths instead of four loose numbers.
+   * The preset sits beside the title with its values behind the button, and
+   * hints behind an icon, because the card is short on purpose.
+   */
+  const DERIVED_SPAN_HINT = "Calculated from the heights, so it cannot be changed here. "
+    + "The vehicle stores only the heights. Change them in the fields beside it and this "
+    + "value follows.";
+
+  const LANDING_ZONES = [
+    { id: "fast", end: "MPC_LAND_ALT1", speeds: ["MPC_Z_VEL_MAX_DN", "MPC_Z_V_AUTO_DN"] },
+    { id: "brake", end: "MPC_LAND_ALT2", speeds: [] },
+    { id: "land", end: null, speeds: ["MPC_LAND_SPEED"] },
+    { id: "crawl", end: "MPC_LAND_ALT3", speeds: ["MPC_LAND_CRWL"] },
+  ];
+
+  function landingCard(state, section) {
+    const card = S.el("div", "page-card safety-card safety-landing");
+    card.dataset.section = section.id || "";
+    const head = S.el("div", "safety-landing-head");
+    const title = S.el("div", "safety-landing-title");
+    title.appendChild(S.sectionTitle(section.title || ""));
+    if (section.hint) {
+      title.appendChild(Corvus.ui.infoHint({ title: section.title, text: section.hint }));
+    }
+    head.appendChild(title);
+    (section.actions || []).forEach((action) => {
+      head.appendChild(actionBlock(state, section, action, true));
+    });
+    card.appendChild(head);
+
+    const byParam = {};
+    (section.fields || []).forEach((f) => { byParam[f.param] = f; });
+    const used = new Set();
+    const zones = S.el("div", "safety-landing-zones");
+    const spans = [];
+    const grid = (fields, cls) => {
+      const g = S.paramFieldGrid(state, fields, { prefix: "safety", hintAsInfo: true });
+      g.classList.add("safety-landing-grid", cls);
+      return g;
+    };
+    LANDING_ZONES.forEach((zone) => {
+      const end = zone.end && byParam[zone.end] ? [byParam[zone.end]] : [];
+      const speeds = zone.speeds.filter((p) => byParam[p]).map((p) => byParam[p]);
+      if (!end.length && !speeds.length) return;
+      end.concat(speeds).forEach((f) => used.add(f.param));
+      const row = S.el("div", "slz slz-" + zone.id);
+      row.appendChild(grid(speeds, "slz-speeds"));
+      row.appendChild(S.el("div", "slz-bar"));
+      row.appendChild(S.el("div", "slz-span"));
+      const cell = S.el("div", "slz-span-cell");
+      const label = S.el("span", "slz-span-text", "");
+      cell.appendChild(label);
+      cell.appendChild(Corvus.ui.infoHint({ text: DERIVED_SPAN_HINT }));
+      row.appendChild(cell);
+      row.appendChild(grid(end, "slz-end"));
+      zones.appendChild(row);
+      spans.push({ id: zone.id, text: label });
+    });
+    const rest = (section.fields || []).filter((f) => !used.has(f.param));
+    if (rest.length) {
+      zones.appendChild(grid(rest, "slz-rest"));
+    }
+    const redraw = () => {
+      const v = landingValues(zones);
+      const metres = (n) => S.formatNumber(Math.round(n * 100) / 100) + " m";
+      const have = (...names) => names.every((n) => n in v);
+      spans.forEach((z) => {
+        let text = "";
+        if (z.id === "fast" && have("MPC_LAND_ALT1")) text = "> " + metres(v.MPC_LAND_ALT1);
+        if (z.id === "brake" && have("MPC_LAND_ALT1", "MPC_LAND_ALT2")
+            && v.MPC_LAND_ALT1 >= v.MPC_LAND_ALT2) {
+          text = metres(v.MPC_LAND_ALT1 - v.MPC_LAND_ALT2);
+        }
+        if (z.id === "land" && have("MPC_LAND_ALT2", "MPC_LAND_ALT3")
+            && v.MPC_LAND_ALT2 >= v.MPC_LAND_ALT3) {
+          text = metres(v.MPC_LAND_ALT2 - v.MPC_LAND_ALT3);
+        }
+        if (z.id === "crawl" && have("MPC_LAND_ALT3")) text = "< " + metres(v.MPC_LAND_ALT3);
+        z.text.textContent = text;
+      });
+    };
+    zones.addEventListener("input", redraw);
+    zones.addEventListener("change", redraw);
+    card.appendChild(zones);
+    redraw();
+    return card;
+  }
+
+  /** What the landing inputs hold now, by parameter; a blank or invalid input is left out. */
+  function landingValues(zones) {
+    const out = {};
+    const read = (node) => {
+      Array.from(node.children || []).forEach((child) => {
+        if (child.dataset && child.dataset.param) {
+          const input = child.querySelector("input");
+          const raw = input ? String(input.value).trim() : "";
+          const n = Number(raw);
+          if (raw !== "" && Number.isFinite(n) && n >= 0) out[child.dataset.param] = n;
+        } else {
+          read(child);
+        }
+      });
+    };
+    read(zones);
+    return out;
   }
 
   /** Write an action's values in order, then re-read so the fields show what the vehicle holds. */

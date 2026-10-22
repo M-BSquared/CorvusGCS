@@ -357,3 +357,28 @@ def test_an_output_is_only_addressed_through_the_bank_that_exists() -> None:
     assert ardupilot_motors.function_param("MAIN", 4) is None
     assert ardupilot_motors.function_param("SERVO", 0) is None
     assert ardupilot_motors.function_param("SERVO", 999) is None
+
+
+def test_a_copter_autotune_tunes_rate_and_angle_in_one_run_without_a_percentage() -> None:
+    doc = ardupilot_tuning.build(_all_values(ardupilot_tuning), "copter")
+    modes = {g["id"]: g["tune"]["mode"] for g in doc["groups"] if g["kind"] == "fields"}
+    assert modes["rate"] == "run"
+    assert modes["attitude"] == "with"
+    assert modes["velocity"] == "manual"
+    autotune = next(g for g in doc["groups"] if g["id"] == "autotune")
+    # ArduPilot narrates its tune over the console; a share would be invented.
+    assert autotune["progress"] is False
+    assert "console" in autotune["running_text"]
+
+
+def test_a_plane_attitude_loop_is_not_part_of_its_autotune() -> None:
+    doc = ardupilot_tuning.build(_all_values(ardupilot_tuning), "plane")
+    modes = {g["id"]: g["tune"]["mode"] for g in doc["groups"] if g["kind"] == "fields"}
+    assert modes["rate"] == "run"
+    assert modes.get("attitude", "manual") == "manual"
+
+
+def test_a_vehicle_without_an_autotune_has_only_manual_loops() -> None:
+    doc = ardupilot_tuning.build(_all_values(ardupilot_tuning), "rover")
+    assert not any(g["kind"] == "autotune" for g in doc["groups"])
+    assert {g["tune"]["mode"] for g in doc["groups"]} == {"manual"}

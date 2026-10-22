@@ -341,8 +341,83 @@ def _autotune_axes(prefix: str, values: dict[str, float]) -> dict[str, Any] | No
         "reason": "PX4 tunes roll, pitch and yaw one after the other in a single "
                   "run. Its multicopter autotune has no axis selection, so one "
                   "axis cannot be tuned on its own. Any gain can still be set by "
-                  "hand on the Rate Controller tab.",
+                  "hand in the Rate Controller below.",
     }
+
+
+AUTOTUNE_RUNNING_TEXT = (
+    "The autopilot is exciting each axis in turn and measuring the response. "
+    "Keep your hands off the sticks and hold the hover. Stop the tune at any "
+    "time if the vehicle misbehaves."
+)
+
+_APPLY_DONE_TEXT = {
+    0: "The tune finished. The gains were not applied because the apply setting "
+       "is Never, so nothing on the vehicle has changed.",
+    1: "The tune finished. Land and disarm to apply the new gains, then test "
+       "them gently before flying normally.",
+    2: "The tune finished and the new gains are already active. Test them "
+       "gently before flying normally.",
+}
+
+TUNE_NONE_TEXT = ("This firmware has no autotune. Set the gains by hand below, "
+                  "on the ground.")
+
+
+def _done_text(values: dict[str, float], prefix: str) -> str:
+    """What the operator does once the tune is over, from the apply setting.
+
+    The answer depends on ``MC_AT_APPLY`` / ``FW_AT_APPLY``: with "Never" the
+    tune changes nothing, which must not be reported as "new gains active".
+    """
+    apply_value = int(round(values.get(f"{prefix}_AT_APPLY", 1.0)))
+    return _APPLY_DONE_TEXT.get(apply_value, _APPLY_DONE_TEXT[1])
+
+
+def _tune(mode: str, text: str, together_with: str = "") -> dict[str, str]:
+    """How one controller is tuned, for the button beside it.
+
+    ``mode`` is ``"run"`` when the autotune tunes this loop, ``"with"`` when it
+    tunes it as part of another loop's run (named by ``together_with``, so the
+    button starts that same run and says so), and ``"manual"`` when no autotune
+    covers it. A loop that cannot be tuned is still reported, with the reason,
+    so the page can grey its button instead of dropping it.
+    """
+    out = {"mode": mode, "text": text}
+    if together_with:
+        out["with"] = together_with
+    return out
+
+
+def _attach_tune(groups: list[dict[str, Any]], family: str | None) -> None:
+    """Add a ``tune`` entry to every controller group, from the autotune the
+    firmware carries (``"MC"``, ``"FW"`` or ``None`` for none)."""
+    for group in groups:
+        if group["kind"] != "fields":
+            continue
+        loop = group["id"]
+        if family is None:
+            group["tune"] = _tune("manual", TUNE_NONE_TEXT)
+        elif loop == "rate":
+            group["tune"] = _tune(
+                "run",
+                "Tunes the roll, pitch and yaw rate gains in one flight. It "
+                "needs a stable hover.")
+        elif loop == "attitude" and family == "MC":
+            group["tune"] = _tune(
+                "with",
+                "PX4 sets the attitude gains in the same run as the rate "
+                "controller, so this starts that run.", "rate")
+        elif loop == "attitude":
+            group["tune"] = _tune(
+                "manual",
+                "The fixed-wing autotune does not change the attitude time "
+                "constants. Set them by hand, on the ground.")
+        else:
+            group["tune"] = _tune(
+                "manual",
+                "PX4 has no autotune for this loop. Set the gains by hand, on "
+                "the ground.")
 
 
 # ---------------------------------------------------------------------------
@@ -540,10 +615,13 @@ def _autotune_group(values: dict[str, float]) -> dict[str, Any] | None:
         "enabled": enabled,
         "enable_param": enable_param if enable_param in values else None,
         "axes": _autotune_axes(prefix, values),
+        "progress": True,
+        "running_text": AUTOTUNE_RUNNING_TEXT,
+        "done_text": _done_text(values, prefix),
         "steps": list(AUTOTUNE_STEPS),
         "sections": ([{"id": "settings", "title": "Autotune settings",
                        "fields": settings}] if settings else []),
-        "charts": _charts(MC_RATE_CHARTS),
+        "charts": [],
     }
 
 
@@ -559,7 +637,9 @@ def build(values: dict[str, float]) -> dict[str, Any]:
     shape is what ``GET /api/tuning`` serialises:
 
     ``groups`` — ordered list of ``{id, title, hint, kind, sections, charts}``,
-    innermost control loop first. ``kind`` is ``"fields"`` for a controller and
+    innermost control loop first. A controller also carries ``tune``, how the
+    autotune reaches it (see :func:`_tune`). ``kind`` is ``"fields"`` for a
+    controller and
     ``"autotune"`` for the autotune group, which carries its preconditions,
     its axis selection (``axes``, see :func:`_autotune_axes`) and its own
     settings alongside its fields. Each field carries the PX4 parameter
@@ -573,4 +653,6 @@ def build(values: dict[str, float]) -> dict[str, Any]:
         _position_group(values),
         _autotune_group(values),
     ) if g is not None]
+    family = _autotune_family(values)
+    _attach_tune(groups, family[0] if family else None)
     return {"groups": groups, "received": len(values)}

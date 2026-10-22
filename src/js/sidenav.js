@@ -383,6 +383,7 @@ Corvus.sidenav = (function () {
     body.appendChild(flightBarCard(cfg));
     body.appendChild(flightHudCard(cfg));
     body.appendChild(mapToolsCard(cfg));
+    body.appendChild(mapMotionCard(cfg));
     body.appendChild(compassCard(cfg));
     body.appendChild(topBarCard(cfg));
     body.appendChild(notificationsCard(cfg));
@@ -680,6 +681,31 @@ Corvus.sidenav = (function () {
         + "drop to the width of their own word first, then to icons alone. "
         + "Trade the words for map only if you want to.",
     }));
+
+    const split = !!((cfg.ui || {}).takeoff_land_split);
+    Corvus.app.setTakeoffLandSplit(split);
+    const splitSwitch = Corvus.ui.toggle({
+      id: "settingsTakeoffLandSplit",
+      value: split,
+      ariaLabel: "Separate Takeoff and Land buttons",
+      onChange: (next) => {
+        Corvus.app.setTakeoffLandSplit(next);
+        return postConfig({ ui: { takeoff_land_split: next } }, { strict: true })
+          .catch((error) => {
+            Corvus.app.setTakeoffLandSplit(!next);
+            throw error;
+          });
+      },
+    });
+    card.appendChild(Corvus.ui.field({
+      label: "Separate Takeoff and Land buttons",
+      control: splitSwitch.el,
+      className: "field-switch",
+      hint: "Off, the bar has one button: TAKEOFF while the aircraft is on "
+        + "the ground, LAND once it is flying. The takeoff card opens only "
+        + "from TAKEOFF, never from LAND. On, TAKEOFF and LAND are two "
+        + "buttons side by side, and the one that does not apply is greyed.",
+    }));
     return card;
   }
 
@@ -696,6 +722,7 @@ Corvus.sidenav = (function () {
       earlierFlights: ui.track_earlier_flights !== false,
       rainbow: ui.track_rainbow === true,
       clearOnRestart: ui.track_clear_on_restart === true,
+      inAir: ui.track_in_air !== false,
     };
     const apply = (patch) => Corvus.map.setTrackOptions(Object.assign(options, patch));
 
@@ -767,6 +794,28 @@ Corvus.sidenav = (function () {
             "the autopilot restarts, until you clear it with the button on " +
             "the map. On: it is cleared every time Corvus starts and every " +
             "time the autopilot reboots.",
+    }));
+
+    const inAir = Corvus.ui.toggle({
+      id: "settingsTrackInAir",
+      value: options.inAir,
+      ariaLabel: "Track in the air in 3D",
+      onChange: (next) => {
+        apply({ inAir: next });
+        return postConfig({ ui: { track_in_air: next } }, { strict: true })
+          .catch((error) => {
+            apply({ inAir: !next });
+            throw error;
+          });
+      },
+    });
+    card.appendChild(Corvus.ui.field({
+      label: "Track in the air in 3D",
+      control: inAir.el,
+      className: "field-switch",
+      hint: "On (the default): in 3D the track is also drawn as a thin line " +
+            "at the height it was flown, above the track on the ground. " +
+            "Off: only the track on the ground.",
     }));
     return card;
   }
@@ -860,6 +909,42 @@ Corvus.sidenav = (function () {
             "the distance and heading between them. Escape or a right click " +
             "clears the line, and a second one turns the tool off. Off, the " +
             "button is gone.",
+    }));
+    return card;
+  }
+
+  // How often a second the aircraft on the map move. 60 Hz by default; 30 Hz is
+  // about a third less CPU in 3D, and on a laptop running on its battery
+  // that is time in the air. Only the map is capped (see anim.js); the
+  // instruments and a hand on the map keep the display's own rate. Same
+  // contract as the cards around it: live at once, persist awaited, a refused
+  // POST puts the old rate back.
+  function mapMotionCard(cfg) {
+    const card = Corvus.ui.card({ title: "Map animation" });
+    const rate = Corvus.anim.setMapRate((cfg.ui || {}).map_animation_rate);
+    const cards = Corvus.ui.optionCards({
+      ariaLabel: "Aircraft on the map",
+      columns: 2,
+      value: String(rate),
+      options: [
+        { id: "30", label: "30 Hz", desc: "Saves power" },
+        { id: "60", label: "60 Hz", desc: "Smoother" },
+      ],
+      onChange: (next) => {
+        const prev = Corvus.anim.mapRate();
+        Corvus.anim.setMapRate(Number(next));
+        postConfig({ ui: { map_animation_rate: Number(next) } }, { strict: true })
+          .catch(() => cards.setValue(String(Corvus.anim.setMapRate(prev))));
+      },
+    });
+    card.appendChild(Corvus.ui.field({
+      label: "Aircraft on the map",
+      control: cards.el,
+      hint: "How many times a second the aircraft on the map move, in 3D " +
+            "with their height line and shadow. 30 Hz needs about a third less " +
+            "CPU in 3D, which a laptop on battery notices. 60 Hz (the default) " +
+            "moves them more smoothly. The flight instruments and moving " +
+            "the map by hand always run at the display's full rate.",
     }));
     return card;
   }

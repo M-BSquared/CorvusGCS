@@ -1782,12 +1782,15 @@ function landingDoc() {
   return doc;
 }
 
-async function testAFormCardPresetListsItsValuesAndWritesThemInOrder() {
+async function testAFormCardPresetNamesItsValuesInTheButtonAndWritesThemInOrder() {
   const { container, fake } = await openWith(landingDoc());
   const block = findOneByClass(container, "safety-action");
   assert.ok(block, "the card shows the preset block");
-  const rows = findByClass(block, "safety-preset-write");
-  assert.deepEqual(rows.map((r) => r.dataset.param), ["MPC_Z_V_AUTO_DN", "MPC_LAND_SPEED"]);
+  assert.equal(findByClass(block, "safety-preset-write").length, 0,
+    "the card does not list the values a second time");
+  const title = findOneByClass(container, "safety-action-apply").title;
+  assert.match(title, /Descent speed \(m\/s\) 2\.5/);
+  assert.match(title, /Landing speed \(m\/s\) 1/);
   assert.ok(control(container, "MPC_LAND_SPEED"), "the value stays an editable field");
 
   fire(findOneByClass(container, "safety-action-apply"), "click");
@@ -1798,6 +1801,26 @@ async function testAFormCardPresetListsItsValuesAndWritesThemInOrder() {
   ]);
   assert.ok(fake.requests.filter((u) => u === "/api/safety").length >= 2,
     "the page re-reads what the vehicle now holds");
+}
+
+async function testTheLandingCardShowsEachStretchAsABracketedSpan() {
+  const doc = landingDoc();
+  const fields = doc.sections[0].fields;
+  [["MPC_Z_VEL_MAX_DN", 1.5, "m/s"], ["MPC_LAND_ALT1", 10, "m"], ["MPC_LAND_ALT2", 5, "m"],
+   ["MPC_LAND_ALT3", 1, "m"], ["MPC_LAND_CRWL", 0.3, "m/s"]].forEach(([param, value, unit]) => {
+    fields.push({ param, label: param, kind: "number", value, unit, step: 0.1 });
+  });
+  const { container } = await openWith(doc);
+  const spans = () => findByClass(container, "slz-span-text").map((n) => n.textContent);
+  assert.deepEqual(spans(), ["> 10 m", "5 m", "4 m", "< 1 m"]);
+  const zones = findOneByClass(container, "safety-landing-zones");
+  const input = control(container, "MPC_LAND_ALT1");
+  input.value = "12";
+  fire(zones, "input");
+  assert.deepEqual(spans(), ["> 12 m", "7 m", "4 m", "< 1 m"]);
+  input.value = "";
+  fire(zones, "input");
+  assert.deepEqual(spans(), ["", "", "4 m", "< 1 m"], "a blank height draws no span");
 }
 
 async function testAFormCardPresetStopsAtTheFirstRefusalAndSaysSo() {
@@ -1891,7 +1914,8 @@ async function main() {
     testTheChecklistCardFollowsChangesMadeElsewhere,
     testTheChecklistCardStaysLiveWhileArmed,
     testTheChecklistCardStopsListeningOnRepaintAndTeardown,
-    testAFormCardPresetListsItsValuesAndWritesThemInOrder,
+    testAFormCardPresetNamesItsValuesInTheButtonAndWritesThemInOrder,
+    testTheLandingCardShowsEachStretchAsABracketedSpan,
     testAFormCardPresetStopsAtTheFirstRefusalAndSaysSo,
     testAFormCardPresetIsGatedWhileArmed,
   ];

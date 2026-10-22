@@ -26,12 +26,14 @@ Corvus.map = (function () {
   let vehicleColor = "";
   let vehicleLabelEl = null;
   // Settings (ui.track_earlier_flights / ui.track_rainbow /
-  // ui.track_clear_on_restart), applied by app.js once the config lands.
-  // Earlier flights get their own colour unless turned off, and a colour each
-  // when the rainbow is on; the track outlives a restart unless asked otherwise.
+  // ui.track_clear_on_restart / ui.track_in_air), applied by app.js once the
+  // config lands. Earlier flights get their own colour unless turned off, and
+  // a colour each when the rainbow is on; the track outlives a restart unless
+  // asked otherwise; in 3D it is drawn in the air too unless turned off.
   let trackEarlierFlights = true;
   let trackRainbow = false;
   let trackClearOnRestart = false;
+  let trackInAir = true;
   let started = false;
   let firstFix = true;
 
@@ -165,6 +167,12 @@ Corvus.map = (function () {
   // A sample closer than this to the end of the line is noise, not movement:
   // a hover adds nothing.
   const TRACK_JITTER_M = 0.3;
+  // The same two rules for height, in metres of height. Looser than across:
+  // a baro wanders by more than a GNSS fix does, and a hover must not turn
+  // that into vertices. A point's height counts as these share of the
+  // horizontal limits (see trackZScale).
+  const TRACK_JITTER_V_M = 1.0;
+  const TRACK_TOLERANCE_V_M = 1.0;
   // How far the drawn line may stray from where the aircraft actually flew:
   // a quarter of the position's own reported uncertainty (gps_h_acc), within
   // these bounds. Finer than that adds points, not truth. A straight leg is
@@ -183,6 +191,16 @@ Corvus.map = (function () {
   // re-renders it into each terrain tile's texture. It is redrawn only when
   // the change is visible, and at most this often.
   const TRACK_PAINT_MIN_PX = 1.5;
+  // The recorded points are where the flight left a straight line, which on
+  // a 30 m orbit is every 8 m or so: drawn as a polyline, a curve shows its
+  // corners. So a curve is DRAWN as one (smoothTrack): a point every
+  // TRACK_SMOOTH_STEP_M along a Hermite curve through the recorded points,
+  // only where the track really curves. A segment longer than
+  // TRACK_SMOOTH_MAX_SEG_M is a leg, and a turn sharper than
+  // TRACK_SMOOTH_MAX_TURN a corner: both stay straight, as flown.
+  const TRACK_SMOOTH_STEP_M = 1.5;
+  const TRACK_SMOOTH_MAX_SEG_M = 20;
+  const TRACK_SMOOTH_MAX_TURN = Math.PI / 3;
   const TRACK_PAINT_MS = 100;
   const TRACK_PAINT_MS_3D = 250;
   // The track survives a restart of the app in localStorage. History, not a
@@ -304,7 +322,7 @@ Corvus.map = (function () {
   // fully offline once tiles are cached. Online, the backend fetches+caches
   // transparently, so the online experience is unchanged. The browser never
   // talks to the internet directly.
-  // MapLibre GL JS v5.24.0 is vendored locally at src/vendor/maplibre-gl.min.js
+  // MapLibre GL JS v6.15.0 is vendored locally at src/vendor/maplibre-gl.mjs
   // (offline fix: the field laptop has no internet, so the CDN load failed and
   // left #map empty). Keep this in sync with src/index.html and the vendor file.
   //
@@ -552,17 +570,27 @@ Corvus.map = (function () {
   /**
    * Distance in metres from *p* to the segment *a*-*b*, in a flat frame
    * around *a*. Clamped to the segment, so flying back along a line counts as
-   * leaving it.
+   * leaving it. *zScale* weighs the height difference in (0, or no height on
+   * one of the three, leaves it out).
    */
-  function metresFromSegment(p, a, b) {
+  function metresFromSegment(p, a, b, zScale) {
     const R = 6371000;
     const k = Math.cos((a[1] * Math.PI) / 180);
-    const toXY = (c) => [((c[0] - a[0]) * Math.PI / 180) * k * R, ((c[1] - a[1]) * Math.PI / 180) * R];
-    const [bx, by] = toXY(b);
-    const [px, py] = toXY(p);
-    const len2 = bx * bx + by * by;
-    const t = len2 > 0 ? Math.max(0, Math.min(1, (px * bx + py * by) / len2)) : 0;
-    return Math.hypot(px - t * bx, py - t * by);
+    const zs = zScale > 0 && a.length > 2 && b.length > 2 && p.length > 2 ? zScale : 0;
+    const toXYZ = (c) => [((c[0] - a[0]) * Math.PI / 180) * k * R,
+      ((c[1] - a[1]) * Math.PI / 180) * R, zs ? (c[2] - a[2]) * zs : 0];
+    const [bx, by, bz] = toXYZ(b);
+    const [px, py, pz] = toXYZ(p);
+    const len2 = bx * bx + by * by + bz * bz;
+    const t = len2 > 0 ? Math.max(0, Math.min(1, (px * bx + py * by + pz * bz) / len2)) : 0;
+    return Math.hypot(px - t * bx, py - t * by, pz - t * bz);
+  }
+
+  /** Metres between two track points, height weighed in by *zScale*. */
+  function metresMoved(a, b, zScale) {
+    const flat = metresBetween(a, b);
+    if (!(zScale > 0) || a.length < 3 || b.length < 3) return flat;
+    return Math.hypot(flat, (b[2] - a[2]) * zScale);
   }
 
   // The samples since the last fixed vertex, and which track they belong to.
@@ -590,28 +618,32 @@ Corvus.map = (function () {
     return Math.min(TRACK_TOLERANCE_MAX_M, Math.max(TRACK_TOLERANCE_MIN_M, acc / 4));
   }
 
-  function recordTrackPoint(position, hAcc) {
+  function recordTrackPoint(position, hAcc, altitude) {
     if (!position || position.length < 2) return false;
     const lng = position[0], lat = position[1];
     if (!isFinite(lng) || !isFinite(lat)) return false;
     // [0,0] is the state store's "no fix yet" default, not the Gulf of Guinea.
     if (lng === 0 && lat === 0) return false;
-    const p = [lng, lat];
+    // The height above home rides along as a third coordinate, for the 3D
+    // track. The line layers drape and ignore it.
+    const alt = altitude === null || altitude === undefined ? NaN : Number(altitude);
+    const p = isFinite(alt) ? [lng, lat, Math.round(alt * 10) / 10] : [lng, lat];
     if (trackWindowOf !== pathCoords) {
       trackWindow = [];
       trackWindowOf = pathCoords;
     }
 
     const tip = pathCoords[pathCoords.length - 1];
-    if (tip && metresBetween(tip, p) < TRACK_JITTER_M) return false;
+    if (tip && metresMoved(tip, p, TRACK_JITTER_M / TRACK_JITTER_V_M) < TRACK_JITTER_M) return false;
 
     if (!trackWindow.length) {
       pathCoords.push(p);   // the first point, or a new segment after a fixed vertex
     } else {
       const anchor = pathCoords[pathCoords.length - 2];
       const tolerance = trackTolerance(hAcc);
+      const zScale = tolerance / TRACK_TOLERANCE_V_M;
       const strays = trackWindow.length >= TRACK_WINDOW_MAX
-        || trackWindow.some((s) => metresFromSegment(s, anchor, p) > tolerance);
+        || trackWindow.some((s) => metresFromSegment(s, anchor, p, zScale) > tolerance);
       if (strays) {
         // The tip so far becomes a fixed vertex, and a new segment opens at it.
         trackWindow = [];
@@ -676,8 +708,84 @@ Corvus.map = (function () {
 
   function currentGeometry() {
     return {
-      type: "Feature", geometry: { type: "LineString", coordinates: pathCoords }, properties: {},
+      type: "Feature", geometry: { type: "LineString", coordinates: smoothTrack(pathCoords) }, properties: {},
     };
+  }
+
+  // The drawn points between two recorded ones, keyed by the first of them
+  // and checked against its neighbours: only the tip's few segments change
+  // between two paints, so the rest is not computed again.
+  const smoothCache = new WeakMap();
+
+  /** The track as drawn: *coords* with the curved stretches filled in. */
+  function smoothTrack(coords) {
+    if (coords.length < 3) return coords;
+    const out = [coords[0]];
+    for (let i = 0; i < coords.length - 1; i++) {
+      const prev = i > 0 ? coords[i - 1] : null;
+      const a = coords[i], b = coords[i + 1];
+      const next = i + 2 < coords.length ? coords[i + 2] : null;
+      let hit = smoothCache.get(a);
+      if (!hit || hit.prev !== prev || hit.b !== b || hit.next !== next) {
+        hit = { prev, b, next, pts: smoothSegment(prev, a, b, next) };
+        smoothCache.set(a, hit);
+      }
+      for (let j = 0; j < hit.pts.length; j++) out.push(hit.pts[j]);
+      out.push(b);
+    }
+    return out;
+  }
+
+  /**
+   * The points strictly between *a* and *b* on a cubic Hermite curve whose
+   * tangent at each end bisects the turn there. Empty for a straight
+   * stretch, a long leg, or where both ends are corners. Worked in a flat
+   * frame around *a* (longitude scaled by the latitude), which over a
+   * segment of a few metres is exact enough; a height is interpolated
+   * straight.
+   */
+  function smoothSegment(prev, a, b, next) {
+    const k = Math.cos((a[1] * Math.PI) / 180);
+    const xy = (c) => [(c[0] - a[0]) * k, c[1] - a[1]];
+    const B = xy(b);
+    const len = Math.hypot(B[0], B[1]);
+    const lenM = metresBetween(a, b);
+    if (!(len > 0) || lenM > TRACK_SMOOTH_MAX_SEG_M || lenM < 2 * TRACK_SMOOTH_STEP_M) return [];
+    const chord = [B[0] / len, B[1] / len];
+    const tangent = (from, to) => {
+      if (!from || !to) return chord;
+      const f = xy(from), t = xy(to);
+      // The two segments meeting at this end: the one before and this one,
+      // or this one and the one after.
+      const u = from === prev ? [-f[0], -f[1]] : B;
+      const v = from === prev ? B : [t[0] - B[0], t[1] - B[1]];
+      const lu = Math.hypot(u[0], u[1]), lv = Math.hypot(v[0], v[1]);
+      if (!(lu > 0) || !(lv > 0)) return chord;
+      const cos = (u[0] * v[0] + u[1] * v[1]) / (lu * lv);
+      if (Math.acos(Math.max(-1, Math.min(1, cos))) > TRACK_SMOOTH_MAX_TURN) return chord;
+      const d = [u[0] / lu + v[0] / lv, u[1] / lu + v[1] / lv];
+      const ld = Math.hypot(d[0], d[1]);
+      return ld > 0 ? [d[0] / ld, d[1] / ld] : chord;
+    };
+    const m0 = tangent(prev, a);
+    const m1 = tangent(a, next);
+    const straight = (m) => Math.abs(m[0] * chord[1] - m[1] * chord[0]) < 1e-6;
+    if (straight(m0) && straight(m1)) return [];
+    const steps = Math.ceil(lenM / TRACK_SMOOTH_STEP_M);
+    const heights = a.length > 2 && b.length > 2;
+    const pts = [];
+    for (let i = 1; i < steps; i++) {
+      const t = i / steps, t2 = t * t, t3 = t2 * t;
+      const h10 = (t3 - 2 * t2 + t) * len;
+      const h01 = -2 * t3 + 3 * t2;
+      const h11 = (t3 - t2) * len;
+      const x = h10 * m0[0] + h01 * B[0] + h11 * m1[0];
+      const y = h10 * m0[1] + h01 * B[1] + h11 * m1[1];
+      const p = [a[0] + x / k, a[1] + y];
+      if (heights) p.push(a[2] + (b[2] - a[2]) * t);
+      pts.push(p);
+    }
+    return pts;
   }
 
   /**
@@ -700,7 +808,9 @@ Corvus.map = (function () {
     return {
       type: "FeatureCollection",
       features: pastFlights.map((coordinates, i) => ({
-        type: "Feature", geometry: { type: "LineString", coordinates }, properties: { color: colors[i] },
+        type: "Feature",
+        geometry: { type: "LineString", coordinates: smoothTrack(coordinates) },
+        properties: { color: colors[i] },
       })),
     };
   }
@@ -721,6 +831,7 @@ Corvus.map = (function () {
     const tip = pathCoords[pathCoords.length - 1];
     trackPaintedTip = tip ? tip.slice() : null;
     if (pathSource) pathSource.setData(currentGeometry());
+    requestTrack3DFrame();
   }
 
   /** Metres one screen pixel covers at *lat* in the current view. */
@@ -770,6 +881,8 @@ Corvus.map = (function () {
 
   function paintPast() {
     if (pastSource) pastSource.setData(pastGeometry());
+    track3dPalette = null;
+    requestTrack3DFrame();
   }
 
   function fleetHasTracks() {
@@ -793,7 +906,9 @@ Corvus.map = (function () {
     if (!storage) return;
     // Seven decimals is about a centimetre, below the finest tolerance, and
     // keeps a full track well inside the storage quota.
-    const round = (flight) => flight.map((c) => [+c[0].toFixed(7), +c[1].toFixed(7)]);
+    const round = (flight) => flight.map((c) => (c.length > 2
+      ? [+c[0].toFixed(7), +c[1].toFixed(7), +c[2].toFixed(1)]
+      : [+c[0].toFixed(7), +c[1].toFixed(7)]));
     try {
       if (!pastFlights.length && pathCoords.length < 2) {
         storage.removeItem(TRACK_KEY);
@@ -814,7 +929,8 @@ Corvus.map = (function () {
     try { saved = JSON.parse(storage.getItem(TRACK_KEY) || "null"); } catch (_e) { return; }
     if (!saved || saved.v !== 1) return;
     const valid = (flight) => Array.isArray(flight) && flight.every((c) =>
-      Array.isArray(c) && c.length === 2 && isFinite(c[0]) && isFinite(c[1]));
+      Array.isArray(c) && (c.length === 2 || (c.length === 3 && isFinite(c[2])))
+      && isFinite(c[0]) && isFinite(c[1]));
     pastFlights = (Array.isArray(saved.past) ? saved.past : [])
       .filter((f) => valid(f) && f.length >= 2);
     pathCoords = valid(saved.current) ? saved.current : [];
@@ -921,7 +1037,7 @@ Corvus.map = (function () {
   }
 
   /**
-   * Apply the three track settings. *startup* is true for the config read when
+   * Apply the four track settings. *startup* is true for the config read when
    * the app starts, the one moment "clear on restart" means discarding what
    * the last session left.
    */
@@ -930,8 +1046,10 @@ Corvus.map = (function () {
     trackEarlierFlights = o.earlierFlights !== false;
     trackRainbow = o.rainbow === true;
     trackClearOnRestart = o.clearOnRestart === true;
+    trackInAir = o.inAir !== false;
     if (startup && trackClearOnRestart) clearTrack();
     repaintTrack();
+    requestTrack3DFrame();
   }
 
   /* Keep the map's drawing buffer at the screen's real resolution whatever
@@ -1084,6 +1202,7 @@ Corvus.map = (function () {
   /** Push the current theme's track colours onto the track layers. */
   function repaintTrack() {
     if (!map) return;
+    track3dPalette = null;
     const track = vehicleColor || Corvus.ui.token("--track", "#E4322F");
     // The casing is the page background, not black: on the light theme a black
     // outline would be heavier than the track it is meant to support.
@@ -1350,7 +1469,14 @@ Corvus.map = (function () {
 
   function initialStyle(key) {
     const spec = specFor(key);
+    // The coarse copy first, as in setBaseLayer, which explains why.
     const sources = {
+      "ground-imagery": {
+        type: "raster",
+        tiles: [tileUrl(key)],
+        tileSize: 256,
+        maxzoom: Math.min(GROUND_IMAGERY_MAXZOOM, spec.maxzoom),
+      },
       base: {
         type: "raster",
         tiles: [tileUrl(key)],
@@ -1359,7 +1485,11 @@ Corvus.map = (function () {
         attribution: spec.attribution,
       },
     };
-    const layers = [{ id: "base", type: "raster", source: "base" }];
+    const layers = [
+      { id: "terrain-ground-imagery", type: "raster", source: "ground-imagery",
+        layout: { visibility: "none" } },
+      { id: "base", type: "raster", source: "base" },
+    ];
     // No `glyphs`: every base layer is a raster and there are no symbol/text
     // layers, so fonts are unused. MapLibre may log a harmless warning.
     return { version: 8, sources, layers };
@@ -1375,8 +1505,27 @@ Corvus.map = (function () {
     if (layersMenuHandle) layersMenuHandle.setLayerValue(key);
     if (!map || !started) return;
     const spec = specFor(key);
-    if (map.getLayer("base")) map.removeLayer("base");
-    if (map.getSource("base")) map.removeSource("base");
+    for (const id of ["base", "terrain-ground-imagery"]) {
+      if (map.getLayer(id)) map.removeLayer(id);
+    }
+    for (const id of ["base", "ground-imagery"]) {
+      if (map.getSource(id)) map.removeSource(id);
+    }
+    // The coarse copy goes in FIRST: MapLibre asks for tiles source by
+    // source in the order they were added, so after a pan onto new ground
+    // its handful of tiles are at the head of the queue rather than behind
+    // the eighty the detail wants. Hidden on the flat map, where it asks for
+    // nothing (see setGround).
+    map.addSource("ground-imagery", {
+      type: "raster",
+      tiles: [tileUrl(key)],
+      tileSize: 256,
+      maxzoom: Math.min(GROUND_IMAGERY_MAXZOOM, spec.maxzoom),
+    });
+    map.addLayer({
+      id: "terrain-ground-imagery", type: "raster", source: "ground-imagery",
+      layout: { visibility: threeD ? "visible" : "none" },
+    }, firstOverlayLayer());
     map.addSource("base", {
       type: "raster",
       tiles: [tileUrl(key)],
@@ -2599,8 +2748,18 @@ Corvus.map = (function () {
     window.setTimeout(() => {
       if (!map || (cameraGoal.pitch === null && cameraGoal.zoom === null)) return;
       if (typeof map.isMoving === "function" && map.isMoving()) return;
-      cameraMove({ duration: 600 }, Corvus.anim.reducedMotion());
+      cameraMove({ duration: TILT_MS }, Corvus.anim.reducedMotion());
     }, 0);
+  }
+
+  /** MapLibre's camera transform, or null. Not public API: v5 kept it at
+   *  map.transform, v6 moved it to map._camera.transform (where its own
+   *  Marker reads it). Losing it silently costs a forced layout per sample
+   *  in viewSize() and the far-side test on the globe, so both places are
+   *  asked. */
+  function transformOf(m) {
+    if (!m) return null;
+    return m.transform || (m._camera && m._camera.transform) || null;
   }
 
   /** The map's viewport in CSS pixels. Read from the transform, which is
@@ -2608,7 +2767,7 @@ Corvus.map = (function () {
    *  clientWidth read here runs right after the other telemetry subscribers
    *  have written the DOM, and forced a full layout on every sample. */
   function viewSize() {
-    const transform = map && map.transform;
+    const transform = transformOf(map);
     if (transform && transform.width > 0 && transform.height > 0) {
       return [transform.width, transform.height];
     }
@@ -2753,16 +2912,27 @@ Corvus.map = (function () {
     // Hidden in 3D, where the aircraft is drawn at its real altitude instead
     // (renderVehicle3D). Leaving it would park a second aircraft on the
     // ground directly under the flying one.
-    if (el) el.hidden = threeD;
+    setShown(el, !threeD);
     vehicleMarker.setLngLat([vehDisplay.lng, vehDisplay.lat]);
     // The whole SVG rotates, so the heading cone and the body stay locked
     // together — they used to be separate elements and could disagree.
     const body = vehicleMarker.getElement().querySelector(".v-body");
-    if (body) body.style.transform = `rotate(${vehDisplay.heading}deg)`;
-    // The airborne aircraft is placed from the map's render matrix, which
-    // only exists on a frame the map actually draws — so a vehicle that moves
-    // while the camera is still has to ask for that frame.
-    if (threeD && map && typeof map.triggerRepaint === "function") map.triggerRepaint();
+    setTransform(body, `rotate(${px(vehDisplay.heading)}deg)`);
+    // The airborne aircraft is placed from the map's render matrix. With the
+    // camera still, the last frame's matrix is the current one; otherwise
+    // the map has to draw the frame that carries it.
+    redrawVehicle3D();
+  }
+
+  /** Show the airborne aircraft where the latest sample puts it: from the
+   *  last frame's matrix while the camera has not moved since, else by
+   *  asking the map for a frame. */
+  function redrawVehicle3D() {
+    if (!threeD || !map) return;
+    if (veh3dMatrixValid && !mapInMotion()) {
+      try { renderVehicle3D(veh3dMatrix); return; } catch (_error) { /* a full frame below */ }
+    }
+    if (typeof map.triggerRepaint === "function") map.triggerRepaint();
   }
 
   /** Refresh the altitudes the 3D aircraft is drawn at. Per telemetry sample
@@ -2784,7 +2954,7 @@ Corvus.map = (function () {
     const key = `${vehAltAgl === null ? "" : vehAltAgl.toFixed(1)}|${vehOnGround}`;
     if (key !== vehAltKey) {
       vehAltKey = key;
-      if (threeD && map && typeof map.triggerRepaint === "function") map.triggerRepaint();
+      redrawVehicle3D();
     }
   }
 
@@ -2849,7 +3019,7 @@ Corvus.map = (function () {
 
     // Track recording stays on the TARGET (latest telemetry) so the track is
     // accurate; interpolation is purely a rendering concern.
-    if (recordTrackPoint(state.position, state.gps_h_acc)) {
+    if (recordTrackPoint(state.position, state.gps_h_acc, state.altitude_agl)) {
       requestTrackPaint();
       updateTrackControl();
       // The plan line's first segment starts at the vehicle, so it must track
@@ -3382,6 +3552,27 @@ Corvus.map = (function () {
   // before it is attached anyway, and how often it looks (whenStill).
   const TERRAIN_ATTACH_WAIT_MS = 1500;
   const TERRAIN_ATTACH_POLL_MS = 50;
+  // How long the terrain waits for its elevation tiles before it is attached
+  // with whatever has arrived (enableTerrain), and how long the tilt waits for
+  // the terrain. The second is short because it is the button's answer: tiles
+  // our cache holds arrive well inside it, and over ground it does not hold
+  // the tilt goes first and the relief follows.
+  const TERRAIN_PRELOAD_MS = 3000;
+  const TERRAIN_TILT_WAIT_MS = 150;
+  // How long the swing between flat and tilted takes. Short enough that the
+  // button answers at once, long enough to read as a move rather than a cut.
+  const TILT_MS = 400;
+  // The zoom of the ancestor MapLibre's terrain falls back to while a tile
+  // loads (its own rule, see primeOverviewTile).
+  const TERRAIN_OVERVIEW_ZOOM = 5;
+  // See init: the browser, not MapLibre, should hold the queue of tiles.
+  const MAX_PARALLEL_TILE_REQUESTS = 64;
+  // A failed tile is asked for again this many times, this long after the
+  // map went idle (onMapIdle). "source z/x/y" -> attempts so far.
+  const TILE_RETRIES = 2;
+  const TILE_RETRY_MS = 3000;
+  const tileRetries = new Map();
+  let tileRetryTimer = null;
   // Attempts the settle poll makes before giving up — a few seconds' worth.
   const TERRAIN_SYNC_TRIES = 20;
   // Where the globe hands over to the flat map. MapLibre's own globe fades
@@ -3431,6 +3622,16 @@ Corvus.map = (function () {
   const BUILDING_MAX_RETRIES = 20;
   // See addBuildingLayer: chosen against map imagery, not against the theme.
   const BUILDING_COLOR = "#A7B0BD";
+  // Under the imagery in 3D (setGround). A 3D tile whose imagery has not
+  // arrived was drawn transparent, so the page showed through it: a white or
+  // black hole in the ground after every pan onto new ground, until the
+  // operator moved the map again. Now it is plain ground with the relief
+  // shading on it. Chosen against map imagery, not against the theme, like
+  // the buildings.
+  const GROUND_COLOR = "#8B9081";
+  // The coarse copy of the imagery under the 3D ground (setGround): a few
+  // tiles cover the view, and the flat map has usually loaded them already.
+  const GROUND_IMAGERY_MAXZOOM = 14;
   // Perspective scaling of the airborne marker, as a fraction of its 2D size.
   // Bounded at both ends: an aircraft near the horizon must still be findable,
   // and one close to the camera must not swallow the viewport.
@@ -3446,6 +3647,19 @@ Corvus.map = (function () {
   const VEH3D_LABEL_GAP_PX = 6;
   // Half the 2D marker's width at scale 1: the readout starts past it.
   const VEH3D_HALF_WIDTH_PX = 24;
+  // The flown track in the air (renderTrack3D), beside the one on the
+  // ground. A thread rather than a ribbon: the ground track is the one to
+  // read, this one only says where in the air it was flown. Earlier flights
+  // thinner and fainter, as on the ground.
+  const TRACK3D_CORE_PX = 1.3;
+  const TRACK3D_CASING_PX = 2.8;
+  const TRACK3D_PAST_CORE_PX = 1.0;
+  const TRACK3D_PAST_CASING_PX = 2.2;
+  const TRACK3D_PAST_OPACITY = 0.7;
+  const TRACK3D_CASING_OPACITY = 0.45;
+  // How long the ground under an earlier flight's first point is trusted
+  // before it is asked again: a terrain-mesh query, and the DEM fills in.
+  const TRACK3D_GROUND_MS = 1000;
 
   let threeD = false;
   // Which 3D the operator asked for, remembered across off/on so pressing the
@@ -3493,6 +3707,8 @@ Corvus.map = (function () {
   // Bumped by anything that invalidates an attach in flight, so a probe that
   // resolves late cannot switch terrain back on behind the operator.
   let terrainGeneration = 0;
+  // The tilt into 3D waiting for the terrain (tiltAfterTerrain), or null.
+  let pendingTilt = null;
   // Whether the globe projection is the one showing. Driven by zoom, not by a
   // button — see applyProjectionForZoom.
   let globeOn = false;
@@ -3529,8 +3745,27 @@ Corvus.map = (function () {
   let veh3dEl = null;        // the aircraft, at altitude
   let veh3dShadowEl = null;  // where it is on the ground, directly below
   let veh3dLeadEl = null;    // the line joining the two
+  let veh3dLeadShown = true; // what setLeadShown last set, built visible
   let veh3dAltEl = null;     // its height above ground, as a number
+  // The flown track at its height, drawn on a canvas from the same matrix.
+  // A canvas and not a line layer: MapLibre drapes every line onto the
+  // terrain, which is the ground track's job and not this one's.
+  let track3dEl = null;
+  let track3dDrawn = false;
+  let track3dPalette = null;
+  // Mercator x, y and z per metre of each point, and the ground under each
+  // earlier flight, both keyed by the arrays themselves so a replaced point
+  // or flight is simply computed again.
+  const track3dMercator = new WeakMap();
+  const track3dGround = new WeakMap();
   let veh3dLayerAdded = false;
+  // The render matrix of the last frame the map drew, and whether the camera
+  // is still where that frame had it. While it is, the matrix still places
+  // the aircraft and its track exactly, so a new sample moves them without a
+  // whole map frame (terrain, tiles, sky): at 60 Hz that frame was most of
+  // the CPU 3D mode cost with the camera standing still.
+  const veh3dMatrix = new Float64Array(16);
+  let veh3dMatrixValid = false;
   // The height to draw the aircraft at, in MapLibre's drawing frame (see
   // terrainElevation). Recomputed per telemetry sample rather than per frame —
   // the DEM lookup behind it is a terrain-mesh query, not an array read.
@@ -3726,18 +3961,25 @@ Corvus.map = (function () {
    * world.
    */
   /**
-   * Bring terrain up, once the camera has been placed above the ground and is
-   * holding still.
+   * Bring terrain up, once its tiles are in, the camera has been placed above
+   * the ground and the camera is holding still.
    *
-   * The tilt does not wait for this. It used to: the camera's height was
-   * seeded first and the tilt handed over to run after it, so the side view
-   * came only once the elevation probe had answered, which over ground the
-   * cache does not hold is its whole timeout. And it came with a race: the
-   * height being written again while the tilt ran stopped the tilt part way.
-   * Now the tilt starts on the press, over the flat map, and the terrain is
-   * attached when the camera is still (whenStill). Attach and seed land in
-   * the same frame, so the ground rises under the camera without the camera
-   * ever being inside it.
+   * The shading goes on first. It reads exactly the terrain's tiles (see
+   * addHillshade), so it loads them while the map is still flat. Attached
+   * before they were in, the terrain drew every tile still loading at sea
+   * level: cliffs hundreds of metres deep beside the ones that had arrived,
+   * and white where the camera saw past them, until the operator moved the
+   * map. Attached once they are in, the terrain takes them from the browser's
+   * cache and comes up whole. The wait is bounded (TERRAIN_PRELOAD_MS), so
+   * ground no cache holds still gets its relief, in pieces.
+   *
+   * The tilt waits for this, for TERRAIN_TILT_WAIT_MS at most (see
+   * tiltAfterTerrain): relief attached under a camera looking straight down
+   * barely shows, and the tilt then reveals it. Past that wait the tilt goes
+   * anyway and the terrain is attached once the camera is still (whenStill),
+   * because writing the camera's height is a jumpTo, which would stop the
+   * tilt part way. Attach and seed land in the same frame, so the ground
+   * rises under the camera without the camera ever being inside it.
    */
   function enableTerrain() {
     const id = terrainSourceId();
@@ -3746,7 +3988,18 @@ Corvus.map = (function () {
     // Claimed before the probe below, so a second press cannot start a second
     // attach, and cancelled by a generation bump if 3D goes off meanwhile.
     const generation = ++terrainGeneration;
-    primeCameraElevation().then((height) => {
+    addHillshade(id);
+    const start = nowMs();
+    // Already tilted (the operator changed the elevation model, or a map
+    // service brought its own, with 3D on): every moment spent waiting is
+    // the ground shown flat. The coarse fallback is enough to come up on.
+    let tilted = false;
+    try { tilted = map.getPitch() > 10; } catch (_error) { /* a flat camera */ }
+    Promise.all([
+      primeCameraElevation(),
+      tilted ? null : whenSourceLoaded(hillshadeSourceId(id), generation, start),
+      primeOverviewTile(id, start),
+    ]).then(([height]) => {
       whenStill(generation, () => {
         attachTerrain(id, generation);
         // AFTER the attach, never before: setTerrain resets the camera's
@@ -3756,9 +4009,92 @@ Corvus.map = (function () {
         // camera goes back underground on the very call that was meant to
         // save it.
         if (height !== null && terrainOn) writeCenterElevation(height);
+        tiltNow();
       });
     });
     return true;
+  }
+
+  /**
+   * Resolve once *id* has loaded the tiles of the view, or after
+   * TERRAIN_PRELOAD_MS from *since* whatever it has. Never rejects: a source
+   * that will not load is a reason to stop waiting, not to fail the mode.
+   */
+  function whenSourceLoaded(id, generation, since) {
+    return new Promise((resolve) => {
+      const look = () => {
+        if (generation !== terrainGeneration || !terrainWanted || !map) { resolve(); return; }
+        let done = true;
+        try {
+          done = typeof map.isSourceLoaded !== "function" || map.isSourceLoaded(id);
+        } catch (_error) { /* the source is gone; nothing to wait for */ }
+        if (done || nowMs() - since > TERRAIN_PRELOAD_MS) { resolve(); return; }
+        window.setTimeout(look, TERRAIN_ATTACH_POLL_MS);
+      };
+      look();
+    });
+  }
+
+  /**
+   * Fetch the coarse elevation tile the terrain falls back to, so it is in
+   * the browser's cache before the terrain asks for it.
+   *
+   * Under every tile it draws, MapLibre's terrain also asks for that tile's
+   * ancestor at zoom 5 and uses it until the tile itself arrives. Without it
+   * a tile still loading is drawn at sea level. It asks for that ancestor
+   * last, behind every detailed tile, so over a slow link or a model our
+   * side renders tile by tile it arrived last too, and the view broke into
+   * cliffs and holes until it did. Resolves when the tile is in, failed, or
+   * the preload wait is up; never rejects.
+   */
+  function primeOverviewTile(id, since) {
+    if (!map || typeof window.fetch !== "function") return Promise.resolve();
+    let centre;
+    try { centre = map.getCenter(); } catch (_error) { return Promise.resolve(); }
+    if (!centre || !isFinite(centre.lng) || !isFinite(centre.lat)) return Promise.resolve();
+    const zoom = Math.min(TERRAIN_OVERVIEW_ZOOM, terrainSpec.maxzoom);
+    const count = 1 << zoom;
+    const lat = Math.max(-85.05112878, Math.min(85.05112878, centre.lat));
+    const rad = (lat * Math.PI) / 180;
+    const x = Math.max(0, Math.min(count - 1, Math.floor(((centre.lng + 180) / 360) * count)));
+    const y = Math.max(0, Math.min(count - 1, Math.floor(
+      ((1 - Math.log(Math.tan(rad) + 1 / Math.cos(rad)) / Math.PI) / 2) * count)));
+    const url = tileUrl(id).replace("{z}", zoom).replace("{x}", x).replace("{y}", y);
+    const left = Math.max(0, TERRAIN_PRELOAD_MS - (nowMs() - since));
+    return new Promise((resolve) => {
+      const timer = window.setTimeout(resolve, left);
+      const done = () => { window.clearTimeout(timer); resolve(); };
+      try {
+        window.fetch(url).then((r) => r.blob()).then(done, done);
+      } catch (_error) {
+        done();
+      }
+    });
+  }
+
+  /**
+   * Tilt into 3D once the terrain is attached, or after TERRAIN_TILT_WAIT_MS
+   * if it is not by then. The button answers at once either way: the
+   * shading appears on the press.
+   */
+  function tiltAfterTerrain(generation) {
+    cancelPendingTilt();
+    pendingTilt = window.setTimeout(() => {
+      pendingTilt = null;
+      if (threeD && generation === terrainGeneration) tiltTo(THREE_D_PITCH);
+    }, TERRAIN_TILT_WAIT_MS);
+  }
+
+  /** The waiting tilt, now. A no-op when none is waiting. */
+  function tiltNow() {
+    if (pendingTilt === null) return;
+    cancelPendingTilt();
+    if (threeD) tiltTo(THREE_D_PITCH);
+  }
+
+  function cancelPendingTilt() {
+    if (pendingTilt !== null) window.clearTimeout(pendingTilt);
+    pendingTilt = null;
   }
 
   /**
@@ -3913,7 +4249,8 @@ Corvus.map = (function () {
     // From here the camera's height is held by syncTerrainElevation, never
     // by MapLibre's per-pixel clamp: see there for why.
     holdCameraGround(true);
-    addHillshade(id);
+    // Normally on since the press (enableTerrain), with its tiles loaded.
+    if (!map.getLayer("terrain-hillshade")) addHillshade(id);
     // From here on, DEM tiles landing are the cue to reconcile the camera's
     // idea of the ground height with the real one — see syncTerrainElevation.
     terrainSyncAt = 0;
@@ -3937,11 +4274,16 @@ Corvus.map = (function () {
   /**
    * Shade the terrain, so its shape reads on any base layer.
    *
-   * Its own source rather than the terrain's: MapLibre renders the terrain
-   * mesh from a DEM one zoom coarser than the view, which is right for a
-   * mesh and too soft for shading, and it warns when one source serves both.
-   * The tiles are the same URLs, so the second source is answered from the
-   * browser's cache or ours, never a second download.
+   * Its own source, because MapLibre warns when one source serves both, but
+   * declared at twice the tile size so it asks for exactly the tiles the
+   * terrain mesh asks for (MapLibre doubles a terrain source's size the same
+   * way). Declared at the real size it asked for a second set one zoom
+   * deeper: twice the elevation tiles on every switch and every pan, which
+   * over a custom model is twice the rendering on our side, and the imagery
+   * waited behind them for the browser's few connections, so the ground
+   * stayed white until the operator moved the map. The slope is computed
+   * from the image's own pixels and the tile's zoom, so the shading is as
+   * strong at either size, only one zoom softer.
    *
    * Under every overlay (it is first in OVERLAY_LAYERS): the downloaded
    * areas, the track and the buildings must not be darkened by a slope.
@@ -3956,7 +4298,7 @@ Corvus.map = (function () {
       map.addSource(shade, {
         type: "raster-dem",
         tiles: [tileUrl(id)],
-        tileSize: terrainTileSize(),
+        tileSize: terrainTileSize() * 2,
         maxzoom: terrainSpec.maxzoom,
         encoding: terrainSpec.encoding || "terrarium",
       });
@@ -4068,11 +4410,9 @@ Corvus.map = (function () {
    * centre's latitude.
    */
   function cameraDistanceM(lat) {
-    const container = map.getContainer();
-    const height = container ? container.clientHeight : 0;
-    const transform = map.transform;
+    const transform = transformOf(map);
     const px = transform && isFinite(transform.cameraToCenterDistance)
-      ? transform.cameraToCenterDistance : 1.5 * height;
+      ? transform.cameraToCenterDistance : 1.5 * viewSize()[1];
     let zoom;
     try { zoom = map.getZoom(); } catch (_error) { zoom = NaN; }
     if (!isFinite(zoom) || !(px > 0)) return 0;
@@ -4332,6 +4672,40 @@ Corvus.map = (function () {
    * backstop for a MapLibre without setSky — it paints the container, which
    * is what shows above the horizon when nothing else does.
    */
+  /**
+   * What the 3D ground shows while its imagery loads: the same imagery at
+   * GROUND_IMAGERY_MAXZOOM, and plain ground under that.
+   *
+   * A tilted view asks for the finest imagery near the camera, eighty tiles
+   * and more after a pan onto new ground, and MapLibre draws nothing coarser
+   * in their place until they arrive. On the flat map that is seconds of a
+   * few blank squares; on the 3D ground it was a hole the page showed
+   * through, white or black, as big as the near half of the view. The coarse
+   * copy is a handful of tiles, usually already cached from the flat map, so
+   * it is there almost at once and the detail sharpens over it. Its URLs are
+   * the base layer's own, so nothing is fetched twice. The source itself is
+   * made with the base layer (setBaseLayer); this only shows or hides it.
+   */
+  function setGround(on) {
+    if (!map) return;
+    try {
+      if (map.getLayer("terrain-ground-imagery") && typeof map.setLayoutProperty === "function") {
+        map.setLayoutProperty("terrain-ground-imagery", "visibility", on ? "visible" : "none");
+      }
+      if (!on) {
+        if (map.getLayer("terrain-ground")) map.removeLayer("terrain-ground");
+        return;
+      }
+      if (map.getLayer("terrain-ground")) return;
+      const below = ["terrain-ground-imagery", "base"].find((id) => map.getLayer(id));
+      map.addLayer({
+        id: "terrain-ground",
+        type: "background",
+        paint: { "background-color": GROUND_COLOR },
+      }, below || firstOverlayLayer());
+    } catch (_error) { /* no style yet; the "load" handler re-applies 3D */ }
+  }
+
   function setSky(on) {
     const container = map && map.getContainer();
     if (container) container.classList.toggle("three-d", !!on);
@@ -4438,11 +4812,14 @@ Corvus.map = (function () {
     // nobody is waiting for on a field laptop's battery.
     stopTerrainSync();
     stopCameraGlide();
+    cancelPendingTilt();
     terrainSeedKey = null;
     holdCameraGround(false);
+    // Before the early return: the shading goes on at the press, so an attach
+    // still waiting for its tiles has one too.
+    removeHillshade();
     if (!map || !terrainOn) return;
     map.off("data", onTerrainData);
-    removeHillshade();
     // Order matters: MapLibre refuses to remove a source the terrain is still
     // bound to, so the binding goes first.
     try { map.setTerrain(null); } catch (_error) { /* already gone */ }
@@ -4754,16 +5131,22 @@ Corvus.map = (function () {
 
   // ---- the aircraft, at altitude ----
 
-  /** Build the four elements that make up the airborne aircraft. */
+  /** Build the four elements that make up the airborne aircraft, and the
+   *  canvas the track in the air is drawn on, under them. */
   function buildVehicle3D(mapEl) {
     if (!mapEl || veh3dEl) return;
+
+    track3dEl = document.createElement("canvas");
+    track3dEl.className = "track3d";
+    track3dEl.setAttribute("aria-hidden", "true");
+    mapEl.appendChild(track3dEl);
 
     veh3dLeadEl = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     veh3dLeadEl.setAttribute("class", "veh3d-lead");
     veh3dLeadEl.setAttribute("aria-hidden", "true");
     const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
     veh3dLeadEl.appendChild(line);
-    veh3dLeadEl.hidden = true;
+    setLeadShown(false);
     mapEl.appendChild(veh3dLeadEl);
 
     veh3dShadowEl = document.createElement("div");
@@ -4784,6 +5167,38 @@ Corvus.map = (function () {
     mapEl.appendChild(veh3dAltEl);
   }
 
+  /**
+   * Show or hide the leader line. It is an SVG element, and SVG has no
+   * `hidden` property: assigning one sets a plain field the CSS never sees,
+   * which left the last line standing after a landing or a switch to 2D.
+   */
+  function setLeadShown(shown) {
+    if (!veh3dLeadEl || shown === veh3dLeadShown) return;
+    veh3dLeadShown = shown;
+    if (shown) veh3dLeadEl.removeAttribute("hidden");
+    else veh3dLeadEl.setAttribute("hidden", "");
+  }
+
+  // The aircraft is redrawn on every animation frame. A write that changes
+  // nothing, or changes it by less than anyone can see, still makes Chromium
+  // restyle and composite a new frame, and in the desktop app Qt composites
+  // that frame again: with the aircraft flying, those frames were most of
+  // what the app cost. So positions go out at a tenth of a pixel and angles
+  // at a tenth of a degree, and only when they changed.
+  function px(v) { return v.toFixed(1); }
+  function setTransform(el, value) {
+    if (el && el.style.transform !== value) el.style.transform = value;
+  }
+  function setShown(el, shown) {
+    if (el && el.hidden === shown) el.hidden = !shown;
+  }
+  function setAttrIf(el, name, value) {
+    if (el && el.getAttribute(name) !== value) el.setAttribute(name, value);
+  }
+  function setTextIf(el, value) {
+    if (el && el.textContent !== value) el.textContent = value;
+  }
+
   function hideVehicle3D() {
     veh3dScreen = null;
     veh3dGroundScreen = null;
@@ -4791,9 +5206,10 @@ Corvus.map = (function () {
     // render hook, which fires on every frame the map draws — including every
     // frame of plain 2D, where all four are hidden already and four attribute
     // writes per frame is a cost with nothing to show for it.
-    [veh3dEl, veh3dShadowEl, veh3dLeadEl, veh3dAltEl].forEach((el) => {
+    [veh3dEl, veh3dShadowEl, veh3dAltEl].forEach((el) => {
       if (el && !el.hidden) el.hidden = true;
     });
+    setLeadShown(false);
   }
 
   /**
@@ -4824,7 +5240,7 @@ Corvus.map = (function () {
    * aircraft — which is what every version did before the globe existed.
    */
   function occludedByGlobe(lngLat) {
-    const transform = map && map.transform;
+    const transform = transformOf(map);
     if (!transform || typeof transform.isLocationOccluded !== "function") return false;
     try {
       return !!transform.isLocationOccluded({ lng: lngLat[0], lat: lngLat[1] });
@@ -4911,42 +5327,41 @@ Corvus.map = (function () {
     const pitch = map.getPitch();
     const bearing = map.getBearing();
     veh3dScreen = { x: air.x, y: air.y };
-    veh3dEl.hidden = false;
-    veh3dEl.style.transform =
-      `translate(-50%, -50%) translate(${air.x}px, ${air.y}px) scale(${scale.toFixed(3)}) rotateX(${pitch}deg)`;
+    setShown(veh3dEl, true);
+    setTransform(veh3dEl,
+      `translate(-50%, -50%) translate(${px(air.x)}px, ${px(air.y)}px) scale(${scale.toFixed(3)}) rotateX(${px(pitch)}deg)`);
     const body = veh3dEl.querySelector(".v-body");
-    if (body) body.style.transform = `rotate(${vehDisplay.heading - bearing}deg)`;
+    setTransform(body, `rotate(${px(vehDisplay.heading - bearing)}deg)`);
 
     // Below this the aircraft is effectively on its own shadow, and a leader
     // line of two pixels reads as a rendering fault.
     const airborne = showsHeightLine(vehAltAgl, vehOnGround) && !!base;
     if (!airborne) {
-      if (veh3dShadowEl) veh3dShadowEl.hidden = true;
-      if (veh3dLeadEl) veh3dLeadEl.hidden = true;
-      if (veh3dAltEl) veh3dAltEl.hidden = true;
+      setShown(veh3dShadowEl, false);
+      setLeadShown(false);
+      setShown(veh3dAltEl, false);
       return;
     }
 
     veh3dGroundScreen = { x: base.x, y: base.y };
-    veh3dShadowEl.hidden = false;
-    veh3dShadowEl.style.transform =
-      `translate(-50%, -50%) translate(${base.x}px, ${base.y}px) scale(${scale.toFixed(3)}) rotateX(${pitch}deg)`;
+    setShown(veh3dShadowEl, true);
+    setTransform(veh3dShadowEl,
+      `translate(-50%, -50%) translate(${px(base.x)}px, ${px(base.y)}px) scale(${scale.toFixed(3)}) rotateX(${px(pitch)}deg)`);
 
-    veh3dLeadEl.hidden = false;
-    veh3dLeadEl.setAttribute("viewBox", `0 0 ${width} ${height}`);
-    veh3dLeadEl.setAttribute("width", String(width));
-    veh3dLeadEl.setAttribute("height", String(height));
+    setLeadShown(true);
+    setAttrIf(veh3dLeadEl, "viewBox", `0 0 ${width} ${height}`);
+    setAttrIf(veh3dLeadEl, "width", String(width));
+    setAttrIf(veh3dLeadEl, "height", String(height));
     const line = veh3dLeadEl.firstChild;
-    line.setAttribute("x1", base.x.toFixed(1));
-    line.setAttribute("y1", base.y.toFixed(1));
-    line.setAttribute("x2", air.x.toFixed(1));
-    line.setAttribute("y2", air.y.toFixed(1));
+    setAttrIf(line, "x1", px(base.x));
+    setAttrIf(line, "y1", px(base.y));
+    setAttrIf(line, "x2", px(air.x));
+    setAttrIf(line, "y2", px(air.y));
 
-    veh3dAltEl.hidden = false;
-    veh3dAltEl.textContent = Corvus.units.formatLength(vehAltAgl);
+    setShown(veh3dAltEl, true);
+    setTextIf(veh3dAltEl, Corvus.units.formatLength(vehAltAgl));
     const label = heightLabelPosition(air, base, scale);
-    veh3dAltEl.style.transform =
-      `translate(0, -50%) translate(${label.x.toFixed(1)}px, ${label.y.toFixed(1)}px)`;
+    setTransform(veh3dAltEl, `translate(0, -50%) translate(${px(label.x)}px, ${px(label.y)}px)`);
   }
 
   /**
@@ -4970,16 +5385,161 @@ Corvus.map = (function () {
 
     veh3dScreen = { x: at.x, y: at.y };
     veh3dGroundScreen = { x: at.x, y: at.y };
-    veh3dEl.hidden = false;
+    setShown(veh3dEl, true);
     // No rotateX: the globe's camera is looking at a sphere, and laying the
     // marker into a ground plane that is not flat would only skew it.
-    veh3dEl.style.transform =
-      `translate(-50%, -50%) translate(${at.x.toFixed(1)}px, ${at.y.toFixed(1)}px)`;
+    setTransform(veh3dEl, `translate(-50%, -50%) translate(${px(at.x)}px, ${px(at.y)}px)`);
     const body = veh3dEl.querySelector(".v-body");
-    if (body) body.style.transform = `rotate(${vehDisplay.heading - map.getBearing()}deg)`;
-    if (veh3dShadowEl) veh3dShadowEl.hidden = true;
-    if (veh3dLeadEl) veh3dLeadEl.hidden = true;
-    if (veh3dAltEl) veh3dAltEl.hidden = true;
+    setTransform(body, `rotate(${px(vehDisplay.heading - map.getBearing())}deg)`);
+    setShown(veh3dShadowEl, false);
+    setLeadShown(false);
+    setShown(veh3dAltEl, false);
+  }
+
+  /** Redraw the track in the air when it has something new to show: on its
+   *  own while the camera is still (see veh3dMatrix), else with a map frame. */
+  function requestTrack3DFrame() {
+    if (!threeD || !map) return;
+    if (veh3dMatrixValid && !mapInMotion()) {
+      try { renderTrack3D(veh3dMatrix); return; } catch (_error) { /* a full frame below */ }
+    }
+    if (typeof map.triggerRepaint === "function") map.triggerRepaint();
+  }
+
+  /** The track's colours, read from the theme once rather than per frame. */
+  function track3DColors() {
+    if (!track3dPalette) {
+      track3dPalette = {
+        track: vehicleColor || Corvus.ui.token("--track", "#E4322F"),
+        casing: Corvus.ui.token("--bg", "#0B0E12"),
+        past: pastColors(),
+      };
+    }
+    return track3dPalette;
+  }
+
+  /**
+   * Where a flight's heights are measured from, in the frame the aircraft
+   * is drawn in, or null when that is not known yet.
+   *
+   * The points carry their height above home. The flight in progress takes
+   * the aircraft's own datum (vehicleDrawAltitude less that height), so its
+   * tip meets the aircraft wherever the aircraft is drawn. An earlier flight
+   * takes the ground under its first point, where it took off. Flat ground
+   * is sea level, as for the aircraft.
+   */
+  function track3DBase(coords, current) {
+    if (current && vehAltDraw !== null && vehAltAgl !== null) return vehAltDraw - vehAltAgl;
+    if (!terrainOn) return 0;
+    const now = Date.now();
+    const known = track3dGround.get(coords);
+    if (known && now - known.at < TRACK3D_GROUND_MS) return known.value;
+    const value = terrainElevation(coords[0]);
+    track3dGround.set(coords, { at: now, value });
+    return value;
+  }
+
+  /** Mercator x, y and z per metre for one track point, computed once. */
+  function track3DMercatorOf(c) {
+    let m = track3dMercator.get(c);
+    if (!m) {
+      if (typeof maplibregl === "undefined") return null;
+      const mc = maplibregl.MercatorCoordinate.fromLngLat({ lng: c[0], lat: c[1] }, 1);
+      m = [mc.x, mc.y, mc.z];
+      track3dMercator.set(c, m);
+    }
+    return m;
+  }
+
+  /**
+   * Trace one flight at its height into *sink* (a canvas context, or
+   * anything with moveTo and lineTo). Returns the number of points traced.
+   *
+   * The same projection as projectAltitude, unrolled: this runs for every
+   * point on every frame. A point without a height, or behind the camera,
+   * breaks the line rather than joining across it.
+   */
+  function traceTrack3D(sink, matrix, coords, base, width, height) {
+    let open = false;
+    let traced = 0;
+    for (let i = 0; i < coords.length; i++) {
+      const c = coords[i];
+      const m = c.length > 2 && isFinite(c[2]) ? track3DMercatorOf(c) : null;
+      if (!m) { open = false; continue; }
+      const z = m[2] * (base + c[2]);
+      const w = matrix[3] * m[0] + matrix[7] * m[1] + matrix[11] * z + matrix[15];
+      if (!(w > 1e-6)) { open = false; continue; }
+      const x = ((matrix[0] * m[0] + matrix[4] * m[1] + matrix[8] * z + matrix[12]) / w * 0.5 + 0.5) * width;
+      const y = (0.5 - (matrix[1] * m[0] + matrix[5] * m[1] + matrix[9] * z + matrix[13]) / w * 0.5) * height;
+      if (open) sink.lineTo(x, y);
+      else { sink.moveTo(x, y); open = true; }
+      traced++;
+    }
+    return traced;
+  }
+
+  /** The canvas sized to the map in device pixels, or null. */
+  function track3DContext(width, height) {
+    if (!track3dEl || typeof track3dEl.getContext !== "function") return null;
+    const ratio = map && typeof map.getPixelRatio === "function"
+      ? map.getPixelRatio() : (window.devicePixelRatio || 1);
+    const w = Math.round(width * ratio), h = Math.round(height * ratio);
+    if (track3dEl.width !== w || track3dEl.height !== h) {
+      track3dEl.width = w;
+      track3dEl.height = h;
+      track3dEl.style.width = width + "px";
+      track3dEl.style.height = height + "px";
+    }
+    const ctx = track3dEl.getContext("2d");
+    if (ctx) ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    return ctx;
+  }
+
+  function clearTrack3D() {
+    if (!track3dDrawn) return;
+    track3dDrawn = false;
+    const ctx = track3dEl && typeof track3dEl.getContext === "function" ? track3dEl.getContext("2d") : null;
+    if (!ctx) return;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, track3dEl.width, track3dEl.height);
+  }
+
+  /**
+   * Draw the flown track at the height it was flown, over the one on the
+   * ground. Same hook and same matrix as the aircraft, so the two agree.
+   * Not on the globe, for the reason renderVehicleOnGlobe gives.
+   */
+  function renderTrack3D(matrix) {
+    if (!track3dEl) return;
+    const show = threeD && trackInAir && !!matrix && !!map && !usingGlobe()
+      && (pathCoords.length >= 2 || pastFlights.length > 0);
+    const [width, height] = show ? viewSize() : [0, 0];
+    if (!show || !(width > 0 && height > 0)) { clearTrack3D(); return; }
+    const ctx = track3DContext(width, height);
+    if (!ctx) return;
+    ctx.clearRect(0, 0, width, height);
+    track3dDrawn = true;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    const colors = track3DColors();
+    const stroke = (coords, current, color) => {
+      if (coords.length < 2) return;
+      const base = track3DBase(coords, current);
+      if (base === null) return;
+      ctx.beginPath();
+      if (traceTrack3D(ctx, matrix, smoothTrack(coords), base, width, height) < 2) return;
+      ctx.globalAlpha = TRACK3D_CASING_OPACITY;
+      ctx.strokeStyle = colors.casing;
+      ctx.lineWidth = current ? TRACK3D_CASING_PX : TRACK3D_PAST_CASING_PX;
+      ctx.stroke();
+      ctx.globalAlpha = current ? 1 : TRACK3D_PAST_OPACITY;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = current ? TRACK3D_CORE_PX : TRACK3D_PAST_CORE_PX;
+      ctx.stroke();
+    };
+    pastFlights.forEach((coords, i) => stroke(coords, false, colors.past[i] || colors.track));
+    stroke(pathCoords, true, colors.track);
+    ctx.globalAlpha = 1;
   }
 
   /**
@@ -5004,7 +5564,11 @@ Corvus.map = (function () {
           // MapLibre's whole frame — the map would stop drawing because a
           // marker could not be placed. Swallow it and leave the aircraft
           // where it was; the next frame tries again.
-          try { renderVehicle3D(renderMatrix(args)); } catch (_error) { /* one bad frame */ }
+          const matrix = renderMatrix(args);
+          veh3dMatrixValid = !!matrix && matrix.length === 16;
+          if (veh3dMatrixValid) veh3dMatrix.set(matrix);
+          try { renderTrack3D(matrix); } catch (_error) { /* one bad frame */ }
+          try { renderVehicle3D(matrix); } catch (_error) { /* one bad frame */ }
         },
       });
       veh3dLayerAdded = true;
@@ -5026,10 +5590,10 @@ Corvus.map = (function () {
    */
   /** Tilt the camera, honouring the reduced-motion contract the rest of the
    *  app keeps: an operator who asked for no animation gets the new angle,
-   *  not a six-hundred-millisecond swing into it. */
+   *  not a swing into it. */
   function tiltTo(pitch) {
     setCameraGoal({ pitch });
-    cameraMove({ duration: 600 }, Corvus.anim.reducedMotion());
+    cameraMove({ duration: TILT_MS }, Corvus.anim.reducedMotion());
   }
 
   /**
@@ -5096,6 +5660,7 @@ Corvus.map = (function () {
     if (!map) return threeD;
     threeD = on;
     const full = threeDDetail === THREE_D_FULL;
+    let terrainStarting = false;
     if (on) {
       // Everything that touches the style waits for the style. The rail is
       // built before "load" (so the operator is never left without controls
@@ -5109,9 +5674,9 @@ Corvus.map = (function () {
         const wantGlobe = wantsGlobe(map.getZoom(), globeOn);
         if (wantGlobe !== globeOn) setGlobe(wantGlobe);
         globeOn = wantGlobe;
-        // Terrain in both modes, on both projections. It comes up behind
-        // the tilt, never in front of it (see enableTerrain).
-        enableTerrain();
+        // Terrain in both modes, on both projections. The tilt waits for it
+        // a moment (see enableTerrain).
+        terrainStarting = enableTerrain();
         if (full) {
           addBuildingLayer();
           refreshBuildings();
@@ -5121,6 +5686,7 @@ Corvus.map = (function () {
           removeBuildingLayer();
         }
         setSky(true);
+        setGround(true);
         addVehicle3DLayer();
         // The aircraft's ground changed under it — from a DEM to the flat
         // plane or the other way — so the height it is drawn at has to be
@@ -5139,11 +5705,13 @@ Corvus.map = (function () {
       // once("moveend") here: a 3D press cancelled before the tilt lands
       // leaves that listener registered forever, and an operator toggling the
       // button accumulates one per press.
-      tiltTo(THREE_D_PITCH);
+      if (terrainStarting) tiltAfterTerrain(terrainGeneration);
+      else if (pendingTilt === null) tiltTo(THREE_D_PITCH);
     } else {
       hideVehicle3D();
       removeBuildingLayer();
       setSky(false);
+      setGround(false);
       setGlobe(false);
       globeOn = false;
       disableTerrain();
@@ -5217,7 +5785,96 @@ Corvus.map = (function () {
     }, { once: true });
   }
 
+  /**
+   * Ask again for the tiles in view that failed, twice at most each.
+   *
+   * MapLibre gives up on a tile after one failure, says nothing when the
+   * answer was a 404 (which is how our backend answers an upstream that
+   * timed out), and only asks again once the view moves. So a single slow
+   * answer left a blurry or plain patch until the operator nudged the map.
+   * Checked when the map goes idle, which is when every tile has either
+   * loaded or failed: if all loaded this is one pass over the tiles in view
+   * and nothing else. A tile that loads is forgotten (onTileData), so it gets
+   * its retries again the next time. Offline the backend answers a miss at
+   * once, so the retries cost two quick requests per missing tile.
+   */
+  function onMapIdle() {
+    if (tileRetryTimer !== null || !retryableTiles().length) return;
+    tileRetryTimer = window.setTimeout(() => {
+      tileRetryTimer = null;
+      const failed = retryableTiles();
+      for (const { sourceId, z, x, y, drop } of failed) {
+        const key = `${sourceId} ${z}/${x}/${y}`;
+        if (tileRetries.size > 2000) tileRetries.clear();
+        tileRetries.set(key, (tileRetries.get(key) || 0) + 1);
+        // Dropped, so the next update asks for it as a new tile, the way a
+        // pan does. Not map.refreshTiles: it marks a failed raster tile
+        // "expired", which MapLibre takes for a tile with an image, and every
+        // frame then threw on the missing texture and drew a blank map.
+        try { drop(); } catch (_error) { /* gone with a switch of map or mode */ }
+      }
+      if (failed.length && typeof map._update === "function") map._update(false);
+    }, TILE_RETRY_MS);
+  }
+
+  function retryableTiles() {
+    return failedTilesInView().filter(({ sourceId, z, x, y }) =>
+      !beyondSparseLevel(sourceId, z)
+      && (tileRetries.get(`${sourceId} ${z}/${x}/${y}`) || 0) < TILE_RETRIES);
+  }
+
+  /** Is *z* above the level an elevation source like Copernicus covers
+   *  everywhere? Above it a missing tile is no finer data there, not a
+   *  failure: the ground uses the level above, and asking again only buys
+   *  the same 404. */
+  function beyondSparseLevel(sourceId, z) {
+    const id = terrainSourceId();
+    if (!id || (sourceId !== id && sourceId !== hillshadeSourceId(id))) return false;
+    // null for every source without one, and Number(null) is 0.
+    const sparse = terrainSpec.sparse_above;
+    return typeof sparse === "number" && z > sparse;
+  }
+
+  /** The tiles in view that failed, as {sourceId, z, x, y, drop}. Not
+   *  public API: MapLibre 6 keeps them in tileManagers[id]._inViewTiles and
+   *  removes one with _removeTile. Anything else answers none, so an upgrade
+   *  that moves them costs the retries, not the map. */
+  function failedTilesInView() {
+    const out = [];
+    try {
+      const managers = (map && map.style && map.style.tileManagers) || {};
+      for (const [sourceId, manager] of Object.entries(managers)) {
+        const tiles = manager && manager._inViewTiles && manager._inViewTiles.getAllTiles
+          && typeof manager._removeTile === "function"
+          ? manager._inViewTiles.getAllTiles() : [];
+        for (const tile of tiles) {
+          const c = tile && tile.state === "errored" && tile.tileID && tile.tileID.canonical;
+          if (c) {
+            out.push({ sourceId, z: c.z, x: c.x, y: c.y,
+              drop: () => manager._removeTile(tile.tileID.key) });
+          }
+        }
+      }
+    } catch (_error) { /* a MapLibre that keeps its tiles elsewhere */ }
+    return out;
+  }
+
+  function onTileData(event) {
+    const c = event && event.tile && event.tile.tileID && event.tile.tileID.canonical;
+    if (c && event.sourceId) tileRetries.delete(`${event.sourceId} ${c.z}/${c.x}/${c.y}`);
+  }
+
   function init(mapEl, controlsEl) {
+    // MapLibre keeps 16 tile requests in flight and queues the rest in order.
+    // The browser opens only a few connections to our server anyway, so a
+    // tile the browser could answer from its cache (ground seen before, the
+    // coarse elevation the terrain falls back to) waited behind slow ones
+    // instead, and the terrain broke into holes until it came. Handed to the
+    // browser, a cached tile comes back at once; the server sees no more
+    // requests at a time than before.
+    if (typeof maplibregl.setMaxParallelImageRequests === "function") {
+      maplibregl.setMaxParallelImageRequests(MAX_PARALLEL_TILE_REQUESTS);
+    }
     map = new maplibregl.Map({
       container: mapEl,
       center: DEFAULT_CENTER,
@@ -5232,6 +5889,8 @@ Corvus.map = (function () {
       keyboard: false,
     });
     Corvus.mapOverlays.attach(map);
+    map.on("idle", onMapIdle);
+    map.on("data", onTileData);
     // Attribution is a legal requirement, so it is always on — but it belongs in
     // the corner nothing else competes for. Bottom-right is where the control
     // rail and the HUD live, so it goes bottom-left, with the clear-track button
@@ -5321,6 +5980,12 @@ Corvus.map = (function () {
       refreshBuildings();
     });
 
+    // Anything that moves the camera or resizes the canvas leaves the last
+    // frame's matrix stale until the frame it causes, which renews it.
+    for (const type of ["move", "resize", "terrain", "projectiontransition"]) {
+      map.on(type, () => { veh3dMatrixValid = false; });
+    }
+
     map.on("load", () => {
       // Regions first: their layers must sit UNDER the track and plan route,
       // and MapLibre stacks in insertion order.
@@ -5330,7 +5995,11 @@ Corvus.map = (function () {
       // The vehicles not being flown, under this one's track.
       if (Corvus.mapFleet) Corvus.mapFleet.attach(map);
 
-      homeMarker = new maplibregl.Marker({ element: buildHomeMarker(), anchor: "center" })
+      // Painted on the ground like a helipad: flat under a tilted camera, and
+      // turning with the map.
+      homeMarker = new maplibregl.Marker({
+        element: buildHomeMarker(), anchor: "center", pitchAlignment: "map", rotationAlignment: "map",
+      })
         .setLngLat(DEFAULT_CENTER).addTo(map);
       vehicleMarker = new maplibregl.Marker({ element: buildVehicleMarker(), anchor: "center", rotationAlignment: "map" })
         .setLngLat(DEFAULT_CENTER).addTo(map);
@@ -5344,6 +6013,8 @@ Corvus.map = (function () {
       // while still easing toward the target and false once settled, which is
       // what lets the loop self-cancel when the vehicle is idle.
       vehAnimator = {
+        // Stepped at the map rate, not on every display frame (see anim.js).
+        map: true,
         step: function (dt) {
           if (!vehDisplay || !vehTarget) return false;
           const nx = Corvus.anim.approach(vehDisplay.lng, vehTarget.lng, dt, POS_TAU);
@@ -5541,6 +6212,11 @@ Corvus.map = (function () {
     _showsHeightLine: (agl, onGround) => showsHeightLine(agl, onGround),
     _heightLabelPosition: (air, base, scale) => heightLabelPosition(air, base, scale),
     _projectAltitude: projectAltitude,
+    // test hook: where MapLibre keeps its camera transform, in each version.
+    _transformOf: (m) => transformOf(m),
+    // test hook: one flight traced at its height, into any moveTo/lineTo sink.
+    _traceTrack3D: (sink, matrix, coords, base, width, height) =>
+      traceTrack3D(sink, matrix, coords, base, width, height),
     // test hook: the building-cell grid as pure geometry — which cells a
     // {w,s,e,n} view around a centre asks for, in which order, and how many.
     // Mirrors the _followAction convention.
@@ -5592,7 +6268,9 @@ Corvus.map = (function () {
     }),
     // test hooks: the pure track rules — distance decimation and the reboot
     // edge — assertable without a map.
-    _recordTrackPoint: (pos, hAcc) => recordTrackPoint(pos, hAcc),
+    _recordTrackPoint: (pos, hAcc, alt) => recordTrackPoint(pos, hAcc, alt),
+    // test hook: the track as drawn, curves filled in.
+    _smoothTrack: (coords) => smoothTrack(coords),
     _realFix: (pos) => realFix(pos),
     // test hook: the home-marker rule — a marker is drawn only for a home the
     // aircraft actually reported. Takes the marker so the rule is assertable
@@ -5616,6 +6294,7 @@ Corvus.map = (function () {
     // without a layout engine.
     _contextPoint: () => (contextPoint ? { lng: contextPoint.lng, lat: contextPoint.lat } : null),
     _openContextMenu: (lngLat) => openContextMenu(lngLat),
+    _trackInAir: () => trackInAir,
     _resetTrackState: () => {
       if (trackPaintTimer !== null) window.clearTimeout(trackPaintTimer);
       trackPaintTimer = null;
@@ -5627,6 +6306,7 @@ Corvus.map = (function () {
       trackEarlierFlights = true;
       trackRainbow = false;
       trackClearOnRestart = false;
+      trackInAir = true;
       if (trackSaveTimer !== null) window.clearTimeout(trackSaveTimer);
       trackSaveTimer = null;
     },

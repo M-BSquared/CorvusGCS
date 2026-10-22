@@ -217,8 +217,8 @@ Corvus.pluginVibration = (function () {
         // Transparent legend plate: the paper color behind it is already the
         // themed surface, and a second opaque box would band against it.
         legend: { x: 1, y: 1, xanchor: "right", yanchor: "top", bgcolor: "rgba(0,0,0,0)" },
-        xaxis: Object.assign({}, theme.xaxis, { title: "Time (s)" }),
-        yaxis: Object.assign({}, theme.yaxis, { title: "Vibration metric (unitless)" }),
+        xaxis: Object.assign({}, theme.xaxis, { title: { text: "Time (s)" } }),
+        yaxis: Object.assign({}, theme.yaxis, { title: { text: "Vibration metric (unitless)" } }),
       });
     }
 
