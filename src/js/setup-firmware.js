@@ -86,9 +86,14 @@ Corvus.setupFirmware = (function () {
       "Flash PX4 or ArduPilot firmware over a direct USB connection only"));
 
     // --- Connection card --------------------------------------------------
-    const linkSection = S.el("div", "page-section");
+    const linkSection = S.el("div", "page-section firmware-link-grid");
     const linkCard = S.el("div", "page-card firmware-link-card");
     linkCard.appendChild(S.sectionTitle("Connection"));
+    const gateCard = S.el("div", "page-card firmware-link-card");
+    gateCard.appendChild(S.sectionTitle("Status"));
+    const readyNote = S.el("div", "params-desc");
+    readyNote.textContent = "Ready to flash.";
+    gateCard.appendChild(readyNote);
 
     const transportRow = S.infoRow("Transport", "—");
     const deviceRow = S.infoRow("Device", "—");
@@ -99,7 +104,7 @@ Corvus.setupFirmware = (function () {
     // (warning style) so the operator immediately sees WHY the gate is closed.
     const gateBanner = S.el("div", "params-banner");
     gateBanner.hidden = true;
-    linkCard.appendChild(gateBanner);
+    gateCard.appendChild(gateBanner);
 
     // Armed banner: separate from the USB gate so the operator sees the exact
     // reason flashing is blocked (the backend's can_flash already encodes armed,
@@ -107,9 +112,10 @@ Corvus.setupFirmware = (function () {
     const armedBanner = S.el("div", "params-banner");
     armedBanner.hidden = true;
     armedBanner.textContent = "Cannot flash while armed. Disarm first.";
-    linkCard.appendChild(armedBanner);
+    gateCard.appendChild(armedBanner);
 
     linkSection.appendChild(linkCard);
+    linkSection.appendChild(gateCard);
     page.appendChild(linkSection);
 
     // --- Firmware card ----------------------------------------------------
@@ -846,6 +852,7 @@ Corvus.setupFirmware = (function () {
       // Armed banner (live telemetry is the authoritative signal; applyStatus
       // re-runs on every telemetry frame via onTelemetry).
       armedBanner.hidden = !armed;
+      readyNote.hidden = !canFlash || armed;
 
       // Progress + label from the status snapshot.
       const pct = Math.max(0, Math.min(100, Math.round(st.progress || 0)));

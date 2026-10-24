@@ -45,7 +45,7 @@ global.localStorage = {
 // DOM stub. Elements carry a settable rect so the clamp maths — the only part
 // of this module that reads layout — can be exercised without a layout engine.
 //
-// The interface-scale control (Settings -> Appearance) puts a CSS `zoom` on
+// The interface-scale control (Settings -> Interface) puts a CSS `zoom` on
 // <body>, which makes getBoundingClientRect and pointer coordinates report
 // SCALED pixels while offsetWidth/clientWidth and style.left stay UNSCALED.
 // uiScale models exactly that split for every element, so the drag maths can
@@ -530,7 +530,7 @@ function testShrinkingTheWindowPullsThePanelBackIntoView() {
   assert.ok(after <= 400 - 64, "still inside the smaller map");
 }
 
-// Settings > Appearance > Flight HUD. The config owns the switch, so the
+// Settings > Flight view > Flight HUD. The config owns the switch, so the
 // panel's own localStorage must not learn about it, and the window has to come
 // back where it was, including when the map changed size while it was away.
 function testSettingsTakeTheHudOffAndBringItBackWhereItWas() {

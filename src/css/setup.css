@@ -967,6 +967,8 @@
 /* ----- FIRMWARE ----- */
 /* Dedicated card class (mirrors .params-card's column layout) so the firmware
    page reads as its own surface, not a params reuse. */
+.firmware-link-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; max-width: 900px; }
+.firmware-link-grid > .page-card { margin-bottom: 0; }
 .firmware-card { display: flex; flex-direction: column; gap: 12px; }
 .firmware-file-row { display: flex; align-items: center; gap: 10px; }
 /* .field-input; the native file picker only needs its own width/padding so

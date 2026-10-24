@@ -511,10 +511,13 @@ function testSettingsHasADropdownWithAReloadButtonAndNoPath() {
   assert.match(css, /\.settings-language-select/);
 }
 
-function testTheLanguageCardComesFirstInAppearance() {
+function testTheLanguageCardComesFirstInInterface() {
   const sidenav = read("js", "sidenav.js");
-  const section = between(sidenav, "function renderAppearanceSection", "// Which optional PAGES");
-  assert.ok(section.indexOf("languageCard(") < section.indexOf("companyLogoCard("));
+  const tab = between(sidenav, "function renderInterfaceTab", "function renderLayoutTab");
+  const at = tab.indexOf("languageCard(");
+  assert.ok(at > 0, "the language card is on the Interface pill");
+  ["themeCard(", "scaleCard(", "unitsCard(", "companyLogoCard("].forEach((c) =>
+    assert.ok(at < tab.indexOf(c), `languageCard comes before ${c}`));
 }
 
 function testTheShippedLanguagesTranslateTheComposedTexts() {
@@ -586,7 +589,7 @@ function testTheLanguageFilesShip() {
     testThePagesLoadI18nBeforeUi, testThePageIsHeldBackUntilTheSavedLanguageIsIn,
     testTheVehiclesOwnConsoleIsNeverTranslated, testTheConfigDecidesTheLanguageAtStart,
     testTheFirstStartOffersTheLanguageInTheLookStepNotOnTheFirstPage, testTheFirstStartUsesADropdown,
-    testSettingsHasADropdownWithAReloadButtonAndNoPath, testTheLanguageCardComesFirstInAppearance,
+    testSettingsHasADropdownWithAReloadButtonAndNoPath, testTheLanguageCardComesFirstInInterface,
     testTheLanguageFilesShip, testTheShippedLanguagesTranslateTheComposedTexts,
   ];
   let count = 0;

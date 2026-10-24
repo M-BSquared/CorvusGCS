@@ -152,26 +152,30 @@
 <h1>Settings</h1>
 <p class="doc-lead">
   <strong>SET</strong> at the bottom of the left rail. Everything applies at
-  once and is saved, in <code>~/.corvus/config.json</code>. This page goes
-  through the sections in the order they appear.
+  once and is saved, in <code>~/.corvus/config.json</code>. The page is split
+  into pills along the top, one per topic, the same way the First Setup shows
+  its steps: <strong>Interface</strong>, <strong>Layout</strong>,
+  <strong>Flight view</strong>, <strong>Map</strong>, <strong>Controls</strong>, <strong>Connections</strong>,
+  <strong>Data</strong>, <strong>Plugins</strong> and <strong>About</strong>.
+  Corvus remembers the last pill until it is restarted. This page goes through
+  them in that order.
 </p>
 
-<h2 id="appearance">Appearance</h2>
+<h2 id="interface">Interface</h2>
+<p>How the whole app reads. <strong>General</strong> holds the language, the colours, the size and the units; <strong>Branding</strong> the logo and the app icon.</p>
 <dl>
   <dt id="language">Language</dt>
   <dd>The language of the interface: English, German or French, from a dropdown, with <strong>Reload languages</strong> beside it. Switching is instant, with no reload. The first start setup opens in the browser's own language when Corvus has a file for it, and offers the choice in its first step, <strong>Look</strong>. A text that a language does not translate stays English. More languages can be added without touching the program, see <a href="#adding-a-language">Adding a language</a>.</dd>
-  <dt>Company logo</dt>
-  <dd>A PNG of your own, shown in the top right of the window.</dd>
   <dt>Colour theme</dt>
   <dd>Six themes, two light and four dark: Light (the default), Light Orange, Blue, Green, Orange and Pink. Switching is instant, with no reload and no flash, and the map, the plots and the instruments all follow.</dd>
   <dt>Interface size</dt>
   <dd>One slider from 80 % to 150 % that scales the whole app, for a small laptop screen or a bright field where you want everything larger.</dd>
   <dt>Units</dt>
   <dd>A unit system (metric, imperial, aviation) that sets altitude and length, distance, speed and temperature at once, and each of the four on its own afterwards. Units are for display only: parameters, mission files and everything sent to the aircraft stay in the units the autopilot uses.</dd>
-  <dt>Pages</dt>
-  <dd>Adds <strong>MISSION</strong> under HOME in the left rail. Off by default. See <a href="mission.html">Mission planner</a>.</dd>
-  <dt id="side-panel">Side panel</dt>
-  <dd><strong>MAVLink console tab</strong> and <strong>SSH tab</strong>, both on by default. Off, the tab is gone from the side panel. Console messages are still collected and still go into the export on the Logs page; saved SSH connections stay saved and plugins still use them, and a terminal opens in a <a href="video.html#windows">window of its own</a> instead. LINK and PLUGINS cannot be switched off.</dd>
+  <dt>Company logo</dt>
+  <dd>A PNG of your own, shown in the top right of the window.</dd>
+  <dt>App icon</dt>
+  <dd><strong>Inverted app icon</strong> uses the black mark instead of the white one for the Dock (macOS) or taskbar (Linux), better on a light dock. <strong>Icon backplate</strong> draws the mark on a filled rounded square so it is visible on a dock of any shade. Neither changes anything but the icon.</dd>
 </dl>
 
 <h3 id="adding-a-language">Adding a language</h3>
@@ -194,6 +198,34 @@
   <li><strong>Finding the texts.</strong> <code>python3 tools/i18n.py new es Spanish Español</code> writes a file with every text the other languages list, each blank. To see what is still English on screen, open Corvus in the language, go through the pages and run <code>copy(JSON.stringify(Corvus.i18n.template(), null, 2))</code> in the browser console. <code>python3 tools/i18n.py check</code> reads every file and reports a placeholder that does not match.</li>
 </ul>
 
+<h2 id="layout">Layout</h2>
+<p>How the window is put together. <strong>Navigation</strong> is the left rail and the side panel; <strong>Windows and notifications</strong> is where camera and terminal windows open and how a notification is drawn.</p>
+<dl>
+  <dt>Pages</dt>
+  <dd>Adds <strong>MISSION</strong> under HOME in the left rail. Off by default. See <a href="mission.html">Mission planner</a>.</dd>
+  <dt id="side-panel">Side panel</dt>
+  <dd><strong>MAVLink console tab</strong> and <strong>SSH tab</strong>, both on by default. Off, the tab is gone from the side panel. Console messages are still collected and still go into the export on the Logs page; saved SSH connections stay saved and plugins still use them, and a terminal opens in a <a href="video.html#windows">window of its own</a> instead. LINK and PLUGINS cannot be switched off.</dd>
+  <dt>Camera and terminal windows</dt>
+  <dd><strong>Open inside the Corvus window</strong> (off by default), <strong>Corvus title bar</strong> (off by default) and <strong>Solid terminals</strong>. See <a href="video.html#windows">Floating windows</a>.</dd>
+  <dt>Notifications</dt>
+  <dd><strong>Severity marks</strong>, off by default: coloured bars above and below the level icon of a notification, blue for information, amber for a warning, red for a fault.</dd>
+</dl>
+
+<h2 id="flight-view">Flight view</h2>
+<p>What you read while flying. <strong>Bars</strong> is the top bar and the flight bar; <strong>Instruments</strong> the flight HUD and the compass.</p>
+<dl>
+  <dt>Top bar</dt>
+  <dd><strong>Status dots</strong>, off by default: a dot after the VEHICLE, STATUS, GPS and BATTERY captions, green good, amber caution, red fault, grey nothing to report. The values already carry that colour; the dots let you scan the bar by colour alone. <strong>Altitude</strong> picks AMSL or relative to home for the ALTITUDE block. <strong>Show altitude</strong>, <strong>Show groundspeed</strong> and <strong>Show climb rate</strong> are on by default; switch one off to take that block off the bar. <strong>Show distance sensor</strong> is off by default: it adds the reading of a downward distance sensor to the altitude card, and only while it is on does Corvus ask the vehicle for it. Hovering over ALTITUDE, GPS or BATTERY opens a card with more detail: for altitude, AMSL, the height above home and the GPS altitude.</dd>
+  <dt>Flight bar</dt>
+  <dd><strong>Shrink with the window</strong>, off by default. On, the ARM, TAKEOFF, LAND, RETURN and PLAN bar steps down as soon as it would cover more than half the map: to the width of each word first, then to icons alone. It is measured on the map itself, so opening the side panel narrows it just as shrinking the window does. <strong>Separate Takeoff and Land buttons</strong>, off by default. Off, the bar has one button: TAKEOFF while the aircraft is on the ground, LAND once it is flying, and the takeoff card opens only from TAKEOFF. On, TAKEOFF and LAND are two buttons and the one that does not apply is greyed.</dd>
+  <dt>Flight HUD</dt>
+  <dd><strong>Show the flight HUD</strong>, on by default. Off, the window with the compass, the attitude indicator and the readouts is taken off the Home map. Turned back on, it returns where you left it. <strong>Square HUD corners</strong>, off by default. Off, the window has a rounded top; on, all four corners are square. The bar with the pin and size buttons sits in the same place either way. See <a href="flying.html#hud">The flight HUD</a>.</dd>
+  <dt>Compass</dt>
+  <dd><strong>Lock compass nose up</strong>. Off, the compass is north up; on, the rose turns and the top of the dial is always the aircraft's heading.</dd>
+</dl>
+
+<h2 id="map">Map</h2>
+<p><strong>Map data</strong> is what the map is drawn from: the map service and your own elevation files (see <a href="3d-offline.html">3D, terrain and offline maps</a>). <strong>On the map</strong> is what is drawn on it.</p>
 <h3 id="map-service">Map service</h3>
 <p>
   Which map service and which of its layers. It can also be switched from the
@@ -221,42 +253,41 @@
 <dl>
   <dt>Flown track</dt>
   <dd>Earlier flights in their own colour (on by default), a colour of its own for each earlier flight (off by default), and clearing the track whenever Corvus starts or the autopilot reboots (off by default). See <a href="flying.html#track">The flown track</a>.</dd>
-  <dt>Controls</dt>
-  <dd>The virtual joystick, USB gamepad, arrow keys and WASD keys, each its own switch and all off by default, and the key strength slider. See <a href="flying.html#manual-control">Manual controls</a>.</dd>
-  <dt>Flight bar</dt>
-  <dd><strong>Shrink with the window</strong>, off by default. On, the ARM, TAKEOFF, LAND, RETURN and PLAN bar steps down as soon as it would cover more than half the map: to the width of each word first, then to icons alone. It is measured on the map itself, so opening the side panel narrows it just as shrinking the window does. <strong>Separate Takeoff and Land buttons</strong>, off by default. Off, the bar has one button: TAKEOFF while the aircraft is on the ground, LAND once it is flying, and the takeoff card opens only from TAKEOFF. On, TAKEOFF and LAND are two buttons and the one that does not apply is greyed.</dd>
-  <dt>Flight HUD</dt>
-  <dd><strong>Show the flight HUD</strong>, on by default. Off, the window with the compass, the attitude indicator and the readouts is taken off the Home map. Turned back on, it returns where you left it. <strong>Square HUD corners</strong>, off by default. Off, the window has a rounded top; on, all four corners are square. The bar with the pin and size buttons sits in the same place either way. See <a href="flying.html#hud">The flight HUD</a>.</dd>
   <dt>Map tools</dt>
   <dd><strong>Show the distance tool</strong>, on by default. Off, the ruler button is taken off the Home map's right-hand bar. See <a href="flying.html#measure">Measuring a distance</a>.</dd>
   <dt>Map animation</dt>
   <dd><strong>Aircraft on the map</strong>, 60 Hz by default. How many times a second the aircraft on the map move, in 3D with their height line and shadow. 30 Hz needs about a third less CPU in 3D, which matters on a laptop running on its battery; 60 Hz moves them more smoothly. The flight instruments and moving the map by hand always run at the display's full rate.</dd>
-  <dt>Compass</dt>
-  <dd><strong>Lock compass nose up</strong>. Off, the compass is north up; on, the rose turns and the top of the dial is always the aircraft's heading.</dd>
-  <dt>Top bar</dt>
-  <dd><strong>Status dots</strong>, off by default: a dot after the VEHICLE, STATUS, GPS and BATTERY captions, green good, amber caution, red fault, grey nothing to report. The values already carry that colour; the dots let you scan the bar by colour alone. <strong>Altitude</strong> picks AMSL or relative to home for the ALTITUDE block. <strong>Show altitude</strong>, <strong>Show groundspeed</strong> and <strong>Show climb rate</strong> are on by default; switch one off to take that block off the bar. <strong>Show distance sensor</strong> is off by default: it adds the reading of a downward distance sensor to the altitude card, and only while it is on does Corvus ask the vehicle for it. Hovering over ALTITUDE, GPS or BATTERY opens a card with more detail: for altitude, AMSL, the height above home and the GPS altitude.</dd>
-  <dt>Notifications</dt>
-  <dd><strong>Severity marks</strong>, off by default: coloured bars above and below the level icon of a notification, blue for information, amber for a warning, red for a fault.</dd>
-  <dt>Camera and terminal windows</dt>
-  <dd><strong>Open inside the Corvus window</strong> (off by default), <strong>Corvus title bar</strong> (off by default) and <strong>Solid terminals</strong>. See <a href="video.html#windows">Floating windows</a>.</dd>
-  <dt>App icon</dt>
-  <dd><strong>Inverted app icon</strong> uses the black mark instead of the white one for the Dock (macOS) or taskbar (Linux), better on a light dock. <strong>Icon backplate</strong> draws the mark on a filled rounded square so it is visible on a dock of any shade. Neither changes anything but the icon.</dd>
 </dl>
 
-<h2 id="ssh">SSH Connections</h2>
+<h2 id="controls">Controls</h2>
+<dl>
+  <dt>Controls</dt>
+  <dd>The virtual joystick, USB gamepad, arrow keys and WASD keys, each its own switch and all off by default, and the key strength slider. See <a href="flying.html#manual-control">Manual controls</a>.</dd>
+</dl>
+
+<h2 id="connections">Connections</h2>
+<p>
+  <strong>Vehicles</strong> lists the links, one vehicle each, and opens the
+  vehicle list.
+</p>
+
+<h3 id="ssh">SSH Connections</h3>
 <p>
   Add, connect and remove saved SSH hosts. The same list is used by the
   <a href="workspace.html#ssh">SSH tab</a> and the
   <a href="plugins.html#ssh-launcher">launcher plugins</a>.
 </p>
 
-<h2 id="connection">Connection</h2>
+<h3 id="connection">Connection</h3>
 <p>
   Shows the saved MAVLink connection and the HTTP port. To change the link,
   use the LINK tab (see <a href="connect.html">Connect to the aircraft</a>).
 </p>
 
-<h2 id="files">Files</h2>
+<h2 id="data">Data</h2>
+<p>What Corvus keeps on this computer and how it reads it back.</p>
+
+<h3 id="files">Parameters</h3>
 <p>
   <strong>Parameter export folder</strong>: where Export writes parameter
   files. Leave it empty for <code>~/.corvus/params</code>; the export dialog can
@@ -278,11 +309,25 @@
   <div><p>A copy is matched to the vehicle by a checksum only, and in rare cases two different files share one. The defaults, descriptions and ranges shown would then belong to another firmware. If defaults ever look wrong, clear the copies and switch this off.</p></div>
 </div>
 
-<h2 id="analysis">Analysis</h2>
+<h3 id="analysis">Analysis</h3>
 <p>
   <strong>Sensitivity</strong> of the flight review: Relaxed, Normal or
   Strict. See <a href="analysis.html#sensitivity">Sensitivity</a>.
 </p>
+
+<h3 id="export-import">Export and import</h3>
+<p>
+  The settings of the station in one JSON file, for a backup or for setting up
+  the next laptop. That includes the window layout (where the flight HUD and
+  the virtual joystick sit), the RC transmitter bindings, the checklists, the
+  plugins and the company logo.
+</p>
+<ul>
+  <li><strong>By part.</strong> Both directions go by part (interface, window layout, map, connections, vehicle, folders, plugins), with <strong>All</strong> and <strong>None</strong> to start from. A part left out of the file is never touched on import.</li>
+  <li><strong>Plugins by plugin.</strong> Under Plugins you choose, per plugin, its <strong>Settings</strong> and its <strong>Files</strong> (the plugin itself, for one you installed). The plugins that ship with Corvus are on every station already, so only their settings travel.</li>
+  <li><strong>Secrets stay out</strong>, unless you switch them on: passwords and map keys are not in the file by default, and an import without them keeps the ones already stored for the same host.</li>
+  <li><strong>Import shows what the file holds</strong>, warns before it installs plugin files, and is refused while the aircraft is armed.</li>
+</ul>
 
 <h2 id="plugins">Plugins</h2>
 <p>
@@ -300,32 +345,18 @@
   last tab. See <a href="plugins.html#options">Plugin settings</a>.
 </p>
 
-<h2 id="export-import">Export and import</h2>
-<p>
-  The settings of the station in one JSON file, for a backup or for setting up
-  the next laptop. That includes the window layout (where the flight HUD and
-  the virtual joystick sit), the RC transmitter bindings, the checklists, the
-  plugins and the company logo.
-</p>
-<ul>
-  <li><strong>By part.</strong> Both directions go by part (interface, window layout, map, connections, vehicle, folders, plugins), with <strong>All</strong> and <strong>None</strong> to start from. A part left out of the file is never touched on import.</li>
-  <li><strong>Plugins by plugin.</strong> Under Plugins you choose, per plugin, its <strong>Settings</strong> and its <strong>Files</strong> (the plugin itself, for one you installed). The plugins that ship with Corvus are on every station already, so only their settings travel.</li>
-  <li><strong>Secrets stay out</strong>, unless you switch them on: passwords and map keys are not in the file by default, and an import without them keeps the ones already stored for the same host.</li>
-  <li><strong>Import shows what the file holds</strong>, warns before it installs plugin files, and is refused while the aircraft is armed.</li>
-</ul>
-
 <h2 id="about">About</h2>
 <p>
   The version, the live connection summary, and <strong>Credits</strong>,
   which lists every bundled component and its licence.
 </p>
 
-<h2 id="updates">Updates</h2>
+<h3 id="updates">Updates</h3>
 <p>
   A switch, on by default, that compares the running version with the
   published releases on GitHub and shows a notice when a newer one exists,
-  plus <strong>Check now</strong>. SET in the left rail carries a marker while
-  a newer release is waiting.
+  plus <strong>Check now</strong>. SET in the left rail and the About pill carry a
+  marker while a newer release is waiting.
 </p>
 <ul>
   <li>Nothing is downloaded and nothing about your machine is sent.</li>
@@ -349,15 +380,15 @@
 <aside class="guide-toc" aria-labelledby="toc-title">
   <p class="guide-toc-title" id="toc-title">On this page</p>
   <ul>
-    <li><a href="#appearance">Appearance</a></li>
-    <li><a href="#ssh">SSH Connections</a></li>
-    <li><a href="#connection">Connection</a></li>
-    <li><a href="#files">Files</a></li>
-    <li><a href="#analysis">Analysis</a></li>
+    <li><a href="#interface">Interface</a></li>
+    <li><a href="#layout">Layout</a></li>
+    <li><a href="#flight-view">Flight view</a></li>
+    <li><a href="#map">Map</a></li>
+    <li><a href="#controls">Controls</a></li>
+    <li><a href="#connections">Connections</a></li>
+    <li><a href="#data">Data</a></li>
     <li><a href="#plugins">Plugins</a></li>
-    <li><a href="#export-import">Export and import</a></li>
     <li><a href="#about">About</a></li>
-    <li><a href="#updates">Updates</a></li>
   </ul>
 </aside>
 </div>

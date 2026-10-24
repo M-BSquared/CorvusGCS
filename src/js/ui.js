@@ -2308,7 +2308,7 @@ Corvus.ui = (function () {
   /*
     uiScale() — scaled pixels per unscaled pixel.
 
-    The interface-size control (Settings -> Appearance) puts a CSS `zoom` on
+    The interface-size control (Settings -> Interface) puts a CSS `zoom` on
     <body>, and that splits the DOM's geometry into two coordinate spaces that
     look alike and are not:
 

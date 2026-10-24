@@ -588,7 +588,7 @@ function testSharedLoopLifecycle() {
 // ALL are settled; a new target re-wakes it.
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
-// Shared rAF loop: the map rate (Settings, Appearance, Map) caps what is drawn
+// Shared rAF loop: the map rate (Settings, Map, Map animation) caps what is drawn
 // on the map, and nothing else.
 // ---------------------------------------------------------------------------
 function testMapRateCapsOnlyMapAnimators() {

@@ -6149,7 +6149,7 @@ Corvus.map = (function () {
     refreshSources,
     getCacheStats,
     // Settings' map-service picker drives the live map through this, so the
-    // Home tab's layer switcher and the Appearance page can never disagree
+    // Home tab's layer switcher and the Settings Map pill can never disagree
     // about which base layer is showing.
     setBaseLayer,
     getBaseLayer: () => activeLayer,

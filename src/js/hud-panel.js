@@ -62,7 +62,7 @@ Corvus.hudPanel = (function () {
   };
   let state = Object.assign({}, DEFAULTS);
   // Whether the panel is on the map at all. The config owns this (Settings >
-  // Appearance > Flight HUD), not localStorage, so it stays out of `state`.
+  // Flight view > Flight HUD), not localStorage, so it stays out of `state`.
   let shown = true;
   let square = false;
   let drag = null;   // {pointerId, dx, dy} while a drag is in flight
@@ -365,7 +365,7 @@ Corvus.hudPanel = (function () {
   }
 
   /**
-   * Put the panel on the Home map or take it off (Settings > Appearance >
+   * Put the panel on the Home map or take it off (Settings > Flight view >
    * Flight HUD). Position and folds are left alone, so it comes back exactly
    * as it was. Safe before init, which applies the last value. Returns it.
    */

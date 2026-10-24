@@ -305,7 +305,7 @@ def test_load_config_map_non_dict_returns_none(tmp_path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# ui — the interface scale written by Settings -> Appearance
+# ui — the interface scale written by Settings -> Interface
 # ---------------------------------------------------------------------------
 def test_load_config_parses_ui_scale(tmp_path) -> None:
     p = tmp_path / "config.json"

@@ -94,8 +94,11 @@ Corvus.sidenav = (function () {
     Corvus.ui.refreshIcons();
   }
 
-  /** Orange dot on SET while a newer release is waiting (Corvus.update). */
+  /** Orange dot on SET, and on the Settings page's About pill, while a newer
+   *  release is waiting (Corvus.update). */
   function paintUpdateBadge(latest) {
+    const pill = pageView && pageView.querySelector('.settings-tab[data-tab="about"]');
+    if (pill) pill.classList.toggle("has-update", !!latest);
     const btn = leftNav && leftNav.querySelector('.nav-item[data-nav="settings"]');
     if (!btn) return;
     btn.classList.toggle("has-update", !!latest);
@@ -363,37 +366,168 @@ Corvus.sidenav = (function () {
     Corvus.panel.showTab("ssh");
   }
 
-  // --- Section A: Appearance (color theme, map service, on-screen controls) ---
-  // Operator choices that all change what the app looks like and what it puts
-  // on screen, so they share one section. Everything here applies immediately
-  // and persists in the background — nothing has a Save button, because there
-  // is nothing to get wrong and undoing is one more click.
-  function renderAppearanceSection(container, cfg, gen) {
+  // --- The Settings page: one pill per topic, like the First Setup steps ---
+  // The page used to be one column of some thirty cards. Each pill now holds
+  // the cards that change the same part of Corvus, and inside a pill the cards
+  // are grouped by where on screen the change shows. The topics have no order
+  // to work through, so unlike the First Setup steps the pills carry an icon,
+  // not a number.
+  const SETTINGS_TABS = [
+    { id: "interface", label: "Interface", icon: "palette", render: renderInterfaceTab },
+    { id: "layout", label: "Layout", icon: "panels-top-left", render: renderLayoutTab },
+    { id: "flight", label: "Flight view", icon: "gauge", render: renderFlightTab },
+    { id: "map", label: "Map", icon: "map", render: renderMapTab },
+    { id: "controls", label: "Controls", icon: "gamepad-2", render: renderControlsTab },
+    { id: "connections", label: "Connections", icon: "plug", render: renderConnectionsTab },
+    { id: "data", label: "Data", icon: "database", render: renderDataTab },
+    { id: "plugins", label: "Plugins", icon: "puzzle", render: renderPluginsSection },
+    { id: "about", label: "About", icon: "info", render: (c, cfg, gen) => renderAboutSection(c, gen) },
+  ];
+
+  // The pill last open, for this session only: a trip to Home and back lands
+  // where the operator left off, a fresh start opens on Interface.
+  let settingsTab = "interface";
+
+  /** One headed group of cards inside a pill. */
+  function cardGroup(container, title, cards) {
     const body = document.createDocumentFragment();
-    body.appendChild(languageCard(gen));
-    body.appendChild(companyLogoCard(cfg));
-    body.appendChild(themeCard(cfg));
-    body.appendChild(scaleCard(cfg));
-    body.appendChild(unitsCard(cfg));
-    body.appendChild(pagesCard(cfg));
-    body.appendChild(sidePanelCard(cfg));
-    body.appendChild(mapServiceCard(cfg, gen));
-    body.appendChild(elevationDataCard(gen));
-    body.appendChild(trackCard(cfg));
-    body.appendChild(controlsCard(cfg));
-    // The flight bar, the top-bar dots, the notification marks and the Dock
-    // icon sit after Controls: all four are small finishing touches on an
-    // interface the cards above them decide.
-    body.appendChild(flightBarCard(cfg));
-    body.appendChild(flightHudCard(cfg));
-    body.appendChild(mapToolsCard(cfg));
-    body.appendChild(mapMotionCard(cfg));
-    body.appendChild(compassCard(cfg));
-    body.appendChild(topBarCard(cfg));
-    body.appendChild(notificationsCard(cfg));
-    body.appendChild(windowsCard(cfg));
-    body.appendChild(appIconCard(cfg));
-    container.appendChild(Corvus.ui.section({ title: "Appearance", body }));
+    cards.forEach((c) => body.appendChild(c));
+    container.appendChild(Corvus.ui.section({ title, body }));
+  }
+
+  // Everything below applies immediately and persists in the background.
+  // Nothing has a Save button, because there is nothing to get wrong and
+  // undoing is one more click.
+
+  // How the whole app reads: the language, the colours, the size, the units,
+  // and whose name is on it.
+  function renderInterfaceTab(container, cfg, gen) {
+    cardGroup(container, "General", [
+      languageCard(gen), themeCard(cfg), scaleCard(cfg), unitsCard(cfg),
+    ]);
+    cardGroup(container, "Branding", [companyLogoCard(cfg), appIconCard(cfg)]);
+  }
+
+  // How the window is put together: which pages the rail offers, which tabs
+  // the side panel carries, where camera and terminal windows open, and how
+  // a notification is drawn.
+  function renderLayoutTab(container, cfg) {
+    cardGroup(container, "Navigation", [pagesCard(cfg), sidePanelCard(cfg)]);
+    cardGroup(container, "Windows and notifications", [windowsCard(cfg), notificationsCard(cfg)]);
+  }
+
+  // What the operator reads while flying: the bars above and below the map
+  // and the instruments on it.
+  function renderFlightTab(container, cfg) {
+    cardGroup(container, "Bars", [topBarCard(cfg), flightBarCard(cfg)]);
+    cardGroup(container, "Instruments", [flightHudCard(cfg), compassCard(cfg)]);
+  }
+
+  // What the map is drawn from, then what is drawn on it.
+  function renderMapTab(container, cfg, gen) {
+    cardGroup(container, "Map data", [mapServiceCard(cfg, gen), elevationDataCard(gen)]);
+    cardGroup(container, "On the map", [trackCard(cfg), mapToolsCard(cfg), mapMotionCard(cfg)]);
+  }
+
+  function renderControlsTab(container, cfg) {
+    cardGroup(container, "Manual control", [controlsCard(cfg)]);
+  }
+
+  // Everything Corvus talks to: the vehicles, the companion computers, and
+  // the ports it listens on.
+  function renderConnectionsTab(container, cfg, gen) {
+    renderVehiclesSection(container, gen);
+    renderSSHSection(container, gen);
+    renderConnectionSection(container, cfg);
+  }
+
+  // What Corvus keeps on this computer and how it reads it back.
+  function renderDataTab(container, cfg) {
+    renderFilesSection(container, cfg);
+    renderAnalysisSection(container, cfg);
+    if (Corvus.settingsTransfer) container.appendChild(Corvus.settingsTransfer.section());
+  }
+
+  /**
+   * The pill row and one panel per pill. Every panel is built now, the hidden
+   * ones too: several cards apply the config to the live interface as they are
+   * built (the rail's Mission entry, the compass, the top bar), and that must
+   * not wait for the operator to open their pill.
+   */
+  function renderSettingsTabs(container, cfg, gen) {
+    if (!SETTINGS_TABS.some((t) => t.id === settingsTab)) settingsTab = SETTINGS_TABS[0].id;
+    const bar = document.createElement("div");
+    bar.className = "settings-tabs";
+    bar.setAttribute("role", "tablist");
+    bar.setAttribute("aria-label", "Settings");
+    container.appendChild(bar);
+
+    const pills = [];
+    const panels = [];
+    SETTINGS_TABS.forEach((t) => {
+      const pill = document.createElement("button");
+      pill.type = "button";
+      pill.className = "settings-tab";
+      pill.id = "settingsPill_" + t.id;
+      pill.dataset.tab = t.id;
+      pill.setAttribute("role", "tab");
+      pill.setAttribute("aria-controls", "settingsPanel_" + t.id);
+      const label = document.createElement("span");
+      label.textContent = t.label;
+      pill.append(Corvus.ui.icon(t.icon, "auto"), label);
+      pill.addEventListener("click", () => select(t.id, true));
+      bar.appendChild(pill);
+      pills.push(pill);
+
+      const panel = document.createElement("div");
+      panel.className = "settings-panel";
+      panel.id = "settingsPanel_" + t.id;
+      panel.dataset.tab = t.id;
+      panel.setAttribute("role", "tabpanel");
+      panel.setAttribute("aria-labelledby", pill.id);
+      container.appendChild(panel);
+      panels.push(panel);
+      try {
+        t.render(panel, cfg, gen);
+      } catch (err) {
+        // One broken card must not take the other pills down with it.
+        console.error(`settings: the ${t.id} pill failed to render:`, err);
+      }
+    });
+
+    function select(id, byOperator) {
+      settingsTab = id;
+      pills.forEach((p) => {
+        const on = p.dataset.tab === id;
+        p.classList.toggle("active", on);
+        p.setAttribute("aria-selected", String(on));
+        p.tabIndex = on ? 0 : -1;
+      });
+      panels.forEach((p) => { p.hidden = p.dataset.tab !== id; });
+      if (byOperator) {
+        pageView.scrollTop = 0;
+        const shown = panels.find((p) => !p.hidden);
+        if (shown && Corvus.anim) Corvus.anim.enter(shown, { duration: 160, group: panels });
+      }
+    }
+
+    // Arrow keys walk the pills, as in any tab row.
+    bar.addEventListener("keydown", (e) => {
+      const at = pills.indexOf(document.activeElement);
+      if (at < 0) return;
+      const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+      let next = null;
+      if (step) next = (at + step + pills.length) % pills.length;
+      else if (e.key === "Home") next = 0;
+      else if (e.key === "End") next = pills.length - 1;
+      if (next === null) return;
+      e.preventDefault();
+      pills[next].focus();
+      select(pills[next].dataset.tab, true);
+    });
+
+    select(settingsTab, false);
+    paintUpdateBadge(Corvus.update ? Corvus.update.available() : null);
   }
 
   // Which optional PAGES the left rail carries.
@@ -2631,8 +2765,7 @@ Corvus.sidenav = (function () {
       hint: "Where Export writes parameter files, on the machine running Corvus. " +
             "Leave empty for ~/.corvus/params. The export dialog can still override it per file.",
     }));
-    container.appendChild(Corvus.ui.section({ title: "Files", body: card }));
-    container.appendChild(paramDefaultsCacheCard(cfg));
+    cardGroup(container, "Parameters", [card, paramDefaultsCacheCard(cfg)]);
   }
 
   // --- Section D1: Analysis (how the Flight Review reads a log) ---
@@ -3162,15 +3295,7 @@ Corvus.sidenav = (function () {
     Corvus.telemetry.requestJson("/api/config").then((res) => {
       if (gen !== navGeneration) return;
       const cfg = (res && res.config) || {};
-      renderAppearanceSection(container, cfg, gen);
-      renderSSHSection(container, gen);
-      renderConnectionSection(container, cfg);
-      renderVehiclesSection(container, gen);
-      renderFilesSection(container, cfg);
-      renderAnalysisSection(container, cfg);
-      renderPluginsSection(container, cfg, gen);
-      if (Corvus.settingsTransfer) container.appendChild(Corvus.settingsTransfer.section());
-      renderAboutSection(container, gen);
+      renderSettingsTabs(container, cfg, gen);
       Corvus.ui.refreshIcons();
     }).catch(() => {
       if (gen !== navGeneration) return;

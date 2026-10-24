@@ -11,7 +11,7 @@ window.Corvus = window.Corvus || {};
   rather than one — a planned mission is reviewed and walked out to, unlike the
   Home tab's fly-to-points, which is one gesture from click to flight.
 
-  Off by default; Settings > Appearance > Pages puts MISSION in the left rail
+  Off by default; Settings > Layout > Pages puts MISSION in the left rail
   (see Corvus.sidenav.setMissionEnabled).
 
   WHAT OWNS WHAT
@@ -3631,7 +3631,7 @@ Corvus.mission = (function () {
   // ---- display units ---------------------------------------------------
   // The plan is metres and m/s throughout, on screen as on the wire. These
   // are the only places a number crosses into or out of the unit the
-  // operator reads (Settings > Appearance > Units).
+  // operator reads (Settings > Interface > Units).
 
   function isSi(quantity) {
     const u = Corvus.units.get();

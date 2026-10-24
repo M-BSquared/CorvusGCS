@@ -1,7 +1,7 @@
 # Interface languages
 
 One JSON file per language, named after its code: `en.json`, `de.json`,
-`fr.json`, `dl.json` (Drachensprech). Corvus lists every file in this folder under Settings, Appearance,
+`fr.json`, `dl.json` (Drachensprech). Corvus lists every file in this folder under Settings, Interface,
 Language, and in the first start setup. Adding a language means adding a file
 here. No code changes.
 

@@ -474,7 +474,7 @@ Corvus.tiles = (function () {
    * order) and labelled "Service · Layer". The initial selection follows the
    * base layer currently on the map, so opening the dialog pre-downloads what
    * the operator is actually looking at — that is how the map service chosen
-   * in Settings > Appearance reaches the downloader.
+   * in Settings > Map reaches the downloader.
    */
   function renderSourceSelect() {
     const sel = dom.srcSelect;

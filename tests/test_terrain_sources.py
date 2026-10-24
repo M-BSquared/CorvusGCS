@@ -37,7 +37,7 @@ def test_terrain_ids_never_shadow_a_base_layer() -> None:
 
 
 def test_a_dem_is_never_offered_as_a_base_layer() -> None:
-    # list_sources() feeds the map's layer switcher and the Appearance picker.
+    # list_sources() feeds the map's layer switcher and the Settings map picker.
     ids = {s["id"] for s in list_sources()}
     assert not (ids & set(TERRAIN_SOURCES))
 

@@ -21,7 +21,7 @@ window.Corvus = window.Corvus || {};
  * the loop, satisfying the reduced-motion contract.
  *
  * An animator that sets `map: true` moves something drawn on the map, and
- * steps at most at the map rate (Settings, Appearance, Map: 60 Hz unless the
+ * steps at most at the map rate (Settings, Map, Map animation: 60 Hz unless the
  * operator picks 30). A display frame that comes sooner passes it over
  * without touching the DOM, so Chromium, and in the desktop app Qt after it,
  * have nothing new of it to composite: with an aircraft flying in 3D, those

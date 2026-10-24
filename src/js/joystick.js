@@ -4,7 +4,7 @@ window.Corvus = window.Corvus || {};
 /*
   Corvus.joystick — the on-screen manual-control pad over the map.
 
-  Four input surfaces, each with its own switch in Settings > Appearance >
+  Four input surfaces, each with its own switch in Settings > Controls >
   Controls, all feeding ONE MANUAL_CONTROL stream:
 
     Virtual joystick   two spring-return sticks — full four-axis control
@@ -68,7 +68,7 @@ window.Corvus = window.Corvus || {};
   The keys deflect part of the way rather than to the stop. A key has no travel
   to meter, so full authority on a keypress would make the mildest correction
   the largest one available. How far is the operator's choice — Settings >
-  Appearance > Controls carries a "Key strength" slider (GAIN_STEPS, default
+  Controls > Controls carries a "Key strength" slider (GAIN_STEPS, default
   half stick, persisted as controls.key_gain) — because how much stick a
   keypress should be worth depends on the airframe, not on this module.
 

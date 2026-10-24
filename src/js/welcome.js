@@ -32,7 +32,7 @@ Corvus.welcome = (function () {
     { id: "controls", label: "Controls" },
   ];
 
-  // Which side panel tabs can be taken away, as Settings > Appearance > Side
+  // Which side panel tabs can be taken away, as Settings > Layout > Side
   // panel offers them. LINK and PLUGINS stay.
   const PANEL_TABS = [
     { id: "console", key: "consoleTab" },
@@ -91,7 +91,7 @@ Corvus.welcome = (function () {
    * The POST /api/config body for *choices*. `ui`, `controls`, `review` and
    * `updates` are merged per key by the backend, so this sets exactly these
    * and leaves the rest, the interface size and the key strength included:
-   * those are under Settings > Appearance. Pure.
+   * those are under Settings > Interface and Controls. Pure.
    */
   function configPatch(choices) {
     return {
@@ -388,7 +388,7 @@ Corvus.welcome = (function () {
             label: "Colour theme",
             control: themes.el,
             hint: "The interface size (text, icons and panels) can be adjusted " +
-                  "later in Settings under Appearance.",
+                  "later in Settings under Interface.",
           }));
           return wrap;
         },
@@ -557,7 +557,7 @@ Corvus.welcome = (function () {
           caution.className = "welcome-review-caution";
           caution.textContent = "These controls reach the aircraft only with COM_RC_IN_MODE " +
             "1, 2 or 3 and a mode that flies from the sticks. All three are off by default. " +
-            "The key strength is under Settings, Appearance.";
+            "The key strength is under Settings, Controls.";
           wrap.appendChild(caution);
           return wrap;
         },

@@ -309,7 +309,7 @@ def test_post_config_non_dict_theme_returns_400(tmp_path) -> None:
 
 
 def test_post_config_persists_ui_scale(tmp_path) -> None:
-    """Settings -> Appearance writes the interface size through this route."""
+    """Settings -> Interface writes the interface size through this route."""
     cfg_path = tmp_path / "config.json"
     handler, responses = _handler(
         config=CorvusConfig(),
@@ -363,7 +363,7 @@ def test_post_config_ui_update_keeps_theme(tmp_path) -> None:
 
 
 def test_post_config_persists_inverted_app_icon(tmp_path) -> None:
-    """Settings -> Appearance writes the desktop app-icon switch through here.
+    """Settings -> Interface writes the desktop app-icon switch through here.
 
     The desktop wrapper reads the same live config object, so this POST is
     what flips the Dock / taskbar icon of the running app.
@@ -382,7 +382,7 @@ def test_post_config_persists_inverted_app_icon(tmp_path) -> None:
 
 
 def test_post_config_persists_flight_hud_off(tmp_path) -> None:
-    """Settings -> Appearance -> Flight HUD. The switch posts only its own key;
+    """Settings -> Flight view -> Flight HUD. The switch posts only its own key;
     the HUD being taken off must reach the disk and leave the compass lock."""
     cfg_path = tmp_path / "config.json"
     handler, responses = _handler(
