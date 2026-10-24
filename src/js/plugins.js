@@ -206,11 +206,78 @@ window.Corvus = window.Corvus || {};
  *                                 declared (see `options` below), each one
  *                                 its saved value or its default.
  *
+ *   control {Object}              Fly the vehicle: the same endpoints the
+ *                                 station's own buttons use, so every check
+ *                                 and every stack difference (PX4 or
+ *                                 ArduPilot) is handled for the plugin.
+ *                                 Without a vehicle id it acts on the vehicle
+ *                                 the operator has selected at the moment of
+ *                                 the call; control.vehicle(id) returns the
+ *                                 same object bound to one vehicle of the
+ *                                 fleet, flown whether or not it is selected.
+ *                                 Every command resolves with the server's
+ *                                 reply and rejects with an Error naming the
+ *                                 reason (`.body` holds the reply) when the
+ *                                 station or the vehicle refused it. Each
+ *                                 command, but not the manual and velocity
+ *                                 streams, writes a line to the MAVLink
+ *                                 console with the plugin's name, so the
+ *                                 operator can see who flew the aircraft.
+ *     vehicleId                   The id this object is bound to, or null.
+ *     vehicles()                  Promise of every vehicle the station hears
+ *                                 (GET /api/fleet): [{id, name, sysid,
+ *                                 armed, mode, active, ...}].
+ *     watchVehicles(cb)           Call cb(fleetSnapshot) on every fleet
+ *                                 update; returns the unsubscribe function.
+ *     vehicle(id)                 This object, bound to vehicle `id`.
+ *     capabilities()              GET /api/mavlink/capabilities: the stack,
+ *                                 its modes, hold_mode, velocity_mode and
+ *                                 `commands`, the MAV_CMDs command() takes.
+ *     modes()                     Promise of the flight-mode names.
+ *     state()                     The vehicle's full telemetry snapshot.
+ *     arm(), disarm()
+ *     setMode(name)               A mode name from modes().
+ *     takeoff(altitude)           Climb to `altitude` metres above home.
+ *     land(), rtl(), hold()       hold() stops where the vehicle is.
+ *     flyTo(point | [points])     A point is {lat, lon, alt} or
+ *                                 [lng, lat, alt] (as the map api gives
+ *                                 them), alt in metres above home. One point
+ *                                 for a vehicle in the air is a reposition;
+ *                                 several, or one from the ground, go up as
+ *                                 a mission that takes off first.
+ *     setHome(point)              Move home sideways; its height stays.
+ *     uploadMission(plan, {start}), startMission(count), clearMission()
+ *                                 A plan as the Mission page saves it.
+ *     command(name, params, place)
+ *                                 Send one MAV_CMD from capabilities()
+ *                                 .commands, e.g. command("DO_CHANGE_SPEED",
+ *                                 [1, 5, -1]). `params` p1 to p7, null for
+ *                                 unset. A command that names a place
+ *                                 (DO_REPOSITION, DO_SET_ROI_LOCATION,
+ *                                 DO_ORBIT) takes p1 to p4 and `place`
+ *                                 {lat, lon, alt, frame}, frame "relative"
+ *                                 (above home, default) or "amsl".
+ *     manual({x, y, z, r, buttons})
+ *                                 One virtual stick frame, as the on-screen
+ *                                 joystick sends: x pitch, y roll, r yaw in
+ *                                 -1 to 1, z thrust in 0 to 1 (0.5 holds).
+ *     velocity({vx, vy, vz, yawRate, frame})
+ *                                 One velocity setpoint in m/s: north, east,
+ *                                 down, or forward, right, down with frame
+ *                                 "body"; yawRate in degrees per second. It
+ *                                 is flown in capabilities().velocity_mode
+ *                                 only (OFFBOARD on PX4, which accepts that
+ *                                 mode once setpoints are already arriving).
+ *                                 manual() and velocity() are streams: send
+ *                                 them again at 2 Hz or more (10 to 20 Hz
+ *                                 for sticks). When they stop, the vehicle
+ *                                 stops by its own timeout.
+ *
  * getSettings/saveSettings are bound to the plugin they were handed to, so a
  * plugin cannot read or overwrite another's settings by accident, and
  * notification is bound the same way so a message carries the name of the
- * plugin that sent it without that plugin having to write it out. map and
- * getOptions are bound the same way.
+ * plugin that sent it without that plugin having to write it out. map,
+ * getOptions and control are bound the same way.
  *
  * All feedback helpers are frontend-only: they never fork the server.
  *
@@ -1197,6 +1264,147 @@ Corvus.plugins = (function () {
     }
   }
 
+  // ---- flying the vehicle (api.control) ------------------------------------
+
+  /** [lng, lat, alt] or {lat, lon, alt} -> {lat, lon, alt}; null for neither. */
+  function controlPoint(p) {
+    if (Array.isArray(p)) return { lat: p[1], lon: p[0], alt: p[2] };
+    if (p && typeof p === "object") return { lat: p.lat, lon: p.lon, alt: p.alt };
+    return null;
+  }
+
+  /**
+   * api.control for one plugin, bound to vehicle `vehicleId` or, with none,
+   * to whichever vehicle is selected when a command is sent. See the api
+   * contract above. `pluginId` is null for the shared, unbound api.
+   *
+   * Every call goes through the station's own endpoints, never to the link
+   * directly, so a plugin gets the same validation, the same PX4 and
+   * ArduPilot sequences and the same refusals the operator's buttons do.
+   *
+   * @param {string|null} pluginId
+   * @param {string|null} vehicleId "<link>:<system id>", as /api/fleet lists
+   * @returns {Object}
+   */
+  function controlApiFor(pluginId, vehicleId) {
+    const target = typeof vehicleId === "string" && vehicleId ? vehicleId : null;
+
+    function transport() {
+      const req = api && api.requestJson;
+      if (typeof req !== "function") throw new Error("no transport");
+      return req;
+    }
+
+    function get(url) {
+      return Promise.resolve().then(() => transport()(
+        target ? `${url}?vehicle=${encodeURIComponent(target)}` : url));
+    }
+
+    // `said` is the console line; the streams pass none, or 20 frames a
+    // second would bury everything else the console has to say.
+    function post(url, body, said) {
+      return Promise.resolve().then(() => {
+        const req = transport();
+        const payload = Object.assign({}, body);
+        if (target) payload.vehicle = target;
+        if (said) {
+          const spec = pluginId ? registry.get(pluginId) : null;
+          const who = spec ? spec.name : "Plugin";
+          pluginConsole(`${who}: ${said}${target ? ` (${target})` : ""}`, "cmd");
+        }
+        return req(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+      }).then((data) => {
+        if (!data || data.ok !== true) {
+          const err = new Error((data && data.error) || "Command rejected by vehicle");
+          err.body = data;
+          throw err;
+        }
+        return data;
+      });
+    }
+
+    function flyTo(points) {
+      const list = (Array.isArray(points) && (points.length === 0 || typeof points[0] === "object")
+        ? points : [points]).map(controlPoint);
+      if (!list.length || list.some((p) => !p)) {
+        return Promise.reject(new Error("flyTo needs a point or a list of points"));
+      }
+      const wire = list.map((p) => (p.alt === undefined || p.alt === null
+        ? { lat: p.lat, lon: p.lon }
+        : { lat: p.lat, lon: p.lon, alt_agl: p.alt }));
+      const said = wire.length === 1
+        ? `fly to ${wire[0].lat}, ${wire[0].lon}`
+        : `fly through ${wire.length} points`;
+      return post("/api/mavlink/gotopoints", { points: wire }, said);
+    }
+
+    return {
+      vehicleId: target,
+      vehicles: () => Promise.resolve()
+        .then(() => transport()("/api/fleet"))
+        .then((data) => (data && Array.isArray(data.vehicles) ? data.vehicles : [])),
+      watchVehicles(cb) {
+        try {
+          const fleet = window.Corvus && Corvus.fleet;
+          if (typeof cb === "function" && fleet && typeof fleet.subscribe === "function") {
+            return fleet.subscribe(cb);
+          }
+        } catch (_e) {
+          // A missing fleet module must never crash a plugin.
+        }
+        return () => {};
+      },
+      vehicle: (id) => controlApiFor(pluginId, id),
+      capabilities: () => get("/api/mavlink/capabilities"),
+      modes: () => get("/api/mavlink/modes")
+        .then((data) => (data && Array.isArray(data.modes) ? data.modes : [])),
+      state: () => get("/api/state"),
+      arm: () => post("/api/mavlink/arm", { arm: true }, "arm"),
+      disarm: () => post("/api/mavlink/arm", { arm: false }, "disarm"),
+      setMode: (mode) => post("/api/mavlink/mode", { mode }, `mode ${mode}`),
+      takeoff: (altitude) => post("/api/mavlink/takeoff", { altitude },
+        `takeoff to ${altitude} m`),
+      land: () => post("/api/mavlink/land", {}, "land"),
+      rtl: () => post("/api/mavlink/rtl", {}, "return"),
+      hold: () => post("/api/mavlink/hold", {}, "hold"),
+      flyTo,
+      setHome(point) {
+        const p = controlPoint(point);
+        if (!p) return Promise.reject(new Error("setHome needs a point"));
+        return post("/api/mavlink/sethome", { lat: p.lat, lon: p.lon },
+          `set home to ${p.lat}, ${p.lon}`);
+      },
+      uploadMission: (plan, opts) => post("/api/mission/upload",
+        { plan, start: !!(opts && opts.start) },
+        opts && opts.start ? "upload and start the mission" : "upload a mission"),
+      startMission: (count) => post("/api/mission/start", { items: count }, "start the mission"),
+      clearMission: () => post("/api/mission/clear", {}, "clear the mission"),
+      command(name, params, place) {
+        const body = { command: name, params: Array.isArray(params) ? params : [] };
+        const p = place ? controlPoint(place) : null;
+        if (p) {
+          body.lat = p.lat;
+          body.lon = p.lon;
+          if (p.alt !== undefined && p.alt !== null) body.alt = p.alt;
+          if (place.frame) body.frame = place.frame;
+        }
+        return post("/api/mavlink/command", body, `command ${name}`);
+      },
+      manual: (axes) => post("/api/mavlink/manual", Object.assign({}, axes)),
+      velocity(v) {
+        const set = v || {};
+        const body = { vx: set.vx || 0, vy: set.vy || 0, vz: set.vz || 0 };
+        if (set.yawRate !== undefined && set.yawRate !== null) body.yaw_rate = set.yawRate;
+        if (set.frame) body.frame = set.frame;
+        return post("/api/mavlink/velocity", body);
+      },
+    };
+  }
+
   /**
    * The shared api with getSettings/saveSettings bound to one plugin. Built
    * per open() on top of the shared object (prototype delegation, not a copy)
@@ -1212,6 +1420,7 @@ Corvus.plugins = (function () {
     scoped.notification = (level, message) => pluginNotification(id, level, message);
     scoped.map = mapApiFor(id);
     scoped.getOptions = () => valuesFor(id);
+    scoped.control = controlApiFor(id, null);
     return scoped;
   }
 
@@ -1327,6 +1536,9 @@ Corvus.plugins = (function () {
       getSettings: () => ({}),
       saveSettings: () => Promise.resolve({}),
       getOptions: () => ({}),
+      // Overwritten per plugin by apiFor(), so the console line names the
+      // plugin; the shared one flies the same, it just signs as "Plugin".
+      control: null,
       // Overwritten per plugin by apiFor(), which binds the keys to the
       // plugin; the shared one draws nothing.
       map: {
@@ -1347,6 +1559,7 @@ Corvus.plugins = (function () {
         fit: () => false,
       },
     };
+    api.control = controlApiFor(null, null);
     // Plugins that registered before the api existed start now.
     registry.forEach((_spec, id) => runStart(id));
     syncTabs();

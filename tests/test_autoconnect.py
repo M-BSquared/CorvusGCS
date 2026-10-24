@@ -98,6 +98,12 @@ class FakeBridge:
     def start(self) -> None:
         self.calls.append("start")
 
+    def switch_connection(self, conn: str) -> None:
+        self.validate_connection(conn)
+        self.stop()
+        self.set_connection(conn)
+        self.start()
+
     def dialled(self) -> bool:
         return "start" in self.calls
 

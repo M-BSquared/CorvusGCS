@@ -3561,7 +3561,7 @@ Corvus.map = (function () {
   const TERRAIN_TILT_WAIT_MS = 150;
   // How long the swing between flat and tilted takes. Short enough that the
   // button answers at once, long enough to read as a move rather than a cut.
-  const TILT_MS = 400;
+  const TILT_MS = 500;
   // The zoom of the ancestor MapLibre's terrain falls back to while a tile
   // loads (its own rule, see primeOverviewTile).
   const TERRAIN_OVERVIEW_ZOOM = 5;

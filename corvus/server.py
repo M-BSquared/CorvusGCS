@@ -93,7 +93,7 @@ from .routes.console import ConsoleRoutes
 from .routes.dem import DemRoutes
 from .routes.control import ControlRoutes
 from .routes.firmware import FirmwareRoutes
-from .routes.fleet import FleetRoutes
+from .routes.fleet import FleetRoutes, targets_vehicle
 from .routes.first_setup import FirstSetupRoutes
 from .routes.geofence import GeofenceRoutes
 from .routes.languages import LanguageRoutes
@@ -2039,6 +2039,7 @@ class CorvusHandler(
         self._send_json({"ok": True, "url": url})
 
     @route("GET", "/api/state")
+    @targets_vehicle
     def _api_state(self) -> None:
         if self.store:
             self._send_json(self.store.get_snapshot())

@@ -577,6 +577,11 @@ class Fleet:
         persist: Callable[[dict[str, Any] | None], None] | None = None,
     ) -> None:
         self._lock = threading.RLock()
+        # One add_link at a time. The id and the port check are decided under
+        # _lock but the link is opened outside it, so two at once (a double
+        # click) took the same id: the second replaced the first in _links and
+        # the first bridge kept its port and thread with nothing left to stop it.
+        self._add_lock = threading.Lock()
         self._links: dict[str, FleetLink] = {
             MAIN_LINK: FleetLink(MAIN_LINK, main_bridge, main_store, primary=True),
         }
@@ -717,6 +722,10 @@ class Fleet:
         if not isinstance(connection, str) or not connection.strip():
             return None, "connection must be a non-empty string"
         connection = connection.strip()
+        with self._add_lock:
+            return self._add_link_locked(connection)
+
+    def _add_link_locked(self, connection: str) -> tuple[str | None, str]:
         with self._lock:
             if len(self._links) - 1 >= MAX_EXTRA_LINKS:
                 return None, f"at most {MAX_EXTRA_LINKS} extra links"

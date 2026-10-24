@@ -659,6 +659,69 @@ api.map.remove("route");</code></pre>
   Remove it when the operator asks. Text and button labels are plain text, never markup, and at
   most 200 characters.
 </p>
+
+<h3 id="control">Flying the vehicle</h3>
+<p>
+  <code>api.control</code> flies the aircraft through the same endpoints the
+  station's own buttons use, so a plugin gets the same checks and the same
+  PX4 and ArduPilot sequences. Each command returns a promise: it resolves
+  with the station's answer and rejects with an error that says why the
+  station or the vehicle refused. Every command writes a line to the MAVLink
+  console with the plugin's name, so the operator can see who flew the
+  aircraft.
+</p>
+<pre><code>const c = api.control;              // the vehicle the operator has selected
+
+await c.takeoff(15);                 // climb to 15 m above home
+await c.flyTo([11.642, 48.0755, 30]);   // [lng, lat, alt], or {lat, lon, alt}
+await c.flyTo([[11.641, 48.075, 30], [11.643, 48.076, 30]]);   // through several points
+await c.hold();                      // stop where it is
+await c.setMode("LOITER");           // a name from await c.modes()
+await c.rtl();                       // or c.land()
+
+// Pick the point on the map and fly there.
+api.map.pickPoint((point) => c.flyTo([point[0], point[1], 25]));
+
+// Several vehicles: each one by its id from the vehicle list.
+const vehicles = await c.vehicles();   // [{id: "main:1", name, armed, mode, ...}, ...]
+const second = c.vehicle("link-2:1");  // flown whether or not it is selected
+await second.takeoff(10);
+const stop = c.watchVehicles((fleet) => draw(fleet.vehicles));   // live list
+
+// A MAVLink command from the list the connected autopilot accepts.
+const caps = await c.capabilities();   // caps.commands, caps.hold_mode, caps.velocity_mode
+await c.command("DO_CHANGE_SPEED", [1, 5, -1]);          // ground speed 5 m/s
+await c.command("DO_SET_ROI_LOCATION", [], { lat: 48.0755, lon: 11.642, alt: 0 });
+
+// Steering. Both are streams: send again at 2 Hz or more, 10 to 20 Hz for sticks.
+c.manual({ x: 0.3, y: 0, z: 0.5, r: 0 });                 // stick frame, as the joystick sends
+c.velocity({ vx: 2, vy: 0, vz: 0, yawRate: 10, frame: "body" });   // m/s and degrees per second</code></pre>
+<p>
+  Heights are metres above home. Without a vehicle id, a command goes to the
+  vehicle selected when it is sent; bind to one with
+  <code>c.vehicle(id)</code> when the plugin flies a particular aircraft. A
+  command for a vehicle whose link is closed, or that flies another system,
+  is refused rather than sent somewhere else.
+</p>
+<p>
+  <code>command()</code> sends only the MAV_CMDs in
+  <code>capabilities().commands</code>: the ones the connected autopilot
+  handles, without arming, takeoff, mode changes and mission start (they have
+  their own calls, with the stack's order behind them) and without anything
+  that does lasting harm from one call, such as a reboot, a calibration or
+  flight termination. A command that names a place (DO_REPOSITION,
+  DO_SET_ROI_LOCATION, DO_ORBIT) takes up to four params and the place as its
+  third argument, with <code>frame</code> "relative" (above home, the
+  default) or "amsl".
+</p>
+<p>
+  <code>velocity()</code> is flown in <code>capabilities().velocity_mode</code>
+  only: OFFBOARD on PX4, GUIDED on ArduPilot, nothing on a plane. PX4 accepts
+  OFFBOARD only once setpoints are arriving, so start the stream, then call
+  <code>setMode(caps.velocity_mode)</code>. When either stream stops, the
+  vehicle ends the motion by its own timeout. Stop the stream in
+  <code>destroy</code>, and hand the aircraft back with <code>hold()</code>.
+</p>
 <p>
   The full <code>api</code> is documented at the top of
   <code>src/js/plugins.js</code>, and the manifest in

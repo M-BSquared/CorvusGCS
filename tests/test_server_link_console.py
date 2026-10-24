@@ -231,6 +231,12 @@ class _TrackingBridge:
     def start(self):
         self.calls.append("start")
 
+    def switch_connection(self, conn):
+        self.validate_connection(conn)
+        self.stop()
+        self.set_connection(conn)
+        self.start()
+
     @staticmethod
     def _parse_serial(conn):
         rest = conn.split(":", 1)[1]

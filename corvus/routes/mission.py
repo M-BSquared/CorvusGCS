@@ -10,6 +10,7 @@ from .. import ardupilot_safety, autopilot, mission
 from ..http_paths import _missions_dir
 from ..http_routes import route
 from ..mavlink_bridge import FLY_TO_MAX_POINTS
+from .fleet import targets_vehicle
 
 logger = logging.getLogger("corvus.server")
 
@@ -45,6 +46,7 @@ class MissionRoutes:
         self._send_json(payload)
 
     @route("POST", "/api/mission/upload")
+    @targets_vehicle
     def _api_mission_upload(self, payload: dict) -> None:
         """Upload a planned mission to the vehicle, optionally starting it.
 
@@ -98,6 +100,7 @@ class MissionRoutes:
         self._send_json({"ok": True, "items": len(items), "started": True, **synced})
 
     @route("POST", "/api/mission/start")
+    @targets_vehicle
     def _api_mission_start(self, payload: dict) -> None:
         """Run the mission already uploaded to the vehicle."""
         count = payload.get("items")
@@ -118,6 +121,7 @@ class MissionRoutes:
         self._send_json({"ok": True})
 
     @route("POST", "/api/mission/clear")
+    @targets_vehicle
     def _api_mission_clear(self, payload: dict) -> None:
         """Wipe the mission stored on the vehicle."""
         if self.mavlink is None:

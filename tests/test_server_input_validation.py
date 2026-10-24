@@ -130,6 +130,12 @@ class _FakeMavlink:
         self.validate_connection(conn_str)
         self.connection = conn_str
 
+    def switch_connection(self, conn_str: str) -> None:
+        self.validate_connection(conn_str)
+        self.stop()
+        self.set_connection(conn_str)
+        self.start()
+
 
 class _FakeSsh:
     """Bridge stand-in recording ``send`` calls; always reports a session."""

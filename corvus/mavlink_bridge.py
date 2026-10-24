@@ -500,6 +500,13 @@ class MavlinkBridge(
         # this cycle saw itself rolls the tlog over.
         self._tlog_armed: bool | None = None
         self._running = threading.Event()
+        # Serialises start(), stop() and switch_connection(). Auto-connect's
+        # watcher and an operator's connect both switch the link from their
+        # own threads; interleaved, the second start() found the first one's
+        # thread running and did nothing, leaving the bridge dialled to one
+        # port while it reported the other. Re-entrant because
+        # switch_connection() holds it across its own stop() and start().
+        self._lifecycle_lock = threading.RLock()
         # Which start() the connect/receive thread belongs to. A thread that
         # stop() could not join in time (blocked opening a port, say) must not
         # carry on once start() has handed the link to a new thread: both would
@@ -566,6 +573,8 @@ class MavlinkBridge(
         self._recent_frames: dict[bytes, float] = {}
         self._recent_frames_swept = 0.0
         self._duplicate_frames = 0
+        # Message types whose handler raised, each logged once.
+        self._dispatch_failed: set[str] = set()
         # Frames a second station asked to put on the uplink that carried our
         # own or the vehicle's system id; see inject_raw.
         self._inject_refused_warned = False
@@ -881,7 +890,22 @@ class MavlinkBridge(
             return device
         return ""
 
+    def switch_connection(self, conn_str: str) -> None:
+        """Close the link and open it again on *conn_str*, as one step.
+
+        Raises ValueError for an unusable spec before anything is torn down.
+        """
+        self.validate_connection(conn_str)
+        with self._lifecycle_lock:
+            self.stop()
+            self.set_connection(conn_str)
+            self.start()
+
     def start(self) -> None:
+        with self._lifecycle_lock:
+            self._start_locked()
+
+    def _start_locked(self) -> None:
         self._stop_event.clear()
         if self._thread and self._thread.is_alive():
             if self._running.is_set():
@@ -900,6 +924,10 @@ class MavlinkBridge(
         self._thread.start()
 
     def stop(self) -> None:
+        with self._lifecycle_lock:
+            self._stop_locked()
+
+    def _stop_locked(self) -> None:
         self._running.clear()
         self._stop_event.set()
         self._stop_tlog()
@@ -2333,14 +2361,7 @@ class MavlinkBridge(
                 # Connection swapped under us during recv: drop this message.
                 if conn is not self._conn:
                     continue
-                if self._is_duplicate_frame(msg):
-                    continue
-                # Capture the raw frame before dispatch; a log write never
-                # blocks the recv loop (TlogWriter.enqueue is non-blocking) and
-                # never breaks the link (guarded).
-                self._write_tlog(msg)
-                self.message_scope.record(msg)
-                self._dispatch(msg)
+                self._process_frame(msg)
                 if self._store.is_stale(timeout=self._warn_timeout()):
                     if self._store.is_stale(timeout=self._drop_timeout()):
                         raise ConnectionError("heartbeat timeout")
@@ -2353,6 +2374,33 @@ class MavlinkBridge(
                 if consecutive_errors >= RECV_ERROR_LIMIT:
                     raise ConnectionError(f"link read failed: {exc}") from exc
                 self._interruptible_sleep(RECV_ERROR_BACKOFF_S)
+
+    def _process_frame(self, msg: Any) -> None:
+        """Log, count and dispatch one received frame. Never raises.
+
+        A handler that fails on a message is a bug in that handler, not a read
+        error. Counted as one, it cost the loop a backoff sleep per frame: one
+        handler failing on a 50 Hz message held the loop to 20 frames a
+        second, the socket backed up, and the heartbeats queued behind it
+        dropped the link. Logged once per message type instead.
+        """
+        try:
+            if self._is_duplicate_frame(msg):
+                return
+            # Capture the raw frame before dispatch; a log write never
+            # blocks the recv loop (TlogWriter.enqueue is non-blocking) and
+            # never breaks the link (guarded).
+            self._write_tlog(msg)
+            self.message_scope.record(msg)
+            self._dispatch(msg)
+        except Exception:  # noqa: BLE001 - one bad frame never costs the link
+            try:
+                name = str(msg.get_type())
+            except Exception:  # noqa: BLE001
+                name = "?"
+            if name not in self._dispatch_failed:
+                self._dispatch_failed.add(name)
+                logger.exception("handling %s failed; further failures are not logged", name)
 
     def _is_duplicate_frame(self, msg: Any) -> bool:
         """Has this exact frame already arrived in the last few hundred ms?

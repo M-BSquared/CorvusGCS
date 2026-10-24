@@ -538,6 +538,64 @@ async function testNotificationIsPushedAtTheOperatorNotOnlyFiled() {
   Corvus.plugins.close();
 }
 
+// ---------------------------------------------------------------------------
+// PART E: flying the vehicle (api.control)
+// ---------------------------------------------------------------------------
+
+async function testControlFliesThroughTheStationsEndpoints() {
+  const lines = [];
+  const savedPanel = Corvus.panel;
+  Corvus.panel = { addConsoleLine: (level, text) => lines.push([level, text]) };
+  const calls = initWithResponses({
+    "/api/mavlink/takeoff": { ok: true, altitude_agl: 15 },
+    "/api/mavlink/gotopoints": { ok: true },
+    "/api/mavlink/command": { ok: true, command: 178 },
+    "/api/mavlink/velocity": { ok: true },
+    "/api/mavlink/land": { ok: false, error: "Land failed: DENIED" },
+    "/api/mavlink/capabilities?vehicle=link-2%3A1": { stack: "ardupilot", commands: [] },
+  });
+  let api = null;
+  Corvus.plugins.register("t-pilot", {
+    name: "Pilot", icon: "i", description: "d",
+    init(_el, a) { api = a; }, destroy() {},
+  });
+  Corvus.plugins.open("t-pilot");
+  const body = (i) => JSON.parse(calls[i].options.body);
+
+  assert.equal(api.control.vehicleId, null);
+  await api.control.takeoff(15);
+  assert.equal(calls[0].url, "/api/mavlink/takeoff");
+  assert.deepEqual(body(0), { altitude: 15 }, "no vehicle named: the selected one");
+  assert.deepEqual(lines.pop(), ["cmd", "Pilot: takeoff to 15 m"],
+    "the operator reads who flew the aircraft");
+
+  const other = api.control.vehicle("link-2:1");
+  await other.flyTo([11.6, 48.1, 30]);
+  assert.deepEqual(body(1), {
+    points: [{ lat: 48.1, lon: 11.6, alt_agl: 30 }], vehicle: "link-2:1",
+  }, "a map point is [lng, lat, alt], and the bound vehicle rides along");
+  await other.flyTo([{ lat: 1, lon: 2, alt: 10 }, { lat: 3, lon: 4 }]);
+  assert.deepEqual(body(2).points, [{ lat: 1, lon: 2, alt_agl: 10 }, { lat: 3, lon: 4 }]);
+
+  await api.control.command("DO_CHANGE_SPEED", [1, 5, -1]);
+  assert.deepEqual(body(3), { command: "DO_CHANGE_SPEED", params: [1, 5, -1] });
+
+  const before = lines.length;
+  await api.control.velocity({ vx: 2, yawRate: 10, frame: "body" });
+  assert.deepEqual(body(4), { vx: 2, vy: 0, vz: 0, yaw_rate: 10, frame: "body" });
+  assert.equal(lines.length, before, "a stream frame writes no console line");
+
+  const caps = await other.capabilities();
+  assert.equal(caps.stack, "ardupilot", "a GET names its vehicle in the query");
+
+  await assert.rejects(api.control.land(), /DENIED/, "a refusal rejects with its reason");
+  await assert.rejects(api.control.flyTo(null), /flyTo needs/);
+
+  Corvus.plugins.close();
+  Corvus.plugins.unregister("t-pilot");
+  Corvus.panel = savedPanel;
+}
+
 /** Fire an element's first click listener. */
 function click(el) { el._listeners.click[0](); }
 
@@ -561,6 +619,7 @@ async function run() {
   await testGetSettingsIsAnIsolatedCopy();
   await testPostJsonResolvesOnAFailureBody();
   await testNotificationIsPushedAtTheOperatorNotOnlyFiled();
+  await testControlFliesThroughTheStationsEndpoints();
 
   // Close the toasts the failure tests raised, whose auto-dismiss timers would
   // otherwise hold the process open for another six seconds.

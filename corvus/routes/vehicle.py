@@ -7,17 +7,23 @@ from __future__ import annotations
 
 import logging
 import math
+from typing import Any
+
+from pymavlink import mavutil
 
 from .. import autopilot
 from ..http_input import _parse_takeoff_altitude
 from ..http_routes import route
 from ..mavlink_bridge import FLY_TO_MAX_POINTS, TAKEOFF_ALTITUDE_MAX_M, TAKEOFF_ALTITUDE_MIN_M
+from ..mavlink_common import VELOCITY_MAX_MS, YAW_RATE_MAX_DEG_S
+from .fleet import targets_vehicle
 
 logger = logging.getLogger("corvus.server")
 
 
 class VehicleRoutes:
     @route("GET", "/api/mavlink/modes")
+    @targets_vehicle
     def _api_mavlink_modes(self) -> None:
         if self.mavlink:
             self._send_json({
@@ -28,6 +34,7 @@ class VehicleRoutes:
             self._send_json({"modes": [], "labels": {}})
 
     @route("GET", "/api/mavlink/capabilities")
+    @targets_vehicle
     def _api_mavlink_capabilities(self) -> None:
         """What the connected flight stack can do.
 
@@ -139,9 +146,7 @@ class VehicleRoutes:
                 )
                 return
         try:
-            self.mavlink.stop()
-            self.mavlink.set_connection(conn)
-            self.mavlink.start()
+            self.mavlink.switch_connection(conn)
         except ValueError as exc:
             self._send_json({"ok": False, "error": str(exc)}, 400)
             return
@@ -194,6 +199,7 @@ class VehicleRoutes:
         self._send_json({"ok": True})
 
     @route("POST", "/api/mavlink/arm")
+    @targets_vehicle
     def _api_mavlink_arm(self, payload: dict) -> None:
         arm = payload.get("arm", True)
         if not isinstance(arm, bool):
@@ -211,6 +217,7 @@ class VehicleRoutes:
             self._send_json({"error": "not connected"}, 400)
 
     @route("POST", "/api/mavlink/mode")
+    @targets_vehicle
     def _api_mavlink_mode(self, payload: dict) -> None:
         mode = payload.get("mode", "")
         if self.mavlink and isinstance(mode, str) and mode:
@@ -225,6 +232,7 @@ class VehicleRoutes:
             self._send_json({"error": "not connected or no mode"}, 400)
 
     @route("POST", "/api/mavlink/takeoff")
+    @targets_vehicle
     def _api_mavlink_takeoff(self, payload: dict) -> None:
         try:
             alt = _parse_takeoff_altitude(payload.get("altitude", 10.0))
@@ -243,6 +251,7 @@ class VehicleRoutes:
             self._send_json({"error": "not connected"}, 400)
 
     @route("POST", "/api/mavlink/land")
+    @targets_vehicle
     def _api_mavlink_land(self, payload: dict) -> None:
         if self.mavlink:
             ok = self.mavlink.land()
@@ -256,6 +265,7 @@ class VehicleRoutes:
             self._send_json({"error": "not connected"}, 400)
 
     @route("POST", "/api/mavlink/rtl")
+    @targets_vehicle
     def _api_mavlink_rtl(self, payload: dict) -> None:
         if self.mavlink:
             ok = self.mavlink.rtl()
@@ -318,6 +328,7 @@ class VehicleRoutes:
         self._send_json({"ok": True})
 
     @route("POST", "/api/mavlink/manual")
+    @targets_vehicle
     def _api_mavlink_manual(self, payload: dict) -> None:
         """Forward one virtual-joystick frame to the vehicle as MANUAL_CONTROL.
 
@@ -357,6 +368,7 @@ class VehicleRoutes:
         self._send_json({"ok": False, "error": error}, status)
 
     @route("POST", "/api/mavlink/sethome")
+    @targets_vehicle
     def _api_mavlink_sethome(self, payload: dict) -> None:
         """Move the home position to a clicked map coordinate.
 
@@ -388,6 +400,7 @@ class VehicleRoutes:
         self._send_json({"ok": False, "error": error}, status)
 
     @route("POST", "/api/mavlink/gotopoints")
+    @targets_vehicle
     def _api_mavlink_gotopoints(self, payload: dict) -> None:
         """Dispatch a multi-waypoint fly-to command to the vehicle."""
         raw_points = payload.get("points")
@@ -453,3 +466,161 @@ class VehicleRoutes:
             error = self.mavlink.get_last_command_error() or "fly to points failed"
             status = 503 if "DISCONNECTED" in error else 409
             self._send_json({"ok": False, "error": error}, status)
+
+    def _command_reply(self, ok: bool, fallback: str, **extra: Any) -> None:
+        """The reply every flight command gives: ok, or the bridge's reason.
+
+        503 when the link is down, 409 for anything the vehicle or the
+        station refused.
+        """
+        if ok:
+            self._send_json({"ok": True, **extra})
+            return
+        error = self.mavlink.get_last_command_error() or fallback
+        status = 503 if "DISCONNECTED" in error else 409
+        self._send_json({"ok": False, "error": error}, status)
+
+    @route("POST", "/api/mavlink/hold")
+    @targets_vehicle
+    def _api_mavlink_hold(self, payload: dict) -> None:
+        """Stop where the vehicle is and keep it there (the stack's hold mode)."""
+        del payload
+        if self.mavlink is None:
+            self._send_json({"ok": False, "error": "not connected"}, 503)
+            return
+        self._command_reply(self.mavlink.hold(), "hold failed")
+
+    @route("POST", "/api/mavlink/command")
+    @targets_vehicle
+    def _api_mavlink_command(self, payload: dict) -> None:
+        """Send one MAV_CMD a plugin names, from the connected stack's list.
+
+        Body: ``{"command": "DO_CHANGE_SPEED" | 178, "params": [p1, ...]}``,
+        a ``null`` param sent as NaN ("unset"). A command that names a place
+        (DO_REPOSITION, DO_SET_ROI_LOCATION, DO_ORBIT) carries ``lat``,
+        ``lon``, ``alt`` and ``frame`` ("relative", metres above home, the
+        default; or "amsl") instead of p5 to p7, and at most four params.
+
+        Only commands in ``GET /api/mavlink/capabilities`` ``commands`` are
+        sent; any other is refused with 409 before anything reaches the
+        vehicle (the list and the reasons are in corvus/autopilot.py).
+        """
+        raw = payload.get("command")
+        command: int | None = None
+        if isinstance(raw, str) and raw.strip():
+            name = raw.strip().upper()
+            name = name[len("MAV_CMD_"):] if name.startswith("MAV_CMD_") else name
+            command = getattr(mavutil.mavlink, "MAV_CMD_" + name, None)
+            if not isinstance(command, int):
+                self._send_json({"ok": False, "error": f"unknown command {raw}"}, 400)
+                return
+        elif isinstance(raw, int) and not isinstance(raw, bool) and 0 <= raw <= 0xFFFF:
+            command = raw
+        else:
+            self._send_json(
+                {"ok": False, "error": "command must be a MAV_CMD name or number"}, 400)
+            return
+
+        positional = command in autopilot.PLUGIN_POSITION_COMMANDS
+        raw_params = payload.get("params", [])
+        limit = 4 if positional else 7
+        if not isinstance(raw_params, list) or len(raw_params) > limit:
+            self._send_json(
+                {"ok": False, "error": f"params must be a list of at most {limit} numbers"}, 400)
+            return
+        params: list[float] = []
+        for index, value in enumerate(raw_params):
+            if value is None:
+                params.append(math.nan)
+                continue
+            if isinstance(value, bool) or not isinstance(value, (int, float)) \
+                    or not math.isfinite(float(value)):
+                self._send_json(
+                    {"ok": False, "error": f"param {index + 1} must be a finite number or null"},
+                    400)
+                return
+            params.append(float(value))
+
+        position = None
+        has_place = any(k in payload for k in ("lat", "lon"))
+        if positional or has_place:
+            if not positional:
+                self._send_json({"ok": False, "error": "this command takes no position"}, 400)
+                return
+            values = {}
+            for name, limit_deg in (("lat", 90.0), ("lon", 180.0), ("alt", None)):
+                value = payload.get(name, 0.0 if name == "alt" else None)
+                if isinstance(value, bool) or not isinstance(value, (int, float)) \
+                        or not math.isfinite(float(value)):
+                    self._send_json({"ok": False, "error": f"{name} must be a finite number"}, 400)
+                    return
+                if limit_deg is not None and not -limit_deg <= float(value) <= limit_deg:
+                    self._send_json(
+                        {"ok": False,
+                         "error": f"{name} must be between {-limit_deg:g} and {limit_deg:g}"},
+                        400)
+                    return
+                values[name] = float(value)
+            frame = payload.get("frame", "relative")
+            if frame not in ("relative", "amsl"):
+                self._send_json(
+                    {"ok": False, "error": 'frame must be "relative" or "amsl"'}, 400)
+                return
+            position = (values["lat"], values["lon"], values["alt"], frame)
+
+        if self.mavlink is None:
+            self._send_json({"ok": False, "error": "not connected"}, 503)
+            return
+        self._command_reply(
+            self.mavlink.plugin_command(command, params, position), "command failed",
+            command=command)
+
+    @route("POST", "/api/mavlink/velocity")
+    @targets_vehicle
+    def _api_mavlink_velocity(self, payload: dict) -> None:
+        """One velocity setpoint, for a plugin that steers by speed.
+
+        Body: ``{"vx", "vy", "vz"}`` in m/s, north, east and down, or with
+        ``"frame": "body"`` forward, right and down; ``yaw_rate`` in degrees
+        per second, clockwise, optional. A stream like ``/api/mavlink/manual``:
+        no ACK, sent again at 2 Hz or more, and the vehicle stops on its own
+        when it ends. It flies only in the capabilities' ``velocity_mode``.
+        """
+        values: dict[str, float] = {}
+        for name in ("vx", "vy", "vz"):
+            raw = payload.get(name, 0.0)
+            if isinstance(raw, bool) or not isinstance(raw, (int, float)) \
+                    or not math.isfinite(float(raw)):
+                self._send_json({"ok": False, "error": f"{name} must be a finite number"}, 400)
+                return
+            if abs(float(raw)) > VELOCITY_MAX_MS:
+                self._send_json(
+                    {"ok": False,
+                     "error": f"{name} must be between {-VELOCITY_MAX_MS:g} and "
+                              f"{VELOCITY_MAX_MS:g} m/s"}, 400)
+                return
+            values[name] = float(raw)
+        yaw_rate = payload.get("yaw_rate")
+        if yaw_rate is not None:
+            if isinstance(yaw_rate, bool) or not isinstance(yaw_rate, (int, float)) \
+                    or not math.isfinite(float(yaw_rate)):
+                self._send_json({"ok": False, "error": "yaw_rate must be a finite number"}, 400)
+                return
+            if abs(float(yaw_rate)) > YAW_RATE_MAX_DEG_S:
+                self._send_json(
+                    {"ok": False,
+                     "error": f"yaw_rate must be between {-YAW_RATE_MAX_DEG_S:g} and "
+                              f"{YAW_RATE_MAX_DEG_S:g} degrees per second"}, 400)
+                return
+            yaw_rate = float(yaw_rate)
+        frame = payload.get("frame", "local")
+        if frame not in ("local", "body"):
+            self._send_json({"ok": False, "error": 'frame must be "local" or "body"'}, 400)
+            return
+        if self.mavlink is None:
+            self._send_json({"ok": False, "error": "not connected"}, 503)
+            return
+        self._command_reply(
+            self.mavlink.velocity_setpoint(
+                values["vx"], values["vy"], values["vz"], yaw_rate, body=frame == "body"),
+            "velocity setpoint failed")

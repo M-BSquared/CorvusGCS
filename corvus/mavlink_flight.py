@@ -16,8 +16,11 @@ import time
 from pymavlink import mavutil
 from typing import Any
 
-from .autopilot import ModeCommand, is_ground_vehicle
-from .mavlink_common import MAV_RESULT_TEXT, TAKEOFF_ALTITUDE_MAX_M, TAKEOFF_ALTITUDE_MIN_M
+from .autopilot import PLUGIN_POSITION_COMMANDS, ModeCommand, is_ground_vehicle
+from .mavlink_common import (
+    MAV_RESULT_TEXT, TAKEOFF_ALTITUDE_MAX_M, TAKEOFF_ALTITUDE_MIN_M,
+    VELOCITY_MAX_MS, YAW_RATE_MAX_DEG_S,
+)
 
 logger = logging.getLogger("corvus.mavlink")
 
@@ -598,3 +601,150 @@ class FlightCommandsMixin:
                 "SETHOME", f"Home set to {lat_f:.7f}, {lon_f:.7f}", "success",
             )
             return True
+
+    # ---- control from plugins -------------------------------------------
+
+    def hold(self) -> bool:
+        """Stop where the vehicle is and stay there, in the stack's hold mode.
+
+        The mode is the dialect's (:meth:`Dialect.hold_mode`): Hold on PX4,
+        LOITER on an ArduPilot copter or plane, HOLD on a rover, POSHOLD on a
+        sub. A plain mode change, so it carries set_mode's priority.
+        """
+        mode = self._dialect.hold_mode(self._mav_type_id)
+        if not mode:
+            self._set_command_error("Hold is not available on this vehicle")
+            return False
+        return self.set_mode(mode)
+
+    def plugin_command(
+        self, command: int, params: list[float] | None = None,
+        position: tuple[float, float, float, str] | None = None,
+    ) -> bool:
+        """Send one MAV_CMD from the dialect's plugin table and wait for its ACK.
+
+        *params* are p1 to p7 (p1 to p4 for a command that names a place), NaN
+        where unset. *position* is ``(lat, lon, alt, frame)`` and is required
+        for, and only for, :data:`PLUGIN_POSITION_COMMANDS`, which travel as
+        COMMAND_INT. *frame* is "relative" (metres above home) or "amsl". PX4
+        reads a COMMAND_INT altitude as AMSL whatever its frame says (see
+        :meth:`Dialect.reposition_altitude_frame`), so a relative one is
+        converted here rather than sent to land at the wrong height.
+
+        True on ACCEPTED, or IN_PROGRESS for a command the vehicle carries on
+        with. A command outside the table is refused without sending.
+        """
+        self._set_command_error("")
+        name = self._dialect.plugin_commands(self._mav_type_id).get(command)
+        if name is None:
+            known = mavutil.mavlink.enums["MAV_CMD"].get(command)
+            label = known.name.removeprefix("MAV_CMD_") if known else str(command)
+            self._set_command_error(
+                f"Command {label} is not available on this autopilot")
+            return False
+        label = f"Command {name}"
+        positional = command in PLUGIN_POSITION_COMMANDS
+        if positional and position is None:
+            self._set_command_error(f"{label} needs lat and lon")
+            return False
+        if not positional and position is not None:
+            self._set_command_error(f"{label} takes no position")
+            return False
+        nan = float("nan")
+        values = [float(v) for v in (params or [])]
+        if not positional:
+            values = (values + [nan] * 7)[:7]
+            result = self._send_command_and_wait(
+                command, values, timeout=5.0, retries=1, accept_in_progress=True,
+            )
+        else:
+            lat, lon, alt, frame = position
+            coords = self._validate_lat_lon(lat, lon, label)
+            if coords is None:
+                return False
+            altitude = float(alt)
+            wire_frame = mavutil.mavlink.MAV_FRAME_GLOBAL
+            if frame == "relative":
+                if self._dialect.reposition_altitude_frame(self._mav_type_id) == "amsl":
+                    amsl = self._takeoff_altitude_amsl(altitude)
+                    if amsl is None:
+                        amsl = self._await_takeoff_reference(altitude)
+                    if amsl is None:
+                        self._set_command_error(
+                            f"{label} failed: no home altitude to measure the height from")
+                        return False
+                    altitude = amsl
+                else:
+                    wire_frame = mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT
+            result = self._send_command_int_and_wait(
+                command, wire_frame, (values + [nan] * 4)[:4],
+                x=int(round(coords[0] * 1e7)), y=int(round(coords[1] * 1e7)),
+                z=altitude, timeout=5.0, retries=1,
+            )
+        if result not in (mavutil.mavlink.MAV_RESULT_ACCEPTED,
+                          mavutil.mavlink.MAV_RESULT_IN_PROGRESS):
+            return self._command_failure(label, result)
+        self._console_publish("COMMAND", f"{name} accepted", "success")
+        return True
+
+    # SET_POSITION_TARGET_LOCAL_NED type_mask: fly the velocity, ignore the
+    # position, the acceleration and the yaw angle.
+    _VELOCITY_TYPE_MASK = 1 | 2 | 4 | 64 | 128 | 256 | 1024
+    _YAW_RATE_IGNORE = 2048
+
+    def velocity_setpoint(
+        self, vx: float, vy: float, vz: float,
+        yaw_rate_deg: float | None = None, body: bool = False,
+    ) -> bool:
+        """Send one velocity setpoint as SET_POSITION_TARGET_LOCAL_NED; no ACK.
+
+        In metres per second: north, east, down, or with *body* forward,
+        right, down. *yaw_rate_deg* turns the vehicle clockwise in degrees
+        per second; None leaves the heading to the vehicle.
+
+        A stream, like :meth:`manual_control`: the caller sends at 2 Hz or
+        more, and when it stops the vehicle's own timeout ends the motion
+        (PX4's offboard loss failsafe, ArduPilot's three second guided
+        velocity timeout). The vehicle flies it only in
+        :meth:`Dialect.velocity_mode`; PX4 needs the stream running before it
+        accepts OFFBOARD at all, so this never changes the mode itself.
+        """
+        self._set_command_error("")
+        if not self._dialect.velocity_mode(self._mav_type_id):
+            self._set_command_error("Velocity control is not available on this vehicle")
+            return False
+        values = [vx, vy, vz] + ([] if yaw_rate_deg is None else [yaw_rate_deg])
+        if not all(isinstance(v, (int, float)) and not isinstance(v, bool)
+                   and math.isfinite(v) for v in values):
+            self._set_command_error("Velocity control failed: not a finite number")
+            return False
+        if any(abs(v) > VELOCITY_MAX_MS for v in (vx, vy, vz)) or (
+                yaw_rate_deg is not None and abs(yaw_rate_deg) > YAW_RATE_MAX_DEG_S):
+            self._set_command_error("Velocity control failed: out of range")
+            return False
+        if not self._connection_ready():
+            self._set_command_error(f"Velocity control failed: {MAV_RESULT_TEXT[-2]}")
+            return False
+        mask = self._VELOCITY_TYPE_MASK
+        if yaw_rate_deg is None:
+            mask |= self._YAW_RATE_IGNORE
+        frame = (mavutil.mavlink.MAV_FRAME_BODY_NED if body
+                 else mavutil.mavlink.MAV_FRAME_LOCAL_NED)
+        try:
+            conn = self._conn
+            with self._send_lock:
+                if conn is None or conn is not self._conn:
+                    self._set_command_error(
+                        f"Velocity control failed: {MAV_RESULT_TEXT[-2]}")
+                    return False
+                conn.mav.set_position_target_local_ned_send(
+                    0, self._target_system, self._target_component, frame, mask,
+                    0.0, 0.0, 0.0, float(vx), float(vy), float(vz),
+                    0.0, 0.0, 0.0, 0.0,
+                    math.radians(yaw_rate_deg) if yaw_rate_deg is not None else 0.0,
+                )
+            return True
+        except Exception as exc:  # noqa: BLE001 - a lost frame is reported, never raised
+            logger.error("velocity setpoint send failed: %s", exc)
+            self._set_command_error(f"Velocity control send failed: {exc}")
+            return False

@@ -425,8 +425,8 @@ class AutoConnectWatcher:
     single stop/set/start contract, the policy stays unit-testable without a
     socket, and there is exactly one shutdown path for each.
 
-    The dial is the same ``stop → set_connection → start`` sequence
-    ``POST /api/mavlink/connect`` performs, validated first, so the exclusive
+    The dial is the same ``switch_connection`` (stop, set, start as one
+    step) ``POST /api/mavlink/connect`` performs, validated first, so the exclusive
     serial ``flock``, the tlog rotation and the forwarder sink behave exactly as
     they do for a manual connect.
     """
@@ -586,9 +586,7 @@ class AutoConnectWatcher:
         )
         self._session.last_dial_key = conn
         try:
-            self._bridge.stop()
-            self._bridge.set_connection(conn)
-            self._bridge.start()
+            self._bridge.switch_connection(conn)
         except Exception:  # noqa: BLE001 - a failed dial must not kill the watcher
             logger.exception("autoconnect: dial of %s failed", conn)
             return "dial-failed"
@@ -615,9 +613,7 @@ class AutoConnectWatcher:
         )
         self._session.last_dial_key = conn
         try:
-            self._bridge.stop()
-            self._bridge.set_connection(conn)
-            self._bridge.start()
+            self._bridge.switch_connection(conn)
         except Exception:  # noqa: BLE001 - a failed dial must not kill the watcher
             logger.exception("autoconnect: dial of %s failed", conn)
             return "dial-failed"

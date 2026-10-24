@@ -29,6 +29,12 @@ TAKEOFF_ALTITUDE_MIN_M = 1.0
 # the two together so they cannot drift.
 TAKEOFF_ALTITUDE_MAX_M = 120.0
 
+# Bounds on a velocity setpoint (POST /api/mavlink/velocity). Past anything
+# the supported vehicles fly, so a typed 300 is refused rather than clamped
+# into a dash at full speed.
+VELOCITY_MAX_MS = 30.0
+YAW_RATE_MAX_DEG_S = 180.0
+
 
 @dataclass
 class _PendingAck:

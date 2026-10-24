@@ -635,6 +635,47 @@ def param_values_match(param_type: int, got: float, wanted: float) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Commands a plugin may send
+# ---------------------------------------------------------------------------
+#
+# POST /api/mavlink/command sends the MAV_CMD a plugin names, but only one
+# from these tables: a command the stack handles (AGENTS.md: never send one the
+# firmware does not understand), and none that already has a flight endpoint
+# with the stack's own sequence behind it (arm, takeoff, mode, mission start)
+# or that does lasting harm from one call (reboot, calibration, parameter
+# storage, flight termination, the fence switch).
+
+
+def _plugin_commands(*names: str) -> dict[int, str]:
+    """``MAV_CMD_<name>`` ids for *names*, skipping any pymavlink lacks."""
+    table: dict[int, str] = {}
+    for name in names:
+        value = getattr(mavutil.mavlink, "MAV_CMD_" + name, None)
+        if value is not None:
+            table[int(value)] = name
+    return table
+
+
+PLUGIN_COMMANDS_COMMON: dict[int, str] = _plugin_commands(
+    "DO_CHANGE_SPEED", "DO_LAND_START", "DO_REPOSITION",
+    "DO_SET_ROI_LOCATION", "DO_SET_ROI_NONE", "DO_DIGICAM_CONTROL",
+    "DO_SET_CAM_TRIGG_DIST", "DO_GRIPPER", "DO_SET_MISSION_CURRENT",
+    "REQUEST_MESSAGE", "DO_GIMBAL_MANAGER_PITCHYAW", "DO_VTOL_TRANSITION",
+)
+PX4_PLUGIN_COMMANDS: dict[int, str] = _plugin_commands("DO_ORBIT", "DO_SET_ACTUATOR")
+# Relays and servos are ArduPilot's: PX4 v1.16 to v1.18 drive outputs through
+# DO_SET_ACTUATOR and answer DO_SET_SERVO only inside a mission.
+ARDUPILOT_PLUGIN_COMMANDS: dict[int, str] = _plugin_commands(
+    "CONDITION_YAW", "DO_SET_RELAY", "DO_REPEAT_RELAY", "DO_SET_SERVO",
+    "DO_REPEAT_SERVO", "DO_PAUSE_CONTINUE", "DO_AUX_FUNCTION",
+)
+# The ones that name a place. They travel as COMMAND_INT, whose x and y carry
+# the position exactly; COMMAND_LONG's float32 would move it by metres.
+PLUGIN_POSITION_COMMANDS: frozenset[int] = frozenset(
+    _plugin_commands("DO_REPOSITION", "DO_SET_ROI_LOCATION", "DO_ORBIT"))
+
+
+# ---------------------------------------------------------------------------
 # Dialects
 # ---------------------------------------------------------------------------
 
@@ -853,6 +894,28 @@ class Dialect:
         """
         return "amsl"
 
+    def hold_mode(self, mav_type: int) -> str:
+        """The mode that stops the vehicle where it is and keeps it there, or "".
+
+        Hold, which PX4 calls LOITER on the wire, on every PX4 vehicle.
+        """
+        return "LOITER"
+
+    def velocity_mode(self, mav_type: int) -> str:
+        """The mode that flies velocity setpoints, or "" when none does.
+
+        PX4 takes SET_POSITION_TARGET_LOCAL_NED in OFFBOARD only, and only
+        once setpoints are already streaming. Not on a plane: PX4 v1.16 to
+        v1.18 fly a fixed wing offboard from position setpoints alone.
+        """
+        if vehicle_class(mav_type) == VEHICLE_PLANE:
+            return ""
+        return "OFFBOARD"
+
+    def plugin_commands(self, mav_type: int) -> dict[int, str]:
+        """The MAV_CMDs a plugin may send this vehicle, id to name."""
+        return {**PLUGIN_COMMANDS_COMMON, **PX4_PLUGIN_COMMANDS}
+
     def mission_start_params(self, count: int) -> tuple[float, float]:
         """MISSION_START's (first, last) item for *count* uploaded plan items.
 
@@ -946,6 +1009,9 @@ class Dialect:
             "stick_mode": self.stick_mode(mav_type),
             "stick_modes": list(self.stick_modes(mav_type)),
             "mission_mode": self.mission_mode,
+            "hold_mode": self.hold_mode(mav_type),
+            "velocity_mode": self.velocity_mode(mav_type),
+            "commands": sorted(self.plugin_commands(mav_type).values()),
             "takeoff_frame": self.takeoff_plan(mav_type).altitude_frame,
             "param_defaults": bool(self.param_metadata_path),
             "param_file_format": self.param_file_format,
@@ -1138,6 +1204,22 @@ class ArduPilotDialect(Dialect):
         """ArduPilot takes DO_REPOSITION in MAV_FRAME_GLOBAL_RELATIVE_ALT."""
         return "relative"
 
+    def hold_mode(self, mav_type: int) -> str:
+        """HOLD on a rover, POSHOLD on a sub, LOITER on the rest; "" without one."""
+        names = set(self._table(mav_type).values())
+        wanted = {VEHICLE_ROVER: "HOLD", VEHICLE_SUB: "POSHOLD"}.get(
+            vehicle_class(mav_type), "LOITER")
+        return wanted if wanted in names else ""
+
+    def velocity_mode(self, mav_type: int) -> str:
+        """GUIDED, except on a plane, whose GUIDED flies to a point only."""
+        if vehicle_class(mav_type) == VEHICLE_PLANE:
+            return ""
+        return self.guided_mode(mav_type)
+
+    def plugin_commands(self, mav_type: int) -> dict[int, str]:
+        return {**PLUGIN_COMMANDS_COMMON, **ARDUPILOT_PLUGIN_COMMANDS}
+
     def mission_start_params(self, count: int) -> tuple[float, float]:
         """Always (0, 0): ArduPilot 4.6 answers any other pair with DENIED.
 
@@ -1305,6 +1387,16 @@ class GenericDialect(Dialect):
 
     def stick_modes(self, mav_type: int) -> tuple[str, ...]:
         return ()
+
+    def hold_mode(self, mav_type: int) -> str:
+        return ""
+
+    def velocity_mode(self, mav_type: int) -> str:
+        return ""
+
+    def plugin_commands(self, mav_type: int) -> dict[int, str]:
+        """None: nothing says what this autopilot handles."""
+        return {}
 
     def mode_table(
         self, mav_type: int, firmware: tuple[int, ...] | None = None,

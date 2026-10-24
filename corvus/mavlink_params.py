@@ -58,6 +58,8 @@ PARAM_RETRANSMIT_GAP_S_UDP = 0.002
 # hostile PARAM_VALUE count causing tens of thousands of requests and a large
 # in-memory cache on a shared UDP link.
 PARAM_CACHE_MAX_ENTRIES = 10_000
+# PARAM_VALUE.param_index for a value that names no index (uint16 -1).
+PARAM_INDEX_NONE = 0xFFFF
 
 # AUTOPILOT_VERSION.capabilities bits that say how integer parameters travel.
 # Numbers rather than names: older pymavlink builds call the first one
@@ -936,6 +938,12 @@ class ParamProtocolMixin:
             )
             pindex = int(msg.param_index)
             pcount = int(msg.param_count)
+            # param_index is a uint16, so the -1 ArduPilot puts in every answer
+            # to a read by name and every PARAM_SET echo arrives as 65535. Read
+            # as an index it failed the range check below, and no write to an
+            # ArduPilot vehicle was ever confirmed.
+            if pindex == PARAM_INDEX_NONE:
+                pindex = -1
         except (AttributeError, TypeError, ValueError, UnicodeError, struct.error):
             logger.debug("discarding malformed PARAM_VALUE")
             return
