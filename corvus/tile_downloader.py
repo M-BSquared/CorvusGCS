@@ -19,6 +19,7 @@ from __future__ import annotations
 import math
 import threading
 import time
+import urllib.error
 import urllib.request
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -46,6 +47,16 @@ _WRITE_BATCH = 256
 # they are happening. Progress is only counted once a batch has landed, which
 # is what keeps "downloaded" meaning "on disk".
 _WRITE_BATCH_SECONDS = 1.0
+# Upstream answers worth asking again: a timeout or a server-side failure. Any
+# other 4xx (404, 401, 403) answers the same way the second time, so retrying
+# it only doubles the load on a service that has already said no.
+_RETRY_STATUSES = frozenset({408, 425, 429, 500, 502, 503, 504})
+# "Slow down" answers. They pause the whole job, not just the one worker that
+# got them: the other workers would otherwise keep hitting a service that has
+# just asked for a break, which is how a tile operator ends up blocking us.
+_THROTTLE_STATUSES = frozenset({429, 503})
+_DEFAULT_BACKOFF_S = 2.0
+_MAX_BACKOFF_S = 30.0
 
 
 def new_job(
@@ -90,7 +101,27 @@ def new_job(
         # added. Both are guarded by "_lock".
         "_pending": [],
         "_pending_since": 0.0,
+        # Monotonic time before which no worker asks the upstream again, set
+        # by a 429/503. Guarded by "_lock".
+        "_backoff_until": 0.0,
     }
+
+
+def _retry_after(exc: urllib.error.HTTPError) -> float:
+    """Seconds a throttled upstream asked us to wait, within sane bounds.
+
+    Only the delta-seconds form of ``Retry-After`` is read; an HTTP date, a
+    missing header or garbage takes the default. Capped so a hostile or
+    confused upstream cannot park a download for an hour.
+    """
+    raw = exc.headers.get("Retry-After") if exc.headers is not None else None
+    try:
+        delay = float(str(raw).strip())
+    except (TypeError, ValueError):
+        delay = _DEFAULT_BACKOFF_S
+    if not math.isfinite(delay) or delay < 0:
+        delay = _DEFAULT_BACKOFF_S
+    return min(delay, _MAX_BACKOFF_S)
 
 
 def lon_to_x(lon: float, z: int) -> int:
@@ -264,6 +295,9 @@ class TileDownloader:
         job["_thread"] = thread
         with self._jobs_lock:
             self._jobs[job_id] = job
+            # Finished orchestrators are dropped here, or a long session that
+            # downloads many areas keeps every thread object it ever started.
+            self._threads = [t for t in self._threads if t.is_alive()]
             self._threads.append(thread)
         thread.start()
         return job_id
@@ -278,6 +312,21 @@ class TileDownloader:
         if cancel is not None:
             cancel.set()
         return True
+
+    def wait(self, job_id: str, timeout: float) -> bool:
+        """Wait up to *timeout* s for a job to end. True once it has ended.
+
+        For a caller that is about to change what the job writes into (deleting
+        its area), which must not race the final flush of a cancelled job.
+        An unknown job counts as ended.
+        """
+        with self._jobs_lock:
+            job = self._jobs.get(job_id)
+        thread = job.get("_thread") if job is not None else None
+        if thread is None:
+            return True
+        thread.join(timeout=max(0.0, float(timeout)))
+        return not thread.is_alive()
 
     def status(self, job_id: str) -> dict | None:
         """Return a snapshot of the job's public state, or None if unknown."""
@@ -363,7 +412,9 @@ class TileDownloader:
         req = urllib.request.Request(
             url, headers={"User-Agent": f"CorvusGCS/{get_version()}"})
         blob: bytes | None = None
-        for attempt in range(2):  # one retry on transient network errors
+        for attempt in range(2):  # one retry, for answers worth asking again
+            if not self._wait_backoff(job):
+                break
             try:
                 with urllib.request.urlopen(req, timeout=_FETCH_TIMEOUT) as resp:
                     data = resp.read(_MAX_TILE_BYTES + 1)
@@ -374,12 +425,20 @@ class TileDownloader:
                         and tile_sources.looks_like_image(data)):
                     blob = data
                 break
+            except urllib.error.HTTPError as exc:
+                if exc.code in _THROTTLE_STATUSES:
+                    until = time.monotonic() + _retry_after(exc)
+                    with job["_lock"]:
+                        job["_backoff_until"] = max(job["_backoff_until"], until)
+                if exc.code not in _RETRY_STATUSES:
+                    break
             except Exception:  # noqa: BLE001 - every failure is a failed tile
                 # Broad on purpose: an exception escaping this method dies in
                 # its future, so the tile would be neither done nor failed and
                 # the job would still report success.
-                if attempt == 1 or cancel.is_set() or self._stop_event.is_set():
-                    break
+                pass
+            if attempt == 1 or cancel.is_set() or self._stop_event.is_set():
+                break
         if blob is None:
             with job["_lock"]:
                 job["failed"] += 1
@@ -401,6 +460,18 @@ class TileDownloader:
             )
         if due:
             self._flush_pending(job)
+
+    def _wait_backoff(self, job: dict) -> bool:
+        """Sit out a throttle the upstream asked for. False if the job was stopped."""
+        cancel = job["_cancel"]
+        while True:
+            with job["_lock"]:
+                delay = job["_backoff_until"] - time.monotonic()
+            if delay <= 0:
+                return not (cancel.is_set() or self._stop_event.is_set())
+            # cancel is set by shutdown() too, so this wakes on either.
+            if cancel.wait(min(delay, _MAX_BACKOFF_S)):
+                return False
 
     def _flush_pending(self, job: dict) -> int:
         """Commit whatever this job has buffered, and count it. Never raises.

@@ -218,6 +218,12 @@ class _TileDownloaderPool:
                 return True
         return False
 
+    def wait(self, job_id: str, timeout: float) -> bool:
+        for dl in self._downloaders.values():
+            if dl.status(job_id) is not None:
+                return bool(dl.wait(job_id, timeout))
+        return True
+
     def status(self, job_id: str) -> dict | None:
         for dl in self._downloaders.values():
             st = dl.status(job_id)

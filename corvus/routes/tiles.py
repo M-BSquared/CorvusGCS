@@ -16,6 +16,11 @@ from ..tile_http import _delete_region_tiles
 
 logger = logging.getLogger("corvus.server")
 
+# How long removing a region waits for its cancelled download to end. Long
+# enough for the last batch to be written, short enough that the request
+# answers even when a fetch is stuck in its own timeout.
+_REMOVE_JOB_WAIT_S = 5.0
+
 
 class TileRoutes:
     def _map_token(self, provider_id: str) -> str:
@@ -381,7 +386,13 @@ class TileRoutes:
         except Exception:  # noqa: BLE001 - the imagery job is already running
             logger.exception("terrain companion download start failed")
             return None
-        if job_id:
+        try:
+            status = self.tile_downloader.status(job_id) if job_id else None
+        except Exception:  # noqa: BLE001 - the imagery job is already running
+            status = None
+        if job_id and not (isinstance(status, dict) and status.get("state") == "failed"):
+            # A job refused at start fetched nothing, so it is no area. The id
+            # still goes back, so the dialog follows it and says why.
             self._record_region(cache, job_id, name, default_terrain, bounds, lo, hi)
         return job_id
 
@@ -529,6 +540,19 @@ class TileRoutes:
         if region is None:
             self._send_json({"ok": False, "error": "unknown region"}, 404)
             return
+
+        # The region id is its download job's id. A region removed while it
+        # is still downloading used to keep downloading: the job went on
+        # writing tiles into the area just deleted, under a row that no
+        # longer existed, so the disk filled with tiles no list showed.
+        # Stopped first, and given a moment to land its last batch, so the
+        # deletion below sees everything the job is going to write.
+        downloader = self.tile_downloader
+        # Cancelling a job that has already ended changes nothing, so this
+        # does not trust the row's state, which can lag the job's.
+        if downloader is not None:
+            if downloader.cancel(region_id) and hasattr(downloader, "wait"):
+                downloader.wait(region_id, _REMOVE_JOB_WAIT_S)
 
         removed_tiles = 0
         if payload.get("delete_tiles") is True:

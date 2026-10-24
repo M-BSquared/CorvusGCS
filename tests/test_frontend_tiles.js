@@ -94,6 +94,7 @@ Corvus.ui = {
 const requests = [];
 let mapTilerKeySet = false;
 let downloadReply = { job_id: "img", terrain_job_id: "dem", name: "Area" };
+let jobsReply = { jobs: [] };
 
 Corvus.telemetry = {
   requestJson(url, opts) {
@@ -120,6 +121,9 @@ Corvus.telemetry = {
     if (url === "/api/tiles/regions") return Promise.resolve({ regions: [] });
     if (url === "/api/tiles/download") return Promise.resolve(downloadReply);
     if (url === "/api/tiles/cancel") return Promise.resolve({ ok: true });
+    if (url === "/api/tiles/jobs") {
+      return jobsReply instanceof Error ? Promise.reject(jobsReply) : Promise.resolve(jobsReply);
+    }
     return Promise.reject(new Error("unexpected " + url));
   },
 };
@@ -131,6 +135,7 @@ Corvus.events = {
   subscribe(topic, fn) { handlers[topic].add(fn); return () => handlers[topic].delete(fn); },
 };
 function emit(data) { Array.from(handlers.tiles).forEach((fn) => fn(data)); }
+function emitError() { Array.from(handlers.error).forEach((fn) => fn({ topics: ["tiles"] })); }
 
 let view = { w: 11.63, s: 48.075, e: 11.645, n: 48.085, zoom: 14 };
 Corvus.map = {
@@ -316,6 +321,76 @@ test("keyed services are offered only once their key is stored", async () => {
   offered = built.tilesSource.options.map((o) => o.value);
   assert.deepEqual(offered, ["satellite", "maptiler_satellite", "google_satellite"]);
   mapTilerKeySet = false;
+});
+
+test("a dropped stream does not call a running download failed", async () => {
+  await openDialog();
+  await startDownload({ job_id: "img", terrain_job_id: null });
+  jobsReply = { jobs: [{ job_id: "img", state: "running", done: 3, total: 15, failed: 0 }] };
+  emitError();
+  await settle();
+  await settle();
+  assert.ok(built.Download.classList.contains("is-busy"), "still shown as running");
+  assert.notEqual(message.kind, "err");
+  // The reconnected stream carries on where it left off.
+  emit({ job_id: "img", state: "done", done: 15, total: 15, failed: 0 });
+  await settle();
+  assert.match(message.text, /Download complete/);
+});
+
+test("a dropped stream with the server unreachable keeps waiting", async () => {
+  await openDialog();
+  await startDownload({ job_id: "img", terrain_job_id: null });
+  jobsReply = new Error("offline");
+  emitError();
+  await settle();
+  await settle();
+  assert.ok(built.Download.classList.contains("is-busy"));
+  assert.notEqual(message.kind, "err");
+  jobsReply = { jobs: [] };
+});
+
+test("a job that ended during a stream drop is settled from the job list", async () => {
+  await openDialog();
+  await startDownload({ job_id: "img", terrain_job_id: null });
+  jobsReply = { jobs: [{ job_id: "img", state: "done", done: 15, total: 15, failed: 0 }] };
+  emitError();
+  await settle();
+  await settle();
+  assert.equal(message.kind, "ok");
+  assert.match(message.text, /Download complete/);
+  jobsReply = { jobs: [] };
+});
+
+test("a job the server no longer knows is reported as stopped", async () => {
+  await openDialog();
+  await startDownload({ job_id: "img", terrain_job_id: null });
+  jobsReply = { jobs: [] };
+  emitError();
+  await settle();
+  await settle();
+  assert.equal(message.kind, "err");
+  assert.match(message.text, /restarted/);
+  assert.equal(built.Download.classList.contains("is-busy"), false);
+});
+
+test("failed elevation is reported, not called a complete download", async () => {
+  await openDialog();
+  await startDownload({ job_id: "img", terrain_job_id: "dem" });
+  emit({ job_id: "img", state: "done", done: 15, total: 15, failed: 0 });
+  await settle();
+  emit({ job_id: "dem", state: "failed", done: 0, total: 6, failed: 0, error: "no tiles in range" });
+  await settle();
+  assert.equal(message.kind, "warn");
+  assert.match(message.text, /elevation data was not: no tiles in range/);
+  assert.doesNotMatch(message.text, /Download complete/);
+});
+
+test("the estimate matches the server's grid at the edges of the world", () => {
+  // One world at z1 is 4 tiles. Unclamped, the east edge at 180 and the
+  // Mercator limit each added a column or row that does not exist.
+  assert.equal(Corvus.tiles.estimateTileCount(-180, -85.05112878, 180, 85.05112878, 1, 1), 4);
+  assert.equal(Corvus.tiles.estimateTileCount(-180, -85.05112878, 180, 85.05112878, 0, 0), 1);
 });
 
 test("no dashes in the operator-facing messages", async () => {

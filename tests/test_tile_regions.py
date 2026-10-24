@@ -514,6 +514,50 @@ def test_remove_with_delete_tiles_reclaims_disk(region_server) -> None:
     assert not any(cache.has_tile(*t) for t in tiles)
 
 
+def test_removing_an_area_still_downloading_stops_its_job(region_server) -> None:
+    """A removed area used to keep downloading into the tiles just deleted.
+
+    The region id is the job id, so the remove route cancels that job and
+    waits for it before deleting, and nothing refills the area afterwards.
+    """
+    server, downloader, caches = region_server
+    cancelled: list[str] = []
+    waited: list[str] = []
+    downloader.cancel = lambda jid: cancelled.append(jid) or True
+    downloader.wait = lambda jid, timeout: waited.append(jid) or True
+    _, data = _req(server, "POST", "/api/tiles/download", _DOWNLOAD)
+
+    status, _ = _req(server, "POST", "/api/tiles/regions/remove",
+                     {"source": "satellite", "id": data["job_id"], "delete_tiles": True})
+    assert status == 200
+    assert cancelled == [data["job_id"]]
+    assert waited == [data["job_id"]]
+
+
+def test_an_elevation_job_refused_at_start_records_no_area(region_server, monkeypatch) -> None:
+    """A companion job that fetched nothing is not an area of the list."""
+    server, downloader, caches = region_server
+    terrain_cache = TileCache(str(caches["satellite"]._path).replace("satellite", "terrain"))
+    caches["terrain"] = terrain_cache
+    real_start = downloader.start
+
+    def start(source, *args, **kwargs):
+        jid = real_start(source, *args, **kwargs)
+        if source == "terrain":
+            downloader.jobs[jid]["status"].update(state="failed", error="no tiles in range")
+        return jid
+
+    monkeypatch.setattr(downloader, "start", start)
+    try:
+        _, data = _req(server, "POST", "/api/tiles/download", {**_DOWNLOAD, "terrain": True})
+        assert data["terrain_job_id"], "the dialog still gets the id to report the failure"
+        assert terrain_cache.list_regions() == []
+        assert len(caches["satellite"].list_regions()) == 1
+    finally:
+        del caches["terrain"]
+        terrain_cache.close()
+
+
 @pytest.mark.parametrize("payload,expected", [
     ({"source": "satellite"}, 400),                    # no id
     ({"id": "job-1"}, 400),                            # no source
@@ -630,3 +674,10 @@ def test_a_job_that_ends_as_its_stream_binds_is_not_lost(region_server) -> None:
     unbind()
     states = [initial["state"]] + [e["state"] for e in got]
     assert "done" in states
+
+
+def test_bounds_too_big_for_a_float_are_a_400_not_a_dropped_connection() -> None:
+    from corvus.http_input import _validate_tile_bounds
+    err, bounds = _validate_tile_bounds({"w": 10 ** 400, "s": 0, "e": 1, "n": 1})
+    assert bounds is None
+    assert "finite" in err

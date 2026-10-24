@@ -107,16 +107,21 @@ Corvus.tiles = (function () {
     return Math.floor(((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2) * Math.pow(2, z));
   }
 
-  /** Total tile count for a bbox across [minzoom..maxzoom] (slippy-map formula). */
+  /** Total tile count for a bbox across [minzoom..maxzoom] (slippy-map formula).
+   *  Clamped to the grid like the backend's _ranges_for_bounds: an east edge
+   *  of exactly 180 or a latitude at the Mercator limit lands one column or
+   *  row past it, and the dialog refused areas the server would accept. */
   function estimateTileCount(w, s, e, n, minzoom, maxzoom) {
     let count = 0;
     const lo = Math.min(minzoom, maxzoom);
     const hi = Math.max(minzoom, maxzoom);
     for (let z = lo; z <= hi; z++) {
-      const xMin = Math.min(lonToX(w, z), lonToX(e, z));
-      const xMax = Math.max(lonToX(w, z), lonToX(e, z));
-      const yMin = Math.min(latToY(n, z), latToY(s, z));
-      const yMax = Math.max(latToY(n, z), latToY(s, z));
+      const last = Math.pow(2, z) - 1;
+      const grid = (v) => Math.max(0, Math.min(last, v));
+      const xMin = grid(Math.min(lonToX(w, z), lonToX(e, z)));
+      const xMax = grid(Math.max(lonToX(w, z), lonToX(e, z)));
+      const yMin = grid(Math.min(latToY(n, z), latToY(s, z)));
+      const yMax = grid(Math.max(latToY(n, z), latToY(s, z)));
       count += (xMax - xMin + 1) * (yMax - yMin + 1);
     }
     return count;
@@ -824,12 +829,31 @@ Corvus.tiles = (function () {
     Corvus.events.followJob(id);
     const offProgress = Corvus.events.subscribe("tiles", onProgress);
     const offError = Corvus.events.subscribe("error", () => {
-      // The stream reconnects on its own; on a hard failure the progress event
-      // carries state "failed". This is only for a stream that dies without a
-      // terminal event, so the operator is not left looking at 0 %.
-      if (jobState === "running") failStart("Progress stream closed");
+      // The stream reconnects on its own and then sends the job's current
+      // state, so a dropped connection is not a failed download. Calling it
+      // one hid the progress of a job still running in the background, and
+      // the next open no longer re-attached to it. The job list says what
+      // really happened.
+      if (jobState === "running") checkJob(id);
     });
     es = function () { offProgress(); offError(); };
+  }
+
+  /** After a stream drop: settle the job from the job list, if it ended or
+   *  is gone. Still running, or the server not reachable yet, changes
+   *  nothing: the reconnecting stream reports it. */
+  function checkJob(id) {
+    Corvus.telemetry.requestJson("/api/tiles/jobs").then((data) => {
+      if (id !== followId || jobState !== "running") return;
+      const jobs = (data && Array.isArray(data.jobs)) ? data.jobs : [];
+      const job = jobs.find((j) => j && j.job_id === id);
+      if (!job) {
+        failStart("The download stopped. Corvus was restarted while it ran. " +
+          "Start it again to fetch the rest.");
+      } else if (job.state !== "running") {
+        onProgress(job);
+      }
+    }).catch(() => { /* the server is not back yet; the stream retries */ });
   }
 
   function onProgress(data) {
@@ -871,6 +895,13 @@ Corvus.tiles = (function () {
     } else if (imagery.state === "failed") {
       jobState = "failed";
       showMsg(`Download failed: ${imagery.error || "unknown error"}`, "err");
+    } else if (ended.some((r) => r.state === "failed")) {
+      // The map is there, the heights are not. "Download complete" here sent
+      // the operator out with a 3D view that is flat offline.
+      const dem = ended.find((r) => r.state === "failed");
+      jobState = "done";
+      showMsg("The map was downloaded, but the elevation data was not: " +
+        `${dem.error || "unknown error"}. 3D terrain will be flat offline here.`, "warn");
     } else if (missing > 0) {
       jobState = "done";
       showMsg(`Download finished, but ${fmtCount(missing)} tiles could not be fetched. ` +

@@ -6,8 +6,10 @@ PNG bytes, and a real on-disk :class:`TileCache` in ``tmp_path``.
 """
 from __future__ import annotations
 
+import email.message
 import http.client
 import time
+import urllib.error
 
 import pytest
 
@@ -502,4 +504,118 @@ def test_downloads_identify_themselves_like_the_interactive_fill(
     jid = dl.start("osm", "https://up/{z}/{x}/{y}.png", (-180.0, -85.0, 180.0, 85.0), 0, 0)
     assert _wait_until(lambda: dl.status(jid)["state"] == "done")
     assert stub_urlopen["user_agents"] == [f"CorvusGCS/{get_version()}"]
+    dl.shutdown()
+
+
+def _http_error(url, code: int, retry_after: str | None = None) -> urllib.error.HTTPError:
+    headers = email.message.Message()
+    if retry_after is not None:
+        headers["Retry-After"] = retry_after
+    return urllib.error.HTTPError(_url_of(url), code, "refused", headers, None)
+
+
+def test_a_404_is_not_asked_for_twice(cache, monkeypatch) -> None:
+    """A tile the upstream does not have is not there the second time either."""
+    calls = {"n": 0}
+
+    def missing_urlopen(url, timeout=None):
+        calls["n"] += 1
+        raise _http_error(url, 404)
+
+    monkeypatch.setattr(td.urllib.request, "urlopen", missing_urlopen)
+    dl = TileDownloader(cache, max_workers=2)
+    jid = dl.start("satellite", "https://up/{z}/{x}/{y}.png",
+                   (-180.0, -85.0, 180.0, 85.0), 1, 1)
+    assert _wait_until(lambda: dl.status(jid)["state"] != "running")
+    assert dl.status(jid)["failed"] == 4
+    assert calls["n"] == 4
+    dl.shutdown()
+
+
+def test_a_server_error_is_retried_once(cache, monkeypatch) -> None:
+    seen: dict[str, int] = {}
+
+    def flaky_urlopen(url, timeout=None):
+        key = _url_of(url)
+        seen[key] = seen.get(key, 0) + 1
+        if seen[key] == 1:
+            raise _http_error(url, 502)
+        return _FakeResp(b"\x89PNG\r\n\x1a\n" + b"ok")
+
+    monkeypatch.setattr(td.urllib.request, "urlopen", flaky_urlopen)
+    dl = TileDownloader(cache, max_workers=2)
+    jid = dl.start("satellite", "https://up/{z}/{x}/{y}.png",
+                   (-180.0, -85.0, 180.0, 85.0), 1, 1)
+    assert _wait_until(lambda: dl.status(jid)["state"] != "running")
+    st = dl.status(jid)
+    assert (st["state"], st["done"], st["failed"]) == ("done", 4, 0)
+    dl.shutdown()
+
+
+def test_a_throttle_is_waited_out_before_asking_again(cache, monkeypatch) -> None:
+    """A 429 used to be retried at once, into the service that had just
+    asked for a break. The pause it asks for is the job's, not the worker's."""
+    monkeypatch.setattr(td, "_SUBMIT_PAUSE", 0.0)
+    times: list[float] = []
+    first = {"hit": False}
+
+    def throttling_urlopen(url, timeout=None):
+        times.append(time.monotonic())
+        if not first["hit"]:
+            first["hit"] = True
+            raise _http_error(url, 429, retry_after="0.3")
+        return _FakeResp(b"\x89PNG\r\n\x1a\n" + b"ok")
+
+    monkeypatch.setattr(td.urllib.request, "urlopen", throttling_urlopen)
+    dl = TileDownloader(cache, max_workers=1)
+    start = time.monotonic()
+    jid = dl.start("satellite", "https://up/{z}/{x}/{y}.png",
+                   (-180.0, -85.0, 180.0, 85.0), 1, 1)
+    assert _wait_until(lambda: dl.status(jid)["state"] != "running")
+    st = dl.status(jid)
+    assert (st["state"], st["done"], st["failed"]) == ("done", 4, 0)
+    assert times[1] - start >= 0.3, "the retry did not wait out Retry-After"
+    dl.shutdown()
+
+
+def test_retry_after_is_bounded() -> None:
+    assert td._retry_after(_http_error("u", 429, "5")) == 5.0
+    assert td._retry_after(_http_error("u", 429, "86400")) == td._MAX_BACKOFF_S
+    assert td._retry_after(_http_error("u", 429, "soon")) == td._DEFAULT_BACKOFF_S
+    assert td._retry_after(_http_error("u", 429, "-3")) == td._DEFAULT_BACKOFF_S
+    assert td._retry_after(_http_error("u", 503)) == td._DEFAULT_BACKOFF_S
+
+
+def test_cancel_during_a_throttle_ends_the_job_promptly(cache, monkeypatch) -> None:
+    def throttling_urlopen(url, timeout=None):
+        raise _http_error(url, 429, retry_after="30")
+
+    monkeypatch.setattr(td.urllib.request, "urlopen", throttling_urlopen)
+    dl = TileDownloader(cache, max_workers=1)
+    jid = dl.start("satellite", "https://up/{z}/{x}/{y}.png",
+                   (-180.0, -85.0, 180.0, 85.0), 1, 1)
+    time.sleep(0.2)
+    dl.cancel(jid)
+    assert dl.wait(jid, 3.0), "a throttled job ignored its cancel"
+    assert dl.status(jid)["state"] == "cancelled"
+    dl.shutdown()
+
+
+def test_wait_reports_the_end_of_a_job(cache, stub_urlopen) -> None:
+    dl = TileDownloader(cache, max_workers=2)
+    jid = dl.start("satellite", "https://up/{z}/{x}/{y}.png",
+                   (-180.0, -85.0, 180.0, 85.0), 1, 1)
+    assert dl.wait(jid, 3.0)
+    assert dl.status(jid)["state"] == "done"
+    assert dl.wait("no-such-job", 0.0)
+    dl.shutdown()
+
+
+def test_finished_job_threads_are_not_kept_forever(cache, stub_urlopen) -> None:
+    dl = TileDownloader(cache, max_workers=1)
+    for _ in range(5):
+        jid = dl.start("satellite", "https://up/{z}/{x}/{y}.png",
+                       (-180.0, -85.0, 180.0, 85.0), 0, 0)
+        assert dl.wait(jid, 3.0)
+    assert len(dl._threads) <= 1
     dl.shutdown()

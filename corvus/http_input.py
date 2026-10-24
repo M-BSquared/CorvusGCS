@@ -147,7 +147,15 @@ def _validate_tile_bounds(bounds: Any) -> tuple[str | None, tuple[float, float, 
     for key in ("w", "s", "e", "n"):
         value = bounds.get(key)
         # bool is a subclass of int — reject it so True is never coerced to 1.0
-        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)):
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return (f"bounds.{key} must be a finite number", None)
+        # float() of a JSON integer too big for a double raises rather than
+        # answering, which dropped the connection instead of a 400.
+        try:
+            finite = math.isfinite(float(value))
+        except OverflowError:
+            finite = False
+        if not finite:
             return (f"bounds.{key} must be a finite number", None)
     w, s, e, n = float(bounds["w"]), float(bounds["s"]), float(bounds["e"]), float(bounds["n"])
     if not -180.0 <= w <= 180.0 or not -180.0 <= e <= 180.0:
