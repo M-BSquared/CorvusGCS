@@ -1634,7 +1634,9 @@ Corvus.ui = (function () {
       if (closed) return;
       closed = true;
       document.removeEventListener("keydown", onKey, true);
-      if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      const detach = () => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); };
+      if (Corvus.anim && overlay.parentNode) Corvus.anim.leave(overlay, detach);
+      else detach();
       if (typeof o.onClose === "function") o.onClose();
     }
 

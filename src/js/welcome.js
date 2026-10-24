@@ -256,12 +256,16 @@ Corvus.welcome = (function () {
         if (step < 0) {
           titleEl.textContent = "Welcome to Corvus GCS";
           footer.style.display = "none";
-          dialog.body.appendChild(startPage());
+          const start = startPage();
+          dialog.body.appendChild(start);
+          if (Corvus.anim) Corvus.anim.stagger(start.children);
         } else {
           titleEl.textContent = "Set up Corvus GCS";
           footer.style.display = "";
           dialog.body.appendChild(stepper());
-          dialog.body.appendChild(pages[STEPS[step].id]());
+          const page = pages[STEPS[step].id]();
+          dialog.body.appendChild(page);
+          if (Corvus.anim) Corvus.anim.enter(page);
           dialog.body.appendChild(msg.el);
           const last = step === STEPS.length - 1;
           const label = nextBtn.querySelector("span");

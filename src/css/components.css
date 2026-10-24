@@ -130,6 +130,10 @@
 .btn:active:not(:disabled):not(.is-busy) {
   transform: scale(0.97);
 }
+/* Down at once, back up eased: the press answers in the frame the pointer
+   lands, which is most of what makes a control feel fast. The eased half is
+   the release, the base rule's transition. */
+.btn:active, .tile:active, .option-card:active { transition-duration: 0s; }
 
 .btn:focus-visible {
   outline: 2px solid var(--accent-bright);

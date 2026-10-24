@@ -145,6 +145,7 @@ Corvus.setup = (function () {
     grid.appendChild(makeTile("video", "video", "Video",
       "RTSP or WebRTC cameras in floating windows."));
     container.appendChild(grid);
+    if (Corvus.anim) Corvus.anim.stagger(grid.children);
 
     // Subscribe to telemetry so the Vehicle Info rows update live. The firmware version
     // only arrives a few seconds after connect via AUTOPILOT_VERSION, so the
@@ -238,6 +239,7 @@ Corvus.setup = (function () {
       activeDestroy = Corvus.setupFirmware.render(container, navigateBack);
     }
     S.refreshIcons();
+    if (Corvus.anim) Corvus.anim.enter(container);
   }
 
   // `teardown` is exported alongside `render` so the left-nav (sidenav.js)

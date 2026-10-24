@@ -1294,6 +1294,10 @@ Corvus.topbar = (function () {
     if (root) setAttr(root, "aria-label", `Vehicle: ${fleetVehicleLabel(state)}, ${count} vehicles`);
   }
 
+  // The blocks whose change is an event the operator should catch from the
+  // corner of an eye. The rest change every frame and would only flicker.
+  const POP_KEYS = new Set(["mode", "armed"]);
+
   // The bar is updated on every telemetry frame and almost nothing in it
   // changes between two; an unchanged write still costs a style pass.
   function setText(el, value) {
@@ -1316,7 +1320,13 @@ Corvus.topbar = (function () {
       if (!cached) return;
       const el = cached.root;
       const valEl = cached.vMain;
-      if (valEl && valEl.textContent !== b.value) valEl.textContent = b.value;
+      if (valEl && valEl.textContent !== b.value) {
+        const had = valEl.textContent;
+        valEl.textContent = b.value;
+        if (had && POP_KEYS.has(b.key) && Corvus.anim) {
+          Corvus.anim.pop(cached.value || valEl, { origin: "left center" });
+        }
+      }
       if (cached.vShort && b.short !== undefined && cached.vShort.textContent !== b.short) {
         cached.vShort.textContent = b.short;
       }
@@ -1342,7 +1352,11 @@ Corvus.topbar = (function () {
     if (warnPill) {
       const { items, unread, count, level } = notificationSummary(state);
       const countEl = warnPill.querySelector(".tb-warn-count");
-      if (countEl) setText(countEl, String(count));
+      if (countEl) {
+        const had = Number(countEl.textContent) || 0;
+        setText(countEl, String(count));
+        if (count > had && Corvus.anim) Corvus.anim.pop(warnPill, { scale: 1.1 });
+      }
       // The pill colour is a token, set from CSS off this attribute. It used
       // to be three hex literals written straight onto style.background, which
       // meant the one element in the bar that never changed with the theme was

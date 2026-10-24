@@ -1399,6 +1399,7 @@ Corvus.setupParameters = (function () {
       if (e.key === "Enter") {
         e.preventDefault();
         if (!applyBtn.disabled) apply();
+        else if (control.classList.contains("invalid") && Corvus.anim) Corvus.anim.shake(control);
       } else if (e.key === "Escape" && state.pending.has(name)) {
         e.preventDefault();
         setDraft(formatValue(param.value, param.type));
@@ -1506,6 +1507,7 @@ Corvus.setupParameters = (function () {
       if (!v.ok) {
         refresh();
         applyBtn.disabled = true;
+        if (Corvus.anim) Corvus.anim.shake(control);
         return;
       }
       applyBtn.disabled = true;
@@ -1540,13 +1542,25 @@ Corvus.setupParameters = (function () {
       state.rowStatus.set(name, {
         cls: "ok", text: meta && meta.reboot_required ? "saved, reboot to apply" : "saved",
       });
+      confirmRow(state, name, true);
       return true;
     } catch (err) {
       const msg = (err && err.message) || "set failed";
       state.rowStatus.set(name, { cls: "err", text: msg });
       notify("critical", `Could not set ${name}: ${msg}`);
+      confirmRow(state, name, false);
       return false;
     }
+  }
+
+  /** Ring the row's control green on a confirmed write, red and shaken on a
+   *  refused one. Looked up afresh: the editor may have redrawn meanwhile. */
+  function confirmRow(state, name, ok) {
+    const view = state.card && state.card._editorView;
+    const handle = view && view.handles.get(name);
+    if (!handle || !Corvus.anim) return;
+    Corvus.anim.flash(handle.control, ok ? "ok" : "err");
+    if (!ok) Corvus.anim.shake(handle.control);
   }
 
   /** Write every draft, one confirmed write after the other. */

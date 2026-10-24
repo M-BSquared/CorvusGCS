@@ -427,7 +427,7 @@ input, textarea, [contenteditable="true"], pre, code, .selectable,
 .fa-btn:hover { color: var(--text-1); background: var(--surface-hover); }
 .fa-btn.plan:hover { color: var(--accent-bright); }
 /* Press: instant scale(0.96), no overshoot. */
-.fa-btn:active:not(:disabled):not(.is-busy) { transform: scale(0.96); }
+.fa-btn:active:not(:disabled):not(.is-busy) { transform: scale(0.96); transition-duration: 0s; }
 .fa-btn:focus-visible { outline: 2px solid var(--accent-bright); outline-offset: 2px; }
 .fa-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 /* .is-busy overrides the disabled cursor/opacity so the ACK wait reads as

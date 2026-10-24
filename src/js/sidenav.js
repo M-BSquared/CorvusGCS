@@ -157,6 +157,10 @@ Corvus.sidenav = (function () {
       pageView.hidden = false;
       renderPage(navId);
     }
+    // Opacity only on the map: a rise would move the whole GL layer with it.
+    if (prev && prev !== navId && Corvus.anim) {
+      Corvus.anim.enter(navId === "home" ? mapView : pageView, { y: navId === "home" ? 0 : 4, duration: 160 });
+    }
   }
 
   function renderPage(navId) {
