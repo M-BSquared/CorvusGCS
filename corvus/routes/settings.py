@@ -288,6 +288,8 @@ class SettingsRoutes:
             self._refresh_autoconnect_session(cfg)
             self._refresh_battery_settings(cfg)
             self._refresh_remote_id(cfg)
+            if self.mcp is not None:
+                self.mcp.settings_reloaded()
 
         if before.get("video") != after.get("video"):
             self._apply_video(video.settings(cfg.video))
@@ -364,6 +366,8 @@ class SettingsRoutes:
             self._refresh_autoconnect_session(cfg)
             self._refresh_battery_settings(cfg)
             self._refresh_remote_id(cfg)
+            if self.mcp is not None:
+                self.mcp.settings_reloaded()
 
         if before.get("video") != after.get("video"):
             self._apply_video(video.settings(cfg.video))

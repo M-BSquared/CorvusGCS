@@ -15,7 +15,7 @@
 
 <div align="center">
   <!-- corvus:version-badge -->
-  <img src="https://img.shields.io/badge/Version-2026.10.36-f7ebe1?style=for-the-badge" height="28" alt="Version 2026.10.36" />
+  <img src="https://img.shields.io/badge/Version-2026.10.37-f7ebe1?style=for-the-badge" height="28" alt="Version 2026.10.37" />
   <img width="8" />
   <!-- <a href="https://www.python.org/" target="_blank"><img src="https://img.shields.io/badge/Python_3.12%2B-3776AB?logo=python&logoColor=white&style=for-the-badge" height="28" alt="Python 3.12+" /></a>
   <img width="8" />
@@ -139,6 +139,7 @@ the documentation that explains it.
 | 🎥 **Watch the camera** | RTSP or WebRTC cameras in floating windows you can put on a second screen. A frozen picture is never passed off as live. [More](https://m-bsquared.github.io/CorvusGCS/guide/video.html) |
 | 📊 **Review flights** | Flight Review for a ULog, Telemetry Review for the recording that always exists, radio link included. [More](https://m-bsquared.github.io/CorvusGCS/guide/analysis.html) |
 | 🖥️ **Tools** | MAVLink console, SSH terminal to a companion computer, and plugins: the Vibration Monitor, the SSH Launcher, Schwalby and Map Entities (trees, gates and devices with a range, placed on the map) ship with it. Two more install from their own repositories: the [NuttX Console](https://github.com/M-BSquared/corvus-nuttx-console) (the PX4 shell over MAVLink, as a console or in a terminal window) and the [Trajectory Viewer](https://github.com/M-BSquared/corvus-trajectory-viewer) (a reference route from a file, drawn under the flown track). A plugin can have a tab of its own, and the console and SSH tabs can be switched off. [More](https://m-bsquared.github.io/CorvusGCS/guide/plugins.html) |
+| 🤖 **AI clients** | Switch on the MCP server and an AI client such as OpenCode can read the vehicle and, as far as you allow it, change parameters, fly missions and points, or steer it directly. One switch per kind of act, each can ask you first, and a Stop on the map takes it all back. Plugins can add tools, and Schwalby lets the client add launch buttons you then allow. [More](https://m-bsquared.github.io/CorvusGCS/guide/mcp.html) |
 | 🎨 **Personalise** | Six colour themes, interface scale from 80 % to 150 %, units, your own logo, and English, German or French. A language is one file, so more can be added. [More](https://m-bsquared.github.io/CorvusGCS/guide/settings.html) |
 | 💻 **Just run it** | One standalone app for macOS, Linux and Windows. No install, no server, no browser, clean shutdown every time. [More](https://m-bsquared.github.io/CorvusGCS/guide/install.html) |
 
@@ -238,6 +239,7 @@ Its source is plain HTML in [`docs/guide`](docs/guide).
 | | | [Telemetry radio, RTK and Remote ID](https://m-bsquared.github.io/CorvusGCS/guide/hardware.html) | [PX4 and ArduPilot](https://m-bsquared.github.io/CorvusGCS/guide/compatibility.html) |
 | | | [Firmware](https://m-bsquared.github.io/CorvusGCS/guide/firmware.html) | [Network and security](https://m-bsquared.github.io/CorvusGCS/guide/security.html) |
 | | | [Video and windows](https://m-bsquared.github.io/CorvusGCS/guide/video.html) | [Files, settings and variables](https://m-bsquared.github.io/CorvusGCS/guide/reference.html) |
+| | | | [AI clients (MCP)](https://m-bsquared.github.io/CorvusGCS/guide/mcp.html) |
 
 ---
 

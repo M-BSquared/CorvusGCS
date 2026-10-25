@@ -72,6 +72,15 @@ server exposes it to the browser over **SSE** (or WebSockets). The browser
 renders the HUD, map, and parameter editor. The same Python process supervises
 all child processes (e.g. MAVLink bridges) and guarantees clean teardown.
 
+The same server answers AI clients at `POST /mcp` (Model Context Protocol,
+Streamable HTTP, `corvus/mcp.py` + `corvus/routes/mcp.py`): off by default,
+loopback only, bearer token in `~/.corvus/mcp-token`, one operator switch per
+kind of act. Every tool runs an existing endpoint in-process
+(`internal_call`), never the link directly, so an MCP tool cannot do what a
+button could not. Plugins add tools from the browser (`mcpTools` in their
+spec). A new endpoint that changes the vehicle is not reachable over MCP
+until a tool and its permission are added there on purpose.
+
 ### Tech stack
 
 - **Backend / wrapper:** CPython, standard library only where possible

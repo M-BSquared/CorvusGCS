@@ -77,6 +77,7 @@ _CONFIG_FIELD_ORDER: tuple[str, ...] = (
     "review",
     "checklists",
     "fleet",
+    "mcp",
 )
 
 # Required keys on a saved ssh_connections entry; missing keys default to a
@@ -221,6 +222,7 @@ class CorvusConfig:
     review: dict[str, Any] | None = None
     checklists: dict[str, Any] | None = None
     fleet: dict[str, Any] | None = None
+    mcp: dict[str, Any] | None = None
 
     def apply_overrides(self, **kwargs: Any) -> CorvusConfig:
         """Return a copy with non-None kwargs overriding matching fields.
@@ -990,6 +992,8 @@ def _build_config(data: dict[str, Any]) -> CorvusConfig:
     checklists = _coerce_checklists(data.get("checklists"))
     from .fleet import coerce_config as coerce_fleet
     fleet = coerce_fleet(data.get("fleet"))
+    from .mcp import coerce_settings as coerce_mcp
+    mcp_cfg = coerce_mcp(data.get("mcp"))
 
     return CorvusConfig(
         mavlink_connection=mavlink_connection,
@@ -1022,6 +1026,7 @@ def _build_config(data: dict[str, Any]) -> CorvusConfig:
         review=review,
         checklists=checklists,
         fleet=fleet,
+        mcp=mcp_cfg,
     )
 
 
@@ -1132,6 +1137,12 @@ def _config_to_dict(cfg: CorvusConfig) -> dict[str, Any]:
         fleet = coerce_fleet(cfg.fleet)
         if fleet is not None:
             out["fleet"] = fleet
+    if cfg.mcp is not None:
+        # Copied through the coercer: permissions and confirm are sub-dicts.
+        from .mcp import coerce_settings as coerce_mcp
+        mcp_block = coerce_mcp(cfg.mcp)
+        if mcp_block is not None:
+            out["mcp"] = mcp_block
     # Stable key order for a readable on-disk diff.
     return {k: out[k] for k in _CONFIG_FIELD_ORDER if k in out}
 

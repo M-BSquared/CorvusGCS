@@ -61,7 +61,7 @@ SECTIONS: dict[str, tuple[str, ...]] = {
     "interface": ("theme", "language", "ui", "controls", "branding", "updates", "review"),
     "map": ("map", "map_tokens", "tile_sources"),
     "connections": ("mavlink_connection", "autoconnect", "forwarding",
-                    "stream_rates", "ssh_connections"),
+                    "stream_rates", "ssh_connections", "mcp"),
     "vehicle": ("battery", "remote_id", "rtk", "video", "parameters", "checklists"),
     "folders": ("http_port", "tile_cache_dir", "tlog_dir", "params_dir",
                 "firmware_dir", "log_download_dir", "missions_dir"),

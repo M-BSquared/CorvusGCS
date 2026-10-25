@@ -58,6 +58,7 @@ from .mavlink_bridge import (
 )
 from .file_manager import open_folder, open_url
 from . import plugin_config
+from . import mcp as mcp_module
 from .plugin_registry import (
     bundled_plugins_dir,
     ensure_user_plugins_dir,
@@ -98,6 +99,7 @@ from .routes.first_setup import FirstSetupRoutes
 from .routes.geofence import GeofenceRoutes
 from .routes.languages import LanguageRoutes
 from .routes.logs import LogRoutes
+from .routes.mcp import McpRoutes, internal_call as _mcp_internal_call
 from .routes.mission import MissionRoutes
 from .routes.rtk import RtkRoutes
 from .routes.settings import SettingsRoutes
@@ -133,6 +135,8 @@ SSH_SSE_CAPACITY = 256
 SHELL_SSE_CAPACITY = 512
 TILES_PROGRESS_SSE_CAPACITY = 16
 FIRMWARE_SSE_CAPACITY = 16
+# MCP status, confirmations and plugin calls: few, and none may be dropped.
+MCP_SSE_CAPACITY = 64
 # Interactive cache-fill timeout. Short on purpose: this is the browser waiting
 # for a map tile, and a tile that takes longer than this has already missed the
 # frame it was wanted for. The offline DOWNLOADER uses its own, longer timeout
@@ -675,6 +679,29 @@ def _build_pinger() -> Any:
         return None
 
 
+def _build_mcp_service(server: Any, config: CorvusConfig, cfg_path: str) -> Any:
+    """Build the MCP server (corvus/mcp.py), or None. Nothing listens until it is on."""
+    def load() -> Any:
+        return config.mcp
+
+    def save(block: dict[str, Any] | None) -> None:
+        with _config_write_lock:
+            config.mcp = block
+            save_config(config, cfg_path)
+
+    try:
+        return mcp_module.McpService(
+            dispatch=lambda method, path, body: _mcp_internal_call(
+                CorvusHandler, server, method, path, body),
+            load_settings=load,
+            save_settings=save,
+            token_path=os.path.join(os.path.dirname(os.path.abspath(cfg_path)), "mcp-token"),
+        )
+    except Exception:  # noqa: BLE001 - never block server creation
+        logger.exception("mcp unavailable")
+        return None
+
+
 def _build_update_checker() -> Any:
     """Build the release-update checker, or None.
 
@@ -860,6 +887,16 @@ def stop_backend(server: Any, log: Any = None) -> None:
     """
     if log is None:
         log = logger
+    # First: an AI client under direct control is put in hold while the bridge
+    # is still there to send it, and every call waiting on the operator ends.
+    mcp_svc = getattr(server, "mcp", None)
+    if mcp_svc is not None:
+        try:
+            log.info("stopping mcp …")
+            mcp_svc.shutdown()
+            log.info("mcp stopped")
+        except Exception:
+            log.exception("mcp shutdown failed")
     # Flash uses the MAVLink bridge (it stops/starts it), so cancel/join the
     # uploader BEFORE tearing the bridge down.
     flash = getattr(server, "flash", None)
@@ -1133,6 +1170,7 @@ class CorvusHandler(
     GeofenceRoutes,
     LanguageRoutes,
     LogRoutes,
+    McpRoutes,
     MissionRoutes,
     RtkRoutes,
     SettingsRoutes,
@@ -1533,7 +1571,7 @@ class CorvusHandler(
         # plugin keeps a file of its own (corvus/plugin_config.py), written by
         # POST /api/plugins/settings. The fleet block is written by
         # corvus.fleet, which holds the links it names open.
-        owned_elsewhere = {"forwarding", "map_tokens", "plugins", "fleet"}
+        owned_elsewhere = {"forwarding", "map_tokens", "plugins", "fleet", "mcp"}
 
         for key, value in partial.items():
             if key not in known:
@@ -1826,7 +1864,9 @@ class CorvusHandler(
 
     def _do_get(self) -> None:
         path = urlparse(self.path).path
-        if path.startswith("/api/"):
+        if path == "/mcp":
+            self._mcp_get()
+        elif path.startswith("/api/"):
             self._handle_api_get(path)
         else:
             self._serve_static(path)
@@ -1838,6 +1878,10 @@ class CorvusHandler(
         if not self._mutating_request_allowed():
             return
         path = urlparse(self.path).path
+        # The MCP endpoint carries JSON-RPC, read and answered by its own route.
+        if path == "/mcp":
+            self._mcp_post()
+            return
         # Firmware upload carries a raw octet-stream body, not JSON. Handle it
         # before the JSON dispatcher so the binary payload is never json-parsed.
         if path == "/api/firmware/upload":
@@ -1860,6 +1904,18 @@ class CorvusHandler(
             self._handle_api_post(path)
         else:
             self._send_json({"error": "not found"}, 404)
+
+    def do_DELETE(self) -> None:
+        self._guarded(self._do_delete)
+
+    def _do_delete(self) -> None:
+        # Only an MCP client ending its session deletes anything here.
+        if not self._mutating_request_allowed():
+            return
+        if urlparse(self.path).path == "/mcp":
+            self._mcp_delete()
+        else:
+            self._send_json({"error": "method not allowed"}, 405)
 
     def _mutating_request_allowed(self) -> bool:
         """Reject browser cross-site writes before any endpoint sees them."""
@@ -4454,6 +4510,7 @@ class CorvusHandler(
             "tiles": (self._bind_tiles, TILES_PROGRESS_SSE_CAPACITY, _sanitize),
             "shell": (self._bind_shell, SHELL_SSE_CAPACITY, lambda e: e),
             "fleet": (self._bind_fleet, 1, _sanitize),
+            "mcp": (self._bind_mcp, MCP_SSE_CAPACITY, _sanitize),
         }
 
     _SSE_TERMINAL_STATES = ("done", "cancelled", "failed")
@@ -5807,6 +5864,10 @@ def create_server(
     server.geocoder = geocoder
     server.autoconnect_session = autoconnect_session
     server.fleet = fleet
+    # After bind_server: a tool runs an endpoint on this server, in-process.
+    mcp_svc = _build_mcp_service(server, config, cfg_path)
+    CorvusHandler.mcp = mcp_svc
+    server.mcp = mcp_svc
     mavlink.start()
     # The extra links, if the operator opened any, and the vehicle list.
     fleet.start()
