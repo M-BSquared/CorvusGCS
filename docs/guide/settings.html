@@ -130,6 +130,7 @@
       <ul>
         <li><a href="workspace.html">Console and SSH</a></li>
         <li><a href="plugins.html">Plugins</a></li>
+        <li><a href="mcp.html">AI clients (MCP)</a></li>
         <li><a href="settings.html" aria-current="page">Settings</a></li>
       </ul>
     </div>
@@ -162,7 +163,7 @@
 </p>
 
 <h2 id="interface">Interface</h2>
-<p>How the whole app reads. <strong>General</strong> holds the language, the colours, the size and the units; <strong>Branding</strong> the logo and the app icon.</p>
+<p>How the whole app reads. <strong>General</strong> holds the language, the colours, the size, tablet mode and the units; <strong>Branding</strong> the logo and the app icon.</p>
 <dl>
   <dt id="language">Language</dt>
   <dd>The language of the interface: English, German or French, from a dropdown, with <strong>Reload languages</strong> beside it. Switching is instant, with no reload. The first start setup opens in the browser's own language when Corvus has a file for it, and offers the choice in its first step, <strong>Look</strong>. A text that a language does not translate stays English. More languages can be added without touching the program, see <a href="#adding-a-language">Adding a language</a>.</dd>
@@ -170,6 +171,23 @@
   <dd>Six themes, two light and four dark: Light (the default), Light Orange, Blue, Green, Orange and Pink. Switching is instant, with no reload and no flash, and the map, the plots and the instruments all follow.</dd>
   <dt>Interface size</dt>
   <dd>One slider from 80 % to 150 % that scales the whole app, for a small laptop screen or a bright field where you want everything larger.</dd>
+  <dt id="tablet-mode">Tablet mode</dt>
+  <dd>
+    Makes Corvus work with a finger on an iPad, an Android tablet or a touch screen laptop. The layout stays the same; what changes:
+    <ul>
+      <li>Buttons, switches, fields and menu rows grow to a size a finger hits, the flight bar and the map's control rail most of all. The virtual joystick's sticks grow to thumb size.</li>
+      <li>A long press does what a right click does: the 3D and camera panels on the map rail, and on the map itself taking back the last planned point or fence corner. A short vibration confirms it where the tablet has one. A finger held on a point on the map does nothing, because it is usually about to drag the point; a mission point is removed with the × in its row.</li>
+      <li>A double tap does what a double click does: it sends the HUD, the stick pad or the checklist back to its corner and maximizes a camera window.</li>
+      <li>The flight HUD moves only after you hold it for a moment; a ring in the accent colour shows it has been picked up. A thumb resting on it or a swipe meant for the map leaves it where it is. The stick pad, the checklist and camera windows are dragged by their bars as before, and those bars and the resize corner are larger.</li>
+      <li>Controls that only showed under a mouse pointer (the HUD's buttons, the tools on a mission row, the handles that add a fence corner) are always shown. Buttons no longer keep the tint of the last tap, so a pressed LAND does not look like it is still active.</li>
+      <li>In the Mission planner a <strong>FINISH</strong> button appears while an area or corridor is drawn, in place of Enter or a double click, and the hints under the tool bar name the finger's gestures. Rows are reordered by their number, which is wider.</li>
+      <li>Charts on Analysis and in tuning no longer take a swipe as a zoom, so the page scrolls under a finger.</li>
+      <li>Gone: the + and − zoom buttons (two fingers zoom the map), the side panel's resize edge, the SSH terminal tab, the App icon card, and in a browser the Camera and terminal windows card. Saved SSH connections stay, and plugins still use them.</li>
+      <li>The side panel starts folded below a width of 1280, so the map keeps its room on a tablet held either way. The page no longer zooms or reloads under a stray pinch, double tap or pull down, and an upright tablet drops the CORVUS wordmark so the top bar fits.</li>
+      <li>Where the browser allows it, the left rail gets a full screen button above <strong>SET</strong>.</li>
+    </ul>
+    The switch is saved on the device that sets it, not in the shared settings, so a tablet and the computer it connects to each keep their own. A device whose main pointer is a finger starts in tablet mode until it is switched off. To reach Corvus from a tablet over the network, see <a href="security.html#second-screen">A second screen on the network</a>; added to the home screen from there, it opens without the browser's bars.
+  </dd>
   <dt>Units</dt>
   <dd>A unit system (metric, imperial, aviation) that sets altitude and length, distance, speed and temperature at once, and each of the four on its own afterwards. Units are for display only: parameters, mission files and everything sent to the aircraft stay in the units the autopilot uses.</dd>
   <dt>Company logo</dt>
@@ -284,6 +302,17 @@
   use the LINK tab (see <a href="connect.html">Connect to the aircraft</a>).
 </p>
 
+<h3 id="mcp">MCP server</h3>
+<p>
+  Lets an AI client such as OpenCode read the vehicle and, as far as you allow
+  it, fly it. The card holds the server switch and who is connected.
+  <strong>Permissions</strong> opens a dialog with one switch per kind of act,
+  each with <strong>Ask me first</strong>, and the plugins that offer tools.
+  <strong>Connect an AI client</strong>, there only while the server is on,
+  opens the address, the token and the OpenCode block. All of it is explained in
+  <a href="mcp.html">AI clients (MCP)</a>.
+</p>
+
 <h2 id="data">Data</h2>
 <p>What Corvus keeps on this computer and how it reads it back.</p>
 
@@ -368,7 +397,7 @@
 </article>
 
 <nav class="doc-pager" aria-label="Previous and next page">
-  <a class="doc-pager-prev" href="plugins.html" rel="prev"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-prev"></use></svg><span><small>Previous</small>Plugins</span></a>
+  <a class="doc-pager-prev" href="mcp.html" rel="prev"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-prev"></use></svg><span><small>Previous</small>AI clients (MCP)</span></a>
   <a class="doc-pager-next" href="compatibility.html" rel="next"><span><small>Next</small>PX4 and ArduPilot</span><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-next"></use></svg></a>
 </nav>
 

@@ -130,6 +130,7 @@
       <ul>
         <li><a href="workspace.html">Console and SSH</a></li>
         <li><a href="plugins.html" aria-current="page">Plugins</a></li>
+        <li><a href="mcp.html">AI clients (MCP)</a></li>
         <li><a href="settings.html">Settings</a></li>
       </ul>
     </div>
@@ -254,6 +255,18 @@
   Plugins</a>) and its shelf is the <strong>SCHWALBY</strong> tab, one press
   from anywhere, instead of a card under PLUGINS.
 </p>
+<p>
+  An AI client connected through the <a href="mcp.html">MCP server</a> can
+  use the shelf too, when you allow it twice: <strong>Plugin tools</strong>
+  under <a href="mcp.html#permissions">Settings, Connections, MCP</a>, and one
+  or both of Schwalby's own switches in its gear:
+</p>
+<dl>
+  <dt>AI clients may add buttons</dt>
+  <dd>The client can add buttons that run on this computer, and change or remove the ones it added. It can never add a button that runs over SSH, and never change one of yours. A button it added carries an <strong>AI</strong> mark. A new one, or one whose command it changed, is drawn dashed and does not run: press it, read the command it would run, and choose <strong>Allow</strong>. Saving it in its editor allows it too.</dd>
+  <dt>AI clients may press buttons</dt>
+  <dd>The client can press any allowed button, yours included, which runs its program exactly as your own press would. With the shelf closed the press takes the same path, so opening Schwalby afterwards shows it running.</dd>
+</dl>
 
 <h2 id="map-entities">Map Entities</h2>
 <p>
@@ -722,6 +735,43 @@ c.velocity({ vx: 2, vy: 0, vz: 0, yawRate: 10, frame: "body" });   // m/s and de
   vehicle ends the motion by its own timeout. Stop the stream in
   <code>destroy</code>, and hand the aircraft back with <code>hold()</code>.
 </p>
+<h3 id="mcp">Tools for an AI client</h3>
+<p>
+  A plugin can offer tools to an AI client through the
+  <a href="mcp.html">MCP server</a>. Give its spec <code>mcpTools</code>: a
+  list, or a function that returns one and is asked again whenever the list
+  is announced, so it can follow the plugin's own settings. Schwalby uses that
+  to offer its tools only when its switches are on.
+</p>
+<pre><code>Corvus.plugins.register("logbook", {
+  name: "Logbook",
+  init: function (el, api) { /* ... */ },
+  destroy: function (el) { /* ... */ },
+  mcpTools: function (api) {
+    if (!api.getOptions().ai) return [];      // a switch of the plugin's own
+    return [{
+      name: "add_note",                       // listed as logbook_add_note
+      title: "Add a logbook note",
+      description: "Write one line into the flight logbook.",
+      inputSchema: { type: "object", properties: { text: { type: "string" } }, required: ["text"] },
+      confirm: false,                         // true: ask the operator every time
+      handler: async function (args, api) {
+        if (!args.text) throw new Error("text is required");   // the agent is told why
+        await api.saveSettings({ last: args.text });
+        return { saved: true };
+      },
+    }];
+  },
+});</code></pre>
+<p>
+  A tool exists only while a Corvus window is open, because its handler runs
+  there. The operator still decides: the client sees a plugin's tools only
+  with <strong>Plugin tools</strong> on and that plugin's switch on under
+  Settings, Connections, MCP, and with <strong>Ask me first</strong> on each
+  call waits for them. Call <code>api.mcp.changed()</code> when the list
+  changes for a reason Corvus cannot see; registering and setting an option
+  announce it by themselves.
+</p>
 <p>
   The full <code>api</code> is documented at the top of
   <code>src/js/plugins.js</code>, and the manifest in
@@ -815,7 +865,7 @@ require("../my-plugin.js");</code></pre>
 
 <nav class="doc-pager" aria-label="Previous and next page">
   <a class="doc-pager-prev" href="workspace.html" rel="prev"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-prev"></use></svg><span><small>Previous</small>Console and SSH</span></a>
-  <a class="doc-pager-next" href="settings.html" rel="next"><span><small>Next</small>Settings</span><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-next"></use></svg></a>
+  <a class="doc-pager-next" href="mcp.html" rel="next"><span><small>Next</small>AI clients (MCP)</span><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-next"></use></svg></a>
 </nav>
 
 <p class="doc-edit">

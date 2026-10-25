@@ -130,6 +130,7 @@
       <ul>
         <li><a href="workspace.html">Console and SSH</a></li>
         <li><a href="plugins.html">Plugins</a></li>
+        <li><a href="mcp.html">AI clients (MCP)</a></li>
         <li><a href="settings.html">Settings</a></li>
       </ul>
     </div>
@@ -177,6 +178,19 @@
   listens where you point it:
 </p>
 <pre><code>CORVUS_BIND=0.0.0.0 ./run.sh</code></pre>
+<p>
+  That lets the tablet show the interface, but its browser still may not
+  command the aircraft or change a setting: those requests come from an
+  address that is not this computer's, and are refused. Name the address the
+  tablet opens as well, and it can:
+</p>
+<pre><code>CORVUS_BIND=0.0.0.0 CORVUS_ALLOWED_ORIGIN=http://192.168.1.20:8000 ./run.sh</code></pre>
+<p>
+  Use this computer's own address and port, exactly as they stand in the
+  tablet's address bar. Switch on
+  <a href="settings.html#tablet-mode">Tablet mode</a> on the tablet for a
+  layout made for a finger.
+</p>
 <p>
   Corvus says so in its log at every launch. There is still no
   authentication, so treat that network the way you would treat handing

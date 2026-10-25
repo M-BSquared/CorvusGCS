@@ -422,6 +422,21 @@ _register(Scene(
 ))
 
 _register(Scene(
+    id="first_setup",
+    asset="docs/assets/images/first-setup.jpg",
+    web="first-setup",
+    title="Setup: First Setup",
+    caption="A new controller set up step by step, from the firmware to the "
+            "battery, each step hosting the real setup page.",
+    theme="blue",
+    page="setup", view="firstsetup", workspace="collapsed",
+    airframe="quad_x", armed=False, mode="POSCTL", path="parked",
+    takeoff_time=0.0, settle=14.0,
+    notes="With no step named, the wizard looks at the controller and opens "
+          "where the work is: the aircraft type, with the step list above it.",
+))
+
+_register(Scene(
     id="motors",
     asset="assets/screenshot_motors.png",
     web="motors",

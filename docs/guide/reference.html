@@ -130,6 +130,7 @@
       <ul>
         <li><a href="workspace.html">Console and SSH</a></li>
         <li><a href="plugins.html">Plugins</a></li>
+        <li><a href="mcp.html">AI clients (MCP)</a></li>
         <li><a href="settings.html">Settings</a></li>
       </ul>
     </div>
@@ -176,6 +177,7 @@
     <tr><td><code>firmware/</code></td><td>Downloaded firmware images and the release list.</td><td><code>firmware_dir</code></td></tr>
     <tr><td><code>plugins/</code></td><td>Your own plugins, each with its own <code>config.json</code>.</td><td></td></tr>
     <tr><td><code>param-metadata/</code></td><td>Copies of PX4 parameter descriptions, when that option is on.</td><td></td></tr>
+    <tr><td><code>mcp-token</code></td><td>The token an AI client needs for the <a href="mcp.html">MCP server</a>. Readable by you alone, and never in a settings export.</td><td></td></tr>
     <tr><td><code>known_hosts</code></td><td>SSH host keys of the companion computers you connected to.</td><td></td></tr>
     <tr><td><code>branding/</code></td><td>Your company logo.</td><td></td></tr>
     <tr><td><code>corvus.lock</code></td><td>The lock that keeps a second Corvus from starting. Held by the running process; nothing to clean up after a crash.</td><td></td></tr>
@@ -207,6 +209,7 @@
     <tr><td><code>http_port</code></td><td>The local HTTP port (default 8000).</td></tr>
     <tr><td><code>autoconnect</code></td><td><code>enabled</code>, <code>usb</code>, <code>sik</code>, <code>udp_fallback</code>. See <a href="connect.html#automatic">Automatic connection</a>.</td></tr>
     <tr><td><code>forwarding</code></td><td>Mirroring the link to a second station: <code>enabled</code>, <code>allow_commands</code>, the other station's <code>host</code> and <code>port</code>, and Corvus's own <code>listen_port</code> (0 for any free port).</td></tr>
+    <tr><td><code>mcp</code></td><td>The <a href="mcp.html">MCP server</a>: <code>enabled</code>, <code>fleet</code>, and per permission a <code>permissions</code> and a <code>confirm</code> switch, plus <code>plugins</code> by plugin id. Only what differs from the defaults is written.</td></tr>
     <tr><td><code>ssh_connections</code></td><td>Saved SSH hosts: <code>name</code>, <code>host</code>, <code>port</code>, <code>username</code>, <code>key_path</code>.</td></tr>
     <tr><td><code>map</code>, <code>map_tokens</code></td><td>The map service and layer, and the saved API keys.</td></tr>
     <tr><td><code>theme</code>, <code>ui</code>, <code>controls</code>, <code>branding</code></td><td>Appearance, pages, the flown track, the compass, windows, manual controls and the logo.</td></tr>
@@ -280,6 +283,11 @@ python serve.py [PORT] [CONNECTION]      # backend only, UI in a browser</code><
   <li><code>GET /api/version</code>: the product name and the running version.</li>
   <li><code>GET /api/mavlink/capabilities</code>: which features the connected autopilot supports, and why a missing one is missing.</li>
 </ul>
+<p>
+  <code>/mcp</code> on the same port is the <a href="mcp.html">MCP server</a>
+  for AI clients: Streamable HTTP, this computer only, with the token, and only
+  while it is switched on.
+</p>
 <p>
   The rest of the API is internal and may change between releases. The
   auto-connect part of it is documented as a contract in the

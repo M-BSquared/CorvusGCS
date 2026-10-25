@@ -31,6 +31,32 @@
 }
 .guide .nav-list a[aria-current="page"] { color: var(--text-1); background: rgb(var(--tint-rgb) / 0.06); }
 
+/* The website's grid, contours and glow behind the top of every page,
+   fading out before the text gets long. */
+.guide { position: relative; }
+.guide::before {
+  content: "";
+  position: absolute; inset: 0 0 auto 0;
+  height: 560px;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(40% 70% at 70% 0%, var(--glow), transparent 70%),
+    linear-gradient(to right, var(--grid-line) 1px, transparent 1px) 0 0 / 64px 64px,
+    linear-gradient(to bottom, var(--grid-line) 1px, transparent 1px) 0 0 / 64px 64px;
+  -webkit-mask-image: linear-gradient(180deg, #000 30%, transparent);
+          mask-image: linear-gradient(180deg, #000 30%, transparent);
+}
+.guide-layout { position: relative; }
+
+/* The group name above the title gets the website's survey marker. */
+.doc > .eyebrow::before {
+  content: "";
+  width: 7px; height: 7px;
+  rotate: 45deg;
+  background: var(--mark);
+}
+
 /* ===================================================================
    Layout: sidebar, text, contents.
    =================================================================== */
@@ -59,9 +85,11 @@
 .guide-nav-toggle { display: none; }
 .guide-nav-group + .guide-nav-group { margin-top: 22px; }
 .guide-nav-heading {
+  display: flex; align-items: center; gap: 8px;
   margin-bottom: 6px;
   padding-left: 12px;
-  font-size: 0.6875rem; font-weight: 600;
+  font-family: var(--mono);
+  font-size: 0.6875rem; font-weight: 500;
   letter-spacing: 0.14em; text-transform: uppercase;
   color: var(--text-3);
 }
@@ -81,7 +109,7 @@
   color: var(--text-1);
   font-weight: 600;
   border-left-color: var(--accent);
-  background: var(--accent-dim);
+  background: linear-gradient(90deg, var(--accent-dim), transparent);
 }
 
 /* --- On this page ------------------------------------------------- */
@@ -106,7 +134,8 @@
   line-height: 1.4;
 }
 .guide-toc li a:hover { color: var(--text-1); }
-.guide-toc li a.is-current { color: var(--accent-bright); border-left-color: var(--accent); }
+.guide-toc li a { transition: color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease; }
+.guide-toc li a.is-current { color: var(--text-1); border-left-color: var(--mark); box-shadow: inset 1px 0 0 var(--mark); }
 
 /* ===================================================================
    The text.
@@ -119,10 +148,18 @@
   margin-bottom: 16px;
 }
 .doc h2 {
+  position: relative;
   font-size: clamp(1.35rem, 1.2rem + 0.6vw, 1.65rem);
   margin: 56px 0 14px;
   padding-top: 26px;
   border-top: 1px solid var(--border-soft);
+}
+/* A short lit segment where the rule starts, like the index on a scale. */
+.doc h2::before {
+  content: "";
+  position: absolute; left: 0; top: -1px;
+  width: 44px; height: 1px;
+  background: var(--mark);
 }
 .doc h3 { font-size: 1.125rem; margin: 34px 0 10px; }
 .doc h4 { font-size: 1rem; margin: 24px 0 8px; }
@@ -201,6 +238,8 @@
 
 /* --- Callouts ------------------------------------------------------ */
 .callout {
+  position: relative;
+  overflow: hidden;
   display: grid;
   grid-template-columns: 20px 1fr;
   gap: 12px;
@@ -212,22 +251,30 @@
 }
 .callout > .icon { color: var(--accent-bright); margin-top: 2px; }
 .callout p { color: var(--text-2); font-size: 0.9375rem; }
+.callout::before {
+  content: "";
+  position: absolute; left: 0; top: 0; bottom: 0;
+  width: 3px;
+  background: var(--accent);
+}
+.callout-warn::before { background: var(--warn); }
 .callout-warn { background: var(--warn-dim); border-color: color-mix(in srgb, var(--warn) 40%, var(--border)); }
 .callout-warn > .icon { color: var(--warn); }
 
 /* --- Screenshots --------------------------------------------------- */
-.doc-shot { margin: 1.6em 0; }
+.doc-shot { margin: 2em 0; }
 .doc-shot a {
   display: block;
   overflow: hidden;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius);
   border: 1px solid var(--border);
-  box-shadow: var(--shadow-soft);
-  transition: border-color 0.15s ease;
+  box-shadow: var(--shadow-window);
+  transition: border-color 0.2s ease;
   text-decoration: none;
 }
-.doc-shot a:hover { border-color: var(--accent); }
-.doc-shot img { width: 100%; }
+.doc-shot a:hover { border-color: color-mix(in srgb, var(--accent) 60%, var(--border)); }
+.doc-shot img { width: 100%; transition: scale 0.6s var(--ease-out); }
+.doc-shot a:hover img { scale: 1.015; }
 .doc-shot figcaption { margin-top: 10px; color: var(--text-3); font-size: 0.875rem; }
 
 /* --- Cards on the overview page ------------------------------------ */
@@ -239,18 +286,38 @@
   padding: 0;
   list-style: none;
 }
-.doc-cards li { margin: 0; }
+.doc .doc-cards { padding: 0; margin: 1.2em 0 0; }
+.doc .doc-cards li { margin: 0; }
 .doc-cards a {
+  position: relative;
+  isolation: isolate;
   display: block;
   height: 100%;
-  padding: 16px 18px;
+  padding: 18px 20px;
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: 6px;
   background: var(--surface-1);
   text-decoration: none;
-  transition: border-color 0.15s ease, background-color 0.15s ease;
+  transition: border-color 0.2s ease, translate 0.25s var(--ease-out), box-shadow 0.25s ease;
 }
-.doc-cards a:hover { border-color: var(--accent); background: var(--surface-2); }
+.doc-cards a:hover { border-color: var(--border-strong); translate: 0 -2px; box-shadow: var(--shadow); }
+/* The same pointer light as the website's feature cards; script.js places it. */
+.doc-cards a::before {
+  content: "";
+  position: absolute; inset: 0; z-index: -1;
+  border-radius: inherit;
+  background: radial-gradient(300px circle at var(--mx, 50%) var(--my, 0%), var(--spot), transparent 60%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+.doc-cards a:hover::before { opacity: 1; }
+.doc-cards strong::after {
+  content: " \2192";
+  color: var(--mark);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.doc-cards a:hover strong::after { opacity: 1; }
 .doc-cards strong { display: block; color: var(--text-1); margin-bottom: 4px; }
 .doc-cards span { display: block; color: var(--text-2); font-size: 0.875rem; line-height: 1.5; }
 
@@ -279,7 +346,9 @@
   font-size: 0.75rem;
   font-weight: 500;
 }
-.doc-pager .icon { color: var(--text-3); }
+.doc-pager .icon { color: var(--text-3); transition: translate 0.2s var(--ease-out), color 0.2s ease; }
+.doc-pager-prev:hover .icon { translate: -3px 0; color: var(--accent-bright); }
+.doc-pager-next:hover .icon { translate: 3px 0; color: var(--accent-bright); }
 .doc-pager-next { grid-column: 2; justify-content: flex-end; text-align: right; }
 
 .doc-edit { max-width: var(--measure); margin-top: 20px; font-size: 0.8125rem; }

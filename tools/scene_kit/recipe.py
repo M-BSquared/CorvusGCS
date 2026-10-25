@@ -43,7 +43,7 @@ RC_BINDINGS: dict[str, dict[str, int]] = {
 # Analysis page's sub-pages (src/js/analysis.js).
 NAV_IDS = ("home", "mission", "setup", "analysis", "logs", "settings")
 SETUP_VIEWS = ("calibration", "control", "tuning", "motors", "safety", "battery",
-               "sik", "rtk", "remoteid", "parameters", "firmware", "video")
+               "sik", "rtk", "remoteid", "parameters", "firmware", "video", "firstsetup")
 ANALYSIS_VIEWS = ("ulog", "tlog", "review", "scope")
 
 # The SSH connections an ``ssh`` scene saves, by the name the card shows. The
