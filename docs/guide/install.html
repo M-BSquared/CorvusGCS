@@ -182,6 +182,11 @@
       <td><code>Corvus_GCS-&lt;version&gt;-windows-x64.zip</code></td>
       <td>Unzip anywhere and run <code>Corvus GCS.exe</code>. The build is unsigned, so SmartScreen asks once: <strong>More info</strong>, then <strong>Run anyway</strong>.</td>
     </tr>
+    <tr>
+      <th scope="row">Android (tablet or phone, Android 7 or later)</th>
+      <td><code>Corvus_GCS-&lt;version&gt;-android.apk</code></td>
+      <td>Copy it to the device and open it; Android asks once to allow installs from that source. The app is a full screen window on a Corvus GCS running on a computer, see <a href="#android">The Android app</a>.</td>
+    </tr>
   </tbody>
 </table>
 </div>
@@ -191,6 +196,25 @@
   The Linux AppImage is built on Ubuntu 22.04 on purpose. An AppImage links
   against the C library of the machine it was built on, so building on an older
   release keeps it running on as many distributions as possible.
+</p>
+
+<h2 id="android">The Android app</h2>
+<p>
+  The Android app does not run the ground station itself. It is a full screen
+  window on the Corvus GCS of a computer on the same network, and it opens in
+  <a href="settings.html#tablet-mode">Tablet mode</a> from the first start,
+  whatever the screen reports. Switching tablet mode off in Settings is kept.
+</p>
+<ol>
+  <li>On the computer, start Corvus so it can be reached from the network and name the address the tablet will use, as described in <a href="security.html#second-screen">A second screen on the network</a>.</li>
+  <li>Install the APK on the tablet and open it. It asks once for the address of that computer, for example <code>192.168.1.20:8000</code>, and remembers it.</li>
+  <li>Back at the start of the history offers <strong>Change address</strong> and <strong>Exit</strong>. When the computer cannot be reached the app says so and offers to try again.</li>
+</ol>
+<p>
+  The APK is signed with a debug key unless the build brings its own. To build
+  it yourself, set <code>ANDROID_HOME</code> and run
+  <code>./build-android.sh</code>; <code>--server http://192.168.1.20:8000/</code>
+  puts the address in, so the app never asks.
 </p>
 
 <h2 id="command-line">Starting with a port and a link</h2>
@@ -314,6 +338,7 @@
   <p class="guide-toc-title" id="toc-title">On this page</p>
   <ul>
     <li><a href="#download">Download the app</a></li>
+    <li><a href="#android">The Android app</a></li>
     <li><a href="#command-line">Starting with a port and a link</a></li>
     <li><a href="#first-start">The first start</a></li>
     <li><a href="#updates">Updates</a></li>

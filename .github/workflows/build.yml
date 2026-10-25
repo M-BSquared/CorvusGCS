@@ -11,7 +11,8 @@
 #   appimage    — Linux x86_64 AppImage via ./build.sh   (-> build-appimage.sh).
 #   macos-app   — macOS arm64 .app + .dmg via ./build.sh --dmg.
 #   windows-app — Windows x64 folder + zip via .\build-windows.ps1 (PyInstaller).
-#   release     — on a version tag, attach all three artifacts to a GitHub Release.
+#   android-app — Android APK (tablet mode on by default) via ./build-android.sh.
+#   release     — on a version tag, attach all four artifacts to a GitHub Release.
 #
 # Packaging cannot be cross-built, so each artifact is produced on its own
 # runner. No version is hardcoded anywhere: the build scripts read the repo-root
@@ -269,9 +270,33 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  # --- Android artifact ------------------------------------------------------
+  # A WebView shell (android/) on a Corvus GCS server on the network, so no
+  # Python is bundled. The runner image ships the Android SDK and Gradle.
+  android-app:
+    needs: [frontend]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Build the Android app
+        run: ./build-android.sh
+      - name: Read version
+        id: ver
+        run: echo "version=$(cat VERSION)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v6
+        with:
+          name: Corvus_GCS-${{ steps.ver.outputs.version }}-android
+          path: dist/Corvus_GCS-*-android.apk
+          if-no-files-found: error
+          retention-days: 30
+
   # --- release (version tags only) -------------------------------------------
   release:
-    needs: [appimage, macos-app, windows-app]
+    needs: [appimage, macos-app, windows-app, android-app]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     permissions:
@@ -355,7 +380,7 @@ jobs:
 
           # Refuse to publish half a release. Everything under artifacts/
           # other than the .lock files is what the three build jobs produced —
-          # the three bundles — so anything missing here means an upload
+          # the four bundles — so anything missing here means an upload
           # reported success without taking.
           for f in artifacts/*; do
             [ -f "$f" ] || continue

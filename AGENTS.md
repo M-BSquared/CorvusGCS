@@ -125,8 +125,15 @@ the current host and fails loudly rather than pretending to cross-build.
 | macOS (arm64 / x86_64) | `./build.sh --dmg` -> `build-macos-app.sh` | `dist/Corvus GCS.app` (+ `dist/Corvus_GCS-<version>-macOS-<arch>.dmg`) | relocatable framework CPython, ad-hoc codesigned |
 | Windows x64 | `.\build-windows.ps1 [-Zip]` | `dist\Corvus GCS\` (+ `dist\Corvus_GCS-<version>-windows-x64.zip`) | PyInstaller, not a hand-relocated interpreter; `./build.sh` from a Windows shell points here rather than cross-building |
 
+The Android app (`android/`, `./build-android.sh`, `dist/Corvus_GCS-<version>-android.apk`)
+is not a fourth bundle of the app. It is a WebView shell on a Corvus server on
+the network, with no Python inside, whose user agent carries `CorvusAndroid` so
+the web UI starts in tablet mode (`src/js/touch.js` and the inline script in
+`src/index.html` read the same marker). Its `versionName` reads `VERSION` and
+no literal lives in `android/`.
+
 CI is GitHub Actions only: `.github/workflows/build.yml` (test + test-windows +
-lint + frontend + appimage + macos-app + windows-app + release) calls the same
+lint + frontend + appimage + macos-app + windows-app + android-app + release) calls the same
 `./build.sh` a developer runs locally. There is no second pipeline; do not add
 one back.
 

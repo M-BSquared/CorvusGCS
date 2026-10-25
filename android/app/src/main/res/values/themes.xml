@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Corvus" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/corvus_bg</item>
+        <item name="android:statusBarColor">@color/corvus_bg</item>
+        <item name="android:navigationBarColor">@color/corvus_bg</item>
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+    </style>
+    <color name="corvus_bg">#0D1117</color>
+    <color name="corvus_fg">#E6EDF3</color>
+</resources>

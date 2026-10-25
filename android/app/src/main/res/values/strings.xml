@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Corvus GCS</string>
+    <string name="server_title">Corvus GCS server</string>
+    <string name="server_message">Address of the computer running Corvus GCS, for example 192.168.1.20:8080.</string>
+    <string name="server_hint">192.168.1.20:8080</string>
+    <string name="connect">Connect</string>
+    <string name="retry">Try again</string>
+    <string name="change_server">Change address</string>
+    <string name="exit">Exit</string>
+    <string name="cannot_reach">Cannot reach %1$s.</string>
+    <string name="leave_title">Leave Corvus GCS?</string>
+</resources>

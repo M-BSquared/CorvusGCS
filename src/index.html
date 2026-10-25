@@ -100,10 +100,11 @@
   } catch (e) {}
   try {
     /* Tablet mode (js/touch.js), kept per device. Until the operator has
-       chosen, a finger as the primary pointer starts in it. The viewport is
+       chosen, a finger as the primary pointer, or the Android app, starts in it. The viewport is
        held at 1 so iOS does not zoom in on every field it focuses. */
     var tm = localStorage.getItem("corvus.touch");
-    var coarse = !!(window.matchMedia && window.matchMedia("(pointer: coarse)").matches);
+    var coarse = !!(window.matchMedia && window.matchMedia("(pointer: coarse)").matches) ||
+      /\bCorvusAndroid\b/.test(navigator.userAgent || "");
     if (tm === "1" || (tm === null && coarse)) {
       document.documentElement.setAttribute("data-touch", "on");
       var vp = document.querySelector('meta[name="viewport"]');

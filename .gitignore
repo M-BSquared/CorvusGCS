@@ -27,3 +27,10 @@ __pycache__/
 !/plugins/schwalby/
 !/plugins/ssh-launcher/
 !/plugins/vibration/
+
+# android
+/android/.gradle/
+/android/build/
+/android/app/build/
+/android/local.properties
+*.apk

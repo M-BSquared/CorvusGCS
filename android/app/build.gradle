@@ -1,0 +1,54 @@
+plugins {
+    id "com.android.application"
+}
+
+// The one version lives in the repo-root VERSION (YYYY.MM.PP); nothing here
+// types it. versionCode is the same number made monotonic for Android.
+def corvusVersion = file("../../VERSION").text.trim()
+def parts = corvusVersion.tokenize(".")
+def corvusCode = (parts[0].toInteger() - 2000) * 100000 + parts[1].toInteger() * 1000 + parts[2].toInteger()
+
+android {
+    namespace "de.corvusgcs.app"
+    compileSdk 35
+
+    defaultConfig {
+        applicationId "de.corvusgcs.app"
+        minSdk 24
+        targetSdk 35
+        versionCode corvusCode
+        versionName corvusVersion
+        // Optional address the app opens first, e.g. -PcorvusServer=http://192.168.1.20:8080/
+        buildConfigField "String", "DEFAULT_SERVER", "\"${project.findProperty('corvusServer') ?: ''}\""
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    signingConfigs {
+        release {
+            def ks = System.getenv("CORVUS_KEYSTORE")
+            if (ks) {
+                storeFile file(ks)
+                storePassword System.getenv("CORVUS_KEYSTORE_PASSWORD")
+                keyAlias System.getenv("CORVUS_KEY_ALIAS")
+                keyPassword System.getenv("CORVUS_KEY_PASSWORD")
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            // Without a release keystore the APK is signed with the debug key,
+            // so it still installs; a store release brings its own.
+            signingConfig System.getenv("CORVUS_KEYSTORE") ? signingConfigs.release : signingConfigs.debug
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}

@@ -47,8 +47,9 @@ window.Corvus = window.Corvus || {};
   a config key would put the laptop into tablet mode the moment the tablet
   switched it on. Until the operator has chosen, a device whose primary
   pointer is a finger (iPad, Android tablet) starts in it and a laptop does
-  not; the inline script in index.html makes the same decision before the
-  first paint.
+  not, and so does the Android app (android/), which says so with CorvusAndroid
+  in its user agent whatever the screen reports; the inline script in
+  index.html makes the same decision before the first paint.
 */
 Corvus.touch = (function () {
   const KEY = "corvus.touch";
@@ -94,6 +95,15 @@ Corvus.touch = (function () {
     }
   }
 
+  /** Whether the page runs in the Corvus Android app, which is a tablet by design. */
+  function androidApp() {
+    try {
+      return !!(typeof navigator !== "undefined" && /\bCorvusAndroid\b/.test(navigator.userAgent || ""));
+    } catch (_e) {
+      return false;
+    }
+  }
+
   /** Whether this device has a touch screen at all, primary or not. */
   function hasTouchscreen() {
     if (coarsePointer()) return true;
@@ -114,10 +124,10 @@ Corvus.touch = (function () {
     return null;
   }
 
-  /** What the device starts in: the stored choice, else a finger means on. */
+  /** What the device starts in: the stored choice, else a finger or the Android app means on. */
   function preferred() {
     const s = stored();
-    return s === null ? coarsePointer() : s;
+    return s === null ? (coarsePointer() || androidApp()) : s;
   }
 
   function viewportMeta() {

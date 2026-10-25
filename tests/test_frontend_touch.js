@@ -134,6 +134,28 @@ function testAFingerStartsInTabletModeAndAMouseDoesNot() {
   assert.equal(attrs["data-touch"], undefined);
 }
 
+function testTheAndroidAppStartsInTabletModeOnAnyScreen() {
+  storage = {};
+  coarse = false;
+  Object.defineProperty(global, "navigator", {
+    value: { maxTouchPoints: 0, userAgent: "Mozilla/5.0 (Linux; Android 14) CorvusAndroid/2026.10.01" },
+    configurable: true,
+  });
+  try {
+    assert.equal(T.applySaved(), true);
+    assert.equal(storage["corvus.touch"], undefined, "a detected start is not a choice");
+    storage = { "corvus.touch": "0" };
+    assert.equal(T.applySaved(), false, "the operator can still switch it off");
+    const html = fs.readFileSync(path.join(SRC, "index.html"), "utf8");
+    assert.ok(html.includes("CorvusAndroid"), "the first paint makes the same default");
+  } finally {
+    Object.defineProperty(global, "navigator", {
+      value: { maxTouchPoints: 0, vibrate: () => true },
+      configurable: true,
+    });
+  }
+}
+
 function testTheOperatorsChoiceOutranksTheScreen() {
   coarse = true;
   storage = { "corvus.touch": "0" };
@@ -472,6 +494,7 @@ function testThePagePaintsInTheModeItWillRunIn() {
 
 const tests = [
   testAFingerStartsInTabletModeAndAMouseDoesNot,
+  testTheAndroidAppStartsInTabletModeOnAnyScreen,
   testTheOperatorsChoiceOutranksTheScreen,
   testTheSwitchIsKeptOnThisDeviceAndToldAround,
   testAHeldFingerIsARightClick,
