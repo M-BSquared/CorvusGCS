@@ -52,6 +52,7 @@ pymavlink does.
 | Remote ID: the identity coerced to what may go on air, the four OPEN_DRONE_ID messages at 1 Hz, the aircraft's ARM_STATUS verdict, the broadcast status | `src/protocol/remote_id.rs` (`corvus_link.remote_id`) | `corvus/mavlink_remote_id.py` keeps the methods; `corvus/remote_id.py` keeps the page's option lists and filing checks |
 | Telemetry: BATTERY_STATUS detail and the battery fields with their latched cell count and drain series, GNSS_INTEGRITY (decoded and CRC checked from an UNKNOWN_441 frame too), the attitude and velocity setpoints, the RC channels, RADIO_STATUS, heartbeat jitter, link quality and the page stream rates | `src/protocol/telemetry.rs` (`corvus_link.telemetry`) | `corvus/mavlink_telemetry.py` keeps the methods and the operation lock around the stream requests; the battery estimator stays in `corvus/battery.py` |
 | Flight commands: mode, arm and disarm, takeoff in each stack's order, land, RTL, set home, hold, the plugin command table, velocity setpoints, and the mission sequences (fly to points, mission start, reposition) with their abort checks between steps | `src/protocol/flight.rs` (`corvus_link.flight`) | `corvus/mavlink_flight.py` keeps the methods, the tunables and the priority lock around mode, disarm, land and RTL; `corvus/mavlink_missions.py` delegates its sequences |
+| The bridge's receive path: the receive loop (degraded and lost heartbeats, read failures), the duplicate frame filter, the dispatcher with the aircraft's own state (heartbeat, position, attitude, GPS, battery, versions, home), the source checks, and the COMMAND_LONG / COMMAND_INT waits with their ACK registry | `src/bridge/receive.rs` (`corvus_link.bridge`) | `corvus/mavlink_bridge.py` keeps the methods, the state they read and write, the operation lock around the command waits, and the threads |
 
 `src/protocol/host.rs` holds what every engine asks of the bridge: logger,
 command error, console, events, send lock, and Python's number conversions.
@@ -142,4 +143,9 @@ pymavlink stays in the `test` dependency group as the reference:
   scripted vehicle that accepts, refuses and confirms in telemetry now,
   late or never, with operator aborts landing between sequence steps and
   the link dropping.
+- `tests/test_bridge_receive_parity.py` does it for the receive path:
+  random frame streams from this vehicle, its other components and other
+  systems through both dispatchers on one fake clock, every store update
+  and handler call compared; the helpers, the duplicate filter, failing
+  handlers, the receive loop's endings and every kind of ACK wait.
 - The rest of the suite drives the bridge with corvus_link's messages.

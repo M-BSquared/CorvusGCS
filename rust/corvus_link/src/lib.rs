@@ -12,6 +12,7 @@ use std::sync::{Mutex, MutexGuard};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyModule};
 
+mod bridge;
 mod link;
 mod protocol;
 mod wire;
@@ -226,5 +227,6 @@ fn corvus_link(m: &Bound<'_, PyModule>) -> PyResult<()> {
     protocol::remote_id::register(py, m)?;
     protocol::telemetry::register(py, m)?;
     protocol::flight::register(py, m)?;
+    bridge::receive::register(py, m)?;
     Ok(())
 }

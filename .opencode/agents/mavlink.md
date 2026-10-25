@@ -93,7 +93,8 @@ shell, on board log format.
   `rust/corvus_link/README.md`.
 - The parameter, mission, FTP, log and shell protocols and the Setup
   commands (calibration, motor test, autotune, reboot), Remote ID, the
-  telemetry handlers and the flight commands are engines in
+  telemetry handlers, the flight commands and the bridge's receive path are
+  engines in
   `corvus_link` (`rust/corvus_link/src/protocol/`); the `corvus/mavlink_*.py`
   module of the same name is each one's seat on the bridge. A protocol change goes into the engine and keeps the
   `tests/test_*_parity.py` files green against the Python references in
