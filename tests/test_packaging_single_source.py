@@ -50,7 +50,7 @@ INSTALLERS = {
 # The packages the application needs at runtime. Adding one here without
 # adding it to pyproject.toml fails, which is the point.
 EXPECTED_RUNTIME = {
-    "pymavlink", "paramiko", "pyserial", "PySide6-Essentials", "PySide6-Addons",
+    "paramiko", "pyserial", "PySide6-Essentials", "PySide6-Addons",
     "PySide6-WebEngine",
 }
 QT = {"PySide6-Essentials", "PySide6-Addons", "PySide6-WebEngine"}
@@ -99,6 +99,39 @@ def test_every_runtime_dependency_states_a_floor() -> None:
             "used to be built this way and could ship against a pymavlink "
             "older than the code needs"
         )
+
+
+def test_every_installer_builds_corvus_link() -> None:
+    """MAVLink is the Rust extension in rust/corvus_link, not a wheel from an
+    index. An installer that forgets it builds a Corvus that cannot fly."""
+    needles = {
+        ROOT / "run.sh": '"$REPO_DIR/rust/corvus_link"',
+        ROOT / "build-appimage.sh": '"$REPO_DIR/rust/corvus_link"',
+        ROOT / "build-macos-app.sh": '"$REPO_DIR/rust/corvus_link"',
+        ROOT / "build-windows.ps1": '(Join-Path $RepoDir "rust\\corvus_link")',
+    }
+    for path, needle in needles.items():
+        assert needle in path.read_text(encoding="utf-8"), f"{path.name} does not build corvus_link"
+    assert GITHUB_CI.read_text(encoding="utf-8").count("pip install ./rust/corvus_link") == 2
+
+
+def test_a_lock_never_pins_the_local_extension() -> None:
+    """corvus_link is built from the checkout; a lock line for it would name
+    this machine's path and fail every rebuild elsewhere."""
+    for name in ("build-appimage.sh", "build-macos-app.sh", "build-windows.ps1"):
+        text = (ROOT / name).read_text(encoding="utf-8")
+        assert "--exclude corvus-link" in text, name
+
+
+def test_pymavlink_is_a_test_reference_only() -> None:
+    assert "pymavlink" not in _group("app")
+    assert "pymavlink" in _group("test")
+    for path in (ROOT / "corvus").rglob("*.py"):
+        for line in path.read_text(encoding="utf-8").splitlines():
+            stripped = line.strip()
+            assert not stripped.startswith(("from pymavlink", "import pymavlink")), (
+                f"{path.relative_to(ROOT)} imports pymavlink; the app uses corvus_link"
+            )
 
 
 def test_the_headless_group_is_the_app_group_without_qt() -> None:

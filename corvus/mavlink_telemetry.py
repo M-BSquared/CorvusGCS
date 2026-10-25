@@ -14,17 +14,18 @@ import threading
 import time
 from typing import Any
 
-from pymavlink import mavutil
-from pymavlink.generator.mavcrc import x25crc
+from corvus_link import mavutil
+from corvus_link import x25crc
 
 from . import battery as battery_math
 from . import rc_config
 
-# GNSS_INTEGRITY (id 441) lives in MAVLink's development.xml, not in the
-# ardupilotmega dialect pymavlink loads, so it reaches the bridge as an
-# UNKNOWN_441 frame and is decoded here. The layout and CRC seed are the
-# message definition's; the CRC is checked because pymavlink cannot check a
-# frame it does not know, and an unchecked frame is a guess about jamming.
+# GNSS_INTEGRITY (id 441) lives in MAVLink's development.xml. corvus_link's
+# MAVLink 2 view decodes it; a link still on the MAVLink 1 view (ids up to 255
+# only) hands it over as an UNKNOWN_441 frame, which is decoded here. The
+# layout and CRC seed are the message definition's; the CRC is checked because
+# nothing upstream checked a frame it did not know, and an unchecked frame is a
+# guess about jamming.
 _GNSS_INTEGRITY_ID = 441
 _GNSS_INTEGRITY_CRC_EXTRA = 169
 _GNSS_INTEGRITY = struct.Struct("<IHHBBBBBBBBB")
@@ -306,7 +307,7 @@ class TelemetryMixin:
         Accepts the decoded message too, for a dialect that one day carries
         it. Only the first receiver is published, for the reason
         _handle_battery_status gives, and only the aircraft's: an unknown
-        frame has no source id pymavlink could read, so it is checked here.
+        frame has no source id corvus_link could read, so it is checked here.
         """
         if msg.get_type() == "GNSS_INTEGRITY":
             fields = {

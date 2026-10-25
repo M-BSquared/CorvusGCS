@@ -13,7 +13,7 @@ import threading
 from typing import Any
 
 import pytest
-from pymavlink import mavutil
+from corvus_link import mavutil
 
 from corvus import ardupilot_safety, geofence, safety_config
 from corvus.mavlink_bridge import MavlinkBridge

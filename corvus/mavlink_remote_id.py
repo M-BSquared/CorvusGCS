@@ -69,7 +69,7 @@ class RemoteIdMixin:
     def remote_id_supported(self) -> bool:
         """Whether the live link can carry the Remote ID messages at all.
 
-        ``OPEN_DRONE_ID_*`` are MAVLink 2 messages, and pymavlink only grows
+        ``OPEN_DRONE_ID_*`` are MAVLink 2 messages, and corvus_link only grows
         the send methods for them once the dialect has been upgraded — which
         happens when the first v2 frame arrives. So this is a fact about the
         connected vehicle, not about this build: a v1-only autopilot genuinely

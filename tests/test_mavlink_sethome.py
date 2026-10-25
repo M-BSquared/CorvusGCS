@@ -20,7 +20,7 @@ from typing import Any
 from collections.abc import Callable
 
 import pytest
-from pymavlink import mavutil
+from corvus_link import mavutil
 
 from corvus.mavlink_bridge import MavlinkBridge
 from corvus.state_store import VehicleStateStore

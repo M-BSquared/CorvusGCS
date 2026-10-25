@@ -14,7 +14,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from pymavlink import mavutil
+from corvus_link import mavutil
 
 from corvus.mavlink_bridge import MavlinkBridge
 from corvus.state_store import VehicleStateStore
@@ -60,7 +60,7 @@ class _FakeMav:
 
 
 class FakeConnectConnection:
-    """Minimal pymavlink connection stand-in for a successful _connect()."""
+    """Minimal mavutil connection stand-in for a successful _connect()."""
 
     def __init__(self) -> None:
         self.mav = _FakeMav()

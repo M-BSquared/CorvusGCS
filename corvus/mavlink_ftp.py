@@ -109,7 +109,7 @@ def encode_ftp_payload(
     seq: int, session: int, opcode: int, *,
     offset: int = 0, data: bytes = b"", size: int | None = None,
 ) -> list[int]:
-    """Build the 251 byte payload list pymavlink's sender expects."""
+    """Build the 251 byte payload list corvus_link's sender expects."""
     body = bytes(data[:FTP_DATA_MAX])
     length = len(body) if size is None else size
     header = _FTP_HEADER.pack(

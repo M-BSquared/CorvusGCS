@@ -149,6 +149,8 @@ $PipLog = Join-Path $BuildDir "pip.log"
 & $VenvPy -m pip install --upgrade pip *>> $PipLog
 if ($LASTEXITCODE -eq 0) { & $VenvPy -m pip install @DepsArgs *>> $PipLog }
 if ($LASTEXITCODE -eq 0) { & $VenvPy -m pip install --group "${Pyproject}:package-windows" *>> $PipLog }
+# MAVLink is corvus_link, the Rust extension; building it needs cargo here.
+if ($LASTEXITCODE -eq 0) { & $VenvPy -m pip install (Join-Path $RepoDir "rust\corvus_link") *>> $PipLog }
 if ($LASTEXITCODE -ne 0) {
     Write-Host "--- last 40 lines of $PipLog ---"
     Get-Content $PipLog -Tail 40
@@ -159,7 +161,7 @@ if ($LASTEXITCODE -ne 0) {
 # can be told to resolve to the same versions:
 #   copy dist\Corvus_GCS-<version>-windows-x64.lock requirements.lock
 New-Item -ItemType Directory -Force -Path $DistDir | Out-Null
-$Frozen = & $VenvPy -m pip freeze --all --exclude-editable
+$Frozen = & $VenvPy -m pip freeze --all --exclude-editable --exclude corvus-link
 if ($LASTEXITCODE -eq 0) {
     @(
         "# Corvus GCS $Version - Windows x64, python $($pyInfo.version)",
@@ -275,9 +277,9 @@ $PyiArgs = @(
     # and are never bundled.
     "--add-data", "$PluginStage;plugins",
     "--hidden-import", "corvus.app",
-    # pymavlink generates its dialects at import time from data the analyser
-    # cannot see, so the whole package is collected rather than guessed at.
-    "--collect-all", "pymavlink",
+    # corvus_link registers corvus_link.mavutil at import time, which the
+    # analyser cannot see; collecting the package keeps the extension whole.
+    "--collect-all", "corvus_link",
     # QtWebEngine links the QtQml and QtQuick libraries, and PyInstaller
     # collects those as libraries either way. Their Python modules are never
     # imported, and their hooks would add PySide6's whole QML tree (Qt3D,
@@ -287,15 +289,8 @@ $PyiArgs = @(
     "--exclude-module", "PySide6.QtQuickWidgets"
 )
 if ($Ico) { $PyiArgs += @("--icon", $Ico) }
-# pymavlink only ever loads its `all` dialect (corvus/app.py pins it). The
-# others, each once for MAVLink 1 and once for 2, stay out of the archive,
-# and lxml with them (tools/bundle_trim.py says why neither is needed).
-$Dialects = Join-Path $VenvDir "Lib\site-packages\pymavlink\dialects"
-foreach ($Wire in @("v10", "v20")) {
-    Get-ChildItem (Join-Path $Dialects $Wire) -Filter "*.py" |
-        Where-Object { $_.BaseName -notin @("all", "__init__") } |
-        ForEach-Object { $PyiArgs += @("--exclude-module", "pymavlink.dialects.$Wire.$($_.BaseName)") }
-}
+# lxml came in with pymavlink and nothing Corvus ships loads it
+# (tools/bundle_trim.py).
 $PyiArgs += @("--exclude-module", "lxml")
 $PyiArgs += $Entry
 
@@ -305,7 +300,7 @@ if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed" }
 $Exe = Join-Path $AppDir "$AppName.exe"
 if (-not (Test-Path $Exe)) { throw "expected $Exe, which PyInstaller did not produce" }
 
-# The dialect XML collect-all copied, Qt translations, Chromium locales but
+# Qt translations, Chromium locales but
 # en-US and de: data files PyInstaller collects and the app never reads.
 Write-Host ">>> Trimming what the app never loads ..."
 & $VenvPy (Join-Path $RepoDir "tools\bundle_trim.py") (Join-Path $AppDir "_internal")
@@ -313,7 +308,7 @@ if ($LASTEXITCODE -ne 0) { throw "trimming the bundle failed" }
 
 # ---- 6. verify --------------------------------------------------------------
 # The failure this catches is the one that matters: a bundle that builds and
-# then cannot import Qt, pymavlink or the app itself on a machine without them.
+# then cannot import Qt, corvus_link or the app itself on a machine without them.
 # It runs against the bundled interpreter payload, not the build venv.
 if (-not $NoVerify) {
     Write-Host ">>> Verifying the bundle ..."

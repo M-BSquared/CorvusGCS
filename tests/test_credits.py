@@ -1,7 +1,7 @@
 """The Credits dialog names every Python package the backend ships.
 
-pyproject.toml's ``headless`` group names three packages, and those pull in
-eight more. A dependency added there, or a new transitive one, would ship in
+pyproject.toml's ``headless`` group names two packages, and those pull in
+more. A dependency added there, or a new transitive one, would ship in
 every bundle without a credit, so the whole installed tree is checked against
 src/js/credits.js rather than a hand-kept list.
 """
@@ -50,7 +50,7 @@ def _installed_tree(roots: list[str]) -> set[str]:
 def test_every_shipped_python_package_is_credited() -> None:
     text = _norm(CREDITS.read_text(encoding="utf-8"))
     tree = _installed_tree(_headless_roots())
-    assert {"pymavlink", "paramiko", "pyserial"} <= tree, tree
+    assert {"paramiko", "pyserial"} <= tree, tree
     missing = sorted(name for name in tree if not re.search(rf"\b{re.escape(name)}\b", text))
     assert not missing, f"shipped but not in src/js/credits.js: {missing}"
 
@@ -61,3 +61,12 @@ def test_the_lgpl_2_1_text_ships_for_paramiko() -> None:
     assert "Version 2.1, February 1999" in text
     licence = metadata.distribution("paramiko").metadata
     assert "2.1" in (licence.get("License-Expression") or licence.get("License") or "")
+
+
+def test_the_mavlink_module_and_what_it_links_are_credited() -> None:
+    """corvus_link is compiled from rust/corvus_link; the crates it links
+    and the message definitions it embeds ship inside it."""
+    text = CREDITS.read_text(encoding="utf-8")
+    for name in ("MAVLink message definitions", "PyO3", "sha2", "socket2", "serialport-rs"):
+        assert name in text, name
+    assert "pymavlink" not in text, "pymavlink no longer ships"

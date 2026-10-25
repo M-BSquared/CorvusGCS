@@ -9,7 +9,7 @@ ArduPilot, together with the disarm lines the operator is told about.
 
 from __future__ import annotations
 
-from pymavlink import mavutil as mv
+from corvus_link import mavutil as mv
 
 from corvus import autopilot
 from corvus.mavlink_bridge import KILL_RECHECK_S, KILL_SETTLE_S, PREARM_REPORT_GAP_S, MavlinkBridge

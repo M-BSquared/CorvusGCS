@@ -29,7 +29,7 @@ from __future__ import annotations
 from types import SimpleNamespace as NS
 
 import pytest
-from pymavlink import mavutil as mv
+from corvus_link import mavutil as mv
 
 from corvus import autopilot as autopilot_dialect
 from corvus.mavlink_bridge import (

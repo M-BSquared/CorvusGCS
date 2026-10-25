@@ -32,10 +32,12 @@ requires-python = ">=3.12"
 # everything except the desktop window. CI runs the suite without Qt on
 # purpose: no headless test imports it, and ~100 MB of Chromium per test job
 # buys nothing.
+#
+# MAVLink is not in this table: it is corvus_link, built from rust/corvus_link
+# (a Rust extension with pymavlink's interface), and every installer builds it
+# with `pip install <repo>/rust/corvus_link` after the group. That needs a Rust
+# toolchain (cargo) on the build machine, never on the target.
 headless = [
-    # MAVLink protocol + dialects. 2.4 is the floor for the message set the
-    # bridge and the forwarder use.
-    "pymavlink>=2.4",
     # SSH to the companion computer.
     "paramiko>=3.0",
     # The serial transport under MAVLink, and the firmware uploader's own use
@@ -60,6 +62,10 @@ app = [
 test = [
     { include-group = "headless" },
     "pytest>=7.0",
+    # The reference corvus_link is held to: the parity tests compare every
+    # message, constant and frame against it, and the simulated vehicle in
+    # tools/scene_kit speaks it. Never shipped.
+    "pymavlink>=2.4",
 ]
 # The linter CI runs.
 lint = ["ruff>=0.5"]

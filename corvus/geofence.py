@@ -11,7 +11,7 @@ the corner count in param1. What differs is what makes the fence act, which is
 a parameter question and so belongs to the safety schema of each stack
 (:func:`corvus.safety_config.geofence_enable_writes` and its ArduPilot twin).
 
-Nothing here imports pymavlink, so the HTTP layer and the tests can use it
+Nothing here imports corvus_link, so the HTTP layer and the tests can use it
 without a link.
 """
 from __future__ import annotations
@@ -28,8 +28,8 @@ from .paths import corvus_path
 logger = logging.getLogger("corvus.geofence")
 
 # MAV_CMD_NAV_FENCE_POLYGON_VERTEX_INCLUSION and MAV_MISSION_TYPE_FENCE, stated
-# here so this module stays importable without pymavlink. The bridge checks
-# both against pymavlink at import.
+# here so this module stays importable without corvus_link. The bridge checks
+# both against corvus_link at import.
 MAV_CMD_NAV_FENCE_POLYGON_VERTEX_INCLUSION = 5001
 MAV_MISSION_TYPE_FENCE = 1
 

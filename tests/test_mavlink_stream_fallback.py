@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace as NS
 
-from pymavlink import mavutil as mv
+from corvus_link import mavutil as mv
 
 from corvus import mavlink_bridge as mb
 from corvus.mavlink_bridge import INTERVAL_REQUEST_SILENT_LIMIT, MavlinkBridge

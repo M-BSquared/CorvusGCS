@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from pymavlink import mavutil
+from corvus_link import mavutil
 
 from corvus.mavlink_bridge import MavlinkBridge
 from corvus.state_store import VehicleStateStore

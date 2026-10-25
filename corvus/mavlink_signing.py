@@ -5,7 +5,7 @@ import os
 import stat
 from typing import Any
 
-from pymavlink import mavutil
+from corvus_link import mavutil
 
 MAVLINK_SIGNING_KEY_FILE_ENV = "CORVUS_MAVLINK_SIGNING_KEY_FILE"
 _SIGNING_UNSIGNED_MESSAGE_IDS = frozenset({

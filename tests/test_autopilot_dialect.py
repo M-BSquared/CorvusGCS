@@ -18,7 +18,7 @@ from __future__ import annotations
 import math
 
 import pytest
-from pymavlink import mavutil as mv
+from corvus_link import mavutil as mv
 
 from corvus import autopilot
 

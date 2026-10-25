@@ -14,7 +14,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
-from pymavlink import mavutil
+from corvus_link import mavutil
 
 from corvus.mavlink_bridge import GCS_SYSTEM_ID, MavlinkBridge, _is_vehicle_heartbeat
 from corvus.state_store import VehicleStateStore

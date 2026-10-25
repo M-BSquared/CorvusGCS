@@ -14,7 +14,7 @@ import threading
 import time
 from typing import Any
 
-from pymavlink import mavutil
+from corvus_link import mavutil
 
 from . import geofence
 from . import mission as mission_plan
@@ -34,7 +34,7 @@ logger = logging.getLogger("corvus.mavlink")
 FLY_TO_MAX_POINTS = 255
 
 # corvus/mission.py states each planner item's MAV_CMD as a frozen literal so
-# it stays importable without pymavlink. This is where that claim is checked:
+# it stays importable without corvus_link. This is where that claim is checked:
 # a mismatch is a wire-format bug, and it fails at import rather than uploading
 # a mission whose "circle" turns out to be some other command entirely.
 _MISSION_CMD_NAMES: dict[str, str] = {
@@ -49,7 +49,7 @@ assert set(_MISSION_CMD_NAMES) == set(mission_plan.COMMAND_OF), \
     "mission.py item types and the MAV_CMD name table disagree"
 for _kind, _name in _MISSION_CMD_NAMES.items():
     assert mission_plan.COMMAND_OF[_kind] == getattr(mavutil.mavlink, _name), \
-        f"mission.py MAV_CMD for {_kind} disagrees with pymavlink"
+        f"mission.py MAV_CMD for {_kind} disagrees with corvus_link"
 assert mission_plan.MAV_CMD_DO_CHANGE_SPEED == mavutil.mavlink.MAV_CMD_DO_CHANGE_SPEED
 assert geofence.MAV_CMD_NAV_FENCE_POLYGON_VERTEX_INCLUSION == \
     mavutil.mavlink.MAV_CMD_NAV_FENCE_POLYGON_VERTEX_INCLUSION
@@ -62,7 +62,7 @@ MISSION_DO_FRAME = mavutil.mavlink.MAV_FRAME_MISSION
 
 # MAV_DO_REPOSITION_FLAGS_CHANGE_MODE: switch into the mode that holds the new
 # position (PX4: Hold, ArduPilot: GUIDED) rather than only moving a target the
-# vehicle may not be following. Pinned by number: not every pymavlink build
+# vehicle may not be following. Pinned by number: not every corvus_link build
 # carries the enum.
 DO_REPOSITION_CHANGE_MODE = 1
 # How long the upload waits with no MISSION_REQUEST and no MISSION_ACK before
@@ -333,7 +333,7 @@ class MissionProtocolMixin:
         # Somebody else may have put a mission on the vehicle: QGroundControl,
         # a companion, a second Corvus. Then what Corvus thought was there is
         # not, and no leg of its plan is claimed to be flown. Two signals: the
-        # mission id PX4 v1.14+ sends (when this pymavlink parses it), and the
+        # mission id PX4 v1.14+ sends (when this corvus_link parses it), and the
         # item count, which every stack sends.
         changed = False
         mission_id = int(getattr(msg, "mission_id", 0) or 0)

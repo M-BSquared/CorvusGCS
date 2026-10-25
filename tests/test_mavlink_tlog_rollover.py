@@ -11,7 +11,7 @@ from pathlib import Path
 from types import SimpleNamespace as NS
 
 import pytest
-from pymavlink import mavutil as mv
+from corvus_link import mavutil as mv
 
 from corvus.mavlink_bridge import MavlinkBridge
 from corvus.state_store import VehicleStateStore

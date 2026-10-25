@@ -252,9 +252,11 @@
 
 <h2 id="from-source">Running from source</h2>
 <p>
-  From a clone of the repository you need <strong>Python 3.12 or newer</strong>.
-  One command creates a virtual environment in <code>.venv/</code>, installs
-  every dependency named in <code>pyproject.toml</code> and opens the app:
+  From a clone of the repository you need <strong>Python 3.12 or newer</strong>
+  and a Rust toolchain (<a href="https://rustup.rs/">rustup.rs</a>) for the
+  MAVLink module. One command creates a virtual environment in
+  <code>.venv/</code>, installs every dependency named in
+  <code>pyproject.toml</code>, builds the MAVLink module and opens the app:
 </p>
 <pre><code>./run.sh
 ./run.sh 8000 serial:/dev/ttyUSB0:57600    # with a port and a connection</code></pre>

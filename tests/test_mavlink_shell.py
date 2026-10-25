@@ -27,7 +27,7 @@ from collections.abc import Callable
 from unittest.mock import MagicMock
 
 import pytest
-from pymavlink import mavutil
+from corvus_link import mavutil
 
 from corvus.mavlink_bridge import MavlinkBridge
 from corvus.state_store import VehicleStateStore

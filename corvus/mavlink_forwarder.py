@@ -142,7 +142,7 @@ def split_frames(buf: bytes) -> tuple[list[bytes], bytes]:
     """Split a byte run into whole MAVLink frames plus the trailing remainder.
 
     Validation is by length and framing only — the CRC needs the per-message
-    CRC_EXTRA table, which belongs to pymavlink, not here. That is enough for
+    CRC_EXTRA table, which belongs to corvus_link, not here. That is enough for
     the job: this exists so a truncated or garbage datagram can never put a
     partial frame onto the link to the aircraft, not to police message content.
     """

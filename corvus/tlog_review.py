@@ -60,7 +60,7 @@ _MAGIC = b"#CORVUS-TLOG "
 # A season of unattended SITL can leave a very large file in the folder, and
 # refusing it with a reason beats an out-of-memory kill of the whole GCS.
 MAX_TLOG_BYTES = 512 * 1024 * 1024
-# pymavlink hands back one Python object per frame. Chunked so peak memory is
+# corvus_link hands back one Python object per frame. Chunked so peak memory is
 # a chunk of parsed messages rather than the whole file's worth at once.
 _CHUNK_BYTES = 1 << 20
 
@@ -180,7 +180,7 @@ def _messages(blob: bytes, start: int = 0) -> Iterable[Any]:
     """Every MAVLink frame in *blob* from *start*, in the order it was received.
 
     A generator, and it matters that callers keep it one: the frames of a
-    recording at :data:`MAX_TLOG_BYTES` are tens of millions of pymavlink
+    recording at :data:`MAX_TLOG_BYTES` are tens of millions of message
     objects, which is gigabytes of Python that no cap on the file size bounds.
     Nothing here may be wrapped in ``list()``.
 
@@ -189,9 +189,9 @@ def _messages(blob: bytes, start: int = 0) -> Iterable[Any]:
     a strict parser throws away the whole flight over it.
     """
     try:
-        from pymavlink import mavutil
-    except ImportError as exc:  # pragma: no cover - pymavlink is a hard dep
-        raise TlogError("pymavlink is not installed on this machine") from exc
+        from corvus_link import mavutil
+    except ImportError as exc:  # pragma: no cover - corvus_link is a hard dep
+        raise TlogError("corvus_link is not installed on this machine") from exc
     link = mavutil.mavlink.MAVLink(None)
     link.robust_parsing = True
     for offset in range(start, len(blob), _CHUNK_BYTES):
@@ -618,7 +618,7 @@ def _mode_name(msg: Any) -> str:
     The words are the *review's*, chosen to match the ULog review so a mode
     band is the same word whichever log it came from ("Return", not "RTL").
     """
-    # Here rather than at the top: it brings pymavlink, which this module
+    # Here rather than at the top: it brings corvus_link, which this module
     # otherwise loads only once a file is actually read.
     from . import autopilot
 

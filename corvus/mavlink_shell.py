@@ -22,7 +22,7 @@ import threading
 from collections.abc import Callable
 from typing import Any
 
-from pymavlink import mavutil
+from corvus_link import mavutil
 
 logger = logging.getLogger("corvus.mavlink")
 

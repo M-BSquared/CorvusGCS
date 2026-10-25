@@ -5,6 +5,8 @@ permission:
   edit:
     "*": "deny"
     "corvus/mavlink_*.py": "allow"
+    "rust/corvus_link/**": "allow"
+    "tests/test_corvus_link_*.py": "allow"
     "corvus/autopilot.py": "allow"
     "corvus/serial_ports.py": "allow"
     "corvus/priority_lock.py": "allow"
@@ -82,9 +84,18 @@ shell, on board log format.
 
 ## Rules for the link
 
-- pymavlink, with `MAVLINK_DIALECT` pinned to `all` by `corvus/app.py`. Code
-  that loads another dialect must change `tools/bundle_trim.py` in the same
-  change (hand that to `build`).
+- `corvus_link` (Rust, `rust/corvus_link`) with pymavlink's interface; the
+  code imports `from corvus_link import mavutil`, never pymavlink. A change to
+  the wire format, a dialect or a link keeps `tests/test_corvus_link_parity.py`
+  and `tests/test_corvus_link_links.py` green against pymavlink, and is rebuilt
+  with `(cd rust/corvus_link && maturin develop --release)` before the suite
+  runs. The link types not built yet are listed in
+  `rust/corvus_link/README.md`.
+- The parameter protocol is `corvus_link.params.ParamEngine`
+  (`rust/corvus_link/src/params.rs`); `corvus/mavlink_params.py` is its seat
+  on the bridge. A protocol change goes into the engine and keeps
+  `tests/test_param_engine_parity.py` green against the Python reference in
+  `tests/reference/`, or changes the reference with it on purpose.
 - Detect firmware from `AUTOPILOT_VERSION`. Never send a `MAV_CMD` or write a
   parameter the connected firmware does not understand; refuse and return the
   reason. Absent parameters fall back, never crash, and are not re-requested on
@@ -119,6 +130,8 @@ text follows the no dash rule. A fix carries a regression test.
 ## Checks
 
 ```
+(cd rust/corvus_link && cargo clippy && maturin develop --release)
+.venv/bin/python -m pytest -q tests/test_corvus_link_*.py
 .venv/bin/python -m pytest -q tests/test_mavlink_*.py tests/test_autopilot_dialect.py
 .venv/bin/python -m pytest -q
 .venv/bin/python -m ruff check corvus serve.py tests plugins

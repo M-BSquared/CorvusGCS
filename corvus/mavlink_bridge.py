@@ -1,4 +1,4 @@
-"""MAVLink bridge — real autopilot communication via pymavlink.
+"""MAVLink bridge — real autopilot communication via corvus_link.
 
 Connects to a PX4 autopilot (SITL or real) over UDP/serial/TCP, parses
 incoming messages, updates the Vehicle State Store, and forwards raw
@@ -38,7 +38,7 @@ import time
 from typing import Any
 from collections.abc import Callable
 
-from pymavlink import mavutil
+from corvus_link import mavutil
 
 from . import autopilot as autopilot_dialect
 from . import rtk
@@ -260,7 +260,7 @@ INTERVAL_REQUEST_SILENT_LIMIT = 3
 # of these is never the flight controller however it fills in `autopilot` —
 # and some do fill it in: a companion computer running MAVSDK reports
 # MAV_AUTOPILOT_GENERIC, not INVALID, which is exactly the case the autopilot
-# field alone lets through. Kept in step with pymavlink's own
+# field alone lets through. Kept in step with corvus_link's own
 # `probably_vehicle_heartbeat`, plus the peripherals PX4 and ArduPilot
 # airframes actually carry.
 _NON_VEHICLE_TYPES = frozenset({
@@ -280,7 +280,7 @@ _NON_VEHICLE_TYPES = frozenset({
 })
 
 # Component ids that are never the autopilot even under the vehicle's own
-# system id. The gimbal is the one pymavlink singles out; the SiK radio and a
+# system id. The gimbal is the one corvus_link singles out; the SiK radio and a
 # UDP bridge matter here because both sit on the wire between Corvus and the
 # aircraft and both heartbeat.
 _NON_AUTOPILOT_COMPONENTS = frozenset({
@@ -294,7 +294,7 @@ _NON_AUTOPILOT_COMPONENTS = frozenset({
 # Upper bounds a real HEARTBEAT stays under. Deliberately far above what the
 # dialect defines today (MAV_TYPE ends in the 40s, MAV_AUTOPILOT in the 20s,
 # MAV_STATE at 8), so an aircraft from a newer firmware with a type this
-# pymavlink does not know yet still connects.
+# corvus_link does not know yet still connects.
 _HEARTBEAT_LIMITS: tuple[tuple[str, int], ...] = (
     ("type", 128),
     ("autopilot", 64),
@@ -788,7 +788,7 @@ class MavlinkBridge(
     def _parse_serial(self, conn_str: str) -> tuple[str, int]:
         """Strip a ``serial:`` prefix and return ``(device, baud)``.
 
-        pymavlink's ``mavlink_connection`` has no ``serial:`` handler — any
+        corvus_link's ``mavlink_connection`` has no ``serial:`` handler — any
         string containing a colon is routed to mavudp, which rejects a serial
         device. We translate the user-facing ``serial:`` form to the bare
         device + ``baud`` kwarg that mavserial expects. Baud defaults to
@@ -1060,9 +1060,9 @@ class MavlinkBridge(
         and neither shows a disconnect. It is the quietest way this application
         can be badly wrong, and it is exactly what a second launch used to do.
 
-        ``flock`` is what pyserial's own ``exclusive=True`` uses; pymavlink
+        ``flock`` is what pyserial's own ``exclusive=True`` uses; corvus_link
         does not pass that through, so it is applied here to the descriptor
-        pymavlink opened. The lock lives on the file handle, so closing the
+        corvus_link opened. The lock lives on the file handle, so closing the
         port or losing the process releases it — a crash leaves nothing stale.
 
         Windows needs none of this: it opens a COM port exclusively already,
@@ -1137,7 +1137,7 @@ class MavlinkBridge(
         configured, and a single line naming the real problem is worth more
         than a connection refused on their behalf.
         """
-        # The binding forms only. pymavlink's "udp:" defaults to input=True
+        # The binding forms only. corvus_link's "udp:" defaults to input=True
         # and "udpin:" is the explicit spelling of the same thing, so both take
         # the port away from whoever else wants it; "udpout:"/"udpbcast:"/
         # "tcp:" dial out from an ephemeral local port and name somebody else's
@@ -1283,11 +1283,11 @@ class MavlinkBridge(
             self.fleet_tracker.observe(hb, vehicle_heartbeat=True)
         except Exception:  # noqa: BLE001 - the vehicle list never costs the link
             logger.debug("fleet tracker failed", exc_info=True)
-        # Tell pymavlink which node we picked. It does its own latching in
+        # Tell corvus_link which node we picked. It does its own latching in
         # post_message — first heartbeat its `probably_vehicle_heartbeat`
         # accepts wins — and that is not always the one _wait_vehicle_heartbeat
         # chose: behind a router the two can land on different nodes, and
-        # mode_mapping() then reads the mode table of whatever pymavlink
+        # mode_mapping() then reads the mode table of whatever corvus_link
         # latched onto instead of the aircraft Corvus is flying. Everything
         # this module sends already addresses _target_system explicitly; this
         # aligns the parts of mavutil that do not.
@@ -1539,7 +1539,7 @@ class MavlinkBridge(
     def _build_mode_mapping(self) -> None:
         """Latch the mode names this link can actually command.
 
-        pymavlink answers ``mode_mapping()`` in two shapes, because the flight
+        corvus_link answers ``mode_mapping()`` in two shapes, because the flight
         stacks encode a mode differently: PX4 gets ``px4_map``, whose values are
         the ``(base_mode, main_mode, sub_mode)`` triples DO_SET_MODE wants;
         everything else gets a per-MAV_TYPE table whose values are a single flat
@@ -1595,7 +1595,7 @@ class MavlinkBridge(
         """Send one GCS heartbeat on *conn* now. Never raises.
 
         A binding UDP socket that has not heard from anybody yet has nowhere to
-        send to; pymavlink drops the frame, which is the right outcome there.
+        send to; corvus_link drops the frame, which is the right outcome there.
         """
         if conn is None:
             return False
@@ -2286,7 +2286,7 @@ class MavlinkBridge(
         self-describing and the stack is not always latched when this runs.
 
         Returns "" when the field is empty or all-zero. Handles
-        list/bytes/bytearray/str inputs (pymavlink yields a list of ints for
+        list/bytes/bytearray/str inputs (corvus_link yields a list of ints for
         uint8_t[] arrays).
         """
         if isinstance(raw, str):
@@ -2567,7 +2567,7 @@ class MavlinkBridge(
             self._handle_radio_status(msg)
             return
 
-        # Not in the dialect pymavlink loads, so it arrives without a source id
+        # Not in the dialect corvus_link loads, so it arrives without a source id
         # and checks the aircraft's own itself. See _handle_gnss_integrity.
         if name in ("UNKNOWN_441", "GNSS_INTEGRITY"):
             self._handle_gnss_integrity(msg)
@@ -2861,7 +2861,7 @@ class MavlinkBridge(
         """Did *msg* come from the aircraft this bridge is flying?
 
         Source system 0 means the frame carries no sender id — the synthetic
-        messages unit tests build, and pymavlink's own BAD_DATA — and is
+        messages unit tests build, and corvus_link's own BAD_DATA — and is
         accepted: this rejects an identified *other* node, it does not demand
         provenance a frame never had.
         """

@@ -21,6 +21,9 @@ __pycache__/
 # dev venv created by run.sh
 /.venv/
 
+# cargo's build output for the MAVLink extension
+/rust/corvus_link/target/
+
 # plugins besides the ones that ship with Corvus
 /plugins/*/
 !/plugins/map-entities/

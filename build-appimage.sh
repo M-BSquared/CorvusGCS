@@ -169,6 +169,11 @@ if ! "$APPDIR/usr/bin/python3" -m pip install \
     echo "ERROR: dependency install failed; log: $PIP_LOG" >&2
     exit 1
 fi
+echo ">>> Building corvus_link (MAVLink, Rust) ..."
+if ! "$APPDIR/usr/bin/python3" -m pip install "$REPO_DIR/rust/corvus_link" >>"$PIP_LOG" 2>&1; then
+    echo "ERROR: corvus_link build failed (is cargo installed?); log: $PIP_LOG" >&2
+    exit 1
+fi
 echo "    (deps install log: $PIP_LOG)"
 # What went into THIS AppImage, exactly. Ships beside the artifact so a
 # rebuild can be told to resolve to the same versions:
@@ -178,7 +183,7 @@ mkdir -p "$REPO_DIR/dist"
     echo "# Corvus GCS $VERSION — Linux x86_64, python $PY_MM"
     echo "# The resolved runtime set this artifact was built from."
     echo "# Install with: pip install -r <this file>"
-    "$APPDIR/usr/bin/python3" -m pip freeze --all --exclude-editable
+    "$APPDIR/usr/bin/python3" -m pip freeze --all --exclude-editable --exclude corvus-link
 } > "$LOCK_OUT" 2>>"$PIP_LOG" || {
     echo "WARNING: could not write $LOCK_OUT" >&2
     rm -f "$LOCK_OUT"
@@ -192,8 +197,7 @@ if [ -f "$LOCK_OUT" ]; then echo "    (resolved set: $LOCK_OUT)"; fi
 # fails the build if anything left would miss a library it links.
 echo ">>> Trimming PySide6 to the Qt modules Corvus loads ..."
 python3 "$REPO_DIR/tools/qt_bundle.py" prune "$APPDIR/usr/lib/python$PY_MM/site-packages"
-# The rest the wheels bring and Corvus never reads: every pymavlink dialect
-# but `all`, lxml, pip, Qt translations and Chromium locales but en-US and de.
+# The rest the wheels bring and Corvus never reads: lxml, pip, Qt translations and Chromium locales but en-US and de.
 echo ">>> Trimming what the app never loads ..."
 python3 "$REPO_DIR/tools/bundle_trim.py" "$APPDIR/usr/lib/python$PY_MM/site-packages"
 rm -f "$APPDIR"/usr/bin/pip "$APPDIR"/usr/bin/pip3 "$APPDIR"/usr/bin/pip3.*

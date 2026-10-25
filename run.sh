@@ -88,14 +88,27 @@ if [ ! -x "$PY" ]; then
     "$BASE" -m venv "$VENV"
 fi
 
-WANT="$("$PY" -c 'import hashlib, sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' \
-        "$REPO_DIR/pyproject.toml")"
+# The stamp covers corvus_link's sources too, so a change to the Rust side
+# rebuilds the extension on the next start.
+WANT="$("$PY" - "$REPO_DIR" <<'PY'
+import hashlib, pathlib, sys
+root = pathlib.Path(sys.argv[1])
+h = hashlib.sha256((root / "pyproject.toml").read_bytes())
+crate = root / "rust" / "corvus_link"
+for path in sorted(crate.rglob("*")):
+    if path.is_file() and "target" not in path.relative_to(crate).parts:
+        h.update(str(path.relative_to(crate)).encode())
+        h.update(path.read_bytes())
+print(h.hexdigest())
+PY
+)"
 HAVE="$(cat "$STAMP" 2>/dev/null || true)"
 if [ "$WANT" != "$HAVE" ]; then
-    echo ">>> Installing dependencies (pyproject.toml, group dev) ..."
+    echo ">>> Installing dependencies (pyproject.toml, group dev) and building corvus_link ..."
     # pip >= 25.1 is what reads [dependency-groups]; a fresh venv ships older.
     if "$PY" -m pip install --quiet --upgrade pip \
-        && "$PY" -m pip install --quiet --group "$REPO_DIR/pyproject.toml:dev"; then
+        && "$PY" -m pip install --quiet --group "$REPO_DIR/pyproject.toml:dev" \
+        && "$PY" -m pip install --quiet "$REPO_DIR/rust/corvus_link"; then
         echo "$WANT" > "$STAMP"
     elif [ -n "$HAVE" ]; then
         echo "WARNING: dependency update failed (offline?); starting with the set already installed" >&2

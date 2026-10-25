@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pymavlink import mavutil
+from corvus_link import mavutil
 
 from . import autopilot as autopilot_dialect
 from .mavlink_common import MAV_RESULT_TEXT

@@ -178,6 +178,17 @@
 </table>
 </div>
 
+<h2 id="rust">The MAVLink module needs Rust</h2>
+<p>
+  Corvus speaks MAVLink through <code>corvus_link</code>, a module written in
+  Rust that lives in <code>rust/corvus_link</code>. Every build, and
+  <code>./run.sh</code>, compiles it, so the build machine needs a Rust
+  toolchain: install it from <a href="https://rustup.rs/">rustup.rs</a> and
+  check that <code>cargo --version</code> answers. The finished app does not
+  need Rust. The first build downloads the Rust libraries the module uses and
+  the <code>maturin</code> build tool once.
+</p>
+
 <h2 id="linux">Linux</h2>
 <p>
   Needs Ubuntu or Debian on x86_64, <code>python3</code> 3.12 or newer,
@@ -244,7 +255,7 @@
 
 <h2 id="rules">What every build guarantees</h2>
 <ul>
-  <li><strong>Self-contained.</strong> No system Python, conda or Qt is needed on the target machine.</li>
+  <li><strong>Self-contained.</strong> No system Python, conda, Qt or Rust is needed on the target machine.</li>
   <li><strong>Offline at run time.</strong> The build may download wheels and tools once; the running app never needs the network.</li>
   <li><strong>One version.</strong> Every file name, window title and launcher reads the one <code>VERSION</code> file; no script carries a version of its own.</li>
   <li><strong>The licence travels with it.</strong> <code>LICENSE.md</code> is inside every bundle, because the licence requires that whoever receives the software also receives its terms.</li>
@@ -288,6 +299,7 @@ node tools/frontend_tests.js</code></pre>
   <p class="guide-toc-title" id="toc-title">On this page</p>
   <ul>
     <li><a href="#entry-points">Entry points</a></li>
+    <li><a href="#rust">The MAVLink module needs Rust</a></li>
     <li><a href="#linux">Linux</a></li>
     <li><a href="#macos">macOS</a></li>
     <li><a href="#windows">Windows</a></li>

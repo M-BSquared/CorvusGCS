@@ -15,7 +15,7 @@
 
 <div align="center">
   <!-- corvus:version-badge -->
-  <img src="https://img.shields.io/badge/Version-2026.10.42-f7ebe1?style=for-the-badge" height="28" alt="Version 2026.10.42" />
+  <img src="https://img.shields.io/badge/Version-2026.10.43-f7ebe1?style=for-the-badge" height="28" alt="Version 2026.10.43" />
   <img width="8" />
   <!-- <a href="https://www.python.org/" target="_blank"><img src="https://img.shields.io/badge/Python_3.12%2B-3776AB?logo=python&logoColor=white&style=for-the-badge" height="28" alt="Python 3.12+" /></a>
   <img width="8" />
@@ -23,7 +23,7 @@
   <img width="8" />
   <img src="https://img.shields.io/badge/%F0%9F%A4%96-Vibe%20Coded-5B2C6F?style=for-the-badge" height="28" alt="Vibe Coded" />
   <img width="8" />-->
-  <!-- <a href="https://github.com/ArduPilot/pymavlink" target="_blank"><img src="https://img.shields.io/badge/pymavlink-00A6E2?logoColor=white&style=for-the-badge" height="28" alt="pymavlink" /></a>
+  <!-- <a href="https://www.rust-lang.org/" target="_blank"><img src="https://img.shields.io/badge/Rust-000000?logo=rust&logoColor=white&style=for-the-badge" height="28" alt="Rust" /></a>
   <img width="8" /> -->
   <!-- <br>-->
   <a href="https://px4.io/" target="_blank"><img src="https://img.shields.io/badge/PX4-v1.16%20%7C%201.17%20%7C%201.18-9f2dfe?logoColor=white&style=for-the-badge" height="28" alt="PX4 v1.16 | 1.17 | 1.18" /></a>
@@ -193,8 +193,10 @@ run it. Python, Qt and every dependency are already inside.
 | **Linux** (x86_64) | `Corvus_GCS-<version>-x86_64.AppImage` | `chmod +x` it, then run it. |
 | **Windows** (x64) | `Corvus_GCS-<version>-windows-x64.zip` | Unzip anywhere and run `Corvus GCS.exe`. SmartScreen asks once: *More info → Run anyway*. |
 
-**From source** (Python 3.12+), one command creates `.venv/`, installs every
-dependency from [`pyproject.toml`](pyproject.toml) and opens the app:
+**From source** (Python 3.12+ and a Rust toolchain, for the MAVLink module in
+[`rust/corvus_link`](rust/corvus_link)), one command creates `.venv/`, installs
+every dependency from [`pyproject.toml`](pyproject.toml), builds the MAVLink
+module and opens the app:
 
 ```bash
 ./run.sh
@@ -342,8 +344,8 @@ In short, and without replacing the terms in [`LICENSE.md`](LICENSE.md):
 - **You may not** sell it, or offer it to third parties as a paid product or
   service.
 
-Third-party components (pymavlink, paramiko, pyserial, PySide6/Qt, MapLibre GL
-JS, Plotly, Lucide, xterm.js, and the Inter and JetBrains Mono typefaces) keep
+Third-party components (paramiko, pyserial, PySide6/Qt, the MAVLink message
+definitions and the Rust libraries in the MAVLink module, MapLibre GL JS, Plotly, Lucide, xterm.js, and the Inter and JetBrains Mono typefaces) keep
 the licenses of their own authors. Map, elevation and building data belong to
 their providers (Esri, OpenStreetMap contributors, Copernicus and others) and
 are credited on the map itself. The full list, with each component's license

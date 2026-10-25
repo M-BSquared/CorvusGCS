@@ -3,14 +3,9 @@
 
 ``tools/qt_bundle.py`` decides which Qt modules stay. This takes the rest:
 
-* **pymavlink dialects.** pymavlink ships about twenty generated dialects
-  twice, once for MAVLink 1 and once for MAVLink 2, with their XML beside
-  them: about 85 MB. ``mavutil`` loads ``$MAVLINK_DIALECT``, which it sets to ``all``
-  itself, and Corvus never names another (corvus/app.py pins it), so
-  ``v10/all.py`` and ``v20/all.py`` are the only two ever imported.
-* **lxml.** A pymavlink dependency used only to validate XML while generating
-  a dialect and to read a DataFlash help file downloaded by MAVExplorer.
-  Neither happens in Corvus, and mavgen degrades to a warning without it.
+* **lxml.** Nothing Corvus ships needs it; it came in with pymavlink, which
+  the bundles no longer carry (MAVLink is ``corvus_link``, built in Rust from
+  ``rust/corvus_link``). Dropped if anything still pulls it in.
 * **pip.** Installs the bundle and is never run from it.
 * **Qt translations.** ``.qm`` files load only through a ``QTranslator``,
   which Corvus does not install.
@@ -33,7 +28,8 @@
 Every step finds its targets by name under the folder it is given, so the
 same call works on a venv's ``site-packages`` (AppImage, ``.app``) and on a
 PyInstaller ``_internal`` folder (Windows). The last step checks that what
-the app needs at runtime is still there, and fails the build if not.
+the app needs at runtime is still there, the ``corvus_link`` extension
+included, and fails the build if not.
 
     python3 tools/bundle_trim.py <site-packages>
     python3 tools/bundle_trim.py --dry-run <site-packages>
@@ -52,8 +48,8 @@ from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 
-# The dialect mavutil loads; corvus/app.py pins MAVLINK_DIALECT to it.
-MAVLINK_DIALECTS: frozenset[str] = frozenset({"all"})
+# The MAVLink extension module the bundle must carry (rust/corvus_link).
+NATIVE_LINK = "corvus_link"
 
 # Chromium needs en-US.pak as its fallback; de is the operators' own.
 KEEP_LOCALES: frozenset[str] = frozenset({"en-US", "de"})
@@ -90,27 +86,6 @@ def _pycache_of(source: Path) -> list[Path]:
     if not cache.is_dir():
         return []
     return sorted(cache.glob(f"{source.stem}.*.pyc"))
-
-
-def plan_dialects(root: Path) -> list[Path]:
-    """Every pymavlink dialect module and XML file except the ones mavutil loads."""
-    out: list[Path] = []
-    for dialects in _dirs_named(root, "dialects"):
-        if dialects.parent.name != "pymavlink":
-            continue
-        for wire in ("v10", "v20"):
-            folder = dialects / wire
-            if not folder.is_dir():
-                continue
-            for entry in sorted(folder.iterdir()):
-                if not entry.is_file() or entry.suffix not in (".py", ".xml"):
-                    continue
-                if entry.stem == "__init__" or entry.stem in MAVLINK_DIALECTS:
-                    continue
-                out.append(entry)
-                if entry.suffix == ".py":
-                    out += _pycache_of(entry)
-    return out
 
 
 def plan_packages(root: Path) -> list[Path]:
@@ -193,26 +168,25 @@ def plan_frameworks(root: Path) -> list[tuple[Path, str]]:
 def plan(root: Path, arch: str = HOST_ARCH) -> Plan:
     """Decide what goes under *root*. Touches nothing."""
     result = Plan()
-    result.remove = sorted(set(plan_dialects(root) + plan_packages(root) + plan_qt_data(root, arch)))
+    result.remove = sorted(set(plan_packages(root) + plan_qt_data(root, arch)))
     result.link = plan_frameworks(root)
     return result
+
+
+def has_native_link(root: Path) -> bool:
+    """Whether the compiled corvus_link module is anywhere under *root*."""
+    for dirpath, _dirnames, files in os.walk(root):
+        for name in files:
+            if name.startswith(NATIVE_LINK) and name.endswith((".so", ".pyd", ".dylib")):
+                return True
+    return False
 
 
 def check(root: Path) -> None:
     """Fail when something the app loads at runtime is gone."""
     missing: list[str] = []
-    for dialects in _dirs_named(root, "dialects"):
-        if dialects.parent.name != "pymavlink":
-            continue
-        for wire in ("v10", "v20"):
-            folder = dialects / wire
-            # PyInstaller keeps the modules in its archive and only the XML
-            # here; that layout has nothing to check.
-            if not folder.is_dir() or not any(folder.glob("*.py")):
-                continue
-            for dialect in MAVLINK_DIALECTS:
-                if not (folder / f"{dialect}.py").is_file():
-                    missing.append((folder / f"{dialect}.py").relative_to(root).as_posix())
+    if not has_native_link(root):
+        missing.append(f"{NATIVE_LINK} (the MAVLink extension module, rust/corvus_link)")
     for locales in _dirs_named(root, "qtwebengine_locales"):
         if not (locales / "en-US.pak").is_file():
             missing.append(str((locales / "en-US.pak").relative_to(root)))

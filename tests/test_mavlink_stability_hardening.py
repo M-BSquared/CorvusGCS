@@ -16,7 +16,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from pymavlink import mavutil
+from corvus_link import mavutil
 
 from corvus import mavlink_bridge
 from corvus.mavlink_bridge import (

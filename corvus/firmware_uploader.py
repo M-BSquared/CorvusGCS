@@ -45,7 +45,7 @@ from .serial_ports import is_windows_com_port
 
 logger = logging.getLogger("corvus.firmware")
 
-# pyserial is a hard dependency (pymavlink pulls it in), but import lazily with a
+# pyserial is a hard dependency (the serial port listing uses it), but import lazily with a
 # clear sentinel so the module imports cleanly even in environments where it is
 # temporarily unavailable (e.g. a unit test that monkeypatches the serial layer).
 try:  # pragma: no cover - import-time guard

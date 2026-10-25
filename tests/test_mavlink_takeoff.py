@@ -7,7 +7,7 @@ from types import SimpleNamespace
 from collections.abc import Callable
 
 import pytest
-from pymavlink import mavutil
+from corvus_link import mavutil
 
 from corvus.mavlink_bridge import (
     STATUSTEXT_CHUNK_TIMEOUT_S,

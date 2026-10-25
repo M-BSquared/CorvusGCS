@@ -5634,7 +5634,7 @@ def apply_startup_connection(
     ``mavlink_connection`` actually accepts: only ``POST /api/mavlink/connect``
     validated, because that is the path with somewhere to put a 400. A typo in
     the file or on the command line therefore started the app into a reconnect
-    loop that could never succeed, reporting whatever pymavlink made of the
+    loop that could never succeed, reporting whatever corvus_link made of the
     string — for a bare word, an attempt to open it as a serial device.
 
     Falling back rather than refusing to start: a ground station that comes up

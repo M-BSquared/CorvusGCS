@@ -13,7 +13,7 @@ import logging
 import math
 import time
 
-from pymavlink import mavutil
+from corvus_link import mavutil
 from typing import Any
 
 from .autopilot import PLUGIN_POSITION_COMMANDS, ModeCommand, is_ground_vehicle

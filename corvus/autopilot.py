@@ -24,13 +24,12 @@ Verified against PX4 v1.16/v1.17/v1.18 and ArduPilot 4.3-4.6
 """
 from __future__ import annotations
 
-import math
 import re
-import struct
 from dataclasses import dataclass
 from typing import Any, NamedTuple
 
-from pymavlink import mavutil
+from corvus_link import mavutil
+from corvus_link import params as _param_codec
 
 # ---------------------------------------------------------------------------
 # Stacks
@@ -120,7 +119,7 @@ PX4_AUTO_SUBMODE: dict[int, str] = {
     17: "EXTERNAL7", 18: "EXTERNAL8", 19: "GUIDED_COURSE",
 }
 
-# (base_mode, main_mode, sub_mode) triples keyed by mode name, as pymavlink's
+# (base_mode, main_mode, sub_mode) triples keyed by mode name, as corvus_link's
 # px4_map spells them. 81/65/29 are the base_mode bytes PX4 itself sends for
 # each family; DO_SET_MODE wants them back verbatim. Only modes PX4's
 # DO_SET_MODE handler actually switches to are here: Orbit is entered with
@@ -142,7 +141,7 @@ PX4_AVAILABLE_MODES: list[str] = [
     "OFFBOARD", "FOLLOWME",
 ]
 
-# Names pymavlink's px4_map still offers that no supported PX4 will fly. RTGS
+# Names corvus_link's px4_map still offers that no supported PX4 will fly. RTGS
 # (AUTO sub mode 7) is refused with "Unsupported auto mode". RATTITUDE (main
 # mode 8) has no branch in the handler: v1.16 and v1.17 answer ACCEPTED and
 # change nothing, v1.18 refuses it as "Unsupported main mode". Both still
@@ -197,7 +196,7 @@ def _plain_mode_label(name: str) -> str:
 #
 # ArduPilot puts a single flat mode number in custom_mode and keeps a separate
 # table per vehicle: mode 4 is GUIDED on a copter and ACRO on a plane, so the
-# table cannot be chosen without knowing MAV_TYPE. pymavlink ships these tables
+# table cannot be chosen without knowing MAV_TYPE. corvus_link ships these tables
 # too, but it lags the firmware by a release or two and has nothing for the
 # tailsitter MAV_TYPEs, so the numbers are written out here — they are flight
 # modes, and a wrong one is a wrong command, not a cosmetic mislabel.
@@ -244,7 +243,7 @@ ARDUPILOT_BLIMP_MODES: dict[int, str] = {
 }
 
 # MAV_TYPE -> which of the tables above. A type that is not listed falls back
-# to pymavlink's map and then, failing that, to the copter table: the
+# to corvus_link's map and then, failing that, to the copter table: the
 # overwhelming majority of unlisted rotary types ArduPilot adds are copters.
 _COPTER_TYPES = (2, 3, 4, 13, 14, 15, 29, 35)
 _PLANE_TYPES = (1, 19, 20, 21, 22, 23, 24, 25, 28)
@@ -335,7 +334,7 @@ class ModeCommand(NamedTuple):
     ArduPilot wants a flat ``custom_mode`` in param2 and ignores param3. Rather
     than have the caller know that, both produce a seven-float payload here.
 
-    A tuple and not a dataclass on purpose: pymavlink's own PX4 mapping is a
+    A tuple and not a dataclass on purpose: corvus_link's own PX4 mapping is a
     ``(base_mode, main_mode, sub_mode)`` tuple, and staying comparable to one
     means the live mapping and the built-in table can be checked against each
     other without unwrapping either.
@@ -489,7 +488,7 @@ def _cal(*params: float) -> CommandPlan:
 
 
 # MAV_CMD ids ArduPilot uses for the magnetometer calibration it runs instead
-# of PREFLIGHT_CALIBRATION. Not in every pymavlink build's enum set, so they
+# of PREFLIGHT_CALIBRATION. Not in every corvus_link build's enum set, so they
 # are pinned by number with a lookup that tolerates their absence.
 def _cmd(name: str, fallback: int) -> int:
     return int(getattr(mavutil.mavlink, name, fallback))
@@ -546,28 +545,17 @@ ACCELCAL_POSITIONS: dict[str, int] = {
 # stores 1082130432 in BAT1_N_CELLS while the echo still reads back as "4.0",
 # so the write even looks confirmed.
 
-PARAM_ENCODING_BYTEWISE = "bytewise"
-PARAM_ENCODING_C_CAST = "c_cast"
+PARAM_ENCODING_BYTEWISE = _param_codec.PARAM_ENCODING_BYTEWISE
+PARAM_ENCODING_C_CAST = _param_codec.PARAM_ENCODING_C_CAST
 
-# MAV_PARAM_TYPE -> (struct code, low, high) for the integer types. REAL32 and
-# the 64-bit types are not here: the first needs no conversion and the others
-# do not fit the field at all.
-_PARAM_INT_TYPES: dict[int, tuple[str, int, int]] = {
-    1: ("<B", 0, 0xFF),
-    2: ("<b", -0x80, 0x7F),
-    3: ("<H", 0, 0xFFFF),
-    4: ("<h", -0x8000, 0x7FFF),
-    5: ("<I", 0, 0xFFFFFFFF),
-    6: ("<i", -0x80000000, 0x7FFFFFFF),
-}
+# The conversions themselves are corvus_link's (Rust): integer types are
+# MAV_PARAM_TYPE 1 to 6 (uint8 to int32); REAL32 needs none and the 64-bit
+# types do not fit the field at all.
 
 
 def param_type_is_integer(param_type: Any) -> bool:
     """Is *param_type* one of the MAV_PARAM_TYPE integer types?"""
-    try:
-        return int(param_type) in _PARAM_INT_TYPES
-    except (TypeError, ValueError):
-        return False
+    return _param_codec.param_type_is_integer(param_type)
 
 
 def decode_param_value(
@@ -580,13 +568,7 @@ def decode_param_value(
     not survive the trip through a Python float intact, and on PX4 every
     integer from -8388607 to -4194305 is one of those.
     """
-    spec = _PARAM_INT_TYPES.get(int(param_type))
-    if spec is None or encoding != PARAM_ENCODING_BYTEWISE:
-        return float(value)
-    if raw is None or len(raw) < 4:
-        raw = struct.pack("<f", float(value))
-    code = spec[0]
-    return float(struct.unpack_from(code, raw[:struct.calcsize(code)])[0])
+    return _param_codec.decode_param_value(value, param_type, encoding, raw)
 
 
 def encode_param_value(value: float, param_type: int, encoding: str) -> float:
@@ -594,26 +576,9 @@ def encode_param_value(value: float, param_type: int, encoding: str) -> float:
 
     Raises ValueError for a value the parameter cannot hold (a fraction or an
     out of range number for an integer), and for the few integers whose byte
-    pattern is a signalling NaN: pymavlink packs the field through a Python
-    float, which quietens that NaN and would change the number on the way out.
+    pattern is a signalling NaN, which a float on the way out would quieten.
     """
-    spec = _PARAM_INT_TYPES.get(int(param_type))
-    if spec is None:
-        return float(value)
-    number = float(value)
-    if not math.isfinite(number) or number != int(number):
-        raise ValueError("this parameter takes whole numbers only")
-    code, low, high = spec
-    whole = int(number)
-    if not low <= whole <= high:
-        raise ValueError(f"this parameter takes values from {low} to {high}")
-    if encoding != PARAM_ENCODING_BYTEWISE:
-        return number
-    packed = struct.pack(code, whole).ljust(4, b"\x00")
-    bits = struct.unpack("<I", packed)[0]
-    if (bits >> 23) & 0xFF == 0xFF and bits & 0x7FFFFF and not bits & 0x400000:
-        raise ValueError("this value cannot be sent exactly over MAVLink")
-    return struct.unpack("<f", packed)[0]
+    return _param_codec.encode_param_value(value, param_type, encoding)
 
 
 def param_values_match(param_type: int, got: float, wanted: float) -> bool:
@@ -623,15 +588,7 @@ def param_values_match(param_type: int, got: float, wanted: float) -> bool:
     it applied", and a float parameter holds exactly the float32 it was sent,
     so anything beyond float32 rounding is a different value.
     """
-    if not (math.isfinite(got) and math.isfinite(wanted)):
-        return False
-    if param_type_is_integer(param_type):
-        return int(round(got)) == int(round(wanted))
-    try:
-        as_sent = struct.unpack("<f", struct.pack("<f", wanted))[0]
-    except OverflowError:
-        return False
-    return abs(got - as_sent) <= 1e-6 * max(1.0, abs(as_sent))
+    return _param_codec.param_values_match(param_type, got, wanted)
 
 
 # ---------------------------------------------------------------------------
@@ -647,7 +604,7 @@ def param_values_match(param_type: int, got: float, wanted: float) -> bool:
 
 
 def _plugin_commands(*names: str) -> dict[int, str]:
-    """``MAV_CMD_<name>`` ids for *names*, skipping any pymavlink lacks."""
+    """``MAV_CMD_<name>`` ids for *names*, skipping any corvus_link lacks."""
     table: dict[int, str] = {}
     for name in names:
         value = getattr(mavutil.mavlink, "MAV_CMD_" + name, None)
@@ -831,13 +788,13 @@ class Dialect:
         self, mapping: dict[str, Any], mav_type: int,
         firmware: tuple[int, ...] | None = None,
     ) -> dict[str, ModeCommand]:
-        """Turn pymavlink's ``mode_mapping()`` into commands, or {} if it cannot.
+        """Turn corvus_link's ``mode_mapping()`` into commands, or {} if it cannot.
 
-        pymavlink answers in two shapes because the stacks encode a mode
+        corvus_link answers in two shapes because the stacks encode a mode
         differently: PX4 gets ``(base_mode, main_mode, sub_mode)`` triples,
         everything else gets a flat integer. The triples are PX4's, so only
         those are adopted here; a flat mapping reaching this method means
-        pymavlink guessed a different stack than the heartbeat did, and the
+        corvus_link guessed a different stack than the heartbeat did, and the
         built-in table is the safer answer.
 
         px4_map is a fixed table and an old one. It still names RTGS and
@@ -1148,12 +1105,12 @@ class ArduPilotDialect(Dialect):
         self, mapping: dict[str, Any], mav_type: int,
         firmware: tuple[int, ...] | None = None,
     ) -> dict[str, ModeCommand]:
-        """Take pymavlink's flat ``{name: number}`` table for this vehicle.
+        """Take corvus_link's flat ``{name: number}`` table for this vehicle.
 
         This is the shape Corvus used to throw away — it is exactly what
         ArduPilot needs, once param2 rather than the packed PX4 word is where
         the number goes. The live mapping is preferred over the built-in table
-        because pymavlink reads it from the heartbeat's own MAV_TYPE, so a
+        because corvus_link reads it from the heartbeat's own MAV_TYPE, so a
         vehicle whose type this module has not heard of still gets real modes.
         """
         custom_enabled = mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED
@@ -1336,7 +1293,7 @@ class GenericDialect(Dialect):
 
     Mode selection is the one thing that cannot be done generically — there is
     no portable encoding of "which mode" — so it is offered only when
-    pymavlink recognised the vehicle well enough to hand over a real table.
+    corvus_link recognised the vehicle well enough to hand over a real table.
     """
 
     stack = STACK_GENERIC

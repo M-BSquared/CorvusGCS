@@ -229,6 +229,12 @@ if ! "$PYROOT/bin/python3" -m pip install "${DEPS_ARGS[@]}" >>"$PIP_LOG" 2>&1; t
     tail -n 20 "$PIP_LOG" >&2 || true
     exit 1
 fi
+echo ">>> Building corvus_link (MAVLink, Rust) ..."
+if ! "$PYROOT/bin/python3" -m pip install "$REPO_DIR/rust/corvus_link" >>"$PIP_LOG" 2>&1; then
+    echo "ERROR: corvus_link build failed (is cargo installed?); log: $PIP_LOG" >&2
+    tail -n 20 "$PIP_LOG" >&2 || true
+    exit 1
+fi
 echo "    (deps install log: $PIP_LOG)"
 # What went into THIS bundle, exactly. Ships beside the artifact so a rebuild
 # six months from now can be told to resolve to the same versions:
@@ -238,7 +244,7 @@ mkdir -p "$DIST_DIR"
     echo "# Corvus GCS $VERSION — macOS $ARCH, python $PY_MM"
     echo "# The resolved runtime set this artifact was built from."
     echo "# Install with: pip install -r <this file>"
-    "$PYROOT/bin/python3" -m pip freeze --all --exclude-editable
+    "$PYROOT/bin/python3" -m pip freeze --all --exclude-editable --exclude corvus-link
 } > "$LOCK_OUT" 2>>"$PIP_LOG" || {
     echo "WARNING: could not write $LOCK_OUT" >&2
     rm -f "$LOCK_OUT"
@@ -263,7 +269,7 @@ for pkg in PySide6 shiboken6; do
 done
 echo ">>> Trimming PySide6 to the Qt modules Corvus loads ..."
 "$PYBIN" "$REPO_DIR/tools/qt_bundle.py" prune "$SITE_PKGS"
-# The rest the wheels bring and Corvus never reads: every pymavlink dialect
+# The rest the wheels bring and Corvus never reads:
 # but `all`, lxml, pip, Qt translations, Chromium locales but en-US and de,
 # Chromium's DevTools, the other architecture's V8 snapshot, and the framework
 # copies pip wrote out where the layout wants symlinks.
@@ -678,7 +684,7 @@ fi
 if [ "$VERIFY" -eq 1 ]; then
     echo ">>> Verifying the bundled runtime ..."
     # PYTHONDONTWRITEBYTECODE, because this step runs the bundled interpreter
-    # INSIDE the bundle that was just signed. Importing Qt and pymavlink writes
+    # INSIDE the bundle that was just signed. Importing Qt and corvus_link writes
     # __pycache__/*.pyc next to their sources, and a file added after signing
     # breaks the seal: `codesign --verify` then lists a few hundred "file
     # added" lines for an .app that had signed cleanly a second earlier.
@@ -690,7 +696,7 @@ if [ "$VERIFY" -eq 1 ]; then
 import sys
 import serial, paramiko                      # noqa: F401
 import ssl, hashlib, sqlite3, lzma, ctypes   # noqa: F401  (the stdlib's own native libraries)
-from pymavlink import mavutil                # noqa: F401
+from corvus_link import mavutil              # noqa: F401  (MAVLink, the Rust extension)
 # Every module corvus/app.py imports, from the trimmed Qt.
 from PySide6 import QtCore, QtGui, QtWidgets, QtNetwork  # noqa: F401
 from PySide6 import QtWebChannel, QtWebEngineCore, QtWebEngineWidgets  # noqa: F401
@@ -703,7 +709,7 @@ print("    interpreter : %s" % sys.version.split()[0])
 print("    prefix      : %s" % sys.prefix)
 print("    corvus      : %s" % get_version())
 print("    qt          : %s (PySide6 %s)" % (QtCore.qVersion(), __import__("PySide6").__version__))
-print("    imports     : pyserial, paramiko, pymavlink, PySide6 QtWebEngine OK")
+print("    imports     : pyserial, paramiko, corvus_link, PySide6 QtWebEngine OK")
 PY
     then
         echo "ERROR: the bundled runtime failed its import check" >&2

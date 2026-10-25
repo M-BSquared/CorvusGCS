@@ -46,7 +46,7 @@ from typing import Any
 
 # ---------------------------------------------------------------------------
 # Enumerations (MAV_ODID_*). Spelled out here rather than imported from
-# pymavlink: the values are frozen by the MAVLink standard, this module is
+# corvus_link: the values are frozen by the MAVLink standard, this module is
 # imported by the HTTP layer with no link open, and a headless install without
 # a v2 dialect loaded must still be able to render the page.
 # ---------------------------------------------------------------------------
@@ -212,7 +212,7 @@ def _text(raw: Any, limit: int) -> str:
     if raw is None:
         return ""
     if isinstance(raw, (bytes, bytearray)):
-        # pymavlink hands a fixed-width char field back as bytes on some
+        # corvus_link hands a fixed-width char field back as bytes on some
         # dialects and as str on others. str() on the bytes form yields
         # "b'no transmitter'", which is what an operator would then read on
         # the page — so it is decoded here rather than at each call site.

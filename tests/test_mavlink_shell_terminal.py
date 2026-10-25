@@ -16,7 +16,7 @@ import sys
 from typing import Any
 from collections.abc import Callable
 
-from pymavlink import mavutil
+from corvus_link import mavutil
 
 from corvus import mavlink_shell
 from corvus.mavlink_bridge import MavlinkBridge

@@ -19,7 +19,7 @@ Three jobs, deliberately separate:
   range coordinates and oversized lists all come back as a message rather than
   an exception.
 * :func:`plan_to_items` lowers a validated plan to a flat, wire-shaped list.
-  It does not import pymavlink — the command numbers below are the frozen
+  It does not import corvus_link — the command numbers below are the frozen
   MAV_CMD values, and ``mavlink_bridge`` asserts them against ``mavutil`` so a
   drift would fail loudly there rather than fly quietly here.
 
@@ -86,7 +86,7 @@ MISSION_NAME_MAX = 64
 MISSION_POINT_NAME_MAX = 40
 
 # MAV_CMD values, frozen. Stated as literals so this module stays importable
-# without pymavlink (the HTTP layer validates plans on machines where the
+# without corvus_link (the HTTP layer validates plans on machines where the
 # MAVLink link may never open); mavlink_bridge checks each one against
 # ``mavutil.mavlink`` before it sends anything.
 MAV_CMD_NAV_WAYPOINT = 16

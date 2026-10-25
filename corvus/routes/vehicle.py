@@ -9,7 +9,7 @@ import logging
 import math
 from typing import Any
 
-from pymavlink import mavutil
+from corvus_link import mavutil
 
 from .. import autopilot
 from ..http_input import _parse_takeoff_altitude

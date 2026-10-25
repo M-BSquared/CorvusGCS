@@ -30,15 +30,8 @@ def write(path: Path, data: bytes | str = b"x") -> Path:
 
 def fake_site(tmp_path: Path) -> Path:
     site = tmp_path / "site-packages"
-    for wire in ("v10", "v20"):
-        folder = site / "pymavlink" / "dialects" / wire
-        write(folder / "__init__.py", "")
-        for dialect in ("all", "common", "ardupilotmega"):
-            write(folder / f"{dialect}.py", dialect)
-            write(folder / f"{dialect}.xml", "<mavlink/>")
-            write(folder / "__pycache__" / f"{dialect}.cpython-313.pyc")
-    write(site / "pymavlink" / "mavutil.py", "")
-    write(site / "pymavlink" / "message_definitions" / "v1.0" / "common.xml")
+    write(site / "corvus_link" / "__init__.py", "from .corvus_link import *")
+    write(site / "corvus_link" / "corvus_link.abi3.so", b"\x7fELF")
     write(site / "lxml" / "__init__.py", "")
     write(site / "lxml-6.0.dist-info" / "METADATA")
     write(site / "pip" / "__init__.py", "")
@@ -54,16 +47,10 @@ def fake_site(tmp_path: Path) -> Path:
     return site
 
 
-def test_only_the_dialect_mavutil_loads_stays(tmp_path):
+def test_the_mavlink_extension_stays(tmp_path):
     site = fake_site(tmp_path)
     bt.trim(site, log=lambda _line: None)
-    for wire in ("v10", "v20"):
-        folder = site / "pymavlink" / "dialects" / wire
-        assert sorted(p.name for p in folder.glob("*.py")) == ["__init__.py", "all.py"]
-        assert [p.name for p in folder.glob("*.xml")] == ["all.xml"]
-        assert [p.name for p in (folder / "__pycache__").iterdir()] == ["all.cpython-313.pyc"]
-    assert (site / "pymavlink" / "mavutil.py").is_file()
-    assert (site / "pymavlink" / "message_definitions" / "v1.0" / "common.xml").is_file()
+    assert (site / "corvus_link" / "corvus_link.abi3.so").is_file()
 
 
 def test_lxml_and_pip_go_with_their_metadata(tmp_path):
@@ -116,10 +103,10 @@ def test_dry_run_changes_nothing(tmp_path):
     assert any("would remove" in line for line in lines)
 
 
-def test_a_missing_all_dialect_fails_the_build(tmp_path):
+def test_a_bundle_without_the_mavlink_extension_fails_the_build(tmp_path):
     site = fake_site(tmp_path)
-    (site / "pymavlink" / "dialects" / "v20" / "all.py").unlink()
-    with pytest.raises(bt.TrimError, match="v20/all.py"):
+    (site / "corvus_link" / "corvus_link.abi3.so").unlink()
+    with pytest.raises(bt.TrimError, match="corvus_link"):
         bt.trim(site, log=lambda _line: None)
 
 
@@ -130,14 +117,10 @@ def test_a_missing_en_us_locale_fails_the_build(tmp_path):
         bt.trim(site, log=lambda _line: None)
 
 
-def test_a_frozen_layout_without_dialect_sources_passes(tmp_path):
+def test_a_frozen_layout_with_the_extension_passes(tmp_path):
     internal = tmp_path / "_internal"
-    for wire in ("v10", "v20"):
-        write(internal / "pymavlink" / "dialects" / wire / "all.xml")
-        write(internal / "pymavlink" / "dialects" / wire / "common.xml")
+    write(internal / "corvus_link" / "corvus_link.pyd")
     bt.trim(internal, log=lambda _line: None)
-    for wire in ("v10", "v20"):
-        assert [p.name for p in (internal / "pymavlink" / "dialects" / wire).iterdir()] == ["all.xml"]
 
 
 # A .framework and its directory symlinks exist only in the macOS bundle; on
@@ -190,8 +173,7 @@ def test_every_build_script_runs_the_trim_after_the_qt_prune():
     assert '"--exclude-module", "lxml"' in windows
 
 
-def test_the_app_pins_the_dialect_the_bundles_keep():
+def test_the_app_no_longer_steers_pymavlink():
+    """MAVLINK_DIALECT only ever told pymavlink which dialect to load."""
     source = (ROOT / "corvus" / "app.py").read_text()
-    assert 'os.environ["MAVLINK_DIALECT"] = "all"' in source
-    assert source.index('os.environ["MAVLINK_DIALECT"]') < source.index("from corvus")
-    assert bt.MAVLINK_DIALECTS == {"all"}
+    assert "MAVLINK_DIALECT" not in source

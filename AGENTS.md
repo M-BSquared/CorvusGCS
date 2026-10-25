@@ -20,8 +20,9 @@ agents. An agent's name is its file name: `backend` is `.opencode/agents/backend
 - `backend` — Vehicle State Store, HTTP/SSE, version endpoint, process
   supervisor, per-stack schema registry.
 - `mavlink` — MAVLink v1/v2, autopilot comms, version-aware parameter schema,
-  and the flight-stack dialect layer (`corvus/autopilot.py`) that keeps PX4 and
-  ArduPilot differences in one place.
+  the flight-stack dialect layer (`corvus/autopilot.py`) that keeps PX4 and
+  ArduPilot differences in one place, and `rust/corvus_link`, the Rust module
+  that carries the wire format and the links.
 - `gui` — web UI, desktop app wrapper, lifecycle/shutdown path.
 - `map` — map engine, GIS transforms, offline tile cache, DEM, buildings.
 - `plugins` — the plugins in `plugins/`, the plugin registry and the
@@ -87,9 +88,19 @@ until a tool and its permission are added there on purpose.
   (`http.server`, `threading`, `subprocess`, `signal`, `atexit`,
   `collections.deque`, `pathlib`, `json`, `struct`). Add a third-party dependency
   only when the stdlib genuinely cannot do the job, and justify it.
-- **MAVLink:** pymavlink is the expected MAVLink library. Keep wire-format
-  parsing and parameter handling version- *and* stack-aware (see the
-  compatibility target below).
+- **MAVLink:** `corvus_link`, written in Rust (`rust/corvus_link`, PyO3,
+  built with maturin). It is a drop-in for pymavlink's interface: the code
+  imports `from corvus_link import mavutil` and gets the same `mavutil`,
+  message classes, `MAVLink` object and connections, with the `all` dialect
+  generated from the XML in `rust/corvus_link/message_definitions/` at build
+  time. pymavlink stays in the `test` group only, as the reference the parity
+  tests (`tests/test_corvus_link_*.py`) hold every message, constant, frame and
+  link to, and as the simulated vehicle in `tools/scene_kit`. No module under
+  `corvus/` imports pymavlink. The parameter protocol runs in corvus_link
+  too (`corvus_link.params.ParamEngine`, behind `corvus/mavlink_params.py`);
+  the other protocols are still Python and move one at a time, each held to
+  its Python predecessor kept in `tests/reference/`. Keep wire-format parsing and parameter handling
+  version- *and* stack-aware (see the compatibility target below).
 - **Frontend:** vanilla JS / small framework, MapLibre GL JS or Leaflet for the
   map. Telemetry is pushed from the backend; the frontend never polls for live
   data.
@@ -143,7 +154,7 @@ narrows the machines the artifact runs on.
 Shared packaging invariants — a violation of any of these is a build bug:
 
 - **Self-contained.** Bundled CPython + stdlib + PySide6/QtWebEngine +
-  pymavlink/paramiko/pyserial. No system Python, no conda, no Qt install on the
+  corvus_link/paramiko/pyserial. No system Python, no conda, no Qt install on the
   target machine.
 - **PySide6, never PyQt6.** The Qt binding is PySide6 (LGPL v3). PyQt6 is GPL
   v3, and the GPL does not combine with the Sustainable Use License, so
@@ -158,15 +169,19 @@ Shared packaging invariants — a violation of any of these is a build bug:
   whole QML tree. macOS 15 is the floor (`LSMinimumSystemVersion`), because
   PySide6 6.10 and later is built for it.
 - **Only what runs.** After the Qt trim, `tools/bundle_trim.py` takes out
-  every pymavlink dialect but `all` (which `corvus/app.py` pins through
-  `MAVLINK_DIALECT`), lxml, pip, Qt translations, Chromium locales but
-  `en-US` and `de`, Chromium's DevTools pack, the other architecture's V8
-  snapshot, and the framework copies pip writes where macOS expects
-  symlinks. It fails the build if the `all` dialect or `en-US.pak` is gone.
-  Code that loads another dialect, a `QTranslator`, lxml or opens the web
-  inspector has to change that tool in the same commit. `tools/qt_bundle.py`
-  keeps a PySide6 Python module only when Python loads it; the Qt libraries
-  QtWebEngine links stay without theirs.
+  lxml, pip, Qt translations, Chromium locales but `en-US` and `de`,
+  Chromium's DevTools pack, the other architecture's V8 snapshot, and the
+  framework copies pip writes where macOS expects symlinks. It fails the build
+  if `en-US.pak` or the compiled `corvus_link` module is gone. Code that loads
+  a `QTranslator`, lxml or opens the web inspector has to change that tool in
+  the same commit. `tools/qt_bundle.py` keeps a PySide6 Python module only when
+  Python loads it; the Qt libraries QtWebEngine links stay without theirs.
+- **corvus_link is built, not downloaded.** Every installer (`run.sh`, the
+  three build scripts, CI) runs `pip install <repo>/rust/corvus_link` after
+  its dependency group, so a build machine needs a Rust toolchain (cargo);
+  the target machine never does. A release lock excludes it
+  (`pip freeze --exclude corvus-link`), because the line would name the
+  build machine's path.
 - **Offline at runtime.** The build may download wheels and packaging tools
   once; the *running* app must never need the network.
 - **Layout contract.** `VERSION`, `corvus/`, `src/`, and `assets/` stay
@@ -412,6 +427,7 @@ Rules that keep the chain honest:
 .venv/bin/python -m pytest -q   # test suite (the gate for every change)
 .venv/bin/python -m ruff check corvus serve.py tests plugins   # lint, as CI runs it
 .venv/bin/python serve.py       # backend only, UI in a normal browser
+(cd rust/corvus_link && maturin develop --release)   # rebuild corvus_link into the venv after a Rust change
 ./build.sh [--dmg]              # artifact for the current host (dispatches below)
 ./build-appimage.sh             # Linux artifact  (x86_64)
 ./build-macos-app.sh [--dmg]    # macOS artifact  (arm64 / x86_64)

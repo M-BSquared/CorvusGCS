@@ -81,7 +81,9 @@ relocated interpreter, and excludes the never imported `QtQml`, `QtQuick` and
 ## The invariants (a violation is a build bug)
 
 - **Self contained.** Bundled CPython and stdlib, PySide6 with QtWebEngine,
-  pymavlink, paramiko, pyserial. No system Python, conda or Qt on the target.
+  corvus_link (MAVLink, built from `rust/corvus_link`), paramiko, pyserial.
+  No system Python, conda, Qt or Rust on the target; the build machine needs
+  cargo, and every installer runs `pip install <repo>/rust/corvus_link`.
 - **PySide6, never PyQt6.** PyQt6 is GPL and does not combine with the
   Sustainable Use License. The LGPL texts in `assets/licenses/` travel in every
   bundle. Since 6.12 QtWebEngine is its own wheel, `PySide6-WebEngine`; the
@@ -90,11 +92,11 @@ relocated interpreter, and excludes the never imported `QtQml`, `QtQuick` and
 - **Only what runs.** `tools/qt_bundle.py` keeps what the imported Qt modules,
   plugins and QtWebEngine link and fails when something would miss a library;
   a new Qt import in `corvus/app.py` goes into its `MODULES`.
-  `tools/bundle_trim.py` removes unused pymavlink dialects (not `all`), lxml,
-  pip, Qt translations, Chromium locales but `en-US` and `de`, the DevTools
-  pack, and the other architecture's V8 snapshot, and fails the build if the
-  `all` dialect or `en-US.pak` is gone. Code that loads another dialect, a
-  `QTranslator`, lxml or the web inspector changes that tool in the same commit.
+  `tools/bundle_trim.py` removes lxml, pip, Qt translations, Chromium locales
+  but `en-US` and `de`, the DevTools pack, and the other architecture's V8
+  snapshot, and fails the build if `en-US.pak` or the compiled `corvus_link`
+  is gone. Code that loads a `QTranslator`, lxml or the web inspector changes
+  that tool in the same commit.
 - **Assets and plugins by allow list.** `tools/bundle_assets.py` ships the
   logos, the university logo and `licenses/`, nothing else from `assets/`.
   `tools/bundle_plugins.py` ships the plugins `.gitignore` lets back in and

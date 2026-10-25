@@ -8,7 +8,7 @@ distance, and a sensor that goes quiet stops being shown.
 from __future__ import annotations
 
 import pytest
-from pymavlink import mavutil
+from corvus_link import mavutil
 
 from corvus import mavlink_bridge
 from corvus.mavlink_bridge import _rangefinder_distance_m

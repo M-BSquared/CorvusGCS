@@ -14,7 +14,7 @@ error, and no enum ever silently rewrites a value it does not recognise.
 from __future__ import annotations
 
 import pytest
-from pymavlink import mavutil as mv
+from corvus_link import mavutil as mv
 
 from corvus import (
     ardupilot_battery,

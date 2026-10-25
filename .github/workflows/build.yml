@@ -40,8 +40,9 @@ concurrency:
 jobs:
   # --- pytest ----------------------------------------------------------------
   # pyproject.toml's `test` group: the headless runtime deps the non-GUI unit
-  # tests import at module load (corvus.server pulls pymavlink + paramiko;
-  # mavlink_bridge uses pyserial lazily) plus pytest. PySide6 is intentionally
+  # tests import at module load (corvus.server pulls corvus_link + paramiko;
+  # mavlink_bridge uses pyserial lazily) plus pytest, and pymavlink, which the
+  # corvus_link parity tests compare against. PySide6 is intentionally
   # NOT installed — no headless test imports Qt. `--group` needs pip >= 25.1,
   # hence the upgrade before it.
   test:
@@ -57,6 +58,10 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install --group test
+      # MAVLink is corvus_link, a Rust extension built from this checkout. The
+      # hosted runners carry cargo; the build fetches maturin and the crates.
+      - name: Build corvus_link
+        run: pip install ./rust/corvus_link
       - name: pytest
         run: pytest -q
 
@@ -79,6 +84,10 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install --group test
+      # MAVLink is corvus_link, a Rust extension built from this checkout. The
+      # hosted runners carry cargo; the build fetches maturin and the crates.
+      - name: Build corvus_link
+        run: pip install ./rust/corvus_link
       - name: pytest
         run: pytest -q
 

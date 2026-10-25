@@ -21,7 +21,7 @@ import sys
 from typing import Any
 
 import pytest
-from pymavlink import mavutil
+from corvus_link import mavutil
 
 _TESTS_DIR = __import__("pathlib").Path(__file__).resolve().parent
 if str(_TESTS_DIR) not in sys.path:

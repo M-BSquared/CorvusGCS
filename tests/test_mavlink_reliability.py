@@ -14,7 +14,7 @@ import time
 from types import SimpleNamespace
 
 import pytest
-from pymavlink import mavutil
+from corvus_link import mavutil
 
 from corvus import autopilot
 from corvus import mavlink_bridge as mb
