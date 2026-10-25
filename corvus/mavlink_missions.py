@@ -7,7 +7,8 @@ MISSION_ITEM_REACHED, the record of what is on the vehicle and the vehicle's
 verdict on a new mission) is ``corvus_link.missions.MissionEngine``, in Rust.
 It reads the tunables below and this module's ``time`` when it needs them.
 The flight sequences on top (fly to points, mission start with its mode and
-arming order, reposition) are still here, and move with the flight commands.
+arming order, reposition) are ``corvus_link.flight.FlightEngine``, with the
+flight commands.
 Nothing here imports the bridge, so the bridge can import this.
 """
 from __future__ import annotations
@@ -24,7 +25,7 @@ from corvus_link import missions as _engine
 
 from . import geofence
 from . import mission as mission_plan
-from .autopilot import is_ground_vehicle
+from .autopilot import is_ground_vehicle  # noqa: F401 - the engine reads it
 # Read by the engine from this module, like the tunables below.
 from .mavlink_common import TAKEOFF_ALTITUDE_MAX_M, TAKEOFF_ALTITUDE_MIN_M, _PendingAck  # noqa: F401
 
@@ -310,74 +311,14 @@ class MissionProtocolMixin:
     def _start_uploaded_mission(self, action: str, count: int, mark: int | None = None) -> bool:
         """MISSION_START, the mission mode and arming, in this stack's order.
 
-        PX4's MISSION_START switches to the mission and arms by itself; the
-        mode change and arm that follow only confirm it. ArduPilot's switches
-        to AUTO and nothing more, and a copter will not arm in AUTO, so a
-        vehicle still on the ground is put in the dialect's arming mode and
-        armed first. That order can leave an aircraft armed for nothing, so a
-        MISSION_START refused after arming disarms again, as takeoff does.
-
-        Called without the command lock: each step takes it for its own round
-        trip, so Disarm, Land, RTL or a mode change never waits behind the
-        mode and arm confirmations, and a sequence one of them interrupted
-        sends nothing more (*mark*, see :meth:`_sequence_interrupted`).
-        Returns False with the reason set.
+        PX4's MISSION_START switches to the mission and arms by itself, and is
+        then only watched in telemetry. ArduPilot's switches to AUTO and
+        nothing more, so a vehicle still on the ground is put in the dialect's
+        arming mode and armed first, and disarmed again if the start is
+        refused after that. Each step takes the command lock for itself, and
+        a sequence an abort interrupted (*mark*) sends nothing more.
         """
-        if mark is None:
-            mark = self._operation_lock.abort_mark()
-        nan = float("nan")
-        first, last = self._mission_start_range(count)
-        arm_mode = self._dialect.mission_arm_mode(self._mav_type_id)
-        armed_here = False
-        if arm_mode and not self._store.get_snapshot().get("armed"):
-            if arm_mode == self._dialect.mission_mode:
-                entered = self._enter_mission_mode(action)
-            else:
-                entered = self._enter_guided(action)
-            if not entered:
-                return False
-            if self._sequence_interrupted(mark, action):
-                return False
-            if not self.arm(True):
-                return False
-            armed_here = True
-        if self._sequence_interrupted(mark, action):
-            return False
-        with self._operation_lock:
-            result = self._send_command_and_wait(
-                mavutil.mavlink.MAV_CMD_MISSION_START,
-                [first, last, nan, nan, nan, nan, nan],
-                timeout=5.0, retries=1,
-            )
-        if result != mavutil.mavlink.MAV_RESULT_ACCEPTED:
-            if armed_here:
-                self._console_publish(
-                    "MISSION", "Mission start refused after arming, disarming again",
-                    "warning",
-                )
-                self.arm(False)
-            return self._command_failure(action, result)
-        if arm_mode:
-            # ArduPilot's MISSION_START is itself the switch to AUTO, and the
-            # vehicle was armed above (or already was).
-            return True
-        # PX4's Commander accepts MISSION_START only after it has switched to
-        # AUTO.MISSION and armed, so the ACK already says both. A DO_SET_MODE
-        # and an arm sent after it used to follow anyway: two more mode events
-        # for the operator, and on a short hop that had already finished, a
-        # second MISSION that restarted the mission. So telemetry is watched
-        # instead, and nothing more is sent.
-        mode = self._dialect.mission_mode
-        if mode and not self._wait_for_mode(mode):
-            snapshot = self._store.get_snapshot()
-            if snapshot.get("mode") != mode:
-                self._console_publish(
-                    "MISSION",
-                    f"{action}: accepted, but the vehicle reports "
-                    f"{snapshot.get('mode') or 'no mode'} rather than {mode}",
-                    "warning",
-                )
-        return True
+        return self._flight_engine.start_uploaded_mission(self, action, count, mark)
 
     @staticmethod
     def _mission_ack_to_result(ack_type: int) -> int:
@@ -396,138 +337,32 @@ class MissionProtocolMixin:
     def _reposition_to(self, lat: float, lon: float, alt_agl: float) -> bool | None:
         """Send an airborne vehicle to one point with MAV_CMD_DO_REPOSITION.
 
-        The one point "Fly to this point" asks for does not need a mission:
-        uploading one replaced whatever mission was on board, and flew through
-        MISSION into LOITER, two mode changes and two notifications for a
-        single hop. A reposition moves the Hold target (GUIDED on ArduPilot)
-        and the vehicle stays in the mode it is in when it is already holding.
-
-        Returns None when the vehicle cannot take it (no altitude reference to
-        convert AGL on PX4, or the command is unsupported), so the caller
-        falls back to the mission, which needs neither.
+        One point needs no mission: a reposition moves the hold target and
+        leaves the stored mission alone. None when the vehicle cannot take it
+        (no altitude reference on PX4, or unsupported), so the caller falls
+        back to the mission.
         """
-        nan = float("nan")
-        if self._dialect.reposition_altitude_frame(self._mav_type_id) == "relative":
-            frame = mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT
-            altitude = float(alt_agl)
-        else:
-            amsl = self._takeoff_altitude_amsl(alt_agl)
-            if amsl is None:
-                return None
-            frame = mavutil.mavlink.MAV_FRAME_GLOBAL
-            altitude = float(amsl)
-        action = "Drive to point" if is_ground_vehicle(self._mav_type_id) else "Fly to point"
-        if not self._enter_guided(action):
-            return False
-        result = self._send_command_int_and_wait(
-            mavutil.mavlink.MAV_CMD_DO_REPOSITION, frame,
-            [-1.0, float(DO_REPOSITION_CHANGE_MODE), 0.0, nan],
-            x=int(round(lat * 1e7)), y=int(round(lon * 1e7)), z=altitude,
-            timeout=5.0, retries=1,
-        )
-        if result == mavutil.mavlink.MAV_RESULT_UNSUPPORTED:
-            return None
-        if result != mavutil.mavlink.MAV_RESULT_ACCEPTED:
-            return self._command_failure(action, result)
-        if is_ground_vehicle(self._mav_type_id):
-            self._console_publish("GOTOPOINTS", "Driving to point", "success")
-        else:
-            self._console_publish(
-                "GOTOPOINTS", f"Flying to point at {alt_agl:.0f} m AGL", "success",
-            )
-        return True
+        return self._flight_engine.reposition_to(self, lat, lon, alt_agl)
 
     def _can_reposition(self, ground: bool, on_ground: bool) -> bool:
         """Is one point best sent as a DO_REPOSITION rather than a mission?
 
-        An aircraft that is in the air, yes. A rover has no air to be in, so it
-        is armed instead, and only on ArduPilot: PX4 reads a reposition's
-        altitude as AMSL and a rover has none to give.
+        An aircraft in the air, yes. A rover only when armed, and only where
+        the stack reads the altitude as relative (ArduPilot).
         """
-        if not ground:
-            return not on_ground
-        relative = self._dialect.reposition_altitude_frame(self._mav_type_id) == "relative"
-        return relative and bool(self._store.get_snapshot().get("armed"))
+        return self._flight_engine.can_reposition(self, ground, on_ground)
 
     def fly_to_points(self, points: list[dict[str, float]]) -> bool:
         """Fly to the given points in order (Punktabflug) by uploading a mission.
 
         Each point is ``{"lat","lon","alt_agl"}`` with ``alt_agl`` in metres
-        above home (same reference as :meth:`takeoff`). Uploads a
-        MISSION_ITEM_INT mission (MAV_FRAME_GLOBAL_RELATIVE_ALT), then starts
-        and arms it in the order the connected stack needs (see
-        :meth:`_start_uploaded_mission`). Returns True only when the mission is
-        accepted, started, and the vehicle is armed. Works on PX4 v1.16, v1.17
-        and v1.18, and on ArduPilot 4.3 to 4.6.
-
-        One point for a vehicle already in the air is a reposition instead
-        (see :meth:`_reposition_to`), which leaves the stored mission alone.
+        above home. Uploads a MAV_FRAME_GLOBAL_RELATIVE_ALT mission (with a
+        takeoff item first on the ground), then starts and arms it in the
+        stack's order (see :meth:`_start_uploaded_mission`). True only when it
+        is accepted, started and armed. One point for a vehicle already in the
+        air is a reposition instead (see :meth:`_reposition_to`).
         """
-        self._set_command_error("")
-        mark = self._operation_lock.abort_mark()
-        ground = is_ground_vehicle(self._mav_type_id)
-        label = "Drive to points" if ground else "Fly to points"
-        cleaned = self._validate_fly_to_points(points)
-        if cleaned is None:
-            return False
-        if not self._connection_ready():
-            return self._command_failure(label, -2)
-        # No altitude-reference gate here, on purpose. There used to be one,
-        # and it was pure ceremony: every item below is built in
-        # MAV_FRAME_GLOBAL_RELATIVE_ALT, whose z *is* the AGL number the
-        # operator typed, so the AMSL value the gate computed was thrown away
-        # without ever being sent. It refused missions over a conversion the
-        # mission does not need.
-        on_ground = not ground and not self._is_airborne()
-        if len(cleaned) == 1 and self._can_reposition(ground, on_ground):
-            # A mode change and one command, each under the lock for itself.
-            handled = self._reposition_to(*cleaned[0])
-            if handled is not None:
-                return handled
-        nan = float("nan")
-        items: list[dict[str, Any]] = []
-        seq = 0
-        if on_ground:
-            # Climb to the first waypoint's AGL, then proceed to the points.
-            takeoff_agl = cleaned[0][2]
-            takeoff_lat, takeoff_lon = self._takeoff_item_position(cleaned[0])
-            items.append(self._build_mission_item_spec(
-                seq, mavutil.mavlink.MAV_CMD_NAV_TAKEOFF,
-                takeoff_lat, takeoff_lon, takeoff_agl, nan, nan, nan, nan,
-            ))
-            seq += 1
-        for lat, lon, alt_agl in cleaned:
-            items.append(self._build_mission_item_spec(
-                seq, mavutil.mavlink.MAV_CMD_NAV_WAYPOINT,
-                lat, lon, alt_agl, 0.0, nan, nan, nan,
-            ))
-            seq += 1
-
-        planned = len(items)
-        items = self._with_mission_home_slot(items)
-        # The upload is a handshake and holds the lock; it gives way to an
-        # abort by cancelling itself. Starting is a sequence, and does not.
-        with self._operation_lock:
-            if not self._connection_ready():
-                return self._command_failure(label, -2)
-            self._console_publish(
-                "GOTOPOINTS", f"Uploading {planned} mission item(s) …", "info",
-            )
-            ack = self._upload_mission(items)
-            if ack != mavutil.mavlink.MAV_MISSION_ACCEPTED:
-                result = ack if ack < 0 else self._mission_ack_to_result(ack)
-                return self._command_failure(label, result)
-            # Not a plan: the Mission page's plan is no longer what is on board.
-            self._note_vehicle_mission(None)
-
-        self._console_publish(
-            "GOTOPOINTS", "Mission accepted; starting …", "info",
-        )
-        if not self._start_uploaded_mission(label, planned, mark):
-            return False
-
-        self._console_publish("GOTOPOINTS", f"{label} started", "success")
-        return True
+        return self._flight_engine.fly_to_points(self, points)
 
     # ------------------------------------------------------------------
     # Mission plan (the Mission page)
@@ -579,23 +414,10 @@ class MissionProtocolMixin:
     def start_mission(self, count: int) -> bool:
         """Run the mission already on the vehicle: MISSION_START, AUTO, arm.
 
-        *count* is how many items were uploaded. On PX4 MAV_CMD_MISSION_START
-        carries an explicit first/last pair rather than the "0 = last item"
-        convention, which is the one part of this that differs across v1.16 to
-        v1.18; the order of the steps is the dialect's, see
-        :meth:`_start_uploaded_mission`.
+        *count* is how many items were uploaded; the order of the steps is the
+        dialect's, see :meth:`_start_uploaded_mission`.
         """
-        self._set_command_error("")
-        mark = self._operation_lock.abort_mark()
-        if isinstance(count, bool) or not isinstance(count, int) or count <= 0:
-            self._set_command_error("mission item count must be positive")
-            return False
-        if not self._connection_ready():
-            return self._command_failure("Mission start", -2)
-        if not self._start_uploaded_mission("Mission start", count, mark):
-            return False
-        self._console_publish("MISSION", "Mission started", "success")
-        return True
+        return self._flight_engine.start_mission(self, count)
 
     def clear_mission(self) -> bool:
         """Wipe the mission stored on the vehicle: a zero-item upload, so a

@@ -6,30 +6,37 @@ sets up. What an operator asks of the aircraft in flight. Each command goes thro
 the bridge's command plumbing (``_send_command_and_wait``) and the dialect
 layer for the stack differences (takeoff order, mission mode).
 Nothing here imports the bridge, so the bridge can import this.
+
+The commands are ``corvus_link.flight.FlightEngine``, in Rust, which also runs
+the mission sequences of :mod:`corvus.mavlink_missions` (fly to points,
+mission start, reposition). It reads its clock (``time``) and the names
+imported below from this module, and calls every step through the bridge, so
+a bridge that overrides one step changes the sequence.
 """
 from __future__ import annotations
 
-import logging
-import math
-import time
-
-from corvus_link import mavutil
+import sys
+import time  # noqa: F401 - the engine's clock
 from typing import Any
 
-from .autopilot import PLUGIN_POSITION_COMMANDS, ModeCommand, is_ground_vehicle
-from .mavlink_common import (
+from corvus_link import flight as _engine
+from corvus_link import mavutil  # noqa: F401 - the engine names unknown commands
+
+# Read by the engine from this module.
+from .autopilot import PLUGIN_POSITION_COMMANDS, ModeCommand, is_ground_vehicle  # noqa: F401
+from .mavlink_common import (  # noqa: F401
     MAV_RESULT_TEXT, TAKEOFF_ALTITUDE_MAX_M, TAKEOFF_ALTITUDE_MIN_M,
     VELOCITY_MAX_MS, YAW_RATE_MAX_DEG_S,
 )
+from .mavlink_missions import DO_REPOSITION_CHANGE_MODE  # noqa: F401
 
-logger = logging.getLogger("corvus.mavlink")
 
 class FlightCommandsMixin:
     """Flight commands: flight mode, arming, takeoff, landing, return and home."""
 
     # How long to watch for the arm/disarm to show up in telemetry. Confirmation
-    # arrives on HEARTBEAT, which is 1 Hz on every link Corvus supports, so the
-    # old 3 s was three heartbeats — and on a lossy radio, sometimes one.
+    # arrives on HEARTBEAT, 1 Hz on every link Corvus supports, so this is six
+    # of them: on a lossy radio three were sometimes one.
     ARMED_STATE_CONFIRM_S = 6.0
 
     # MAV_LANDED_STATE values that mean the aircraft is off the ground.
@@ -39,158 +46,68 @@ class FlightCommandsMixin:
     AIRBORNE_FALLBACK_M = 1.5
 
     # How long takeoff waits for an altitude reference to turn up before it
-    # gives up on converting AGL to AMSL. HOME_POSITION streams at 0.5-1 Hz and
-    # GLOBAL_POSITION_INT far faster, so this covers "the operator clicked
-    # Takeoff a second after connecting" without putting a noticeable pause in
-    # front of the command in the normal case, where the reference is already
-    # there and this is never called.
+    # gives up on converting AGL to AMSL: "the operator clicked Takeoff a
+    # second after connecting", without a pause in the normal case.
     TAKEOFF_REFERENCE_WAIT_S = 2.0
 
     # How long a mode change is given to show up in telemetry before the
-    # command that depends on it is sent anyway. HEARTBEAT is 1 Hz on every
-    # link Corvus supports, so this is three of them on a lossy radio.
+    # command that depends on it is sent anyway.
     MODE_CONFIRM_S = 3.0
+
+    def _init_flight_state(self) -> None:
+        """Set up the flight command engine; called from the bridge's __init__."""
+        self._flight_engine = _engine.FlightEngine(sys.modules[__name__])
 
     def set_mode(self, mode: str) -> bool:
         """Change flight mode, ACK-confirmed.
 
         Priority tier: a mode change is always a direct operator instruction
-        and is always a single command, so it can neither be starved nor
-        starve anything. Reaching for LOITER or RTL on the mode selector is
-        how a flight gets taken back by hand, and it has to act at once.
+        and a single command. Reaching for LOITER or RTL on the mode selector
+        is how a flight gets taken back by hand, and it has to act at once.
         """
         with self._operation_lock.priority():
-            self._set_command_error("")
-            if not self._connection_ready():
-                return self._command_failure("Mode change", -2)
-            value = self._mode_values.get(mode)
-            if not isinstance(value, tuple) or len(value) < 3:
-                # Three different failures used to share one message, and two
-                # of them named PX4 at an aircraft that was not running it.
-                if self._modes_unsupported:
-                    text = (
-                        "Mode changes are not supported on this autopilot: "
-                        "Corvus does not know how it encodes a mode"
-                    )
-                else:
-                    text = (
-                        f"Unknown or unsupported {self._dialect.label} mode: "
-                        f"{mode}"
-                    )
-                logger.error("%s", text)
-                self._set_command_error(text)
-                return False
-            params = ModeCommand(*value[:3]).params()
-            result = self._send_command_and_wait(
-                mavutil.mavlink.MAV_CMD_DO_SET_MODE,
-                params,
-                timeout=3.0,
-                retries=1,
-            )
-            if result != mavutil.mavlink.MAV_RESULT_ACCEPTED:
-                return self._command_failure("Mode change", result)
-            self._console_publish("MODE", f"Mode accepted: {mode}", "success")
-            return True
+            return self._flight_engine.set_mode(self, mode)
 
     def _sequence_interrupted(self, mark: int, action: str) -> bool:
         """Did the operator take over while a multi-step command was under way?
 
-        Takeoff and mission start are several commands with telemetry waits
-        between them, and they no longer hold the command lock across those
-        waits: Disarm, Land, RTL or a mode change must not queue behind them.
-        So each later step asks first whether one of those ran meanwhile, and
-        the sequence stops there rather than sending its next step on top of
-        the operator's.
+        Takeoff and mission start do not hold the command lock across their
+        telemetry waits, so Disarm, Land, RTL or a mode change never queue
+        behind them. Each later step asks this first and stops with the reason
+        rather than send its next step on top of the operator's.
         """
-        if not self._operation_lock.aborted_since(mark):
-            return False
-        text = f"{action} stopped: another command took over"
-        self._set_command_error(text)
-        self._console_publish(action.upper(), text, "warning")
-        return True
+        return self._flight_engine.sequence_interrupted(self, mark, action)
 
     def _reports_armed_state(self, armed: bool) -> bool:
         """Does fresh telemetry say the vehicle is already *armed* (or not)?"""
-        snapshot = self._store.get_snapshot()
-        return (
-            bool(snapshot.get("connected"))
-            and bool(snapshot.get("armed")) is armed
-            and not self._store.is_stale(timeout=2.0)
-        )
+        return self._flight_engine.reports_armed_state(self, armed)
 
     def _wait_for_armed_state(self, armed: bool, timeout: float = ARMED_STATE_CONFIRM_S) -> bool:
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            snapshot = self._store.get_snapshot()
-            if snapshot.get("connected") and bool(snapshot.get("armed")) is armed:
-                return True
-            time.sleep(0.05)
-        return False
+        """Watch the store until it reports *armed*, for up to *timeout* seconds."""
+        return self._flight_engine.wait_for_armed_state(self, armed, timeout)
 
     def arm(self, arm: bool = True) -> bool:
-        """Arm/disarm with ACK confirmation. Returns True only if PX4 accepted.
+        """Arm/disarm with ACK confirmation.
 
-        Disarm is an abort and takes the priority tier: it is the command an
-        operator reaches for when something is wrong, and it must not queue
-        behind a parameter upload. Arming is ordinary and queues normally.
+        Disarm is an abort and takes the priority tier; arming queues. The
+        command is always sent, since telemetry lags the vehicle. An accepted
+        command whose telemetry confirmation never arrives (behind
+        mavlink-router, say) is reported as unconfirmed, not as failed: calling
+        it a failure would tell the operator an armed aircraft was disarmed.
         """
         if not isinstance(arm, bool):
             self._set_command_error("Arm state must be boolean")
             return False
-        action = "Arm" if arm else "Disarm"
         # Disarm overtakes routine work; arm does not.
         gate = self._operation_lock if arm else self._operation_lock.priority()
         with gate:
-            self._set_command_error("")
-            if not self._connection_ready():
-                return self._command_failure(action, -2)
-            # Always sent, even when telemetry already shows the state asked
-            # for. Telemetry lags the vehicle by up to a heartbeat: a Disarm
-            # pressed right after an Arm was accepted read "already disarmed"
-            # off the store and returned success without sending anything.
-            nan = float("nan")
-            result = self._send_command_and_wait(
-                mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM,
-                [1.0 if arm else 0.0, 0.0, nan, nan, nan, nan, nan],
-                timeout=3.0, retries=2,
-            )
-            if result != mavutil.mavlink.MAV_RESULT_ACCEPTED:
-                # ArduPilot answers FAILED to arming an armed vehicle and to
-                # disarming a disarmed one. When fresh telemetry agrees the
-                # vehicle is in the state asked for, that is not a failure.
-                if result >= 0 and self._reports_armed_state(arm):
-                    return True
-                return self._command_failure(action, result)
-        # Outside the lock deliberately. What follows sends nothing: it watches
-        # the store for the vehicle's own report of the new state. Holding the
-        # command lock through six seconds of reading telemetry blocked every
-        # other command for the duration and protected nothing — and it was the
-        # single longest hold in the class, because takeoff nests this call.
-        if not self._wait_for_armed_state(arm):
-            # The vehicle ACCEPTED the command; telemetry has not caught up.
-            # That is a reporting gap, not a refusal, and calling it a
-            # failure was the more dangerous of the two mistakes: the arm
-            # confirmation only ever arrives on a HEARTBEAT from the exact
-            # component this session latched onto at connect, so behind
-            # mavlink-router or a companion computer it can simply never
-            # come — and Corvus would then tell the operator the aircraft
-            # was disarmed while it was armed and spinning.
-            #
-            # So the ACK is taken at its word and the *uncertainty* is what
-            # gets reported. The armed indicator on the bar is driven by
-            # telemetry either way, so it keeps showing the truth as soon
-            # as any arrives.
-            text = (
-                f"{action} accepted by the vehicle, but no telemetry "
-                f"confirmation within {self.ARMED_STATE_CONFIRM_S:.0f}s. "
-                f"Check the armed indicator"
-            )
-            self._console_publish("ARM", text, "warning")
-            self._store_update_warning(text, "warning")
-            return True
-        completed = "Armed" if arm else "Disarmed"
-        self._console_publish("ARM", f"{completed} successfully", "success")
-        return True
+            verdict = self._flight_engine.arm_command(self, arm)
+        if verdict is not None:
+            return verdict
+        # Outside the lock: the confirmation sends nothing, it watches the
+        # store for up to ARMED_STATE_CONFIRM_S, and holding the lock across
+        # it blocked every other command for the duration.
+        return self._flight_engine.arm_confirm(self, arm)
 
     def _is_airborne(self) -> bool:
         """Is the aircraft off the ground? The vehicle's own answer first.
@@ -199,22 +116,10 @@ class FlightCommandsMixin:
         planner and the status bar cannot disagree about whether a takeoff item
         needs prepending.
         """
-        snapshot = self._store.get_snapshot()
-        landed = snapshot.get("landed_state")
-        if landed in self._AIRBORNE_LANDED_STATES:
-            return True
-        if landed == 1:            # ON_GROUND, stated outright
-            return False
-        try:
-            return float(snapshot.get("altitude_agl", 0.0)) > self.AIRBORNE_FALLBACK_M
-        except (TypeError, ValueError):
-            return False
+        return self._flight_engine.is_airborne(self)
 
     def _takeoff_altitude_amsl(self, altitude_agl: float) -> float | None:
-        reference = self._home_alt_amsl
-        if reference is None:
-            reference = self._position_home_alt_amsl
-        return None if reference is None else reference + altitude_agl
+        return self._flight_engine.takeoff_altitude_amsl(self, altitude_agl)
 
     def _await_takeoff_reference(self, altitude_agl: float) -> float | None:
         """Nudge the vehicle for home and wait briefly for an altitude reference.
@@ -222,400 +127,86 @@ class FlightCommandsMixin:
         Returns the AMSL takeoff altitude once one can be derived, or None if
         nothing arrives inside the window.
         """
-        self._request_home()
-        deadline = time.monotonic() + self.TAKEOFF_REFERENCE_WAIT_S
-        while time.monotonic() < deadline:
-            if self._stop_event.is_set() or not self._connection_ready():
-                return None
-            amsl = self._takeoff_altitude_amsl(altitude_agl)
-            if amsl is not None:
-                return amsl
-            time.sleep(0.05)
-        return self._takeoff_altitude_amsl(altitude_agl)
+        return self._flight_engine.await_takeoff_reference(self, altitude_agl)
 
     def _wait_for_mode(self, mode: str, timeout: float = MODE_CONFIRM_S) -> bool:
         """Watch the store until the vehicle reports *mode*, or time out.
 
         Sends nothing. ArduPilot refuses a guided takeoff outside GUIDED, and
-        it refuses it from the *old* mode if the command overtakes the mode
-        change on the wire — so the takeoff waits for the aircraft's own word
-        rather than for the DO_SET_MODE ack, which only says the command was
-        understood.
+        from the old mode if the command overtakes the mode change on the
+        wire, so the takeoff waits for the aircraft's own word.
         """
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            if self._stop_event.is_set() or not self._connection_ready():
-                return False
-            if self._store.get_snapshot().get("mode") == mode:
-                return True
-            time.sleep(0.05)
-        return self._store.get_snapshot().get("mode") == mode
+        return self._flight_engine.wait_for_mode(self, mode, timeout)
 
     def _enter_guided(self, action: str) -> bool:
         """Put the vehicle in the mode a guided command needs, if it needs one.
 
-        PX4 switches itself and answers "" here, so this is a no-op on a PX4
-        link. ArduPilot has to be in GUIDED first, and a vehicle already in a
-        mode that accepts guided commands (GUIDED itself, or the AUTO_RTL /
-        TAKEOFF modes that are guided states in disguise) is left alone rather
-        than kicked out of it.
+        PX4 needs none. ArduPilot has to be in GUIDED first, and a vehicle
+        already in a mode that accepts guided commands is left alone.
         """
-        wanted = self._dialect.guided_mode(self._mav_type_id)
-        if not wanted:
-            return True
-        current = self._store.get_snapshot().get("mode") or ""
-        if current == wanted:
-            return True
-        if not self.set_mode(wanted):
-            existing = self.get_last_command_error()
-            self._set_command_error(
-                f"{action} needs {wanted} mode, which the vehicle refused"
-                + (f": {existing}" if existing else "")
-            )
-            return False
-        if not self._wait_for_mode(wanted):
-            # The vehicle ACCEPTED the mode change; its heartbeat has not caught
-            # up. Proceed rather than refuse — the command that follows is
-            # ack-confirmed on its own, and a refusal here would strand a
-            # takeoff on a slow link that was about to work.
-            self._console_publish(
-                "MODE",
-                f"{wanted} accepted but not yet confirmed in telemetry, "
-                f"continuing with {action.lower()}",
-                "warning",
-            )
-        return True
+        return self._flight_engine.enter_guided(self, action)
 
     def _enter_mission_mode(self, action: str) -> bool:
-        """Switch to the mode that runs a stored mission.
-
-        PX4 calls it MISSION (its AUTO.MISSION sub-mode); ArduPilot calls it
-        AUTO. Hardcoding either name is how a mission upload that the vehicle
-        accepted was then followed by "Unknown or unsupported mode: MISSION".
-        """
-        mode = self._dialect.mission_mode
-        if not mode:
-            self._set_command_error(
-                f"{action}: Corvus does not know this autopilot's mission mode"
-            )
-            return False
-        if mode not in self._mode_values and self._mode_values:
-            # The live mapping is the authority when there is one — a vehicle
-            # that names its mission mode something else entirely says so here
-            # rather than after the command is refused.
-            self._set_command_error(
-                f"{action}: this vehicle does not offer a {mode} mode"
-            )
-            return False
-        return self.set_mode(mode)
+        """Switch to the mode that runs a stored mission: MISSION on PX4, AUTO
+        on ArduPilot, from the dialect rather than hardcoded."""
+        return self._flight_engine.enter_mission_mode(self, action)
 
     def takeoff(self, altitude_agl: float = 10.0) -> bool:
         """Command a guided takeoff to *altitude_agl* metres above the ground.
 
-        The two supported stacks want this staged in opposite orders, and the
-        altitude in different frames:
+        **PX4** accepts ``MAV_CMD_NAV_TAKEOFF`` from any mode with param7 as an
+        **AMSL** altitude and is armed afterwards, so a refused takeoff never
+        leaves an armed aircraft on the ground. Without an altitude reference
+        param7 is NaN, the vehicle's own configured altitude.
 
-        **PX4** accepts ``MAV_CMD_NAV_TAKEOFF`` from any mode, reads param7 as
-        an **AMSL** altitude, and switches itself into AUTO.TAKEOFF. Arming
-        comes afterwards, so a refused takeoff never leaves an armed aircraft
-        sitting on the ground.
-
-        **ArduPilot** reads param7 as an altitude **relative to home**, refuses
-        the command outside GUIDED, and refuses it while disarmed. So the order
-        inverts — mode, then arm, then takeoff — and this method disarms again
-        if the last step fails, because the inverted order is the one that *can*
-        leave an aircraft armed for no reason.
-
-        Sending PX4's payload to ArduPilot is not a cosmetic mismatch: a 10 m
-        takeoff becomes a request to climb to 10 m above sea level, which on
-        most of the world's land is a command to stay put.
+        **ArduPilot** reads param7 **relative to home**, and refuses the
+        command outside GUIDED or while disarmed: mode, arm, takeoff, and a
+        disarm again if the takeoff is refused.
         """
-        self._set_command_error("")
-        if is_ground_vehicle(self._mav_type_id):
-            self._set_command_error("Takeoff is not available on a rover. Arm it and drive.")
-            return False
-        if isinstance(altitude_agl, bool):
-            self._set_command_error("Takeoff altitude must be a number")
-            return False
-        try:
-            altitude_agl = float(altitude_agl)
-        except (TypeError, ValueError):
-            self._set_command_error("Takeoff altitude must be a number")
-            return False
-        if not math.isfinite(altitude_agl):
-            self._set_command_error("Takeoff altitude must be finite")
-            return False
-        if not TAKEOFF_ALTITUDE_MIN_M <= altitude_agl <= TAKEOFF_ALTITUDE_MAX_M:
-            self._set_command_error(
-                f"Takeoff altitude must be between {TAKEOFF_ALTITUDE_MIN_M:.0f} and "
-                f"{TAKEOFF_ALTITUDE_MAX_M:.0f} m AGL"
-            )
-            return False
-        if not self._connection_ready():
-            return self._command_failure("Takeoff", -2)
-        mark = self._operation_lock.abort_mark()
-        nan = float("nan")
-        plan = self._dialect.takeoff_plan(self._mav_type_id)
-        # Resolved BEFORE the command lock is taken. Validation reads nothing
-        # shared, and the reference wait below sends a single HOME request and
-        # then watches the store for up to two seconds — so holding the lock
-        # across it blocked every other command, including the abort commands,
-        # while this one did nothing but read telemetry.
-        if plan.altitude_frame == "relative":
-            # ArduPilot flies param7 as metres above home, which is the number
-            # the operator typed. There is nothing to convert and therefore no
-            # altitude reference to wait for — the whole HOME_POSITION dance
-            # below exists only because PX4 wants AMSL.
-            takeoff_alt: float = altitude_agl
-            altitude_note = f"Requesting {altitude_agl:.0f} m above home"
-        else:
-            alt_amsl = self._takeoff_altitude_amsl(altitude_agl)
-            if alt_amsl is None:
-                # No altitude reference yet — usually because HOME_POSITION and
-                # GLOBAL_POSITION_INT simply have not arrived in the second
-                # since connect. Ask for home once and give the streams a
-                # moment rather than refusing on the spot.
-                alt_amsl = self._await_takeoff_reference(altitude_agl)
-            if alt_amsl is None:
-                # Still nothing. param7 is left unspecified rather than
-                # invented: NaN is this protocol's "use your own default" (the
-                # same convention every unused param in this file uses), so the
-                # vehicle takes off to its configured takeoff altitude.
-                #
-                # Refusing here was the wrong call. Corvus was deciding, on the
-                # ground, that a flight could not happen — using a reference it
-                # only ever needed in order to *convert* the operator's number,
-                # not to validate it. Whether this aircraft can take off right
-                # now is the autopilot's judgement, and it is far better placed
-                # to make it; if it cannot, its own refusal reaches the operator
-                # with a reason attached.
-                takeoff_alt = nan
-                text = (
-                    "No altitude reference yet (no HOME_POSITION or global "
-                    "position), so asking the vehicle to take off to its own "
-                    f"configured altitude instead of {altitude_agl:.0f} m"
-                )
-                logger.warning("%s", text)
-                self._console_publish("TAKEOFF", text, "warning")
-                self._store_update_warning(text, "warning")
-                altitude_note = ""
-            else:
-                takeoff_alt = alt_amsl
-                altitude_note = (
-                    f"Requesting {altitude_agl:.0f} m AGL ({alt_amsl:.1f} m AMSL)"
-                )
-
-        # Also before the lock: the mode change ArduPilot needs first is itself
-        # an ack-confirmed command followed by a wait on telemetry, and holding
-        # the command lock across it would block the abort commands for as long
-        # as the vehicle took to answer.
-        if plan.order == "mode_arm_takeoff" and not self._enter_guided("Takeoff"):
-            return False
-
-        params = [plan.min_pitch_deg, nan, nan, nan, nan, nan, takeoff_alt]
-        # Each step takes the command lock for itself and no longer than its
-        # own round trip. Holding it across the whole sequence held it across
-        # the arm confirmation too, up to six seconds of reading telemetry,
-        # and a Disarm, Land or RTL pressed in that window waited for it.
-        if self._sequence_interrupted(mark, "Takeoff"):
-            return False
-        if not self._connection_ready():
-            # Re-checked: the waits above are not instantaneous, and the link
-            # may have gone in the meantime.
-            return self._command_failure("Takeoff", -2)
-        if altitude_note:
-            self._console_publish("TAKEOFF", altitude_note, "info")
-
-        if plan.order == "takeoff_then_arm":
-            with self._operation_lock:
-                result = self._send_command_and_wait(
-                    mavutil.mavlink.MAV_CMD_NAV_TAKEOFF,
-                    params, timeout=5.0, retries=1,
-                )
-            if result != mavutil.mavlink.MAV_RESULT_ACCEPTED:
-                return self._command_failure("Takeoff", result)
-            self._console_publish(
-                "TAKEOFF", "Takeoff target accepted; arming …", "info")
-            if self._sequence_interrupted(mark, "Takeoff"):
-                return False
-            if not self.arm(True):
-                return False
-        else:
-            # ArduPilot refuses NAV_TAKEOFF while disarmed, so arming comes
-            # first — and that is the order that can strand an armed
-            # aircraft on the ground, so a refused takeoff disarms again.
-            self._console_publish(
-                "TAKEOFF", "Arming before takeoff …", "info")
-            if not self.arm(True):
-                return False
-            if self._sequence_interrupted(mark, "Takeoff"):
-                # The operator acted after the arm. What they asked for stands;
-                # no takeoff is sent on top of it.
-                return False
-            with self._operation_lock:
-                result = self._send_command_and_wait(
-                    mavutil.mavlink.MAV_CMD_NAV_TAKEOFF,
-                    params, timeout=5.0, retries=1,
-                )
-            if result != mavutil.mavlink.MAV_RESULT_ACCEPTED:
-                failure = (
-                    f"Takeoff failed: "
-                    f"{MAV_RESULT_TEXT.get(result, f'RESULT_{result}')}"
-                )
-                self._console_publish(
-                    "TAKEOFF",
-                    "Takeoff refused after arming, disarming again",
-                    "warning",
-                )
-                self.arm(False)
-                # After the disarm, which clears the last error itself.
-                self._set_command_error(failure)
-                self._console_publish("TAKEOFF", failure, "error")
-                self._store_update_warning(failure, "critical")
-                return False
-        self._console_publish("TAKEOFF", "Takeoff accepted and vehicle armed", "success")
-        return True
+        return self._flight_engine.takeoff(self, altitude_agl)
 
     def land(self) -> bool:
         """Command land at current position with NaN lat/lon and ACK.
 
-        Priority tier: this is one of the three commands an operator uses to
-        end a flight that is going wrong, and it must not wait behind a
-        parameter upload or a stream-rate batch.
+        Priority tier: one of the three commands an operator uses to end a
+        flight that is going wrong.
         """
         with self._operation_lock.priority():
-            self._set_command_error("")
-            if is_ground_vehicle(self._mav_type_id):
-                self._set_command_error("Land is not available on a rover. Disarm it to stop.")
-                return False
-            nan = float("nan")
-            result = self._send_command_and_wait(
-                mavutil.mavlink.MAV_CMD_NAV_LAND,
-                [0.0, 0.0, nan, nan, nan, nan, nan],
-                timeout=5.0, retries=1,
-            )
-            if result != mavutil.mavlink.MAV_RESULT_ACCEPTED:
-                return self._command_failure("Land", result)
-            self._console_publish("LAND", "Land accepted", "success")
-            return True
+            return self._flight_engine.land(self)
 
     def rtl(self) -> bool:
-        """Command return to launch with ACK.
-
-        Priority tier, for the same reason :meth:`land` is.
-        """
+        """Command return to launch with ACK; priority tier, as :meth:`land`."""
         with self._operation_lock.priority():
-            self._set_command_error("")
-            nan = float("nan")
-            result = self._send_command_and_wait(
-                mavutil.mavlink.MAV_CMD_NAV_RETURN_TO_LAUNCH,
-                [nan, nan, nan, nan, nan, nan, nan],
-                timeout=5.0, retries=1,
-            )
-            if result != mavutil.mavlink.MAV_RESULT_ACCEPTED:
-                return self._command_failure("RTL", result)
-            self._console_publish("RTL", "RTL accepted", "success")
-            return True
+            return self._flight_engine.rtl(self)
 
     def _validate_lat_lon(
         self, lat: Any, lon: Any, action: str,
     ) -> tuple[float, float] | None:
         """Coerce and range-check one coordinate pair, or None with the error set.
 
-        Shares :meth:`_fly_to_point_number`'s bool rejection — ``True`` is an
+        Shares :meth:`_fly_to_point_number`'s bool rejection: ``True`` is an
         ``int`` in Python and would otherwise fly as latitude 1.0.
         """
-        lat_f = self._fly_to_point_number(lat)
-        lon_f = self._fly_to_point_number(lon)
-        if lat_f is None or not math.isfinite(lat_f) or not -90.0 <= lat_f <= 90.0:
-            self._set_command_error(f"{action} failed: lat out of range")
-            return None
-        if lon_f is None or not math.isfinite(lon_f) or not -180.0 <= lon_f <= 180.0:
-            self._set_command_error(f"{action} failed: lon out of range")
-            return None
-        return lat_f, lon_f
+        return self._flight_engine.validate_lat_lon(self, lat, lon, action)
 
     def set_home(self, lat: float, lon: float) -> bool:
         """Move the home position to (*lat*, *lon*), keeping its altitude.
 
-        MAV_CMD_DO_SET_HOME with param1=0 ("use the specified location"), sent
-        as COMMAND_INT so the coordinates survive the wire intact. Works on
-        PX4 v1.16, v1.17 and v1.18.
-
-        The altitude is NOT taken from the click: a map gives no terrain, and
-        PX4 treats the z of this command as AMSL, so guessing would move home
-        vertically as a side effect of moving it laterally. The current home
-        altitude is reused instead (falling back to the reference derived from
-        AMSL minus AGL, exactly as takeoff does), which makes this a purely
-        horizontal move. Without either reference the command is refused
-        rather than sent with a made-up altitude.
-
-        Deliberately allowed while armed, like takeoff/land/rtl/arm: relocating
-        home is how an operator redirects RTL mid-flight, so refusing it in the
-        air would remove the case it is most needed for.
+        MAV_CMD_DO_SET_HOME with param1=0 as COMMAND_INT; works on PX4 v1.16,
+        v1.17 and v1.18. The altitude is the current home's (or the AMSL minus
+        AGL reference), never the click's, so this is a purely horizontal move,
+        and without one the command is refused rather than sent with a made up
+        altitude. Allowed while armed: it is how RTL is redirected in flight.
         """
-        self._set_command_error("")
-        coords = self._validate_lat_lon(lat, lon, "Set home")
-        if coords is None:
-            return False
-        lat_f, lon_f = coords
-        alt_amsl = self._takeoff_altitude_amsl(0.0)
-        if alt_amsl is None:
-            # Same brief wait the takeoff path takes: right after connect the
-            # reference is usually just late, not absent. Outside the command
-            # lock, which it would otherwise hold for two seconds of reading
-            # telemetry while an RTL waited.
-            alt_amsl = self._await_takeoff_reference(0.0)
-        with self._operation_lock:
-            if alt_amsl is None:
-                # Unlike takeoff, this one keeps its refusal. The altitude here
-                # is not a number being converted for the wire — it is the
-                # altitude home will *have*, and home altitude is what RTL
-                # descends to. A guessed value moves the landing point
-                # vertically as a side effect of dragging it sideways, which is
-                # the one outcome this command exists to avoid.
-                text = "Set home failed: no home or global altitude reference"
-                self._set_command_error("no home or global altitude reference")
-                self._console_publish("SETHOME", text, "error")
-                self._store_update_warning(text, "critical")
-                return False
-
-            nan = float("nan")
-            result = self._send_command_int_and_wait(
-                mavutil.mavlink.MAV_CMD_DO_SET_HOME,
-                mavutil.mavlink.MAV_FRAME_GLOBAL,
-                [0.0, nan, nan, nan],
-                x=int(round(lat_f * 1e7)),
-                y=int(round(lon_f * 1e7)),
-                z=alt_amsl,
-                timeout=5.0, retries=1,
-            )
-            if result != mavutil.mavlink.MAV_RESULT_ACCEPTED:
-                return self._command_failure("Set home", result)
-            # PX4 publishes HOME_POSITION when home changes, but the operator
-            # has just clicked a spot and is watching for the marker to move
-            # there. Ask for it rather than leaving the confirmation to the
-            # next scheduled one.
-            self._request_home()
-            self._console_publish(
-                "SETHOME", f"Home set to {lat_f:.7f}, {lon_f:.7f}", "success",
-            )
-            return True
+        return self._flight_engine.set_home(self, lat, lon)
 
     # ---- control from plugins -------------------------------------------
 
     def hold(self) -> bool:
-        """Stop where the vehicle is and stay there, in the stack's hold mode.
-
-        The mode is the dialect's (:meth:`Dialect.hold_mode`): Hold on PX4,
-        LOITER on an ArduPilot copter or plane, HOLD on a rover, POSHOLD on a
-        sub. A plain mode change, so it carries set_mode's priority.
-        """
-        mode = self._dialect.hold_mode(self._mav_type_id)
-        if not mode:
-            self._set_command_error("Hold is not available on this vehicle")
-            return False
-        return self.set_mode(mode)
+        """Stop where the vehicle is and stay there, in the stack's hold mode:
+        Hold on PX4, LOITER on an ArduPilot copter or plane, HOLD on a rover,
+        POSHOLD on a sub."""
+        return self._flight_engine.hold(self)
 
     def plugin_command(
         self, command: int, params: list[float] | None = None,
@@ -624,68 +215,13 @@ class FlightCommandsMixin:
         """Send one MAV_CMD from the dialect's plugin table and wait for its ACK.
 
         *params* are p1 to p7 (p1 to p4 for a command that names a place), NaN
-        where unset. *position* is ``(lat, lon, alt, frame)`` and is required
-        for, and only for, :data:`PLUGIN_POSITION_COMMANDS`, which travel as
-        COMMAND_INT. *frame* is "relative" (metres above home) or "amsl". PX4
-        reads a COMMAND_INT altitude as AMSL whatever its frame says (see
-        :meth:`Dialect.reposition_altitude_frame`), so a relative one is
-        converted here rather than sent to land at the wrong height.
-
-        True on ACCEPTED, or IN_PROGRESS for a command the vehicle carries on
-        with. A command outside the table is refused without sending.
+        where unset. *position* is ``(lat, lon, alt, frame)``, required for and
+        only for :data:`PLUGIN_POSITION_COMMANDS`, which travel as COMMAND_INT;
+        a "relative" altitude is converted to AMSL where the stack reads it so.
+        True on ACCEPTED, or IN_PROGRESS. A command outside the table is
+        refused without sending.
         """
-        self._set_command_error("")
-        name = self._dialect.plugin_commands(self._mav_type_id).get(command)
-        if name is None:
-            known = mavutil.mavlink.enums["MAV_CMD"].get(command)
-            label = known.name.removeprefix("MAV_CMD_") if known else str(command)
-            self._set_command_error(
-                f"Command {label} is not available on this autopilot")
-            return False
-        label = f"Command {name}"
-        positional = command in PLUGIN_POSITION_COMMANDS
-        if positional and position is None:
-            self._set_command_error(f"{label} needs lat and lon")
-            return False
-        if not positional and position is not None:
-            self._set_command_error(f"{label} takes no position")
-            return False
-        nan = float("nan")
-        values = [float(v) for v in (params or [])]
-        if not positional:
-            values = (values + [nan] * 7)[:7]
-            result = self._send_command_and_wait(
-                command, values, timeout=5.0, retries=1, accept_in_progress=True,
-            )
-        else:
-            lat, lon, alt, frame = position
-            coords = self._validate_lat_lon(lat, lon, label)
-            if coords is None:
-                return False
-            altitude = float(alt)
-            wire_frame = mavutil.mavlink.MAV_FRAME_GLOBAL
-            if frame == "relative":
-                if self._dialect.reposition_altitude_frame(self._mav_type_id) == "amsl":
-                    amsl = self._takeoff_altitude_amsl(altitude)
-                    if amsl is None:
-                        amsl = self._await_takeoff_reference(altitude)
-                    if amsl is None:
-                        self._set_command_error(
-                            f"{label} failed: no home altitude to measure the height from")
-                        return False
-                    altitude = amsl
-                else:
-                    wire_frame = mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT
-            result = self._send_command_int_and_wait(
-                command, wire_frame, (values + [nan] * 4)[:4],
-                x=int(round(coords[0] * 1e7)), y=int(round(coords[1] * 1e7)),
-                z=altitude, timeout=5.0, retries=1,
-            )
-        if result not in (mavutil.mavlink.MAV_RESULT_ACCEPTED,
-                          mavutil.mavlink.MAV_RESULT_IN_PROGRESS):
-            return self._command_failure(label, result)
-        self._console_publish("COMMAND", f"{name} accepted", "success")
-        return True
+        return self._flight_engine.plugin_command(self, command, params, position)
 
     # SET_POSITION_TARGET_LOCAL_NED type_mask: fly the velocity, ignore the
     # position, the acceleration and the yaw angle.
@@ -699,52 +235,8 @@ class FlightCommandsMixin:
         """Send one velocity setpoint as SET_POSITION_TARGET_LOCAL_NED; no ACK.
 
         In metres per second: north, east, down, or with *body* forward,
-        right, down. *yaw_rate_deg* turns the vehicle clockwise in degrees
-        per second; None leaves the heading to the vehicle.
-
-        A stream, like :meth:`manual_control`: the caller sends at 2 Hz or
-        more, and when it stops the vehicle's own timeout ends the motion
-        (PX4's offboard loss failsafe, ArduPilot's three second guided
-        velocity timeout). The vehicle flies it only in
-        :meth:`Dialect.velocity_mode`; PX4 needs the stream running before it
-        accepts OFFBOARD at all, so this never changes the mode itself.
+        right, down. *yaw_rate_deg* turns clockwise in degrees per second;
+        None leaves the heading to the vehicle. A stream at 2 Hz or more whose
+        end the vehicle's own timeout catches; never changes the mode itself.
         """
-        self._set_command_error("")
-        if not self._dialect.velocity_mode(self._mav_type_id):
-            self._set_command_error("Velocity control is not available on this vehicle")
-            return False
-        values = [vx, vy, vz] + ([] if yaw_rate_deg is None else [yaw_rate_deg])
-        if not all(isinstance(v, (int, float)) and not isinstance(v, bool)
-                   and math.isfinite(v) for v in values):
-            self._set_command_error("Velocity control failed: not a finite number")
-            return False
-        if any(abs(v) > VELOCITY_MAX_MS for v in (vx, vy, vz)) or (
-                yaw_rate_deg is not None and abs(yaw_rate_deg) > YAW_RATE_MAX_DEG_S):
-            self._set_command_error("Velocity control failed: out of range")
-            return False
-        if not self._connection_ready():
-            self._set_command_error(f"Velocity control failed: {MAV_RESULT_TEXT[-2]}")
-            return False
-        mask = self._VELOCITY_TYPE_MASK
-        if yaw_rate_deg is None:
-            mask |= self._YAW_RATE_IGNORE
-        frame = (mavutil.mavlink.MAV_FRAME_BODY_NED if body
-                 else mavutil.mavlink.MAV_FRAME_LOCAL_NED)
-        try:
-            conn = self._conn
-            with self._send_lock:
-                if conn is None or conn is not self._conn:
-                    self._set_command_error(
-                        f"Velocity control failed: {MAV_RESULT_TEXT[-2]}")
-                    return False
-                conn.mav.set_position_target_local_ned_send(
-                    0, self._target_system, self._target_component, frame, mask,
-                    0.0, 0.0, 0.0, float(vx), float(vy), float(vz),
-                    0.0, 0.0, 0.0, 0.0,
-                    math.radians(yaw_rate_deg) if yaw_rate_deg is not None else 0.0,
-                )
-            return True
-        except Exception as exc:  # noqa: BLE001 - a lost frame is reported, never raised
-            logger.error("velocity setpoint send failed: %s", exc)
-            self._set_command_error(f"Velocity control send failed: {exc}")
-            return False
+        return self._flight_engine.velocity_setpoint(self, vx, vy, vz, yaw_rate_deg, body)

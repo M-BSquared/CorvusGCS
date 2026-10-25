@@ -619,6 +619,7 @@ class MavlinkBridge(
         self._init_shell_state()
         self._init_telemetry_state()
         self._init_remote_id_state()
+        self._init_flight_state()
 
     # Accepted MAVLink connection-string prefixes (BUG 2). set_connection()
     # rejects anything else so a non-str/empty/garbage JSON value cannot reach

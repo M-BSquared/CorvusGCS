@@ -225,5 +225,6 @@ fn corvus_link(m: &Bound<'_, PyModule>) -> PyResult<()> {
     protocol::setup::register(py, m)?;
     protocol::remote_id::register(py, m)?;
     protocol::telemetry::register(py, m)?;
+    protocol::flight::register(py, m)?;
     Ok(())
 }
