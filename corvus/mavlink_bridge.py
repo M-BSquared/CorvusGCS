@@ -1184,10 +1184,8 @@ class MavlinkBridge(
         # gap is one round trip rather than the stream's own 0.5 Hz.
         self._store.update(home=[0.0, 0.0])
         # Per-connection-cycle state (A1/A3): fresh jitter window + flags.
-        self._hb_times.clear()
+        self._forget_link_quality()
         self._degraded_warned = False
-        self._radio_status_seen = False
-        self._uplink_score = 0
         # A new link may be a new aircraft with a different pack, so the
         # latched cell count goes with the old connection.
         self._forget_battery_cells()
@@ -2604,7 +2602,7 @@ class MavlinkBridge(
             # One clock read per heartbeat, shared by the staleness timer and
             # the jitter window, so the two cannot disagree about when this
             # heartbeat landed (A1).
-            self._hb_times.append(self._store.heartbeat())
+            self._note_heartbeat(self._store.heartbeat())
             self._publish_heartbeat_jitter()
             if (self._rangefinder_seen is not None
                     and time.monotonic() - self._rangefinder_seen > _RANGEFINDER_STALE_S):

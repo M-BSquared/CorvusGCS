@@ -50,6 +50,7 @@ pymavlink does.
 | The PX4 NSH shell over SERIAL_CONTROL: console lines (CR dropped, backspaces applied, long lines flushed), the terminal's raw text and backlog, release on stop, UTF-8 split across chunks | `src/protocol/shell.rs` (`corvus_link.shell`) | `corvus/mavlink_shell.py` keeps the methods, `_shell_lock` and the limits |
 | The Setup commands: sensor calibration, its cancel and ArduPilot's accelerometer positions, the bench motor test and its stop, the autotune (PX4 command with its progress ACKs, ArduPilot flight mode), the two reboots | `src/protocol/setup.rs` (`corvus_link.setup`) | `corvus/mavlink_setup.py` keeps the methods, the operation lock around each and the tunables |
 | Remote ID: the identity coerced to what may go on air, the four OPEN_DRONE_ID messages at 1 Hz, the aircraft's ARM_STATUS verdict, the broadcast status | `src/protocol/remote_id.rs` (`corvus_link.remote_id`) | `corvus/mavlink_remote_id.py` keeps the methods; `corvus/remote_id.py` keeps the page's option lists and filing checks |
+| Telemetry: BATTERY_STATUS detail and the battery fields with their latched cell count and drain series, GNSS_INTEGRITY (decoded and CRC checked from an UNKNOWN_441 frame too), the attitude and velocity setpoints, the RC channels, RADIO_STATUS, heartbeat jitter, link quality and the page stream rates | `src/protocol/telemetry.rs` (`corvus_link.telemetry`) | `corvus/mavlink_telemetry.py` keeps the methods and the operation lock around the stream requests; the battery estimator stays in `corvus/battery.py` |
 
 `src/protocol/host.rs` holds what every engine asks of the bridge: logger,
 command error, console, events, send lock, and Python's number conversions.
@@ -130,4 +131,9 @@ pymavlink stays in the `test` dependency group as the reference:
   random identities and every odd value in every field, the messages field
   for field, timestamps, arm statuses and whole broadcast sessions on v2,
   v1, missing and failing links.
+- `tests/test_telemetry_parity.py` does it for telemetry: Python's
+  `round()` and `sum()` against 45000 values, quaternions, thousands of
+  intact and damaged GNSS_INTEGRITY frames, every handler on random and
+  malformed messages with each store update compared, the battery
+  fields and drain rate, jitter and link quality, and every stream request.
 - The rest of the suite drives the bridge with corvus_link's messages.

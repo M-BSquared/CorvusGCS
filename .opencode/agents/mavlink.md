@@ -92,7 +92,8 @@ shell, on board log format.
   runs. The link types not built yet are listed in
   `rust/corvus_link/README.md`.
 - The parameter, mission, FTP, log and shell protocols and the Setup
-  commands (calibration, motor test, autotune, reboot) and Remote ID are engines in
+  commands (calibration, motor test, autotune, reboot), Remote ID and the
+  telemetry handlers are engines in
   `corvus_link` (`rust/corvus_link/src/protocol/`); the `corvus/mavlink_*.py`
   module of the same name is each one's seat on the bridge. A protocol change goes into the engine and keeps the
   `tests/test_*_parity.py` files green against the Python references in

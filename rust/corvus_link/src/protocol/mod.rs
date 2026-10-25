@@ -8,3 +8,4 @@ pub mod params;
 pub mod remote_id;
 pub mod setup;
 pub mod shell;
+pub mod telemetry;
