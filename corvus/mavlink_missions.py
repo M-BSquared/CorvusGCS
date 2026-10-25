@@ -1,25 +1,32 @@
 """The MAVLink mission protocol: fly to points, planned missions, clear.
 
-Mixed into :class:`corvus.mavlink_bridge.MavlinkBridge`: the methods run on
-the bridge and use its link, locks and state (``_conn``, ``_send_lock``,
-``_operation_lock``, ``_store``), which the bridge's ``__init__`` sets up.
+Mixed into :class:`corvus.mavlink_bridge.MavlinkBridge`. The transfer
+protocol itself (the upload and download handshakes for missions and
+geofences, the item requests served during an upload, MISSION_CURRENT and
+MISSION_ITEM_REACHED, the record of what is on the vehicle and the vehicle's
+verdict on a new mission) is ``corvus_link.missions.MissionEngine``, in Rust.
+It reads the tunables below and this module's ``time`` when it needs them.
+The flight sequences on top (fly to points, mission start with its mode and
+arming order, reposition) are still here, and move with the flight commands.
 Nothing here imports the bridge, so the bridge can import this.
 """
 from __future__ import annotations
 
 import logging
-import math
 import re
+import sys
 import threading
-import time
+import time  # noqa: F401 - the engine reads this module's clock, and tests replace it
 from typing import Any
 
 from corvus_link import mavutil
+from corvus_link import missions as _engine
 
 from . import geofence
 from . import mission as mission_plan
 from .autopilot import is_ground_vehicle
-from .mavlink_common import TAKEOFF_ALTITUDE_MAX_M, TAKEOFF_ALTITUDE_MIN_M, _PendingAck
+# Read by the engine from this module, like the tunables below.
+from .mavlink_common import TAKEOFF_ALTITUDE_MAX_M, TAKEOFF_ALTITUDE_MIN_M, _PendingAck  # noqa: F401
 
 logger = logging.getLogger("corvus.mavlink")
 
@@ -119,84 +126,41 @@ MISSION_VERDICT_SETTLE_S = 0.3
 _REJECTED_PREFIX = re.compile(r"^mission rejected:\s*", re.IGNORECASE)
 
 
-class _MissionVerdict:
-    """What the vehicle says about a mission it has just accepted.
+def _engine_attribute(name: str) -> property:
+    """A bridge attribute the mission state used to be, now the engine's."""
+    def get(self: Any) -> Any:
+        return getattr(self._mission_engine, name)
 
-    ``total`` is the item count it was sent, so a MISSION_CURRENT still about
-    the previous mission is not read as the answer. ``reasons`` collects the
-    critical STATUSTEXT lines that arrive meanwhile: a rejection's reason is
-    one of them.
-    """
+    def set_(self: Any, value: Any) -> None:
+        setattr(self._mission_engine, name, value)
 
-    def __init__(self, total: int) -> None:
-        self.total = total
-        self.event = threading.Event()
-        self.after = math.inf
-        self.state = ""
-        self.reasons: list[str] = []
-
-
-class _MissionDownload:
-    """One download in flight: what the receive thread fills in, and the wake-up."""
-
-    def __init__(self) -> None:
-        self.event = threading.Event()
-        self.count: int | None = None
-        self.waiting_for: int = -1
-        self.items: dict[int, dict[str, Any]] = {}
-        self.drops = 0
-
-
-def _finite_or_none(value: Any) -> float | None:
-    try:
-        number = float(value)
-    except (TypeError, ValueError):
-        return None
-    return number if math.isfinite(number) else None
-
+    return property(get, set_)
 
 
 class MissionProtocolMixin:
     """MISSION_COUNT / MISSION_REQUEST(_INT) / MISSION_ITEM(_INT) / MISSION_ACK."""
 
+    # The state the bridge used to hold itself, kept addressable by its old
+    # names: the shutdown path, the vehicle list and the tests read them.
+    _mission_items = _engine_attribute("items")
+    _mission_upload_type = _engine_attribute("upload_type")
+    _vehicle_fence = _engine_attribute("vehicle_fence")
+    _pending_mission_ack = _engine_attribute("pending_ack")
+    _mission_last_request = _engine_attribute("last_request")
+    _vehicle_mission_index = _engine_attribute("vehicle_index")
+    _vehicle_mission_id = _engine_attribute("vehicle_mission_id")
+    _vehicle_mission_id_pending = _engine_attribute("vehicle_mission_id_pending")
+    _vehicle_mission_confirmed = _engine_attribute("vehicle_mission_confirmed")
+    _vehicle_mission_noted_at = _engine_attribute("vehicle_mission_noted_at")
+    _mission_revision = _engine_attribute("revision")
+    _mission_verdict = property(lambda self: self._mission_engine.verdict)
+
     def _init_mission_state(self) -> None:
-        """Set up the upload handshake state; called from the bridge's __init__."""
-        # Mission-upload handshake state (set only during fly_to_points). The
-        # receive thread reads _mission_items on MISSION_REQUEST_INT and wakes
-        # _pending_mission_ack on MISSION_ACK; _mission_lock guards both.
+        """Set up the mission protocol; called from the bridge's __init__."""
+        self._mission_engine = _engine.MissionEngine(sys.modules[__name__])
+        # Kept for code that pairs reads of the state above under one lock;
+        # the engine guards its own state.
         self._mission_lock = threading.Lock()
-        self._mission_items: list[dict[str, Any]] | None = None
-        # MAV_MISSION_TYPE of the upload in flight: 0 for a mission, FENCE for
-        # the geofence. A request for the other kind is not ours to answer.
-        self._mission_upload_type = 0
-        # The area last put on the vehicle over this link ([] after a clear),
-        # or None when that is not known.
-        self._vehicle_fence: list[list[float]] | None = None
-        self._pending_mission_ack: _PendingAck | None = None
-        # When the vehicle last asked for an item. The upload watches this so a
-        # stalled handshake ends in seconds rather than sitting out a budget
-        # scaled to the item count.
-        self._mission_last_request: float = 0.0
-        # A download in flight, filled in by the receive thread.
-        self._mission_download: _MissionDownload | None = None
-        # What Corvus knows is on the vehicle: the plan item each vehicle item
-        # belongs to, from the last upload or download this link made. None is
-        # "not known", which is the honest answer after a reconnect, or once
-        # the vehicle reports a mission id that is not the one Corvus left.
-        self._vehicle_mission_index: list[int | None] | None = None
-        # The id the vehicle gave its mission (MISSION_CURRENT.mission_id,
-        # PX4 only). Adopted from the first report after Corvus's own transfer,
-        # and compared against every report after that.
-        self._vehicle_mission_id: int | None = None
-        self._vehicle_mission_id_pending = False
-        # The count check: once the vehicle has reported the count Corvus
-        # expects, any other count is a mission somebody else put there.
-        self._vehicle_mission_confirmed = False
-        self._vehicle_mission_noted_at = 0.0
-        self._mission_revision = 0
-        # The verdict an upload in flight is waiting for, filled in by the
-        # receive thread from MISSION_CURRENT.
-        self._mission_verdict: _MissionVerdict | None = None
 
     def mission_capabilities(self) -> dict[str, Any]:
         """The planner's part of GET /api/mavlink/capabilities.
@@ -210,45 +174,7 @@ class MissionProtocolMixin:
 
     def _handle_mission_request(self, msg: Any, as_int: bool) -> None:
         """Serve one MISSION_ITEM(_INT) during an upload we initiated."""
-        conn = self._conn
-        if not conn or not self._ack_is_for_us(msg):
-            return
-        seq = int(getattr(msg, "seq", -1))
-        kind = int(getattr(msg, "mission_type", 0) or 0)
-        with self._mission_lock:
-            items = self._mission_items
-            upload_type = self._mission_upload_type
-        if items is None or not (0 <= seq < len(items)) or kind != upload_type:
-            return
-        # Only a fence names its type on the wire: a mission item is sent the
-        # way it always was, which every MAVLink build understands.
-        typed = (upload_type,) if upload_type else ()
-        item = items[seq]
-        with self._mission_lock:
-            self._mission_last_request = time.monotonic()
-        try:
-            with self._send_lock:
-                # Connection swapped under us (A6): drop the request.
-                if conn is not self._conn:
-                    return
-                if as_int:
-                    conn.mav.mission_item_int_send(
-                        self._target_system, self._target_component, seq,
-                        item["frame"], item["command"], item["current"],
-                        item["autocontinue"], item["param1"], item["param2"],
-                        item["param3"], item["param4"], item["x_int"],
-                        item["y_int"], item["z"], *typed,
-                    )
-                else:
-                    conn.mav.mission_item_send(
-                        self._target_system, self._target_component, seq,
-                        item["frame"], item["command"], item["current"],
-                        item["autocontinue"], item["param1"], item["param2"],
-                        item["param3"], item["param4"], item["x_f"],
-                        item["y_f"], item["z"], *typed,
-                    )
-        except Exception as exc:
-            logger.debug("mission item send failed (seq=%d): %s", seq, exc)
+        self._mission_engine.handle_request(self, msg, as_int)
 
     # ------------------------------------------------------------------
     # Download (MISSION_REQUEST_LIST) and progress (MISSION_CURRENT)
@@ -256,328 +182,65 @@ class MissionProtocolMixin:
 
     def _handle_mission_count(self, msg: Any) -> None:
         """The vehicle's answer to MISSION_REQUEST_LIST: how many items."""
-        if not self._ack_is_for_us(msg) or int(getattr(msg, "mission_type", 0) or 0):
-            return
-        with self._mission_lock:
-            download = self._mission_download
-            if download is None or download.count is not None:
-                return
-            try:
-                download.count = max(0, int(msg.count))
-            except (TypeError, ValueError):
-                return
-            download.event.set()
+        self._mission_engine.handle_count(self, msg)
 
     def _handle_mission_item(self, msg: Any, as_int: bool) -> None:
         """One item of a download, kept only if it is the one asked for."""
-        if not self._ack_is_for_us(msg) or int(getattr(msg, "mission_type", 0) or 0):
-            return
-        try:
-            seq = int(msg.seq)
-            x, y = msg.x, msg.y
-            item = {
-                "command": int(msg.command),
-                "frame": int(msg.frame),
-                "lat": (int(x) / 1e7) if as_int else float(x),
-                "lon": (int(y) / 1e7) if as_int else float(y),
-                "alt": _finite_or_none(msg.z) or 0.0,
-                # NaN is how a yaw that was never asked for travels; kept as
-                # None so the item survives JSON and means the same thing.
-                "params": [_finite_or_none(getattr(msg, f"param{n}", None))
-                           for n in range(1, 5)],
-                "autocontinue": int(getattr(msg, "autocontinue", 1) or 0),
-            }
-        except (AttributeError, TypeError, ValueError):
-            logger.debug("discarding malformed mission item")
-            return
-        with self._mission_lock:
-            download = self._mission_download
-            if download is None or seq != download.waiting_for:
-                return
-            download.items[seq] = item
-            download.event.set()
+        self._mission_engine.handle_item(self, msg, as_int)
 
     def _mission_offset(self) -> int:
         """Vehicle sequence numbers minus this is the plan's numbering."""
-        return 1 if self._dialect.mission_seq0_is_home else 0
+        return self._mission_engine.mission_offset(self)
 
     def _plan_item_of(self, seq: int) -> int:
-        index = self._vehicle_mission_index
-        if index is None or not 0 <= seq < len(index) or index[seq] is None:
-            return -1
-        return int(index[seq])
+        return self._mission_engine.plan_item_of(seq)
 
     def _handle_mission_current(self, msg: Any) -> None:
-        """Which item the vehicle is flying to, and whether its mission changed."""
-        try:
-            seq = int(msg.seq) - self._mission_offset()
-        except (AttributeError, TypeError, ValueError):
-            return
-        fields: dict[str, Any] = {
-            "mission_seq": seq if seq >= 0 else -1,
-            "mission_item": self._plan_item_of(seq),
-        }
-        total = getattr(msg, "total", None)
-        if isinstance(total, int) and total:
-            fields["mission_total"] = (
-                0 if total == MISSION_TOTAL_NONE
-                else max(0, total - self._mission_offset()))
-        state = MISSION_STATE_NAMES.get(int(getattr(msg, "mission_state", 0) or 0))
-        if state:
-            fields["mission_state"] = state
-        verdict = self._mission_verdict
-        if (verdict is not None and state and total == verdict.total
-                and time.monotonic() >= verdict.after):
-            verdict.state = state
-            verdict.event.set()
-        # Somebody else may have put a mission on the vehicle: QGroundControl,
-        # a companion, a second Corvus. Then what Corvus thought was there is
-        # not, and no leg of its plan is claimed to be flown. Two signals: the
-        # mission id PX4 v1.14+ sends (when this corvus_link parses it), and the
-        # item count, which every stack sends.
-        changed = False
-        mission_id = int(getattr(msg, "mission_id", 0) or 0)
-        if mission_id:
-            if self._vehicle_mission_id_pending or self._vehicle_mission_id is None:
-                self._vehicle_mission_id = mission_id
-                self._vehicle_mission_id_pending = False
-            elif mission_id != self._vehicle_mission_id:
-                self._vehicle_mission_id = mission_id
-                changed = True
-        index = self._vehicle_mission_index
-        if index is not None and "mission_total" in fields:
-            if fields["mission_total"] == len(index):
-                self._vehicle_mission_confirmed = True
-            elif (self._vehicle_mission_confirmed
-                  or time.monotonic() - self._vehicle_mission_noted_at >= MISSION_CHANGE_GRACE_S):
-                changed = True
-        if changed and index is not None:
-            self._forget_vehicle_mission("the vehicle holds a different mission now")
-            fields["mission_item"] = -1
-        self._store.update(**fields)
+        """Which item the vehicle is flying to, and whether its mission changed.
+
+        Somebody else may have put a mission on the vehicle (QGroundControl, a
+        companion, a second Corvus); then no leg of Corvus' plan is claimed to
+        be flown. The signals are the mission id PX4 v1.14+ sends and the item
+        count every stack sends.
+        """
+        self._mission_engine.handle_current(self, msg)
 
     def _handle_mission_item_reached(self, msg: Any) -> None:
-        try:
-            seq = int(msg.seq) - self._mission_offset()
-        except (AttributeError, TypeError, ValueError):
-            return
-        if seq >= 0:
-            self._store.update(mission_reached=seq,
-                               mission_reached_item=self._plan_item_of(seq))
+        self._mission_engine.handle_item_reached(self, msg)
 
     def _note_vehicle_mission(self, plan_index: list[int | None] | None) -> None:
         """Record what Corvus just put on (or read off) the vehicle."""
-        self._vehicle_mission_index = list(plan_index) if plan_index is not None else None
-        self._vehicle_mission_id_pending = True
-        self._vehicle_mission_confirmed = False
-        self._vehicle_mission_noted_at = time.monotonic()
-        self._mission_revision += 1
-        self._store.update(
-            mission_known=plan_index is not None,
-            mission_revision=self._mission_revision,
-            mission_total=len(plan_index) if plan_index is not None else -1,
-            mission_item=-1, mission_reached_item=-1,
-        )
+        self._mission_engine.note_vehicle_mission(self, plan_index)
 
     def _forget_vehicle_mission(self, reason: str = "") -> None:
         """Corvus no longer knows what is on the vehicle (a new link, another station)."""
-        had = self._vehicle_mission_index is not None
-        self._vehicle_mission_index = None
-        self._mission_revision += 1
-        self._store.update(mission_known=False, mission_revision=self._mission_revision,
-                           mission_item=-1, mission_reached_item=-1)
-        if had and reason:
-            self._console_publish("MISSION", reason.capitalize(), "info")
+        self._mission_engine.forget_vehicle_mission(self, reason)
 
     def download_mission(self) -> dict[str, Any] | None:
         """Read the mission stored on the vehicle, and read it back as a plan.
 
-        MISSION_REQUEST_LIST, then one MISSION_REQUEST_INT per item, each
-        asked again until it arrives or :data:`MISSION_DOWNLOAD_TRIES` is
-        spent, then MISSION_ACK. ArduPilot's home slot is left out, so the
-        items are numbered as the plan numbers them. A mission longer than the
-        planner holds is refused after the count, before any item is asked
-        for.
-
-        Holds the command lock like an upload does, but gives it up between
-        items if an abort is waiting: the transfer is cancelled on the
-        vehicle and the RTL goes first.
+        MISSION_REQUEST_LIST, then one MISSION_REQUEST_INT per item, asked
+        again until it arrives or :data:`MISSION_DOWNLOAD_TRIES` is spent, the
+        whole handshake started over :data:`MISSION_DOWNLOAD_RESTARTS` times,
+        then MISSION_ACK. ArduPilot's home slot is left out. A mission longer
+        than the planner holds is refused after the count. An abort waiting
+        for the command lock cancels the transfer on the vehicle.
 
         Returns ``{"items", "count"}`` plus :func:`corvus.mission.items_to_plan`
         output, or None with the reason as the last command error.
         """
         with self._operation_lock:
-            self._set_command_error("")
-            if not self._connection_ready():
-                self._command_failure("Mission download", -2)
-                return None
-            download = _MissionDownload()
-
-            def watch(entry: dict[str, Any]) -> None:
-                if (entry.get("name") == "STATUSTEXT"
-                        and _UNEXPECTED_REQUEST in str(entry.get("text") or "").lower()):
-                    download.drops += 1
-                    download.event.set()
-
-            add = getattr(self, "add_console_sub", None)
-            remove = getattr(self, "remove_console_sub", None)
-            if callable(add):
-                add(watch)
-            with self._mission_lock:
-                self._mission_download = download
-            try:
-                items = self._run_mission_download(download)
-            finally:
-                with self._mission_lock:
-                    if self._mission_download is download:
-                        self._mission_download = None
-                if callable(remove):
-                    remove(watch)
-            if items is None:
-                return None
-            known = self._home_lat_lon()
-            home = {"lat": known[0], "lon": known[1]} if known else None
-            converted = mission_plan.items_to_plan(
-                items, home=home, home_alt_amsl=self._home_alt_amsl)
-            self._note_vehicle_mission(converted["plan_index"])
-            self._console_publish(
-                "MISSION", f"Read {len(items)} mission item(s) from the vehicle", "success")
-            return dict(converted, items=items, count=len(items),
-                        revision=self._mission_revision)
-
-    def _mission_wait_s(self) -> float:
-        slow = getattr(self, "_is_slow_link", lambda: False)()
-        return MISSION_DOWNLOAD_WAIT_S_SLOW if slow else MISSION_DOWNLOAD_WAIT_S
-
-    def _run_mission_download(self, download: _MissionDownload) -> list[dict[str, Any]] | None:
-        """The handshake itself. None on failure, with the reason set."""
-        target = (self._target_system, self._target_component)
-
-        def ask(send: Any, answered: Any, tries: int) -> bool | None:
-            """Send, wait, repeat. True answered, False lost, None interrupted."""
-            for _attempt in range(tries):
-                if self._stop_event.is_set() or not self._connection_ready():
-                    return None
-                download.event.clear()
-                drops = download.drops
-                conn = self._conn
-                try:
-                    with self._send_lock:
-                        if conn is None or conn is not self._conn:
-                            return None
-                        send(conn)
-                except Exception as exc:  # noqa: BLE001 - a torn-down link is a failed download
-                    logger.debug("mission download send failed: %s", exc)
-                    return None
-                deadline = time.monotonic() + self._mission_wait_s()
-                while time.monotonic() < deadline:
-                    if download.event.wait(timeout=0.1) and answered():
-                        return True
-                    if self._operation_lock.abort_waiting():
-                        return None
-                    if download.drops != drops:
-                        break
-                if answered():
-                    return True
-            return False
-
-        def ask_list() -> bool | None:
-            with self._mission_lock:
-                download.count = None
-            return ask(lambda conn: conn.mav.mission_request_list_send(*target, 0),
-                       lambda: download.count is not None, MISSION_DOWNLOAD_TRIES)
-
-        got = ask_list()
-        if got is None:
-            self._cancel_mission_download()
-            self._set_command_error("mission download interrupted")
-            return None
-        if not got:
-            self._set_command_error("the vehicle did not answer the mission request")
-            return None
-        total = int(download.count or 0)
-        offset = self._mission_offset() if total else 0
-        if total - offset > mission_plan.MISSION_MAX_ITEMS:
-            self._cancel_mission_download()
-            self._set_command_error(
-                f"the vehicle's mission has {total - offset} items, more than the "
-                f"{mission_plan.MISSION_MAX_ITEMS} the planner holds")
-            return None
-        for seq in range(total):
-            with self._mission_lock:
-                download.waiting_for = seq
-            restarts = 0
-            while True:
-                got = ask(lambda conn, seq=seq: conn.mav.mission_request_int_send(*target, seq, 0),
-                          lambda seq=seq: seq in download.items, 1)
-                if got:
-                    break
-                if got is None:
-                    self._cancel_mission_download()
-                    self._set_command_error("mission download interrupted")
-                    return None
-                if restarts >= MISSION_DOWNLOAD_RESTARTS:
-                    self._cancel_mission_download()
-                    reason = (
-                        ". The vehicle keeps reporting the request as unexpected, so another "
-                        "station (a companion computer or a second ground station) is "
-                        "probably reading the mission at the same time"
-                        if download.drops else "")
-                    self._set_command_error(
-                        f"mission item {seq + 1} of {total} never arrived{reason}")
-                    return None
-                restarts += 1
-                self._console_publish(
-                    "MISSION",
-                    ("The vehicle ended the transfer and reported the request as unexpected. "
-                     if download.drops else f"Mission item {seq + 1} did not arrive. ")
-                    + "Reading the mission again from the start", "info")
-                with self._mission_lock:
-                    download.waiting_for = -1
-                got = ask_list()
-                if not got:
-                    self._cancel_mission_download()
-                    self._set_command_error(
-                        "mission download interrupted" if got is None
-                        else "the vehicle did not answer the mission request")
-                    return None
-                if int(download.count or 0) != total:
-                    self._cancel_mission_download()
-                    self._set_command_error(
-                        "the mission on the vehicle changed while it was being read")
-                    return None
-                with self._mission_lock:
-                    download.waiting_for = seq
-        if total:
-            self._send_mission_ack(mavutil.mavlink.MAV_MISSION_ACCEPTED)
-        return [download.items[seq] for seq in range(offset, total)]
+            return self._mission_engine.download_mission(self)
 
     def _send_mission_ack(self, result: int, mission_type: int = 0) -> None:
-        conn = self._conn
-        try:
-            with self._send_lock:
-                if conn is not None and conn is self._conn:
-                    conn.mav.mission_ack_send(
-                        self._target_system, self._target_component, result, mission_type)
-        except Exception as exc:  # noqa: BLE001 - the vehicle times the transfer out anyway
-            logger.debug("mission ack send failed: %s", exc)
+        self._mission_engine.send_ack(self, result, mission_type)
 
     def _cancel_mission_download(self) -> None:
         self._send_mission_ack(MAV_MISSION_OPERATION_CANCELLED)
 
     def _handle_mission_ack(self, msg: Any) -> None:
         """Resolve the pending upload waiter with the MISSION_ACK result."""
-        if not self._ack_is_for_us(msg):
-            return
-        ack_type = int(getattr(msg, "type", -1))
-        text = f"MISSION_ACK: type={ack_type}"
-        level = "success" if ack_type == mavutil.mavlink.MAV_MISSION_ACCEPTED else "error"
-        self._console_publish("GOTOPOINTS", text, level)
-        with self._mission_lock:
-            pending = self._pending_mission_ack
-            if pending is not None and pending.result is None:
-                pending.result = ack_type
-                pending.event.set()
+        self._mission_engine.handle_ack(self, msg)
 
     def _upload_mission(self, items: list[dict[str, Any]], mission_type: int = 0) -> int:
         """Upload mission items and wait for MISSION_ACK.
@@ -587,76 +250,10 @@ class MissionProtocolMixin:
         on rejection, -1 on timeout, -2 on disconnect/shutdown, -3 when an
         abort command (RTL, Land, Disarm, a mode change) is waiting: the
         transfer is cancelled on the vehicle, which keeps the mission it had,
-        and the abort goes first.
+        and the abort goes first. Bounded by progress: a vehicle that stops
+        asking for items ends it after :data:`MISSION_UPLOAD_QUIET_S`.
         """
-        pending = _PendingAck()
-        typed = (mission_type,) if mission_type else ()
-        started = time.monotonic()
-        with self._mission_lock:
-            self._mission_upload_type = mission_type
-            self._mission_items = list(items)
-            self._pending_mission_ack = pending
-            self._mission_last_request = started
-        slow = getattr(self, "_is_slow_link", lambda: False)()
-        count_retry_s = MISSION_COUNT_RETRY_S_SLOW if slow else MISSION_COUNT_RETRY_S
-
-        def send_count() -> bool:
-            conn = self._conn
-            try:
-                with self._send_lock:
-                    if conn is None or conn is not self._conn:
-                        return False
-                    conn.mav.mission_count_send(
-                        self._target_system, self._target_component, len(items), *typed,
-                    )
-            except Exception as exc:
-                logger.error("mission_count_send failed: %s", exc)
-                return False
-            return True
-
-        try:
-            if not send_count():
-                return -2
-            count_sent_at = started
-            count_sends = 1
-            # Bounded by progress, not by item count. PX4 requests the items
-            # one at a time and back to back, so "the vehicle has stopped
-            # asking" is known within MISSION_UPLOAD_QUIET_S — where a budget
-            # of 2 s per item held _operation_lock (and with it arm, land and
-            # RTL) for minutes after a handshake had already died.
-            deadline = time.monotonic() + min(
-                MISSION_UPLOAD_MAX_S, 5.0 + 2.0 * len(items),
-            )
-            while True:
-                if pending.event.wait(timeout=0.2):
-                    return pending.result if pending.result is not None else -1
-                if self._operation_lock.abort_waiting():
-                    self._send_mission_ack(MAV_MISSION_OPERATION_CANCELLED, mission_type)
-                    logger.info("mission upload cancelled: an abort command is waiting")
-                    return -3
-                now = time.monotonic()
-                if now > deadline:
-                    return -1
-                with self._mission_lock:
-                    last = self._mission_last_request
-                if (last <= started and count_sends < MISSION_COUNT_TRIES
-                        and now - count_sent_at > count_retry_s):
-                    logger.info("no item requested yet, sending MISSION_COUNT again")
-                    if not send_count():
-                        return -2
-                    count_sent_at = now
-                    count_sends += 1
-                    continue
-                # No item has been asked for in a while and no ACK has landed:
-                # the handshake is not in progress, it is over.
-                if now - last > MISSION_UPLOAD_QUIET_S:
-                    return -1
-        finally:
-            with self._mission_lock:
-                if self._pending_mission_ack is pending:
-                    self._pending_mission_ack = None
-                self._mission_items = None
-                self._mission_upload_type = 0
+        return self._mission_engine.upload(self, items, mission_type)
 
     # ------------------------------------------------------------------
     # Fly to points (Punktabflug)
@@ -673,52 +270,7 @@ class MissionProtocolMixin:
         self, points: list[dict[str, float]],
     ) -> list[tuple[float, float, float]] | None:
         """Validate the operator payload. Returns cleaned points or None."""
-        if not isinstance(points, list) or not points:
-            self._set_command_error("points must be a non-empty list")
-            return None
-        if len(points) > FLY_TO_MAX_POINTS:
-            self._set_command_error(
-                f"too many points ({len(points)}); the maximum is {FLY_TO_MAX_POINTS}"
-            )
-            return None
-        cleaned: list[tuple[float, float, float]] = []
-        ground = is_ground_vehicle(self._mav_type_id)
-        for idx, entry in enumerate(points):
-            if not isinstance(entry, dict):
-                self._set_command_error(f"point {idx} must be an object")
-                return None
-            lat = self._fly_to_point_number(entry.get("lat"))
-            lon = self._fly_to_point_number(entry.get("lon"))
-            alt = self._fly_to_point_number(entry.get("alt_agl"))
-            if ground and entry.get("alt_agl") is None:
-                alt = 0.0
-            if lat is None:
-                self._set_command_error(f"point {idx} lat must be a number")
-                return None
-            if not math.isfinite(lat) or not -90.0 <= lat <= 90.0:
-                self._set_command_error(f"point {idx} lat out of range")
-                return None
-            if lon is None:
-                self._set_command_error(f"point {idx} lon must be a number")
-                return None
-            if not math.isfinite(lon) or not -180.0 <= lon <= 180.0:
-                self._set_command_error(f"point {idx} lon out of range")
-                return None
-            if alt is None:
-                self._set_command_error(f"point {idx} alt_agl must be a number")
-                return None
-            if ground:
-                alt = 0.0
-            elif not math.isfinite(alt) or not (
-                TAKEOFF_ALTITUDE_MIN_M <= alt <= TAKEOFF_ALTITUDE_MAX_M
-            ):
-                self._set_command_error(
-                    f"point {idx} alt_agl must be between "
-                    f"{TAKEOFF_ALTITUDE_MIN_M:.0f} and {TAKEOFF_ALTITUDE_MAX_M:.0f} m"
-                )
-                return None
-            cleaned.append((lat, lon, alt))
-        return cleaned
+        return self._mission_engine.validate_points(self, points)
 
     @staticmethod
     def _build_mission_item_spec(
@@ -729,61 +281,22 @@ class MissionProtocolMixin:
         """Build one MISSION_ITEM_INT / MISSION_ITEM send-spec.
 
         Frame defaults to MAV_FRAME_GLOBAL_RELATIVE_ALT (relative to home =
-        AGL), supported by PX4 v1.16-v1.18 for MISSION_ITEM_INT. A planner item
-        that names no place passes MISSION_DO_FRAME instead.
+        AGL). A planner item that names no place passes MISSION_DO_FRAME.
         """
-        return {
-            "frame": (mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT
-                      if frame is None else int(frame)),
-            "command": command,
-            "current": 1 if seq == 0 else 0,
-            "autocontinue": 1,
-            "param1": float(p1), "param2": float(p2),
-            "param3": float(p3), "param4": float(p4),
-            "x_int": int(round(lat * 1e7)),
-            "y_int": int(round(lon * 1e7)),
-            "x_f": float(lat), "y_f": float(lon), "z": float(alt),
-        }
+        return _engine.MissionEngine.build_item_spec(
+            seq, command, lat, lon, alt, p1, p2, p3, p4, frame)
 
     def _with_mission_home_slot(
         self, specs: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
         """Prepend the home slot ArduPilot reserves at mission sequence 0.
 
-        PX4 numbers mission items from 0. ArduPilot's AP_Mission keeps *home*
-        in slot 0 and the first real item in slot 1, and an upload that does
-        not account for that does not fail — the vehicle simply stores the
-        first item as a home position and flies a mission with its takeoff
-        missing. Which is exactly the sort of difference that only shows up on
-        the airfield.
-
-        The placeholder carries the home the vehicle has already told us about
-        when it has, and zeroes when it has not; ArduPilot overwrites slot 0
-        with its own home either way, so the values are a courtesy rather than
-        a command. A zero-item upload (the protocol's "clear") is passed
-        through untouched — a clear has no home slot to reserve.
+        PX4 numbers mission items from 0; ArduPilot keeps *home* in slot 0,
+        and an upload that ignores that stores the first item as home and
+        flies the mission without its takeoff. A zero-item upload (a clear)
+        is passed through.
         """
-        if not specs or not self._dialect.mission_seq0_is_home:
-            return specs
-        snapshot = self._store.get_snapshot()
-        home = snapshot.get("home") or [0.0, 0.0]
-        # The store keeps home as [lon, lat], like every position it holds.
-        try:
-            home_lon, home_lat = float(home[0]), float(home[1])
-        except (TypeError, ValueError, IndexError):
-            home_lat = home_lon = 0.0
-        home_alt = self._home_alt_amsl or 0.0
-        placeholder = self._build_mission_item_spec(
-            0, mavutil.mavlink.MAV_CMD_NAV_WAYPOINT,
-            home_lat, home_lon, home_alt, 0.0, 0.0, 0.0, 0.0,
-            frame=mavutil.mavlink.MAV_FRAME_GLOBAL,
-        )
-        out = [placeholder]
-        for item in specs:
-            shifted = dict(item)
-            shifted["current"] = 0
-            out.append(shifted)
-        return out
+        return self._mission_engine.with_home_slot(self, specs)
 
     def _mission_start_range(self, count: int) -> tuple[float, float]:
         """The (first, last) item indices MAV_CMD_MISSION_START should carry.
@@ -869,38 +382,16 @@ class MissionProtocolMixin:
     @staticmethod
     def _mission_ack_to_result(ack_type: int) -> int:
         """Map MAV_MISSION_RESULT to MAV_RESULT for "Fly to points failed: ..."."""
-        if ack_type == mavutil.mavlink.MAV_MISSION_ACCEPTED:
-            return mavutil.mavlink.MAV_RESULT_ACCEPTED
-        if ack_type == mavutil.mavlink.MAV_MISSION_DENIED:
-            return mavutil.mavlink.MAV_RESULT_DENIED
-        # 2 = MAV_MISSION_UNSUPPORTED_FRAME, 3 = MAV_MISSION_UNSUPPORTED
-        if ack_type in (2, 3):
-            return mavutil.mavlink.MAV_RESULT_UNSUPPORTED
-        return mavutil.mavlink.MAV_RESULT_FAILED
+        return _engine.MissionEngine.ack_to_result(ack_type)
 
     def _takeoff_item_position(
         self, first: tuple[float, float, float],
     ) -> tuple[float, float]:
         """Where a prepended takeoff item is placed: the vehicle, else home, else the first point.
 
-        Never 0/0, which is what it used to carry. PX4's feasibility check
-        counts the takeoff item as the first waypoint (``MIS_DIST_1WP``), so a
-        takeoff "at" 0/0 is thousands of kilometres from the aircraft, and once
-        airborne PX4 treats the item's position as somewhere to go.
+        Never 0/0: PX4 counts the takeoff item as the first waypoint.
         """
-        snapshot = self._store.get_snapshot()
-        for key in ("position", "home"):
-            value = snapshot.get(key) or []
-            try:
-                lon, lat = float(value[0]), float(value[1])
-            except (TypeError, ValueError, IndexError):
-                continue
-            if (lat, lon) == (0.0, 0.0):
-                continue
-            if math.isfinite(lat) and math.isfinite(lon) \
-                    and -90.0 <= lat <= 90.0 and -180.0 <= lon <= 180.0:
-                return lat, lon
-        return first[0], first[1]
+        return self._mission_engine.takeoff_item_position(self, first)
 
     def _reposition_to(self, lat: float, lon: float, alt_agl: float) -> bool | None:
         """Send an airborne vehicle to one point with MAV_CMD_DO_REPOSITION.
@@ -1063,9 +554,10 @@ class MissionProtocolMixin:
     def upload_mission_plan(self, items: list[dict[str, Any]]) -> bool:
         """Upload a planned mission. Does not start it and does not arm.
 
-        *items* is :func:`corvus.mission.plan_to_items` output — a flat list of
+        *items* is :func:`corvus.mission.plan_to_items` output, a flat list of
         ``{"command", "lat", "lon", "alt", "params": [p1..p4]}``. Returns True
-        only on MAV_MISSION_ACCEPTED.
+        only on MAV_MISSION_ACCEPTED and when a stack that reports a verdict
+        (see Dialect.mission_validity_reported) does not reject it.
         """
         with self._operation_lock:
             self._set_command_error("")
@@ -1074,167 +566,15 @@ class MissionProtocolMixin:
                 return False
             drawn = len(items)
             items = self.lower_mission_plan(items)
-            if len(items) > FLY_TO_MAX_POINTS:
-                circles = (" This autopilot flies a circle as waypoints around it: "
-                           "give the circles fewer turns." if len(items) > drawn else "")
-                self._set_command_error(
-                    f"too many mission items ({len(items)}); "
-                    f"the maximum is {FLY_TO_MAX_POINTS}.{circles}"
-                )
-                return False
-            if not self._connection_ready():
-                return self._command_failure("Mission upload", -2)
-            refusal = self._mission_refusal(items)
-            if refusal:
-                self._set_command_error(refusal)
-                self._console_publish("MISSION", refusal, "error")
-                return False
-
-            specs: list[dict[str, Any]] = []
-            for seq, entry in enumerate(items):
-                params = list(entry.get("params") or [0.0, 0.0, 0.0, 0.0])
-                params += [0.0] * (4 - len(params))
-                command = int(entry["command"])
-                # A command that names no place (a speed change, a Return)
-                # carries no altitude frame either; everything that navigates
-                # stays in the relative-alt frame the plan's altitudes are
-                # written in. See mission.POSITIONLESS_COMMANDS for why the
-                # Return in particular cannot go in a global frame.
-                frame = (MISSION_DO_FRAME
-                         if command in mission_plan.POSITIONLESS_COMMANDS
-                         else None)
-                specs.append(self._build_mission_item_spec(
-                    seq, command,
-                    float(entry.get("lat", 0.0)), float(entry.get("lon", 0.0)),
-                    float(entry.get("alt", 0.0)),
-                    params[0], params[1], params[2], params[3],
-                    frame=frame,
-                ))
-
-            self._console_publish(
-                "MISSION", f"Uploading {len(specs)} mission item(s) …", "info",
-            )
-            wire = self._with_mission_home_slot(specs)
-            verdict = (_MissionVerdict(len(wire))
-                       if self._dialect.mission_validity_reported else None)
-            listening = self._listen_for_mission_verdict(verdict)
-            try:
-                ack = self._upload_mission(wire)
-                if ack != mavutil.mavlink.MAV_MISSION_ACCEPTED:
-                    result = ack if ack < 0 else self._mission_ack_to_result(ack)
-                    return self._command_failure("Mission upload", result)
-                # Which plan item each uploaded item came from, when the caller
-                # lowered a plan (corvus.mission.plan_to_items marks them).
-                # Noted before the verdict is waited for: the mission is on
-                # the vehicle whatever it thinks of it, and a MISSION_CURRENT
-                # counting it must not read as somebody else's.
-                index = [entry.get("item") for entry in items]
-                self._note_vehicle_mission(
-                    index if all(isinstance(i, int) for i in index) else None)
-                rejection = self._await_mission_verdict(verdict)
-            finally:
-                listening()
-            if rejection:
-                self._set_command_error(rejection)
-                self._console_publish("MISSION", rejection, "error")
-                return False
-            self._console_publish("MISSION", "Mission accepted by the vehicle", "success")
-            return True
+            return self._mission_engine.upload_plan(self, items, drawn)
 
     def _mission_refusal(self, items: list[dict[str, Any]]) -> str:
-        """Why this stack will not take *items*, or "" when it will.
-
-        Checked before anything is sent: an item the firmware does not know
-        fails the whole transfer with a bare UNSUPPORTED, which tells the
-        operator neither which item nor what to use instead.
-        """
-        refusals = self._dialect.mission_refusals(self._mav_type_id)
-        for number, entry in enumerate(items, start=1):
-            try:
-                command = int(entry.get("command"))
-            except (TypeError, ValueError):
-                continue
-            reason = refusals.get(command)
-            if not reason:
-                continue
-            item = entry.get("item")
-            where = f"item {int(item) + 1}" if isinstance(item, int) else f"item {number}"
-            return (f"Mission upload refused: {mission_plan.label_of_command(command)} "
-                    f"({where}). {reason}.")
-        return ""
-
-    def _listen_for_mission_verdict(self, verdict: _MissionVerdict | None) -> Any:
-        """Arm *verdict* for the receive thread; returns the call that disarms it.
-
-        The critical STATUSTEXT lines seen meanwhile are kept, since the
-        reason for a rejection arrives as one of them.
-        """
-        if verdict is None:
-            return lambda: None
-
-        def collect(entry: dict[str, Any]) -> None:
-            if entry.get("name") == "STATUSTEXT" and entry.get("level") == "critical":
-                text = str(entry.get("text") or "").strip()
-                if text:
-                    verdict.reasons.append(text)
-
-        add = getattr(self, "add_console_sub", None)
-        remove = getattr(self, "remove_console_sub", None)
-        if callable(add):
-            add(collect)
-        with self._mission_lock:
-            self._mission_verdict = verdict
-
-        def stop() -> None:
-            with self._mission_lock:
-                if self._mission_verdict is verdict:
-                    self._mission_verdict = None
-            if callable(remove):
-                remove(collect)
-        return stop
-
-    def _await_mission_verdict(self, verdict: _MissionVerdict | None) -> str:
-        """The vehicle's reason for refusing a mission it has just accepted, or "".
-
-        "" also when it said nothing in time: an older firmware, or a lost
-        MISSION_CURRENT. The upload's own ACK is then all there is, which is
-        what every upload relied on before this check.
-        """
-        if verdict is None:
-            return ""
-        verdict.after = time.monotonic() + MISSION_VERDICT_SETTLE_S
-        deadline = time.monotonic() + MISSION_VERDICT_WAIT_S
-        while not verdict.event.wait(timeout=0.1):
-            if time.monotonic() >= deadline:
-                return ""
-            if self._stop_event.is_set() or self._operation_lock.abort_waiting():
-                return ""
-        if verdict.state != "no_mission":
-            return ""
-        # The line that names the mission, else the last critical one.
-        reasons = [text for text in verdict.reasons if "mission" in text.lower()] \
-            or verdict.reasons
-        if reasons:
-            return f"The vehicle rejected the mission: {_REJECTED_PREFIX.sub('', reasons[-1])}"
-        if self._home_lat_lon() is None:
-            # The one reason the station can see for itself, and the usual one
-            # on a bench: every height in the plan is relative to home.
-            return ("The vehicle rejected the mission: it has no home position yet. "
-                    "Every height in the plan is measured from home, so wait for a "
-                    "GPS fix and upload again.")
-        hint = self._dialect.mission_rejection_hint
-        return "The vehicle stored the mission but will not fly it." + (f" {hint}" if hint else "")
+        """Why this stack will not take *items*, or "" when it will."""
+        return self._mission_engine.refusal(self, items)
 
     def _home_lat_lon(self) -> tuple[float, float] | None:
         """The home the vehicle reported, as (lat, lon), or None before it has one."""
-        value = self._store.get_snapshot().get("home") or []
-        try:
-            lon, lat = float(value[0]), float(value[1])
-        except (TypeError, ValueError, IndexError):
-            return None
-        if (lat, lon) == (0.0, 0.0) or not (math.isfinite(lat) and math.isfinite(lon)):
-            return None
-        return lat, lon
+        return self._mission_engine.home_lat_lon(self)
 
     def start_mission(self, count: int) -> bool:
         """Run the mission already on the vehicle: MISSION_START, AUTO, arm.
@@ -1258,23 +598,10 @@ class MissionProtocolMixin:
         return True
 
     def clear_mission(self) -> bool:
-        """Wipe the mission stored on the vehicle.
-
-        Uploading a zero-item mission is the protocol's own way of saying this,
-        and it goes through the same MISSION_COUNT / MISSION_ACK handshake —
-        so a vehicle that refuses reports why, exactly as a real upload does.
-        """
+        """Wipe the mission stored on the vehicle: a zero-item upload, so a
+        vehicle that refuses reports why, as a real upload does."""
         with self._operation_lock:
-            self._set_command_error("")
-            if not self._connection_ready():
-                return self._command_failure("Mission clear", -2)
-            ack = self._upload_mission([])
-            if ack != mavutil.mavlink.MAV_MISSION_ACCEPTED:
-                result = ack if ack < 0 else self._mission_ack_to_result(ack)
-                return self._command_failure("Mission clear", result)
-            self._note_vehicle_mission([])
-            self._console_publish("MISSION", "Mission cleared", "success")
-            return True
+            return self._mission_engine.clear_mission(self)
 
     # ------------------------------------------------------------------
     # Geofence (mission_type FENCE)
@@ -1293,41 +620,9 @@ class MissionProtocolMixin:
         schema. Returns True only on MAV_MISSION_ACCEPTED.
         """
         with self._operation_lock:
-            self._set_command_error("")
-            if not isinstance(polygon, list) or len(polygon) < geofence.MIN_VERTICES:
-                self._set_command_error(
-                    f"an area needs at least {geofence.MIN_VERTICES} corners")
-                return False
-            if not self._connection_ready():
-                return self._command_failure("Geofence upload", -2)
-            specs = [
-                self._build_mission_item_spec(
-                    seq, int(entry["command"]), entry["lat"], entry["lon"], 0.0,
-                    *entry["params"], frame=mavutil.mavlink.MAV_FRAME_GLOBAL)
-                for seq, entry in enumerate(geofence.fence_items(polygon))
-            ]
-            for spec in specs:
-                spec["current"] = 0
-            self._console_publish(
-                "GEOFENCE", f"Uploading a geofence with {len(specs)} corners …", "info")
-            ack = self._upload_mission(specs, geofence.MAV_MISSION_TYPE_FENCE)
-            if ack != mavutil.mavlink.MAV_MISSION_ACCEPTED:
-                result = ack if ack < 0 else self._mission_ack_to_result(ack)
-                return self._command_failure("Geofence upload", result)
-            self._vehicle_fence = [list(p) for p in polygon]
-            self._console_publish("GEOFENCE", "Geofence accepted by the vehicle", "success")
-            return True
+            return self._mission_engine.upload_fence(self, polygon)
 
     def clear_fence(self) -> bool:
         """Remove every fence the vehicle holds: a zero-item FENCE transfer."""
         with self._operation_lock:
-            self._set_command_error("")
-            if not self._connection_ready():
-                return self._command_failure("Geofence clear", -2)
-            ack = self._upload_mission([], geofence.MAV_MISSION_TYPE_FENCE)
-            if ack != mavutil.mavlink.MAV_MISSION_ACCEPTED:
-                result = ack if ack < 0 else self._mission_ack_to_result(ack)
-                return self._command_failure("Geofence clear", result)
-            self._vehicle_fence = []
-            self._console_publish("GEOFENCE", "Geofence removed from the vehicle", "success")
-            return True
+            return self._mission_engine.clear_fence(self)

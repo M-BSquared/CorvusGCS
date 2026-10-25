@@ -4,7 +4,7 @@
 //!
 //! The engine owns the protocol's state and decisions. What belongs to the
 //! bridge it runs on stays there and is asked for through the bridge object:
-//! the link and its send lock (`_param_send`), whether it is ready, the armed
+//! the link and its send lock (`_link_send`), whether it is ready, the armed
 //! state, the command error, the console, the listeners, and the clock.
 //! The clock is `time.monotonic` and `time.sleep` looked up at call time, so
 //! a test that replaces them drives the engine exactly as it drove the
@@ -423,13 +423,13 @@ fn armed(bridge: &Bound<'_, PyAny>) -> PyResult<bool> {
         .is_truthy()
 }
 
-/// `bridge._param_send(conn, method, *args)`: True when sent, False when the
+/// `bridge._link_send(conn, method, *args)`: True when sent, False when the
 /// link it was meant for is gone; anything else raises.
 fn send(bridge: &Bound<'_, PyAny>, conn: &Bound<'_, PyAny>, method: &str, args: Vec<PyObject>) -> PyResult<bool> {
     let py = bridge.py();
     let mut all: Vec<PyObject> = vec![conn.clone().unbind(), PyString::new(py, method).into_any().unbind()];
     all.extend(args);
-    bridge.call_method1("_param_send", PyTuple::new(py, all)?)?.is_truthy()
+    bridge.call_method1("_link_send", PyTuple::new(py, all)?)?.is_truthy()
 }
 
 fn status_dict<'py>(py: Python<'py>, pairs: &[(&str, PyObject)]) -> PyResult<Bound<'py, PyDict>> {

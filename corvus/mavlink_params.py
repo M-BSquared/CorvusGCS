@@ -120,18 +120,6 @@ class ParamProtocolMixin:
         """Discard vehicle-specific parameter metadata for a new link cycle."""
         self._param_engine.reset()
 
-    def _param_send(self, conn: Any, method: str, *args: Any) -> bool:
-        """Send one parameter message on *conn* under the send lock.
-
-        False when *conn* is no longer the bridge's link (a reconnect swapped
-        it); a send that fails raises.
-        """
-        with self._send_lock:
-            if conn is None or conn is not self._conn:
-                return False
-            getattr(conn.mav, method)(self._target_system, self._target_component, *args)
-            return True
-
     # ------------------------------------------------------------------
     # Parameter protocol
     # ------------------------------------------------------------------

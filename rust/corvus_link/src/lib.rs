@@ -218,5 +218,6 @@ fn corvus_link(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("dialect_v2", dialect::namespace(py, defs::Wire::V2)?)?;
     build_mavutil(py, m)?;
     params::register(py, m)?;
+    protocol::missions::register(py, m)?;
     Ok(())
 }

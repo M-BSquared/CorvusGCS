@@ -2906,14 +2906,21 @@ class MavlinkBridge(
             for pending in self._pending_acks.values():
                 pending.result = -2
                 pending.event.set()
-        # Wake a blocked fly_to_points uploader so shutdown cannot hang.
-        with self._mission_lock:
-            self._mission_items = None
-            pending = self._pending_mission_ack
-            self._pending_mission_ack = None
-        if pending is not None:
-            pending.result = -2
-            pending.event.set()
+        # Wake a blocked mission uploader so shutdown cannot hang.
+        self._mission_engine.cancel_upload()
+
+    def _link_send(self, conn: Any, method: str, *args: Any) -> bool:
+        """Send one message on *conn* under the send lock, addressed to the vehicle.
+
+        False when *conn* is no longer this bridge's link (a reconnect swapped
+        it); a send that fails raises. The protocols in corvus_link send
+        through this.
+        """
+        with self._send_lock:
+            if conn is None or conn is not self._conn:
+                return False
+            getattr(conn.mav, method)(self._target_system, self._target_component, *args)
+            return True
 
     def _connection_ready(self) -> bool:
         return bool(

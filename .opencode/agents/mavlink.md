@@ -91,11 +91,13 @@ shell, on board log format.
   with `(cd rust/corvus_link && maturin develop --release)` before the suite
   runs. The link types not built yet are listed in
   `rust/corvus_link/README.md`.
-- The parameter protocol is `corvus_link.params.ParamEngine`
-  (`rust/corvus_link/src/protocol/params.rs`); `corvus/mavlink_params.py` is its seat
+- The parameter and mission protocols are `corvus_link.params.ParamEngine`
+  and `corvus_link.missions.MissionEngine` (`rust/corvus_link/src/protocol/`);
+  `corvus/mavlink_params.py` and `corvus/mavlink_missions.py` are their seats
   on the bridge. A protocol change goes into the engine and keeps
-  `tests/test_param_engine_parity.py` green against the Python reference in
-  `tests/reference/`, or changes the reference with it on purpose.
+  `tests/test_param_engine_parity.py` and `tests/test_mission_engine_parity.py`
+  green against the Python references in `tests/reference/`, or changes the
+  reference with it on purpose.
 - Detect firmware from `AUTOPILOT_VERSION`. Never send a `MAV_CMD` or write a
   parameter the connected firmware does not understand; refuse and return the
   reason. Absent parameters fall back, never crash, and are not re-requested on

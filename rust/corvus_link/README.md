@@ -43,9 +43,15 @@ pymavlink does.
 | --- | --- | --- |
 | Parameters: the cache, the download state machine and its lossy-link watchdog, PARAM_VALUE checks and decoding, named reads with the barrier, confirmed writes, verify, the batch upload, and the integer value codec (bytewise or C cast) | `src/protocol/params.rs` (`corvus_link.params`) | `corvus/mavlink_params.py` keeps the bridge's methods and attribute names, the locks, the two worker threads and the listeners, and hands the engine the bridge for the link, the clock and the command error |
 
-The engine reads the clock as `time.monotonic` and `time.sleep` at call
+| Missions: the upload and download handshakes for missions and geofences, the item requests served during an upload, MISSION_CURRENT and MISSION_ITEM_REACHED as a place in the plan, the record of what is on the vehicle, the vehicle's verdict on a new mission, the fly-to payload checks and item specs | `src/protocol/missions.rs` (`corvus_link.missions`) | `corvus/mavlink_missions.py` keeps the bridge's methods and attribute names and the tunables the engine reads; fly to points, mission start (mode and arming order) and reposition stay here until the flight commands move |
+
+The parameter engine reads the clock as `time.monotonic` and `time.sleep` at call
 time and reaches the link only through the bridge, so a test that replaces
-either drives the Rust code exactly as it drove the Python.
+either drives the Rust code exactly as it drove the Python. The mission
+engine reads its tunables and `time` from `corvus.mavlink_missions` for the
+same reason, and calls the bridge's own helpers (`_upload_mission`,
+`_with_mission_home_slot`, ...) through the bridge, so a replaced one is the
+one that runs.
 
 ## Link types
 
@@ -96,4 +102,8 @@ pymavlink stays in the `test` dependency group as the reference:
   PARAM_VALUE streams, downloads, writes, reads, verifies and uploads, and
   compares the cache, the progress, every notification, every message sent
   and every result.
+- `tests/test_mission_engine_parity.py` does the same for the mission
+  protocol: uploads (accepted, refused, rejected after the ACK, unanswered),
+  downloads with lost and dropped items, MISSION_CURRENT streams, fences,
+  clears and the fly-to checks, on PX4 and ArduPilot.
 - The rest of the suite drives the bridge with corvus_link's messages.
