@@ -1,0 +1,193 @@
+/*
+  Corvus GCS: tablet mode, the page sheets' half.
+
+  Every rule here is guarded by :root[data-touch], the attribute js/touch.js
+  writes on <html> when Settings > Interface > Tablet mode is on, so without it
+  this sheet does nothing and the app looks exactly as it does on a laptop.
+  The shared controls' half (buttons, fields, switches, menu rows) is at the
+  end of css/components.css; this is the app's own chrome: the flight bar, the
+  map's control rail, the side panel, the movable windows over the map.
+
+  Loaded last of the page sheets, so a tie with the rule it adjusts goes to
+  this one. Three kinds of change, and nothing else:
+
+    bigger     a box a finger hits (--touch-target, --touch-target-sm)
+    shown      what a pointer would have found by hovering
+    gone       what needs a mouse or a keyboard to be of any use
+*/
+
+/* ===== The page itself =====
+   No pull to refresh, no rubber band, no double tap zoom, no grey flash on a
+   tap and no copy and share bubble on a held finger. A swipe that reloads the
+   ground station in flight is the one gesture a tablet browser offers that
+   must never land. The map's own pinch and pan are its own (touch-action on
+   its canvas), and a scrolling list still scrolls. */
+:root[data-touch] {
+  overscroll-behavior: none;
+  touch-action: manipulation;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+:root[data-touch] body {
+  overscroll-behavior: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Anything a page marks as desktop only, and the reverse: a control that
+   stands in for a mouse or keyboard gesture (the planner's FINISH, for Enter
+   and a double click) exists in tablet mode only. */
+:root[data-touch] [data-touch-hide] { display: none !important; }
+:root:not([data-touch]) [data-touch-only] { display: none !important; }
+
+/* ===== No hover left behind =====
+   A tablet browser applies :hover to whatever was tapped last and keeps it
+   there until the next tap elsewhere. On the controls a flight is flown
+   with, that tint reads as a state: LAND looked pressed long after it was
+   pressed. The press itself still shows, through :active. The rail's own
+   items are the library's, at the end of css/components.css. */
+:root[data-touch] .fa-btn:hover:not(.armed):not(.active):not(.is-next) { color: var(--text-2); background: transparent; }
+:root[data-touch] .mc-btn:hover:not(.active) { color: var(--text-2); background: transparent; }
+:root[data-touch] .tab:hover:not(.active) { color: var(--text-3); background: transparent; }
+:root[data-touch] .settings-tab:hover:not(.active) { color: var(--text-3); background: transparent; }
+
+/* ===== Side panel =====
+   The resize edge is a 7px line to drag: no finger finds it, and the width it
+   sets is a desk preference. The handle that folds the panel away is the
+   control a tablet uses instead, so it gets wider. */
+:root[data-touch] { --panel-w-collapsed: 30px; }
+:root[data-touch] .panel-grip { display: none; }
+:root[data-touch] .panel-handle svg,
+:root[data-touch] .panel-handle i { width: 20px; height: 20px; }
+:root[data-touch] .tab { min-height: var(--touch-target); }
+:root[data-touch] .tabs-arrow { width: 32px; }
+:root[data-touch] .link-kind { min-height: var(--touch-target-sm); }
+:root[data-touch] .link-card-title { min-height: var(--touch-target); }
+:root[data-touch] .btn.link-reconnect { min-width: var(--touch-target-sm); }
+
+/* ===== Top bar =====
+   An upright tablet is about 820px wide, and the full bar needs a little
+   more than that: its captions ran into each other. The logo keeps its mark
+   and gives up its words, which the readouts need more. */
+:root[data-touch][data-vw~="max-959"] .tb-logo-text { display: none; }
+:root[data-touch][data-vw~="max-959"] .tb-block { padding-left: 7px; padding-right: 7px; }
+
+/* ===== Settings pills ===== */
+:root[data-touch] .settings-tab { min-height: var(--touch-target-sm); padding-left: 14px; padding-right: 14px; }
+
+/* ===== Flight bar =====
+   The buttons a flight is flown with: the tallest targets in the app. fitBar
+   in js/map.js measures the bar as it is drawn, so it narrows these the same
+   way when the row will not fit. */
+:root[data-touch] .fa-btn { min-width: 80px; min-height: 54px; justify-content: center; }
+:root[data-touch] .fa-btn i,
+:root[data-touch] .fa-btn svg { width: 20px; height: 20px; }
+:root[data-touch] .flight-actions.is-tight .fa-btn,
+:root[data-touch] .flight-actions.is-compact .fa-btn { min-width: 54px; }
+:root[data-touch] .fa-divider { height: 42px; }
+:root[data-touch] .field-select.mode-selector { min-height: 54px; font-size: 12px; }
+
+/* Takeoff and fly-to-points panels: the slider thumb is what the finger
+   drags, and the confirm is the second step of a takeoff. */
+:root[data-touch] .takeoff-slider { height: 6px; border-radius: 3px; }
+:root[data-touch] .takeoff-slider::-webkit-slider-thumb { width: 28px; height: 28px; }
+:root[data-touch] .takeoff-slider::-moz-range-thumb { width: 28px; height: 28px; }
+:root[data-touch] .takeoff-slider-row { min-height: var(--touch-target); }
+:root[data-touch] .takeoff-alt-input { min-height: var(--touch-target-sm); }
+:root[data-touch] .takeoff-confirm,
+:root[data-touch] .plan-fly,
+:root[data-touch] .plan-clear { min-height: 50px; }
+
+/* ===== Map chrome =====
+   The control rail, the offline map trigger and the place search are laid
+   out off each other's widths (see "Geometry shared by the map chrome" in
+   css/map.css), so the buttons and the offsets grow together, on both maps. */
+:root[data-touch] .map-view,
+:root[data-touch] .mission-map-wrap {
+  --map-rail-w: calc(var(--touch-target) + 14px);
+  --map-search-clear: calc(var(--map-rail-clear) + var(--touch-target) + var(--map-rail-gap));
+  --map-trigger-clear: calc(var(--map-search-clear) + var(--touch-target) + var(--map-rail-gap));
+}
+/* Zooming is two fingers on the map itself; the buttons for it are what a
+   mouse needed. Gone on both maps, and the rail is shorter for it. */
+:root[data-touch] .mc-btn[data-act="in"],
+:root[data-touch] .mc-btn[data-act="out"] { display: none; }
+:root[data-touch] .mc-btn,
+:root[data-touch] .tiles-trigger,
+:root[data-touch] .map-search-trigger { width: var(--touch-target); height: var(--touch-target); }
+:root[data-touch] .mc-btn i, :root[data-touch] .mc-btn svg,
+:root[data-touch] .tiles-trigger i, :root[data-touch] .tiles-trigger svg,
+:root[data-touch] .map-search-trigger i, :root[data-touch] .map-search-trigger svg { width: 20px; height: 20px; }
+:root[data-touch] .map-search-field { height: var(--touch-target); }
+:root[data-touch] .map-search-reset { min-width: 32px; min-height: 32px; }
+/* Clearing the flown track, bottom left. It stacks flush on the attribution
+   disc below it, so it keeps its size and only its hit area grows. */
+:root[data-touch] .track-clear::after { content: ""; position: absolute; inset: -8px -8px -2px; border-radius: 50%; }
+:root[data-touch] .map-search-results {
+  top: calc(var(--touch-target) + var(--map-rail-gap));
+  right: calc(var(--touch-target) + var(--map-rail-gap));
+}
+
+/* ===== Windows over the map =====
+   The HUD's own buttons only showed under a hovering pointer; a finger never
+   hovers, so they stay. The grip bars are what a window is dragged by.
+
+   A window that a finger has picked up says so with a ring in the accent
+   colour, since the finger covers the very spot that would otherwise show it
+   moving. The HUD needs a moment's hold before it lifts (js/touch.js), and
+   the ring is how the operator knows it has. */
+:root[data-touch] .flight-overlay.is-dragging,
+:root[data-touch] .joystick-pad.is-dragging,
+:root[data-touch] .checklist-panel.is-dragging,
+:root[data-touch] .term-win.is-dragging:not(.is-max) {
+  box-shadow: 0 0 0 2px var(--accent), var(--shadow-pop);
+}
+:root[data-touch] .hud-actions { opacity: 1; }
+:root[data-touch] .hud-actions .icon-btn { min-width: 32px; min-height: 32px; }
+:root[data-touch] .js-grip { min-height: 30px; }
+:root[data-touch] .js-grip .js-collapse { min-width: 32px; min-height: 30px; }
+:root[data-touch] .checklist-bar { min-height: 34px; }
+/* The checklist is dragged by its bar only, so the rest of the window can
+   give a finger back its scroll: a long list has to be read to the end. */
+:root[data-touch] .checklist-panel { touch-action: manipulation; }
+:root[data-touch] .checklist-body { touch-action: pan-y; }
+
+/* The stick pad sized for thumbs. Wins over the narrow-window sizes in
+   css/responsive.css, which were made for a mouse dragging a small knob. */
+:root[data-touch] .joystick-pad {
+  --js-size: 128px;
+  --js-knob: 50px;
+  --js-key: 44px;
+  --gp-size: 36px;
+  --gp-dot: 12px;
+}
+:root[data-touch] .js-surfaces,
+:root[data-touch] .js-sticks { gap: 18px; }
+
+/* Camera and terminal windows: a title bar a finger can take hold of, and a
+   resize corner bigger than a fingertip. */
+:root[data-touch] .term-win-bar { height: var(--touch-target); }
+:root[data-touch] .term-win-grip { width: 30px; height: 30px; }
+
+/* ===== Mission planner =====
+   The row tools appeared under a hovering pointer; here they are always on,
+   and the × in them is how a point is removed (a held finger on a point is
+   left alone, see onMarker in js/touch.js). The number cell is the row's
+   drag handle under a finger, so it gets the width of one. */
+:root[data-touch] .mission-row-tools { opacity: 1; }
+:root[data-touch] .mission-row-tools .icon-btn { min-width: 32px; min-height: 32px; }
+:root[data-touch] .mission-row { grid-template-columns: 30px 16px auto minmax(4.5em, 1fr) auto; }
+:root[data-touch] .mission-row-index { align-self: stretch; display: grid; place-items: center end; min-height: 32px; }
+:root[data-touch] .mission-pattern-done { min-width: 120px; }
+
+/* Points on the map: the ring keeps its size, the box a finger hits grows. */
+:root[data-touch] .mission-point::after,
+:root[data-touch] .mission-home::after { content: ""; position: absolute; inset: -9px; border-radius: 50%; }
+
+/* ===== Geofence editor =====
+   Corners a finger can take hold of, and the handles that add a corner, which
+   only grew under a hovering pointer, shown at full strength. */
+:root[data-touch] .geofence-corner { width: 22px; height: 22px; }
+:root[data-touch] .geofence-mid { width: 18px; height: 18px; opacity: 1; }
+:root[data-touch] .geofence-corner::after,
+:root[data-touch] .geofence-mid::after { content: ""; position: absolute; inset: -9px; border-radius: 50%; }

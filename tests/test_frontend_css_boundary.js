@@ -57,7 +57,7 @@ const sheetOrder = [...indexHtml.matchAll(/href="css\/([\w.-]+\.css)"/g)].map((m
 // order IS the old file's order, so it is pinned here as well.
 assert.deepEqual(
   sheetOrder,
-  ["themes.css", "components.css", ...["main.css", "map.css", "flight.css", "panel.css", "setup.css", "responsive.css", "setup-forms.css", "link.css", "mission.css"]],
+  ["themes.css", "components.css", ...["main.css", "map.css", "flight.css", "panel.css", "setup.css", "responsive.css", "setup-forms.css", "link.css", "mission.css", "touch.css"]],
   `index.html must load themes.css, then components.css, then the page sheets in order — got ${sheetOrder.join(", ")}`
 );
 

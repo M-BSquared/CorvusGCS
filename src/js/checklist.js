@@ -530,6 +530,7 @@ Corvus.checklist = (function () {
         scale: k,
       };
       try { panel.setPointerCapture(event.pointerId); } catch (_e) {}
+      if (Corvus.touch) Corvus.touch.claim(event.pointerId);
       panel.classList.add("is-dragging");
       event.preventDefault();
     });

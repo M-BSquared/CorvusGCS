@@ -9,6 +9,7 @@ window.Corvus = window.Corvus || {};
   window now, with four affordances and deliberately no title bar:
 
     drag      grab the panel anywhere that is not a button and move it
+              (in tablet mode: hold it a moment first, then move it)
     pin       lock the position so a stray drag over the map cannot shift it —
               the one that matters in the field, where the panel sits under a
               thumb on a trackpad while the aircraft is airborne
@@ -286,7 +287,7 @@ Corvus.hudPanel = (function () {
     const hb = host.getBoundingClientRect();
     const pb = panelEl.getBoundingClientRect();
     const k = pointerScale(host);
-    drag = {
+    const grab = {
       pointerId: e.pointerId,
       // Grab offset in the panel's own (unscaled) pixels, so the point under
       // the cursor stays under the cursor at any interface size.
@@ -296,11 +297,20 @@ Corvus.hudPanel = (function () {
       hostTop: hb.top,
       scale: k,
     };
+    e.preventDefault();
+    // In tablet mode a finger picks the panel up only once it has been held
+    // on it (js/touch.js): the whole panel is the handle, and a thumb resting
+    // on it or a swipe meant for the map must not carry it off in flight.
+    if (Corvus.touch && Corvus.touch.holdToMove(e, () => startDrag(grab))) return;
+    startDrag(grab);
+  }
+
+  function startDrag(grab) {
+    drag = grab;
     // Capture so the drag survives the pointer leaving the header — including
     // over the map canvas, which would otherwise swallow the move events.
-    try { panelEl.setPointerCapture(e.pointerId); } catch (_e) {}
+    try { panelEl.setPointerCapture(grab.pointerId); } catch (_e) {}
     panelEl.classList.add("is-dragging");
-    e.preventDefault();
   }
 
   function onPointerMove(e) {

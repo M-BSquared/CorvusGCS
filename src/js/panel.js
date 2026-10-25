@@ -908,19 +908,28 @@ Corvus.panel = (function () {
     return true;
   }
 
+  // Tab id -> the reasons it is hidden for. Settings and tablet mode each hide
+  // the SSH tab for their own reason, and the tab comes back only when neither
+  // does: turning tablet mode off must not undo the operator's own switch.
+  const hiddenFor = Object.create(null);
+
   /**
    * Hide or show one of the panel's tabs (Settings: the MAVLink console and
-   * SSH tabs). Hiding the tab that is showing brings the first remaining one
-   * forward. LINK and PLUGINS cannot be hidden: one is how the aircraft is
-   * reached, the other where plugins go.
+   * SSH tabs; tablet mode: SSH). Hiding the tab that is showing brings the
+   * first remaining one forward. LINK and PLUGINS cannot be hidden: one is
+   * how the aircraft is reached, the other where plugins go.
    *
+   * @param {string} [reason] who is asking, "settings" when omitted
    * @returns {boolean} whether there is such a tab
    */
-  function setTabHidden(id, hidden) {
+  function setTabHidden(id, hidden, reason) {
     if (id === "link" || id === "future") return false;
     const btn = tabButton(id);
     if (!btn) return false;
-    btn.hidden = !!hidden;
+    const why = hiddenFor[id] || (hiddenFor[id] = new Set());
+    if (hidden) why.add(reason || "settings");
+    else why.delete(reason || "settings");
+    btn.hidden = why.size > 0;
     updateTabArrows();
     if (btn.hidden && btn.classList.contains("active")) {
       const next = fallbackTab(id);

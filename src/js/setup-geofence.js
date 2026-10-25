@@ -365,8 +365,10 @@ Corvus.setupGeofence = (function () {
       say("", "");
       if (map.doubleClickZoom) map.doubleClickZoom.disable();
       mapBox.classList.add("is-drawing");
-      showHint("Click to place corners. Enter or a double click closes the area, "
-        + "right click undoes a corner, Escape cancels.");
+      showHint(Corvus.touch && Corvus.touch.isEnabled()
+        ? "Tap to place corners. Finish closes the area, holding the map undoes a corner."
+        : "Click to place corners. Enter or a double click closes the area, "
+          + "right click undoes a corner, Escape cancels.");
       redraw();
       sync();
     }
@@ -607,7 +609,9 @@ Corvus.setupGeofence = (function () {
         if (!drawing || !event || !event.lngLat) return;
         draft.push([event.lngLat.lng, event.lngLat.lat]);
         if (distinctCorners(draft).length >= 3) {
-          showHint("Enter or a double click closes the area. Right click undoes a corner.");
+          showHint(Corvus.touch && Corvus.touch.isEnabled()
+            ? "Finish closes the area. Holding the map undoes a corner."
+            : "Enter or a double click closes the area. Right click undoes a corner.");
         }
         redraw();
         sync();
@@ -625,6 +629,8 @@ Corvus.setupGeofence = (function () {
       });
       map.on("contextmenu", (event) => {
         if (event && event.preventDefault) event.preventDefault();
+        // A held finger on a corner is that corner's gesture (js/touch.js).
+        if (Corvus.touch && Corvus.touch.onMarker(event)) return;
         if (drawing) undoCorner();
       });
     }

@@ -260,6 +260,38 @@ function testDragMovesThePanelAndPersistsThePosition() {
   assert.deepEqual([persisted().x, persisted().y], [430, 220], "position persisted");
 }
 
+// Tablet mode: the whole panel is the handle, so a finger lifts it only after
+// a hold (Corvus.touch.holdToMove). A swipe across it before then moves
+// nothing; once lifted it follows the finger exactly as a mouse drag does.
+function testInTabletModeAFingerMovesThePanelOnlyAfterAHold() {
+  let lift = null;
+  Corvus.touch = {
+    holdToMove: (e, onLift) => {
+      if (e.pointerType !== "touch") return false;
+      lift = onLift;
+      return true;
+    },
+  };
+  try {
+    const { panel } = mount();
+    Corvus.hudPanel.init(panel);
+    const h = dragSurface(panel);
+    fire(h, "pointerdown", { clientX: 740, clientY: 390, pointerType: "touch" });
+    fire(h, "pointermove", { clientX: 540, clientY: 290, pointerType: "touch" });
+    assert.equal(panel.style.left || "", "", "not before the hold");
+    assert.ok(!panel.classList.contains("is-dragging"));
+    assert.equal(typeof lift, "function");
+    lift();
+    assert.ok(panel.classList.contains("is-dragging"), "lifted");
+    fire(h, "pointermove", { clientX: 540, clientY: 290, pointerType: "touch" });
+    fire(h, "pointerup", { clientX: 540, clientY: 290, pointerType: "touch" });
+    assert.equal(panel.style.left, "430px", "then it follows the finger from where it was held");
+    assert.equal(panel.style.top, "220px");
+  } finally {
+    delete Corvus.touch;
+  }
+}
+
 function testPinnedPanelRefusesToMove() {
   const { panel } = mount();
   Corvus.hudPanel.init(panel);
@@ -583,6 +615,7 @@ function testAHudSwitchedOffBeforeInitStartsHidden() {
 }
 
 const tests = [
+  testInTabletModeAFingerMovesThePanelOnlyAfterAHold,
   testInitReparentsInstrumentsInsteadOfRebuilding,
   testSettingsTakeTheHudOffAndBringItBackWhereItWas,
   testAHudSwitchedOffBeforeInitStartsHidden,

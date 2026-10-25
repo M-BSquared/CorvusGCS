@@ -2228,7 +2228,12 @@ Corvus.ui = (function () {
     const muted = token("--text-3", "#69737F");
     const grid = token("--border-soft", "#20262E");
     const axis = token("--border", "#2A3038");
+    // In tablet mode a finger on a chart scrolls the page. Plotly's drag would
+    // take it as a zoom box instead, and on Analysis, where the charts are
+    // most of the page, the page could then hardly be scrolled at all.
+    const touch = !!(Corvus.touch && Corvus.touch.isEnabled());
     return {
+      ...(touch ? { dragmode: false } : {}),
       paper_bgcolor: surface,
       plot_bgcolor: surface,
       font: { color: text, family: "JetBrains Mono, monospace", size: 10 },
@@ -2271,9 +2276,12 @@ Corvus.ui = (function () {
     }
     const handler = () => fn();
     window.addEventListener("corvus:themechange", handler);
+    // Tablet mode changes what plotlyTheme() hands a chart too.
+    window.addEventListener("corvus:touchchange", handler);
     return function () {
       if (typeof window.removeEventListener === "function") {
         window.removeEventListener("corvus:themechange", handler);
+        window.removeEventListener("corvus:touchchange", handler);
       }
     };
   }

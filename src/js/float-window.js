@@ -334,6 +334,7 @@ Corvus.floatWindows = (function () {
       };
       if (drag.mode === "size" && rec.maximized) restore(rec, true);
       try { rec.el.setPointerCapture(e.pointerId); } catch (_e) {}
+      if (Corvus.touch) Corvus.touch.claim(e.pointerId);
       rec.el.classList.add("is-dragging");
       e.preventDefault();
     });

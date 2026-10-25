@@ -71,7 +71,17 @@ Corvus.sidenav = (function () {
         ? [{ id: "mission", label: "MISSION", icon: "route", after: "divider" }]
         : [{ divider: true }]),
       ...NAV,
-      { id: "settings", label: "SET", icon: "settings", title: "Settings", before: "spacer" },
+      // A tablet's browser bars take a tenth of the screen; in tablet mode the
+      // rail offers to drop them, where the browser can.
+      ...(fullscreenOffered()
+        ? [{
+            id: "fullscreen", action: true, before: "spacer",
+            label: "FULL", icon: Corvus.touch.isFullscreen() ? "minimize" : "maximize",
+            title: Corvus.touch.isFullscreen() ? "Leave full screen" : "Full screen",
+            onClick: () => Corvus.touch.toggleFullscreen(),
+          }]
+        : []),
+      { id: "settings", label: "SET", icon: "settings", title: "Settings", before: fullscreenOffered() ? null : "spacer" },
     ];
 
     items.forEach((n) => {
@@ -85,13 +95,17 @@ Corvus.sidenav = (function () {
         icon: n.icon,
         label: n.label,
         title: n.title,
-        active: n.id === activeNav,
-        onClick: () => switchTo(n.id),
+        active: !n.action && n.id === activeNav,
+        onClick: n.onClick || (() => switchTo(n.id)),
       }));
       if (n.after) leftNav.appendChild(railFiller(n.after));
     });
     paintUpdateBadge(Corvus.update ? Corvus.update.available() : null);
     Corvus.ui.refreshIcons();
+  }
+
+  function fullscreenOffered() {
+    return !!(Corvus.touch && Corvus.touch.isEnabled() && Corvus.touch.canFullscreen());
   }
 
   /** Orange dot on SET, and on the Settings page's About pill, while a newer
@@ -149,7 +163,7 @@ Corvus.sidenav = (function () {
       analysisDestroy = null;
     }
     leftNav.querySelectorAll(".nav-item").forEach((x) =>
-      x.classList.toggle("active", x.dataset.nav === navId));
+      x.classList.toggle("active", x.dataset.nav === navId && x.dataset.nav !== "fullscreen"));
 
     if (navId === "home") {
       mapView.hidden = false;
@@ -403,7 +417,7 @@ Corvus.sidenav = (function () {
   // and whose name is on it.
   function renderInterfaceTab(container, cfg, gen) {
     cardGroup(container, "General", [
-      languageCard(gen), themeCard(cfg), scaleCard(cfg), unitsCard(cfg),
+      languageCard(gen), themeCard(cfg), scaleCard(cfg), touchCard(), unitsCard(cfg),
     ]);
     cardGroup(container, "Branding", [companyLogoCard(cfg), appIconCard(cfg)]);
   }
@@ -439,6 +453,8 @@ Corvus.sidenav = (function () {
     renderVehiclesSection(container, gen);
     renderSSHSection(container, gen);
     renderConnectionSection(container, cfg);
+    // The MCP server: an AI client on this computer (js/settings-mcp.js).
+    if (Corvus.settingsMcp) container.appendChild(Corvus.settingsMcp.section());
   }
 
   // What Corvus keeps on this computer and how it reads it back.
@@ -621,12 +637,16 @@ Corvus.sidenav = (function () {
             });
         },
       });
-      card.appendChild(Corvus.ui.field({
+      const row = Corvus.ui.field({
         label: spec.label,
         control: sw.el,
         className: "field-switch",
         hint: spec.hint,
-      }));
+      });
+      // Tablet mode takes the SSH tab away whatever this says (js/touch.js),
+      // so a switch that could not bring it back is not offered there.
+      if (spec.id === "ssh") row.dataset.touchHide = "";
+      card.appendChild(row);
     });
     return card;
   }
@@ -1289,6 +1309,8 @@ Corvus.sidenav = (function () {
     const po = Corvus.popouts;
     if (po) po.setInApp(on);
     const desktop = !!(po && po.native());
+    // In a tablet's browser this is a switch that can never be used.
+    if (!desktop) card.dataset.touchHide = "";
 
     const sw = Corvus.ui.toggle({
       id: "settingsWindowsInApp",
@@ -1395,6 +1417,8 @@ Corvus.sidenav = (function () {
   // the change up on its own timer, so the icon flips while the app runs.
   function appIconCard(cfg) {
     const card = Corvus.ui.card({ title: "App icon" });
+    // The Dock and the taskbar are a desktop's; a tablet has neither.
+    card.dataset.touchHide = "";
     const ui = cfg.ui || {};
 
     const inverted = Corvus.ui.toggle({
@@ -1722,6 +1746,41 @@ Corvus.sidenav = (function () {
             "and panels. Larger reads better on a bright field laptop. " +
             "100% is the default.",
     }));
+    return card;
+  }
+
+  // Tablet mode. Unlike everything else on this page it is not in the backend
+  // config: a tablet reaches Corvus over the network and shares the laptop's
+  // config, so the choice is kept on the device that made it (js/touch.js).
+  // Nothing to persist in the background, so nothing for a refusal to undo.
+  function touchCard() {
+    const T = Corvus.touch;
+    const card = Corvus.ui.card({ title: "Tablet mode" });
+    if (!T) return card;
+    const sw = Corvus.ui.toggle({
+      id: "settingsTouchMode",
+      value: T.isEnabled(),
+      ariaLabel: "Tablet mode",
+      onChange: (on) => { T.setEnabled(on); },
+    });
+    card.appendChild(Corvus.ui.field({
+      label: "Touch screen layout",
+      control: sw.el,
+      className: "field-switch",
+      hint: "Larger buttons for a finger, a long press where a mouse would " +
+            "right click, and none of the parts that need a mouse or a " +
+            "keyboard, such as the SSH terminal tab. Saved on this device " +
+            "only, so a tablet and the computer it connects to each keep " +
+            "their own.",
+    }));
+    if (T.hasTouchscreen() && T.stored() === null) {
+      const note = document.createElement("span");
+      note.className = "field-hint";
+      note.textContent = T.isEnabled()
+        ? "Switched on by itself because this screen is a touch screen."
+        : "This screen also takes touch.";
+      card.appendChild(note);
+    }
     return card;
   }
 
@@ -3321,6 +3380,8 @@ Corvus.sidenav = (function () {
 
   return {
     init, setMissionEnabled, isMissionEnabled: () => missionEnabled,
+    // Tablet mode adds and removes the fullscreen entry (js/touch.js).
+    refreshRail: () => { if (leftNav) renderLeftNav(); },
     // Which page is showing, and the way to another one: a plugin that frames
     // something on the Home map brings Home forward first.
     switchTo, current: () => activeNav,

@@ -1301,7 +1301,11 @@ function testNothingOverridesMapLibresMarkerPositioning() {
                    "wp-marker", "home-marker"];
   const rules = rulesNaming(mainCss, markers);
   assert.ok(rules.length > 0, "the marker rules must be findable in the page sheets");
-  rules.forEach((rule) => {
+  // A rule for the marker's ::after (tablet mode's larger hit area) positions
+  // that box, inside the marker, and leaves the marker where MapLibre put it.
+  const onPseudo = (rule) => rule.selector.split(",")
+    .every((sel) => /::(after|before)\s*$/.test(sel.trim()));
+  rules.filter((rule) => !onPseudo(rule)).forEach((rule) => {
     assert.ok(!/(^|[;\s])position\s*:/.test(rule.body),
       `"${rule.selector}" sets position on a MapLibre marker element. ` +
       `MapLibre owns that property — overriding it drops the marker into ` +

@@ -1563,3 +1563,43 @@
   color: var(--text-3);
   word-break: break-all;
 }
+
+/* ===== Tablet mode =====
+   :root[data-touch] is js/touch.js's switch, on <html> like data-theme. These
+   are the library's half: how big each shared control is when a finger is
+   the pointer. The page sheets' half (the flight bar, the map chrome, the
+   rail) is in css/touch.css.
+
+   min-width and min-height rather than width and height wherever a page
+   gives a control its own size: a minimum beats any fixed size without
+   having to out-specify the page rule that set it, so one line here reaches
+   every `.icon-btn.params-reset { width: 24px }` in the app. The look stays
+   the same; only the box a finger can hit grows. */
+:root[data-touch] .btn { min-height: var(--touch-target); }
+:root[data-touch] .btn[data-size="sm"] { min-height: var(--touch-target-sm); }
+:root[data-touch] .btn[data-shape="round"] { min-width: var(--touch-target); }
+:root[data-touch] .icon-btn { min-width: var(--touch-target-sm); min-height: var(--touch-target-sm); }
+:root[data-touch] .icon-btn i, :root[data-touch] .icon-btn svg { width: 17px; height: 17px; }
+:root[data-touch] .field-select,
+:root[data-touch] .field-input { min-height: var(--touch-target-sm); }
+:root[data-touch] .nav-item { height: 58px; }
+:root[data-touch] .nav-item i, :root[data-touch] .nav-item svg { width: 23px; height: 23px; }
+/* A tablet keeps :hover on whatever was tapped last; on the rail that made the
+   page just left look like the one still open (see "No hover left behind" in
+   css/touch.css). */
+:root[data-touch] .nav-item:hover:not(.active) { color: var(--text-2); background: transparent; }
+:root[data-touch] .nav-item:hover:not(.active) .nav-label { color: var(--text-3); }
+:root[data-touch] .option-item { min-height: var(--touch-target); padding-top: 9px; padding-bottom: 9px; }
+:root[data-touch] .ui-segment-opt { min-height: var(--touch-target-sm); }
+:root[data-touch] .ui-slider { --slider-thumb: 26px; }
+:root[data-touch] .ui-slider-step { padding-top: 6px; padding-bottom: 6px; }
+/* The switch keeps its shape and grows to a thumb's width. */
+:root[data-touch] .ui-toggle { min-height: var(--touch-target-sm); }
+:root[data-touch] .ui-toggle-track { width: 52px; height: 30px; }
+:root[data-touch] .ui-toggle-knob { width: 24px; height: 24px; }
+:root[data-touch] .ui-toggle.on .ui-toggle-knob { transform: translateX(22px); }
+/* The info icon annotates a caption and has to stay its size in the row, so
+   only its hit area grows, past its own edges. */
+:root[data-touch] .ui-info { position: relative; }
+:root[data-touch] .ui-info::after { content: ""; position: absolute; inset: -10px; }
+

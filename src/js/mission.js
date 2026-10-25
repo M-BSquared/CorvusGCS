@@ -272,13 +272,19 @@ Corvus.mission = (function () {
   // The shapes a PATTERN covers. Each is a tool of its own, armed from the
   // card under the PATTERN button, and each ends in plain waypoints: the
   // sweep is generated once and from then on is an ordinary route.
+  // `touchHint` is the same step for a finger (tablet mode, js/touch.js),
+  // where there is no Enter and a double tap on the map zooms it: the FINISH
+  // button under the hint is what ends the shape there.
   const PATTERNS = {
     pattern_circle: { icon: "rotate-cw", label: "Circle",
-      hint: "Click the centre, then click the edge of the circle to fly." },
+      hint: "Click the centre, then click the edge of the circle to fly.",
+      touchHint: "Tap the centre, then tap the edge of the circle to fly." },
     pattern_corridor: { icon: "route", label: "Corridor",
-      hint: "Click along the centre line of the corridor. Enter or a double click finishes." },
+      hint: "Click along the centre line of the corridor. Enter or a double click finishes.",
+      touchHint: "Tap along the centre line of the corridor, then press FINISH." },
     pattern_area: { icon: "vector-square", label: "Area",
-      hint: "Click the corners of the area. Enter or a double click finishes." },
+      hint: "Click the corners of the area. Enter or a double click finishes.",
+      touchHint: "Tap the corners of the area, then press FINISH." },
   };
   // How close a takeoff has to stand to the start to BE the start's takeoff,
   // rather than a separate place the aircraft flies to before it climbs.
@@ -657,6 +663,7 @@ Corvus.mission = (function () {
   let patternHover = false;
   let patternLeaveTimer = 0;
   let patternCardEl = null;
+  let patternDoneEl = null;
   let patternButtonEl = null;
   let patternSource = null;
   let planName = "Mission";
@@ -1177,7 +1184,16 @@ Corvus.mission = (function () {
     const hint = document.createElement("div");
     hint.className = "mission-hint";
     hint.id = "missionHint";
-    topLeft.append(toolsEl, hint);
+    // What Enter and a double click do with a mouse, for a finger: tablet
+    // mode only (data-touch-only), and only while a shape can be finished.
+    patternDoneEl = Corvus.ui.button({
+      variant: "primary", size: "sm", icon: "check", label: "FINISH",
+      className: "mission-pattern-done",
+      onClick: () => { if (PATTERNS[tool] && tool !== "pattern_circle" && patternReady()) commitPattern(); },
+    });
+    patternDoneEl.dataset.touchOnly = "";
+    patternDoneEl.hidden = true;
+    topLeft.append(toolsEl, hint, patternDoneEl);
     mapWrap.appendChild(topLeft);
 
     const controls = document.createElement("div");
@@ -1817,6 +1833,9 @@ Corvus.mission = (function () {
   function setHint(text) {
     const hint = document.getElementById("missionHint");
     if (hint) hint.textContent = text;
+    // Every change to the shape being drawn ends in a new hint, so this is
+    // where the button that finishes it learns whether there is one to finish.
+    if (patternDoneEl) patternDoneEl.hidden = !(PATTERNS[tool] && tool !== "pattern_circle" && patternReady());
   }
 
   /** The line under the tool bar: what the next step is, in the order a
@@ -1833,13 +1852,18 @@ Corvus.mission = (function () {
       return;
     }
     if (PATTERNS[tool]) {
-      setHint(`${PATTERNS[tool].hint} Right click undoes a point. Esc to stop.`);
+      setHint(byFinger()
+        ? `${PATTERNS[tool].touchHint} Hold the map to take a point back.`
+        : `${PATTERNS[tool].hint} Right click undoes a point. Esc to stop.`);
       return;
     }
     if (tool !== "select") {
       const end = endIndex();
       const before = end >= 0 && !ENDS[tool] ? ` before ${END_NAMES[items[end].type]}` : "";
-      setHint(`Click the map to add a ${TYPES[tool].label.toLowerCase()}${before}. Esc to stop.`);
+      const what = TYPES[tool].label.toLowerCase();
+      setHint(byFinger()
+        ? `Tap the map to add a ${what}${before}. SELECT stops.`
+        : `Click the map to add a ${what}${before}. Esc to stop.`);
       return;
     }
     if (!home) {
@@ -1851,12 +1875,28 @@ Corvus.mission = (function () {
         ? "Now add points with POINT, HOLD or PATTERN, then end with RETURN or at the last point."
         : "Now add points with POINT, HOLD or PATTERN, then end with LAND or RETURN.");
     } else if (endIndex() < 0) {
-      setHint(drives
-        ? "End with RETURN, or the vehicle stops at the last point. Drag a point to move it, right-click to delete it."
-        : "End the mission with LAND or RETURN. Drag a point to move it, right-click to delete it.");
+      if (byFinger()) {
+        setHint(drives
+          ? "End with RETURN, or the vehicle stops at the last point. Drag a point to move it, remove it with the × in the list."
+          : "End the mission with LAND or RETURN. Drag a point to move it, remove it with the × in the list.");
+      } else {
+        setHint(drives
+          ? "End with RETURN, or the vehicle stops at the last point. Drag a point to move it, right-click to delete it."
+          : "End the mission with LAND or RETURN. Drag a point to move it, right-click to delete it.");
+      }
     } else {
-      setHint("Drag a point to move it, right-click to delete it. New points go in before the end.");
+      setHint(byFinger()
+        ? "Drag a point to move it, remove it with the × in the list. New points go in before the end."
+        : "Drag a point to move it, right-click to delete it. New points go in before the end.");
     }
+  }
+
+  /** Tablet mode: the hints name the finger's gestures, not the mouse's. */
+  function byFinger() {
+    return !!(Corvus.touch && Corvus.touch.isEnabled());
+  }
+  if (typeof window.addEventListener === "function") {
+    window.addEventListener("corvus:touchchange", () => { if (toolsEl) updateHint(); });
   }
 
   /* The rail, which IS the Home map's rail: the same buttons, in the same
@@ -2196,6 +2236,8 @@ Corvus.mission = (function () {
     // not take the landing away instead.
     map.on("contextmenu", (event) => {
       if (event && event.preventDefault) event.preventDefault();
+      // A held finger on a point is that point's gesture (js/touch.js).
+      if (Corvus.touch && Corvus.touch.onMarker(event)) return;
       if (PATTERNS[tool] && patternPts.length) {
         patternPts.pop();
         drawPattern();
@@ -2670,7 +2712,9 @@ Corvus.mission = (function () {
   function updatePatternHint() {
     if (!PATTERNS[tool]) return;
     if (tool !== "pattern_circle" && patternReady()) {
-      setHint("Enter or a double click covers it. Click for more points, right click undoes one.");
+      setHint(byFinger()
+        ? "Press FINISH to cover it. Tap for more points, hold the map to take one back."
+        : "Enter or a double click covers it. Click for more points, right click undoes one.");
     } else {
       updateHint();
     }
@@ -3853,6 +3897,7 @@ Corvus.mission = (function () {
   function beginRowDrag() {
     const drag = rowDrag;
     drag.active = true;
+    if (Corvus.touch) Corvus.touch.claim(drag.pointerId);
     drag.grab = drag.startY - unscaledRect(drag.row, drag.scale).top;
     // Captured on the LIST rather than the row. The row is re-inserted
     // between its neighbours as the drag goes on, and captured only once the

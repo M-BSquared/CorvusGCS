@@ -120,6 +120,15 @@
   --text-lg: 14px;
   --text-xl: 15px;
 
+  /* --- Touch targets ---
+     The smallest box a finger reliably hits, for tablet mode (js/touch.js,
+     css/touch.css). 44px is the size the iPad's own controls are built to;
+     the small one is for dense rows (a parameter's reset, a mission row's
+     tools) where 44 would double the row and 36 still lands. Both are
+     multiplied by --ui-scale like everything else. */
+  --touch-target: 44px;
+  --touch-target-sm: 36px;
+
   --top-h: 60px;
   --left-w: 70px;
   --panel-w: 380px;

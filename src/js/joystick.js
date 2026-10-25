@@ -1095,6 +1095,7 @@ Corvus.joystick = (function () {
       // Capture on the pad so the drag survives the pointer leaving the grip —
       // including over the map canvas, which would otherwise swallow the moves.
       try { pad.setPointerCapture(event.pointerId); } catch (_e) {}
+      if (Corvus.touch) Corvus.touch.claim(event.pointerId);
       pad.classList.add("is-dragging");
       event.preventDefault();
     });
