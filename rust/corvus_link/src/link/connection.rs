@@ -10,14 +10,14 @@ use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict, PyList, PyString, PyTuple};
 use pyo3::{PyTraverseError, PyVisit};
 
-use crate::defs::{self, constant_or, Wire};
-use crate::dialect;
-use crate::lock;
-use crate::mavlink::{self, Mavlink};
-use crate::modes;
 #[cfg(unix)]
-use crate::transport::{ChildExec, Uds};
-use crate::transport::{LogFile, Mcast, Serial, Tcp, TcpEvent, TcpIn, Udp};
+use crate::link::transport::{ChildExec, Uds};
+use crate::link::transport::{LogFile, Mcast, Serial, Tcp, TcpEvent, TcpIn, Udp};
+use crate::lock;
+use crate::wire::defs::{self, constant_or, Wire};
+use crate::wire::dialect;
+use crate::wire::frame::{self, Mavlink};
+use crate::wire::modes;
 
 static GLOBAL_LINK_ID: AtomicI64 = AtomicI64::new(0);
 
@@ -85,8 +85,8 @@ impl MavfileState {
         let wire = dialect::current_wire();
         if let Some(def) = defs::message_by_name("GPS_RAW_INT", wire) {
             let args = PyTuple::new(py, vec![0i64; def.base_fields])?;
-            let values = crate::message::bind_arguments(py, def, wire, &args, None, false, "__init__")?;
-            messages.set_item("HOME", crate::message::build(py, def, wire, &values)?)?;
+            let values = crate::wire::message::bind_arguments(py, def, wire, &args, None, false, "__init__")?;
+            messages.set_item("HOME", crate::wire::message::build(py, def, wire, &values)?)?;
         }
         Ok(state)
     }
@@ -334,7 +334,7 @@ impl Connection {
                     source_system,
                     source_component,
                     address,
-                    start_time: mavlink::now(),
+                    start_time: frame::now(),
                     stop_on_eof: false,
                     portdead: false,
                     param_fetch_start: 0.0,
@@ -643,7 +643,7 @@ impl Connection {
             return Ok(());
         }
         msg.setattr("_posted", true)?;
-        let mut stamp = mavlink::now();
+        let mut stamp = frame::now();
         if dict.contains("usec")? {
             let usec: f64 = msg.getattr("usec")?.extract()?;
             lock(&this.state).uptime = usec * 1.0e-6;
@@ -803,7 +803,7 @@ impl Connection {
                     if let Some(f) = log {
                         let t: String = m.call_method0("get_type")?.extract()?;
                         if t != "BAD_DATA" {
-                            let usec = ((mavlink::now() * 1.0e6) as u64) & !3u64;
+                            let usec = ((frame::now() * 1.0e6) as u64) & !3u64;
                             let mut data = usec.to_be_bytes().to_vec();
                             data.extend(m.call_method0("get_msgbuf")?.extract::<Vec<u8>>()?);
                             f.call_method1(py, "write", (PyBytes::new(py, &data),))?;
@@ -1410,7 +1410,7 @@ impl Connection {
     }
 
     fn write(&self, py: Python<'_>, buf: &Bound<'_, PyAny>) -> PyResult<Option<i64>> {
-        let data = mavlink::bytes_arg(buf)?;
+        let data = frame::bytes_arg(buf)?;
         self.write_bytes(py, &data)
     }
 
@@ -1448,7 +1448,7 @@ impl Connection {
     }
 
     fn auto_mavlink_version(&self, py: Python<'_>, buf: &Bound<'_, PyAny>) -> PyResult<()> {
-        let data = mavlink::bytes_arg(buf)?;
+        let data = frame::bytes_arg(buf)?;
         self.auto_version(py, &data)
     }
 
@@ -1498,14 +1498,14 @@ impl Connection {
             ),
             Some(t) => Some(vec![t.extract()?]),
         };
-        let mut start = mavlink::now();
+        let mut start = frame::now();
         loop {
             if let Some(timeout) = timeout {
-                let now = mavlink::now();
+                let now = frame::now();
                 if now < start {
                     start = now;
                 }
-                if start + timeout < mavlink::now() {
+                if start + timeout < frame::now() {
                     return Ok(None);
                 }
             }
@@ -1608,7 +1608,7 @@ impl Connection {
         let key = if secret_key.is_none() {
             None
         } else {
-            Some(crate::crc::bytes_of(secret_key)?)
+            Some(crate::wire::crc::bytes_of(secret_key)?)
         };
         let link_id = match link_id {
             Some(v) => v,
@@ -1622,7 +1622,7 @@ impl Connection {
             Some(t) => t,
             None => {
                 let epoch_offset = 1420070400.0;
-                let now = mavlink::now().max(epoch_offset);
+                let now = frame::now().max(epoch_offset);
                 ((now - epoch_offset) * 100.0 * 1000.0) as u64
             }
         };
@@ -1681,14 +1681,14 @@ impl Connection {
     fn time_since(&self, py: Python<'_>, mtype: &str) -> PyResult<f64> {
         let messages = self.messages(py)?;
         match messages.get_item(mtype) {
-            Ok(m) => Ok(mavlink::now() - m.getattr("_timestamp")?.extract::<f64>()?),
-            Err(_) => Ok(mavlink::now() - lock(&self.state).start_time),
+            Ok(m) => Ok(frame::now() - m.getattr("_timestamp")?.extract::<f64>()?),
+            Err(_) => Ok(frame::now() - lock(&self.state).start_time),
         }
     }
 
     fn param_fetch_all(slf: &Bound<'_, Self>) -> PyResult<()> {
         let this = slf.get();
-        let now = mavlink::now();
+        let now = frame::now();
         {
             let mut s = lock(&this.state);
             if now - s.param_fetch_start < 2.0 {
@@ -2263,7 +2263,7 @@ pub fn mavlink_connection(
             let mut s = lock(&c.state);
             s.notimestamps = notimestamps;
             s.stop_on_eof = true;
-            s.ts_override = Some(if notimestamps { 0.0 } else { mavlink::now() });
+            s.ts_override = Some(if notimestamps { 0.0 } else { frame::now() });
             s.robust_parsing = robust_parsing;
         }
         conn.get().mav(py).get().set_robust_parsing(robust_parsing);

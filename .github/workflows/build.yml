@@ -115,6 +115,32 @@ jobs:
       - name: ruff
         run: ruff check corvus serve.py tests plugins
 
+  # --- the Rust side of corvus_link -----------------------------------------
+  # Formatting, clippy with warnings as errors, and the Rust unit tests of the
+  # parts that need no Python (CRC, dialect tables, modes, the parameter value
+  # codec). The test binary links libpython, so the loader is pointed at the
+  # interpreter's own library folder. The behaviour against pymavlink and the
+  # former Python code is pytest's job, in the test jobs above.
+  rust:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rust/corvus_link
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: rustfmt
+        run: cargo fmt --check
+      - name: clippy
+        run: cargo clippy --all-targets -- -D warnings
+      - name: cargo test
+        run: |
+          export PYO3_PYTHON="$(command -v python)"
+          export LD_LIBRARY_PATH="$(python -c 'import sysconfig; print(sysconfig.get_config_var("LIBDIR"))')"
+          cargo test
+
   # --- frontend assertions (no browser, no test runner) ----------------------
   frontend:
     runs-on: ubuntu-latest

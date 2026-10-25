@@ -179,7 +179,7 @@ impl Udp {
         buf.truncate(n);
         if self.server {
             let mut clients = lock(&self.clients);
-            let now = crate::mavlink::now();
+            let now = crate::wire::frame::now();
             match clients.0.iter().position(|a| *a == addr) {
                 Some(i) => clients.1[i] = now,
                 None => {
@@ -201,7 +201,7 @@ impl Udp {
     fn try_write(&self, buf: &[u8]) -> io::Result<()> {
         let sock = self.socket()?;
         if self.server {
-            let now = crate::mavlink::now();
+            let now = crate::wire::frame::now();
             let mut clients = lock(&self.clients);
             let count = clients.0.len();
             let mut remove = Vec::new();
@@ -575,7 +575,7 @@ impl Serial {
     /// otherwise keep the old rate), then the real rate.
     #[cfg(unix)]
     pub fn open(device: &str, baud: u32) -> Result<Serial, SerialOpenError> {
-        use crate::posix_serial as ps;
+        use crate::link::serial_posix as ps;
         let fd = ps::open(device).map_err(|e| {
             let code = e.raw_os_error().unwrap_or(libc::EIO);
             SerialOpenError {
@@ -731,7 +731,7 @@ impl Serial {
             let Some(fd) = *lock(&self.fd) else {
                 return Err(ebadf());
             };
-            crate::posix_serial::write_all(fd, buf)
+            crate::link::serial_posix::write_all(fd, buf)
         }
         #[cfg(windows)]
         {
@@ -765,7 +765,7 @@ impl Serial {
     pub fn set_rtscts(&self, enable: bool) {
         #[cfg(unix)]
         if let Some(fd) = *lock(&self.fd) {
-            let _ = crate::posix_serial::set_rtscts(fd, enable);
+            let _ = crate::link::serial_posix::set_rtscts(fd, enable);
         }
         #[cfg(windows)]
         {
@@ -784,7 +784,7 @@ impl Serial {
     pub fn set_baudrate(&self, baud: u32) -> io::Result<()> {
         #[cfg(unix)]
         if let Some(fd) = *lock(&self.fd) {
-            crate::posix_serial::configure(fd, baud, false)?;
+            crate::link::serial_posix::configure(fd, baud, false)?;
         }
         #[cfg(windows)]
         {

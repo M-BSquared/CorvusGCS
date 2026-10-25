@@ -13,10 +13,10 @@ use pyo3::prelude::*;
 use pyo3::pyclass::CompareOp;
 use pyo3::types::{PyByteArray, PyBytes, PyDict, PyList, PyString, PyTuple};
 
-use crate::codec;
-use crate::defs::{MsgDef, Ty, Wire};
-use crate::dialect;
 use crate::lock;
+use crate::wire::codec;
+use crate::wire::defs::{MsgDef, Ty, Wire};
+use crate::wire::dialect;
 
 pub const MSG_ID_BAD_DATA: i64 = -1;
 pub const MSG_ID_UNKNOWN: i64 = -2;
@@ -96,7 +96,7 @@ pub struct Meta {
 }
 
 /// `MAVLink_message`. One Rust class for every message type; the per-type
-/// class objects pymavlink exposes are [`crate::dialect::MessageType`].
+/// class objects pymavlink exposes are [`crate::wire::dialect::MessageType`].
 #[pyclass(name = "MAVLink_message", module = "corvus_link", subclass, dict, frozen)]
 pub struct Message {
     pub meta: Mutex<Meta>,
@@ -318,7 +318,7 @@ pub fn bind_arguments<'py>(
     Ok(out)
 }
 
-fn default_value<'py>(py: Python<'py>, field: &crate::defs::FieldDef) -> PyResult<Bound<'py, PyAny>> {
+fn default_value<'py>(py: Python<'py>, field: &crate::wire::defs::FieldDef) -> PyResult<Bound<'py, PyAny>> {
     Ok(if field.ty == Ty::Char {
         PyBytes::new(py, b"").into_any()
     } else if field.array_len == 0 {
@@ -488,7 +488,7 @@ impl Message {
             ));
         };
         let payload = codec::pack_payload(slf.as_any(), def, wire)?;
-        let frame = crate::mavlink::frame_message(py, slf.get(), mav, def, wire, payload, force_mavlink1)?;
+        let frame = crate::wire::frame::frame_message(py, slf.get(), mav, def, wire, payload, force_mavlink1)?;
         Ok(PyBytes::new(py, &frame))
     }
 

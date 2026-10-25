@@ -10,18 +10,28 @@ from corvus_link import mavutil
 where it used to import `pymavlink.mavutil`, and nothing else in Corvus
 changes.
 
+## Layout
+
+```
+src/
+  lib.rs        the Python module: corvus_link, corvus_link.mavutil, corvus_link.params
+  wire/         MAVLink itself: dialect tables, messages, codec, CRC, framing, modes
+  link/         the links: mavlink_connection, per-system state, UDP, TCP, serial, ...
+  protocol/     the bridge's protocols, moved from Python one at a time
+```
+
 ## What it does
 
 | Part | Source | pymavlink counterpart |
 | --- | --- | --- |
-| Message, enum and constant tables of the `all` dialect, generated from the XML at build time | `build.rs`, `src/defs.rs`, `message_definitions/v1.0/` | `mavgen` output in `dialects/v10/all.py`, `dialects/v20/all.py` |
-| `mavutil.mavlink`: constants, `enums`, `MAVLink_<name>_message` classes, `mavlink_map` | `src/dialect.rs` | the generated dialect module |
-| Message objects (`get_type`, `get_msgbuf`, `to_dict`, fields as attributes) | `src/message.rs` | `MAVLink_message` |
-| Payload packing and unpacking with `struct`'s rules | `src/codec.rs` | `struct.Struct` per message |
-| Framing, CRC_EXTRA, sequence numbers, MAVLink 2 signing, the stream parser | `src/mavlink.rs`, `src/crc.rs` | `MAVLink`, `MAVLinkSigning`, `x25crc` |
-| `mavlink_connection`, per-system state, `recv_match`, `wait_heartbeat`, `mode_mapping`, `setup_signing` | `src/connection.rs` | `mavfile` and its subclasses |
-| The links | `src/transport.rs`, `src/posix_serial.rs` | `mavudp`, `mavtcp`, `mavtcpin`, `mavserial`, `mavuds`, `mavmcast`, `mavchildexec`, `mavlogfile` |
-| Flight mode tables and names | `src/modes.rs` | `mode_mapping_*`, `px4_map`, `mode_string_v10` |
+| Message, enum and constant tables of the `all` dialect, generated from the XML at build time | `build.rs`, `src/wire/defs.rs`, `message_definitions/v1.0/` | `mavgen` output in `dialects/v10/all.py`, `dialects/v20/all.py` |
+| `mavutil.mavlink`: constants, `enums`, `MAVLink_<name>_message` classes, `mavlink_map` | `src/wire/dialect.rs` | the generated dialect module |
+| Message objects (`get_type`, `get_msgbuf`, `to_dict`, fields as attributes) | `src/wire/message.rs` | `MAVLink_message` |
+| Payload packing and unpacking with `struct`'s rules | `src/wire/codec.rs` | `struct.Struct` per message |
+| Framing, CRC_EXTRA, sequence numbers, MAVLink 2 signing, the stream parser | `src/wire/frame.rs`, `src/wire/crc.rs` | `MAVLink`, `MAVLinkSigning`, `x25crc` |
+| `mavlink_connection`, per-system state, `recv_match`, `wait_heartbeat`, `mode_mapping`, `setup_signing` | `src/link/connection.rs` | `mavfile` and its subclasses |
+| The links | `src/link/transport.rs`, `src/link/serial_posix.rs` | `mavudp`, `mavtcp`, `mavtcpin`, `mavserial`, `mavuds`, `mavmcast`, `mavchildexec`, `mavlogfile` |
+| Flight mode tables and names | `src/wire/modes.rs` | `mode_mapping_*`, `px4_map`, `mode_string_v10` |
 
 A link starts on the MAVLink 1 view (message ids up to 255, no extension
 fields) and moves to MAVLink 2 on its first MAVLink 2 frame, process wide, as
@@ -31,7 +41,7 @@ pymavlink does.
 
 | Protocol | Source | Python side |
 | --- | --- | --- |
-| Parameters: the cache, the download state machine and its lossy-link watchdog, PARAM_VALUE checks and decoding, named reads with the barrier, confirmed writes, verify, the batch upload, and the integer value codec (bytewise or C cast) | `src/params.rs` (`corvus_link.params`) | `corvus/mavlink_params.py` keeps the bridge's methods and attribute names, the locks, the two worker threads and the listeners, and hands the engine the bridge for the link, the clock and the command error |
+| Parameters: the cache, the download state machine and its lossy-link watchdog, PARAM_VALUE checks and decoding, named reads with the barrier, confirmed writes, verify, the batch upload, and the integer value codec (bytewise or C cast) | `src/protocol/params.rs` (`corvus_link.params`) | `corvus/mavlink_params.py` keeps the bridge's methods and attribute names, the locks, the two worker threads and the listeners, and hands the engine the bridge for the link, the clock and the command error |
 
 The engine reads the clock as `time.monotonic` and `time.sleep` at call
 time and reaches the link only through the bridge, so a test that replaces

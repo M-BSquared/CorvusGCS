@@ -6,7 +6,7 @@ use pyo3::exceptions::PyOverflowError;
 use pyo3::prelude::*;
 use pyo3::types::{PyByteArray, PyBytes, PyFloat, PyList, PyString};
 
-use crate::defs::{FieldDef, MsgDef, Ty, Wire};
+use crate::wire::defs::{FieldDef, MsgDef, Ty, Wire};
 
 pub fn struct_error(py: Python<'_>, message: impl Into<String>) -> PyErr {
     match py.import("struct").and_then(|m| m.getattr("error")) {

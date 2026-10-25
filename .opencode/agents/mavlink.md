@@ -92,7 +92,7 @@ shell, on board log format.
   runs. The link types not built yet are listed in
   `rust/corvus_link/README.md`.
 - The parameter protocol is `corvus_link.params.ParamEngine`
-  (`rust/corvus_link/src/params.rs`); `corvus/mavlink_params.py` is its seat
+  (`rust/corvus_link/src/protocol/params.rs`); `corvus/mavlink_params.py` is its seat
   on the bridge. A protocol change goes into the engine and keeps
   `tests/test_param_engine_parity.py` green against the Python reference in
   `tests/reference/`, or changes the reference with it on purpose.

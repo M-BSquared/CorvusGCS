@@ -16,11 +16,11 @@ use pyo3::types::{PyByteArray, PyBytes, PyDict, PyList, PyTuple};
 use pyo3::{PyTraverseError, PyVisit};
 use sha2::{Digest, Sha256};
 
-use crate::codec;
-use crate::crc;
-use crate::defs::{self, MsgDef, Wire};
 use crate::lock;
-use crate::message::{self, Header, Kind, Message};
+use crate::wire::codec;
+use crate::wire::crc;
+use crate::wire::defs::{self, MsgDef, Wire};
+use crate::wire::message::{self, Header, Kind, Message};
 
 pyo3::create_exception!(corvus_link, MAVError, PyException, "MAVLink error class");
 

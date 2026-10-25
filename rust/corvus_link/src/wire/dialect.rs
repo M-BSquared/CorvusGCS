@@ -13,10 +13,10 @@ use pyo3::sync::GILOnceCell;
 use pyo3::types::{PyDict, PyList, PyModule, PyString, PyTuple};
 use pyo3::{PyTraverseError, PyVisit};
 
-use crate::defs::{self, MsgDef, Wire, ENUMS, MESSAGES};
 use crate::lock;
-use crate::mavlink::{self, Mavlink, Signing};
-use crate::message::{self, Message, PyHeader};
+use crate::wire::defs::{self, MsgDef, Wire, ENUMS, MESSAGES};
+use crate::wire::frame::{self, Mavlink, Signing};
+use crate::wire::message::{self, Message, PyHeader};
 
 static V2_ACTIVE: AtomicBool = AtomicBool::new(false);
 static NAMESPACES: GILOnceCell<(Py<PyModule>, Py<PyModule>)> = GILOnceCell::new();
@@ -169,9 +169,9 @@ impl SpecialFactory {
     ) -> PyResult<Bound<'py, Message>> {
         if self.unknown {
             let id: u32 = a.extract()?;
-            message::unknown(py, id, &mavlink::bytes_arg(b)?, self.wire)
+            message::unknown(py, id, &frame::bytes_arg(b)?, self.wire)
         } else {
-            message::bad_data(py, &mavlink::bytes_arg(a)?, &b.str()?.to_string(), self.wire)
+            message::bad_data(py, &frame::bytes_arg(a)?, &b.str()?.to_string(), self.wire)
         }
     }
 
@@ -366,12 +366,12 @@ fn build_namespace(py: Python<'_>, wire: Wire) -> PyResult<Bound<'_, PyModule>> 
         Ok(v) => m.add("MAVLINK_IGNORE_CRC", v)?,
         Err(_) => m.add("MAVLINK_IGNORE_CRC", 0)?,
     }
-    m.add("PROTOCOL_MARKER_V1", mavlink::PROTOCOL_MARKER_V1)?;
-    m.add("PROTOCOL_MARKER_V2", mavlink::PROTOCOL_MARKER_V2)?;
-    m.add("HEADER_LEN_V1", mavlink::HEADER_LEN_V1)?;
-    m.add("HEADER_LEN_V2", mavlink::HEADER_LEN_V2)?;
-    m.add("MAVLINK_SIGNATURE_BLOCK_LEN", mavlink::SIGNATURE_BLOCK_LEN)?;
-    m.add("MAVLINK_IFLAG_SIGNED", mavlink::IFLAG_SIGNED)?;
+    m.add("PROTOCOL_MARKER_V1", frame::PROTOCOL_MARKER_V1)?;
+    m.add("PROTOCOL_MARKER_V2", frame::PROTOCOL_MARKER_V2)?;
+    m.add("HEADER_LEN_V1", frame::HEADER_LEN_V1)?;
+    m.add("HEADER_LEN_V2", frame::HEADER_LEN_V2)?;
+    m.add("MAVLINK_SIGNATURE_BLOCK_LEN", frame::SIGNATURE_BLOCK_LEN)?;
+    m.add("MAVLINK_IFLAG_SIGNED", frame::IFLAG_SIGNED)?;
     for (i, name) in [
         "MAVLINK_TYPE_CHAR",
         "MAVLINK_TYPE_UINT8_T",
@@ -390,11 +390,11 @@ fn build_namespace(py: Python<'_>, wire: Wire) -> PyResult<Bound<'_, PyModule>> 
     {
         m.add(*name, i)?;
     }
-    m.add("x25crc", py.get_type::<crate::crc::X25Crc>())?;
+    m.add("x25crc", py.get_type::<crate::wire::crc::X25Crc>())?;
     m.add("MAVLink_header", py.get_type::<PyHeader>())?;
     m.add("MAVLink_message", py.get_type::<Message>())?;
     m.add("MAVLinkSigning", py.get_type::<Signing>())?;
-    m.add("MAVError", py.get_type::<mavlink::MAVError>())?;
+    m.add("MAVError", py.get_type::<frame::MAVError>())?;
     m.add("MAVLink", Py::new(py, MavlinkFactory { wire })?)?;
     m.add(
         "MAVLink_bad_data",

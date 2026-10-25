@@ -428,6 +428,7 @@ Rules that keep the chain honest:
 .venv/bin/python -m ruff check corvus serve.py tests plugins   # lint, as CI runs it
 .venv/bin/python serve.py       # backend only, UI in a normal browser
 (cd rust/corvus_link && maturin develop --release)   # rebuild corvus_link into the venv after a Rust change
+(cd rust/corvus_link && cargo clippy --all-targets && PYO3_PYTHON=../../.venv/bin/python cargo test)   # Rust checks (libpython on the loader path, as CI sets it)
 ./build.sh [--dmg]              # artifact for the current host (dispatches below)
 ./build-appimage.sh             # Linux artifact  (x86_64)
 ./build-macos-app.sh [--dmg]    # macOS artifact  (arm64 / x86_64)

@@ -12,18 +12,13 @@ use std::sync::{Mutex, MutexGuard};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyModule};
 
-mod codec;
-mod connection;
-mod crc;
-mod defs;
-mod dialect;
-mod mavlink;
-mod message;
-mod modes;
-mod params;
-#[cfg(unix)]
-mod posix_serial;
-mod transport;
+mod link;
+mod protocol;
+mod wire;
+
+use link::{connection, transport};
+use protocol::params;
+use wire::{crc, defs, dialect, frame, message, modes};
 
 /// Lock a mutex, recovering it if a panic poisoned it: a panic surfaces in
 /// Python as an exception, and the link must stay usable afterwards.
@@ -212,12 +207,12 @@ fn build_mavutil(py: Python<'_>, parent: &Bound<'_, PyModule>) -> PyResult<()> {
 fn corvus_link(m: &Bound<'_, PyModule>) -> PyResult<()> {
     let py = m.py();
     dialect::init_wire_from_env();
-    m.add("MAVError", py.get_type::<mavlink::MAVError>())?;
+    m.add("MAVError", py.get_type::<frame::MAVError>())?;
     m.add_class::<crc::X25Crc>()?;
     m.add_class::<message::Message>()?;
     m.add_class::<message::PyHeader>()?;
-    m.add_class::<mavlink::Mavlink>()?;
-    m.add_class::<mavlink::Signing>()?;
+    m.add_class::<frame::Mavlink>()?;
+    m.add_class::<frame::Signing>()?;
     m.add_class::<connection::Connection>()?;
     m.add("dialect_v1", dialect::namespace(py, defs::Wire::V1)?)?;
     m.add("dialect_v2", dialect::namespace(py, defs::Wire::V2)?)?;

@@ -177,7 +177,7 @@ pub fn decode_param_value(
     let t = py_int(param_type)?;
     let v = py_float(value)?;
     let raw: Option<Vec<u8>> = match raw {
-        Some(r) if !r.is_none() => Some(crate::mavlink::bytes_arg(r)?),
+        Some(r) if !r.is_none() => Some(crate::wire::frame::bytes_arg(r)?),
         _ => None,
     };
     Ok(decode_value(v, t, encoding, raw.as_deref()))
@@ -530,7 +530,7 @@ impl ParamEngine {
         let buf: Vec<u8> = if buf.is_none() {
             Vec::new()
         } else {
-            crate::mavlink::bytes_arg(&buf).ok()?
+            crate::wire::frame::bytes_arg(&buf).ok()?
         };
         let header = match buf.first()? {
             0xFD => 10,
@@ -1877,4 +1877,74 @@ pub fn register(py: Python<'_>, parent: &Bound<'_, PyModule>) -> PyResult<()> {
         .getattr("modules")?
         .set_item("corvus_link.params", &m)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const INT32: i64 = 6;
+    const UINT8: i64 = 1;
+    const REAL32: i64 = 9;
+
+    #[test]
+    fn px4_integers_travel_as_their_bytes() {
+        let wire = encode_value(4.0, INT32, PARAM_ENCODING_BYTEWISE).unwrap();
+        assert_eq!((wire as f32).to_bits(), 4);
+        assert_eq!(decode_value(wire, INT32, PARAM_ENCODING_BYTEWISE, None), 4.0);
+        let minus_one = encode_value(-1.0, INT32, PARAM_ENCODING_BYTEWISE).unwrap();
+        assert!(minus_one.is_nan());
+        assert_eq!(
+            decode_value(f64::NAN, INT32, PARAM_ENCODING_BYTEWISE, Some(&(-1i32).to_le_bytes())),
+            -1.0
+        );
+    }
+
+    #[test]
+    fn ardupilot_integers_travel_as_numbers() {
+        assert_eq!(encode_value(4.0, INT32, PARAM_ENCODING_C_CAST).unwrap(), 4.0);
+        assert_eq!(decode_value(4.0, INT32, PARAM_ENCODING_C_CAST, None), 4.0);
+    }
+
+    #[test]
+    fn integers_refuse_fractions_ranges_and_signalling_nans() {
+        assert_eq!(
+            encode_value(4.5, INT32, PARAM_ENCODING_BYTEWISE).unwrap_err(),
+            "this parameter takes whole numbers only"
+        );
+        assert_eq!(
+            encode_value(256.0, UINT8, PARAM_ENCODING_C_CAST).unwrap_err(),
+            "this parameter takes values from 0 to 255"
+        );
+        assert_eq!(
+            encode_value(0x7F80_0001u32 as i32 as f64, INT32, PARAM_ENCODING_BYTEWISE).unwrap_err(),
+            "this value cannot be sent exactly over MAVLink"
+        );
+        assert!(encode_value(f64::INFINITY, INT32, PARAM_ENCODING_C_CAST).is_err());
+    }
+
+    #[test]
+    fn floats_pass_unchanged() {
+        assert_eq!(encode_value(0.15, REAL32, PARAM_ENCODING_BYTEWISE).unwrap(), 0.15);
+        assert_eq!(decode_value(0.15, REAL32, PARAM_ENCODING_BYTEWISE, None), 0.15);
+    }
+
+    #[test]
+    fn matching_is_exact_for_integers_and_float32_for_floats() {
+        assert!(values_match(INT32, 4.0, 4.0));
+        assert!(!values_match(INT32, 1082130432.0, 4.0));
+        assert!(values_match(INT32, 2.5, 2.0), "half to even, as Python's round");
+        assert!(!values_match(INT32, 3.5, 3.0));
+        assert!(values_match(REAL32, 0.15f32 as f64, 0.15));
+        assert!(!values_match(REAL32, 0.1501, 0.15));
+        assert!(!values_match(REAL32, f64::NAN, f64::NAN));
+        assert!(!values_match(REAL32, 1.0, 1e39));
+    }
+
+    #[test]
+    fn echoes_are_judged_with_a_tolerance_for_floats() {
+        assert!(echo_confirms(REAL32, 9.5000001, 9.5));
+        assert!(!echo_confirms(REAL32, 9.6, 9.5));
+        assert!(echo_confirms(INT32, 6.0, 6.0));
+    }
 }

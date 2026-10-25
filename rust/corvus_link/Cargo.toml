@@ -12,7 +12,7 @@ name = "corvus_link"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-pyo3 = { version = "0.25", features = ["extension-module", "abi3-py312"] }
+pyo3 = { version = "0.25", features = ["abi3-py312"] }
 sha2 = "0.10"
 indexmap = "2"
 socket2 = { version = "0.5", features = ["all"] }

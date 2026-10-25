@@ -219,3 +219,86 @@ pub fn constant(name: &str) -> Option<i64> {
 pub fn constant_or(name: &str, fallback: i64) -> i64 {
     constant(name).unwrap_or(fallback)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn heartbeat_is_what_mavlink_says_it_is() {
+        let hb = message_by_name("HEARTBEAT", Wire::V2).unwrap();
+        assert_eq!(hb.id, 0);
+        assert_eq!(hb.crc_extra, 50);
+        let wire_order: Vec<&str> = hb.order.iter().map(|&i| hb.fields[i as usize].name).collect();
+        assert_eq!(
+            wire_order,
+            [
+                "custom_mode",
+                "type",
+                "autopilot",
+                "base_mode",
+                "system_status",
+                "mavlink_version"
+            ]
+        );
+        assert_eq!(
+            hb.fields
+                .iter()
+                .find(|f| f.name == "mavlink_version")
+                .unwrap()
+                .const_value,
+            Some(3)
+        );
+    }
+
+    #[test]
+    fn the_mavlink_1_view_has_no_extensions_and_no_large_ids() {
+        let status = message_by_name("SYS_STATUS", Wire::V2).unwrap();
+        assert!(status.fields(Wire::V2).len() > status.fields(Wire::V1).len());
+        assert_eq!(status.fields(Wire::V1).len(), status.base_fields);
+        assert!(message_by_name("OPEN_DRONE_ID_BASIC_ID", Wire::V1).is_none());
+        assert!(message_by_name("OPEN_DRONE_ID_BASIC_ID", Wire::V2).is_some());
+    }
+
+    #[test]
+    fn extension_fields_come_after_the_base_fields_on_the_wire() {
+        for m in MESSAGES {
+            let order = m.order;
+            assert!(
+                order[..m.base_fields].iter().all(|&i| (i as usize) < m.base_fields),
+                "{}",
+                m.name
+            );
+            let sizes: Vec<usize> = order[..m.base_fields]
+                .iter()
+                .map(|&i| m.fields[i as usize].ty.size())
+                .collect();
+            assert!(
+                sizes.windows(2).all(|w| w[0] >= w[1]),
+                "{} base fields are not sorted by size",
+                m.name
+            );
+        }
+    }
+
+    #[test]
+    fn message_ids_and_names_are_unique() {
+        let mut ids = std::collections::HashSet::new();
+        let mut names = std::collections::HashSet::new();
+        for m in MESSAGES {
+            assert!(ids.insert(m.id));
+            assert!(names.insert(m.name));
+        }
+    }
+
+    #[test]
+    fn constants_resolve() {
+        assert_eq!(constant("MAV_CMD_NAV_TAKEOFF"), Some(22));
+        assert_eq!(constant("MAV_AUTOPILOT_PX4"), Some(12));
+        assert_eq!(constant("MAV_MODE_FLAG_SAFETY_ARMED"), Some(128));
+        assert_eq!(constant("NOT_A_CONSTANT"), None);
+        for e in ENUMS {
+            assert!(e.entries.last().unwrap().name.ends_with("_ENUM_END"), "{}", e.name);
+        }
+    }
+}

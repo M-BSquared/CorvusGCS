@@ -7,7 +7,7 @@
 use std::io;
 use std::os::unix::io::RawFd;
 
-use crate::transport::wait_writable;
+use crate::link::transport::wait_writable;
 
 fn check(rc: libc::c_int) -> io::Result<libc::c_int> {
     if rc < 0 {
@@ -213,4 +213,20 @@ pub fn set_rtscts(fd: RawFd, enable: bool) -> io::Result<()> {
         t.c_cflag &= !libc::CRTSCTS;
     }
     check(unsafe { libc::tcsetattr(fd, libc::TCSANOW, &t) }).map(|_| ())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_rates_mavlink_radios_use_are_standard() {
+        for baud in [9600, 19200, 38400, 57600, 115200, 230400] {
+            assert!(standard_rate(baud).is_some(), "{baud}");
+        }
+        assert!(
+            standard_rate(250_000).is_none(),
+            "a custom rate goes through the special path"
+        );
+    }
 }

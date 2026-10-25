@@ -3,7 +3,7 @@
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyTuple};
 
-use crate::defs::constant_or;
+use crate::wire::defs::constant_or;
 
 pub const MODE_MAPPING_APM: &[(i64, &str)] = &[
     (0, "MANUAL"),
@@ -171,7 +171,7 @@ pub fn ap_mode_table(mav_type: i64) -> Option<&'static [(i64, &'static str)]> {
         "MAV_TYPE_VTOL_QUADROTOR",
         "MAV_TYPE_VTOL_TAILSITTER_QUADROTOR",
     ];
-    let is = |names: &[&str]| names.iter().any(|n| crate::defs::constant(n) == Some(mav_type));
+    let is = |names: &[&str]| names.iter().any(|n| crate::wire::defs::constant(n) == Some(mav_type));
     if is(&copter) {
         Some(MODE_MAPPING_ACM)
     } else if is(&plane) {
@@ -214,7 +214,7 @@ pub fn ap_mode_types() -> Vec<i64> {
     ];
     let mut out = Vec::new();
     for n in names {
-        if let Some(v) = crate::defs::constant(n) {
+        if let Some(v) = crate::wire::defs::constant(n) {
             if !out.contains(&v) {
                 out.push(v);
             }
@@ -345,4 +345,35 @@ pub fn mode_string_v10(msg: &Bound<'_, PyAny>) -> PyResult<String> {
         }
     }
     Ok(format!("Mode({custom_mode})"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn px4_modes_decode_from_the_packed_custom_mode() {
+        assert_eq!(interpret_px4_mode(PX4_CUSTOM_MAIN_MODE_POSCTL << 16), "POSCTL");
+        assert_eq!(
+            interpret_px4_mode((PX4_CUSTOM_MAIN_MODE_AUTO << 16) | (PX4_CUSTOM_SUB_MODE_AUTO_MISSION << 24)),
+            "MISSION"
+        );
+        assert_eq!(
+            interpret_px4_mode((PX4_CUSTOM_MAIN_MODE_AUTO << 16) | (PX4_CUSTOM_SUB_MODE_AUTO_RTL << 24)),
+            "RTL"
+        );
+        assert_eq!(interpret_px4_mode(0), "UNKNOWN");
+    }
+
+    #[test]
+    fn ardupilot_tables_follow_the_vehicle_type() {
+        let quad = crate::wire::defs::constant("MAV_TYPE_QUADROTOR").unwrap();
+        let plane = crate::wire::defs::constant("MAV_TYPE_FIXED_WING").unwrap();
+        let rover = crate::wire::defs::constant("MAV_TYPE_GROUND_ROVER").unwrap();
+        let name = |t: i64, n: i64| ap_mode_table(t).unwrap().iter().find(|(k, _)| *k == n).unwrap().1;
+        assert_eq!(name(quad, 4), "GUIDED");
+        assert_eq!(name(plane, 4), "ACRO");
+        assert_eq!(name(rover, 15), "GUIDED");
+        assert!(ap_mode_table(crate::wire::defs::constant("MAV_TYPE_GCS").unwrap()).is_none());
+    }
 }
