@@ -33,6 +33,10 @@ So this module owns three things, and none of them is a parameter:
     degE7 latitudes, the 2019 epoch, the reserved ``id_or_mac``, the -1000 that
     means "not known" — is testable without a vehicle.
 
+``settings``, ``messages``, ``arm_status`` and ``system_timestamp`` are
+``corvus_link.remote_id``, in Rust, beside the broadcast that sends them; the
+filing checks and the page's option lists stay here.
+
 None of this is legal advice and the module never claims to certify anything.
 It reports what the two published broadcast formats ask for; the operator files
 the paperwork.
@@ -43,6 +47,8 @@ from __future__ import annotations
 import datetime
 import string
 from typing import Any
+
+from corvus_link import remote_id as _wire
 
 # ---------------------------------------------------------------------------
 # Enumerations (MAV_ODID_*). Spelled out here rather than imported from
@@ -134,8 +140,8 @@ CLASS_EU_OPTIONS: list[dict[str, Any]] = [
 ]
 
 # MAV_ODID_ARM_STATUS, as the vehicle reports it back.
-ARM_STATUS_GOOD = 0
-ARM_STATUS_FAIL = 1
+ARM_STATUS_GOOD: int = _wire.ARM_STATUS_GOOD
+ARM_STATUS_FAIL: int = _wire.ARM_STATUS_FAIL
 
 # Identifier types that identify the *airframe* rather than a flight. A session
 # ID is deliberately not one of them: it is valid under Part 89 and useless for
@@ -156,14 +162,14 @@ CLASSIFICATION_EU = 1
 # Field widths from the MAVLink message definitions. They are the hard cap on
 # what can be sent, not a style preference: a 21st character does not truncate
 # politely at the far end, it shifts the field.
-UAS_ID_MAX = 20
-OPERATOR_ID_MAX = 20
-DESCRIPTION_MAX = 23
+UAS_ID_MAX: int = _wire.UAS_ID_MAX
+OPERATOR_ID_MAX: int = _wire.OPERATOR_ID_MAX
+DESCRIPTION_MAX: int = _wire.DESCRIPTION_MAX
 
 # The ODID "unknown" sentinel for the altitudes and the operational volume.
 # -1000 m is below the lowest point on land by a margin no aircraft will ever
 # fly at, which is why the standard could spend a real value on it.
-ALTITUDE_UNKNOWN = -1000.0
+ALTITUDE_UNKNOWN: float = _wire.ALTITUDE_UNKNOWN
 
 # OPEN_DRONE_ID_SYSTEM.timestamp counts seconds from this epoch, not from 1970.
 ODID_EPOCH = datetime.datetime(2019, 1, 1, tzinfo=datetime.UTC)
@@ -187,116 +193,15 @@ REGION_LABELS: dict[str, str] = {
 # Coercion
 # ---------------------------------------------------------------------------
 
-def _enum(raw: Any, options: list[dict[str, Any]], default: int) -> int:
-    """Clamp *raw* to one of *options*, falling back to *default*.
-
-    An out-of-range enum is not preserved the way the parameter pages preserve
-    an unknown value: there the number came off the aircraft and is a fact
-    about it, here it came from a browser and would be broadcast as a claim.
-    """
-    try:
-        value = int(raw)
-    except (TypeError, ValueError):
-        return default
-    return value if any(o["value"] == value for o in options) else default
-
-
-def _text(raw: Any, limit: int) -> str:
-    """Trim *raw* to printable ASCII, bounded to *limit* characters.
-
-    Non-ASCII is dropped rather than transliterated. The receiving field is a
-    fixed-width byte array read as ASCII by every receiver in the world, so a
-    UTF-8 'ö' does not arrive as 'o', it arrives as two characters of noise
-    that push the rest of the field along.
-    """
-    if raw is None:
-        return ""
-    if isinstance(raw, (bytes, bytearray)):
-        # corvus_link hands a fixed-width char field back as bytes on some
-        # dialects and as str on others. str() on the bytes form yields
-        # "b'no transmitter'", which is what an operator would then read on
-        # the page — so it is decoded here rather than at each call site.
-        raw = bytes(raw).split(b"\x00", 1)[0].decode("ascii", errors="ignore")
-    text = str(raw).replace("\x00", "").strip()
-    cleaned = "".join(c for c in text if 0x20 <= ord(c) <= 0x7E)
-    return cleaned[:limit]
-
-
-def _number(raw: Any, default: float, lo: float, hi: float) -> float:
-    try:
-        value = float(raw)
-    except (TypeError, ValueError):
-        return default
-    if value != value or value in (float("inf"), float("-inf")):
-        return default
-    return min(max(value, lo), hi)
-
-
-def _count(raw: Any, default: int, lo: int, hi: int) -> int:
-    if isinstance(raw, bool):
-        return default
-    try:
-        value = int(float(raw))
-    except (TypeError, ValueError):
-        return default
-    return min(max(value, lo), hi)
-
-
 def settings(raw: Any) -> dict[str, Any]:
     """Return the stored identity, every field bounded and typed.
 
     Called on the way out of the config file and again on the way in from the
-    page, so the two can never disagree about what a stored value means.
+    page, so the two can never disagree about what a stored value means. An
+    enum outside the lists above falls back to its default rather than being
+    kept: it came from a browser and would be broadcast as a claim.
     """
-    data = raw if isinstance(raw, dict) else {}
-    basic = data.get("basic_id") if isinstance(data.get("basic_id"), dict) else {}
-    operator = data.get("operator_id") if isinstance(data.get("operator_id"), dict) else {}
-    self_id = data.get("self_id") if isinstance(data.get("self_id"), dict) else {}
-    system = data.get("system") if isinstance(data.get("system"), dict) else {}
-
-    return {
-        # Off unless the operator turned it on. Broadcasting somebody else's
-        # serial number, or a half-filled form, is worse than broadcasting
-        # nothing: one is a missing filing, the other is a false one.
-        "enabled": bool(data.get("enabled", False)),
-        "region": (str(data.get("region") or "eu").lower()
-                   if str(data.get("region") or "eu").lower() in REGIONS else "eu"),
-        "basic_id": {
-            "id_type": _enum(basic.get("id_type"), ID_TYPE_OPTIONS, ID_TYPE_SERIAL),
-            "ua_type": _enum(basic.get("ua_type"), UA_TYPE_OPTIONS, 0),
-            "uas_id": _text(basic.get("uas_id"), UAS_ID_MAX),
-        },
-        "operator_id": {
-            "operator_id_type": _enum(operator.get("operator_id_type"),
-                                      OPERATOR_ID_TYPE_OPTIONS, 0),
-            "operator_id": _text(operator.get("operator_id"), OPERATOR_ID_MAX),
-        },
-        "self_id": {
-            "description_type": _enum(self_id.get("description_type"),
-                                      DESCRIPTION_TYPE_OPTIONS, 0),
-            "description": _text(self_id.get("description"), DESCRIPTION_MAX),
-        },
-        "system": {
-            "operator_location_type": _enum(system.get("operator_location_type"),
-                                            OPERATOR_LOCATION_TYPE_OPTIONS,
-                                            LOCATION_TAKEOFF),
-            "operator_latitude": _number(system.get("operator_latitude"), 0.0, -90.0, 90.0),
-            "operator_longitude": _number(system.get("operator_longitude"), 0.0, -180.0, 180.0),
-            "operator_altitude_geo": _number(system.get("operator_altitude_geo"),
-                                             ALTITUDE_UNKNOWN, -1000.0, 31767.0),
-            "classification_type": _enum(system.get("classification_type"),
-                                         CLASSIFICATION_TYPE_OPTIONS,
-                                         CLASSIFICATION_UNDECLARED),
-            "category_eu": _enum(system.get("category_eu"), CATEGORY_EU_OPTIONS, 0),
-            "class_eu": _enum(system.get("class_eu"), CLASS_EU_OPTIONS, 0),
-            "area_count": _count(system.get("area_count"), 1, 1, 65535),
-            "area_radius": _count(system.get("area_radius"), 0, 0, 65535),
-            "area_ceiling": _number(system.get("area_ceiling"), ALTITUDE_UNKNOWN,
-                                    -1000.0, 31767.0),
-            "area_floor": _number(system.get("area_floor"), ALTITUDE_UNKNOWN,
-                                  -1000.0, 31767.0),
-        },
-    }
+    return _wire.settings(raw)
 
 
 def defaults() -> dict[str, Any]:
@@ -549,111 +454,25 @@ def ua_type_for_vehicle(mav_type: int) -> int:
 # Message building
 # ---------------------------------------------------------------------------
 
-def _fixed_bytes(text: str, length: int) -> bytes:
-    """ASCII, zero-padded to exactly *length* bytes."""
-    raw = str(text or "").encode("ascii", errors="ignore")[:length]
-    return raw + b"\x00" * (length - len(raw))
-
-
 def system_timestamp(now: datetime.datetime | None = None) -> int:
     """Seconds since the ODID epoch (2019-01-01 UTC), clamped to uint32."""
-    moment = now or datetime.datetime.now(datetime.UTC)
-    if moment.tzinfo is None:
-        moment = moment.replace(tzinfo=datetime.UTC)
-    seconds = int((moment - ODID_EPOCH).total_seconds())
-    return max(0, min(seconds, 0xFFFFFFFF))
+    return _wire.system_timestamp(now)
 
 
 def messages(identity: dict[str, Any], *, target_system: int, target_component: int,
              now: datetime.datetime | None = None) -> list[tuple[str, dict[str, Any]]]:
     """The Remote ID messages to send, as ``(message name, kwargs)`` pairs.
 
-    All four go out together on every cycle rather than only the ones that
-    changed. They are not a configuration write the vehicle stores: both stacks
-    time the last one out and fail the pre-arm check when the stream stops, so
-    "unchanged" is not a reason to skip a send.
-
-    ``id_or_mac`` is 20 reserved zero bytes in every one of them — the field is
-    for a future addressing scheme and the standard requires it to be zero.
+    All four go out together on every cycle: both stacks time the last one
+    out and fail the pre-arm check when the stream stops. ``id_or_mac`` is 20
+    reserved zero bytes, the operator position goes out only when it is a
+    fixed one, and the EU category and class only under the EU
+    classification.
     """
-    resolved = settings(identity)
-    basic = resolved["basic_id"]
-    operator = resolved["operator_id"]
-    self_id = resolved["self_id"]
-    system = resolved["system"]
-    addressed = {
-        "target_system": int(target_system),
-        "target_component": int(target_component),
-        "id_or_mac": _fixed_bytes("", 20),
-    }
-
-    # A fixed position is the only one whose coordinates are the operator's. On
-    # the take-off setting the vehicle supplies them, and sending a stale pair
-    # of numbers alongside that flag would be sending a position that is not
-    # claimed to be anything — so it goes out as zero.
-    if system["operator_location_type"] == LOCATION_FIXED:
-        latitude = int(round(system["operator_latitude"] * 1e7))
-        longitude = int(round(system["operator_longitude"] * 1e7))
-        altitude = float(system["operator_altitude_geo"])
-    else:
-        latitude = 0
-        longitude = 0
-        altitude = ALTITUDE_UNKNOWN
-
-    # The category and class only mean anything under the EU classification.
-    # Sending a class mark with the classification undeclared broadcasts a
-    # number nobody can interpret.
-    if system["classification_type"] == CLASSIFICATION_EU:
-        category_eu = int(system["category_eu"])
-        class_eu = int(system["class_eu"])
-    else:
-        category_eu = 0
-        class_eu = 0
-
-    return [
-        ("open_drone_id_basic_id", dict(
-            addressed,
-            id_type=int(basic["id_type"]),
-            ua_type=int(basic["ua_type"]),
-            uas_id=_fixed_bytes(basic["uas_id"], UAS_ID_MAX),
-        )),
-        ("open_drone_id_operator_id", dict(
-            addressed,
-            operator_id_type=int(operator["operator_id_type"]),
-            operator_id=_fixed_bytes(operator["operator_id"], OPERATOR_ID_MAX),
-        )),
-        ("open_drone_id_self_id", dict(
-            addressed,
-            description_type=int(self_id["description_type"]),
-            description=_fixed_bytes(self_id["description"], DESCRIPTION_MAX),
-        )),
-        ("open_drone_id_system", dict(
-            addressed,
-            operator_location_type=int(system["operator_location_type"]),
-            classification_type=int(system["classification_type"]),
-            operator_latitude=latitude,
-            operator_longitude=longitude,
-            area_count=int(system["area_count"]),
-            area_radius=int(system["area_radius"]),
-            area_ceiling=float(system["area_ceiling"]),
-            area_floor=float(system["area_floor"]),
-            category_eu=category_eu,
-            class_eu=class_eu,
-            operator_altitude_geo=altitude,
-            timestamp=system_timestamp(now),
-        )),
-    ]
+    return _wire.messages(identity, target_system=target_system,
+                          target_component=target_component, now=now)
 
 
 def arm_status(status: Any, error: Any) -> dict[str, Any]:
     """Normalise an ``OPEN_DRONE_ID_ARM_STATUS`` into something renderable."""
-    try:
-        code = int(status)
-    except (TypeError, ValueError):
-        code = ARM_STATUS_FAIL
-    text = _text(error, 50)
-    return {
-        "ok": code == ARM_STATUS_GOOD,
-        "status": code,
-        "error": text,
-    }
+    return _wire.arm_status(status, error)

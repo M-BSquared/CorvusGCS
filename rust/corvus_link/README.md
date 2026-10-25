@@ -49,6 +49,7 @@ pymavlink does.
 | On-board logs, the request side: list, data, erase (refused while armed), end | `src/protocol/logs.rs` (`corvus_link.logs`) | `corvus/mavlink_logs.py` keeps the methods and the reply sink |
 | The PX4 NSH shell over SERIAL_CONTROL: console lines (CR dropped, backspaces applied, long lines flushed), the terminal's raw text and backlog, release on stop, UTF-8 split across chunks | `src/protocol/shell.rs` (`corvus_link.shell`) | `corvus/mavlink_shell.py` keeps the methods, `_shell_lock` and the limits |
 | The Setup commands: sensor calibration, its cancel and ArduPilot's accelerometer positions, the bench motor test and its stop, the autotune (PX4 command with its progress ACKs, ArduPilot flight mode), the two reboots | `src/protocol/setup.rs` (`corvus_link.setup`) | `corvus/mavlink_setup.py` keeps the methods, the operation lock around each and the tunables |
+| Remote ID: the identity coerced to what may go on air, the four OPEN_DRONE_ID messages at 1 Hz, the aircraft's ARM_STATUS verdict, the broadcast status | `src/protocol/remote_id.rs` (`corvus_link.remote_id`) | `corvus/mavlink_remote_id.py` keeps the methods; `corvus/remote_id.py` keeps the page's option lists and filing checks |
 
 `src/protocol/host.rs` holds what every engine asks of the bridge: logger,
 command error, console, events, send lock, and Python's number conversions.
@@ -125,4 +126,8 @@ pymavlink stays in the `test` dependency group as the reference:
   calibration on both stacks, cancels, accelerometer positions, motor tests
   with bad numbers, throttles and durations, the stop order, the PX4 and
   ArduPilot autotune, the autotune ACK stream and both reboots.
+- `tests/test_remote_id_parity.py` does it for Remote ID: a few thousand
+  random identities and every odd value in every field, the messages field
+  for field, timestamps, arm statuses and whole broadcast sessions on v2,
+  v1, missing and failing links.
 - The rest of the suite drives the bridge with corvus_link's messages.
