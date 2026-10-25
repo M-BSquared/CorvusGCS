@@ -48,6 +48,8 @@ pymavlink does.
 | MAVLink FTP, the read side: open, burst read with the gaps asked for again, session reset, CRC32, terminate, one transfer at a time with its cancel | `src/protocol/ftp.rs` (`corvus_link.ftp`) | `corvus/mavlink_ftp.py` keeps the methods, the transfer slot `_ftp_lock`, `FtpError` and the tunables |
 | On-board logs, the request side: list, data, erase (refused while armed), end | `src/protocol/logs.rs` (`corvus_link.logs`) | `corvus/mavlink_logs.py` keeps the methods and the reply sink |
 
+| The PX4 NSH shell over SERIAL_CONTROL: console lines (CR dropped, backspaces applied, long lines flushed), the terminal's raw text and backlog, release on stop, UTF-8 split across chunks | `src/protocol/shell.rs` (`corvus_link.shell`) | `corvus/mavlink_shell.py` keeps the methods, `_shell_lock` and the limits |
+
 `src/protocol/host.rs` holds what every engine asks of the bridge: logger,
 command error, console, events, send lock, and Python's number conversions.
 
@@ -115,4 +117,8 @@ pymavlink stays in the `test` dependency group as the reference:
 - `tests/test_ftp_logs_parity.py` does it for FTP (plain, lossy, unsized,
   busy, empty, missing, silent, aborted and cancelled reads, checksums,
   replies addressed elsewhere) and for the log requests.
+- `tests/test_shell_parity.py` does it for the shell: console reassembly and
+  terminal text over chunked streams with split characters, invalid bytes,
+  carriage returns and backspaces, the backlog, switching owners, commands,
+  writes, refusals and the release.
 - The rest of the suite drives the bridge with corvus_link's messages.
