@@ -97,8 +97,8 @@ until a tool and its permission are added there on purpose.
   tests (`tests/test_corvus_link_*.py`) hold every message, constant, frame and
   link to, and as the simulated vehicle in `tools/scene_kit`. No module under
   `corvus/` imports pymavlink. The parameter, mission, FTP, log and
-  shell protocols run in corvus_link too (`corvus_link.params`, `.missions`,
-  `.ftp`, `.logs`, `.shell`, behind the `corvus/mavlink_*.py` module of the
+  shell protocols and the Setup commands run in corvus_link too
+  (`corvus_link.params`, `.missions`, `.ftp`, `.logs`, `.shell`, `.setup`, behind the `corvus/mavlink_*.py` module of the
   same name);
   the other protocols are still Python and move one at a time, each held to
   its Python predecessor kept in `tests/reference/`. Keep wire-format parsing and parameter handling

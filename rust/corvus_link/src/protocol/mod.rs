@@ -5,4 +5,5 @@ pub mod host;
 pub mod logs;
 pub mod missions;
 pub mod params;
+pub mod setup;
 pub mod shell;

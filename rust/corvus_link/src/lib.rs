@@ -222,5 +222,6 @@ fn corvus_link(m: &Bound<'_, PyModule>) -> PyResult<()> {
     protocol::ftp::register(py, m)?;
     protocol::logs::register(py, m)?;
     protocol::shell::register(py, m)?;
+    protocol::setup::register(py, m)?;
     Ok(())
 }

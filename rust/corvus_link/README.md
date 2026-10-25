@@ -47,8 +47,8 @@ pymavlink does.
 
 | MAVLink FTP, the read side: open, burst read with the gaps asked for again, session reset, CRC32, terminate, one transfer at a time with its cancel | `src/protocol/ftp.rs` (`corvus_link.ftp`) | `corvus/mavlink_ftp.py` keeps the methods, the transfer slot `_ftp_lock`, `FtpError` and the tunables |
 | On-board logs, the request side: list, data, erase (refused while armed), end | `src/protocol/logs.rs` (`corvus_link.logs`) | `corvus/mavlink_logs.py` keeps the methods and the reply sink |
-
 | The PX4 NSH shell over SERIAL_CONTROL: console lines (CR dropped, backspaces applied, long lines flushed), the terminal's raw text and backlog, release on stop, UTF-8 split across chunks | `src/protocol/shell.rs` (`corvus_link.shell`) | `corvus/mavlink_shell.py` keeps the methods, `_shell_lock` and the limits |
+| The Setup commands: sensor calibration, its cancel and ArduPilot's accelerometer positions, the bench motor test and its stop, the autotune (PX4 command with its progress ACKs, ArduPilot flight mode), the two reboots | `src/protocol/setup.rs` (`corvus_link.setup`) | `corvus/mavlink_setup.py` keeps the methods, the operation lock around each and the tunables |
 
 `src/protocol/host.rs` holds what every engine asks of the bridge: logger,
 command error, console, events, send lock, and Python's number conversions.
@@ -121,4 +121,8 @@ pymavlink stays in the `test` dependency group as the reference:
   terminal text over chunked streams with split characters, invalid bytes,
   carriage returns and backspaces, the backlog, switching owners, commands,
   writes, refusals and the release.
+- `tests/test_setup_parity.py` does it for the Setup commands: every
+  calibration on both stacks, cancels, accelerometer positions, motor tests
+  with bad numbers, throttles and durations, the stop order, the PX4 and
+  ArduPilot autotune, the autotune ACK stream and both reboots.
 - The rest of the suite drives the bridge with corvus_link's messages.
