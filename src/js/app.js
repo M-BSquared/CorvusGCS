@@ -739,6 +739,9 @@ Corvus.app = (function () {
     // also covers the case where that script could not read storage.
     Corvus.theme.applySaved();
     Corvus.scale.applySaved();
+    // Tablet mode is this device's own choice and never in the config, so
+    // there is nothing for the fetch below to correct.
+    Corvus.touch.applySaved();
     // The language last used on this machine, before the config answers. The
     // page is held back by index.html until it is in, so nothing paints in the
     // wrong one first.
@@ -855,11 +858,14 @@ Corvus.app = (function () {
     // its collapsible body, so they have to exist first.
     Corvus.hudPanel.init(document.getElementById("flightOverlay"));
     Corvus.panel.init();
+    // The panel's tabs exist now; tablet mode takes the SSH one away.
+    Corvus.touch.sync();
     // AFTER panel.init: it is panel.initFuture that calls Corvus.plugins.init,
     // and the loader wants the plugin api (and its root element) in place. The
     // fetch is not awaited — plugins register as their scripts arrive and the
     // grid re-renders itself, so boot never waits on the plugin folder.
     Corvus.plugins.loadInstalled();
+    Corvus.mcp.init();
     Corvus.link.init();
     initFlightActions();
     // The offline-map panel is a modal now (it mounts itself to <body>), so
@@ -907,7 +913,12 @@ Corvus.app = (function () {
       // the interface size collapses the panel at the point the layout
       // actually gets cramped rather than at a fixed window width.
       const width = document.body.clientWidth || window.innerWidth;
-      if (width < 960 && !collapsed) Corvus.panel.toggle(false);
+      // A tablet is held at 1024 to 1366 wide, where the panel open by
+      // default leaves the map a strip (and the planner's beside its own
+      // list, less). In tablet mode it starts folded until the window is as
+      // wide as the one it opens at; the handle brings it out.
+      const narrow = Corvus.touch && Corvus.touch.isEnabled() ? 1280 : 960;
+      if (width < narrow && !collapsed) Corvus.panel.toggle(false);
       else if (width >= 1280 && collapsed) Corvus.panel.toggle(false);
     });
     window.dispatchEvent(new Event("resize"));
