@@ -445,3 +445,27 @@
 .schw-confirm { display: flex; flex-direction: column; gap: 8px; }
 .schw-confirm-line { margin: 0; font-size: 13px; line-height: 1.5; color: var(--text-2); }
 .schw-confirm-line:first-child { color: var(--text-1); font-weight: 550; }
+
+/* A button an AI client added: a small AI mark before the label. Until the
+   operator allows it, it is drawn as an outline in the warning colour, so it
+   cannot be mistaken for one that runs on a press. */
+.schw-launch > span.schw-ai {
+  flex: 0 0 auto;
+  margin-right: 6px;
+  padding: 0 4px;
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 14px;
+  letter-spacing: 0.04em;
+  opacity: 0.85;
+  overflow: visible;
+}
+.schw-pending .btn.schw-launch,
+.schw-pending .btn.schw-launch:hover {
+  background: transparent;
+  color: var(--warning);
+  border: 1px dashed var(--warning);
+  filter: none;
+}

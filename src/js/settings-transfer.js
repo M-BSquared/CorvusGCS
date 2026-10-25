@@ -59,7 +59,10 @@ Corvus.settingsTransfer = (function () {
   // corvus.firstSetup.v1 is which controllers were told "do not ask again":
   // they are boards on this desk, and meaningless on another station.
   const NOT_SETTINGS = ["corvus.console.history", "corvus.mission.last", "corvus.frostedTerminals",
-    "corvus.checklist.ticks", "corvus.map.track", "corvus.map.fleetTracks", "corvus.firstSetup.v1"];
+    "corvus.checklist.ticks", "corvus.map.track", "corvus.map.fleetTracks", "corvus.firstSetup.v1",
+    // Tablet mode belongs to the device, not the station: a laptop importing
+    // a tablet's settings must not come up in it.
+    "corvus.touch"];
 
   /* The parts an import is chosen by. The ids match SECTIONS in
      corvus/settings_bundle.py. */
@@ -71,7 +74,8 @@ Corvus.settingsTransfer = (function () {
       hint: "Where the flight HUD, the virtual joystick and the checklist sit, and which cards are folded." },
     { id: "map", label: "Map", hint: "Map service, base layer, 3D mode and map keys." },
     { id: "connections", label: "Connections",
-      hint: "Default link, auto connect, forwarding to a second station, SSH connections." },
+      hint: "Default link, auto connect, forwarding to a second station, SSH connections, " +
+            "the MCP server's switches (never its token)." },
     { id: "vehicle", label: "Vehicle",
       hint: "Battery estimate, Remote ID, RTK base, cameras, extra safety parameters, preflight checklists." },
     { id: "folders", label: "Folders and port",

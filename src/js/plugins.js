@@ -116,6 +116,23 @@ window.Corvus = window.Corvus || {};
  *                                 plugin names a saved SSH connection rather
  *                                 than keeping a password.
  *
+ *   mcp {Object}                  The MCP server (Settings, Connections, MCP).
+ *     changed()                   Say that this plugin's tools changed, so the
+ *                                 AI client is given the new list. Called by
+ *                                 itself when the plugin registers and when
+ *                                 one of its options is set.
+ *
+ *   A plugin offers tools to an AI client with `mcpTools` in its spec: an
+ *   array, or a function (api) => array, asked again every time the list is
+ *   announced, so it can depend on the plugin's own settings. Each tool is
+ *   {name, title, description, inputSchema, confirm, readOnly, handler}:
+ *   `name` is [A-Za-z0-9_-], listed as "<plugin id>_<name>"; `inputSchema` a
+ *   JSON Schema object; `confirm` true to ask the operator every time, on top
+ *   of what they set; `handler(args, api)` returns the result (or a Promise
+ *   of it) and throws to refuse, with the message the agent is told. A tool
+ *   runs only while a Corvus window is open, only when the operator allowed
+ *   plugin tools and this plugin, and the plugin decides the rest.
+ *
  *   map {Object}                  Shapes and text on the Home map. Lines and
  *                                 areas are always drawn UNDER the flown track,
  *                                 so where the aircraft has been stays on top;
@@ -446,7 +463,10 @@ Corvus.plugins = (function () {
       tab: spec.tab === true,
       options: cleanOptionSpecs(spec.options),
       optionsChanged: typeof spec.optionsChanged === "function" ? spec.optionsChanged : null,
+      mcpTools: (typeof spec.mcpTools === "function" || Array.isArray(spec.mcpTools))
+        ? spec.mcpTools : null,
     });
+    mcpChanged();
     runStart(id);
     // A tab if it asks for one and may have one; otherwise the grid, if it is
     // on screen, re-renders so the new card appears.
@@ -466,6 +486,7 @@ Corvus.plugins = (function () {
     if (tabbed.has(id)) unmountTab(id);
     removeOverlaysOf(id);
     registry.delete(id);
+    mcpChanged();
     startedIds.delete(id);
     if (rootEl && activeId === null) renderGrid();
     return true;
@@ -1237,6 +1258,7 @@ Corvus.plugins = (function () {
       settingsStore[id] = Object.assign({}, settingsStore[id] || {}, { [OPTIONS_KEY]: opts });
       if (key === TAB_OPTION) syncTabs();
       else notifyOptions(id);
+      mcpChanged();
     };
     apply(after);
     return pluginPostJson("/api/plugins/settings", { id, settings: { [OPTIONS_KEY]: after } })
@@ -1262,6 +1284,79 @@ Corvus.plugins = (function () {
     } catch (err) {
       console.error("plugin optionsChanged failed:", id, err);
     }
+  }
+
+  // ---- tools for an AI client (Corvus.mcp) --------------------------------
+
+  const MCP_NAME_RE = /^[A-Za-z0-9_-]{1,48}$/;
+
+  /** Tell the MCP window module the plugin tools changed. Best-effort. */
+  function mcpChanged() {
+    try {
+      if (window.Corvus && Corvus.mcp && typeof Corvus.mcp.toolsChanged === "function") {
+        Corvus.mcp.toolsChanged();
+      }
+    } catch (_e) { /* no MCP module, nothing to tell */ }
+  }
+
+  /** One plugin's tools, well formed, with their handlers. */
+  function mcpToolsOf(id) {
+    const spec = registry.get(id);
+    if (!spec || !spec.mcpTools || !api) return [];
+    let raw = spec.mcpTools;
+    if (typeof raw === "function") {
+      try {
+        raw = raw(apiFor(id));
+      } catch (err) {
+        console.error("plugin mcpTools failed:", id, err);
+        return [];
+      }
+    }
+    if (!Array.isArray(raw)) return [];
+    const seen = new Set();
+    const out = [];
+    raw.forEach((t) => {
+      if (!t || typeof t !== "object" || typeof t.handler !== "function") return;
+      if (typeof t.name !== "string" || !MCP_NAME_RE.test(t.name) || seen.has(t.name)) return;
+      seen.add(t.name);
+      const schema = t.inputSchema && typeof t.inputSchema === "object"
+        && t.inputSchema.type === "object" ? t.inputSchema : { type: "object", properties: {} };
+      out.push({
+        name: t.name,
+        title: typeof t.title === "string" ? t.title : t.name,
+        description: typeof t.description === "string" ? t.description : "",
+        input_schema: schema,
+        confirm: t.confirm === true,
+        read_only: t.readOnly === true,
+        handler: t.handler,
+      });
+    });
+    return out;
+  }
+
+  /** Every registered plugin's tools, as the MCP window module announces them. */
+  function mcpTools() {
+    const out = [];
+    registry.forEach((spec, id) => {
+      mcpToolsOf(id).forEach((t) => {
+        out.push({
+          plugin: id, plugin_name: spec.name, name: t.name, title: t.title,
+          description: t.description, input_schema: t.input_schema,
+          confirm: t.confirm, read_only: t.read_only,
+        });
+      });
+    });
+    return out;
+  }
+
+  /**
+   * Run one plugin tool for the AI client. Resolves the handler's result and
+   * rejects with the reason it refused, which is what the agent is told.
+   */
+  function runMcpTool(id, name, args) {
+    const tool = mcpToolsOf(id).find((t) => t.name === name);
+    if (!tool) return Promise.reject(new Error(`The plugin offers no tool ${name} right now.`));
+    return Promise.resolve().then(() => tool.handler(args || {}, apiFor(id)));
   }
 
   // ---- flying the vehicle (api.control) ------------------------------------
@@ -1421,6 +1516,7 @@ Corvus.plugins = (function () {
     scoped.map = mapApiFor(id);
     scoped.getOptions = () => valuesFor(id);
     scoped.control = controlApiFor(id, null);
+    scoped.mcp = { changed: mcpChanged };
     return scoped;
   }
 
@@ -1691,5 +1787,6 @@ Corvus.plugins = (function () {
     setTabsAllowed, tabsAllowed: () => tabsAllowed,
     hasOptions, options: optionsOf, setOption,
     LINE_COLORS, circleRing,
+    mcpTools, runMcpTool,
   };
 })();

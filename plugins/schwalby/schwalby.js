@@ -66,6 +66,17 @@ window.Corvus = window.Corvus || {};
  * (api.notification), for the operator who has already turned back to the
  * aircraft.
  *
+ * AN AI CLIENT can use the shelf through Corvus' MCP server, when the
+ * operator allows it twice: Plugin tools in Settings, Connections, MCP, and
+ * one or both of Schwalby's own switches (Settings, Plugins, its gear).
+ * "May add buttons" lets it add buttons that run on this computer, and change
+ * or remove the ones it added; such a button carries an AI mark, and a new or
+ * changed one waits on the shelf until the operator presses it and allows it.
+ * "May press buttons" lets it press any allowed button, as the operator
+ * would. Over SSH it presses only what the operator set up: it can never add
+ * a button that runs elsewhere. With the shelf closed a press goes the same
+ * way (the same endpoints, the same sessions), just without the row to show it.
+ *
  * Self-contained like every plugin: this script, its stylesheet
  * (schwalby.css, every class prefixed schw-), the Corvus.ui components and the
  * plugin api, nothing else.
@@ -348,7 +359,7 @@ Corvus.pluginSchwalby = (function () {
     if (!command) return null;
     const label = String(raw.label == null ? "" : raw.label).trim();
     const target = coerceTarget(raw);
-    return {
+    const out = {
       id: (typeof raw.id === "string" && raw.id) ? raw.id : newId(),
       label: label || command,
       target,
@@ -362,6 +373,13 @@ Corvus.pluginSchwalby = (function () {
       restart: raw.restart === true,
       color: coerceColor(raw.color),
     };
+    // Added by an AI client over MCP, and, until the operator allows it, not
+    // to be run. Only written when set, so a shelf without any reads as before.
+    if (raw.by_mcp === true) {
+      out.by_mcp = true;
+      if (raw.pending === true) out.pending = true;
+    }
+    return out;
   }
 
   /**
@@ -709,6 +727,241 @@ Corvus.pluginSchwalby = (function () {
     offline: { level: "critical", text: "Offline" },
     error: { level: "warning", text: "Cannot ping" },
   };
+
+  // ---- the AI client's half (Corvus' MCP server) ---------------------------
+
+  // The open shelf, if there is one: a press from the AI client then runs
+  // through it so the row shows it, and a change it made redraws it.
+  let mounted = null;
+
+  const MCP_EDIT = "mcp_edit";
+  const MCP_RUN = "mcp_run";
+
+  const OPTIONS = [
+    {
+      key: MCP_EDIT, type: "toggle", default: false,
+      label: "AI clients may add buttons",
+      hint: "Through Corvus' MCP server an AI client can add buttons that run on this " +
+            "computer, and change or remove the ones it added. A new or changed one " +
+            "waits on the shelf until you press it and allow it.",
+    },
+    {
+      key: MCP_RUN, type: "toggle", default: false,
+      label: "AI clients may press buttons",
+      hint: "Through Corvus' MCP server an AI client can press any allowed button, which " +
+            "runs its program as your own press would.",
+    },
+  ];
+
+  /** What the AI client is told about one button. Pure. */
+  function describeButton(b) {
+    return {
+      id: b.id, label: b.label,
+      runs_on: b.target === TARGET_LOCAL ? "this computer" : `ssh ${b.connection}`,
+      directory: b.directory, command: b.command, mode: b.mode, restart: b.restart,
+      added_by_ai: b.by_mcp === true,
+      waiting_for_operator: b.pending === true,
+    };
+  }
+
+  function fail(text) { throw new Error(text); }
+
+  function textArg(args, key, required) {
+    const v = args[key];
+    if (v === undefined || v === null) {
+      if (required) fail(`${key} is required`);
+      return undefined;
+    }
+    if (typeof v !== "string") fail(`${key} must be a string`);
+    return v.trim();
+  }
+
+  /**
+   * A button from the AI client's arguments, merged over *base*. Always on
+   * this computer: the AI client never gets a button that runs elsewhere.
+   * Pure, and exported for the test suite.
+   */
+  function mcpButton(args, base) {
+    const a = args || {};
+    const next = Object.assign({}, base || { id: newId(), mode: MODE_TERMINAL });
+    ["label", "command", "directory"].forEach((k) => {
+      const v = textArg(a, k, !base && (k === "label" || k === "command"));
+      if (v !== undefined) next[k] = v;
+    });
+    if (a.mode !== undefined) {
+      if (a.mode !== MODE_TERMINAL && a.mode !== MODE_BACKGROUND) {
+        fail(`mode must be "${MODE_TERMINAL}" or "${MODE_BACKGROUND}"`);
+      }
+      next.mode = a.mode;
+    }
+    if (a.restart !== undefined) {
+      if (typeof a.restart !== "boolean") fail("restart must be true or false");
+      next.restart = a.restart;
+    }
+    if (a.color !== undefined) next.color = coerceColor(a.color);
+    next.target = TARGET_LOCAL;
+    next.connection = "";
+    next.by_mcp = true;
+    const runs = (b) => [b.command, b.directory, b.mode, b.restart === true].join("\u0000");
+    if (!base || runs(base) !== runs(next)) next.pending = true;
+    const button = coerceButton(next);
+    if (!button) fail("command must not be empty");
+    return button;
+  }
+
+  /** Save the shelf from outside it, keep the companion, redraw an open one. */
+  function saveShelf(api, list) {
+    const saved = Object.assign({}, api.getSettings(), { buttons: list });
+    return api.saveSettings(saved, true).then(() => {
+      if (mounted) mounted.reload();
+    });
+  }
+
+  /**
+   * Press a button without the shelf on screen: the same endpoints and the
+   * same session the row would use, so opening the shelf afterwards shows it
+   * running and its arrow opens its terminal.
+   */
+  function headlessPress(api, entry) {
+    const local = entry.target === TARGET_LOCAL;
+    const where = local ? LOCAL_HOST : (entry.connection || "ssh");
+    const say = (line, ok) => api.console(`${PLUGIN_ID} (${where}): ${line}`, ok ? "success" : "error");
+    const failed = (text) => {
+      api.notification("warning", `${entry.label}: ${text}`);
+      throw new Error(text);
+    };
+    const bodyOf = (err) => (err && err.body) || { ok: false, error: (err && err.message) || String(err) };
+    if (entry.mode === MODE_BACKGROUND) {
+      const request = local
+        ? api.postJson("/api/local/run", { directory: entry.directory, command: entry.command })
+        : api.postJson("/api/ssh/run", {
+          name: entry.connection, directory: entry.directory, command: entry.command, detach: true,
+        });
+      return request.catch(bodyOf).then((res) => {
+        const summary = local ? localSummary(res) : sshSummary(res);
+        say((res && res.command) || entry.command, summary.kind !== "err");
+        if (summary.kind === "err") failed(summary.text);
+        return { ok: true, message: `${entry.label}: ${summary.text}` };
+      });
+    }
+    const session = sessionName(entry);
+    const line = terminalLine(entry);
+    const send = () => api.postJson("/api/ssh/send", { name: session, data: line + "\n" });
+    const first = restarts(entry)
+      ? api.postJson("/api/ssh/send", { name: session, data: CTRL_C }).then((res) => (
+        res && res.ok ? new Promise((r) => setTimeout(r, RESTART_GRACE_MS)).then(send) : res))
+      : send();
+    return first.catch(bodyOf).then((res) => {
+      if (res && res.ok) {
+        say(line, true);
+        return { ok: true, message: `${entry.label} sent to its terminal` };
+      }
+      const connect = local
+        ? api.postJson("/api/local/connect", { name: session })
+        : api.postJson("/api/ssh/connect", { name: session, from: entry.connection });
+      return connect.catch(bodyOf).then((up) => {
+        if (!(up && up.ok && up.connected)) failed((up && up.error) || "Could not open the terminal");
+        return send().then(() => {
+          say(line, true);
+          return { ok: true, message: `${entry.label} is running in its terminal` };
+        });
+      });
+    });
+  }
+
+  /** The tools Schwalby offers an AI client, by its two switches. */
+  function mcpTools(api) {
+    const opts = (api && typeof api.getOptions === "function") ? api.getOptions() : {};
+    const edit = opts[MCP_EDIT] === true;
+    const run = opts[MCP_RUN] === true;
+    if (!edit && !run) return [];
+    const shelf = () => normalizeButtons(api.getSettings());
+    const own = (id) => {
+      const entry = shelf().find((b) => b.id === id);
+      if (!entry) fail(`No button ${id}. list_buttons names them.`);
+      if (!entry.by_mcp) fail("That button is the operator's. You may change only the ones you added.");
+      return entry;
+    };
+    const buttonFields = {
+      label: { type: "string", description: "What the button says" },
+      command: { type: "string", description: "The shell command it runs on this computer" },
+      directory: { type: "string", description: "The folder it runs in, empty for home" },
+      mode: { type: "string", enum: [MODE_TERMINAL, MODE_BACKGROUND],
+        description: "terminal: typed into a terminal of its own. background: started " +
+                     "without a window, stopped when Corvus closes" },
+      restart: { type: "boolean", description: "Pressed again, stop it with Ctrl-C and start it again" },
+      color: { type: "string", description: "#RRGGBB, empty for the theme's own" },
+    };
+    const tools = [{
+      name: "list_buttons", title: "Schwalby buttons", readOnly: true,
+      description: "The launch buttons on the Schwalby shelf: what each runs and where, " +
+                   "and whether it waits for the operator to allow it.",
+      inputSchema: { type: "object", properties: {} },
+      handler: () => ({
+        buttons: shelf().map(describeButton), max: MAX_BUTTONS,
+        you_may_add: edit, you_may_press: run,
+      }),
+    }];
+    if (edit) {
+      tools.push({
+        name: "add_button", title: "Add a Schwalby button",
+        description: "Add a launch button that runs a command on this computer. It waits on " +
+                     "the shelf until the operator allows it; it cannot be pressed before.",
+        inputSchema: { type: "object", properties: buttonFields, required: ["label", "command"] },
+        handler: (args) => {
+          const list = shelf();
+          if (list.length >= MAX_BUTTONS) fail(`The shelf is full (${MAX_BUTTONS} buttons).`);
+          const button = mcpButton(args, null);
+          return saveShelf(api, list.concat([button])).then(() => ({
+            id: button.id, waiting_for_operator: true,
+            message: "Added. The operator has to allow it on the Schwalby shelf before it runs.",
+          }));
+        },
+      });
+      tools.push({
+        name: "update_button", title: "Change a Schwalby button",
+        description: "Change a button you added. Changing what it runs makes it wait for " +
+                     "the operator again.",
+        inputSchema: { type: "object", properties: Object.assign({ id: { type: "string" } }, buttonFields),
+          required: ["id"] },
+        handler: (args) => {
+          const before = own(textArg(args, "id", true));
+          const after = mcpButton(args, before);
+          const list = shelf().map((b) => (b.id === before.id ? after : b));
+          return saveShelf(api, list).then(() => ({
+            id: after.id, waiting_for_operator: after.pending === true,
+          }));
+        },
+      });
+      tools.push({
+        name: "remove_button", title: "Remove a Schwalby button",
+        description: "Remove a button you added.",
+        inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
+        handler: (args) => {
+          const entry = own(textArg(args, "id", true));
+          return saveShelf(api, shelf().filter((b) => b.id !== entry.id))
+            .then(() => ({ removed: entry.id }));
+        },
+      });
+    }
+    if (run) {
+      tools.push({
+        name: "press_button", title: "Press a Schwalby button",
+        description: "Press a launch button, as the operator would: its program starts in its " +
+                     "terminal or in the background.",
+        inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
+        handler: (args) => {
+          const id = textArg(args, "id", true);
+          const entry = shelf().find((b) => b.id === id);
+          if (!entry) fail(`No button ${id}. list_buttons names them.`);
+          if (entry.pending) fail("The operator has not allowed this button yet.");
+          if (mounted) return mounted.press(id);
+          return headlessPress(api, entry);
+        },
+      });
+    }
+    return tools;
+  }
 
   function init(containerEl, api) {
     const ui = Corvus.ui;
@@ -1496,8 +1749,22 @@ Corvus.pluginSchwalby = (function () {
           ? `${restarts(entry) ? "Stop it with Ctrl-C and start it again" : "Run it again"} ` +
             `in the terminal it is already in.\n${previewLine(entry) || entry.command}`
           : (previewLine(entry) || entry.command),
-        onClick: () => launch(entry, launchBtn),
+        onClick: () => (entry.pending ? approve(entry) : launch(entry, launchBtn)),
       });
+      if (entry.pending) {
+        row.classList.add("schw-pending");
+        launchBtn.title = "Added by an AI client. Press to see what it runs and allow it.\n" +
+          (previewLine(entry) || entry.command);
+        launchBtn.setAttribute("aria-label", `Check and allow ${entry.label}`);
+      }
+      if (entry.by_mcp) {
+        const mark = document.createElement("span");
+        mark.className = "schw-ai";
+        mark.textContent = "AI";
+        mark.title = entry.pending ? "Added by an AI client, waiting for you to allow it"
+          : "Added by an AI client";
+        launchBtn.insertBefore(mark, launchBtn.firstChild);
+      }
 
       if (entry.color) {
         launchBtn.dataset.color = entry.color;
@@ -2045,6 +2312,8 @@ Corvus.pluginSchwalby = (function () {
       async function commit() {
         const entry = coerceButton(draft);
         if (!entry) return;
+        // The operator has read it in the editor and saved it: theirs now.
+        delete entry.pending;
         const before = isNew ? null : buttons.find((b) => b.id === entry.id);
         if (before && !(await leaveSession(before, entry))) return;
         if (cancelled) return;
@@ -2149,10 +2418,10 @@ Corvus.pluginSchwalby = (function () {
       output.hidden = true;
       output.textContent = "";
       clearError(entry);
-      ui.setBusy(btn, true);
-      const done = () => { if (!cancelled) ui.setBusy(btn, false); };
-      if (entry.mode === MODE_BACKGROUND) launchDetached(entry).finally(done);
-      else launchInTerminal(entry).finally(done);
+      const done = () => { if (!cancelled && btn) ui.setBusy(btn, false); };
+      if (btn) ui.setBusy(btn, true);
+      return (entry.mode === MODE_BACKGROUND ? launchDetached(entry) : launchInTerminal(entry))
+        .finally(done);
     }
 
     /**
@@ -2431,6 +2700,27 @@ Corvus.pluginSchwalby = (function () {
       return true;
     }
 
+    /** A button an AI client added: show what it runs, and run it only once allowed. */
+    async function approve(entry) {
+      const yes = await askConfirm({
+        title: `Allow "${entry.label}"?`,
+        lines: ["An AI client added this button. Pressing it will run:",
+          previewLine(entry) || entry.command,
+          "Allow it only if you would run that yourself."],
+        confirmLabel: "Allow", icon: "check",
+      });
+      if (!yes || cancelled) return;
+      buttons = buttons.map((b) => {
+        if (b.id !== entry.id) return b;
+        const next = Object.assign({}, b);
+        delete next.pending;
+        return next;
+      });
+      persist();
+      api.console(consoleLine(entry, `allowed ${entry.label}, added by an AI client`), "info");
+      renderShelf();
+    }
+
     /** Remove a button, and the session only it could reach. */
     async function remove(entry, running) {
       if (running) {
@@ -2506,7 +2796,25 @@ Corvus.pluginSchwalby = (function () {
 
     startProbing();
 
+    const handle = {
+      reload() {
+        if (cancelled) return;
+        buttons = normalizeButtons(api.getSettings());
+        if (editing === null) renderShelf();
+      },
+      press(id) {
+        const entry = buttons.find((b) => b.id === id);
+        if (!entry) return Promise.reject(new Error("No such button."));
+        return launch(entry, null).then(() => {
+          if (errors[entry.id]) throw new Error(errors[entry.id]);
+          return { ok: true, message: status.el.textContent || `${entry.label} started` };
+        });
+      },
+    };
+    mounted = handle;
+
     containerEl._schwDestroy = function () {
+      if (mounted === handle) mounted = null;
       cancelled = true;
       endRowDrag();
       stopPolling();
@@ -2524,7 +2832,7 @@ Corvus.pluginSchwalby = (function () {
   }
 
   return {
-    init, destroy,
+    init, destroy, mcpTools, mcpButton, describeButton, OPTIONS, MCP_EDIT, MCP_RUN,
     previewLine, terminalLine, sshSummary, localSummary, normalizeButtons, missingConnections,
     coerceButton, coerceMode, restarts, moveButton, coerceColor, readableOn, BUTTON_COLORS, coerceTarget, sessionName, derivedName,
     newConnectionError, newConnectionBody, segment,
@@ -2547,6 +2855,9 @@ if (window.Corvus && Corvus.plugins && typeof Corvus.plugins.register === "funct
     // have a tab of its own, switched on from its gear in Settings > Plugins,
     // and is a card under PLUGINS otherwise.
     tab: true,
+    // Whether an AI client may use the shelf, over Corvus' MCP server.
+    options: Corvus.pluginSchwalby.OPTIONS,
+    mcpTools: function (api) { return Corvus.pluginSchwalby.mcpTools(api); },
     init: function (containerEl, api) { Corvus.pluginSchwalby.init(containerEl, api); },
     destroy: function (containerEl) { Corvus.pluginSchwalby.destroy(containerEl); },
   });

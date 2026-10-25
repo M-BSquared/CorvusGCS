@@ -356,6 +356,20 @@ function testConsoleAndSshCanBeSwitchedOff() {
   assert.equal(panel.isTabShown("ssh"), true);
 }
 
+// Settings and tablet mode each hide SSH for their own reason (js/touch.js),
+// and the tab is back only when neither still does.
+function testEachReasonForHidingATabStandsOnItsOwn() {
+  panel.setTabHidden("ssh", true, "touch");
+  assert.equal(panel.isTabShown("ssh"), false);
+  panel.setTabHidden("ssh", false);
+  assert.equal(panel.isTabShown("ssh"), false, "the settings switch cannot undo tablet mode");
+  panel.setTabHidden("ssh", true);
+  panel.setTabHidden("ssh", false, "touch");
+  assert.equal(panel.isTabShown("ssh"), false, "leaving tablet mode keeps the operator's own switch");
+  panel.setTabHidden("ssh", false);
+  assert.equal(panel.isTabShown("ssh"), true);
+}
+
 function testLinkAndPluginsCannotBeSwitchedOff() {
   assert.equal(panel.setTabHidden("link", true), false);
   assert.equal(panel.setTabHidden("future", true), false);
@@ -805,6 +819,7 @@ const tests = [
   testAnAddedTabSitsBeforePlugins,
   testShowingATabRunsItsHookEveryTime,
   testConsoleAndSshCanBeSwitchedOff,
+  testEachReasonForHidingATabStandsOnItsOwn,
   testLinkAndPluginsCannotBeSwitchedOff,
   testPanelToggleCollapsesAndExpandsCleanly,
   testStartRunsOnceAtRegistration,
