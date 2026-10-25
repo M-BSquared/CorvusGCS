@@ -15,11 +15,14 @@ use std::collections::HashMap;
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
-use pyo3::exceptions::{PyAttributeError, PyTypeError, PyValueError};
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyCFunction, PyDict, PyFloat, PyInt, PyList, PyString, PyTuple};
 
 use crate::lock;
+use crate::protocol::host::{
+    caught_by, console, event_set, link_send, logger, obj, py_float, py_int, set_error, truthy,
+};
 
 const MAV_MISSION_ACCEPTED: i64 = 0;
 const MAV_MISSION_DENIED: i64 = 14;
@@ -157,28 +160,6 @@ pub struct MissionEngine {
     st: Mutex<State>,
 }
 
-fn logger(py: Python<'_>) -> PyResult<Bound<'_, PyAny>> {
-    py.import("logging")?.call_method1("getLogger", ("corvus.mavlink",))
-}
-
-fn truthy(obj: &Bound<'_, PyAny>, method: &str) -> PyResult<bool> {
-    obj.call_method0(method)?.is_truthy()
-}
-
-fn event_set(bridge: &Bound<'_, PyAny>, name: &str) -> PyResult<bool> {
-    bridge.getattr(name)?.call_method0("is_set")?.is_truthy()
-}
-
-fn set_error(bridge: &Bound<'_, PyAny>, text: &str) -> PyResult<()> {
-    bridge.call_method1("_set_command_error", (text,))?;
-    Ok(())
-}
-
-fn console(bridge: &Bound<'_, PyAny>, name: &str, text: &str, level: &str) -> PyResult<()> {
-    bridge.call_method1("_console_publish", (name, text, level))?;
-    Ok(())
-}
-
 fn store_update(bridge: &Bound<'_, PyAny>, fields: &Bound<'_, PyDict>) -> PyResult<()> {
     bridge.getattr("_store")?.call_method("update", (), Some(fields))?;
     Ok(())
@@ -186,14 +167,6 @@ fn store_update(bridge: &Bound<'_, PyAny>, fields: &Bound<'_, PyDict>) -> PyResu
 
 fn snapshot<'py>(bridge: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
     bridge.getattr("_store")?.call_method0("get_snapshot")
-}
-
-fn py_float(value: &Bound<'_, PyAny>) -> PyResult<f64> {
-    value.py().get_type::<PyFloat>().call1((value,))?.extract()
-}
-
-fn py_int(value: &Bound<'_, PyAny>) -> PyResult<i64> {
-    value.py().get_type::<PyInt>().call1((value,))?.extract()
 }
 
 /// `int(getattr(msg, name, default) or 0)`.
@@ -220,16 +193,6 @@ fn finite_or_none(py: Python<'_>, value: Option<Bound<'_, PyAny>>) -> PyObject {
 
 fn is_number(value: &Bound<'_, PyAny>) -> bool {
     !value.is_instance_of::<PyBool>() && (value.is_instance_of::<PyInt>() || value.is_instance_of::<PyFloat>())
-}
-
-fn caught_by(py: Python<'_>, err: &PyErr, kinds: &[&str]) -> bool {
-    kinds.iter().any(|kind| match *kind {
-        "AttributeError" => err.is_instance_of::<PyAttributeError>(py),
-        "TypeError" => err.is_instance_of::<PyTypeError>(py),
-        "ValueError" => err.is_instance_of::<PyValueError>(py),
-        "IndexError" => err.is_instance_of::<pyo3::exceptions::PyIndexError>(py),
-        _ => false,
-    })
 }
 
 impl MissionEngine {
@@ -275,13 +238,6 @@ impl MissionEngine {
         }
     }
 
-    fn send(bridge: &Bound<'_, PyAny>, conn: &Bound<'_, PyAny>, method: &str, args: Vec<PyObject>) -> PyResult<bool> {
-        let py = bridge.py();
-        let mut all: Vec<PyObject> = vec![conn.clone().unbind(), PyString::new(py, method).into_any().unbind()];
-        all.extend(args);
-        bridge.call_method1("_link_send", PyTuple::new(py, all)?)?.is_truthy()
-    }
-
     fn download_wait_s(&self, bridge: &Bound<'_, PyAny>) -> PyResult<f64> {
         let py = bridge.py();
         let slow = match bridge.getattr("_is_slow_link") {
@@ -316,7 +272,7 @@ impl MissionEngine {
             download.signal.clear();
             let drops = lock(&download.state).drops;
             let conn = bridge.getattr("_conn")?;
-            match Self::send(bridge, &conn, method, args()) {
+            match link_send(bridge, &conn, method, args()) {
                 Ok(true) => {}
                 Ok(false) => return Ok(None),
                 Err(err) => {
@@ -710,14 +666,6 @@ impl MissionEngine {
 
 pub const MAV_MISSION_OPERATION_CANCELLED: i64 = 15;
 
-fn obj<'py, T: IntoPyObject<'py>>(py: Python<'py>, v: T) -> PyObject
-where
-    T::Error: Into<PyErr>,
-{
-    use pyo3::IntoPyObjectExt;
-    v.into_py_any(py).expect("plain values convert")
-}
-
 #[pymethods]
 impl MissionEngine {
     /// *env* is the module that holds the tunables and the clock
@@ -929,7 +877,7 @@ impl MissionEngine {
             } else {
                 "mission_item_send"
             };
-            Self::send(bridge, &conn, method, args)?;
+            link_send(bridge, &conn, method, args)?;
             Ok(())
         })();
         if let Err(err) = sent {
@@ -1150,7 +1098,7 @@ impl MissionEngine {
         if conn.is_none() {
             return Ok(());
         }
-        if let Err(err) = Self::send(
+        if let Err(err) = link_send(
             bridge,
             &conn,
             "mission_ack_send",
@@ -1224,7 +1172,7 @@ impl MissionEngine {
             if mission_type != 0 {
                 args.push(obj(py, mission_type));
             }
-            match Self::send(bridge, &conn, "mission_count_send", args) {
+            match link_send(bridge, &conn, "mission_count_send", args) {
                 Ok(sent) => Ok(sent),
                 Err(err) => {
                     logger(py)?.call_method1("error", ("mission_count_send failed: %s", err.value(py)))?;

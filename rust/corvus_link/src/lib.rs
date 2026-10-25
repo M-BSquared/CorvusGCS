@@ -219,5 +219,7 @@ fn corvus_link(m: &Bound<'_, PyModule>) -> PyResult<()> {
     build_mavutil(py, m)?;
     params::register(py, m)?;
     protocol::missions::register(py, m)?;
+    protocol::ftp::register(py, m)?;
+    protocol::logs::register(py, m)?;
     Ok(())
 }

@@ -45,6 +45,12 @@ pymavlink does.
 
 | Missions: the upload and download handshakes for missions and geofences, the item requests served during an upload, MISSION_CURRENT and MISSION_ITEM_REACHED as a place in the plan, the record of what is on the vehicle, the vehicle's verdict on a new mission, the fly-to payload checks and item specs | `src/protocol/missions.rs` (`corvus_link.missions`) | `corvus/mavlink_missions.py` keeps the bridge's methods and attribute names and the tunables the engine reads; fly to points, mission start (mode and arming order) and reposition stay here until the flight commands move |
 
+| MAVLink FTP, the read side: open, burst read with the gaps asked for again, session reset, CRC32, terminate, one transfer at a time with its cancel | `src/protocol/ftp.rs` (`corvus_link.ftp`) | `corvus/mavlink_ftp.py` keeps the methods, the transfer slot `_ftp_lock`, `FtpError` and the tunables |
+| On-board logs, the request side: list, data, erase (refused while armed), end | `src/protocol/logs.rs` (`corvus_link.logs`) | `corvus/mavlink_logs.py` keeps the methods and the reply sink |
+
+`src/protocol/host.rs` holds what every engine asks of the bridge: logger,
+command error, console, events, send lock, and Python's number conversions.
+
 The parameter engine reads the clock as `time.monotonic` and `time.sleep` at call
 time and reaches the link only through the bridge, so a test that replaces
 either drives the Rust code exactly as it drove the Python. The mission
@@ -106,4 +112,7 @@ pymavlink stays in the `test` dependency group as the reference:
   protocol: uploads (accepted, refused, rejected after the ACK, unanswered),
   downloads with lost and dropped items, MISSION_CURRENT streams, fences,
   clears and the fly-to checks, on PX4 and ArduPilot.
+- `tests/test_ftp_logs_parity.py` does it for FTP (plain, lossy, unsized,
+  busy, empty, missing, silent, aborted and cancelled reads, checksums,
+  replies addressed elsewhere) and for the log requests.
 - The rest of the suite drives the bridge with corvus_link's messages.

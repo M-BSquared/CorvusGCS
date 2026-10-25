@@ -18,9 +18,10 @@ use std::time::Duration;
 use indexmap::IndexMap;
 use pyo3::exceptions::{PyKeyError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::{PyBool, PyBytes, PyDict, PyFloat, PyInt, PyList, PySet, PyString, PyTuple};
+use pyo3::types::{PyBool, PyBytes, PyDict, PyFloat, PyInt, PyList, PySet, PyString};
 
 use crate::lock;
+use crate::protocol::host::{armed, event_set, link_send, logger, obj, set_error, truthy};
 
 pub const PARAM_DOWNLOAD_INACTIVITY_S: f64 = 1.0;
 pub const PARAM_DOWNLOAD_MAX_ROUNDS: i64 = 3;
@@ -398,54 +399,12 @@ fn sleep(py: Python<'_>, seconds: f64) -> PyResult<()> {
     Ok(())
 }
 
-fn logger(py: Python<'_>) -> PyResult<Bound<'_, PyAny>> {
-    py.import("logging")?.call_method1("getLogger", ("corvus.mavlink",))
-}
-
-fn truthy(obj: &Bound<'_, PyAny>, method: &str) -> PyResult<bool> {
-    obj.call_method0(method)?.is_truthy()
-}
-
-fn event_set(bridge: &Bound<'_, PyAny>, name: &str) -> PyResult<bool> {
-    bridge.getattr(name)?.call_method0("is_set")?.is_truthy()
-}
-
-fn set_error(bridge: &Bound<'_, PyAny>, text: &str) -> PyResult<()> {
-    bridge.call_method1("_set_command_error", (text,))?;
-    Ok(())
-}
-
-fn armed(bridge: &Bound<'_, PyAny>) -> PyResult<bool> {
-    bridge
-        .getattr("_store")?
-        .call_method0("get_snapshot")?
-        .call_method1("get", ("armed",))?
-        .is_truthy()
-}
-
-/// `bridge._link_send(conn, method, *args)`: True when sent, False when the
-/// link it was meant for is gone; anything else raises.
-fn send(bridge: &Bound<'_, PyAny>, conn: &Bound<'_, PyAny>, method: &str, args: Vec<PyObject>) -> PyResult<bool> {
-    let py = bridge.py();
-    let mut all: Vec<PyObject> = vec![conn.clone().unbind(), PyString::new(py, method).into_any().unbind()];
-    all.extend(args);
-    bridge.call_method1("_link_send", PyTuple::new(py, all)?)?.is_truthy()
-}
-
 fn status_dict<'py>(py: Python<'py>, pairs: &[(&str, PyObject)]) -> PyResult<Bound<'py, PyDict>> {
     let d = PyDict::new(py);
     for (k, v) in pairs {
         d.set_item(*k, v)?;
     }
     Ok(d)
-}
-
-fn obj<'py, T: IntoPyObject<'py>>(py: Python<'py>, v: T) -> PyObject
-where
-    T::Error: Into<PyErr>,
-{
-    use pyo3::IntoPyObjectExt;
-    v.into_py_any(py).expect("plain values convert")
 }
 
 impl ParamEngine {
@@ -995,7 +954,7 @@ impl ParamEngine {
             st.retransmit_round = 0;
         }
         let conn = bridge.getattr("_conn")?;
-        let sent = match send(bridge, &conn, "param_request_list_send", vec![]) {
+        let sent = match link_send(bridge, &conn, "param_request_list_send", vec![]) {
             Ok(true) => Ok(()),
             Ok(false) => Err("link closed".to_string()),
             Err(err) => Err(err.value(py).str()?.to_string()),
@@ -1025,7 +984,7 @@ impl ParamEngine {
             return Ok(false);
         };
         let conn = bridge.getattr("_conn")?;
-        match send(
+        match link_send(
             bridge,
             &conn,
             "param_request_read_send",
@@ -1095,7 +1054,7 @@ impl ParamEngine {
                 if event_set(bridge, "_stop_event")? {
                     return Ok(());
                 }
-                match send(
+                match link_send(
                     bridge,
                     &conn,
                     "param_request_read_send",
@@ -1353,7 +1312,7 @@ impl ParamEngine {
                     obj(py, wire_value),
                     obj(py, ptype),
                 ];
-                match send(bridge, &conn, "param_set_send", args) {
+                match link_send(bridge, &conn, "param_set_send", args) {
                     Ok(true) => {}
                     Ok(false) => {
                         set_error(bridge, "not connected")?;
