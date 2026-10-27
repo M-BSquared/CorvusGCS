@@ -105,7 +105,7 @@ impl MapRail {
                 painter.hline(
                     egui::Rangef::new(x + 4.0, x + BTN - 4.0),
                     y + 2.0 + 0.5,
-                    Stroke::new(1.0, style::BORDER_SOFT),
+                    Stroke::new(1.0, style::border_soft()),
                 );
                 y += 5.0 + 6.0;
                 continue;
@@ -128,11 +128,11 @@ impl MapRail {
                 .on_hover_text(title);
             let active = (item == Item::Center && map.follow) || (item == Item::Layers && self.layers_open);
             let (fill, color) = if active {
-                (style::ACCENT_DARK, style::TEXT_1)
+                (style::accent_dark(), style::text_1())
             } else if resp.hovered() && works {
-                (style::SURFACE_HOVER, style::TEXT_1)
+                (style::surface_hover(), style::text_1())
             } else {
-                (Color32::TRANSPARENT, style::TEXT_2)
+                (Color32::TRANSPARENT, style::text_2())
             };
             let alpha = if works { 1.0 } else { 0.4 };
             painter.rect_filled(r, style::RADIUS_BTN, fill);
@@ -172,7 +172,7 @@ impl MapRail {
                 ui,
                 icon,
                 Rect::from_center_size(r.center(), Vec2::splat(17.0)),
-                style::TEXT_2.gamma_multiply(0.4),
+                style::text_2().gamma_multiply(0.4),
             );
         }
 
@@ -213,8 +213,8 @@ impl MapRail {
                 ui.allocate_rect(menu, egui::Sense::hover());
                 let mut y = menu.top() + 5.0;
                 for prov in &providers {
-                    let g = style::galley(ui, &prov.to_uppercase(), 10.0, Weight::W600, style::TEXT_3, 0.8);
-                    painter.galley(Pos2::new(menu.left() + 5.0 + 6.0, y + 4.0), g, style::TEXT_3);
+                    let g = style::galley(ui, &prov.to_uppercase(), 10.0, Weight::W600, style::text_3(), 0.8);
+                    painter.galley(Pos2::new(menu.left() + 5.0 + 6.0, y + 4.0), g, style::text_3());
                     y += head_h;
                     for (id, label, p) in layers.iter().filter(|(_, _, p)| p == prov) {
                         let _ = p;
@@ -222,14 +222,14 @@ impl MapRail {
                         let resp = ui.interact(r, ui.scope_id().with(("layer", id.as_str())), egui::Sense::click());
                         let active = *id == map.source;
                         if active {
-                            painter.rect_filled(r, style::RADIUS_BTN, style::ACCENT_DARK);
+                            painter.rect_filled(r, style::RADIUS_BTN, style::accent_dark());
                         } else if resp.hovered() {
                             painter.rect_filled(r, style::RADIUS_BTN, style::tint(0.06));
                         }
                         let color = if active || resp.hovered() {
-                            style::TEXT_1
+                            style::text_1()
                         } else {
-                            style::TEXT_2
+                            style::text_2()
                         };
                         let g = style::galley(ui, label, 12.0, Weight::W400, color, 0.0);
                         painter.galley(Pos2::new(r.left() + 8.0, r.center().y - g.size().y / 2.0), g, color);

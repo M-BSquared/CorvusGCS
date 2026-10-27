@@ -90,12 +90,12 @@ impl Hud {
             self.flight_end = None;
             let d = || "\u{2014}".to_string();
             return [
-                ("ALT AMSL", d(), style::TEXT_1),
-                ("FLIGHT TIME", d(), style::TEXT_1),
-                ("GS", d(), style::NAV),
-                ("V/S", d(), style::TEXT_1),
-                ("HDG", d(), style::NAV),
-                ("SAT", d(), style::TEXT_1),
+                ("ALT AMSL", d(), style::text_1()),
+                ("FLIGHT TIME", d(), style::text_1()),
+                ("GS", d(), style::nav()),
+                ("V/S", d(), style::text_1()),
+                ("HDG", d(), style::nav()),
+                ("SAT", d(), style::text_1()),
             ];
         }
         let sats = match s.get("gps_satellites") {
@@ -108,21 +108,29 @@ impl Hud {
             (
                 "ALT AMSL",
                 units.format_length(num("altitude_amsl"), 0, false, false),
-                style::TEXT_1,
+                style::text_1(),
             ),
-            ("FLIGHT TIME", format_clock(self.flight_seconds(s, now)), style::TEXT_1),
+            (
+                "FLIGHT TIME",
+                format_clock(self.flight_seconds(s, now)),
+                style::text_1(),
+            ),
             (
                 "GS",
                 units.format_speed(num("groundspeed"), 1, false, false),
-                style::NAV,
+                style::nav(),
             ),
-            ("V/S", units.format_speed(num("vspeed"), 1, true, false), style::TEXT_1),
+            (
+                "V/S",
+                units.format_speed(num("vspeed"), 1, true, false),
+                style::text_1(),
+            ),
             (
                 "HDG",
                 format!("{:03}\u{00B0}", js_round(num("heading")) as i64),
-                style::NAV,
+                style::nav(),
             ),
-            ("SAT", sats, style::TEXT_1),
+            ("SAT", sats, style::text_1()),
         ]
     }
 
@@ -206,8 +214,8 @@ impl Hud {
         painter.rect(
             grid,
             style::RADIUS_BTN,
-            style::BORDER_SOFT,
-            Stroke::new(1.0, style::BORDER_SOFT),
+            style::border_soft(),
+            Stroke::new(1.0, style::border_soft()),
             egui::StrokeKind::Inside,
         );
         let inner = grid.shrink(1.0);
@@ -228,10 +236,10 @@ impl Hud {
                 _ => CornerRadius::ZERO,
             };
             painter.rect_filled(cell, r, style::glass(0.4));
-            let l = style::galley(ui, label, 8.5, Weight::W600, style::TEXT_3, 0.7);
+            let l = style::galley(ui, label, 8.5, Weight::W600, style::text_3(), 0.7);
             let v = style::galley(ui, &value, 15.0, Weight::W600, color, 0.0);
             let lh = l.size().y;
-            painter.galley(Pos2::new(cell.left() + 9.0, cell.top() + 7.0), l, style::TEXT_3);
+            painter.galley(Pos2::new(cell.left() + 9.0, cell.top() + 7.0), l, style::text_3());
             let vy = cell.top() + 7.0 + lh + 2.0 + (15.0 * 1.1 - v.size().y) / 2.0;
             painter.galley(Pos2::new(cell.left() + 9.0, vy), v, color);
         }
@@ -239,33 +247,35 @@ impl Hud {
 }
 
 fn readout_height(ui: &egui::Ui) -> f32 {
-    let l = style::galley(ui, "HEADING", 8.5, Weight::W600, style::TEXT_3, 0.9)
+    let l = style::galley(ui, "HEADING", 8.5, Weight::W600, style::text_3(), 0.9)
         .size()
         .y;
-    let v = style::galley(ui, "000", 13.0, Weight::W600, style::TEXT_1, 0.0)
+    let v = style::galley(ui, "000", 13.0, Weight::W600, style::text_1(), 0.0)
         .size()
         .y;
     l + 1.0 + v
 }
 
 fn cell_height(ui: &egui::Ui) -> f32 {
-    let l = style::galley(ui, "ALT", 8.5, Weight::W600, style::TEXT_3, 0.7).size().y;
+    let l = style::galley(ui, "ALT", 8.5, Weight::W600, style::text_3(), 0.7)
+        .size()
+        .y;
     7.0 + l + 2.0 + 15.0 * 1.1 + 7.0
 }
 
 fn readout(ui: &egui::Ui, painter: &egui::Painter, dial: Rect, label: &str, value: &str) {
-    let l = style::galley(ui, label, 8.5, Weight::W600, style::TEXT_3, 0.9);
-    let v = style::galley(ui, value, 13.0, Weight::W600, style::TEXT_1, 0.0);
+    let l = style::galley(ui, label, 8.5, Weight::W600, style::text_3(), 0.9);
+    let v = style::galley(ui, value, 13.0, Weight::W600, style::text_1(), 0.0);
     let y = dial.bottom() + 5.0;
     painter.galley(
         Pos2::new(dial.center().x - l.size().x / 2.0, y),
         l.clone(),
-        style::TEXT_3,
+        style::text_3(),
     );
     painter.galley(
         Pos2::new(dial.center().x - v.size().x / 2.0, y + l.size().y + 1.0),
         v,
-        style::TEXT_1,
+        style::text_1(),
     );
 }
 
@@ -323,7 +333,7 @@ fn compass(ui: &egui::Ui, painter: &egui::Painter, rect: Rect, heading: f32) {
     painter.circle(
         vb.c,
         vb.w(74.0),
-        style::rgba(0xFFFFFF, 0.55),
+        style::input(0.55),
         Stroke::new(vb.w(1.0), style::tint(0.06)),
     );
     for deg in (0..360).step_by(5) {
@@ -336,9 +346,9 @@ fn compass(ui: &egui::Ui, painter: &egui::Painter, rect: Rect, heading: f32) {
             82.0
         };
         let (color, width) = if cardinal {
-            (style::TEXT_2, 2.2)
+            (style::text_2(), 2.2)
         } else if major {
-            (style::TEXT_3, 1.6)
+            (style::text_3(), 1.6)
         } else if medium {
             (style::tint(0.34), 1.1)
         } else {
@@ -350,7 +360,7 @@ fn compass(ui: &egui::Ui, painter: &egui::Painter, rect: Rect, heading: f32) {
     }
     for (d, t) in [(0.0, "N"), (90.0, "E"), (180.0, "S"), (270.0, "W")] {
         let (x, y) = polar(d, 60.0);
-        let color = if t == "N" { style::NAV } else { style::TEXT_2 };
+        let color = if t == "N" { style::nav() } else { style::text_2() };
         text_centered(ui, painter, vb.p(x, y), t, vb.w(13.0), Weight::W700, color, vb.w(0.3));
     }
     for d in [30, 60, 120, 150, 210, 240, 300, 330] {
@@ -362,7 +372,7 @@ fn compass(ui: &egui::Ui, painter: &egui::Painter, rect: Rect, heading: f32) {
             &format!("{:02}", d / 10),
             vb.w(7.5),
             Weight::W600,
-            style::TEXT_3,
+            style::text_3(),
             0.0,
         );
     }
@@ -371,19 +381,19 @@ fn compass(ui: &egui::Ui, painter: &egui::Painter, rect: Rect, heading: f32) {
         |pts: &[(f32, f32)]| -> Vec<Pos2> { pts.iter().map(|&(x, y)| vb.c + rot * Vec2::new(x, y) * vb.s).collect() };
     painter.add(Shape::convex_polygon(
         needle(&[(0.0, 43.0), (5.0, 9.0), (0.0, 3.0), (-5.0, 9.0)]),
-        style::rgba(style::VEHICLE_RGB, 0.28),
+        style::rgba(style::vehicle_rgb(), 0.28),
         Stroke::NONE,
     ));
     painter.add(Shape::convex_polygon(
         needle(&[(0.0, -50.0), (7.0, -9.0), (0.0, -3.0), (-7.0, -9.0)]),
-        style::VEHICLE,
+        style::vehicle(),
         Stroke::NONE,
     ));
     painter.circle(
         vb.c,
         vb.w(4.0),
-        style::SURFACE_1,
-        Stroke::new(vb.w(1.6), style::VEHICLE),
+        style::surface_1(),
+        Stroke::new(vb.w(1.6), style::vehicle()),
     );
 }
 
@@ -458,10 +468,10 @@ fn attitude(ui: &egui::Ui, painter: &egui::Painter, rect: Rect, pitch: f32, roll
     let sky = circle_cut(vb.c, ball, o, dir, -1.0);
     let ground = circle_cut(vb.c, ball, o, dir, 1.0);
     if sky.len() > 2 {
-        painter.add(Shape::convex_polygon(sky, style::ADI_SKY, Stroke::NONE));
+        painter.add(Shape::convex_polygon(sky, style::adi_sky(), Stroke::NONE));
     }
     if ground.len() > 2 {
-        painter.add(Shape::convex_polygon(ground, style::ADI_GROUND, Stroke::NONE));
+        painter.add(Shape::convex_polygon(ground, style::adi_ground(), Stroke::NONE));
     }
     if let Some((a, b)) = clip_to_circle(vb.c, ball, tf(-900.0, 0.0), tf(900.0, 0.0)) {
         painter.line_segment([a, b], Stroke::new(vb.w(1.8), Color32::WHITE));
@@ -489,9 +499,9 @@ fn attitude(ui: &egui::Ui, painter: &egui::Painter, rect: Rect, pitch: f32, roll
         let (x1, y1) = polar(tick, if zero { 75.0 } else { 79.0 });
         let (x2, y2) = polar(tick, 86.0);
         let (color, width) = if zero {
-            (style::TEXT_2, 2.2)
+            (style::text_2(), 2.2)
         } else {
-            (style::TEXT_3, 1.6)
+            (style::text_3(), 1.6)
         };
         line_round(painter, vb.p(x1, y1), vb.p(x2, y2), vb.w(width), color);
     }
@@ -499,7 +509,7 @@ fn attitude(ui: &egui::Ui, painter: &egui::Painter, rect: Rect, pitch: f32, roll
         .iter()
         .map(|&(x, y)| vb.c + rot * Vec2::new(x, y) * vb.s)
         .collect();
-    painter.add(Shape::convex_polygon(pointer, style::ADI_MARK, Stroke::NONE));
+    painter.add(Shape::convex_polygon(pointer, style::adi_mark(), Stroke::NONE));
     for (a, b) in [((-32.0, 0.0), (-13.0, 0.0)), ((32.0, 0.0), (13.0, 0.0))] {
         line_round(
             painter,
@@ -510,9 +520,9 @@ fn attitude(ui: &egui::Ui, painter: &egui::Painter, rect: Rect, pitch: f32, roll
         );
     }
     for (a, b) in [((-32.0, 0.0), (-13.0, 0.0)), ((32.0, 0.0), (13.0, 0.0))] {
-        line_round(painter, vb.p(a.0, a.1), vb.p(b.0, b.1), vb.w(2.6), style::ADI_MARK);
+        line_round(painter, vb.p(a.0, a.1), vb.p(b.0, b.1), vb.w(2.6), style::adi_mark());
     }
-    painter.circle_filled(vb.c, vb.w(2.2), style::ADI_MARK);
+    painter.circle_filled(vb.c, vb.w(2.2), style::adi_mark());
 }
 
 #[cfg(test)]

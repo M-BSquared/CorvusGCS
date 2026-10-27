@@ -21,7 +21,10 @@ use crate::telemetry::Telemetry;
 use crate::units::Units;
 use crate::{fonts, style, topbar};
 
-static LOGO: &[u8] = include_bytes!("../../../assets/CorvusGCS_logo_inverted.png");
+/// The mark ships in two cuts (themes.css `--logo-mark`): black for the
+/// light themes, white for the dark ones.
+static LOGO_FOR_LIGHT: &[u8] = include_bytes!("../../../assets/CorvusGCS_logo_inverted.png");
+static LOGO_FOR_DARK: &[u8] = include_bytes!("../../../assets/CorvusGCS_logo.png");
 
 struct App {
     server: Server,
@@ -76,7 +79,7 @@ impl App {
                 }
             });
         egui::CentralPanel::default()
-            .frame(egui::Frame::NONE.fill(style::BG))
+            .frame(egui::Frame::NONE.fill(style::bg()))
             .show(ui, |ui| {
                 let body = ui.max_rect();
                 let rail = egui::Rect::from_min_size(body.min, egui::vec2(nav::WIDTH, body.height()));
@@ -143,10 +146,20 @@ fn title(server: &Server) -> String {
     }
 }
 
+/// `GET /api/config` answers `{"config": {...}}`; the settings are inside.
+pub fn unwrap_config(answer: &Value) -> Value {
+    answer.get("config").cloned().unwrap_or_else(|| answer.clone())
+}
+
 /// Opens the window on `server` and runs until it is closed.
 pub fn run(server: Server, context: &'static OnceLock<egui::Context>) -> ExitCode {
-    let config = http::get_json(&server, "/api/config").unwrap_or(Value::Null);
+    let config = http::get_json(&server, "/api/config")
+        .map(|c| unwrap_config(&c))
+        .unwrap_or(Value::Null);
     let units = Units::from_config(&config);
+    // Before anything is built, so every colour of the first frame is the
+    // theme's (js/theme.js fromConfig).
+    style::set_theme(style::theme_from_config(&config));
     let ui_flag = |k: &str, default: bool| {
         config
             .get("ui")
@@ -191,7 +204,12 @@ pub fn run(server: Server, context: &'static OnceLock<egui::Context>) -> ExitCod
             rail.measure = measure;
             let logo = egui::ImageSource::Bytes {
                 uri: "bytes://corvus-logo.png".into(),
-                bytes: LOGO.into(),
+                bytes: if style::is_dark() {
+                    LOGO_FOR_DARK
+                } else {
+                    LOGO_FOR_LIGHT
+                }
+                .into(),
             };
             Ok(Box::new(App {
                 server: server.clone(),
@@ -215,5 +233,20 @@ pub fn run(server: Server, context: &'static OnceLock<egui::Context>) -> ExitCod
             eprintln!("corvus-gcs: {e}");
             ExitCode::FAILURE
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn the_settings_are_inside_the_answer() {
+        let answer = json!({"config": {"ui": {"scale": 1.25}, "theme": {"name": "pink"}}});
+        let cfg = unwrap_config(&answer);
+        assert_eq!(cfg["ui"]["scale"], 1.25);
+        assert_eq!(style::theme_from_config(&cfg), "pink");
+        assert_eq!(unwrap_config(&json!({"ui": {}})), json!({"ui": {}}));
     }
 }

@@ -32,7 +32,7 @@ SIGKILL if it is still there after 8 s. If the window does not close within
 | `src/track.rs` | the flown track, recorded and smoothed as `src/js/map.js` does |
 | `src/hud.rs` | compass, attitude indicator and readouts (`src/js/instruments.js`) |
 | `src/flight.rs` | the flight bar, takeoff card and mode picker (`src/js/app.js`) |
-| `src/style.rs` | the design tokens of the default light theme and the type |
+| `src/style.rs` | the design tokens of the six themes (light, light-orange, green, blue, pink, orange) and the type |
 | `src/notify.rs` | the notification board, its read and dismiss rules, the command dedupe and the toasts (`src/js/topbar.js`) |
 | `src/notify_ui.rs` | the NOTIFICATIONS pill, the board and the toast stack |
 | `src/frost.rs` | the frosted glass under every `.glass` surface |
@@ -50,6 +50,12 @@ callback on the OpenGL renderer copies what is already drawn under the
 panel, blurs and saturates it inside the panel's rounded corners
 (`src/frost.rs`), and the fill paints over it. The copy is taken before the
 panel's shadow, because a browser draws a box shadow outside the box only.
+
+The theme is the config's `theme.name`, as in the web interface, and is read
+once at start; the palettes are `themes.css` value for value (the dark
+themes share one base, blue and pink and orange change the accent family,
+blue also the navigation colour). The frost saturates 190 % and brightens
+10 % on the dark themes, and the logo is the white cut there.
 
 The window title comes from `GET /api/version`; the crate carries no
 version of its own.

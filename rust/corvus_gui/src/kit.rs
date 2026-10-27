@@ -97,15 +97,15 @@ impl<'a> Button<'a> {
         let hover = resp.hovered() && self.enabled;
         let (fill, text, stroke) = match self.variant {
             Variant::Primary => (
-                if hover { style::ACCENT_HOVER } else { style::ACCENT },
-                style::TEXT_INVERTED,
+                if hover { style::accent_hover() } else { style::accent() },
+                style::text_inverted(),
                 Stroke::NONE,
             ),
-            Variant::Secondary => (style::glass(0.6), style::TEXT_1, Stroke::new(1.0, style::tint(0.09))),
+            Variant::Secondary => (style::glass(0.6), style::text_1(), Stroke::new(1.0, style::tint(0.09))),
             Variant::DangerOutline => (
-                style::rgba(0xD62B26, if hover { 0.12 } else { 0.07 }),
-                style::CRITICAL,
-                Stroke::new(1.0, style::rgba(0xD62B26, 0.30)),
+                style::critical().gamma_multiply(if hover { 0.12 } else { 0.07 }),
+                style::critical(),
+                Stroke::new(1.0, style::critical().gamma_multiply(0.30)),
             ),
         };
         let alpha = if self.enabled { 1.0 } else { 0.45 };
@@ -148,11 +148,11 @@ pub fn icon_btn(
         .interact(rect, ui.scope_id().with(id), egui::Sense::click())
         .on_hover_text(title);
     let (fill, color) = if active {
-        (style::ACCENT_DARK, style::ACCENT_BRIGHT)
+        (style::accent_dark(), style::accent_bright())
     } else if resp.hovered() {
-        (style::SURFACE_HOVER, style::TEXT_1)
+        (style::surface_hover(), style::text_1())
     } else {
-        (Color32::TRANSPARENT, style::TEXT_3)
+        (Color32::TRANSPARENT, style::text_3())
     };
     ui.painter().rect_filled(rect, style::RADIUS_BTN, fill);
     let s = if rect.width() < 24.0 { 13.0 } else { 15.0 };
@@ -177,15 +177,15 @@ pub fn text_field(
         painter.rect_stroke(
             rect.expand(2.0),
             style::RADIUS_BTN + 2,
-            Stroke::new(2.0, style::rgba(0x1B1F26, 0.10)),
+            Stroke::new(2.0, style::accent_dim()),
             egui::StrokeKind::Inside,
         );
     }
     painter.rect(
         rect,
         style::RADIUS_BTN,
-        style::glass(0.6),
-        Stroke::new(1.0, if focused { style::ACCENT } else { style::BORDER }),
+        style::input(0.6),
+        Stroke::new(1.0, if focused { style::accent() } else { style::border() }),
         egui::StrokeKind::Inside,
     );
     let font = if mono {
@@ -198,8 +198,8 @@ pub fn text_field(
         .id(id)
         .frame(egui::Frame::NONE)
         .font(font)
-        .text_color(style::TEXT_1)
-        .hint_text(egui::RichText::new(placeholder).color(style::TEXT_3))
+        .text_color(style::text_1())
+        .hint_text(egui::RichText::new(placeholder).color(style::text_3()))
         .align(egui::Align2::LEFT_CENTER)
         .desired_width(rect.width() - 22.0)
         .min_size(Vec2::new(0.0, rect.height()));
@@ -250,21 +250,21 @@ pub fn select(
         painter.rect_stroke(
             rect.expand(2.0),
             style::RADIUS_BTN + 2,
-            Stroke::new(2.0, style::rgba(0x1B1F26, 0.10)),
+            Stroke::new(2.0, style::accent_dim()),
             egui::StrokeKind::Inside,
         );
     }
     painter.rect(
         rect,
         style::RADIUS_BTN,
-        style::glass(0.6),
-        Stroke::new(1.0, if open { style::ACCENT } else { style::BORDER }),
+        style::input(0.6),
+        Stroke::new(1.0, if open { style::accent() } else { style::border() }),
         egui::StrokeKind::Inside,
     );
     let current = choices.iter().find(|c| c.value == selected);
     let (text, color) = match current {
-        Some(c) => (c.label.as_str(), style::TEXT_1),
-        None => (placeholder, style::TEXT_3),
+        Some(c) => (c.label.as_str(), style::text_1()),
+        None => (placeholder, style::text_3()),
     };
     let g = if mono {
         style::galley_mono(ui, text, 12.0, color)
@@ -281,7 +281,7 @@ pub fn select(
         ui,
         "chevron-down",
         Rect::from_center_size(Pos2::new(rect.right() - 14.0, rect.center().y), Vec2::splat(12.0)),
-        style::TEXT_3,
+        style::text_3(),
     );
     if resp.clicked() {
         open = !open;
@@ -313,16 +313,16 @@ pub fn select(
                     let row = ui.interact(r, id.with(("row", i)), sense);
                     let active = c.value == selected;
                     if active {
-                        painter.rect_filled(r, style::RADIUS_BTN, style::ACCENT_DARK);
+                        painter.rect_filled(r, style::RADIUS_BTN, style::accent_dark());
                     } else if row.hovered() && c.enabled {
                         painter.rect_filled(r, style::RADIUS_BTN, style::tint(0.06));
                     }
                     let color = if !c.enabled {
-                        style::TEXT_3
+                        style::text_3()
                     } else if active || row.hovered() {
-                        style::TEXT_1
+                        style::text_1()
                     } else {
-                        style::TEXT_2
+                        style::text_2()
                     };
                     let g = if mono {
                         style::galley_mono(ui, &c.label, 12.0, color)
@@ -362,13 +362,13 @@ pub fn checkbox(
     warn: bool,
     id: impl std::hash::Hash + std::fmt::Debug,
 ) -> bool {
-    let g = style::galley(ui, label, 12.0, Weight::W400, style::TEXT_1, 0.0);
+    let g = style::galley(ui, label, 12.0, Weight::W400, style::text_1(), 0.0);
     let h = g.size().y.max(14.0);
     let rect = Rect::from_min_size(at, Vec2::new(width, h));
     let resp = ui.interact(rect, ui.scope_id().with(id), egui::Sense::click());
     let painter = ui.painter();
     let bx = Rect::from_min_size(Pos2::new(at.x, at.y + (h - 14.0) / 2.0), Vec2::splat(14.0));
-    let accent = if warn { style::WARNING } else { style::ACCENT };
+    let accent = if warn { style::warning() } else { style::accent() };
     if *on {
         painter.rect_filled(bx, 3, accent);
         let a = bx.left_top() + Vec2::new(3.2, 7.2);
@@ -379,15 +379,15 @@ pub fn checkbox(
         painter.rect(
             bx,
             3,
-            style::SURFACE_1,
-            Stroke::new(1.0, style::BORDER_STRONG),
+            style::surface_1(),
+            Stroke::new(1.0, style::border_strong()),
             egui::StrokeKind::Inside,
         );
     }
     painter.galley(
         Pos2::new(bx.right() + 8.0, at.y + (h - g.size().y) / 2.0),
         g,
-        style::TEXT_1,
+        style::text_1(),
     );
     if resp.clicked() {
         *on = !*on;

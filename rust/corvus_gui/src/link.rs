@@ -421,32 +421,32 @@ impl LinkTab {
         painter.rect(
             card,
             style::RADIUS,
-            style::SURFACE_2,
-            Stroke::new(1.0, style::BORDER),
+            style::surface_2(),
+            Stroke::new(1.0, style::border()),
             egui::StrokeKind::Inside,
         );
         let inner = card.shrink(13.0);
         let cy = inner.top() + row_h / 2.0;
         let dot_c = match dot {
-            "healthy" => style::HEALTHY,
-            "warning" => style::WARNING,
-            _ => style::TEXT_DISABLED,
+            "healthy" => style::healthy(),
+            "warning" => style::warning(),
+            _ => style::text_disabled(),
         };
         kit::dot(&painter, Pos2::new(inner.left() + 3.5, cy), dot_c, dot != "off");
-        let g = style::galley(ui, label, 12.0, Weight::W700, style::TEXT_1, 0.4);
+        let g = style::galley(ui, label, 12.0, Weight::W700, style::text_1(), 0.4);
         painter.galley(
             Pos2::new(inner.left() + 7.0 + 6.0, cy - g.size().y / 2.0),
             g.clone(),
-            style::TEXT_1,
+            style::text_1(),
         );
         let mut px = inner.left() + 13.0 + g.size().x + 6.0;
         if status == "connected" {
             let (q, level) = quality_info(state.get("link_quality").and_then(Value::as_str).unwrap_or(""));
             if !q.is_empty() {
                 let color = match level {
-                    "healthy" => style::HEALTHY,
-                    "warning" => style::WARNING,
-                    _ => style::CRITICAL,
+                    "healthy" => style::healthy(),
+                    "warning" => style::warning(),
+                    _ => style::critical(),
                 };
                 let pg = style::galley(ui, q, 9.5, Weight::W700, color, 0.6);
                 let pill = Rect::from_min_size(
@@ -465,7 +465,7 @@ impl LinkTab {
             let b = Button::new("Disconnect", Variant::DangerOutline)
                 .small()
                 .title("Close this link");
-            let bw = style::galley(ui, "Disconnect", 11.0, Weight::W600, style::CRITICAL, 0.1)
+            let bw = style::galley(ui, "Disconnect", 11.0, Weight::W600, style::critical(), 0.1)
                 .size()
                 .x
                 + 22.0;
@@ -487,7 +487,11 @@ impl LinkTab {
                 ui,
                 "refresh-cw",
                 Rect::from_center_size(r.center(), Vec2::splat(13.0)),
-                if resp.hovered() { style::TEXT_1 } else { style::TEXT_3 },
+                if resp.hovered() {
+                    style::text_1()
+                } else {
+                    style::text_3()
+                },
             );
             if resp.clicked() {
                 let c = if conn.is_empty() {
@@ -506,24 +510,24 @@ impl LinkTab {
             ly += 8.0;
             let mut bx = inner.right();
             if let Some((text, title)) = &auto {
-                let bg = style::galley(ui, text, 9.5, Weight::W700, style::TEXT_3, 0.6);
+                let bg = style::galley(ui, text, 9.5, Weight::W700, style::text_3(), 0.6);
                 let pill = Rect::from_min_size(
                     Pos2::new(bx - bg.size().x - 12.0, ly + (why_h - bg.size().y - 6.0) / 2.0),
                     bg.size() + Vec2::new(12.0, 6.0),
                 );
-                dashed_pill(&painter, pill, style::BORDER_STRONG);
-                painter.galley(pill.min + Vec2::new(6.0, 3.0), bg, style::TEXT_3);
+                dashed_pill(&painter, pill, style::border_strong());
+                painter.galley(pill.min + Vec2::new(6.0, 3.0), bg, style::text_3());
                 ui.interact(pill, ui.scope_id().with("autobadge"), egui::Sense::hover())
                     .on_hover_text(*title);
                 bx = pill.left() - 8.0;
             }
             if !conn.is_empty() {
-                let cg = style::galley_mono(ui, &conn, 10.5, style::TEXT_2);
+                let cg = style::galley_mono(ui, &conn, 10.5, style::text_2());
                 let clip = Rect::from_min_max(Pos2::new(inner.left(), ly), Pos2::new(bx, ly + why_h));
                 ui.painter_at(clip).galley(
                     Pos2::new(inner.left(), ly + (why_h - cg.size().y) / 2.0),
                     cg,
-                    style::TEXT_2,
+                    style::text_2(),
                 );
                 ui.interact(clip, ui.scope_id().with("conn"), egui::Sense::hover())
                     .on_hover_text(conn.as_str());
@@ -532,10 +536,10 @@ impl LinkTab {
         }
         if err_h > 0.0 {
             ly += 8.0;
-            painter.hline(inner.x_range(), ly + 0.5, Stroke::new(1.0, style::BORDER));
-            let eg = style::galley(ui, &error, 11.0, Weight::W400, style::CRITICAL, 0.0);
+            painter.hline(inner.x_range(), ly + 0.5, Stroke::new(1.0, style::border()));
+            let eg = style::galley(ui, &error, 11.0, Weight::W400, style::critical(), 0.0);
             let clip = Rect::from_min_size(Pos2::new(inner.left(), ly + 9.0), Vec2::new(inner.width(), 15.4));
-            ui.painter_at(clip).galley(clip.min, eg, style::CRITICAL);
+            ui.painter_at(clip).galley(clip.min, eg, style::critical());
             ui.interact(clip, ui.scope_id().with("err"), egui::Sense::hover())
                 .on_hover_text(error.as_str());
         }
@@ -552,7 +556,7 @@ impl LinkTab {
         open: bool,
         id: &str,
     ) -> (f32, bool) {
-        let g = style::galley(ui, title, 12.0, Weight::W600, style::TEXT_1, 0.4);
+        let g = style::galley(ui, title, 12.0, Weight::W600, style::text_1(), 0.4);
         let h = g.size().y.max(15.0);
         let r = Rect::from_min_size(at, Vec2::new(w, h));
         let resp = ui.interact(r, ui.scope_id().with(id), egui::Sense::click());
@@ -560,12 +564,19 @@ impl LinkTab {
             ui,
             icon,
             Rect::from_min_size(Pos2::new(at.x, at.y + (h - 15.0) / 2.0), Vec2::splat(15.0)),
-            style::ACCENT,
+            style::accent(),
         );
-        ui.painter()
-            .galley(Pos2::new(at.x + 23.0, at.y + (h - g.size().y) / 2.0), g, style::TEXT_1);
+        ui.painter().galley(
+            Pos2::new(at.x + 23.0, at.y + (h - g.size().y) / 2.0),
+            g,
+            style::text_1(),
+        );
         let caret = if open { "chevron-down" } else { "chevron-right" };
-        let cc = if resp.hovered() { style::TEXT_1 } else { style::TEXT_3 };
+        let cc = if resp.hovered() {
+            style::text_1()
+        } else {
+            style::text_3()
+        };
         icons::paint(
             ui,
             caret,
@@ -625,12 +636,12 @@ impl LinkTab {
                 let resp = ui.interact(r, ui.scope_id().with(("kind", i)), egui::Sense::click());
                 let selected = self.net == is_net;
                 if selected {
-                    painter.rect_filled(r, style::RADIUS_BTN - 2, style::SURFACE_1);
+                    painter.rect_filled(r, style::RADIUS_BTN - 2, style::surface_1());
                 }
                 let color = if selected || resp.hovered() {
-                    style::TEXT_1
+                    style::text_1()
                 } else {
-                    style::TEXT_3
+                    style::text_3()
                 };
                 let g = style::galley(ui, label, 11.0, Weight::W600, color, 0.3);
                 let total = 13.0 + 6.0 + g.size().x;
@@ -639,7 +650,7 @@ impl LinkTab {
                     ui,
                     icon,
                     Rect::from_min_size(Pos2::new(sx, r.center().y - 6.5), Vec2::splat(13.0)),
-                    if selected { style::ACCENT } else { color },
+                    if selected { style::accent() } else { color },
                 );
                 painter.galley(Pos2::new(sx + 19.0, r.center().y - g.size().y / 2.0), g, color);
                 if resp.clicked() {
@@ -674,8 +685,8 @@ impl LinkTab {
                 }
                 cy += field_h;
                 if self.port_missing {
-                    let g = kit::wrapped(ui, &missing_port_hint(&self.port), 11.0, style::WARNING, iw);
-                    painter.galley(Pos2::new(inner_x, cy + 5.0), g.clone(), style::WARNING);
+                    let g = kit::wrapped(ui, &missing_port_hint(&self.port), 11.0, style::warning(), iw);
+                    painter.galley(Pos2::new(inner_x, cy + 5.0), g.clone(), style::warning());
                     cy += 5.0 + g.size().y;
                 }
                 cy += 10.0;
@@ -694,8 +705,8 @@ impl LinkTab {
                     self.connect(ctx);
                 }
                 cy += field_h + 9.0;
-                let lg = style::galley(ui, "COMMON ENDPOINTS", 10.0, Weight::W600, style::TEXT_3, 0.8);
-                painter.galley(Pos2::new(inner_x, cy), lg.clone(), style::TEXT_3);
+                let lg = style::galley(ui, "COMMON ENDPOINTS", 10.0, Weight::W600, style::text_3(), 0.8);
+                painter.galley(Pos2::new(inner_x, cy), lg.clone(), style::text_3());
                 cy += lg.size().y + 5.0;
                 for (i, (name, conn, note)) in PRESETS.iter().enumerate() {
                     let row =
@@ -704,7 +715,7 @@ impl LinkTab {
                         .interact(row, ui.scope_id().with(("preset", i)), egui::Sense::click())
                         .on_hover_text(*conn);
                     let (fill, stroke) = if resp.hovered() {
-                        (style::glass(0.95), style::rgba(0x1B1F26, 0.45))
+                        (style::glass(0.95), style::accent_a(0.45))
                     } else {
                         (style::glass(0.82), style::tint(0.09))
                     };
@@ -720,15 +731,19 @@ impl LinkTab {
                         name,
                         11.0,
                         Weight::W600,
-                        if resp.hovered() { style::ACCENT } else { style::TEXT_1 },
+                        if resp.hovered() {
+                            style::accent()
+                        } else {
+                            style::text_1()
+                        },
                         0.1,
                     );
                     painter.galley(
                         Pos2::new(row.left() + 8.0, row.center().y - ng.size().y / 2.0),
                         ng,
-                        style::TEXT_1,
+                        style::text_1(),
                     );
-                    let cg = style::galley_mono(ui, conn, 10.0, style::TEXT_3);
+                    let cg = style::galley_mono(ui, conn, 10.0, style::text_3());
                     let info =
                         Rect::from_center_size(Pos2::new(row.right() - 8.0 - 8.0, row.center().y), Vec2::splat(16.0));
                     painter.galley(
@@ -737,7 +752,7 @@ impl LinkTab {
                             row.center().y - cg.size().y / 2.0 + 1.0,
                         ),
                         cg,
-                        style::TEXT_3,
+                        style::text_3(),
                     );
                     let ir = ui
                         .interact(info, ui.scope_id().with(("presetinfo", i)), egui::Sense::hover())
@@ -746,7 +761,7 @@ impl LinkTab {
                         ui,
                         "info",
                         info.shrink(1.5),
-                        if ir.hovered() { style::ACCENT } else { style::TEXT_3 },
+                        if ir.hovered() { style::accent() } else { style::text_3() },
                     );
                     if resp.clicked() {
                         self.custom = (*conn).to_string();
@@ -773,11 +788,11 @@ impl LinkTab {
             }
         }
         let card = Rect::from_min_max(Pos2::new(x, y), Pos2::new(x + w, cy + 14.0));
-        painter.set(start_shape, Shape::rect_filled(card, style::RADIUS, style::SURFACE_2));
+        painter.set(start_shape, Shape::rect_filled(card, style::RADIUS, style::surface_2()));
         painter.rect_stroke(
             card,
             style::RADIUS,
-            Stroke::new(1.0, style::BORDER),
+            Stroke::new(1.0, style::border()),
             egui::StrokeKind::Inside,
         );
         card.bottom()
@@ -827,8 +842,8 @@ impl LinkTab {
                 self.save_forwarding(ctx, enabled, allow);
             }
             cy += field_h + 5.0;
-            let hint = kit::wrapped(ui, &forwarding_hint(&s), 11.0, style::TEXT_3, iw);
-            painter.galley(Pos2::new(inner_x, cy), hint.clone(), style::TEXT_3);
+            let hint = kit::wrapped(ui, &forwarding_hint(&s), 11.0, style::text_3(), iw);
+            painter.galley(Pos2::new(inner_x, cy), hint.clone(), style::text_3());
             cy += hint.size().y + 10.0;
             if kit::checkbox(
                 ui,
@@ -844,14 +859,18 @@ impl LinkTab {
             cy += 15.0;
             if allow {
                 let warn = "Two stations will be able to arm and change the mode of this aircraft. Leave off to share telemetry only. Corvus transmits as MAVLink system 254 and QGroundControl as 255; if the other station is on 254 too, give it its own. PX4 counts sequence numbers per ID and reports loss that is not happening.";
-                let g = kit::wrapped(ui, warn, 11.0, style::WARNING, iw);
-                painter.galley(Pos2::new(inner_x, cy + 10.0), g.clone(), style::WARNING);
+                let g = kit::wrapped(ui, warn, 11.0, style::warning(), iw);
+                painter.galley(Pos2::new(inner_x, cy + 10.0), g.clone(), style::warning());
                 cy += 10.0 + g.size().y;
             }
             let err = s.get("error").and_then(Value::as_str).filter(|e| !e.is_empty());
             let notice = s.get("notice").and_then(Value::as_str).filter(|e| !e.is_empty());
             if let Some(text) = err.or(notice) {
-                let color = if err.is_some() { style::CRITICAL } else { style::WARNING };
+                let color = if err.is_some() {
+                    style::critical()
+                } else {
+                    style::warning()
+                };
                 let g = kit::wrapped(ui, text, 10.5, color, iw);
                 painter.galley(Pos2::new(inner_x, cy + 10.0), g.clone(), color);
                 cy += 10.0 + g.size().y;
@@ -863,17 +882,17 @@ impl LinkTab {
                 if allow {
                     t.push_str(&format!(", {injected} received from the other station"));
                 }
-                let g = kit::wrapped(ui, &t, 11.0, style::TEXT_3, iw);
-                painter.galley(Pos2::new(inner_x, cy + 10.0), g.clone(), style::TEXT_3);
+                let g = kit::wrapped(ui, &t, 11.0, style::text_3(), iw);
+                painter.galley(Pos2::new(inner_x, cy + 10.0), g.clone(), style::text_3());
                 cy += 10.0 + g.size().y;
             }
         }
         let card = Rect::from_min_max(Pos2::new(x, y), Pos2::new(x + w, cy + 14.0));
-        painter.set(start_shape, Shape::rect_filled(card, style::RADIUS, style::SURFACE_2));
+        painter.set(start_shape, Shape::rect_filled(card, style::RADIUS, style::surface_2()));
         painter.rect_stroke(
             card,
             style::RADIUS,
-            Stroke::new(1.0, style::BORDER),
+            Stroke::new(1.0, style::border()),
             egui::StrokeKind::Inside,
         );
         card.bottom()
@@ -882,24 +901,24 @@ impl LinkTab {
 
 /// `.link-field-label`: 10 px, uppercase. Returns the y under it.
 fn field_label(ui: &egui::Ui, x: f32, y: f32, text: &str) -> f32 {
-    let g = style::galley(ui, &text.to_uppercase(), 10.0, Weight::W600, style::TEXT_3, 0.7);
+    let g = style::galley(ui, &text.to_uppercase(), 10.0, Weight::W600, style::text_3(), 0.7);
     let h = g.size().y;
-    ui.painter().galley(Pos2::new(x, y), g, style::TEXT_3);
+    ui.painter().galley(Pos2::new(x, y), g, style::text_3());
     y + h
 }
 
 /// `.panel-section-header` with its title; returns its rect.
 pub fn section_header(ui: &egui::Ui, rect: Rect, title: &str) -> Rect {
-    let g = style::galley(ui, title, 12.0, Weight::W600, style::TEXT_1, 0.4);
+    let g = style::galley(ui, title, 12.0, Weight::W600, style::text_1(), 0.4);
     let h = 11.0 * 2.0 + g.size().y.max(28.0) + 1.0;
     let r = Rect::from_min_size(rect.min, Vec2::new(rect.width(), h));
     let painter = ui.painter();
     painter.galley(
         Pos2::new(r.left() + 12.0, r.center().y - g.size().y / 2.0),
         g,
-        style::TEXT_1,
+        style::text_1(),
     );
-    painter.hline(r.x_range(), r.bottom() - 0.5, Stroke::new(1.0, style::BORDER_SOFT));
+    painter.hline(r.x_range(), r.bottom() - 0.5, Stroke::new(1.0, style::border_soft()));
     r
 }
 

@@ -318,7 +318,11 @@ impl ConsoleTab {
         // .console-toolbar: padding 10 12, a rule, 8 px under it
         let field_h: f32 = 2.0 + 10.0 + 11.5 * 1.21;
         let bar = Rect::from_min_size(rect.min, Vec2::new(rect.width(), 20.0 + field_h.max(26.0) + 1.0));
-        painter.hline(bar.x_range(), bar.bottom() - 0.5, Stroke::new(1.0, style::BORDER_SOFT));
+        painter.hline(
+            bar.x_range(),
+            bar.bottom() - 0.5,
+            Stroke::new(1.0, style::border_soft()),
+        );
         let tools_w = 4.0 * 26.0 + 3.0 * 2.0;
         let search = Rect::from_min_size(
             Pos2::new(rect.left() + 12.0, bar.center().y - field_h / 2.0),
@@ -347,11 +351,11 @@ impl ConsoleTab {
                 .on_hover_text(title);
             let active = i == 0 && paused;
             let (fill, color) = if active {
-                (style::WARNING_DARK, style::WARNING)
+                (style::warning_dark(), style::warning())
             } else if resp.hovered() {
-                (style::SURFACE_HOVER, style::TEXT_1)
+                (style::surface_hover(), style::text_1())
             } else {
-                (Color32::TRANSPARENT, style::TEXT_3)
+                (Color32::TRANSPARENT, style::text_3())
             };
             painter.rect_filled(r, 5, fill);
             icons::paint(ui, icon, Rect::from_center_size(r.center(), Vec2::splat(13.0)), color);
@@ -375,13 +379,13 @@ impl ConsoleTab {
         );
         self.paint_stream(ui, stream);
 
-        painter.rect_filled(row, 0, style::SURFACE_1);
-        painter.hline(row.x_range(), row.top() + 0.5, Stroke::new(1.0, style::BORDER_SOFT));
-        let prompt = style::galley_mono(ui, ">>", 13.0, style::TERMINAL_CMD);
+        painter.rect_filled(row, 0, style::surface_1());
+        painter.hline(row.x_range(), row.top() + 0.5, Stroke::new(1.0, style::border_soft()));
+        let prompt = style::galley_mono(ui, ">>", 13.0, style::terminal_cmd());
         painter.galley(
             Pos2::new(row.left() + 12.0, row.center().y - prompt.size().y / 2.0),
             prompt.clone(),
-            style::TERMINAL_CMD,
+            style::terminal_cmd(),
         );
         let send = Rect::from_min_size(
             Pos2::new(row.right() - 12.0 - 34.0, row.center().y - 17.0),
@@ -418,16 +422,16 @@ impl ConsoleTab {
             .on_hover_text("Send");
         let busy = self.sending.is_some();
         let fill = if sresp.hovered() && !busy {
-            style::ACCENT_HOVER
+            style::accent_hover()
         } else {
-            style::ACCENT
+            style::accent()
         };
         painter.circle_filled(send.center(), 17.0, fill.gamma_multiply(if busy { 0.45 } else { 1.0 }));
         icons::paint(
             ui,
             "send",
             Rect::from_center_size(send.center(), Vec2::splat(15.0)),
-            style::TEXT_INVERTED,
+            style::text_inverted(),
         );
         if sresp.clicked() && !busy {
             self.send(&ctx);
@@ -440,10 +444,10 @@ impl ConsoleTab {
             &count,
             10.0,
             if paused { Weight::W600 } else { Weight::W400 },
-            if paused { style::WARNING } else { style::TEXT_3 },
+            if paused { style::warning() } else { style::text_3() },
             0.0,
         );
-        painter.galley(Pos2::new(footer.left() + 12.0, footer.top() + 5.0), cg, style::TEXT_3);
+        painter.galley(Pos2::new(footer.left() + 12.0, footer.top() + 5.0), cg, style::text_3());
     }
 
     fn filter_field(&mut self, ui: &mut egui::Ui, r: Rect) {
@@ -454,7 +458,7 @@ impl ConsoleTab {
             painter.rect_stroke(
                 r.expand(2.0),
                 style::RADIUS_BTN + 2,
-                Stroke::new(2.0, style::rgba(0x1B1F26, 0.10)),
+                Stroke::new(2.0, style::accent_dim()),
                 egui::StrokeKind::Inside,
             );
         }
@@ -462,14 +466,14 @@ impl ConsoleTab {
             r,
             style::RADIUS_BTN,
             style::glass(0.82),
-            Stroke::new(1.0, if focused { style::ACCENT } else { style::tint(0.09) }),
+            Stroke::new(1.0, if focused { style::accent() } else { style::tint(0.09) }),
             egui::StrokeKind::Inside,
         );
         icons::paint(
             ui,
             "search",
             Rect::from_min_size(Pos2::new(r.left() + 7.0, r.center().y - 6.0), Vec2::splat(12.0)),
-            style::TEXT_3,
+            style::text_3(),
         );
         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(Rect::from_min_max(
             Pos2::new(r.left() + 25.0, r.top()),
@@ -480,7 +484,7 @@ impl ConsoleTab {
                 .id(id)
                 .frame(egui::Frame::NONE)
                 .font(style::font(11.5, Weight::W400))
-                .hint_text(egui::RichText::new("Filter").color(style::TEXT_3))
+                .hint_text(egui::RichText::new("Filter").color(style::text_3()))
                 .align(egui::Align2::LEFT_CENTER)
                 .desired_width(r.width() - 33.0)
                 .min_size(Vec2::new(0.0, r.height())),
@@ -574,8 +578,8 @@ impl ConsoleTab {
         painter.rect(
             r,
             style::RADIUS_BTN,
-            style::SURFACE_1,
-            Stroke::new(1.0, style::BORDER_SOFT),
+            style::terminal_bg(),
+            Stroke::new(1.0, style::border_soft()),
             egui::StrokeKind::Inside,
         );
         let inner = r.shrink2(Vec2::new(12.0, 8.0));
@@ -590,13 +594,17 @@ impl ConsoleTab {
                 for l in &lines {
                     let class = level_class(&l.level);
                     let (msg, arrow, rail) = match class {
-                        "success" => (style::HEALTHY, style::TERMINAL_CMD, Some(style::HEALTHY)),
-                        "warning" => (style::WARNING, style::WARNING, Some(style::WARNING)),
-                        "error" => (style::CRITICAL, style::CRITICAL, Some(style::CRITICAL)),
-                        "nav" => (style::NAV, style::TERMINAL_CMD, None),
-                        "cmd" => (style::TERMINAL_CMD, style::TERMINAL_CMD, Some(style::TERMINAL_CMD)),
-                        "shell" => (style::NAV_BRIGHT, style::TERMINAL_CMD, Some(style::NAV_BRIGHT)),
-                        _ => (style::TERMINAL_TEXT, style::TERMINAL_CMD, None),
+                        "success" => (style::healthy(), style::terminal_cmd(), Some(style::healthy())),
+                        "warning" => (style::warning(), style::warning(), Some(style::warning())),
+                        "error" => (style::critical(), style::critical(), Some(style::critical())),
+                        "nav" => (style::nav(), style::terminal_cmd(), None),
+                        "cmd" => (
+                            style::terminal_cmd(),
+                            style::terminal_cmd(),
+                            Some(style::terminal_cmd()),
+                        ),
+                        "shell" => (style::nav_bright(), style::terminal_cmd(), Some(style::nav_bright())),
+                        _ => (style::terminal_text(), style::terminal_cmd(), None),
                     };
                     let mut job = egui::text::LayoutJob::default();
                     let fmt = |c: Color32| egui::TextFormat {
@@ -605,7 +613,7 @@ impl ConsoleTab {
                         line_height: Some(12.0 * 1.55),
                         ..Default::default()
                     };
-                    job.append(&l.ts, 0.0, fmt(style::TERMINAL_MUTED));
+                    job.append(&l.ts, 0.0, fmt(style::terminal_muted()));
                     job.append(" ", 0.0, fmt(msg));
                     job.append(">>", 0.0, fmt(arrow));
                     job.append(" ", 0.0, fmt(msg));

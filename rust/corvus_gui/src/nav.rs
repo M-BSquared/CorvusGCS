@@ -79,11 +79,11 @@ pub fn slots(mission: bool) -> Vec<Slot> {
 /// Draws the rail into `rect`; returns the page clicked, if any.
 pub fn show(ui: &mut egui::Ui, rect: Rect, mission: bool, active: Page) -> Option<Page> {
     let painter = ui.painter_at(rect);
-    painter.rect_filled(rect, 0, style::SURFACE_1);
+    painter.rect_filled(rect, 0, style::surface_1());
     painter.vline(
         rect.right() - 0.5,
         rect.y_range(),
-        egui::Stroke::new(1.0, style::BORDER),
+        egui::Stroke::new(1.0, style::border()),
     );
     let slots = slots(mission);
     // padding: 10px 0; gap: 4px; the spacer takes what is left.
@@ -106,7 +106,7 @@ pub fn show(ui: &mut egui::Ui, rect: Rect, mission: bool, active: Page) -> Optio
                 painter.hline(
                     egui::Rangef::new(cx - 17.0, cx + 17.0),
                     y + 6.5,
-                    egui::Stroke::new(1.0, style::BORDER_SOFT),
+                    egui::Stroke::new(1.0, style::border_soft()),
                 );
                 y += 13.0;
             }
@@ -120,18 +120,18 @@ pub fn show(ui: &mut egui::Ui, rect: Rect, mission: bool, active: Page) -> Optio
                 }
                 let is_active = page == active;
                 let (fill, icon_c, label_c) = if is_active {
-                    (style::ACCENT_DARK, style::TEXT_1, style::TEXT_1)
+                    (style::accent_dark(), style::text_1(), style::text_1())
                 } else if resp.hovered() {
-                    (style::SURFACE_HOVER, style::TEXT_1, style::TEXT_2)
+                    (style::surface_hover(), style::text_1(), style::text_2())
                 } else {
-                    (Color32::TRANSPARENT, style::TEXT_2, style::TEXT_3)
+                    (Color32::TRANSPARENT, style::text_2(), style::text_3())
                 };
                 painter.rect_filled(r, style::RADIUS_BTN, fill);
                 if is_active {
                     // ::before: 3 x 26 at left -10px
                     let bar =
                         Rect::from_center_size(Pos2::new(r.left() - 10.0 + 1.5, r.center().y), Vec2::new(3.0, 26.0));
-                    painter.rect_filled(bar, 2, style::ACCENT);
+                    painter.rect_filled(bar, 2, style::accent());
                 }
                 let (label, icon) = page.item();
                 let g = style::galley(ui, label, 9.0, Weight::W600, label_c, 0.7);
@@ -159,14 +159,14 @@ pub fn show(ui: &mut egui::Ui, rect: Rect, mission: bool, active: Page) -> Optio
 /// look of the plugin tab's empty state, so it reads as the app's own.
 pub fn placeholder(ui: &egui::Ui, rect: Rect, page: Page) {
     let painter = ui.painter_at(rect);
-    painter.rect_filled(rect, 0, style::BG);
+    painter.rect_filled(rect, 0, style::bg());
     let (_, icon) = page.item();
-    let title = style::galley(ui, page.title(), 13.0, Weight::W600, style::TEXT_1, 0.0);
+    let title = style::galley(ui, page.title(), 13.0, Weight::W600, style::text_1(), 0.0);
     let desc = crate::kit::wrapped(
         ui,
         "This page is not in the native interface yet. It is still in the web interface.",
         11.0,
-        style::TEXT_3,
+        style::text_3(),
         220.0,
     );
     let h = 52.0 + 14.0 + title.size().y + 14.0 + desc.size().y;
@@ -175,24 +175,28 @@ pub fn placeholder(ui: &egui::Ui, rect: Rect, page: Page) {
     painter.rect(
         tile,
         14,
-        style::SURFACE_2,
-        egui::Stroke::new(1.0, style::BORDER),
+        style::surface_2(),
+        egui::Stroke::new(1.0, style::border()),
         egui::StrokeKind::Inside,
     );
     icons::paint(
         ui,
         icon,
         Rect::from_center_size(tile.center(), Vec2::splat(26.0)),
-        style::ACCENT,
+        style::accent(),
     );
     y += 52.0 + 14.0;
     painter.galley(
         Pos2::new(rect.center().x - title.size().x / 2.0, y),
         title.clone(),
-        style::TEXT_1,
+        style::text_1(),
     );
     y += title.size().y + 14.0;
-    painter.galley(Pos2::new(rect.center().x - desc.size().x / 2.0, y), desc, style::TEXT_3);
+    painter.galley(
+        Pos2::new(rect.center().x - desc.size().x / 2.0, y),
+        desc,
+        style::text_3(),
+    );
 }
 
 #[cfg(test)]

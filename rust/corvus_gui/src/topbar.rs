@@ -31,10 +31,10 @@ impl Tone {
     /// keeps the bar's text colour, as `accent` does on the light theme.
     pub fn color(self) -> Color32 {
         match self {
-            Tone::Plain | Tone::Accent | Tone::Off => style::TEXT_1,
-            Tone::Healthy => style::HEALTHY,
-            Tone::Warning | Tone::Armed => style::WARNING,
-            Tone::Critical => style::CRITICAL,
+            Tone::Plain | Tone::Accent | Tone::Off => style::text_1(),
+            Tone::Healthy => style::healthy(),
+            Tone::Warning | Tone::Armed => style::warning(),
+            Tone::Critical => style::critical(),
         }
     }
 }
@@ -442,9 +442,9 @@ fn tile(b: &Block) -> Option<Color32> {
         return None;
     }
     match b.value.as_str() {
-        "READY" => Some(style::HEALTHY_DARK),
-        "ARMED" => Some(style::WARNING_DARK),
-        "KILL SWITCH" | "TERMINATED" => Some(style::CRITICAL_DARK),
+        "READY" => Some(style::healthy_dark()),
+        "ARMED" => Some(style::warning_dark()),
+        "KILL SWITCH" | "TERMINATED" => Some(style::critical_dark()),
         _ => None,
     }
 }
@@ -462,17 +462,17 @@ pub fn show(
     let painter = ui.painter_at(rect);
     // background: linear-gradient(180deg, var(--surface-1), var(--bg))
     let mut mesh = egui::Mesh::default();
-    mesh.colored_vertex(rect.left_top(), style::SURFACE_1);
-    mesh.colored_vertex(rect.right_top(), style::SURFACE_1);
-    mesh.colored_vertex(rect.right_bottom(), style::BG);
-    mesh.colored_vertex(rect.left_bottom(), style::BG);
+    mesh.colored_vertex(rect.left_top(), style::surface_1());
+    mesh.colored_vertex(rect.right_top(), style::surface_1());
+    mesh.colored_vertex(rect.right_bottom(), style::bg());
+    mesh.colored_vertex(rect.left_bottom(), style::bg());
     mesh.add_triangle(0, 1, 2);
     mesh.add_triangle(0, 2, 3);
     painter.add(mesh);
     painter.hline(
         rect.x_range(),
         rect.bottom() - 0.5,
-        egui::Stroke::new(1.0, style::BORDER),
+        egui::Stroke::new(1.0, style::border()),
     );
 
     // .top-bar { padding: 0 12px 0 8px; gap: 2px }; .tb-logo { padding: 0 14px 0 4px; gap: 10px }
@@ -480,23 +480,23 @@ pub fn show(
     let mark = Rect::from_min_size(Pos2::new(x, rect.center().y - 17.0), Vec2::splat(34.0));
     egui::Image::new(logo.clone()).paint_at(ui, mark);
     x = mark.right() + 10.0;
-    let name = style::galley(ui, "CORVUS", 15.0, Weight::W700, style::TEXT_1, 1.4);
-    let sub = style::galley(ui, "GROUND CONTROL", 9.0, Weight::W600, style::TEXT_3, 1.6);
+    let name = style::galley(ui, "CORVUS", 15.0, Weight::W700, style::text_1(), 1.4);
+    let sub = style::galley(ui, "GROUND CONTROL", 9.0, Weight::W600, style::text_3(), 1.6);
     // line-height: 1, so each line is its font size tall; 3px between.
     let text_h = 15.0 + 3.0 + 9.0;
     let top = rect.center().y - text_h / 2.0;
     painter.galley(
         Pos2::new(x, top + (15.0 - name.size().y) / 2.0),
         name.clone(),
-        style::TEXT_1,
+        style::text_1(),
     );
     painter.galley(
         Pos2::new(x, top + 18.0 + (9.0 - sub.size().y) / 2.0),
         sub.clone(),
-        style::TEXT_3,
+        style::text_3(),
     );
     x += name.size().x.max(sub.size().x) + 14.0;
-    painter.vline(x - 0.5, rect.y_range(), egui::Stroke::new(1.0, style::BORDER_SOFT));
+    painter.vline(x - 0.5, rect.y_range(), egui::Stroke::new(1.0, style::border_soft()));
     // .tb-logo { margin-right: 6px } and the bar's 2px gap
     x += 6.0 + 2.0;
 
@@ -504,16 +504,16 @@ pub fn show(
         if i > 0 {
             x += 2.0 + 1.0;
         }
-        let label = style::galley(ui, &b.label.to_uppercase(), 9.5, Weight::W600, style::TEXT_3, 0.9);
+        let label = style::galley(ui, &b.label.to_uppercase(), 9.5, Weight::W600, style::text_3(), 0.9);
         let value = style::galley(ui, &b.value, 15.0, Weight::W600, b.tone.color(), 0.0);
-        let sub = (!b.sub.is_empty()).then(|| style::galley(ui, &b.sub, 11.0, Weight::W500, style::TEXT_2, 0.0));
+        let sub = (!b.sub.is_empty()).then(|| style::galley(ui, &b.sub, 11.0, Weight::W500, style::text_2(), 0.0));
         let value_w = value.size().x + sub.as_ref().map_or(0.0, |s| 5.0 + s.size().x);
         let w = label.size().x.max(value_w) + 24.0;
         let block = Rect::from_min_max(Pos2::new(x, rect.top()), Pos2::new(x + w, rect.bottom() - 1.0));
         let id = ui.scope_id().with(("tb", i));
         let response = ui.interact(block, id, egui::Sense::hover());
         if response.hovered() {
-            painter.rect_filled(block, 0, style::SURFACE_HOVER);
+            painter.rect_filled(block, 0, style::surface_hover());
         } else if let Some(fill) = tile(b) {
             painter.rect_filled(block, 0, fill);
         }
@@ -521,7 +521,7 @@ pub fn show(
         let label_h = label.size().y;
         let value_h = 15.0 * 1.1;
         let top = block.center().y - (label_h + 2.0 + value_h) / 2.0;
-        painter.galley(Pos2::new(x + 12.0, top), label, style::TEXT_3);
+        painter.galley(Pos2::new(x + 12.0, top), label, style::text_3());
         let base = top + label_h + 2.0;
         let vy = base + (value_h - value.size().y) / 2.0;
         painter.galley(Pos2::new(x + 12.0, vy), value.clone(), b.tone.color());
@@ -532,7 +532,7 @@ pub fn show(
             painter.galley(
                 Pos2::new(x + 12.0 + value.size().x + 5.0, vy + ascent_gap),
                 sub,
-                style::TEXT_2,
+                style::text_2(),
             );
         }
         if !b.title.is_empty() {

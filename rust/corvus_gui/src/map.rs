@@ -279,7 +279,7 @@ impl Map {
         if self.attribution.is_empty() {
             return;
         }
-        let g = style::galley(ui, self.attribution, 10.0, style::Weight::W400, style::TEXT_2, 0.0);
+        let g = style::galley(ui, self.attribution, 10.0, style::Weight::W400, style::text_2(), 0.0);
         let size = Vec2::new(g.size().x + 4.0 + 9.0, 10.0 * 1.4 + 8.0);
         let pill = egui::Rect::from_min_size(Pos2::new(rect.left() + 10.0, rect.bottom() - 10.0 - size.y), size);
         let painter = ui.painter_at(rect);
@@ -287,7 +287,7 @@ impl Map {
         painter.galley(
             Pos2::new(pill.left() + 9.0, pill.center().y - g.size().y / 2.0),
             g,
-            style::TEXT_2,
+            style::text_2(),
         );
     }
 
@@ -342,7 +342,7 @@ fn paint_flight(painter: &egui::Painter, pts: &[Pos2], color: Color32, past: boo
 /// the heading cone, a white ring, the red body and a white centre dot.
 fn paint_vehicle(painter: &egui::Painter, c: Pos2, heading: f32) {
     for (r, a) in [(17.0, 0.07), (14.0, 0.07), (11.0, 0.08)] {
-        painter.circle_filled(c, r, style::rgba(style::VEHICLE_RGB, a));
+        painter.circle_filled(c, r, style::rgba(style::vehicle_rgb(), a));
     }
     // The SVG's 48 px box, centred, rotated by the heading.
     let rot = egui::emath::Rot2::from_angle(heading.to_radians());
@@ -362,7 +362,7 @@ fn paint_vehicle(painter: &egui::Painter, c: Pos2, heading: f32) {
     cone.push(at(16.5, 15.5));
     // The base curves in, so the outline is not convex: filled as a fan
     // from the tip, which sees every point of it.
-    let fill = style::rgba(style::VEHICLE_RGB, 0.62);
+    let fill = style::rgba(style::vehicle_rgb(), 0.62);
     let mut mesh = egui::Mesh::default();
     for p in &cone {
         mesh.colored_vertex(*p, fill);
@@ -376,7 +376,7 @@ fn paint_vehicle(painter: &egui::Painter, c: Pos2, heading: f32) {
         Stroke::new(0.9, Color32::from_rgba_unmultiplied(255, 255, 255, 140)),
     ));
     painter.circle_filled(c, 10.5, Color32::WHITE);
-    painter.circle_filled(c, 9.0, style::VEHICLE);
+    painter.circle_filled(c, 9.0, style::vehicle());
     painter.circle_filled(c, 2.4, Color32::WHITE);
 }
 
@@ -395,7 +395,7 @@ fn paint_home(painter: &egui::Painter, c: Pos2) {
     }
     painter.circle_filled(c, 10.0, Color32::WHITE);
     // color-mix(in srgb, var(--healthy) 88%, #000)
-    let h = style::HEALTHY;
+    let h = style::healthy();
     let mix = |v: u8| (f32::from(v) * 0.88).round() as u8;
     painter.circle_filled(c, 8.6, Color32::from_rgb(mix(h.r()), mix(h.g()), mix(h.b())));
     let glyph = Stroke::new(2.0, Color32::WHITE);
@@ -417,13 +417,13 @@ impl Plugin for Layers<'_> {
                 .iter()
                 .map(|p| screen(projector, rect, p))
                 .collect();
-            paint_flight(&painter, &pts, style::TRACK_PAST, true);
+            paint_flight(&painter, &pts, style::track_past(), true);
         }
         let pts: Vec<Pos2> = track::smooth(&self.track.current)
             .iter()
             .map(|p| screen(projector, rect, p))
             .collect();
-        paint_flight(&painter, &pts, style::TRACK, false);
+        paint_flight(&painter, &pts, style::track(), false);
         if let Some((lng, lat)) = self.home {
             paint_home(&painter, screen(projector, rect, &Point { lng, lat, alt: None }));
         }

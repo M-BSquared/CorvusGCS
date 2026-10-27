@@ -20,17 +20,31 @@ use eframe::egui::{self, CornerRadius, Rect};
 use eframe::egui_glow;
 use eframe::glow::{self, HasContext};
 
-/// `--blur-soft`: what `.glass`, the map rail and the attribution pill use.
-pub const SOFT: Filter = Filter {
-    blur: 24.0,
-    saturate: 1.8,
-};
+/// `--blur-soft` of the theme in force: what `.glass`, the map rail and the
+/// attribution pill use. The light themes blur 24px and saturate 180%; the
+/// dark ones saturate 190% and brighten by 10%, which is what lets the frost
+/// come through over a dark surface.
+pub fn soft() -> Filter {
+    filter_of(&crate::style::palette())
+}
 
-/// One backdrop filter: a Gaussian of `blur` CSS px, then `saturate`.
+/// `--blur-soft` of a palette.
+pub fn filter_of(p: &crate::style::Palette) -> Filter {
+    let (blur, saturate, brightness) = p.blur_soft;
+    Filter {
+        blur,
+        saturate,
+        brightness,
+    }
+}
+
+/// One backdrop filter: a Gaussian of `blur` CSS px, then `saturate`, then
+/// `brightness`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Filter {
     pub blur: f32,
     pub saturate: f32,
+    pub brightness: f32,
 }
 
 struct Resources {
@@ -45,6 +59,7 @@ struct Resources {
     u_radius: Option<glow::UniformLocation>,
     u_blur: Option<glow::UniformLocation>,
     u_sat: Option<glow::UniformLocation>,
+    u_bright: Option<glow::UniformLocation>,
     u_tex: Option<glow::UniformLocation>,
 }
 
@@ -67,6 +82,7 @@ uniform vec4 u_rect;   // the panel: x, y (from the bottom), w, h in px
 uniform vec4 u_radius; // corner radii in px: top left, top right, bottom right, bottom left
 uniform float u_blur;  // the Gaussian's sigma in px
 uniform float u_sat;   // the CSS saturate amount
+uniform float u_bright; // the CSS brightness amount
 out vec4 frag;
 
 float rounded(vec2 p, vec2 half_size, vec4 r) {
@@ -106,7 +122,7 @@ void main() {
         0.715 - 0.715 * s, 0.715 + 0.285 * s, 0.715 - 0.715 * s,
         0.072 - 0.072 * s, 0.072 - 0.072 * s, 0.072 + 0.928 * s
     );
-    c = clamp(m * c, 0.0, 1.0);
+    c = clamp(m * c * u_bright, 0.0, 1.0);
     // egui blends premultiplied.
     frag = vec4(c * coverage, coverage);
 }
@@ -154,6 +170,7 @@ unsafe fn create(gl: &glow::Context) -> Result<Resources, String> {
         u_radius: u("u_radius"),
         u_blur: u("u_blur"),
         u_sat: u("u_sat"),
+        u_bright: u("u_bright"),
         u_tex: u("u_tex"),
         program,
         vao,
@@ -257,6 +274,7 @@ unsafe fn draw(info: &egui::PaintCallbackInfo, gl: &glow::Context, id: u64, radi
     );
     gl.uniform_1_f32(res.u_blur.as_ref(), sigma);
     gl.uniform_1_f32(res.u_sat.as_ref(), filter.saturate);
+    gl.uniform_1_f32(res.u_bright.as_ref(), filter.brightness);
     gl.bind_vertex_array(Some(res.vao));
     gl.draw_arrays(glow::TRIANGLE_STRIP, 0, 4);
     gl.bind_vertex_array(None);
@@ -319,12 +337,22 @@ mod tests {
     }
 
     #[test]
-    fn the_glass_filter_is_the_css_one() {
+    fn the_glass_filter_is_the_css_one_per_theme() {
+        use crate::style::palette_of;
         assert_eq!(
-            SOFT,
+            filter_of(&palette_of("light")),
             Filter {
                 blur: 24.0,
-                saturate: 1.8
+                saturate: 1.8,
+                brightness: 1.0
+            }
+        );
+        assert_eq!(
+            filter_of(&palette_of("blue")),
+            Filter {
+                blur: 24.0,
+                saturate: 1.9,
+                brightness: 1.1
             }
         );
     }

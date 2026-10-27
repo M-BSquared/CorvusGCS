@@ -125,13 +125,17 @@ impl Panel {
             handle,
             0,
             if hresp.hovered() {
-                style::SURFACE_HOVER
+                style::surface_hover()
             } else {
-                style::SURFACE_2
+                style::surface_2()
             },
         );
-        painter.vline(handle.left() + 0.5, handle.y_range(), Stroke::new(1.0, style::BORDER));
-        painter.vline(handle.right() - 0.5, handle.y_range(), Stroke::new(1.0, style::BORDER));
+        painter.vline(handle.left() + 0.5, handle.y_range(), Stroke::new(1.0, style::border()));
+        painter.vline(
+            handle.right() - 0.5,
+            handle.y_range(),
+            Stroke::new(1.0, style::border()),
+        );
         let icon = if self.collapsed {
             "chevron-left"
         } else {
@@ -142,9 +146,9 @@ impl Panel {
             icon,
             Rect::from_center_size(handle.center(), Vec2::splat(16.0)),
             if hresp.hovered() {
-                style::ACCENT_BRIGHT
+                style::accent_bright()
             } else {
-                style::TEXT_3
+                style::text_3()
             },
         );
         if hresp.clicked() {
@@ -154,7 +158,7 @@ impl Panel {
             return;
         }
         let body = Rect::from_min_max(Pos2::new(handle.right(), rect.top()), rect.max);
-        painter.rect_filled(body, 0, style::SURFACE_1);
+        painter.rect_filled(body, 0, style::surface_1());
 
         // .panel-grip: 7 px over the handle's right edge
         let grip = Rect::from_min_size(
@@ -186,10 +190,10 @@ impl Panel {
         }
         let tab_h = 9.0 * 2.0 + 11.0 * 1.21 + 2.0;
         let strip = Rect::from_min_size(body.min, Vec2::new(body.width(), 8.0 + tab_h + 1.0));
-        painter.hline(strip.x_range(), strip.bottom() - 0.5, Stroke::new(1.0, style::BORDER));
+        painter.hline(strip.x_range(), strip.bottom() - 0.5, Stroke::new(1.0, style::border()));
         let galleys: Vec<_> = shown
             .iter()
-            .map(|t| style::galley(ui, t.caption(), 11.0, Weight::W600, style::TEXT_3, 0.9))
+            .map(|t| style::galley(ui, t.caption(), 11.0, Weight::W600, style::text_3(), 0.9))
             .collect();
         let natural: f32 = galleys.iter().map(|g| g.size().x + 20.0).sum::<f32>() + 2.0 * (shown.len() as f32 - 1.0);
         let extra = ((strip.width() - 24.0 - natural) / shown.len() as f32).max(0.0);
@@ -200,11 +204,11 @@ impl Panel {
             let resp = ui.interact(r, ui.scope_id().with(("tab", i)), egui::Sense::click());
             let active = *t == self.active;
             let color = if active {
-                style::ACCENT
+                style::accent()
             } else if resp.hovered() {
-                style::TEXT_1
+                style::text_1()
             } else {
-                style::TEXT_3
+                style::text_3()
             };
             if resp.hovered() && !active {
                 painter.rect_filled(
@@ -215,11 +219,11 @@ impl Panel {
                         sw: 0,
                         se: 0,
                     },
-                    style::SURFACE_HOVER,
+                    style::surface_hover(),
                 );
             }
             if active {
-                painter.hline(r.x_range(), r.bottom() - 1.0, Stroke::new(2.0, style::ACCENT));
+                painter.hline(r.x_range(), r.bottom() - 1.0, Stroke::new(2.0, style::accent()));
             }
             let g = style::galley(ui, t.caption(), 11.0, Weight::W600, color, 0.9);
             painter.galley(
@@ -273,7 +277,7 @@ impl Panel {
             ui,
             "plus",
             Rect::from_center_size(add.center(), Vec2::splat(15.0)),
-            style::TEXT_3.gamma_multiply(0.45),
+            style::text_3().gamma_multiply(0.45),
         );
         ui.interact(add, ui.scope_id().with("sshadd"), egui::Sense::hover())
             .on_hover_text("Add connection (not in this build yet)");
@@ -286,8 +290,8 @@ impl Panel {
             painter.rect(
                 card,
                 style::RADIUS,
-                style::SURFACE_2,
-                Stroke::new(1.0, style::BORDER),
+                style::surface_2(),
+                Stroke::new(1.0, style::border()),
                 egui::StrokeKind::Inside,
             );
             let g = style::galley(
@@ -295,10 +299,10 @@ impl Panel {
                 "Could not load connections.",
                 12.0,
                 Weight::W400,
-                style::TEXT_3,
+                style::text_3(),
                 0.0,
             );
-            painter.galley(card.min + Vec2::new(13.0, 13.0), g, style::TEXT_3);
+            painter.galley(card.min + Vec2::new(13.0, 13.0), g, style::text_3());
             y = card.bottom() + 10.0;
         }
         let devices = list
@@ -312,28 +316,28 @@ impl Panel {
             painter.rect(
                 card,
                 style::RADIUS,
-                style::SURFACE_2,
-                Stroke::new(1.0, style::BORDER),
+                style::surface_2(),
+                Stroke::new(1.0, style::border()),
                 egui::StrokeKind::Inside,
             );
             let inner = card.shrink(13.0);
             let tile = Rect::from_min_size(inner.min, Vec2::splat(34.0));
-            painter.rect_filled(tile, style::RADIUS_BTN, style::SURFACE_3);
+            painter.rect_filled(tile, style::RADIUS_BTN, style::surface_3());
             icons::paint(
                 ui,
                 "server",
                 Rect::from_center_size(tile.center(), Vec2::splat(17.0)),
-                style::TEXT_2,
+                style::text_2(),
             );
             let name = dev
                 .get("title")
                 .or_else(|| dev.get("name"))
                 .and_then(Value::as_str)
                 .unwrap_or("");
-            let ng = style::galley(ui, name, 13.0, Weight::W600, style::TEXT_1, 0.0);
-            let hg = style::galley_mono(ui, &ssh_address(dev), 11.0, style::TEXT_2);
+            let ng = style::galley(ui, name, 13.0, Weight::W600, style::text_1(), 0.0);
+            let hg = style::galley_mono(ui, &ssh_address(dev), 11.0, style::text_2());
             let status = if connected { "CONNECTED" } else { "OFFLINE" };
-            let sc = if connected { style::HEALTHY } else { style::TEXT_3 };
+            let sc = if connected { style::healthy() } else { style::text_3() };
             let sg = style::galley(ui, status, 10.0, Weight::W600, sc, 0.7);
             let sx = inner.right() - sg.size().x;
             painter.galley(Pos2::new(sx, tile.center().y - sg.size().y / 2.0), sg, sc);
@@ -347,12 +351,12 @@ impl Panel {
             tp.galley(
                 Pos2::new(text_clip.left(), tile.center().y - th / 2.0),
                 ng.clone(),
-                style::TEXT_1,
+                style::text_1(),
             );
             tp.galley(
                 Pos2::new(text_clip.left(), tile.center().y - th / 2.0 + ng.size().y + 1.0),
                 hg,
-                style::TEXT_2,
+                style::text_2(),
             );
             // CONNECT and the two square buttons: the terminal is its own step.
             let row_y = tile.bottom() + 10.0;
@@ -374,7 +378,7 @@ impl Panel {
                     ui,
                     icon,
                     Rect::from_center_size(ir.center(), Vec2::splat(15.0)),
-                    style::TEXT_3.gamma_multiply(0.45),
+                    style::text_3().gamma_multiply(0.45),
                 );
             }
             y = card.bottom() + 10.0;
@@ -410,32 +414,36 @@ pub fn ssh_address(conn: &Value) -> String {
 /// The PLUGINS tab with nothing in it (`.future-empty`).
 fn plugins_empty(ui: &egui::Ui, rect: Rect) {
     let painter = ui.painter();
-    let title = style::galley(ui, "Tools & Plugins", 13.0, Weight::W600, style::TEXT_1, 0.0);
-    let desc = kit::wrapped(ui, "Extensions and tools plug in here.", 11.0, style::TEXT_3, 220.0);
+    let title = style::galley(ui, "Tools & Plugins", 13.0, Weight::W600, style::text_1(), 0.0);
+    let desc = kit::wrapped(ui, "Extensions and tools plug in here.", 11.0, style::text_3(), 220.0);
     let h = 52.0 + 14.0 + title.size().y + 14.0 + desc.size().y;
     let mut y = rect.center().y - h / 2.0;
     let tile = Rect::from_center_size(Pos2::new(rect.center().x, y + 26.0), Vec2::splat(52.0));
     painter.rect(
         tile,
         14,
-        style::SURFACE_2,
-        Stroke::new(1.0, style::BORDER),
+        style::surface_2(),
+        Stroke::new(1.0, style::border()),
         egui::StrokeKind::Inside,
     );
     icons::paint(
         ui,
         "puzzle",
         Rect::from_center_size(tile.center(), Vec2::splat(26.0)),
-        style::ACCENT,
+        style::accent(),
     );
     y += 52.0 + 14.0;
     painter.galley(
         Pos2::new(rect.center().x - title.size().x / 2.0, y),
         title.clone(),
-        style::TEXT_1,
+        style::text_1(),
     );
     y += title.size().y + 14.0;
-    painter.galley(Pos2::new(rect.center().x - desc.size().x / 2.0, y), desc, style::TEXT_3);
+    painter.galley(
+        Pos2::new(rect.center().x - desc.size().x / 2.0, y),
+        desc,
+        style::text_3(),
+    );
 }
 
 #[cfg(test)]

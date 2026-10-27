@@ -301,7 +301,7 @@ impl FlightBar {
             self.takeoff_open = false;
         }
 
-        let caption_h = style::galley(ui, "ARM", 10.0, Weight::W600, style::TEXT_2, 0.6)
+        let caption_h = style::galley(ui, "ARM", 10.0, Weight::W600, style::text_2(), 0.6)
             .size()
             .y;
         let btn_h = 1.0 + 9.0 + 17.0 + 3.0 + caption_h + 9.0 + 1.0;
@@ -318,7 +318,7 @@ impl FlightBar {
             (None, false) => current_label.to_string(),
             (None, true) => "SELECT MODE".into(),
         };
-        let select_g = style::galley(ui, &select_text, 11.0, Weight::W600, style::TEXT_1, 0.5);
+        let select_g = style::galley(ui, &select_text, 11.0, Weight::W600, style::text_1(), 0.5);
         let select_w = (10.0 + select_g.size().x + 26.0 + 2.0).max(120.0);
         let select_h = 2.0 + 8.0 + 11.0 * 1.21 + 8.0;
 
@@ -430,7 +430,7 @@ impl FlightBar {
         painter.vline(
             x + 2.0,
             egui::Rangef::new(bar.center().y - 17.0, bar.center().y + 17.0),
-            Stroke::new(1.0, style::BORDER_SOFT),
+            Stroke::new(1.0, style::border_soft()),
         );
         x += 5.0 + BAR_GAP;
         let select = Rect::from_min_size(
@@ -480,7 +480,7 @@ impl FlightBar {
         let painter = ui.painter();
         let alpha = if busy { 0.45 } else { 1.0 };
         let stroke = if self.mode_open {
-            Stroke::new(1.0, style::ACCENT)
+            Stroke::new(1.0, style::accent())
         } else {
             Stroke::NONE
         };
@@ -488,7 +488,7 @@ impl FlightBar {
             painter.rect_stroke(
                 rect.expand(2.0),
                 style::RADIUS_BTN + 2,
-                Stroke::new(2.0, style::rgba(0x1B1F26, 0.10)),
+                Stroke::new(2.0, style::accent_dim()),
                 egui::StrokeKind::Inside,
             );
         }
@@ -499,14 +499,14 @@ impl FlightBar {
             stroke,
             egui::StrokeKind::Inside,
         );
-        let color = if placeholder { style::TEXT_3 } else { style::TEXT_1 };
+        let color = if placeholder { style::text_3() } else { style::text_1() };
         painter.galley(
             Pos2::new(rect.left() + 11.0, rect.center().y - text.size().y / 2.0),
             text,
             color.gamma_multiply(alpha),
         );
         let chevron = Rect::from_center_size(Pos2::new(rect.right() - 8.0 - 6.0, rect.center().y), Vec2::splat(12.0));
-        icons::paint(ui, "chevron-down", chevron, style::TEXT_3);
+        icons::paint(ui, "chevron-down", chevron, style::text_3());
         if response.clicked() && !busy {
             self.mode_open = !self.mode_open;
             self.takeoff_open = false;
@@ -555,16 +555,16 @@ impl FlightBar {
                     );
                     let active = m.value == current;
                     if active {
-                        painter.rect_filled(r, style::RADIUS_BTN, style::SURFACE_HOVER);
+                        painter.rect_filled(r, style::RADIUS_BTN, style::surface_hover());
                     } else if resp.hovered() && *enabled {
                         painter.rect_filled(r, style::RADIUS_BTN, style::tint(0.06));
                     }
                     let color = if !enabled {
-                        style::TEXT_3
+                        style::text_3()
                     } else if active || resp.hovered() {
-                        style::TEXT_1
+                        style::text_1()
                     } else {
-                        style::TEXT_2
+                        style::text_2()
                     };
                     let g = style::galley(ui, &m.label, 12.0, Weight::W400, color, 0.0);
                     painter.galley(Pos2::new(r.left() + 8.0, r.center().y - g.size().y / 2.0), g, color);
@@ -599,7 +599,7 @@ impl FlightBar {
     /// The takeoff card: hangs 16 px under its button, 260 px wide.
     fn takeoff_card(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, area: Rect, anchor: Rect, units: &Units) {
         let w = 260.0;
-        let title = style::galley(ui, "TAKEOFF ALTITUDE", 11.0, Weight::W600, style::TEXT_2, 1.0);
+        let title = style::galley(ui, "TAKEOFF ALTITUDE", 11.0, Weight::W600, style::text_2(), 1.0);
         let confirm_h = 10.0 * 2.0 + 15.0;
         let h = 14.0 + 20.0 + 12.0 + 30.0 + 12.0 + confirm_h + 14.0;
         let left = anchor.left().min(area.right() - w - 14.0).max(area.left());
@@ -616,20 +616,24 @@ impl FlightBar {
                 painter.galley(
                     Pos2::new(inner.left(), inner.top() + 10.0 - title.size().y / 2.0),
                     title,
-                    style::TEXT_2,
+                    style::text_2(),
                 );
                 // .icon-btn with the x
                 let close =
                     Rect::from_center_size(Pos2::new(inner.right() - 10.0, inner.top() + 10.0), Vec2::splat(20.0));
                 let resp = ui.interact(close, ui.scope_id().with("takeoffclose"), egui::Sense::click());
                 if resp.hovered() {
-                    painter.rect_filled(close, 5, style::SURFACE_HOVER);
+                    painter.rect_filled(close, 5, style::surface_hover());
                 }
                 icons::paint(
                     ui,
                     "x",
                     close.shrink(3.0),
-                    if resp.hovered() { style::TEXT_1 } else { style::TEXT_3 },
+                    if resp.hovered() {
+                        style::text_1()
+                    } else {
+                        style::text_3()
+                    },
                 );
                 if resp.clicked() {
                     self.takeoff_open = false;
@@ -638,7 +642,7 @@ impl FlightBar {
                 // The slider row: the track takes what the entry leaves.
                 let row_y = inner.top() + 20.0 + 12.0 + 15.0;
                 let unit_w = 18.0f32.max(
-                    style::galley(ui, units.length.symbol, 12.0, Weight::W600, style::TEXT_2, 0.0)
+                    style::galley(ui, units.length.symbol, 12.0, Weight::W600, style::text_2(), 0.0)
                         .size()
                         .x,
                 );
@@ -647,7 +651,7 @@ impl FlightBar {
                 let pos = altitude_to_position(self.takeoff_alt, TAKEOFF_MIN_M, TAKEOFF_MAX_M, TAKEOFF_SPAN);
                 let thumb_x = track.min + (track.max - track.min) * (pos / TAKEOFF_SPAN) as f32;
                 let track_rect = Rect::from_x_y_ranges(track, egui::Rangef::new(row_y - 2.0, row_y + 2.0));
-                painter.rect_filled(track_rect, 2, style::SURFACE_3);
+                painter.rect_filled(track_rect, 2, style::surface_3());
                 let hit = Rect::from_x_y_ranges(track, egui::Rangef::new(row_y - 9.0, row_y + 9.0));
                 let slide = ui.interact(hit, ui.scope_id().with("takeoffslider"), egui::Sense::click_and_drag());
                 if let Some(p) = slide
@@ -662,8 +666,8 @@ impl FlightBar {
                 painter.circle(
                     Pos2::new(thumb_x, row_y),
                     8.0,
-                    style::ACCENT,
-                    Stroke::new(2.0, style::TEXT_1),
+                    style::accent(),
+                    Stroke::new(2.0, style::text_1()),
                 );
 
                 // The entry: 64 px, 15 px semibold green, right aligned.
@@ -671,7 +675,7 @@ impl FlightBar {
                 let mut child = ui.new_child(egui::UiBuilder::new().max_rect(entry));
                 let edit = egui::TextEdit::singleline(&mut self.takeoff_text)
                     .font(style::font(15.0, Weight::W600))
-                    .text_color(style::HEALTHY)
+                    .text_color(style::healthy())
                     .align(egui::Align2::RIGHT_CENTER)
                     .margin(egui::Margin::symmetric(6, 5))
                     .desired_width(entry_w - 12.0);
@@ -694,11 +698,11 @@ impl FlightBar {
                     }
                     self.takeoff_text = units.format_length(self.takeoff_alt, 0, false, true);
                 }
-                let unit = style::galley(ui, units.length.symbol, 12.0, Weight::W600, style::TEXT_2, 0.0);
+                let unit = style::galley(ui, units.length.symbol, 12.0, Weight::W600, style::text_2(), 0.0);
                 painter.galley(
                     Pos2::new(entry.right() + 4.0, row_y - unit.size().y / 2.0 + 1.0),
                     unit,
-                    style::TEXT_2,
+                    style::text_2(),
                 );
 
                 // .takeoff-confirm
@@ -709,25 +713,25 @@ impl FlightBar {
                 let busy = self.busy(Command::Takeoff);
                 let resp = ui.interact(button, ui.scope_id().with("takeoffconfirm"), egui::Sense::click());
                 let fill = if resp.hovered() {
-                    style::HEALTHY_BRIGHT
+                    style::healthy_bright()
                 } else {
-                    style::HEALTHY
+                    style::healthy()
                 };
                 let alpha = if busy { 0.45 } else { 1.0 };
                 painter.rect_filled(button, style::RADIUS_BTN, fill.gamma_multiply(alpha));
-                let label = style::galley(ui, "CONFIRM TAKEOFF", 12.0, Weight::W700, style::TEXT_INVERTED, 0.6);
+                let label = style::galley(ui, "CONFIRM TAKEOFF", 12.0, Weight::W700, style::text_inverted(), 0.6);
                 let total = 15.0 + 6.0 + label.size().x;
                 let start = button.center().x - total / 2.0;
                 icons::paint(
                     ui,
                     "arrow-up",
                     Rect::from_min_size(Pos2::new(start, button.center().y - 7.5), Vec2::splat(15.0)),
-                    style::TEXT_INVERTED,
+                    style::text_inverted(),
                 );
                 painter.galley(
                     Pos2::new(start + 21.0, button.center().y - label.size().y / 2.0),
                     label,
-                    style::TEXT_INVERTED,
+                    style::text_inverted(),
                 );
                 if resp.clicked() && !busy {
                     confirm = true;
@@ -771,13 +775,17 @@ fn fa_button(
     let hovered = resp.hovered() && enabled && !busy;
     let (fill, color) = if armed {
         (
-            if hovered { style::HEALTHY_BRIGHT } else { style::HEALTHY },
-            style::TEXT_INVERTED,
+            if hovered {
+                style::healthy_bright()
+            } else {
+                style::healthy()
+            },
+            style::text_inverted(),
         )
     } else if hovered {
-        (style::SURFACE_HOVER, style::TEXT_1)
+        (style::surface_hover(), style::text_1())
     } else {
-        (Color32::TRANSPARENT, style::TEXT_2)
+        (Color32::TRANSPARENT, style::text_2())
     };
     let alpha = if !enabled {
         0.4
@@ -808,7 +816,7 @@ fn fa_button(
         painter.rect_stroke(
             r,
             style::RADIUS_BTN,
-            Stroke::new(2.0, style::ACCENT_BRIGHT.gamma_multiply(pulse)),
+            Stroke::new(2.0, style::accent_bright().gamma_multiply(pulse)),
             egui::StrokeKind::Outside,
         );
         ui.ctx().request_repaint();
