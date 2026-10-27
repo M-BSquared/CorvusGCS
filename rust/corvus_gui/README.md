@@ -33,6 +33,7 @@ SIGKILL if it is still there after 8 s. If the window does not close within
 | `src/hud.rs` | compass, attitude indicator and readouts (`src/js/instruments.js`) |
 | `src/flight.rs` | the flight bar, takeoff card and mode picker (`src/js/app.js`) |
 | `src/style.rs` | the design tokens of the default light theme and the type |
+| `src/frost.rs` | the frosted glass under every `.glass` surface |
 | `src/fonts.rs`, `src/icons.rs`, `build.rs` | Inter, JetBrains Mono and the Lucide icons, from the web's own files |
 
 ## Looking like the web interface
@@ -41,8 +42,12 @@ Every measure is taken from the CSS with one CSS pixel as one egui point,
 so a block here is the size, weight and colour of the element it copies.
 The fonts are the web's WOFF2 files and the icons are cut out of its
 `lucide.min.js`, both at build time, so there is no second copy of either.
-egui cannot blur what lies under a panel (`backdrop-filter`), so the glass
-panels use a denser white than the CSS's 60 % to read the same.
+The glass panels are frosted as the CSS frosts them (`backdrop-filter:
+blur(24px) saturate(180%)`, then 60 % white, 55 % on the map rail): a paint
+callback on the OpenGL renderer copies what is already drawn under the
+panel, blurs and saturates it inside the panel's rounded corners
+(`src/frost.rs`), and the fill paints over it. The copy is taken before the
+panel's shadow, because a browser draws a box shadow outside the box only.
 
 The window title comes from `GET /api/version`; the crate carries no
 version of its own.

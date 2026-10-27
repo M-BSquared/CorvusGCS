@@ -7,7 +7,7 @@
 //! areas, 3D, measuring, place search and the offline map download are
 //! drawn where the web map has them and come with their own steps.
 
-use eframe::egui::{self, Color32, CornerRadius, Pos2, Rect, Stroke, Vec2};
+use eframe::egui::{self, Color32, Pos2, Rect, Stroke, Vec2};
 use serde_json::Value;
 
 use crate::icons;
@@ -76,15 +76,8 @@ pub struct MapRail {
     pub measure: bool,
 }
 
-fn glass_box(painter: &egui::Painter, r: Rect) {
-    painter.add(style::shadow_pop().as_shape(r, CornerRadius::same(style::RADIUS)));
-    painter.rect(
-        r,
-        style::RADIUS,
-        style::glass(0.72),
-        style::glass_stroke(),
-        egui::StrokeKind::Inside,
-    );
+fn glass_box(painter: &egui::Painter, key: (&str, usize), r: Rect) {
+    style::glass_panel(painter, key, r, style::RADIUS, 0.55);
 }
 
 impl MapRail {
@@ -102,7 +95,7 @@ impl MapRail {
             Pos2::new(area.right() - INSET - (BTN + 12.0), area.top() + INSET),
             Vec2::new(BTN + 12.0 + 2.0, h + 2.0),
         );
-        glass_box(&painter, rail);
+        glass_box(&painter, ("maprail", 0), rail);
         ui.interact(rail, ui.scope_id().with("mapctl"), egui::Sense::click_and_drag());
         let mut y = rail.top() + 7.0;
         let x = rail.left() + 7.0;
@@ -172,7 +165,7 @@ impl MapRail {
         {
             let right = area.right() - clear - i as f32 * (BTN + GAP);
             let r = Rect::from_min_size(Pos2::new(right - BTN, area.top() + INSET), Vec2::splat(BTN));
-            glass_box(&painter, r);
+            glass_box(&painter, ("trigger", i), r);
             ui.interact(r, ui.scope_id().with(("trigger", i)), egui::Sense::hover())
                 .on_hover_text(format!("{title} (not in this build yet)"));
             icons::paint(
@@ -216,14 +209,7 @@ impl MapRail {
             .fixed_pos(menu.min)
             .show(&ctx, |ui| {
                 let painter = ui.painter().clone();
-                painter.add(style::shadow_pop().as_shape(menu, CornerRadius::same(style::RADIUS)));
-                painter.rect(
-                    menu,
-                    style::RADIUS,
-                    style::rgba(0xFFFFFF, 0.94),
-                    style::glass_stroke(),
-                    egui::StrokeKind::Inside,
-                );
+                style::glass_panel(&painter, "layers", menu, style::RADIUS, 0.6);
                 ui.allocate_rect(menu, egui::Sense::hover());
                 let mut y = menu.top() + 5.0;
                 for prov in &providers {

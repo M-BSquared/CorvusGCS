@@ -82,11 +82,24 @@ pub fn shadow_pop() -> egui::epaint::Shadow {
     }
 }
 
-/// The `.glass` material. CSS blurs what is under it (`backdrop-filter`),
-/// which egui cannot; the fill is raised from 0.6 to stand in for the blur,
-/// so text on it reads as it does in the web app.
-pub fn glass_fill() -> Color32 {
-    glass(0.78)
+/// A `.glass` surface: its shadow, the frosted backdrop (`--blur-soft`,
+/// see `frost`), the translucent white at `fill` (0.6 for `.glass`, 0.55
+/// for the map rail, 0.38 for the attribution pill) and the hairline.
+/// `key` names the panel, so its backdrop has a texture of its own.
+pub fn glass_panel(
+    painter: &egui::Painter,
+    key: impl std::hash::Hash,
+    rect: egui::Rect,
+    radius: impl Into<egui::CornerRadius>,
+    fill: f32,
+) {
+    use std::hash::{BuildHasher, BuildHasherDefault};
+    let radius = radius.into();
+    let id = BuildHasherDefault::<std::collections::hash_map::DefaultHasher>::default().hash_one(key);
+    crate::frost::copy_backdrop(painter, id, rect, crate::frost::SOFT);
+    painter.add(shadow_pop().as_shape(rect, radius));
+    crate::frost::draw_backdrop(painter, id, rect, radius, crate::frost::SOFT);
+    painter.rect(rect, radius, glass(fill), glass_stroke(), egui::StrokeKind::Inside);
 }
 
 /// `border: 1px solid rgb(var(--tint-rgb) / 0.06)`.

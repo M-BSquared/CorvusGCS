@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use eframe::egui::{self, Color32, CornerRadius, Galley, Pos2, Rect, Stroke, Vec2};
+use eframe::egui::{self, Color32, Galley, Pos2, Rect, Stroke, Vec2};
 
 use crate::icons;
 use crate::style::{self, Weight};
@@ -298,14 +298,7 @@ pub fn select(
             .fixed_pos(menu.min)
             .show(ui.ctx(), |ui| {
                 let painter = ui.painter().clone();
-                painter.add(style::shadow_pop().as_shape(menu, CornerRadius::same(style::RADIUS)));
-                painter.rect(
-                    menu,
-                    style::RADIUS,
-                    style::rgba(0xFFFFFF, 0.94),
-                    style::glass_stroke(),
-                    egui::StrokeKind::Inside,
-                );
+                style::glass_panel(&painter, "selectmenu", menu, style::RADIUS, 0.6);
                 ui.allocate_rect(menu, egui::Sense::hover());
                 for (i, c) in choices.iter().enumerate() {
                     let r = Rect::from_min_size(

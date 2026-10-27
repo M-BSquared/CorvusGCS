@@ -283,14 +283,7 @@ impl Map {
         let size = Vec2::new(g.size().x + 4.0 + 9.0, 10.0 * 1.4 + 8.0);
         let pill = egui::Rect::from_min_size(Pos2::new(rect.left() + 10.0, rect.bottom() - 10.0 - size.y), size);
         let painter = ui.painter_at(rect);
-        painter.add(style::shadow_pop().as_shape(pill, egui::CornerRadius::same(255)));
-        painter.rect(
-            pill,
-            egui::CornerRadius::same(255),
-            style::glass(0.62),
-            style::glass_stroke(),
-            egui::StrokeKind::Inside,
-        );
+        style::glass_panel(&painter, "attribution", pill, egui::CornerRadius::same(255), 0.38);
         painter.galley(
             Pos2::new(pill.left() + 9.0, pill.center().y - g.size().y / 2.0),
             g,

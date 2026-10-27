@@ -94,7 +94,10 @@ impl eframe::App for App {
         self.draw(ui);
     }
 
-    fn on_exit(&mut self) {
+    fn on_exit(&mut self, gl: Option<&eframe::glow::Context>) {
+        if let Some(gl) = gl {
+            crate::frost::destroy(gl);
+        }
         self.telemetry.stop();
         self.panel.shut_down();
         self.map.shut_down();
@@ -138,6 +141,7 @@ pub fn run(server: Server, context: &'static OnceLock<egui::Context>) -> ExitCod
         .unwrap_or(1.0) as f32;
     let sources = http::get_json(&server, "/api/tiles/sources").unwrap_or(Value::Null);
     let options = eframe::NativeOptions {
+        renderer: eframe::Renderer::Glow,
         viewport: egui::ViewportBuilder::default()
             .with_title(title(&server))
             .with_inner_size([1440.0, 900.0])

@@ -13,6 +13,7 @@ mod bg;
 mod console;
 mod flight;
 mod fonts;
+mod frost;
 mod http;
 mod hud;
 mod icons;

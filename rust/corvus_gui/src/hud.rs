@@ -171,14 +171,7 @@ impl Hud {
             sw: style::RADIUS,
             se: style::RADIUS,
         };
-        painter.add(style::shadow_pop().as_shape(rect, radius));
-        painter.rect(
-            rect,
-            radius,
-            style::glass_fill(),
-            style::glass_stroke(),
-            egui::StrokeKind::Inside,
-        );
+        style::glass_panel(&painter, "hud", rect, radius, 0.6);
         // The panel takes the pointer, so the map under it does not pan.
         ui.interact(rect, ui.scope_id().with("hud"), egui::Sense::click_and_drag());
 

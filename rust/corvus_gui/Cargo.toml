@@ -12,7 +12,10 @@ name = "corvus-gcs"
 path = "src/main.rs"
 
 [dependencies]
-eframe = "0.37"
+# glow: the OpenGL renderer, whose paint callbacks can read what is already
+# drawn, which the frosted glass (frost.rs) needs; wgpu draws a frame in one
+# pass and cannot.
+eframe = { version = "0.37", features = ["glow"] }
 # The SVG loader draws the Lucide icons the web interface uses.
 egui_extras = { version = "0.37", features = ["svg", "image"] }
 image = { version = "0.25", default-features = false, features = ["png"] }

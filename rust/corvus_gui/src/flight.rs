@@ -308,14 +308,7 @@ impl FlightBar {
         let bar_h = BAR_PAD * 2.0 + btn_h + 2.0;
         let bar = Rect::from_min_size(area.min + Vec2::splat(INSET), Vec2::new(bar_w, bar_h));
         let painter = ui.painter().clone();
-        painter.add(style::shadow_pop().as_shape(bar, CornerRadius::same(style::RADIUS)));
-        painter.rect(
-            bar,
-            style::RADIUS,
-            style::glass_fill(),
-            style::glass_stroke(),
-            egui::StrokeKind::Inside,
-        );
+        style::glass_panel(&painter, "flightbar", bar, style::RADIUS, 0.6);
         ui.interact(bar, ui.scope_id().with("flightbar"), egui::Sense::click_and_drag());
 
         let mut x = bar.left() + BAR_PAD + 1.0;
@@ -499,14 +492,7 @@ impl FlightBar {
             .fixed_pos(menu.min)
             .show(ctx, |ui| {
                 let painter = ui.painter().clone();
-                painter.add(style::shadow_pop().as_shape(menu, CornerRadius::same(style::RADIUS)));
-                painter.rect(
-                    menu,
-                    style::RADIUS,
-                    style::rgba(0xFFFFFF, 0.94),
-                    style::glass_stroke(),
-                    egui::StrokeKind::Inside,
-                );
+                style::glass_panel(&painter, "modemenu", menu, style::RADIUS, 0.6);
                 ui.allocate_rect(menu, egui::Sense::hover());
                 for (i, (m, enabled)) in rows.iter().enumerate() {
                     let r = Rect::from_min_size(
@@ -572,14 +558,7 @@ impl FlightBar {
             .fixed_pos(card.min)
             .show(ctx, |ui| {
                 let painter = ui.painter().clone();
-                painter.add(style::shadow_pop().as_shape(card, CornerRadius::same(style::RADIUS)));
-                painter.rect(
-                    card,
-                    style::RADIUS,
-                    style::glass_fill(),
-                    style::glass_stroke(),
-                    egui::StrokeKind::Inside,
-                );
+                style::glass_panel(&painter, "takeoff", card, style::RADIUS, 0.6);
                 ui.allocate_rect(card, egui::Sense::click_and_drag());
                 let inner = card.shrink(14.0);
                 painter.galley(
