@@ -59,6 +59,7 @@ pymavlink does.
 | The connection cycle and its threads: start and stop, the connect/receive cycle with its reconnect backoff, connect (open, the first autopilot heartbeat, pinning the target, the dialect), the GCS heartbeat at 1 Hz with Remote ID on it, the deferred interval and version workers, all on Rust threads | `src/bridge/cycle.rs`, `src/bridge/thread.rs` (`corvus_link.bridge`) | `corvus/mavlink_bridge.py` keeps the methods, the lifecycle lock and the state |
 | The vehicle list's tracker: one bound autopilot per link (a companion or station heartbeat on its id ignored), its position, heading, speed, altitude, battery, mode and arm state, its warnings as events, stale after 5 s and forgotten after 10 min; the fleet's publish thread on a `CoreThread` | `src/bridge/fleet.rs` (`corvus_link.bridge`) | `corvus/fleet.py` keeps `FleetTracker` with its lock and state, and the `Fleet` manager (links, names, colours, config, the HTTP proxies) |
 | The second station forwarder: every frame mirrored to UDP endpoints through a drop-oldest queue, inbound datagrams split into whole frames, a peer learned only on a whole frame, commanding only from configured endpoints, never a frame under Corvus' id, never a mirror into the vehicle link's own socket, name resolution off the send path, and both threads on `CoreThread`s | `src/bridge/forward.rs` (`corvus_link.bridge`) | `corvus/mavlink_forwarder.py` keeps `MavlinkForwarder` with its socket (Python's) and state |
+| Auto-connect: the port classification and pick (USB before SiK, by device name, never a bootloader or a phantom), the startup resolver (command line, USB, SiK, configured, UDP fallback), the mid-session suggestion, and the watcher: one dial per appearance while idle, a suggestion while busy, a manual connect winning the session, a link followed to the name its device came back under, the bootloader notice; its thread on a `CoreThread` | `src/bridge/autoconnect.rs` (`corvus_link.bridge`) | `corvus/autoconnect.py` keeps the data classes, `SessionState` with its lock, and the watcher's store, bridge and busy list readers |
 | The parameter workers (batch upload, download watchdog, metadata download) on `CoreThread`s through `start_thread` | `src/bridge/thread.rs` | `corvus/mavlink_params.py` and `corvus/param_metadata.py` keep the work itself; the metadata file is still decompressed and parsed in Python |
 
 The link's threads are `CoreThread`s (`src/bridge/thread.rs`): native
@@ -67,8 +68,9 @@ releasing it wherever Python does. A native thread must not be inside the
 interpreter while it shuts down, so every one is registered, and an `atexit`
 hook (registered when corvus_link is imported, so it runs after the
 application's own teardown) stops the link loops and joins what is left. A
-`CoreThread` handle exists only once its thread has started, and a stopped
-one leaves no entry in `threading.enumerate()`.
+`CoreThread` handle exists only once its thread has started and is listed
+in `threading.enumerate()` under its name, as `threading.Thread.start`
+promises, and a stopped one leaves no entry there.
 
 `src/protocol/host.rs` holds what every engine asks of the bridge: logger,
 command error, console, events, send lock, and Python's number conversions.
@@ -183,6 +185,12 @@ pymavlink stays in the `test` dependency group as the reference:
   vehicle link loop check, name resolution, and a live UDP exchange with a
   station sending whole, split, junk and Corvus-id frames from a configured
   and an unknown address, commanding on and off.
+- `tests/test_autoconnect_parity.py` does it for auto-connect: the policy
+  on random port lists (classification, pick, startup resolver, suggestion,
+  baud and validity), random watcher stories (devices plugged, pulled,
+  replugged under another name and in the bootloader, the link busy and
+  idle, a manual connect, dials refused and failing) compared tick by tick
+  with every store write and log line, and the watcher thread.
 - `tests/test_param_threads_parity.py` does it for the parameter workers:
   uploads with valid and broken lists, armed and disarmed, a second upload
   while one runs, the watchdog with the bridge running or not, and the

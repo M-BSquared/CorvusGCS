@@ -158,6 +158,7 @@ pub fn spawn(
     }
     let own = handle.clone_ref(py);
     let thread_name = name.to_string();
+    let (started, running) = std::sync::mpsc::channel::<()>();
     let spawned = std::thread::Builder::new().name(thread_name.clone()).spawn(move || {
         if !shutting_down() {
             Python::with_gil(|py| {
@@ -166,6 +167,7 @@ pub fn spawn(
                 if let Ok(current) = py.import("threading").and_then(|t| t.call_method0("current_thread")) {
                     let _ = current.setattr("name", &thread_name);
                 }
+                let _ = started.send(());
                 if let Err(err) = body(py) {
                     if err.is_instance_of::<PyException>(py) {
                         err.display(py);
@@ -182,6 +184,12 @@ pub fn spawn(
         handle.get().finished.mark();
         return Err(PyException::new_err(format!("cannot start thread {name}: {err}")));
     }
+    // Like `threading.Thread.start`: back only once the thread is listed in
+    // `threading.enumerate()` under its name. A thread that never got that
+    // far drops the sender, which ends the wait too.
+    py.allow_threads(move || {
+        let _ = running.recv();
+    });
     Ok(handle)
 }
 
