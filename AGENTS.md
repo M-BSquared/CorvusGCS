@@ -99,7 +99,8 @@ until a tool and its permission are added there on purpose.
   `corvus/` imports pymavlink. The parameter, mission, FTP, log and
   shell protocols, the Setup commands, Remote ID, the telemetry handlers and
   the flight commands run in corvus_link too, and so does the bridge's
-  receive path, command transaction and connection cycle, whose threads are
+  receive path, command transaction, status reporting (STATUSTEXT, kill
+  switch, preflight report) and connection cycle, whose threads are
   Rust threads (`corvus_link.params`, `.missions`,
   `.ftp`, `.logs`, `.shell`, `.setup`, `.remote_id`, `.telemetry`, `.flight`,
   `.bridge`, behind the `corvus/mavlink_*.py` module of the

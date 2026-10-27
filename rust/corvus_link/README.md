@@ -53,6 +53,7 @@ pymavlink does.
 | Telemetry: BATTERY_STATUS detail and the battery fields with their latched cell count and drain series, GNSS_INTEGRITY (decoded and CRC checked from an UNKNOWN_441 frame too), the attitude and velocity setpoints, the RC channels, RADIO_STATUS, heartbeat jitter, link quality and the page stream rates | `src/protocol/telemetry.rs` (`corvus_link.telemetry`) | `corvus/mavlink_telemetry.py` keeps the methods and the operation lock around the stream requests; the battery estimator stays in `corvus/battery.py` |
 | Flight commands: mode, arm and disarm, takeoff in each stack's order, land, RTL, set home, hold, the plugin command table, velocity setpoints, and the mission sequences (fly to points, mission start, reposition) with their abort checks between steps | `src/protocol/flight.rs` (`corvus_link.flight`) | `corvus/mavlink_flight.py` keeps the methods, the tunables and the priority lock around mode, disarm, land and RTL; `corvus/mavlink_missions.py` delegates its sequences |
 | The bridge's receive path: the receive loop (degraded and lost heartbeats, read failures), the duplicate frame filter, the dispatcher with the aircraft's own state (heartbeat, position, attitude, GPS, battery, versions, home), the source checks, and the COMMAND_LONG / COMMAND_INT waits with their ACK registry | `src/bridge/receive.rs` (`corvus_link.bridge`) | `corvus/mavlink_bridge.py` keeps the methods, the state they read and write, the operation lock around the command waits |
+| What the vehicle says in words: STATUSTEXT reassembled from its chunks and published (console, warning board, routine chatter left out), the kill switch latched and released from its line, from the preflight check that names it or from a ready verdict or whole report after it, and the preflight report requests | `src/bridge/status.rs` (`corvus_link.bridge`) | `corvus/mavlink_bridge.py` keeps the methods, the state and the console fan out; which line means what is the dialect's |
 | The connection cycle and its threads: start and stop, the connect/receive cycle with its reconnect backoff, connect (open, the first autopilot heartbeat, pinning the target, the dialect), the GCS heartbeat at 1 Hz with Remote ID on it, the deferred interval and version workers, all on Rust threads | `src/bridge/cycle.rs`, `src/bridge/thread.rs` (`corvus_link.bridge`) | `corvus/mavlink_bridge.py` keeps the methods, the lifecycle lock and the state; the parameter workers stay Python threads |
 
 The link's threads are `CoreThread`s (`src/bridge/thread.rs`): native
@@ -158,6 +159,10 @@ pymavlink stays in the `test` dependency group as the reference:
   systems through both dispatchers on one fake clock, every store update
   and handler call compared; the helpers, the duplicate filter, failing
   handlers, the receive loop's endings and every kind of ACK wait.
+- `tests/test_bridge_status_parity.py` does it for STATUSTEXT and the kill
+  switch: random sessions of whole, chunked, reordered, partial, broken and
+  odd lines from several sources with SYS_STATUS verdicts in between, on
+  PX4 and ArduPilot, and the partial eviction and the report requests.
 - `tests/test_bridge_cycle_parity.py` does it for the connection cycle:
   connect against scripted links and open failures, the run cycle with its
   backoff and supersession, the heartbeat wait, the GCS heartbeat loop, the
