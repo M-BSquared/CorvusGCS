@@ -28,7 +28,7 @@ importable from here.
 """
 from __future__ import annotations
 
-import datetime
+import datetime  # noqa: F401 - the engines read it from here (SYSTEM_TIME, tlog names)
 import errno
 import logging
 import os
@@ -544,6 +544,8 @@ class MavlinkBridge(
         self._link_cycle = _receive.LinkCycle(sys.modules[__name__])
         # STATUSTEXT, vehicle events and the preflight report; see corvus_link.bridge.
         self._status_engine = _receive.StatusEngine(sys.modules[__name__])
+        # The tlog: which file, when, and each frame to it; see corvus_link.bridge.
+        self._tlog_session = _receive.TlogSession(sys.modules[__name__])
 
     # Accepted MAVLink connection-string prefixes (BUG 2). set_connection()
     # rejects anything else so a non-str/empty/garbage JSON value cannot reach
@@ -1202,15 +1204,7 @@ class MavlinkBridge(
         BEFORE "." (0x2E), which would have put the second session's file ahead
         of the first's in the Analysis listing.
         """
-        stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S-%f")
-        path = os.path.join(log_dir, stamp + ".tlog")
-        n = 1
-        while os.path.exists(path):
-            # Zero-padded so _02 sorts after _01 rather than lexicographically
-            # scattering once a tick collects ten sessions.
-            path = os.path.join(log_dir, f"{stamp}_{n:02d}.tlog")
-            n += 1
-        return path
+        return _receive.TlogSession(sys.modules[__name__]).next_path(log_dir)
 
     def _start_tlog(self) -> None:
         """Open a fresh tlog for this flight session.
@@ -1219,20 +1213,7 @@ class MavlinkBridge(
         so they stay hermetic. A log-dir permission error must never break the
         link: on failure the tlog is simply disabled for the session.
         """
-        if not self._running.is_set():
-            return
-        # Close any leftover writer from a prior cycle (defensive: _run tears
-        # down between reconnects, but guard against a double connect).
-        self._stop_tlog()
-        try:
-            log_dir = default_log_dir()
-            os.makedirs(log_dir, exist_ok=True)
-            path = self._next_tlog_path(log_dir)
-            self._tlog = TlogWriter(path)
-            self._tlog.set_conn(self._conn_str)
-        except Exception as exc:
-            logger.warning("tlog disabled: %s", exc)
-            self._tlog = None
+        self._tlog_session.start(self)
 
     def _roll_tlog_on_disarm(self, armed: bool) -> None:
         """Start the next tlog when the vehicle disarms after a flight.
@@ -1244,24 +1225,11 @@ class MavlinkBridge(
         firmware version is asked for again so the new file carries its own
         AUTOPILOT_VERSION for the flight review.
         """
-        was_armed = self._tlog_armed
-        self._tlog_armed = armed
-        if not was_armed or armed or self._tlog is None:
-            return
-        self._start_tlog()
-        if self._tlog is not None:
-            self._request_version()
+        self._tlog_session.roll_on_disarm(self, armed)
 
     def _stop_tlog(self) -> None:
         """Stop and close the current tlog if active; idempotent."""
-        tlog = self._tlog
-        if tlog is None:
-            return
-        self._tlog = None
-        try:
-            tlog.stop()
-        except Exception as exc:
-            logger.debug("tlog stop failed: %s", exc)
+        self._tlog_session.stop(self)
 
     def _write_tlog(self, msg: Any) -> None:
         """Log a raw MAVLink frame if a tlog is active; never breaks the link.
@@ -1270,28 +1238,7 @@ class MavlinkBridge(
         consumers want the bytes exactly as they came off the wire, and both
         are non-blocking appends, so taking the msgbuf once serves both.
         """
-        tlog = self._tlog
-        sink = self._frame_sink
-        if tlog is None and sink is None:
-            return
-        try:
-            get_buf = getattr(msg, "get_msgbuf", None)
-            if get_buf is None:
-                return
-            raw = get_buf()
-        except Exception as exc:
-            logger.debug("frame capture failed: %s", exc)
-            return
-        if tlog is not None:
-            try:
-                tlog.write_frame(raw)
-            except Exception as exc:
-                logger.debug("tlog write failed: %s", exc)
-        if sink is not None:
-            try:
-                sink(raw)
-            except Exception as exc:  # noqa: BLE001 - a sink never breaks the link
-                logger.debug("frame forward failed: %s", exc)
+        self._tlog_session.write(self, msg)
 
     def local_udp_address(self) -> tuple[str, int] | None:
         """Where a UDP-listening vehicle link is bound, else None.

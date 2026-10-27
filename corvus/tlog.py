@@ -5,20 +5,26 @@ flight is always attributable to the build that produced it. The file starts
 with a single metadata header line (magic prefix + JSON, terminated by a
 newline) that a reader skips in one read; raw MAVLink frames follow verbatim.
 
-Stdlib only. The receive loop never blocks on disk: ``write_frame`` only
-appends to a bounded, drop-oldest deque (recent data is preserved when the
-writer falls behind). A dedicated daemon thread drains the deque and flushes
-periodically. ``stop()`` drains the remainder, flushes, closes the file, and
-joins the writer with a bounded timeout — never blocks forever.
+The receive loop never blocks on disk: ``write_frame`` only appends to a
+bounded, drop-oldest deque (recent data is preserved when the writer falls
+behind). A writer thread drains the deque and flushes. ``stop()`` drains the
+remainder, flushes, closes the file, and joins the writer with a bounded
+timeout — never blocks forever.
+
+The writer's logic and thread are ``corvus_link.bridge.TlogEngine``, in Rust
+(a ``CoreThread``, under the same shutdown guard as the link). The file, the
+queue and the locks stay here, on the writer, and the engine works on them.
 """
 from __future__ import annotations
 
 import collections
-import json
 import logging
 import pathlib
+import sys
 import threading
 from typing import Any
+
+from corvus_link import bridge as _bridge
 
 logger = logging.getLogger("corvus.tlog")
 
@@ -34,6 +40,8 @@ _DEFAULT_MAX_QUEUE = 10000
 # Writer wake cadence: how long it waits for new frames before re-checking the
 # stop flag. Also bounds the flush interval on a quiet link.
 _DRAIN_TIMEOUT_S = 0.5
+
+_engine = _bridge.TlogEngine(sys.modules[__name__])
 
 
 class TlogWriter:
@@ -57,24 +65,14 @@ class TlogWriter:
         self._stop = threading.Event()
         self._conn_str = ""
         self._header_written = False
-        # Set once a write to disk has failed. A field laptop fills its disk
-        # mid-flight; the writer thread used to die on the resulting OSError
-        # with nothing logged, so recording stopped silently and stop() then
-        # raised out of _ensure_header before it reached the close, leaking the
-        # file handle. Now the failure is reported once, the writer keeps
-        # draining (so the producer never backs up), and stop() still closes.
+        # Set once a write to disk has failed (a field laptop fills its disk
+        # mid-flight): reported once, further frames dropped, and stop() still
+        # closes the file.
         self._failed = False
-        self._thread = threading.Thread(
-            target=self._writer_loop, name="tlog-writer", daemon=True,
-        )
-        self._thread.start()
+        self._thread = _engine.start(self)
 
     def set_conn(self, conn_str: str) -> None:
-        """Amend the ``conn`` field before the header is written; no-op after.
-
-        Called by the bridge right after construction, before any frame
-        arrives, so the metadata header records the live connection string.
-        """
+        """Amend the ``conn`` field before the header is written; no-op after."""
         if self._header_written:
             return
         self._conn_str = conn_str
@@ -85,41 +83,16 @@ class TlogWriter:
         Drops the oldest buffered frame when the deque is full (recent data is
         preserved). A stop()d writer discards further frames.
         """
-        if self._stop.is_set() or self._failed:
-            return
-        with self._cond:
-            self._buf.append(raw_bytes)
-            self._cond.notify()
+        _engine.write_frame(self, raw_bytes)
 
     def stop(self) -> None:
         """Drain remaining frames, flush, close, and join the writer thread.
 
         Idempotent and bounded: the writer is joined with a 2 s timeout so a
-        stuck disk cannot hang shutdown.
+        stuck disk cannot hang shutdown, and a failing disk never skips the
+        close.
         """
-        self._stop.set()
-        with self._cond:
-            self._cond.notify_all()
-        if self._thread.is_alive():
-            self._thread.join(timeout=2.0)
-        # Best-effort final header + flush + close; safe if the writer did it.
-        # Guarded so a failing disk cannot skip the close below and leak the
-        # descriptor — the whole point of stop() is that the handle goes away.
-        try:
-            self._ensure_header()
-        except Exception:  # noqa: BLE001 - teardown never raises
-            self._note_failure("tlog header write failed")
-        with self._file_lock:
-            if self._file is not None and not self._file.closed:
-                # A flush that fails on a full disk must not skip the close.
-                try:
-                    self._file.flush()
-                except Exception:
-                    pass
-                try:
-                    self._file.close()
-                except Exception:
-                    pass
+        _engine.stop(self)
 
     def __enter__(self) -> TlogWriter:
         return self
@@ -132,80 +105,21 @@ class TlogWriter:
     # ------------------------------------------------------------------
 
     def _writer_loop(self) -> None:
-        try:
-            self._drain_until_stopped()
-        except Exception:  # noqa: BLE001 - the writer thread must not die silently
-            self._note_failure("tlog writer stopped after a write failure")
-        with self._file_lock:
-            try:
-                self._file.flush()
-            except Exception:
-                pass
+        _engine.writer_loop(self)
 
     def _drain_until_stopped(self) -> None:
-        while not self._stop.is_set():
-            with self._cond:
-                while not self._buf and not self._stop.is_set():
-                    self._cond.wait(timeout=_DRAIN_TIMEOUT_S)
-                if not self._buf and self._stop.is_set():
-                    break
-                batch: list[bytes] = []
-                while self._buf:
-                    batch.append(self._buf.popleft())
-            if batch:
-                self._ensure_header()
-                self._write_batch(batch)
-        # Final drain on stop so no enqueued frame is lost.
-        with self._cond:
-            batch = list(self._buf)
-            self._buf.clear()
-        if batch:
-            self._ensure_header()
-            self._write_batch(batch)
-        # An empty tlog still carries its metadata header for attributability.
-        self._ensure_header()
+        _engine.drain_until_stopped(self)
 
-    def _note_failure(self, message: str) -> None:
+    def _note_failure(self, message: str, exc: BaseException | None = None) -> None:
         """Report the first write failure and stop accepting further frames."""
-        already = self._failed
-        self._failed = True
-        with self._cond:
-            self._buf.clear()
-        if not already:
-            logger.warning("%s: %s", message, self._path, exc_info=True)
+        _engine.note_failure(self, message, exc)
 
     def _ensure_header(self) -> None:
         """Write the metadata header once (double-checked under the file lock)."""
-        if self._header_written:
-            return
-        header = self._build_header()
-        with self._file_lock:
-            if self._header_written:
-                return
-            self._file.write(header)
-            self._file.flush()
-            self._header_written = True
+        _engine.ensure_header(self)
 
     def _build_header(self) -> bytes:
-        # Lazy import: tlog must not introduce an import cycle with the bridge
-        # or any other module that reads the version at import time.
-        from .version import get_version
-
-        import datetime
-
-        meta = {
-            "product": "Corvus GCS",
-            "version": get_version(),
-            "conn": self._conn_str,
-            "started_at": datetime.datetime.now(datetime.UTC).isoformat(),
-            "format": "mavlink-raw",
-        }
-        return _MAGIC + json.dumps(meta).encode("utf-8") + b"\n"
+        return _engine.build_header(self)
 
     def _write_batch(self, batch: list[bytes]) -> None:
-        with self._file_lock:
-            if self._file is None or self._file.closed:
-                return
-            for raw in batch:
-                self._file.write(raw)
-            self._file.flush()
+        _engine.write_batch(self, batch)

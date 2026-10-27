@@ -185,6 +185,23 @@ pub fn spawn(
     Ok(handle)
 }
 
+/// Start *target(*args)* on a new `CoreThread` named *name*; for Python
+/// workers (the tlog writer, the parameter upload and watchdog) that should
+/// live under the same shutdown guard as the link loops.
+#[pyfunction]
+#[pyo3(signature = (name, target, *args))]
+pub fn start_thread(
+    py: Python<'_>,
+    name: &str,
+    target: PyObject,
+    args: Py<pyo3::types::PyTuple>,
+) -> PyResult<Py<CoreThread>> {
+    spawn(py, name, move |py| {
+        target.bind(py).call1(args.bind(py))?;
+        Ok(())
+    })
+}
+
 /// The thread a loop is running on: its `CoreThread`, or the Python thread
 /// that called it directly.
 pub fn current(py: Python<'_>) -> PyResult<PyObject> {
@@ -212,6 +229,7 @@ pub fn join_at_exit(py: Python<'_>, timeout: f64) -> usize {
 pub fn register(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<CoreThread>()?;
     m.add_function(wrap_pyfunction!(join_at_exit, m)?)?;
+    m.add_function(wrap_pyfunction!(start_thread, m)?)?;
     py.import("atexit")?
         .call_method1("register", (m.getattr("join_at_exit")?,))?;
     Ok(())
