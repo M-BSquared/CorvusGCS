@@ -9,11 +9,17 @@
 
 mod app;
 mod backend;
+mod flight;
+mod fonts;
 mod http;
+mod hud;
+mod icons;
+mod map;
 mod sse;
+mod style;
 mod telemetry;
-mod theme;
 mod topbar;
+mod track;
 mod units;
 
 use std::path::PathBuf;

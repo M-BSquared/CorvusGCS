@@ -1,4 +1,5 @@
-//! The window.
+//! The window: the top bar, and under it the map with the flight bar and the
+//! HUD over it, laid out as index.html lays out `.top-bar` and `#mapView`.
 
 use std::process::ExitCode;
 use std::sync::OnceLock;
@@ -6,42 +7,57 @@ use std::sync::OnceLock;
 use eframe::egui;
 use serde_json::Value;
 
+use crate::flight::FlightBar;
 use crate::http::{self, Server};
+use crate::hud::Hud;
+use crate::map::Map;
 use crate::telemetry::Telemetry;
-use crate::theme::Theme;
-use crate::topbar;
 use crate::units::Units;
+use crate::{fonts, style, topbar};
+
+static LOGO: &[u8] = include_bytes!("../../../assets/CorvusGCS_logo_inverted.png");
 
 struct App {
-    server: Server,
     telemetry: Telemetry,
-    theme: Theme,
     units: Units,
+    map: Map,
+    hud: Hud,
+    flight: FlightBar,
+    logo: egui::ImageSource<'static>,
+}
+
+fn now_ms() -> f64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0.0, |d| d.as_secs_f64() * 1000.0)
 }
 
 impl App {
     fn draw(&mut self, ui: &mut egui::Ui) {
         let state: Value = self.telemetry.state();
+        let now = now_ms();
+        self.map.update(&state);
+        self.flight.drain_errors(now);
+
         let blocks = topbar::blocks(&state, &self.units);
         egui::Panel::top("topbar")
-            .frame(
-                egui::Frame::new()
-                    .fill(self.theme.surface)
-                    .stroke(egui::Stroke::new(1.0, self.theme.border))
-                    .inner_margin(egui::Margin::symmetric(0, 8)),
-            )
-            .show(ui, |ui| topbar::show(ui, &self.theme, &blocks));
-        egui::CentralPanel::default().show(ui, |ui| {
-            let stream = if self.telemetry.stream_up() {
-                "open"
-            } else {
-                "reconnecting"
-            };
-            ui.label(
-                egui::RichText::new(format!("Backend {}, telemetry stream {stream}", self.server.url()))
-                    .color(self.theme.text_muted),
-            );
-        });
+            .exact_size(topbar::HEIGHT)
+            .frame(egui::Frame::NONE)
+            .show(ui, |ui| {
+                let rect = ui.max_rect();
+                topbar::show(ui, rect, &self.logo, &blocks);
+            });
+        egui::CentralPanel::default()
+            .frame(egui::Frame::NONE.fill(style::BG))
+            .show(ui, |ui| {
+                let area = ui.max_rect();
+                self.map.show(ui, &state);
+                let corner = area.max - egui::vec2(16.0, 16.0);
+                self.hud.show(ui, corner, &state, &self.units, now);
+                self.flight.show(ui, area, &state, &self.units);
+            });
+        // The flight clock ticks while airborne, and toasts expire.
+        ui.ctx().request_repaint_after(std::time::Duration::from_millis(250));
     }
 }
 
@@ -52,6 +68,7 @@ impl eframe::App for App {
 
     fn on_exit(&mut self) {
         self.telemetry.stop();
+        self.map.shut_down();
     }
 }
 
@@ -75,6 +92,7 @@ pub fn run(server: Server, context: &'static OnceLock<egui::Context>) -> ExitCod
     let units = http::get_json(&server, "/api/config")
         .map(|c| Units::from_config(&c))
         .unwrap_or_default();
+    let sources = http::get_json(&server, "/api/tiles/sources").unwrap_or(Value::Null);
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title(title(&server))
@@ -88,14 +106,24 @@ pub fn run(server: Server, context: &'static OnceLock<egui::Context>) -> ExitCod
         Box::new(move |cc| {
             let ctx = cc.egui_ctx.clone();
             let _ = context.set(ctx.clone());
-            let theme = Theme::light();
-            theme.apply(&ctx);
-            let telemetry = Telemetry::start(server.clone(), move || ctx.request_repaint());
+            egui_extras::install_image_loaders(&ctx);
+            fonts::install(&ctx);
+            style::apply(&ctx);
+            let repaint = ctx.clone();
+            let telemetry = Telemetry::start(server.clone(), move || repaint.request_repaint());
+            let map = Map::new(&ctx, &server, &sources);
+            let flight = FlightBar::new(server.clone(), &ctx);
+            let logo = egui::ImageSource::Bytes {
+                uri: "bytes://corvus-logo.png".into(),
+                bytes: LOGO.into(),
+            };
             Ok(Box::new(App {
-                server,
                 telemetry,
-                theme,
                 units,
+                map,
+                hud: Hud::default(),
+                flight,
+                logo,
             }))
         }),
     );

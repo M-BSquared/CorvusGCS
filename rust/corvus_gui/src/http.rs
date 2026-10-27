@@ -209,7 +209,6 @@ pub fn get_json(server: &Server, path: &str) -> Result<serde_json::Value, String
 }
 
 /// POST a JSON document and read the JSON answer.
-#[allow(dead_code)]
 pub fn post_json(server: &Server, path: &str, body: &serde_json::Value) -> Result<serde_json::Value, String> {
     let text = body.to_string();
     let r = request(
@@ -292,6 +291,41 @@ mod tests {
     fn without_a_length_the_body_runs_to_the_end() {
         let r = parse("HTTP/1.0 200 OK\r\nContent-Type: text/event-stream\r\n\r\nevent: ping\ndata: {}\n\n");
         assert_eq!(r.text().unwrap(), "event: ping\ndata: {}\n\n");
+    }
+
+    #[test]
+    fn a_post_carries_its_json_and_a_refusal_carries_its_reason() {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let server = Server::local(listener.local_addr().unwrap().port());
+        let t = std::thread::spawn(move || {
+            let mut seen = Vec::new();
+            for answer in [
+                "HTTP/1.0 200 OK\r\nContent-Length: 11\r\n\r\n{\"ok\":true}",
+                "HTTP/1.0 400 Bad Request\r\nContent-Length: 18\r\n\r\n{\"error\":\"no fix\"}",
+            ] {
+                let (mut s, _) = listener.accept().unwrap();
+                // Head and body may come in two reads.
+                let mut got = Vec::new();
+                let mut buf = [0u8; 2048];
+                while !got.ends_with(b"}") {
+                    let n = s.read(&mut buf).unwrap();
+                    got.extend_from_slice(&buf[..n]);
+                }
+                seen.push(String::from_utf8_lossy(&got).into_owned());
+                s.write_all(answer.as_bytes()).unwrap();
+            }
+            seen
+        });
+        let ok = post_json(&server, "/api/mavlink/arm", &serde_json::json!({"arm": true})).unwrap();
+        assert_eq!(ok["ok"], true);
+        let refused = post_json(&server, "/api/mavlink/takeoff", &serde_json::json!({"altitude": 10.0}));
+        assert_eq!(refused.unwrap_err(), "no fix");
+        let seen = t.join().unwrap();
+        assert!(seen[0].starts_with("POST /api/mavlink/arm HTTP/1.1\r\n"));
+        assert!(seen[0].contains("Content-Type: application/json\r\n"));
+        assert!(seen[0].ends_with("{\"arm\":true}"));
+        assert!(seen[1].ends_with("{\"altitude\":10.0}"));
     }
 
     #[test]

@@ -89,6 +89,7 @@ impl Telemetry {
     }
 
     /// Whether the stream itself is open (the vehicle may still be absent).
+    #[cfg(test)]
     pub fn stream_up(&self) -> bool {
         self.shared.lock().map(|s| s.stream_up).unwrap_or(false)
     }
