@@ -16,7 +16,7 @@ use eframe::egui::{self, Color32, CornerRadius, Pos2, Rect, Stroke, Vec2};
 use serde_json::{json, Value};
 
 use crate::http::{self, Server};
-use crate::icons::{self, Icon};
+use crate::icons;
 use crate::style::{self, Weight};
 use crate::units::{js_round, Units};
 
@@ -279,9 +279,9 @@ impl FlightBar {
         let select_w = (10.0 + select_g.size().x + 26.0 + 2.0).max(120.0);
         let select_h = 2.0 + 8.0 + 11.0 * 1.21 + 8.0;
 
-        let mut buttons: Vec<(Command, Icon, &str, &str, bool)> = vec![(
+        let mut buttons: Vec<(Command, &'static str, &str, &str, bool)> = vec![(
             Command::Arm,
-            Icon::Power,
+            "power",
             if armed { "DISARM" } else { "ARM" },
             "Arm / Disarm",
             true,
@@ -290,7 +290,7 @@ impl FlightBar {
             let land = role == "land";
             buttons.push((
                 if land { Command::Land } else { Command::Takeoff },
-                if land { Icon::ArrowDown } else { Icon::ArrowUp },
+                if land { "arrow-down" } else { "arrow-up" },
                 if land { "LAND" } else { "TAKEOFF" },
                 if land { "Land" } else { "Takeoff" },
                 true,
@@ -298,7 +298,7 @@ impl FlightBar {
         }
         buttons.push((
             Command::Rtl,
-            Icon::Home,
+            "house",
             "RETURN",
             if ground { "Return to start" } else { "Return to Launch" },
             true,
@@ -327,7 +327,7 @@ impl FlightBar {
             let clicked = fa_button(
                 ui,
                 r,
-                *icon,
+                icon,
                 caption,
                 title,
                 *enabled,
@@ -379,7 +379,7 @@ impl FlightBar {
         fa_button(
             ui,
             plan,
-            Icon::Route,
+            "route",
             "PLAN",
             "Plan fly-to-points mission (not in this build yet)",
             false,
@@ -468,7 +468,7 @@ impl FlightBar {
             color.gamma_multiply(alpha),
         );
         let chevron = Rect::from_center_size(Pos2::new(rect.right() - 8.0 - 6.0, rect.center().y), Vec2::splat(12.0));
-        icons::paint(ui, Icon::ChevronDown, chevron, style::TEXT_3);
+        icons::paint(ui, "chevron-down", chevron, style::TEXT_3);
         if response.clicked() && !busy {
             self.mode_open = !self.mode_open;
             self.takeoff_open = false;
@@ -596,7 +596,7 @@ impl FlightBar {
                 }
                 icons::paint(
                     ui,
-                    Icon::X,
+                    "x",
                     close.shrink(3.0),
                     if resp.hovered() { style::TEXT_1 } else { style::TEXT_3 },
                 );
@@ -689,7 +689,7 @@ impl FlightBar {
                 let start = button.center().x - total / 2.0;
                 icons::paint(
                     ui,
-                    Icon::ArrowUp,
+                    "arrow-up",
                     Rect::from_min_size(Pos2::new(start, button.center().y - 7.5), Vec2::splat(15.0)),
                     style::TEXT_INVERTED,
                 );
@@ -744,7 +744,7 @@ impl FlightBar {
 fn fa_button(
     ui: &mut egui::Ui,
     r: Rect,
-    icon: Icon,
+    icon: &'static str,
     caption: &str,
     title: &str,
     enabled: bool,

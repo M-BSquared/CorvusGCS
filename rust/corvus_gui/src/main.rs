@@ -9,13 +9,21 @@
 
 mod app;
 mod backend;
+mod bg;
+mod console;
 mod flight;
 mod fonts;
 mod http;
 mod hud;
 mod icons;
+mod kit;
+mod link;
 mod map;
+mod maprail;
+mod nav;
+mod panel;
 mod sse;
+mod stream;
 mod style;
 mod telemetry;
 mod topbar;

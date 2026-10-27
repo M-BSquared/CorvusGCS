@@ -1,5 +1,6 @@
-//! The window: the top bar, and under it the map with the flight bar and the
-//! HUD over it, laid out as index.html lays out `.top-bar` and `#mapView`.
+//! The window, laid out as index.html lays out `.app`: the top bar, and
+//! under it `.body` with the left rail, the page (the map with the flight
+//! bar, HUD and map controls over it on HOME) and the right panel.
 
 use std::process::ExitCode;
 use std::sync::OnceLock;
@@ -11,6 +12,9 @@ use crate::flight::FlightBar;
 use crate::http::{self, Server};
 use crate::hud::Hud;
 use crate::map::Map;
+use crate::maprail::MapRail;
+use crate::nav::{self, Page};
+use crate::panel::Panel;
 use crate::telemetry::Telemetry;
 use crate::units::Units;
 use crate::{fonts, style, topbar};
@@ -24,6 +28,10 @@ struct App {
     hud: Hud,
     flight: FlightBar,
     logo: egui::ImageSource<'static>,
+    page: Page,
+    mission_page: bool,
+    panel: Panel,
+    rail: MapRail,
 }
 
 fn now_ms() -> f64 {
@@ -50,11 +58,31 @@ impl App {
         egui::CentralPanel::default()
             .frame(egui::Frame::NONE.fill(style::BG))
             .show(ui, |ui| {
-                let area = ui.max_rect();
-                self.map.show(ui, &state);
-                let corner = area.max - egui::vec2(16.0, 16.0);
-                self.hud.show(ui, corner, &state, &self.units, now);
-                self.flight.show(ui, area, &state, &self.units);
+                let body = ui.max_rect();
+                let rail = egui::Rect::from_min_size(body.min, egui::vec2(nav::WIDTH, body.height()));
+                let panel_w = self.panel.current_width();
+                let panel = egui::Rect::from_min_max(egui::pos2(body.right() - panel_w, body.top()), body.max);
+                let main = egui::Rect::from_min_max(
+                    egui::pos2(rail.right(), body.top()),
+                    egui::pos2(panel.left(), body.bottom()),
+                );
+                if self.page == Page::Home {
+                    let mut map_ui = ui.new_child(egui::UiBuilder::new().max_rect(main));
+                    map_ui.set_clip_rect(main);
+                    self.map.show(&mut map_ui, &state);
+                    let corner = main.max - egui::vec2(16.0, 16.0);
+                    self.hud.show(&mut map_ui, corner, &state, &self.units, now);
+                    self.rail.show(&mut map_ui, main, &mut self.map, &state);
+                    self.flight.show(&mut map_ui, main, &state, &self.units);
+                } else {
+                    nav::placeholder(ui, main, self.page);
+                }
+                if let Some(page) = nav::show(ui, rail, self.mission_page, self.page) {
+                    self.page = page;
+                }
+                let mut panel_ui = ui.new_child(egui::UiBuilder::new().max_rect(panel));
+                panel_ui.set_clip_rect(panel);
+                self.panel.show(&mut panel_ui, panel, &state);
             });
         // The flight clock ticks while airborne, and toasts expire.
         ui.ctx().request_repaint_after(std::time::Duration::from_millis(250));
@@ -68,6 +96,7 @@ impl eframe::App for App {
 
     fn on_exit(&mut self) {
         self.telemetry.stop();
+        self.panel.shut_down();
         self.map.shut_down();
     }
 }
@@ -89,9 +118,24 @@ fn title(server: &Server) -> String {
 
 /// Opens the window on `server` and runs until it is closed.
 pub fn run(server: Server, context: &'static OnceLock<egui::Context>) -> ExitCode {
-    let units = http::get_json(&server, "/api/config")
-        .map(|c| Units::from_config(&c))
-        .unwrap_or_default();
+    let config = http::get_json(&server, "/api/config").unwrap_or(Value::Null);
+    let units = Units::from_config(&config);
+    let ui_flag = |k: &str, default: bool| {
+        config
+            .get("ui")
+            .and_then(|u| u.get(k))
+            .and_then(Value::as_bool)
+            .unwrap_or(default)
+    };
+    let mission_page = ui_flag("mission_page", false);
+    let measure = ui_flag("measure_tool", true);
+    // The interface size (Settings > Interface), as --ui-scale zooms the page.
+    let scale = config
+        .get("ui")
+        .and_then(|u| u.get("scale"))
+        .and_then(Value::as_f64)
+        .filter(|s| (0.8..=1.5).contains(s))
+        .unwrap_or(1.0) as f32;
     let sources = http::get_json(&server, "/api/tiles/sources").unwrap_or(Value::Null);
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
@@ -113,6 +157,10 @@ pub fn run(server: Server, context: &'static OnceLock<egui::Context>) -> ExitCod
             let telemetry = Telemetry::start(server.clone(), move || repaint.request_repaint());
             let map = Map::new(&ctx, &server, &sources);
             let flight = FlightBar::new(server.clone(), &ctx);
+            ctx.set_zoom_factor(scale);
+            let panel = Panel::new(server.clone(), &ctx, &config);
+            let mut rail = MapRail::default();
+            rail.measure = measure;
             let logo = egui::ImageSource::Bytes {
                 uri: "bytes://corvus-logo.png".into(),
                 bytes: LOGO.into(),
@@ -124,6 +172,10 @@ pub fn run(server: Server, context: &'static OnceLock<egui::Context>) -> ExitCod
                 hud: Hud::default(),
                 flight,
                 logo,
+                page: Page::Home,
+                mission_page,
+                panel,
+                rail,
             }))
         }),
     );

@@ -23,6 +23,8 @@ pub const SURFACE_3: Color32 = hex(0xE8EBF0);
 pub const SURFACE_HOVER: Color32 = hex(0xE2E6EC);
 pub const ACCENT: Color32 = hex(0x1B1F26);
 pub const ACCENT_BRIGHT: Color32 = hex(0x343B45);
+pub const ACCENT_DARK: Color32 = hex(0xE2E6EC);
+pub const ACCENT_HOVER: Color32 = hex(0x2C323B);
 pub const HEALTHY: Color32 = hex(0x0F8B50);
 pub const HEALTHY_DARK: Color32 = hex(0xD8F1E3);
 pub const HEALTHY_BRIGHT: Color32 = hex(0x0B7343);
@@ -41,6 +43,13 @@ pub const TEXT_3: Color32 = hex(0x79828D);
 pub const TEXT_INVERTED: Color32 = hex(0xFFFFFF);
 pub const BORDER: Color32 = hex(0xD3D8DF);
 pub const BORDER_SOFT: Color32 = hex(0xE4E8ED);
+pub const BORDER_STRONG: Color32 = hex(0xB6BEC8);
+pub const SURFACE_2: Color32 = hex(0xF1F3F6);
+pub const TEXT_DISABLED: Color32 = hex(0xA9B1BA);
+pub const NAV_BRIGHT: Color32 = hex(0x085A9C);
+pub const TERMINAL_CMD: Color32 = hex(0x0F8B50);
+pub const TERMINAL_MUTED: Color32 = hex(0x79828D);
+pub const TERMINAL_TEXT: Color32 = hex(0x1B1F26);
 pub const ADI_SKY: Color32 = hex(0x3AA7D6);
 pub const ADI_GROUND: Color32 = hex(0x006310);
 pub const ADI_MARK: Color32 = hex(0xF58A2B);
@@ -113,6 +122,16 @@ impl Weight {
 /// `font: <weight> <size>px var(--sans)`.
 pub fn font(size: f32, weight: Weight) -> FontId {
     FontId::new(size, weight.family())
+}
+
+/// `font: <size>px var(--mono)`.
+pub fn mono(size: f32) -> FontId {
+    FontId::new(size, FontFamily::Name("mono-400".into()))
+}
+
+/// One run of text in JetBrains Mono.
+pub fn galley_mono(ui: &egui::Ui, text: &str, size: f32, color: Color32) -> Arc<Galley> {
+    ui.painter().layout_no_wrap(text.to_string(), mono(size), color)
 }
 
 /// One run of text as CSS sets it: size, weight, colour, letter spacing.

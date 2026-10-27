@@ -18,15 +18,44 @@ const FONTS: &[&str] = &[
     "JetBrainsMono-latin-ext",
 ];
 
-/// (the name in this crate, the Lucide export name)
+/// (the Lucide name the web interface uses, the export name in lucide.min.js)
 const ICONS: &[(&str, &str)] = &[
     ("power", "Power"),
-    ("arrow_up", "ArrowUp"),
-    ("arrow_down", "ArrowDown"),
-    ("home", "House"),
+    ("arrow-up", "ArrowUp"),
+    ("arrow-down", "ArrowDown"),
+    ("house", "House"),
     ("route", "Route"),
     ("x", "X"),
-    ("chevron_down", "ChevronDown"),
+    ("chevron-down", "ChevronDown"),
+    ("chevron-right", "ChevronRight"),
+    ("chevron-left", "ChevronLeft"),
+    ("sliders-horizontal", "SlidersHorizontal"),
+    ("chart-column", "ChartColumn"),
+    ("file-text", "FileText"),
+    ("settings", "Settings"),
+    ("plug", "Plug"),
+    ("cable", "Cable"),
+    ("network", "Network"),
+    ("refresh-cw", "RefreshCw"),
+    ("share-2", "Share2"),
+    ("search", "Search"),
+    ("pause", "Pause"),
+    ("play", "Play"),
+    ("copy", "Copy"),
+    ("download", "Download"),
+    ("rotate-ccw", "RotateCcw"),
+    ("send", "Send"),
+    ("plus", "Plus"),
+    ("minus", "Minus"),
+    ("server", "Server"),
+    ("pencil", "Pencil"),
+    ("puzzle", "Puzzle"),
+    ("crosshair", "Crosshair"),
+    ("layers", "Layers"),
+    ("frame", "Frame"),
+    ("box", "Box"),
+    ("ruler", "Ruler"),
+    ("info", "Info"),
 ];
 
 fn main() {
@@ -43,21 +72,16 @@ fn main() {
     let lucide_path = web.join("vendor/lucide.min.js");
     println!("cargo:rerun-if-changed={}", lucide_path.display());
     let lucide = std::fs::read_to_string(&lucide_path).expect("read lucide.min.js");
-    let mut code = String::new();
-    for (ident, export) in ICONS {
+    let mut code = String::from("/// The SVG of a Lucide icon by its web name.\npub fn svg(name: &str) -> Option<&'static [u8]> {\n    Some(match name {\n");
+    for (name, export) in ICONS {
         let nodes = icon_nodes(&lucide, export).unwrap_or_else(|| panic!("Lucide icon {export} not found"));
         let svg = format!(
             "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" \
              stroke=\"#ffffff\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">{nodes}</svg>"
         );
-        writeln!(
-            code,
-            "pub const {}: &[u8] = {:?}.as_bytes();",
-            ident.to_uppercase(),
-            svg
-        )
-        .unwrap();
+        writeln!(code, "        {name:?} => {svg:?}.as_bytes(),").unwrap();
     }
+    code.push_str("        _ => return None,\n    })\n}\n");
     std::fs::write(out.join("icons.rs"), code).expect("write icons.rs");
 }
 

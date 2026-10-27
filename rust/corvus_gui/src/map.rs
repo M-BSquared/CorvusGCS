@@ -23,7 +23,7 @@ const FIRST_FIX_ZOOM: f64 = 16.0;
 /// The follow dead zone, as a share of the map: the aircraft moves freely
 /// inside it and the map pans only once it leaves.
 const FOLLOW_BOX_FRACTION: f32 = 0.4;
-const SOURCE_ID: &str = "satellite";
+const DEFAULT_SOURCE: &str = "satellite";
 
 struct CorvusTiles {
     base: String,
@@ -54,12 +54,12 @@ impl TileSource for CorvusTiles {
     }
 }
 
-/// The source's credit and top zoom from `/api/tiles/sources`.
-fn describe(sources: &Value) -> (String, u8) {
-    let entry = sources.get("sources").and_then(Value::as_array).and_then(|list| {
-        list.iter()
-            .find(|s| s.get("id").and_then(Value::as_str) == Some(SOURCE_ID))
-    });
+/// A source's credit and top zoom from `/api/tiles/sources`.
+fn describe(sources: &Value, id: &str) -> (String, u8) {
+    let entry = sources
+        .get("sources")
+        .and_then(Value::as_array)
+        .and_then(|list| list.iter().find(|s| s.get("id").and_then(Value::as_str) == Some(id)));
     let attribution = entry
         .and_then(|e| e.get("attribution"))
         .and_then(Value::as_str)
@@ -75,6 +75,10 @@ fn describe(sources: &Value) -> (String, u8) {
 
 /// The map and what it remembers between frames.
 pub struct Map {
+    server: Server,
+    sources: Value,
+    /// The base layer shown, a source id of `/api/tiles/sources`.
+    pub source: String,
     tiles: Option<HttpTiles>,
     memory: MapMemory,
     attribution: &'static str,
@@ -95,12 +99,65 @@ fn real_fix(v: Option<&Value>) -> Option<(f64, f64)> {
 
 impl Map {
     pub fn new(ctx: &egui::Context, server: &Server, sources: &Value) -> Map {
-        let (attribution, max_zoom) = describe(sources);
-        // Leaked once: walkers wants a 'static credit, and there is one map.
+        let mut memory = MapMemory::default();
+        let _ = memory.set_zoom(DEFAULT_ZOOM);
+        memory.center_at(walkers::lon_lat(DEFAULT_CENTER.0, DEFAULT_CENTER.1));
+        let mut map = Map {
+            server: server.clone(),
+            sources: sources.clone(),
+            source: String::new(),
+            tiles: None,
+            memory,
+            attribution: "",
+            track: Track::default(),
+            first_fix: true,
+            follow: true,
+            heading: None,
+        };
+        map.set_source(ctx, DEFAULT_SOURCE);
+        map
+    }
+
+    /// The base layers to offer: (id, label, provider label).
+    pub fn layers(&self) -> Vec<(String, String, String)> {
+        let providers = self
+            .sources
+            .get("providers")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        let provider_label = |id: &str| {
+            providers
+                .iter()
+                .find(|p| p.get("id").and_then(Value::as_str) == Some(id))
+                .and_then(|p| p.get("label").and_then(Value::as_str))
+                .unwrap_or(id)
+                .to_string()
+        };
+        self.sources
+            .get("sources")
+            .and_then(Value::as_array)
+            .map(|list| {
+                list.iter()
+                    .filter_map(|s| {
+                        let id = s.get("id")?.as_str()?.to_string();
+                        let label = s.get("label").and_then(Value::as_str).unwrap_or(&id).to_string();
+                        let prov = provider_label(s.get("provider").and_then(Value::as_str).unwrap_or(""));
+                        Some((id, label, prov))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Shows the source `id`, through the backend's proxy like every other.
+    pub fn set_source(&mut self, ctx: &egui::Context, id: &str) {
+        let (attribution, max_zoom) = describe(&self.sources, id);
+        // Leaked once per layer picked: walkers wants a 'static credit.
         let attribution: &'static str = Box::leak(attribution.into_boxed_str());
         let source = CorvusTiles {
-            base: server.url(),
-            id: SOURCE_ID.into(),
+            base: self.server.url(),
+            id: id.into(),
             attribution,
             max_zoom,
         };
@@ -109,18 +166,25 @@ impl Map {
             cache: None,
             ..Default::default()
         };
-        let tiles = HttpTiles::with_options(source, options, ctx.clone());
-        let mut memory = MapMemory::default();
-        let _ = memory.set_zoom(DEFAULT_ZOOM);
-        memory.center_at(walkers::lon_lat(DEFAULT_CENTER.0, DEFAULT_CENTER.1));
-        Map {
-            tiles: Some(tiles),
-            memory,
-            attribution,
-            track: Track::default(),
-            first_fix: true,
-            follow: true,
-            heading: None,
+        self.tiles = Some(HttpTiles::with_options(source, options, ctx.clone()));
+        self.attribution = attribution;
+        self.source = id.to_string();
+    }
+
+    /// Zooms one step in or out.
+    pub fn zoom(&mut self, by: i32) {
+        let _ = if by > 0 {
+            self.memory.zoom_in()
+        } else {
+            self.memory.zoom_out()
+        };
+    }
+
+    /// Centres on the aircraft and follows it again.
+    pub fn recenter(&mut self, state: &Value) {
+        self.follow = true;
+        if let Some((lng, lat)) = real_fix(state.get("position")) {
+            self.memory.center_at(walkers::lon_lat(lng, lat));
         }
     }
 
@@ -392,10 +456,10 @@ mod tests {
             {"id": "satellite", "attribution": "© Esri, Maxar, Earthstar Geographics", "maxzoom": 19}
         ]});
         assert_eq!(
-            describe(&sources),
+            describe(&sources, "satellite"),
             ("© Esri, Maxar, Earthstar Geographics".to_string(), 19)
         );
-        assert_eq!(describe(&json!({})), (String::new(), 19));
+        assert_eq!(describe(&json!({}), "satellite"), (String::new(), 19));
     }
 
     #[test]
@@ -424,6 +488,9 @@ mod tests {
     fn the_first_fix_records_a_track_point() {
         let ctx = egui::Context::default();
         let mut m = Map {
+            server: Server::local(1),
+            sources: Value::Null,
+            source: String::new(),
             tiles: None,
             memory: MapMemory::default(),
             attribution: "",
