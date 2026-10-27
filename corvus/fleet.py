@@ -28,12 +28,15 @@ import json
 import logging
 import math
 import re
+import sys
 import threading
 import time
 from typing import Any
 from collections.abc import Callable
 
-from . import autopilot as autopilot_dialect
+from corvus_link import bridge as _threads
+
+from . import autopilot as autopilot_dialect  # noqa: F401 - the tracker engine reads it
 
 logger = logging.getLogger("corvus.fleet")
 
@@ -81,6 +84,9 @@ MAX_REMEMBERED = 64
 _COLOR_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
 _LINK_ID_RE = re.compile(r"^link-[0-9]{1,3}$")
 _KEY_RE = re.compile(r"^(main|link-[0-9]{1,3}):([0-9]{1,3})$")
+
+
+_engine = _threads.FleetEngine(sys.modules[__name__])
 
 
 def vehicle_key(link_id: str, system_id: int) -> str:
@@ -190,6 +196,9 @@ class FleetTracker:
     about the link. Until :meth:`bind` names the system the link latched it
     takes nothing, so a stray frame on a noisy radio never becomes a vehicle.
     Thread-safe: written by the receive thread, read by the fleet publisher.
+
+    The logic is ``corvus_link.bridge.FleetEngine``, in Rust; the lock, the
+    binding, the entry and the events stay here.
     """
 
     def __init__(self, type_names: dict[int, str] | None = None) -> None:
@@ -205,20 +214,7 @@ class FleetTracker:
 
     def bind(self, system: int, component: int = 0) -> None:
         """Track *system* from now on, and only it. Another system forgets the last."""
-        try:
-            system = int(system)
-            component = int(component or 0)
-        except (TypeError, ValueError):
-            return
-        if not 1 <= system <= 255:
-            return
-        with self._lock:
-            if system != self._system:
-                self._entry = None
-            self._system = system
-            self._component = component
-            if self._entry is not None and component:
-                self._entry["component"] = component
+        _engine.bind(self, system, component)
 
     def bound_system(self) -> int | None:
         with self._lock:
@@ -227,150 +223,19 @@ class FleetTracker:
     def observe(self, msg: Any, vehicle_heartbeat: bool = False, now: float | None = None) -> None:
         """Take one received frame. *vehicle_heartbeat* is the bridge's verdict
         that a HEARTBEAT is an autopilot's and not a gimbal's or a station's."""
-        try:
-            name = msg.get_type()
-            system = int(msg.get_srcSystem() or 0)
-            component = int(msg.get_srcComponent() or 0)
-        except Exception:  # noqa: BLE001 - a malformed frame is not the tracker's problem
-            return
-        stamp = time.monotonic() if now is None else now
-        with self._lock:
-            if self._system is None or system != self._system:
-                return
-            entry = self._entry
-            if name == "HEARTBEAT":
-                if not vehicle_heartbeat:
-                    return
-                if self._component and component and component != self._component:
-                    # A companion running MAVSDK heartbeats as an autopilot on
-                    # the same system id; it does not speak for the airframe.
-                    return
-                if entry is None:
-                    entry = self._new_entry(system, component or self._component, stamp)
-                    self._entry = entry
-                self._take_heartbeat(entry, msg, stamp)
-                return
-            if entry is None or (entry["component"] and component != entry["component"]):
-                return
-            if name == "GLOBAL_POSITION_INT":
-                lat = _finite(getattr(msg, "lat", None))
-                lon = _finite(getattr(msg, "lon", None))
-                if lat is None or lon is None or (lat == 0 and lon == 0):
-                    return
-                if not (-90e7 <= lat <= 90e7 and -180e7 <= lon <= 180e7):
-                    return
-                entry["position"] = [round(lon / 1e7, 7), round(lat / 1e7, 7)]
-                rel = _finite(getattr(msg, "relative_alt", None))
-                amsl = _finite(getattr(msg, "alt", None))
-                entry["altitude_rel"] = round(rel / 1000.0, 1) if rel is not None else None
-                entry["altitude_amsl"] = round(amsl / 1000.0, 1) if amsl is not None else None
-                hdg = getattr(msg, "hdg", 65535)
-                if isinstance(hdg, (int, float)) and hdg != 65535:
-                    entry["heading"] = round(float(hdg) / 100.0, 1)
-                vx = _finite(getattr(msg, "vx", 0)) or 0.0
-                vy = _finite(getattr(msg, "vy", 0)) or 0.0
-                entry["groundspeed"] = round(math.hypot(vx, vy) / 100.0, 1)
-            elif name == "VFR_HUD":
-                heading = _finite(getattr(msg, "heading", None))
-                if heading is not None:
-                    entry["heading"] = heading
-                speed = _finite(getattr(msg, "groundspeed", None))
-                if speed is not None:
-                    entry["groundspeed"] = round(speed, 1)
-            elif name == "ATTITUDE" and entry.get("heading") is None:
-                yaw = _finite(getattr(msg, "yaw", None))
-                if yaw is not None:
-                    entry["heading"] = round(math.degrees(yaw) % 360.0, 1)
-            elif name == "STATUSTEXT":
-                self._take_statustext(entry, msg)
-            elif name == "SYS_STATUS":
-                remaining = getattr(msg, "battery_remaining", -1)
-                if isinstance(remaining, int) and 0 <= remaining <= 100:
-                    entry["battery"] = remaining
-                voltage = getattr(msg, "voltage_battery", 65535)
-                if isinstance(voltage, int) and 0 < voltage != 65535:
-                    entry["voltage"] = round(voltage / 1000.0, 1)
-
-    def _take_statustext(self, entry: dict[str, Any], msg: Any) -> None:
-        try:
-            severity = int(getattr(msg, "severity", 6))
-        except (TypeError, ValueError):
-            return
-        if severity > EVENT_MAX_SEVERITY:
-            return
-        raw = getattr(msg, "text", "")
-        if isinstance(raw, (bytes, bytearray)):
-            raw = bytes(raw).split(b"\x00", 1)[0].decode("utf-8", errors="replace")
-        text = " ".join(str(raw).split("\x00", 1)[0].split())
-        if not text:
-            return
-        self._event_seq += 1
-        self._events.append((self._event_seq, entry["sysid"], severity, text))
-        if len(self._events) > MAX_EVENTS:
-            del self._events[:-MAX_EVENTS]
+        _engine.observe(self, msg, vehicle_heartbeat, now)
 
     def events_since(self, seq: int) -> tuple[int, list[tuple[int, int, str]]]:
         """``(last seq, [(system, severity, text), ...])`` after *seq*."""
-        with self._lock:
-            fresh = [(s, sev, t) for n, s, sev, t in self._events if n > seq]
-            return self._event_seq, fresh
-
-    def _new_entry(self, system: int, component: int, stamp: float) -> dict[str, Any]:
-        return {
-            "sysid": system, "component": component,
-            "first_heartbeat": stamp, "last_heartbeat": stamp,
-            "type": "", "type_id": 0, "autopilot": 0, "stack": "",
-            "mode": "", "mode_label": "", "armed": False, "system_status": 0,
-            "position": None, "altitude_rel": None, "altitude_amsl": None,
-            "heading": None, "groundspeed": None, "battery": None, "voltage": None,
-        }
-
-    def _take_heartbeat(self, entry: dict[str, Any], msg: Any, stamp: float) -> None:
-        entry["last_heartbeat"] = stamp
-        try:
-            type_id = int(getattr(msg, "type", 0) or 0)
-        except (TypeError, ValueError):
-            type_id = 0
-        entry["type_id"] = type_id
-        entry["type"] = self._type_names.get(type_id, f"TYPE_{type_id}")
-        autopilot_id = getattr(msg, "autopilot", 0)
-        entry["autopilot"] = autopilot_id
-        base_mode = int(getattr(msg, "base_mode", 0) or 0)
-        entry["armed"] = bool(base_mode & 128)
-        entry["system_status"] = int(getattr(msg, "system_status", 0) or 0)
-        try:
-            dialect = autopilot_dialect.dialect_for(autopilot_id)
-            mode = dialect.decode_mode(getattr(msg, "custom_mode", 0), base_mode, type_id)
-            entry["stack"] = dialect.stack
-            entry["mode"] = mode
-            entry["mode_label"] = dialect.mode_label(mode) if mode else ""
-        except Exception:  # noqa: BLE001 - an undecodable mode is shown as none
-            entry["mode"] = entry["mode_label"] = ""
+        return tuple(_engine.events_since(self, seq))
 
     def systems(self, now: float | None = None) -> list[dict[str, Any]]:
         """The vehicle, as a list of none or one plain dict."""
-        stamp = time.monotonic() if now is None else now
-        with self._lock:
-            entry = self._entry
-            if entry is None:
-                return []
-            age = stamp - entry["last_heartbeat"]
-            if age > FORGET_S:
-                self._entry = None
-                return []
-            item = {
-                k: v for k, v in entry.items()
-                if k not in ("first_heartbeat", "last_heartbeat", "component", "autopilot")
-            }
-        item["stale"] = age > STALE_S
-        return [item]
+        return _engine.systems(self, now)
 
     def forget(self) -> None:
         """Drop the vehicle and the binding: the link flies nothing now."""
-        with self._lock:
-            self._entry = None
-            self._system = None
-            self._component = 0
+        _engine.forget(self)
 
 
 class ActiveStore:
@@ -655,10 +520,7 @@ class Fleet:
         self._pending_links = []
         self._stop.clear()
         if self._thread is None or not self._thread.is_alive():
-            self._thread = threading.Thread(
-                target=self._publish_loop, name="fleet-publish", daemon=True,
-            )
-            self._thread.start()
+            self._thread = _threads.start_thread("fleet-publish", self._publish_loop)
 
     def stop(self) -> None:
         """Stop publishing and close every extra link. The main one is not ours."""
