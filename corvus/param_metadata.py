@@ -27,6 +27,8 @@ import threading
 from pathlib import Path
 from typing import Any
 
+from corvus_link import bridge as _threads
+
 from .mavlink_ftp import FTP_ERR_FILE_NOT_FOUND, FTP_ERR_UNKNOWN_COMMAND, FtpError
 
 logger = logging.getLogger("corvus.mavlink")
@@ -311,7 +313,7 @@ class ParamMetadataMixin:
         self._param_meta: dict[str, dict[str, Any]] = {}
         self._param_meta_progress = (0, 0)
         self._param_meta_source = ""          # "vehicle" | "cache" once ready
-        self._param_meta_thread: threading.Thread | None = None
+        self._param_meta_thread: Any = None
         self._param_meta_cancel = threading.Event()
         # Bumped by every reset, so a fetch that outlived its link cycle
         # cannot publish metadata for a vehicle that is no longer there.
@@ -355,13 +357,11 @@ class ParamMetadataMixin:
             self._param_meta_cancel = threading.Event()
             cancel = self._param_meta_cancel
             use_cache = cache if dialect.param_metadata_cacheable else None
-            self._param_meta_thread = threading.Thread(
-                target=self._param_metadata_worker,
-                args=(generation, dialect.param_metadata_path,
-                      dialect.param_metadata_format, cancel, use_cache),
-                name="param-metadata", daemon=True,
+            self._param_meta_thread = _threads.start_thread(
+                "param-metadata", self._param_metadata_worker,
+                generation, dialect.param_metadata_path,
+                dialect.param_metadata_format, cancel, use_cache,
             )
-            self._param_meta_thread.start()
             return self._param_metadata_status_locked(False)
 
     def param_metadata_status(self, include_params: bool = False) -> dict[str, Any]:

@@ -15,6 +15,7 @@ import threading
 from typing import Any
 from collections.abc import Callable
 
+from corvus_link import bridge as _threads
 from corvus_link import params as _engine
 
 logger = logging.getLogger("corvus.mavlink")
@@ -102,10 +103,12 @@ class ParamProtocolMixin:
         # until it does; the dialect's default applies meanwhile.
         self._param_encoding_declared = ""
         self._param_engine = _engine.ParamEngine()
-        self._param_watchdog_thread: threading.Thread | None = None
+        # The workers run on corvus_link's CoreThreads, under the link's
+        # shutdown guard.
+        self._param_watchdog_thread: Any = None
         self._param_lock = threading.Lock()
         self._param_listeners: list[Callable[[dict[str, Any]], None]] = []
-        self._param_upload_thread: threading.Thread | None = None
+        self._param_upload_thread: Any = None
 
     def _abort_parameter_operations(self) -> None:
         """Wake parameter waiters and prevent an upload crossing a reconnect.
@@ -216,12 +219,9 @@ class ParamProtocolMixin:
                 return False
             # set_param takes _operation_lock itself, on the worker thread; it
             # is not held across the loop, which would block every command.
-            param_upload_thread = threading.Thread(
-                target=self.set_params_batch, args=(params,),
-                name="param-upload", daemon=True,
+            self._param_upload_thread = _threads.start_thread(
+                "param-upload", self.set_params_batch, params,
             )
-            param_upload_thread.start()
-            self._param_upload_thread = param_upload_thread
             return True
 
     def set_params_batch(self, params: list[dict]) -> None:
@@ -313,11 +313,9 @@ class ParamProtocolMixin:
             return
         if self._param_watchdog_thread and self._param_watchdog_thread.is_alive():
             return
-        param_watchdog_thread = threading.Thread(
-            target=self._param_watchdog, name="param-watchdog", daemon=True,
+        self._param_watchdog_thread = _threads.start_thread(
+            "param-watchdog", self._param_watchdog,
         )
-        param_watchdog_thread.start()
-        self._param_watchdog_thread = param_watchdog_thread
 
     def _finish_param_download_incomplete(self) -> None:
         """Flip a stuck download to a terminal "incomplete" (partial params kept)."""

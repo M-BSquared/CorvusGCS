@@ -843,45 +843,15 @@ def test_the_armed_confirmation_wait_happens_outside_the_command_lock() -> None:
 # stop() on another thread never meets a worker that is not started yet
 # ---------------------------------------------------------------------------
 
-# The link's own workers run on corvus_link's CoreThreads, whose handle is
-# only returned once the thread exists, so the gap below cannot open for them;
-# the race is pinned for them in the test after this one.
-@pytest.mark.parametrize(("spawn", "attr", "name"), [
-    ("_start_param_watchdog", "_param_watchdog_thread", "param-watchdog"),
-])
-def test_stop_in_the_gap_before_a_worker_starts_does_not_raise(
-    monkeypatch: pytest.MonkeyPatch, spawn: str, attr: str, name: str,
-) -> None:
-    """The MAVLink thread spawns these while stop() runs on the caller's.
-
-    Published before start(), stop() could join a thread that had not started,
-    which raises and abandoned the rest of the teardown. Seen on CI as
-    "cannot join thread before it is started".
-    """
-    b = bridge()
-    b._running.set()
-    real_thread = threading.Thread
-
-    class StopBeforeStart(real_thread):  # type: ignore[misc, valid-type]
-        def start(self) -> None:
-            if self.name == name:
-                b.stop()
-            super().start()
-
-    monkeypatch.setattr(mavlink_bridge.threading, "Thread", StopBeforeStart)
-    getattr(b, spawn)()
-    monkeypatch.undo()
-
-    worker = getattr(b, attr)
-    assert worker is not None and worker.name == name
-    worker.join(timeout=5)
-    assert not worker.is_alive(), f"{name} outlived stop()"
-
-
+# Every worker the link starts runs on a corvus_link CoreThread, whose handle
+# is only returned once the thread exists: the gap a published but unstarted
+# threading.Thread left between publish and start() cannot open. What is
+# pinned is that a stop() racing the spawn ends each worker.
 @pytest.mark.parametrize(("spawn", "attr", "name"), [
     ("_start_gcs_heartbeat", "_hb_thread", "gcs-hb"),
     ("_schedule_message_intervals", "_intervals_thread", "mavlink-intervals"),
     ("_schedule_version_retry", "_version_retry_thread", "px4-ver-retry"),
+    ("_start_param_watchdog", "_param_watchdog_thread", "param-watchdog"),
 ])
 def test_stop_racing_a_link_worker_spawn_ends_it(spawn: str, attr: str, name: str) -> None:
     """The MAVLink thread spawns these while stop() runs on the caller's.

@@ -348,7 +348,8 @@ logs.
 - The MAVLink link runs on corvus_link's native threads (`CoreThread`). They
   are joined by `MavlinkBridge.stop()` like any other, and corvus_link's own
   `atexit` hook stops and joins any still running before the interpreter
-  finalises; a native thread left inside a finalising interpreter is ended
+  finalises. The tlog writer and the parameter workers run on them too
+  (`corvus_link.bridge.start_thread`); a native thread left inside a finalising interpreter is ended
   mid-frame. Do not start one that this path does not reach.
 - The Review-Agent does not green-light a change until it has audited the
   shutdown path for the change in question.
