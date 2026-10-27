@@ -58,6 +58,7 @@ pymavlink does.
 | The telemetry log: the writer (bounded drop-oldest queue, a writer thread, the header line, batches, a full disk reported once and the file still closed) and the bridge's session (file names that never collide, a file per connection and per flight, every frame to it and to the forwarder) | `src/bridge/tlog.rs` (`corvus_link.bridge`) | `corvus/tlog.py` keeps `TlogWriter` with its file, queue and locks; `corvus/mavlink_bridge.py` the session methods |
 | The connection cycle and its threads: start and stop, the connect/receive cycle with its reconnect backoff, connect (open, the first autopilot heartbeat, pinning the target, the dialect), the GCS heartbeat at 1 Hz with Remote ID on it, the deferred interval and version workers, all on Rust threads | `src/bridge/cycle.rs`, `src/bridge/thread.rs` (`corvus_link.bridge`) | `corvus/mavlink_bridge.py` keeps the methods, the lifecycle lock and the state |
 | The vehicle list's tracker: one bound autopilot per link (a companion or station heartbeat on its id ignored), its position, heading, speed, altitude, battery, mode and arm state, its warnings as events, stale after 5 s and forgotten after 10 min; the fleet's publish thread on a `CoreThread` | `src/bridge/fleet.rs` (`corvus_link.bridge`) | `corvus/fleet.py` keeps `FleetTracker` with its lock and state, and the `Fleet` manager (links, names, colours, config, the HTTP proxies) |
+| The second station forwarder: every frame mirrored to UDP endpoints through a drop-oldest queue, inbound datagrams split into whole frames, a peer learned only on a whole frame, commanding only from configured endpoints, never a frame under Corvus' id, never a mirror into the vehicle link's own socket, name resolution off the send path, and both threads on `CoreThread`s | `src/bridge/forward.rs` (`corvus_link.bridge`) | `corvus/mavlink_forwarder.py` keeps `MavlinkForwarder` with its socket (Python's) and state |
 | The parameter workers (batch upload, download watchdog, metadata download) on `CoreThread`s through `start_thread` | `src/bridge/thread.rs` | `corvus/mavlink_params.py` and `corvus/param_metadata.py` keep the work itself; the metadata file is still decompressed and parsed in Python |
 
 The link's threads are `CoreThread`s (`src/bridge/thread.rs`): native
@@ -177,6 +178,11 @@ pymavlink stays in the `test` dependency group as the reference:
   battery from the autopilot and other components, binds and forgets,
   the vehicle and its events compared at every step, and the publish
   thread.
+- `tests/test_forwarder_parity.py` does it for the forwarder: the frame
+  splitter on random byte runs, endpoint parsing, the static list and the
+  vehicle link loop check, name resolution, and a live UDP exchange with a
+  station sending whole, split, junk and Corvus-id frames from a configured
+  and an unknown address, commanding on and off.
 - `tests/test_param_threads_parity.py` does it for the parameter workers:
   uploads with valid and broken lists, armed and disarmed, a second upload
   while one runs, the watchdog with the bridge running or not, and the

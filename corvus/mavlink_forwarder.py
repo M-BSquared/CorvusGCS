@@ -58,17 +58,23 @@ to us is learned and forgotten again after a silence, which is what lets an
 operator start and stop QGroundControl as often as they like without touching
 Corvus.
 
-Stdlib only. One socket, two daemon threads, all released by :meth:`stop`.
+One socket, two threads, all released by :meth:`stop`. The logic, the frame
+splitting and both threads are ``corvus_link.bridge.ForwarderEngine``, in Rust
+(``CoreThread``s under the link's shutdown guard); the socket and the state
+stay on the forwarder.
 """
 from __future__ import annotations
 
 import collections
 import logging
 import socket
+import sys
 import threading
-import time
+import time  # noqa: F401 - the engine's clock
 from typing import Any
 from collections.abc import Callable, Iterable
+
+from corvus_link import bridge as _bridge
 
 logger = logging.getLogger("corvus.forward")
 
@@ -123,19 +129,7 @@ def parse_endpoint(text: str, default_port: int = DEFAULT_PORT) -> tuple[str, in
     Returns None rather than raising: an endpoint list is operator-typed
     config, and one bad line must cost that line, not the whole feature.
     """
-    raw = str(text or "").strip()
-    if not raw:
-        return None
-    host, _, port_text = raw.rpartition(":")
-    if not host:                      # bare "host", or a leading colon
-        host, port_text = raw, ""
-    try:
-        port = int(port_text) if port_text else default_port
-    except ValueError:
-        return None
-    if not (0 < port < 65536) or not host:
-        return None
-    return host, port
+    return _bridge.parse_endpoint(text, default_port)
 
 
 def split_frames(buf: bytes) -> tuple[list[bytes], bytes]:
@@ -146,32 +140,8 @@ def split_frames(buf: bytes) -> tuple[list[bytes], bytes]:
     the job: this exists so a truncated or garbage datagram can never put a
     partial frame onto the link to the aircraft, not to police message content.
     """
-    frames: list[bytes] = []
-    i = 0
-    n = len(buf)
-    while i < n:
-        stx = buf[i]
-        if stx == _STX_V1:
-            if n - i < 2:
-                break
-            total = buf[i + 1] + _V1_OVERHEAD
-        elif stx == _STX_V2:
-            if n - i < 3:
-                break
-            total = buf[i + 1] + _V2_OVERHEAD
-            if buf[i + 2] & _MAVLINK_IFLAG_SIGNED:
-                total += _V2_SIGNATURE_LEN
-        else:
-            i += 1                    # resynchronise on the next start byte
-            continue
-        if total > _MAX_FRAME:
-            i += 1
-            continue
-        if n - i < total:
-            break                     # a whole frame has not arrived yet
-        frames.append(buf[i:i + total])
-        i += total
-    return frames, buf[i:]
+    frames, rest = _bridge.split_frames(buf)
+    return frames, rest
 
 
 def frame_source_system(frame: bytes) -> int:
@@ -181,11 +151,7 @@ def frame_source_system(frame: bytes) -> int:
     wire versions, and this is only ever asked of frames :func:`split_frames`
     has already vouched for.
     """
-    if len(frame) >= 6 and frame[0] == _STX_V1:
-        return frame[3]
-    if len(frame) >= 8 and frame[0] == _STX_V2:
-        return frame[5]
-    return 0
+    return _bridge.frame_source_system(frame)
 
 
 def _local_host_addresses() -> frozenset[str]:
@@ -244,25 +210,10 @@ class MavlinkForwarder:
         self._allow_commands = bool(allow_commands)
         # The primary target first: it is the one an operator never had to
         # type, and the one a bare "turn it on" has to reach.
-        self._static: list[tuple[str, int]] = []
-        for item in (f"{self._host}:{self._port}", *endpoints):
-            parsed = parse_endpoint(item)
-            if parsed is None:
-                logger.warning("ignoring unusable forward endpoint %r", item)
-                continue
-            if parsed in self._static:
-                continue
-            if parsed == (self._listen_host, self._listen_port):
-                # Our own address. Every mirrored frame would come straight
-                # back as an inbound datagram, and with commanding on that
-                # puts the aircraft's own telemetry onto the uplink — double
-                # the load on a 57 kbps radio, for nothing.
-                logger.warning(
-                    "ignoring forward endpoint %r: it is this forwarder's own address",
-                    item,
-                )
-                continue
-            self._static.append(parsed)
+        # Our own address is left out: every mirrored frame would come
+        # straight back, and with commanding on put the aircraft's own
+        # telemetry onto the uplink.
+        self._static: list[tuple[str, int]] = list(_engine.static_endpoints(self, endpoints))
         # Static endpoints with their names already resolved to addresses, so
         # the send path never calls the resolver. Rebuilt by _resolve_static.
         self._resolved: list[tuple[str, int]] = []
@@ -274,8 +225,9 @@ class MavlinkForwarder:
         self._out: collections.deque[bytes] = collections.deque(maxlen=_MAX_QUEUE)
         self._cond = threading.Condition()
         self._stop = threading.Event()
-        self._rx_thread: threading.Thread | None = None
-        self._tx_thread: threading.Thread | None = None
+        # corvus_link CoreThreads, under the link's shutdown guard.
+        self._rx_thread: Any = None
+        self._tx_thread: Any = None
         self._error = ""
         # Non-fatal but worth saying out loud — today, only "the port you
         # asked for was busy, here is the one you got".
@@ -315,40 +267,7 @@ class MavlinkForwarder:
         one and says so, and only a socket that cannot be created at all is a
         failure. Either way the app comes up with telemetry working.
         """
-        if self._sock is not None:
-            return True
-        sock, bound, note = self._bind()
-        if sock is None:
-            logger.warning("MAVLink forwarding disabled: %s", self._error)
-            return False
-        self._sock = sock
-        self._bound = bound
-        # A fallback is a NOTICE, not an error: the mirror is running and the
-        # operator is not looking at a failure. Only a forwarder that did not
-        # come up leaves _error set.
-        self._error = ""
-        self._notice = note
-        self._sysid_conflict = False
-        self._refused = 0
-        self._refused_peers = set()
-        self._loop_blocked = None
-        self._local_hosts = _local_host_addresses()
-        self._resolve_static(force=True)
-        self._stop.clear()
-        self._rx_thread = threading.Thread(
-            target=self._rx_loop, name="mav-forward-rx", daemon=True)
-        self._tx_thread = threading.Thread(
-            target=self._tx_loop, name="mav-forward-tx", daemon=True)
-        self._rx_thread.start()
-        self._tx_thread.start()
-        logger.info(
-            "MAVLink forwarding: mirroring to %s, listening on %s:%d "
-            "(commands from other stations: %s)",
-            ", ".join(f"{h}:{p}" for h, p in self._static) or "nothing",
-            bound[0], bound[1],
-            "allowed" if self._allow_commands else "blocked",
-        )
-        return True
+        return _engine.start(self)
 
     def _bind(self) -> tuple[socket.socket | None, tuple[str, int], str]:
         """Bind the listen socket, falling back to an ephemeral port.
@@ -359,63 +278,11 @@ class MavlinkForwarder:
         got — the LINK tab shows it, because a station configured to dial into
         the old port needs to know.
         """
-        for port, fallback in ((self._listen_port, False), (0, True)):
-            if fallback and self._listen_port == 0:
-                break                 # already asked for ephemeral; no retry
-            try:
-                sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                sock.bind((self._listen_host, port))
-                sock.settimeout(_DRAIN_TIMEOUT_S)
-            except OSError as exc:
-                try:
-                    sock.close()
-                except Exception:  # noqa: BLE001
-                    pass
-                self._error = (
-                    f"cannot listen on {self._listen_host}:{port} "
-                    f"({exc.strerror or exc})"
-                )
-                continue
-            try:
-                bound = sock.getsockname()
-            except OSError:
-                bound = (self._listen_host, port)
-            note = ""
-            if fallback:
-                note = (
-                    f"port {self._listen_port} was busy, listening on "
-                    f"{bound[0]}:{bound[1]} instead"
-                )
-                logger.warning("MAVLink forwarding: %s", note)
-            return sock, (bound[0], int(bound[1])), note
-        return None, (self._listen_host, self._listen_port), self._error
+        return tuple(_engine.bind(self))
 
     def stop(self) -> None:
         """Idempotent teardown: threads joined, socket closed, queue dropped."""
-        self._stop.set()
-        with self._cond:
-            self._out.clear()
-            self._cond.notify_all()
-        sock = self._sock
-        self._sock = None
-        if sock is not None:
-            try:
-                sock.close()
-            except Exception:  # noqa: BLE001 - teardown never raises
-                pass
-        for thread in (self._rx_thread, self._tx_thread):
-            if thread is not None:
-                try:
-                    thread.join(timeout=2.0)
-                except Exception:  # noqa: BLE001
-                    pass
-        self._rx_thread = None
-        self._tx_thread = None
-        with self._peer_lock:
-            self._peers.clear()
-        self._rx_buf.clear()
-        self._bound = None
+        _engine.stop(self)
 
     # ------------------------------------------------------------------
     # Data path
@@ -427,13 +294,7 @@ class MavlinkForwarder:
         Called from the MAVLink receive loop, so it does exactly one thing: a
         bounded append. Any send that would block belongs on the tx thread.
         """
-        if self._stop.is_set() or self._sock is None or not raw:
-            return
-        with self._cond:
-            if len(self._out) == self._out.maxlen:
-                self._dropped += 1
-            self._out.append(raw)
-            self._cond.notify()
+        _engine.feed(self, raw)
 
     def _resolve_static(self, force: bool = False) -> None:
         """Turn the static endpoints' host names into addresses, once.
@@ -445,54 +306,16 @@ class MavlinkForwarder:
         So the lookup happens here — at start, and afterwards only for the
         names that failed, at most every ``_RESOLVE_RETRY_S``.
         """
-        now = time.monotonic()
-        if not force and (
-            not self._unresolved or now - self._resolved_at < _RESOLVE_RETRY_S
-        ):
-            return
-        pending = list(self._static) if force else list(self._unresolved)
-        keep = [] if force else [a for a in self._resolved]
-        unresolved: list[tuple[str, int]] = []
-        for host, port in pending:
-            try:
-                info = socket.getaddrinfo(
-                    host, port, socket.AF_INET, socket.SOCK_DGRAM)
-            except OSError as exc:
-                unresolved.append((host, port))
-                logger.warning("forward endpoint %s:%d does not resolve (%s)",
-                               host, port, exc)
-                continue
-            addr = info[0][4][:2]
-            entry = (str(addr[0]), int(addr[1]))
-            if entry not in keep:
-                keep.append(entry)
-        self._resolved = keep
-        self._unresolved = unresolved
-        self._resolved_at = now
+        _engine.resolve_static(self, force)
 
     def _live_peers(self) -> list[tuple[str, int]]:
         """The endpoints that have spoken MAVLink to us recently, expired swept."""
-        now = time.monotonic()
-        with self._peer_lock:
-            live = [addr for addr, seen in self._peers.items()
-                    if now - seen <= _PEER_TTL_S]
-            if len(live) != len(self._peers):
-                self._peers = {a: self._peers[a] for a in live}
-        return live
+        return list(_engine.live_peers(self))
 
     def _targets(self) -> list[tuple[str, int]]:
         """Everywhere one mirrored frame goes: the configured endpoints, plus
         whoever has dialled in, minus ourselves and the vehicle link."""
-        bound = self._bound
-        out: list[tuple[str, int]] = []
-        for addr in (*self._resolved, *self._live_peers()):
-            if addr in out or addr == bound:
-                continue
-            if self._is_vehicle_link(addr):
-                self._note_loop(addr)
-                continue
-            out.append(addr)
-        return out
+        return list(_engine.targets(self))
 
     def _is_vehicle_link(self, addr: tuple[str, int]) -> bool:
         """Is *addr* the socket Corvus receives the aircraft on?
@@ -505,164 +328,20 @@ class MavlinkForwarder:
         replayed for as long as the loop runs, and old heartbeats making the
         mode and armed state flicker.
         """
-        getter = self._link_address
-        if getter is None:
-            return False
-        try:
-            own = getter()
-        except Exception:  # noqa: BLE001 - a link mid-reconnect has no address
-            return False
-        if not own:
-            return False
-        host, port = str(own[0]), int(own[1])
-        if int(addr[1]) != port:
-            return False
-        peer = str(addr[0])
-        if host in ("", "0.0.0.0"):
-            return peer.startswith("127.") or peer in self._local_hosts
-        if peer == host:
-            return True
-        return peer.startswith("127.") and host.startswith("127.")
+        return _engine.is_vehicle_link(self, addr)
 
     def _note_loop(self, addr: tuple[str, int]) -> None:
         """Latch (and log once) an endpoint skipped as the vehicle link."""
-        if self._loop_blocked == addr:
-            return
-        self._loop_blocked = addr
-        logger.warning(
-            "not forwarding to %s:%d: that is the port Corvus receives the "
-            "vehicle on, so every frame would come straight back. Set "
-            "forwarding to another port (for example 14560) and point the "
-            "other station's UDP link at it.", addr[0], addr[1],
-        )
+        _engine.note_loop(self, addr)
 
     def _loop_text(self) -> str:
-        addr = self._loop_blocked
-        if addr is None:
-            return ""
-        return (
-            f"Not mirroring to {addr[0]}:{addr[1]}: Corvus receives the vehicle "
-            f"on that port, so every frame would come straight back. Choose "
-            f"another forwarding port, for example 14560, and set the other "
-            f"station's UDP link to it."
-        )
+        return _engine.loop_text(self)
 
     def _tx_loop(self) -> None:
-        while not self._stop.is_set():
-            with self._cond:
-                if not self._out:
-                    self._cond.wait(_DRAIN_TIMEOUT_S)
-                    continue
-                batch = list(self._out)
-                self._out.clear()
-            sock = self._sock
-            if sock is None:
-                continue
-            if self._unresolved:
-                self._resolve_static()
-            targets = self._targets()
-            if not targets:
-                continue
-            for frame in batch:
-                for addr in targets:
-                    try:
-                        sock.sendto(frame, addr)
-                        self._sent += 1
-                    except OSError:
-                        # An endpoint that has gone away must not take the
-                        # aircraft's telemetry down with it. It ages out of
-                        # _peers on its own; a static one keeps being tried.
-                        self._dropped += 1
-                    except Exception:  # noqa: BLE001
-                        self._dropped += 1
+        _engine.tx_loop(self)
 
     def _rx_loop(self) -> None:
-        while not self._stop.is_set():
-            sock = self._sock
-            if sock is None:
-                break
-            try:
-                data, addr = sock.recvfrom(65535)
-            except TimeoutError:
-                continue
-            except OSError:
-                if self._stop.is_set():
-                    break
-                time.sleep(0.05)
-                continue
-            if not data:
-                continue
-            if addr == self._bound:
-                continue          # our own datagram; never a peer to mirror to
-            if self._is_vehicle_link(addr):
-                # Corvus' own vehicle socket answering the mirror. Neither a
-                # peer nor a station that may command.
-                self._note_loop(addr)
-                continue
-            self._received += 1
-            # Reassemble per endpoint: UDP preserves datagram boundaries, but a
-            # sender is free to split a frame across two of them.
-            buffered = self._rx_buf.get(addr, b"") + data
-            frames, remainder = split_frames(buffered)
-            # Only an endpoint that is actually mid-frame keeps an entry. The
-            # common case — a datagram holding whole frames — leaves nothing
-            # over, and used to store an empty bytestring that nothing ever
-            # removed, one per source address the socket had ever seen.
-            if remainder and len(remainder) < _MAX_FRAME:
-                self._rx_buf[addr] = remainder
-            else:
-                self._rx_buf.pop(addr, None)
-            if len(self._rx_buf) > _MAX_RX_BUFFERS:
-                self._drop_stale_rx_buffers()
-            # Learned only on a WHOLE MAVLink frame, not on any datagram that
-            # arrives. A peer is subscribed to the whole telemetry stream, so a
-            # stray packet — a port scan, another program's stale socket, a
-            # broadcast picked up when the operator widened listen_host — must
-            # not be able to sign itself up for the aircraft's position at
-            # 10 Hz.
-            #
-            # A leftover remainder used to count, and that let anything in: a
-            # datagram of random bytes ending in 0xFD or 0xFE leaves exactly
-            # such a remainder, because split_frames parks on a start byte it
-            # has not yet seen a length for. One arbitrary trailing byte was
-            # the whole admission test. The remainder is still kept above — a
-            # sender really may split a frame across two datagrams — but it is
-            # the completed frame that subscribes them, on the datagram that
-            # finishes it.
-            if not frames:
-                continue
-            with self._peer_lock:
-                self._peers[addr] = time.monotonic()
-            # Commanding is gated on WHO is speaking, not only on whether the
-            # operator armed the uplink at all. Being learned as a peer earns a
-            # copy of the telemetry — that costs nothing and is how a second
-            # screen works. Reaching the aircraft is a different privilege, and
-            # it belongs to the endpoints the operator named: anything else
-            # that found the socket is a stranger, and on a forwarder the
-            # operator widened to listen_host 0.0.0.0 that is every machine on
-            # the network. Without this, turning commanding on handed an arm
-            # and a mode change to the whole LAN.
-            may_command = self._allow_commands and addr in self._resolved
-            if self._allow_commands and not may_command:
-                self._note_command_refused(addr)
-            for frame in frames:
-                # Checked before the commanding gate: the conflict is about
-                # sequence numbers on the DOWNLINK, so it is just as real when
-                # the second station is only listening — and telemetry-only is
-                # the default, which is where the LINK tab promises to say so.
-                if frame_source_system(frame) == _CORVUS_SYSTEM_ID:
-                    # Also never injected: under our id it is either a looped
-                    # copy of what Corvus itself sent, or a station PX4 could
-                    # not tell apart from Corvus.
-                    self._note_sysid_conflict()
-                    continue
-                if not may_command or self._inject is None:
-                    continue
-                try:
-                    if self._inject(frame):
-                        self._injected += 1
-                except Exception:  # noqa: BLE001 - a bad inject never kills the loop
-                    logger.debug("forward inject failed", exc_info=True)
+        _engine.rx_loop(self)
 
     def _drop_stale_rx_buffers(self) -> None:
         """Forget the half-frames of endpoints that have stopped talking.
@@ -670,11 +349,7 @@ class MavlinkForwarder:
         Runs on the rx thread alone, so ``_rx_buf`` needs no lock; the peer
         table it consults does.
         """
-        now = time.monotonic()
-        with self._peer_lock:
-            live = {a for a, seen in self._peers.items() if now - seen <= _PEER_TTL_S}
-        for addr in [a for a in self._rx_buf if a not in live]:
-            self._rx_buf.pop(addr, None)
+        _engine.drop_stale_rx_buffers(self)
 
     def _note_command_refused(self, addr: tuple[str, int]) -> None:
         """Record (and log once) a station whose frames were not put on the uplink.
@@ -685,17 +360,7 @@ class MavlinkForwarder:
         The fix is one line of config, but only if they can find out that this
         is what happened.
         """
-        self._refused += 1
-        if addr in self._refused_peers:
-            return
-        self._refused_peers.add(addr)
-        logger.warning(
-            "refusing to forward commands from %s:%d. Commanding is allowed only "
-            "from the configured endpoints (%s). Add it to the forwarding "
-            "endpoint list if this station should be able to command the aircraft.",
-            addr[0], addr[1],
-            ", ".join(f"{h}:{p}" for h, p in self._static) or "none",
-        )
+        _engine.note_command_refused(self, addr)
 
     def _note_sysid_conflict(self) -> None:
         """Latch (and log once) that the other station shares our system id.
@@ -706,15 +371,7 @@ class MavlinkForwarder:
         failsafe unable to say which station went away. Nothing here can fix
         that from this end, so it is reported where the operator will see it.
         """
-        if self._sysid_conflict:
-            return
-        self._sysid_conflict = True
-        logger.warning(
-            "the other station is transmitting as MAVLink system %d, the same id "
-            "Corvus uses. Give it its own (QGroundControl: Application Settings "
-            "→ MAVLink → Ground Station system ID)",
-            _CORVUS_SYSTEM_ID,
-        )
+        _engine.note_sysid_conflict(self)
 
     # ------------------------------------------------------------------
     # Introspection
@@ -735,36 +392,8 @@ class MavlinkForwarder:
     def status(self) -> dict[str, Any]:
         """What the LINK tab shows: where the stream is being sent, where this
         forwarder can be reached, and whether anything is answering."""
-        listen_host, listen_port = self.listen_address()
-        return {
-            "running": self._sock is not None and not self._stop.is_set(),
-            "host": self._host,
-            "port": self._port,
-            "listen_host": listen_host,
-            "listen_port": listen_port,
-            "listen_port_requested": self._listen_port,
-            "allow_commands": self._allow_commands,
-            "endpoints": [f"{h}:{p}" for h, p in self._static],
-            # "peers" is the honest answer to "is anything actually there?":
-            # only stations that have spoken to us, never the endpoints we
-            # were told to mirror at whether or not anybody is listening.
-            "peers": [f"{h}:{p}" for h, p in self._live_peers()],
-            "targets": [f"{h}:{p}" for h, p in self._targets()],
-            "frames_sent": self._sent,
-            "datagrams_received": self._received,
-            "frames_injected": self._injected,
-            "dropped": self._dropped,
-            "sysid_conflict": self._sysid_conflict,
-            # Stations that reached the socket and spoke MAVLink, but are not
-            # among the endpoints allowed to command.
-            "commands_refused": self._refused,
-            "commands_refused_from": sorted(
-                f"{h}:{p}" for h, p in self._refused_peers
-            ),
-            "loop_blocked": (
-                f"{self._loop_blocked[0]}:{self._loop_blocked[1]}"
-                if self._loop_blocked else ""
-            ),
-            "notice": self._notice or self._loop_text(),
-            "error": self._error,
-        }
+        return _engine.status(self)
+
+
+# The logic, built over this module's constants, clock and logger.
+_engine = _bridge.ForwarderEngine(sys.modules[__name__])
