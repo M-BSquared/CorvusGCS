@@ -1439,6 +1439,9 @@
   font-size: 10px; font-weight: 600; letter-spacing: 0.3px; text-align: center;
   padding: 4px 8px; border-radius: var(--radius-btn);
   color: var(--warning); border: 1px solid var(--warning-dark);
+  /* Takes the width the controls above give it and wraps inside it. A long
+     translation must not stretch the pad past its buttons. */
+  width: 0; min-width: 100%; box-sizing: border-box;
 }
 .js-lock[hidden] { display: none; }
 .js-lock.is-unlocked { color: var(--text-2); border-color: var(--border); }

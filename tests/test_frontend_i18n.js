@@ -288,6 +288,34 @@ async function testASubtreeThatWasOffThePageCatchesUpWithTheLanguage() {
   body.childNodes.length = 0;
 }
 
+// A label rewritten only when it changed must not take its own translation for
+// a change: that rewrote the top bar's status and mode on every frame, and the
+// German landed a moment after the English each time.
+async function testALabelKnowsItShowsItsEnglishInTranslation() {
+  const label = element("span", {}, ["Settings"]);
+  Object.defineProperty(label, "textContent", { get() { return text(this); } });
+  Object.defineProperty(label, "firstChild", { get() { return this.childNodes[0] || null; } });
+  body.appendChild(label);
+  await I.use("de");
+  assert.equal(text(label), "Einstellungen");
+  assert.equal(I.shows(label, "Settings"), true, "the translation counts as showing the English");
+  assert.equal(I.shows(label, "Takeoff"), false);
+  assert.equal(I.shows(label, "Einstellungen"), true, "what is on screen is shown, too");
+  await I.use("fr");
+  assert.equal(I.shows(label, "Settings"), true);
+  await I.use("en");
+  assert.equal(I.shows(label, "Settings"), true);
+  assert.equal(I.shows(null, "Settings"), false);
+  body.childNodes.length = 0;
+}
+
+function testTheLiveLabelsAskBeforeRewriting() {
+  const topbar = fs.readFileSync(path.join(SRC, "js", "topbar.js"), "utf8");
+  const app = fs.readFileSync(path.join(SRC, "js", "app.js"), "utf8");
+  assert.match(topbar, /if \(valEl && !shows\(valEl, b\.value\)\)/, "the status and mode blocks");
+  assert.match(app, /!showsText\(span, armCaption\)/, "the arm button");
+}
+
 async function testWhatIsNotInterfaceIsLeftAlone() {
   const script = element("script", {}, ["Settings"]);
   const area = element("textarea", {}, ["Settings"]);
@@ -578,7 +606,7 @@ function testTheLanguageFilesShip() {
   ];
   const asyncTests = [
     testSwitchingLanguagesSwapsTextAndAttributesAndComesBack, testASubtreeThatWasOffThePageCatchesUpWithTheLanguage,
-    testWhatIsNotInterfaceIsLeftAlone,
+    testWhatIsNotInterfaceIsLeftAlone, testALabelKnowsItShowsItsEnglishInTranslation,
     testAnUnknownLanguageLeavesTheCurrentOneAlone, testAFailedLoadLeavesTheCurrentOneAlone,
     testTheLastRequestWins, testSwitchingTellsTheRestOfTheApp,
     testAStorageThatRefusesDoesNotBreakSwitching, testWhatThePageBuildsLaterIsTranslatedToo,
@@ -591,6 +619,7 @@ function testTheLanguageFilesShip() {
     testTheFirstStartOffersTheLanguageInTheLookStepNotOnTheFirstPage, testTheFirstStartUsesADropdown,
     testSettingsHasADropdownWithAReloadButtonAndNoPath, testTheLanguageCardComesFirstInInterface,
     testTheLanguageFilesShip, testTheShippedLanguagesTranslateTheComposedTexts,
+    testTheLiveLabelsAskBeforeRewriting,
   ];
   let count = 0;
   for (const t of sync.concat(asyncTests, wiring)) {

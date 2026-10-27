@@ -644,7 +644,7 @@ Corvus.app = (function () {
       btnArm.classList.toggle("armed", !!s?.armed);
       const span = btnArm.querySelector("span");
       const armCaption = s?.armed ? "DISARM" : "ARM";
-      if (span && span.textContent !== armCaption) span.textContent = armCaption;
+      if (span && !showsText(span, armCaption)) span.textContent = armCaption;
       adaptToVehicle(Corvus.capabilities ? Corvus.capabilities.isGround(s) : false);
       showFlightPhase(s);
       showVehicleMode(modeSel, s?.mode || "", s?.mode_label || "");
@@ -681,6 +681,11 @@ Corvus.app = (function () {
    * into) gets a disabled row of its own rather than a blank picker, named
    * by `label`, the word the top bar shows for it.
    */
+  /** Whether *el* shows *text*, in English or in its translation. */
+  function showsText(el, text) {
+    return Corvus.i18n ? Corvus.i18n.shows(el, text) : el.textContent === text;
+  }
+
   function showVehicleMode(modeSel, mode, label) {
     if (!modeSel) return;
     const options = Array.from(modeSel.options || []);
@@ -695,7 +700,7 @@ Corvus.app = (function () {
       }
       if (reported.value !== mode) reported.value = mode;
       const text = label || mode;
-      if (reported.textContent !== text) reported.textContent = text;
+      if (!showsText(reported, text)) reported.textContent = text;
     } else if (reported) {
       reported.remove();
     }

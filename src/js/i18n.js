@@ -514,6 +514,23 @@ Corvus.i18n = (function () {
     try { translateTree(node); } finally { if (active()) resume(); }
   }
 
+  /**
+   * Whether *el* already shows *english*, as written or as this module
+   * translated it. Code that rewrites a label only when it changed has to ask
+   * this rather than compare textContent: a translated label never equals its
+   * English, so the comparison would rewrite it on every frame, and the
+   * translation would land a moment later each time.
+   */
+  function shows(el, english) {
+    if (!el) return false;
+    const text = english == null ? "" : String(english);
+    if (el.textContent === text) return true;
+    const node = el.firstChild;
+    if (!node || node.nodeType !== 3 || node.nextSibling) return false;
+    const rec = node.__i18n;
+    return !!rec && rec.gen === generation && rec.src === text && node.nodeValue === rec.out;
+  }
+
   /** The English texts seen on screen that the current language lacks, sorted. */
   function missing() {
     return Array.from(missed.keys()).sort();
@@ -527,7 +544,7 @@ Corvus.i18n = (function () {
   }
 
   return {
-    init, use, reload, refresh, options, t, collect, missing, template, sync,
+    init, use, reload, refresh, options, t, collect, missing, template, sync, shows,
     current: () => code,
     available: () => languages.slice(),
     userDir: () => userDir,
