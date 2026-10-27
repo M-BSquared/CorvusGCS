@@ -185,10 +185,10 @@ pub fn run(server: Server, context: &'static OnceLock<egui::Context>, page: Opti
         .unwrap_or(1.0) as f32;
     let sources = http::get_json(&server, "/api/tiles/sources").unwrap_or(Value::Null);
     let start_page = match page {
-        Some("setup") | Some("parameters") => Page::Setup,
+        Some("setup") | Some("parameters") | Some("safety") => Page::Setup,
         _ => Page::Home,
     };
-    let open_params = page == Some("parameters");
+    let open_page = page.filter(|p| matches!(*p, "parameters" | "safety")).map(String::from);
     let options = eframe::NativeOptions {
         renderer: eframe::Renderer::Glow,
         viewport: egui::ViewportBuilder::default()
@@ -235,8 +235,8 @@ pub fn run(server: Server, context: &'static OnceLock<egui::Context>, page: Opti
                 page: start_page,
                 setup: {
                     let mut s = SetupPage::new(server.clone());
-                    if open_params {
-                        s.open("parameters", &ctx);
+                    if let Some(p) = &open_page {
+                        s.open(p, &ctx);
                     }
                     s
                 },

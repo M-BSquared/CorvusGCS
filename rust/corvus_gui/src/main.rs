@@ -27,6 +27,8 @@ mod notify_ui;
 mod pagekit;
 mod panel;
 mod params;
+mod safety;
+mod schema_form;
 mod setup;
 mod sse;
 mod stream;
@@ -69,7 +71,7 @@ fn parse_args() -> Result<Args, String> {
             "--python" => args.python = Some(PathBuf::from(value("--python")?)),
             "--page" => args.page = Some(value("--page")?),
             "-h" | "--help" => {
-                println!("usage: corvus-gcs [--server http://host:port] [--root DIR] [--python PATH] [--page setup|parameters]");
+                println!("usage: corvus-gcs [--server http://host:port] [--root DIR] [--python PATH] [--page setup|parameters|safety]");
                 std::process::exit(0);
             }
             other => return Err(format!("unknown argument {other}")),

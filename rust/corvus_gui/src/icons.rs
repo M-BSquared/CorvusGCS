@@ -11,7 +11,7 @@ mod generated {
 
 /// Paints the icon `name` into `rect` in `color`; an unknown name paints
 /// nothing (build.rs fails the build for a name it cannot find).
-pub fn paint(ui: &egui::Ui, name: &'static str, rect: Rect, color: Color32) {
+pub fn paint(ui: &egui::Ui, name: &str, rect: Rect, color: Color32) {
     if let Some(bytes) = generated::svg(name) {
         egui::Image::from_bytes(format!("bytes://lucide/{name}.svg"), bytes)
             .tint(color)

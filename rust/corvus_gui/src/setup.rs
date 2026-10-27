@@ -11,6 +11,7 @@ use crate::http::Server;
 use crate::kit::{Button, Variant};
 use crate::pagekit;
 use crate::params::ParamsPage;
+use crate::safety::SafetyPage;
 use crate::style::{self, Weight};
 
 const TILES: &[(&str, &str, &str, &str)] = &[
@@ -98,6 +99,7 @@ pub fn columns(w: f32) -> usize {
 enum View {
     Tiles,
     Parameters(Box<ParamsPage>),
+    Safety(Box<SafetyPage>),
     Elsewhere(&'static str),
 }
 
@@ -119,6 +121,7 @@ impl SetupPage {
     pub fn take_errors(&mut self) -> Vec<String> {
         match &mut self.view {
             View::Parameters(p) => p.take_errors(),
+            View::Safety(p) => p.take_errors(),
             _ => Vec::new(),
         }
     }
@@ -127,6 +130,7 @@ impl SetupPage {
     pub fn open(&mut self, id: &str, ctx: &egui::Context) {
         self.view = match id {
             "parameters" => View::Parameters(Box::new(ParamsPage::new(self.server.clone(), ctx))),
+            "safety" => View::Safety(Box::new(SafetyPage::new(self.server.clone(), ctx))),
             other => match TILES.iter().find(|t| t.0 == other) {
                 Some(t) => View::Elsewhere(t.2),
                 None => View::Tiles,
@@ -166,11 +170,13 @@ impl SetupPage {
                         );
                         y = grid(ui, x, y, w, &mut self.view, &self.server);
                     }
-                    View::Parameters(_) | View::Elsewhere(_) => {
+                    View::Parameters(_) | View::Safety(_) | View::Elsewhere(_) => {
                         let (bh, back) = pagekit::back_button(ui, Pos2::new(x, y), "Setup");
                         y += bh + 18.0;
                         if back {
                             self.view = View::Tiles;
+                        } else if let View::Safety(p) = &mut self.view {
+                            y = p.show(ui, x, y, w, state);
                         } else if let View::Parameters(p) = &mut self.view {
                             y = head(
                                 ui,
@@ -326,6 +332,7 @@ fn grid(ui: &mut egui::Ui, x: f32, y: f32, w: f32, view: &mut View, server: &Ser
         if pagekit::tile(ui, r, icon, title, desc) {
             *view = match *id {
                 "parameters" => View::Parameters(Box::new(ParamsPage::new(server.clone(), ui.ctx()))),
+                "safety" => View::Safety(Box::new(SafetyPage::new(server.clone(), ui.ctx()))),
                 _ => View::Elsewhere(title),
             };
         }
