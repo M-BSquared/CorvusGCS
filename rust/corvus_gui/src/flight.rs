@@ -12,7 +12,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use eframe::egui::{self, Color32, CornerRadius, Pos2, Rect, Stroke, Vec2};
+use eframe::egui::{self, Color32, Pos2, Rect, Stroke, Vec2};
 use serde_json::{json, Value};
 
 use crate::http::{self, Server};
@@ -147,11 +147,16 @@ enum Command {
     Mode,
 }
 
-/// What a finished command left for the bar.
+/// What the command threads leave for the bar and the board.
 #[derive(Debug, Default)]
 struct Outcome {
     busy: Vec<Command>,
-    errors: Vec<String>,
+    /// Commands sent, with the actions a vehicle line about them would name.
+    begun: Vec<(u64, Vec<&'static str>)>,
+    /// Their answers: Ok, or the reason to put on the board.
+    settled: Vec<(u64, Result<(), String>)>,
+    /// Errors that are no command's (the mode list did not load).
+    plain: Vec<String>,
 }
 
 /// The bar's state.
@@ -163,8 +168,9 @@ pub struct FlightBar {
     takeoff_alt: f64,
     takeoff_text: String,
     mode_open: bool,
-    pub toasts: Vec<(String, f64)>,
     was_connected: bool,
+    next_token: u64,
+    attempts: std::collections::HashMap<u64, u64>,
 }
 
 impl FlightBar {
@@ -177,8 +183,9 @@ impl FlightBar {
             takeoff_alt: 10.0,
             takeoff_text: String::new(),
             mode_open: false,
-            toasts: Vec::new(),
             was_connected: false,
+            next_token: 0,
+            attempts: std::collections::HashMap::new(),
         };
         bar.load_modes(ctx);
         bar
@@ -193,7 +200,7 @@ impl FlightBar {
         std::thread::spawn(move || {
             match http::get_json(&server, "/api/mavlink/modes") {
                 Ok(data) => *modes.lock().expect("modes") = modes_from(&data),
-                Err(e) => outcome.lock().expect("outcome").errors.push(if e.is_empty() {
+                Err(e) => outcome.lock().expect("outcome").plain.push(if e.is_empty() {
                     "Could not load flight modes".into()
                 } else {
                     e
@@ -209,8 +216,22 @@ impl FlightBar {
 
     /// POSTs a command the way Corvus.telemetry.postAction does: an answer
     /// without `ok: true` is a refusal, its `error` the reason.
-    fn send(&self, ctx: &egui::Context, command: Command, path: &'static str, body: Value, fallback: String) {
-        self.outcome.lock().expect("outcome").busy.push(command);
+    fn send(
+        &mut self,
+        ctx: &egui::Context,
+        command: Command,
+        actions: &[&'static str],
+        path: &'static str,
+        body: Value,
+        fallback: String,
+    ) {
+        self.next_token += 1;
+        let token = self.next_token;
+        {
+            let mut o = self.outcome.lock().expect("outcome");
+            o.busy.push(command);
+            o.begun.push((token, actions.to_vec()));
+        }
         let server = self.server.clone();
         let outcome = self.outcome.clone();
         let ctx = ctx.clone();
@@ -228,19 +249,41 @@ impl FlightBar {
             });
             let mut o = outcome.lock().expect("outcome");
             o.busy.retain(|c| *c != command);
-            if let Err(e) = result {
-                o.errors.push(if e.is_empty() { fallback } else { e });
-            }
+            o.settled
+                .push((token, result.map_err(|e| if e.is_empty() { fallback } else { e })));
             drop(o);
             ctx.request_repaint();
         });
     }
 
-    /// Takes errors the commands left, as toasts.
-    pub fn drain_errors(&mut self, now: f64) {
-        let errors = std::mem::take(&mut self.outcome.lock().expect("outcome").errors);
-        self.toasts.extend(errors.into_iter().map(|e| (e, now)));
-        self.toasts.retain(|(_, at)| now - at < 6000.0);
+    /// Hands what the commands did to the board, as app.js does with
+    /// Corvus.topbar: beginCommand when sent, succeedCommand on an answer,
+    /// failCommand and notifyError on a refusal.
+    pub fn settle(&mut self, board: &mut crate::notify::Board, now: f64) {
+        let (begun, settled, plain) = {
+            let mut o = self.outcome.lock().expect("outcome");
+            (
+                std::mem::take(&mut o.begun),
+                std::mem::take(&mut o.settled),
+                std::mem::take(&mut o.plain),
+            )
+        };
+        for (token, actions) in begun {
+            let attempt = board.begin(&actions, now);
+            self.attempts.insert(token, attempt);
+        }
+        for (token, result) in settled {
+            let Some(attempt) = self.attempts.remove(&token) else {
+                continue;
+            };
+            match result {
+                Ok(()) => board.succeeded(attempt),
+                Err(e) => board.failed(attempt, &e, now),
+            }
+        }
+        for e in plain {
+            board.add_local("critical", &e, now);
+        }
     }
 
     /// Draws the bar and its card inside `area` (the map).
@@ -335,6 +378,7 @@ impl FlightBar {
                         self.send(
                             &ctx,
                             Command::Arm,
+                            &[if will { "arm" } else { "disarm" }],
                             "/api/mavlink/arm",
                             json!({"arm": will}),
                             fallback.into(),
@@ -348,6 +392,7 @@ impl FlightBar {
                     Command::Land => self.send(
                         &ctx,
                         Command::Land,
+                        &["land"],
                         "/api/mavlink/land",
                         json!({}),
                         "Land rejected".into(),
@@ -355,6 +400,7 @@ impl FlightBar {
                     Command::Rtl => self.send(
                         &ctx,
                         Command::Rtl,
+                        &["rtl"],
                         "/api/mavlink/rtl",
                         json!({}),
                         "Return rejected".into(),
@@ -408,7 +454,6 @@ impl FlightBar {
                 self.takeoff_card(ui, &ctx, area, anchor, units);
             }
         }
-        self.paint_toasts(ui, area);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -539,7 +584,14 @@ impl FlightBar {
             self.mode_open = false;
             if mode != current {
                 let fallback = format!("Mode {mode} rejected");
-                self.send(ctx, Command::Mode, "/api/mavlink/mode", json!({"mode": mode}), fallback);
+                self.send(
+                    ctx,
+                    Command::Mode,
+                    &["mode"],
+                    "/api/mavlink/mode",
+                    json!({"mode": mode}),
+                    fallback,
+                );
             }
         }
     }
@@ -687,32 +739,11 @@ impl FlightBar {
             self.send(
                 ctx,
                 Command::Takeoff,
+                &["takeoff", "arm"],
                 "/api/mavlink/takeoff",
                 json!({"altitude": alt}),
                 "Takeoff rejected by autopilot".into(),
             );
-        }
-    }
-
-    /// A refused command, at the bottom centre of the map, until the
-    /// notifications board is in.
-    fn paint_toasts(&self, ui: &egui::Ui, area: Rect) {
-        let painter = ui.painter();
-        let mut y = area.bottom() - 16.0;
-        for (text, _) in self.toasts.iter().rev().take(3) {
-            let g = style::galley(ui, text, 12.0, Weight::W500, style::TEXT_1, 0.0);
-            let size = g.size() + Vec2::new(28.0, 18.0);
-            let r = Rect::from_min_size(Pos2::new(area.center().x - size.x / 2.0, y - size.y), size);
-            painter.add(style::shadow_pop().as_shape(r, CornerRadius::same(style::RADIUS)));
-            painter.rect(
-                r,
-                style::RADIUS,
-                style::SURFACE_1,
-                Stroke::new(1.0, style::CRITICAL),
-                egui::StrokeKind::Inside,
-            );
-            painter.galley(r.min + Vec2::new(14.0, 9.0), g, style::TEXT_1);
-            y = r.top() - 8.0;
         }
     }
 }

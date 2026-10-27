@@ -33,6 +33,8 @@ SIGKILL if it is still there after 8 s. If the window does not close within
 | `src/hud.rs` | compass, attitude indicator and readouts (`src/js/instruments.js`) |
 | `src/flight.rs` | the flight bar, takeoff card and mode picker (`src/js/app.js`) |
 | `src/style.rs` | the design tokens of the default light theme and the type |
+| `src/notify.rs` | the notification board, its read and dismiss rules, the command dedupe and the toasts (`src/js/topbar.js`) |
+| `src/notify_ui.rs` | the NOTIFICATIONS pill, the board and the toast stack |
 | `src/frost.rs` | the frosted glass under every `.glass` surface |
 | `src/fonts.rs`, `src/icons.rs`, `build.rs` | Inter, JetBrains Mono and the Lucide icons, from the web's own files |
 

@@ -108,6 +108,11 @@ fn now_ts() -> String {
     format!("{:02}:{:02}:{:02}", t / 3600, (t % 3600) / 60, t % 60)
 }
 
+/// Seconds east of UTC on this machine now.
+pub fn local_offset() -> i64 {
+    local_offset_secs()
+}
+
 #[cfg(unix)]
 fn local_offset_secs() -> i64 {
     // SAFETY: localtime_r writes into the tm we hand it.

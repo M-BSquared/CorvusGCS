@@ -22,6 +22,8 @@ mod link;
 mod map;
 mod maprail;
 mod nav;
+mod notify;
+mod notify_ui;
 mod panel;
 mod sse;
 mod stream;

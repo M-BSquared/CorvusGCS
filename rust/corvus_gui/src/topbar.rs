@@ -450,7 +450,15 @@ fn tile(b: &Block) -> Option<Color32> {
 }
 
 /// Draws the bar into `rect` (the full width, `HEIGHT` tall).
-pub fn show(ui: &mut egui::Ui, rect: Rect, logo: &egui::ImageSource<'static>, blocks: &[Block]) {
+/// Returns true when the NOTIFICATIONS block was clicked.
+pub fn show(
+    ui: &mut egui::Ui,
+    rect: Rect,
+    logo: &egui::ImageSource<'static>,
+    blocks: &[Block],
+    notifications: &crate::notify::Summary,
+    board_open: bool,
+) -> bool {
     let painter = ui.painter_at(rect);
     // background: linear-gradient(180deg, var(--surface-1), var(--bg))
     let mut mesh = egui::Mesh::default();
@@ -532,6 +540,9 @@ pub fn show(ui: &mut egui::Ui, rect: Rect, logo: &egui::ImageSource<'static>, bl
         }
         x += w;
     }
+    // The NOTIFICATIONS block closes the row, as the last of blocks().
+    let (_, clicked) = crate::notify_ui::block(ui, rect, x + 3.0, notifications, board_open);
+    clicked
 }
 
 #[cfg(test)]

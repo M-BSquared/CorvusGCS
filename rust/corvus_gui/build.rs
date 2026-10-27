@@ -56,6 +56,10 @@ const ICONS: &[(&str, &str)] = &[
     ("box", "Box"),
     ("ruler", "Ruler"),
     ("info", "Info"),
+    ("message-square", "MessageSquare"),
+    ("octagon-alert", "OctagonAlert"),
+    ("triangle-alert", "TriangleAlert"),
+    ("trash-2", "Trash2"),
 ];
 
 fn main() {

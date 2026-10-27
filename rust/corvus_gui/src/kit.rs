@@ -411,6 +411,30 @@ pub fn wrapped(ui: &egui::Ui, text: &str, size: f32, color: Color32, width: f32)
     ui.painter().layout_job(job)
 }
 
+/// Text wrapped to `width` in a given weight and line height (a factor of
+/// the size, as CSS `line-height`).
+pub fn wrapped_weight(
+    ui: &egui::Ui,
+    text: &str,
+    size: f32,
+    weight: Weight,
+    color: Color32,
+    width: f32,
+    line: f32,
+) -> Arc<Galley> {
+    let mut job = egui::text::LayoutJob::single_section(
+        text.to_string(),
+        egui::TextFormat {
+            font_id: style::font(size, weight),
+            color,
+            line_height: Some(size * line),
+            ..Default::default()
+        },
+    );
+    job.wrap.max_width = width;
+    ui.painter().layout_job(job)
+}
+
 /// A dot as `.link-status-dot`: 7 px, a halo when lit, a ring when off.
 pub fn dot(painter: &egui::Painter, c: Pos2, color: Color32, lit: bool) {
     let ring = Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), 51);

@@ -48,6 +48,10 @@ pub fn initial_state() -> Value {
 struct Shared {
     state: Value,
     stream_up: bool,
+    /// Said once per drop while a vehicle was linked, as telemetry.js
+    /// publishTransportError does; reset by the next good frame.
+    error_reported: bool,
+    errors: Vec<String>,
 }
 
 /// The reader thread and what it has seen.
@@ -63,6 +67,8 @@ impl Telemetry {
         let shared = Arc::new(Mutex::new(Shared {
             state: initial_state(),
             stream_up: false,
+            error_reported: false,
+            errors: Vec::new(),
         }));
         let stop = Arc::new(AtomicBool::new(false));
         let thread = {
@@ -86,6 +92,14 @@ impl Telemetry {
             .lock()
             .map(|s| s.state.clone())
             .unwrap_or_else(|_| initial_state())
+    }
+
+    /// Takes the transport errors raised since the last call.
+    pub fn take_errors(&self) -> Vec<String> {
+        self.shared
+            .lock()
+            .map(|mut s| std::mem::take(&mut s.errors))
+            .unwrap_or_default()
     }
 
     /// Whether the stream itself is open (the vehicle may still be absent).
@@ -115,9 +129,15 @@ fn run(server: &Server, shared: &Mutex<Shared>, stop: &AtomicBool, changed: &dyn
         let was_connected = {
             let mut s = shared.lock().expect("telemetry lock");
             s.stream_up = false;
+            let linked = s.state.get("connected") == Some(&Value::Bool(true));
             let was = s.state.get("connected") != Some(&Value::Bool(false));
             if was {
                 s.state["connected"] = Value::Bool(false);
+            }
+            // With no vehicle on the link a dropped stream loses nothing.
+            if linked && !s.error_reported && !stop.load(Ordering::SeqCst) {
+                s.error_reported = true;
+                s.errors.push("Telemetry connection interrupted; reconnecting".into());
             }
             was
         };
@@ -170,7 +190,10 @@ fn read_stream(server: &Server, shared: &Mutex<Shared>, stop: &AtomicBool, chang
         }
         // A frame that does not parse is dropped; the next one replaces it.
         if let Ok(next) = serde_json::from_str::<Value>(&event.data) {
-            shared.lock().expect("telemetry lock").state = next;
+            let mut s = shared.lock().expect("telemetry lock");
+            s.state = next;
+            s.error_reported = false;
+            drop(s);
             changed();
         }
     }

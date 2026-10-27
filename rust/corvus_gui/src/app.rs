@@ -14,6 +14,8 @@ use crate::hud::Hud;
 use crate::map::Map;
 use crate::maprail::MapRail;
 use crate::nav::{self, Page};
+use crate::notify::Board;
+use crate::notify_ui;
 use crate::panel::Panel;
 use crate::telemetry::Telemetry;
 use crate::units::Units;
@@ -22,6 +24,8 @@ use crate::{fonts, style, topbar};
 static LOGO: &[u8] = include_bytes!("../../../assets/CorvusGCS_logo_inverted.png");
 
 struct App {
+    server: Server,
+    board: Board,
     telemetry: Telemetry,
     units: Units,
     map: Map,
@@ -45,7 +49,20 @@ impl App {
         let state: Value = self.telemetry.state();
         let now = now_ms();
         self.map.update(&state);
-        self.flight.drain_errors(now);
+        self.board.update(&state, now);
+        self.flight.settle(&mut self.board, now);
+        for e in self.telemetry.take_errors() {
+            self.board.add_local("critical", &e, now);
+        }
+        if std::mem::take(&mut self.board.clear_remote) {
+            // The backend's store owns the vehicle's lines; its next push is
+            // what really removes them.
+            let server = self.server.clone();
+            std::thread::spawn(move || {
+                let _ = http::post_json(&server, "/api/warnings/clear", &serde_json::json!({}));
+            });
+        }
+        let summary = self.board.summary(now);
 
         let blocks = topbar::blocks(&state, &self.units);
         egui::Panel::top("topbar")
@@ -53,7 +70,10 @@ impl App {
             .frame(egui::Frame::NONE)
             .show(ui, |ui| {
                 let rect = ui.max_rect();
-                topbar::show(ui, rect, &self.logo, &blocks);
+                if topbar::show(ui, rect, &self.logo, &blocks, &summary, self.board.open) {
+                    let open = !self.board.open;
+                    self.board.set_open(open, now);
+                }
             });
         egui::CentralPanel::default()
             .frame(egui::Frame::NONE.fill(style::BG))
@@ -84,6 +104,10 @@ impl App {
                 panel_ui.set_clip_rect(panel);
                 self.panel.show(&mut panel_ui, panel, &state);
             });
+        let screen = ui.ctx().content_rect();
+        let below = notify_ui::board(ui.ctx(), screen, screen.top() + topbar::HEIGHT, &mut self.board, now);
+        let toasts_top = below.map_or(screen.top() + topbar::HEIGHT + 10.0, |b| b + 10.0);
+        notify_ui::toasts(ui.ctx(), screen, toasts_top, &mut self.board);
         // The flight clock ticks while airborne, and toasts expire.
         ui.ctx().request_repaint_after(std::time::Duration::from_millis(250));
     }
@@ -170,6 +194,8 @@ pub fn run(server: Server, context: &'static OnceLock<egui::Context>) -> ExitCod
                 bytes: LOGO.into(),
             };
             Ok(Box::new(App {
+                server: server.clone(),
+                board: Board::default(),
                 telemetry,
                 units,
                 map,
