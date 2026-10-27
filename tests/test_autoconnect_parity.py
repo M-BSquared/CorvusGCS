@@ -108,7 +108,7 @@ def test_the_policy_matches(seed: int) -> None:
 def test_classify_ports_survives_what_python_survived() -> None:
     for rows in (None, [], (), [{"device": "/dev/ttyACM0"}], [1, 2], iter(ROWS)):
         listed = list(rows) if rows is not None and not isinstance(rows, (list, tuple)) else rows
-        results = [outcome(lambda m=m: [port_tuple(p) for p in m.classify_ports(listed)]) for m in MODULES]
+        results = [outcome(lambda m=m, rows=listed: [port_tuple(p) for p in m.classify_ports(rows)]) for m in MODULES]
         assert results[1] == results[0]
 
 

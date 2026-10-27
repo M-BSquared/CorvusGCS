@@ -575,6 +575,17 @@ impl Serial {
     /// otherwise keep the old rate), then the real rate.
     #[cfg(unix)]
     pub fn open(device: &str, baud: u32) -> Result<Serial, SerialOpenError> {
+        Self::open_with(device, baud, true)
+    }
+
+    /// pyserial's own open, straight at *baud*: for a device that is not a
+    /// flight controller, where the 1200 baud touch means nothing or worse.
+    pub fn open_direct(device: &str, baud: u32) -> Result<Serial, SerialOpenError> {
+        Self::open_with(device, baud, false)
+    }
+
+    #[cfg(unix)]
+    fn open_with(device: &str, baud: u32, touch: bool) -> Result<Serial, SerialOpenError> {
         use crate::link::serial_posix as ps;
         let fd = ps::open(device).map_err(|e| {
             let code = e.raw_os_error().unwrap_or(libc::EIO);
@@ -587,7 +598,7 @@ impl Serial {
             }
         })?;
         let setup = (|| -> io::Result<()> {
-            ps::configure(fd, 1200, false)?;
+            ps::configure(fd, if touch { 1200 } else { baud }, false)?;
             ps::raise_modem_lines(fd, true)?;
             ps::flush_input(fd);
             ps::configure(fd, baud, false)
@@ -610,8 +621,13 @@ impl Serial {
 
     #[cfg(windows)]
     pub fn open(device: &str, baud: u32) -> Result<Serial, SerialOpenError> {
+        Self::open_with(device, baud, true)
+    }
+
+    #[cfg(windows)]
+    fn open_with(device: &str, baud: u32, touch: bool) -> Result<Serial, SerialOpenError> {
         use serialport::SerialPort;
-        let mut port = serialport::new(device, 1200)
+        let mut port = serialport::new(device, if touch { 1200 } else { baud })
             .timeout(Duration::from_secs(3600))
             .flow_control(serialport::FlowControl::None)
             .data_bits(serialport::DataBits::Eight)
@@ -715,6 +731,96 @@ impl Serial {
             let k = port.read(&mut buf)?;
             buf.truncate(k);
             Ok(buf)
+        }
+    }
+
+    /// Bytes the driver holds that have not been read, pyserial's
+    /// `in_waiting`.
+    pub fn waiting(&self) -> io::Result<usize> {
+        if self.closed.load(Ordering::SeqCst) {
+            return Err(io::Error::new(io::ErrorKind::Other, "Attempting to use a port that is not open"));
+        }
+        #[cfg(unix)]
+        {
+            let Some(fd) = *lock(&self.fd) else {
+                return Err(ebadf());
+            };
+            let mut n: libc::c_int = 0;
+            if unsafe { libc::ioctl(fd, libc::FIONREAD as _, &mut n) } < 0 {
+                return Err(io::Error::last_os_error());
+            }
+            Ok(n.max(0) as usize)
+        }
+        #[cfg(windows)]
+        {
+            use serialport::SerialPort;
+            let guard = lock(&self.port);
+            let Some(port) = guard.as_ref() else {
+                return Err(io::Error::new(io::ErrorKind::Other, "Attempting to use a port that is not open"));
+            };
+            Ok(port.bytes_to_read().map_err(io::Error::from)? as usize)
+        }
+    }
+
+    /// pyserial's `read(n)` with a timeout: up to *n* bytes, returning early
+    /// only once *n* have come or *timeout* seconds have passed.
+    pub fn read_timeout(&self, n: usize, timeout: f64) -> io::Result<Vec<u8>> {
+        let deadline = std::time::Instant::now() + Duration::from_secs_f64(timeout.max(0.0));
+        let mut out = Vec::new();
+        while out.len() < n {
+            let left = deadline.saturating_duration_since(std::time::Instant::now()).as_secs_f64();
+            if !self.wait_readable(left) {
+                if self.closed.load(Ordering::SeqCst) {
+                    return Err(io::Error::new(io::ErrorKind::Other, "Attempting to use a port that is not open"));
+                }
+                break;
+            }
+            out.extend(self.recv(n - out.len())?);
+            if std::time::Instant::now() >= deadline {
+                break;
+            }
+        }
+        Ok(out)
+    }
+
+    /// All of *buf*, or a timeout error once *timeout* seconds have passed
+    /// with the driver's buffer still full.
+    pub fn write_timeout(&self, buf: &[u8], timeout: f64) -> io::Result<usize> {
+        #[cfg(unix)]
+        {
+            if self.closed.load(Ordering::SeqCst) {
+                return Err(io::Error::new(io::ErrorKind::Other, "Attempting to use a port that is not open"));
+            }
+            let _guard = lock(&self.write_lock);
+            let Some(fd) = *lock(&self.fd) else {
+                return Err(ebadf());
+            };
+            let deadline = std::time::Instant::now() + Duration::from_secs_f64(timeout.max(0.0));
+            let mut rest = buf;
+            while !rest.is_empty() {
+                let rc = unsafe { libc::write(fd, rest.as_ptr() as *const libc::c_void, rest.len()) };
+                if rc < 0 {
+                    let err = io::Error::last_os_error();
+                    match err.kind() {
+                        io::ErrorKind::Interrupted => continue,
+                        io::ErrorKind::WouldBlock => {
+                            let left = deadline.saturating_duration_since(std::time::Instant::now()).as_secs_f64();
+                            if left <= 0.0 || !wait_writable(fd, left) {
+                                return Err(io::Error::new(io::ErrorKind::TimedOut, "Write timeout"));
+                            }
+                            continue;
+                        }
+                        _ => return Err(err),
+                    }
+                }
+                rest = &rest[rc as usize..];
+            }
+            Ok(buf.len())
+        }
+        #[cfg(windows)]
+        {
+            let _ = timeout;
+            self.write(buf)
         }
     }
 

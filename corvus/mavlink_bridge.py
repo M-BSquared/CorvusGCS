@@ -43,7 +43,7 @@ from corvus_link import bridge as _receive
 from corvus_link import mavutil
 
 from . import autopilot as autopilot_dialect
-from . import rtk
+from . import rtk  # noqa: F401 - read by the RTCM engine
 from .autopilot import (  # noqa: F401 - re-exported, see the tables below
     PX4_AUTO_SUBMODE,
     PX4_AVAILABLE_MODES,
@@ -1894,46 +1894,7 @@ class MavlinkBridge(
 
         Returns True when every fragment was written.
         """
-        if not frame:
-            return False
-        if not self._connection_ready():
-            with self._rtcm_lock:
-                self._rtcm_dropped += 1
-            return False
-        with self._rtcm_lock:
-            sequence = self._rtcm_sequence
-            self._rtcm_sequence = (sequence + 1) & 0x1F
-        parts = rtk.fragments(frame, sequence)
-        if not parts:
-            with self._rtcm_lock:
-                self._rtcm_dropped += 1
-            logger.warning(
-                "RTCM message of %d bytes is too long for GPS_RTCM_DATA; dropped",
-                len(frame),
-            )
-            return False
-        try:
-            with self._send_lock:
-                conn = self._conn
-                if conn is None:
-                    raise RuntimeError("link closed")
-                for flags, chunk in parts:
-                    # The field is a fixed 180 bytes; the length is carried
-                    # separately, so the tail is padding and not data.
-                    conn.mav.gps_rtcm_data_send(
-                        flags, len(chunk),
-                        list(chunk) + [0] * (rtk.FRAGMENT_BYTES - len(chunk)),
-                    )
-        except Exception as exc:  # noqa: BLE001 - see the docstring
-            with self._rtcm_lock:
-                self._rtcm_dropped += 1
-            logger.debug("RTCM injection failed: %s", exc)
-            return False
-        with self._rtcm_lock:
-            self._rtcm_bytes += len(frame)
-            self._rtcm_messages += 1
-            self._rtcm_last_send = time.monotonic()
-        return True
+        return _rtcm_engine.inject_rtcm(self, frame)
 
     def rtcm_stats(self) -> dict[str, Any]:
         """What has actually reached the aircraft, for the RTK page.
@@ -1942,22 +1903,11 @@ class MavlinkBridge(
         base streaming happily into a link that is down is the failure this
         pair of numbers exists to make visible.
         """
-        with self._rtcm_lock:
-            last = self._rtcm_last_send
-            return {
-                "bytes": self._rtcm_bytes,
-                "messages": self._rtcm_messages,
-                "dropped": self._rtcm_dropped,
-                "age": (time.monotonic() - last) if last else None,
-            }
+        return _rtcm_engine.rtcm_stats(self)
 
     def forget_rtcm_session(self) -> None:
         """Reset the injection counters when the correction source changes."""
-        with self._rtcm_lock:
-            self._rtcm_bytes = 0
-            self._rtcm_messages = 0
-            self._rtcm_dropped = 0
-            self._rtcm_last_send = 0.0
+        _rtcm_engine.forget_rtcm_session(self)
 
     # On-board log download (MAVLink LOG_*): LogTransferMixin in
     # corvus/mavlink_logs.py.
@@ -2079,3 +2029,6 @@ class MavlinkBridge(
             logger.error("manual control send failed: %s", exc)
             self._set_command_error(f"Manual control send failed: {exc}")
             return False
+
+
+_rtcm_engine = _receive.RtcmEngine(sys.modules[__name__])

@@ -2,7 +2,7 @@
 //! command transaction (`receive`), its own requests and signing
 //! (`requests`), the vehicle list's tracker (`fleet`), the second
 //! station forwarder (`forward`), the auto-connect policy and watcher
-//! (`autoconnect`), what the vehicle reports in words
+//! (`autoconnect`), RTCM injection (`rtcm`), what the vehicle reports in words
 //! (`status`), the telemetry log (`tlog`), the connection cycle (`cycle`) and
 //! the threads it runs on (`thread`), as ``corvus_link.bridge``.
 
@@ -15,6 +15,7 @@ pub mod fleet;
 pub mod forward;
 pub mod receive;
 pub mod requests;
+pub mod rtcm;
 pub mod status;
 pub mod thread;
 pub mod tlog;
@@ -30,6 +31,7 @@ pub fn register(py: Python<'_>, parent: &Bound<'_, PyModule>) -> PyResult<()> {
     status::register(&m)?;
     tlog::register(&m)?;
     requests::register(&m)?;
+    rtcm::register(&m)?;
     parent.add_submodule(&m)?;
     py.import("sys")?
         .getattr("modules")?

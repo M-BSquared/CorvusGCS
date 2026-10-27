@@ -15,6 +15,7 @@ use pyo3::types::{PyDict, PyModule};
 mod bridge;
 mod link;
 mod protocol;
+mod rtk;
 mod wire;
 
 use link::{connection, transport};
@@ -228,5 +229,6 @@ fn corvus_link(m: &Bound<'_, PyModule>) -> PyResult<()> {
     protocol::telemetry::register(py, m)?;
     protocol::flight::register(py, m)?;
     bridge::register(py, m)?;
+    rtk::register(py, m)?;
     Ok(())
 }
