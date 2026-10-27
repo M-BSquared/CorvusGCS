@@ -843,10 +843,10 @@ def test_the_armed_confirmation_wait_happens_outside_the_command_lock() -> None:
 # stop() on another thread never meets a worker that is not started yet
 # ---------------------------------------------------------------------------
 
+# The link's own workers run on corvus_link's CoreThreads, whose handle is
+# only returned once the thread exists, so the gap below cannot open for them;
+# the race is pinned for them in the test after this one.
 @pytest.mark.parametrize(("spawn", "attr", "name"), [
-    ("_start_gcs_heartbeat", "_hb_thread", "gcs-hb"),
-    ("_schedule_message_intervals", "_intervals_thread", "mavlink-intervals"),
-    ("_schedule_version_retry", "_version_retry_thread", "px4-ver-retry"),
     ("_start_param_watchdog", "_param_watchdog_thread", "param-watchdog"),
 ])
 def test_stop_in_the_gap_before_a_worker_starts_does_not_raise(
@@ -873,6 +873,40 @@ def test_stop_in_the_gap_before_a_worker_starts_does_not_raise(
     monkeypatch.undo()
 
     worker = getattr(b, attr)
+    assert worker is not None and worker.name == name
+    worker.join(timeout=5)
+    assert not worker.is_alive(), f"{name} outlived stop()"
+
+
+@pytest.mark.parametrize(("spawn", "attr", "name"), [
+    ("_start_gcs_heartbeat", "_hb_thread", "gcs-hb"),
+    ("_schedule_message_intervals", "_intervals_thread", "mavlink-intervals"),
+    ("_schedule_version_retry", "_version_retry_thread", "px4-ver-retry"),
+])
+def test_stop_racing_a_link_worker_spawn_ends_it(spawn: str, attr: str, name: str) -> None:
+    """The MAVLink thread spawns these while stop() runs on the caller's.
+
+    A worker handle is a started thread from the moment it is published, so
+    a stop() on another thread at once after the spawn, the earliest point it
+    can see the handle, joins it without raising and the worker ends.
+    """
+    b = bridge()
+    b._running.set()
+    errors: list[BaseException] = []
+    getattr(b, spawn)()
+    worker = getattr(b, attr)
+
+    def stop() -> None:
+        try:
+            b.stop()
+        except BaseException as exc:  # noqa: BLE001 - reported below
+            errors.append(exc)
+
+    stopper = threading.Thread(target=stop)
+    stopper.start()
+    stopper.join(timeout=10)
+
+    assert not errors, errors
     assert worker is not None and worker.name == name
     worker.join(timeout=5)
     assert not worker.is_alive(), f"{name} outlived stop()"

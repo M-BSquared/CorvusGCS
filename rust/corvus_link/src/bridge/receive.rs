@@ -1265,7 +1265,8 @@ impl ReceiveEngine {
             Ok(())
         };
         loop {
-            if !bridge.getattr("_running")?.call_method0("is_set")?.is_truthy()?
+            if crate::bridge::thread::shutting_down()
+                || !bridge.getattr("_running")?.call_method0("is_set")?.is_truthy()?
                 || !bridge.getattr("_conn")?.is_truthy()?
             {
                 return Ok(());
@@ -1529,17 +1530,16 @@ impl ReceiveEngine {
     }
 }
 
-pub fn register(py: Python<'_>, parent: &Bound<'_, PyModule>) -> PyResult<()> {
-    let m = PyModule::new(py, "corvus_link.bridge")?;
+pub fn register(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<ReceiveEngine>()?;
-    m.add_function(wrap_pyfunction!(is_plausible_heartbeat, &m)?)?;
-    m.add_function(wrap_pyfunction!(is_vehicle_heartbeat, &m)?)?;
-    m.add_function(wrap_pyfunction!(sensor_health, &m)?)?;
-    m.add_function(wrap_pyfunction!(prearm_ok, &m)?)?;
-    m.add_function(wrap_pyfunction!(rangefinder_distance_m, &m)?)?;
-    m.add_function(wrap_pyfunction!(gps_altitude_m, &m)?)?;
-    m.add_function(wrap_pyfunction!(gps_accuracy_m, &m)?)?;
-    m.add_function(wrap_pyfunction!(decode_git_hash, &m)?)?;
+    m.add_function(wrap_pyfunction!(is_plausible_heartbeat, m)?)?;
+    m.add_function(wrap_pyfunction!(is_vehicle_heartbeat, m)?)?;
+    m.add_function(wrap_pyfunction!(sensor_health, m)?)?;
+    m.add_function(wrap_pyfunction!(prearm_ok, m)?)?;
+    m.add_function(wrap_pyfunction!(rangefinder_distance_m, m)?)?;
+    m.add_function(wrap_pyfunction!(gps_altitude_m, m)?)?;
+    m.add_function(wrap_pyfunction!(gps_accuracy_m, m)?)?;
+    m.add_function(wrap_pyfunction!(decode_git_hash, m)?)?;
     m.add("NON_VEHICLE_TYPES", PyFrozenSet::new(py, non_vehicle_types())?)?;
     m.add(
         "NON_AUTOPILOT_COMPONENTS",
@@ -1547,9 +1547,5 @@ pub fn register(py: Python<'_>, parent: &Bound<'_, PyModule>) -> PyResult<()> {
     )?;
     m.add("HEARTBEAT_LIMITS", PyTuple::new(py, HEARTBEAT_LIMITS)?)?;
     m.add("DOWNWARD_ORIENTATION", DOWNWARD_ORIENTATION)?;
-    parent.add_submodule(&m)?;
-    py.import("sys")?
-        .getattr("modules")?
-        .set_item("corvus_link.bridge", &m)?;
     Ok(())
 }

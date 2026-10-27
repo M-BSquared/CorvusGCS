@@ -99,7 +99,8 @@ until a tool and its permission are added there on purpose.
   `corvus/` imports pymavlink. The parameter, mission, FTP, log and
   shell protocols, the Setup commands, Remote ID, the telemetry handlers and
   the flight commands run in corvus_link too, and so does the bridge's
-  receive path and command transaction (`corvus_link.params`, `.missions`,
+  receive path, command transaction and connection cycle, whose threads are
+  Rust threads (`corvus_link.params`, `.missions`,
   `.ftp`, `.logs`, `.shell`, `.setup`, `.remote_id`, `.telemetry`, `.flight`,
   `.bridge`, behind the `corvus/mavlink_*.py` module of the
   same name);
@@ -342,6 +343,11 @@ logs.
   thread. This is required of the backend, the app wrapper, and any bridge
   process.
 - File handles (tlogs, caches) are flushed and closed in the shutdown path.
+- The MAVLink link runs on corvus_link's native threads (`CoreThread`). They
+  are joined by `MavlinkBridge.stop()` like any other, and corvus_link's own
+  `atexit` hook stops and joins any still running before the interpreter
+  finalises; a native thread left inside a finalising interpreter is ended
+  mid-frame. Do not start one that this path does not reach.
 - The Review-Agent does not green-light a change until it has audited the
   shutdown path for the change in question.
 
