@@ -14,6 +14,10 @@ use crate::style::{self, Weight};
 pub enum Variant {
     Primary,
     Secondary,
+    Ghost,
+    /// A primary button that cannot be pressed: `.btn.params-apply:disabled`
+    /// is flat grey rather than a faded accent.
+    Inert,
     /// `.btn.link-disconnect`: outlined in the critical colour.
     DangerOutline,
 }
@@ -68,6 +72,17 @@ impl<'a> Button<'a> {
         style::galley(ui, self.label, size, self.weight, color, 0.1)
     }
 
+    /// The width it wants at its natural size.
+    pub fn width(&self, ui: &egui::Ui) -> f32 {
+        let pad = if self.small { 11.0 } else { 14.0 };
+        let icon = if self.icon.is_some() {
+            self.icon_size() + if self.label.is_empty() { 0.0 } else { 7.0 }
+        } else {
+            0.0
+        };
+        2.0 + 2.0 * pad + icon + self.text(ui, style::text_1()).size().x
+    }
+
     /// Its height at its natural size.
     pub fn height(&self) -> f32 {
         let pad = if self.small { 7.0 } else { 10.0 };
@@ -102,6 +117,12 @@ impl<'a> Button<'a> {
                 Stroke::NONE,
             ),
             Variant::Secondary => (style::glass(0.6), style::text_1(), Stroke::new(1.0, style::tint(0.09))),
+            Variant::Ghost => (
+                if hover { style::tint(0.04) } else { Color32::TRANSPARENT },
+                if hover { style::text_1() } else { style::text_2() },
+                Stroke::NONE,
+            ),
+            Variant::Inert => (style::surface_3(), style::text_3(), Stroke::NONE),
             Variant::DangerOutline => (
                 style::critical().gamma_multiply(if hover { 0.12 } else { 0.07 }),
                 style::critical(),

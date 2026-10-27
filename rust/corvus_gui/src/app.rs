@@ -17,6 +17,7 @@ use crate::nav::{self, Page};
 use crate::notify::Board;
 use crate::notify_ui;
 use crate::panel::Panel;
+use crate::setup::SetupPage;
 use crate::telemetry::Telemetry;
 use crate::units::Units;
 use crate::{fonts, style, topbar};
@@ -36,6 +37,7 @@ struct App {
     flight: FlightBar,
     logo: egui::ImageSource<'static>,
     page: Page,
+    setup: SetupPage,
     mission_page: bool,
     panel: Panel,
     rail: MapRail,
@@ -54,7 +56,7 @@ impl App {
         self.map.update(&state);
         self.board.update(&state, now);
         self.flight.settle(&mut self.board, now);
-        for e in self.telemetry.take_errors() {
+        for e in self.setup.take_errors().into_iter().chain(self.telemetry.take_errors()) {
             self.board.add_local("critical", &e, now);
         }
         if std::mem::take(&mut self.board.clear_remote) {
@@ -97,10 +99,15 @@ impl App {
                     self.hud.show(&mut map_ui, corner, &state, &self.units, now);
                     self.rail.show(&mut map_ui, main, &mut self.map, &state);
                     self.flight.show(&mut map_ui, main, &state, &self.units);
+                } else if self.page == Page::Setup {
+                    self.setup.show(ui, main, &state, now);
                 } else {
                     nav::placeholder(ui, main, self.page);
                 }
                 if let Some(page) = nav::show(ui, rail, self.mission_page, self.page) {
+                    if page == Page::Setup && self.page == Page::Setup {
+                        self.setup.reset();
+                    }
                     self.page = page;
                 }
                 let mut panel_ui = ui.new_child(egui::UiBuilder::new().max_rect(panel));
@@ -152,7 +159,7 @@ pub fn unwrap_config(answer: &Value) -> Value {
 }
 
 /// Opens the window on `server` and runs until it is closed.
-pub fn run(server: Server, context: &'static OnceLock<egui::Context>) -> ExitCode {
+pub fn run(server: Server, context: &'static OnceLock<egui::Context>, page: Option<&str>) -> ExitCode {
     let config = http::get_json(&server, "/api/config")
         .map(|c| unwrap_config(&c))
         .unwrap_or(Value::Null);
@@ -177,6 +184,11 @@ pub fn run(server: Server, context: &'static OnceLock<egui::Context>) -> ExitCod
         .filter(|s| (0.8..=1.5).contains(s))
         .unwrap_or(1.0) as f32;
     let sources = http::get_json(&server, "/api/tiles/sources").unwrap_or(Value::Null);
+    let start_page = match page {
+        Some("setup") | Some("parameters") => Page::Setup,
+        _ => Page::Home,
+    };
+    let open_params = page == Some("parameters");
     let options = eframe::NativeOptions {
         renderer: eframe::Renderer::Glow,
         viewport: egui::ViewportBuilder::default()
@@ -220,7 +232,14 @@ pub fn run(server: Server, context: &'static OnceLock<egui::Context>) -> ExitCod
                 hud: Hud::default(),
                 flight,
                 logo,
-                page: Page::Home,
+                page: start_page,
+                setup: {
+                    let mut s = SetupPage::new(server.clone());
+                    if open_params {
+                        s.open("parameters", &ctx);
+                    }
+                    s
+                },
                 mission_page,
                 panel,
                 rail,

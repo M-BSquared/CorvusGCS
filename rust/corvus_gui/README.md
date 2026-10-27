@@ -11,6 +11,7 @@ uses, so the backend does not change for it:
 cargo run --release                                   # start serve.py here and show it
 cargo run --release -- --server http://10.0.0.5:8080  # a backend elsewhere
 cargo run --release -- --root DIR --python PATH       # where serve.py is, what runs it
+cargo run --release -- --page parameters              # open on a page (setup, parameters)
 ```
 
 Locally, `serve.py` runs as a child on a free port. Every way out (window
@@ -33,6 +34,9 @@ SIGKILL if it is still there after 8 s. If the window does not close within
 | `src/hud.rs` | compass, attitude indicator and readouts (`src/js/instruments.js`) |
 | `src/flight.rs` | the flight bar, takeoff card and mode picker (`src/js/app.js`) |
 | `src/style.rs` | the design tokens of the six themes (light, light-orange, green, blue, pink, orange) and the type |
+| `src/setup.rs` | the Setup page: head, vehicle card, the tile grid and the sub-pages (`src/js/setup.js`) |
+| `src/params.rs` | the Parameters page: download, search, filter, defaults, edit and apply (`src/js/setup-parameters.js`) |
+| `src/pagekit.rs` | page furniture: header, section title, tile, back button, segmented control |
 | `src/notify.rs` | the notification board, its read and dismiss rules, the command dedupe and the toasts (`src/js/topbar.js`) |
 | `src/notify_ui.rs` | the NOTIFICATIONS pill, the board and the toast stack |
 | `src/frost.rs` | the frosted glass under every `.glass` surface |

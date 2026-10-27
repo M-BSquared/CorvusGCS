@@ -24,7 +24,10 @@ mod maprail;
 mod nav;
 mod notify;
 mod notify_ui;
+mod pagekit;
 mod panel;
+mod params;
+mod setup;
 mod sse;
 mod stream;
 mod style;
@@ -52,6 +55,7 @@ struct Args {
     server: Option<String>,
     root: Option<PathBuf>,
     python: Option<PathBuf>,
+    page: Option<String>,
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -63,8 +67,9 @@ fn parse_args() -> Result<Args, String> {
             "--server" => args.server = Some(value("--server")?),
             "--root" => args.root = Some(PathBuf::from(value("--root")?)),
             "--python" => args.python = Some(PathBuf::from(value("--python")?)),
+            "--page" => args.page = Some(value("--page")?),
             "-h" | "--help" => {
-                println!("usage: corvus-gcs [--server http://host:port] [--root DIR] [--python PATH]");
+                println!("usage: corvus-gcs [--server http://host:port] [--root DIR] [--python PATH] [--page setup|parameters]");
                 std::process::exit(0);
             }
             other => return Err(format!("unknown argument {other}")),
@@ -136,7 +141,7 @@ fn main() -> ExitCode {
         }
     };
 
-    let code = app::run(server, &CONTEXT);
+    let code = app::run(server, &CONTEXT, args.page.as_deref());
     // The interface (and with it the telemetry thread) is gone; now the
     // backend, SIGTERM first.
     drop(local);
