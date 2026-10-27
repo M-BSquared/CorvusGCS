@@ -9,7 +9,7 @@
 //! Python methods, so a bridge or a test that replaces one keeps doing so,
 //! and read the clock, `random` and `mavutil` from ``corvus.mavlink_bridge``.
 
-use pyo3::exceptions::{PyConnectionError, PyException, PyOSError, PyOverflowError};
+use pyo3::exceptions::{PyConnectionError, PyException, PyOSError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyModule, PyTuple};
 
@@ -380,19 +380,19 @@ impl LinkCycle {
     }
 
     /// Exponential backoff with jitter: base * 2^(attempt-1), capped, then
-    /// +/- the jitter. Computed as Python did, which overflows a float past
-    /// attempt 1024.
+    /// +/- the jitter, never below the floor, for any number of attempts.
     fn reconnect_delay(&self, py: Python<'_>, attempt: i64) -> PyResult<f64> {
         let env = self.env(py);
         let base: f64 = env.getattr("RECONNECT_BASE_S")?.extract()?;
         let cap: f64 = env.getattr("RECONNECT_CAP_S")?.extract()?;
         let jitter: f64 = env.getattr("RECONNECT_JITTER")?.extract()?;
         let floor: f64 = env.getattr("RECONNECT_MIN_S")?.extract()?;
-        let exponent = (attempt - 1).max(0);
-        if exponent >= 1024 {
-            return Err(PyOverflowError::new_err("int too large to convert to float"));
-        }
-        let scaled = base * 2f64.powi(exponent as i32);
+        // Capped well before 2^n leaves the float range: past the cap the
+        // delay is the cap whatever the exponent. Uncapped, the Python this
+        // replaced raised OverflowError on attempt 1025, about 2.3 hours of
+        // failed reconnects, and the link thread died with it.
+        let exponent = attempt.saturating_sub(1).clamp(0, 1023) as i32;
+        let scaled = base * 2f64.powi(exponent);
         let raw = if cap < scaled { cap } else { scaled };
         let factor = 1.0
             + env

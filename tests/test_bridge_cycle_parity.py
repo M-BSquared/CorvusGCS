@@ -281,12 +281,22 @@ def test_run_cycles_match(case: str, logs: Logs, monkeypatch: pytest.MonkeyPatch
     assert results[1] == results[0]
 
 
-@pytest.mark.parametrize("attempt", [-3, 0, 1, 2, 3, 4, 5, 6, 10, 60, 1024, 1025, 5000])
+@pytest.mark.parametrize("attempt", [-3, 0, 1, 2, 3, 4, 5, 6, 10, 60, 1023, 1024])
 @pytest.mark.parametrize("jitter", [-0.25, 0.0, 0.25])
 def test_reconnect_delays_match(attempt: int, jitter: float, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(random, "uniform", lambda a, b: jitter)
     results = [outcome(kind(VehicleStateStore())._reconnect_delay, attempt) for kind in KINDS]
     assert results[1] == results[0]
+
+
+@pytest.mark.parametrize("attempt", [1025, 5000])
+def test_the_backoff_no_longer_overflows_where_the_python_did(attempt: int, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The one place the engine departs from the reference on purpose: from
+    attempt 1025 the Python raised OverflowError and the link thread died;
+    the engine stays at the cap. See test_mavlink_serial for the regression."""
+    monkeypatch.setattr(random, "uniform", lambda a, b: 0.0)
+    assert outcome(ReferenceBridge(VehicleStateStore())._reconnect_delay, attempt)[:2] == ("error", "OverflowError")
+    assert MavlinkBridge(VehicleStateStore())._reconnect_delay(attempt) == 8.0
 
 
 def test_a_superseded_thread_never_connects(monkeypatch: pytest.MonkeyPatch) -> None:

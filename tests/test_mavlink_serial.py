@@ -298,6 +298,22 @@ def test_reconnect_delay_is_unified_across_serial_and_udp(
         assert serial._reconnect_delay(attempt) == udp._reconnect_delay(attempt)
 
 
+@pytest.mark.parametrize("jitter", [-0.25, 0.0, 0.25])
+def test_reconnect_delay_stays_capped_for_any_number_of_attempts(
+    monkeypatch: pytest.MonkeyPatch, jitter: float,
+) -> None:
+    """Regression: base * 2 ** (attempt - 1) left the float range on attempt
+    1025, about 2.3 hours of failed reconnects at the 8 s cap. The delay then
+    raised OverflowError, the link thread died, and the station never
+    reconnected to an aircraft that came back."""
+    monkeypatch.setattr("corvus.mavlink_bridge.random.uniform", lambda a, b: jitter)
+    bridge = MavlinkBridge(VehicleStateStore(), "udp:0.0.0.0:14540")
+    capped = 8.0 * (1 + jitter)
+    for attempt in (6, 1023, 1024, 1025, 1026, 5000, 10**6, 2**62):
+        assert bridge._reconnect_delay(attempt) == pytest.approx(capped)
+    assert bridge._reconnect_delay(-(2**62)) == pytest.approx(0.5 * (1 + jitter))
+
+
 # ---------------------------------------------------------------------------
 # link-status transitions
 # ---------------------------------------------------------------------------
@@ -455,6 +471,37 @@ def test_run_resets_reconnect_attempt_after_successful_connect(
     bridge._run()
 
     assert bridge._reconnect_attempt == 1
+
+
+def test_the_cycle_keeps_reconnecting_after_a_thousand_failed_attempts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression: the reconnect cycle outlives attempt 1025, where the
+    backoff used to overflow and end the link thread for good."""
+    store = VehicleStateStore()
+    seed_link_fields(store)
+    bridge = MavlinkBridge(store, "udp:0.0.0.0:14540")
+    bridge._running.set()
+    bridge._reconnect_attempt = 1023
+    backoffs: list[float] = []
+
+    def fake_connect() -> None:
+        raise ConnectionError("No heartbeat received")
+
+    def fake_backoff(seconds: float) -> None:
+        backoffs.append(seconds)
+        if len(backoffs) >= 5:
+            bridge._running.clear()
+
+    monkeypatch.setattr(bridge, "_connect", fake_connect)
+    monkeypatch.setattr(bridge, "_interruptible_sleep", fake_backoff)
+
+    bridge._run()
+
+    assert len(backoffs) == 5, "the cycle stopped reconnecting"
+    assert all(6.0 <= delay <= 10.0 for delay in backoffs)
+    assert bridge._reconnect_attempt == 1028
+    assert store.get_snapshot()["link_status"] == "reconnecting"
 
 
 # ---------------------------------------------------------------------------
