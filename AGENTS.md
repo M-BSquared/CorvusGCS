@@ -110,7 +110,11 @@ until a tool and its permission are added there on purpose.
   version- *and* stack-aware (see the compatibility target below).
 - **Frontend:** vanilla JS / small framework, MapLibre GL JS or Leaflet for the
   map. Telemetry is pushed from the backend; the frontend never polls for live
-  data.
+  data. It is being replaced by a native egui app, `rust/corvus_gui`, a
+  client of the same HTTP/SSE API that starts and supervises `serve.py`
+  itself (or connects to `--server`), page by page with the same words and
+  rules as the web page it replaces. The web interface stays until the
+  switch.
 - **Maps:** local tile cache (MBTiles/SQLite) for full offline field use.
 - **Vendored libraries** live in `src/vendor/` and are dropped in by hand. Two
   of them are patched, both marked `CORVUS-ZOOM-PATCH` and both for the same
@@ -445,6 +449,7 @@ Rules that keep the chain honest:
 ./build-appimage.sh             # Linux artifact  (x86_64)
 ./build-macos-app.sh [--dmg]    # macOS artifact  (arm64 / x86_64)
 node tools/frontend_tests.js    # frontend assertions: tests/ + plugins/*/tests/
+(cd rust/corvus_gui && cargo run --release)   # the native interface, starts serve.py itself
 python3 tools/guide.py          # after editing docs/guide/*.html: rewrite each page's frame
 git config core.hooksPath .githooks   # one-time, enables the VERSION auto-bump
 ```
