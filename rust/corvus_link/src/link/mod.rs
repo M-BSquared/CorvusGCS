@@ -5,3 +5,4 @@ pub mod connection;
 #[cfg(unix)]
 pub mod serial_posix;
 pub mod transport;
+pub mod websocket;

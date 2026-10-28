@@ -13,6 +13,7 @@ use pyo3::{PyTraverseError, PyVisit};
 #[cfg(unix)]
 use crate::link::transport::{ChildExec, Uds};
 use crate::link::transport::{LogFile, Mcast, Serial, Tcp, TcpEvent, TcpIn, Udp};
+use crate::link::websocket::{WsClient, WsError, WsServer};
 use crate::lock;
 use crate::wire::defs::{self, constant_or, Wire};
 use crate::wire::dialect;
@@ -150,6 +151,8 @@ pub enum Link {
     TcpIn(TcpIn),
     Serial(Serial),
     Mcast(Mcast),
+    WsClient(WsClient),
+    WsServer(WsServer),
     #[cfg(unix)]
     Uds(Uds),
     #[cfg(unix)]
@@ -165,6 +168,8 @@ impl Link {
             Link::TcpIn(l) => l.wait_readable(timeout),
             Link::Serial(l) => l.wait_readable(timeout),
             Link::Mcast(l) => l.wait_readable(timeout),
+            Link::WsClient(l) => l.wait_readable(timeout),
+            Link::WsServer(l) => l.wait_readable(timeout),
             #[cfg(unix)]
             Link::Uds(l) => l.wait_readable(timeout),
             #[cfg(unix)]
@@ -184,6 +189,8 @@ impl Link {
             Link::TcpIn(l) => l.raw().map(|h| h as i64),
             Link::Serial(l) => l.fileno(),
             Link::Mcast(l) => l.raw().map(|h| h as i64),
+            Link::WsClient(l) => l.raw().map(|h| h as i64),
+            Link::WsServer(l) => l.raw().map(|h| h as i64),
             #[cfg(unix)]
             Link::Uds(l) => l.raw().map(|h| h as i64),
             #[cfg(unix)]
@@ -199,6 +206,8 @@ impl Link {
             Link::TcpIn(l) => l.close(),
             Link::Serial(l) => l.close(),
             Link::Mcast(l) => l.close(),
+            Link::WsClient(l) => l.close(),
+            Link::WsServer(l) => l.close(),
             #[cfg(unix)]
             Link::Uds(l) => l.close(),
             #[cfg(unix)]
@@ -275,6 +284,7 @@ impl PortHandle {
             Link::Tcp(l) => l.local_addr(),
             Link::TcpIn(l) => l.local_addr(),
             Link::Mcast(l) => l.local_addr(),
+            Link::WsServer(l) => l.local_addr(),
             _ => return Err(PyAttributeError::new_err("this port has no attribute 'getsockname'")),
         }
         .map_err(|e| os_error(&e))?;
@@ -430,6 +440,8 @@ impl Connection {
                 result.map_err(|e| os_error(&e))
             }
             Link::TcpIn(l) => Ok(l.recv(n)),
+            Link::WsServer(l) => Ok(py.allow_threads(|| l.recv(n))),
+            Link::WsClient(l) => py.allow_threads(|| l.recv(n)).map_err(ws_error),
             Link::Serial(l) => l.recv(n).map_err(|e| PyOSError::new_err(e.to_string())),
             Link::Tcp(l) => {
                 let (result, event) = l.recv(n);
@@ -489,6 +501,14 @@ impl Connection {
             }
             Link::TcpIn(l) => {
                 l.write(buf);
+                Ok(None)
+            }
+            Link::WsServer(l) => {
+                l.write(buf);
+                Ok(None)
+            }
+            Link::WsClient(l) => {
+                py.allow_threads(|| l.write(buf)).map_err(ws_error)?;
                 Ok(None)
             }
             Link::Mcast(l) => {
@@ -1286,6 +1306,11 @@ impl Connection {
             )));
         }
         if let Link::TcpIn(l) = &*self.link {
+            if !l.has_client() {
+                return Ok(py.None());
+            }
+        }
+        if let Link::WsServer(l) = &*self.link {
             if !l.has_client() {
                 return Ok(py.None());
             }
@@ -2189,9 +2214,22 @@ pub fn mavlink_connection(
             source_component,
         );
     }
+    if let Some(rest) = device.strip_prefix("wsserver:") {
+        let link = py.allow_threads(|| WsServer::open(rest)).map_err(ws_error)?;
+        return Connection::new_object(
+            py,
+            Link::WsServer(link),
+            "mavwebsocket",
+            format!("wsserver:{rest}"),
+            source_system,
+            source_component,
+        );
+    }
+    if device.starts_with("ws:") || device.starts_with("wss:") {
+        let link = py.allow_threads(|| WsClient::open(device)).map_err(ws_error)?;
+        return Connection::new_object(py, Link::WsClient(link), "mavwebsocket_client", device.to_string(), source_system, source_component);
+    }
     // Not built yet. pymavlink also opens these; each needs its own piece:
-    //  * wsserver:, ws:, wss:  MAVLink over WebSocket (server and client).
-    //    Needs a WebSocket codec and, for wss:, TLS (a rustls dependency).
     //  * csv:                  pymavlink's CSVReader for CSV exports.
     //  * *.bin, *.px4log, and text *.log: DataFlash logs (DFReader). Corvus
     //    reads ArduPilot .bin logs through its own log service instead.
@@ -2199,7 +2237,7 @@ pub fn mavlink_connection(
     //    messages, only without the seek-ahead recv_match acceleration.
     // Until then they fail here with a message that says so, rather than
     // falling through to the serial or UDP branch below.
-    for prefix in ["wsserver:", "ws:", "wss:", "csv:"] {
+    for prefix in ["csv:"] {
         if device.starts_with(prefix) {
             return Err(PyNotImplementedError::new_err(format!(
                 "corvus_link does not support {prefix} links yet"
@@ -2305,6 +2343,15 @@ pub fn mavlink_connection(
         source_system,
         source_component,
     )
+}
+
+fn ws_error(e: WsError) -> PyErr {
+    match e {
+        WsError::Value(m) => PyValueError::new_err(m),
+        WsError::Os(e) => os_error(&e),
+        WsError::Runtime(m) => pyo3::exceptions::PyRuntimeError::new_err(m),
+        WsError::Unsupported(m) => PyNotImplementedError::new_err(m),
+    }
 }
 
 /// DFReader_is_text_log: a text DataFlash log starts with "FMT,".

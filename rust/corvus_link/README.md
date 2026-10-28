@@ -30,7 +30,7 @@ src/
 | Payload packing and unpacking with `struct`'s rules | `src/wire/codec.rs` | `struct.Struct` per message |
 | Framing, CRC_EXTRA, sequence numbers, MAVLink 2 signing, the stream parser | `src/wire/frame.rs`, `src/wire/crc.rs` | `MAVLink`, `MAVLinkSigning`, `x25crc` |
 | `mavlink_connection`, per-system state, `recv_match`, `wait_heartbeat`, `mode_mapping`, `setup_signing` | `src/link/connection.rs` | `mavfile` and its subclasses |
-| The links | `src/link/transport.rs`, `src/link/serial_posix.rs` | `mavudp`, `mavtcp`, `mavtcpin`, `mavserial`, `mavuds`, `mavmcast`, `mavchildexec`, `mavlogfile` |
+| The links | `src/link/transport.rs`, `src/link/serial_posix.rs`, `src/link/websocket.rs` | `mavudp`, `mavtcp`, `mavtcpin`, `mavserial`, `mavuds`, `mavmcast`, `mavchildexec`, `mavlogfile`, `mavwebsocket`, `mavwebsocket_client` |
 | Flight mode tables and names | `src/wire/modes.rs` | `mode_mapping_*`, `px4_map`, `mode_string_v10` |
 
 A link starts on the MAVLink 1 view (message ids up to 255, no extension
@@ -92,13 +92,31 @@ one that runs.
 Built: `udpin:`, `udpout:`, `udpbcast:`, `udp:` (and a bare `host:port`),
 `tcp:`, `tcpin:`, serial devices (`/dev/...`, `COMx`, `device,baud`),
 `uds:` and `unix:` (POSIX), `mcast:`, a `.elf` or `/bin/` executable as a
-child process (POSIX), and tlog and raw MAVLink log files.
+child process (POSIX), tlog and raw MAVLink log files, and MAVLink over
+WebSocket: `ws:host:port[:resource]`, `wss:host:port[:resource]` and
+`wsserver:host:port`.
+
+The WebSocket links carry MAVLink in binary messages; a text frame is
+ignored. The client reconnects when the connection is reset and tries again
+on every call while it has none. The server takes one client at a time and
+returns to accepting when it leaves. A resource without a leading `/` gets
+one (pymavlink sent it as written, which is not a valid request line).
+`wss:` trusts the system's root certificates and the file `SSL_CERT_FILE`
+names (as Python does), and checks the host name. rustls is stricter than
+OpenSSL about one thing: a certificate that is its own CA and also the
+server's is refused as a server certificate ("CaUsedAsEndEntity"), so use a
+CA and a server certificate it signed. Building with
+`--no-default-features` leaves TLS (and its C compiler requirement) out; a
+`wss:` link then raises `NotImplementedError`. The default build has TLS.
+
+Dependencies added for this: `tungstenite` (the WebSocket protocol, with
+only its handshake feature), `rustls` with the `ring` provider, and
+`rustls-native-certs`. The standard library has neither a WebSocket codec nor
+TLS.
 
 Not built yet. They fail with `NotImplementedError` and a message that says
 so, rather than falling through to the serial or UDP branch:
 
-- `wsserver:`, `ws:`, `wss:`: MAVLink over WebSocket, server and client.
-  Needs a WebSocket codec and, for `wss:`, TLS.
 - `csv:`: pymavlink's CSV log reader.
 - DataFlash logs: `*.bin`, `*.px4log`, and text `*.log` starting with `FMT,`
   (pymavlink's `DFReader`). Corvus reads ArduPilot `.bin` logs through its
@@ -131,6 +149,13 @@ pymavlink stays in the `test` dependency group as the reference:
   speaks pymavlink, including serial over a pseudo-terminal, and feeds the
   same stream into pymavlink's `mavfile` and this one to compare the
   per-system state.
+- `tests/test_corvus_link_websocket.py` runs `ws:`, `wss:` and `wsserver:`
+  through pymavlink (with wsproto) and through corvus_link against a scripted
+  wsproto server and client: binary messages both ways, split messages, text
+  frames, a ping, a close, a reset and the reconnect, a missing server, a
+  second client after the first left, bad device strings, and `wss:` against
+  a TLS server with a throwaway CA (refused untrusted, refused for the wrong
+  host name, carrying data once trusted).
 - `tests/test_param_engine_parity.py` runs the parameter protocol Corvus had
   in Python (kept in `tests/reference/`) and the Rust engine through the same
   PARAM_VALUE streams, downloads, writes, reads, verifies and uploads, and

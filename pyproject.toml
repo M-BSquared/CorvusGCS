@@ -66,6 +66,9 @@ test = [
     # message, constant and frame against it, and the simulated vehicle in
     # tools/scene_kit speaks it. Never shipped.
     "pymavlink>=2.4",
+    # What pymavlink's WebSocket links need; the parity tests run its wsserver:
+    # and ws: links against the Rust ones. Never shipped.
+    "wsproto>=1.2",
 ]
 # The linter CI runs.
 lint = ["ruff>=0.5"]
