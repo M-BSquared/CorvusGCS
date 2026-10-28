@@ -2,6 +2,7 @@
 //! top of a link, and the transports under it.
 
 pub mod connection;
+pub mod csv_log;
 #[cfg(unix)]
 pub mod serial_posix;
 pub mod transport;

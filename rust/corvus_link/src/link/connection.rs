@@ -2074,7 +2074,14 @@ fn split_host_port(device: &str, what: &str) -> PyResult<(String, u16)> {
     Ok((parts[0].to_string(), port))
 }
 
-/// `mavutil.mavlink_connection` for the transports Corvus offers.
+/// The device prefixes that open a link, which pymavlink checks before it
+/// looks at a file name.
+const LINK_PREFIXES: [&str; 12] = [
+    "tcp:", "tcpin:", "uds:", "unix:", "udpin:", "udpout:", "udpbcast:", "wsserver:", "ws:", "wss:", "udp:", "mcast:",
+];
+
+/// `mavutil.mavlink_connection`: a link, or a log read as a stream of
+/// messages (`csv:`).
 #[pyfunction]
 #[pyo3(signature = (
     device, baud=None, source_system=255, source_component=0, planner_format=None, write=false,
@@ -2082,8 +2089,63 @@ fn split_host_port(device: &str, what: &str) -> PyResult<(String, u16)> {
     zero_time_base=false, retries=3, reconnect_delay=1.0, use_native=false, force_connected=false,
     progress_callback=None, udp_timeout=0.0, **opts
 ))]
-#[allow(clippy::too_many_arguments, unused_variables)]
+#[allow(clippy::too_many_arguments)]
 pub fn mavlink_connection(
+    py: Python<'_>,
+    device: &str,
+    baud: Option<&Bound<'_, PyAny>>,
+    source_system: i64,
+    source_component: i64,
+    planner_format: Option<PyObject>,
+    write: bool,
+    append: bool,
+    robust_parsing: bool,
+    notimestamps: bool,
+    input: bool,
+    dialect: Option<PyObject>,
+    autoreconnect: bool,
+    zero_time_base: bool,
+    retries: i64,
+    reconnect_delay: f64,
+    use_native: bool,
+    force_connected: bool,
+    progress_callback: Option<PyObject>,
+    udp_timeout: f64,
+    opts: Option<&Bound<'_, PyDict>>,
+) -> PyResult<PyObject> {
+    let lower = device.to_lowercase();
+    let is_link = LINK_PREFIXES.iter().any(|p| device.starts_with(p));
+    if !(is_link || lower.ends_with(".bin") || lower.ends_with(".px4log")) && lower.starts_with("csv:") {
+        return Ok(crate::link::csv_log::open(py, device, progress_callback, opts)?.into_any());
+    }
+    Ok(open_connection(
+        py,
+        device,
+        baud,
+        source_system,
+        source_component,
+        planner_format,
+        write,
+        append,
+        robust_parsing,
+        notimestamps,
+        input,
+        dialect,
+        autoreconnect,
+        zero_time_base,
+        retries,
+        reconnect_delay,
+        use_native,
+        force_connected,
+        progress_callback,
+        udp_timeout,
+        opts,
+    )?
+    .into_any())
+}
+
+#[allow(clippy::too_many_arguments, unused_variables)]
+fn open_connection(
     py: Python<'_>,
     device: &str,
     baud: Option<&Bound<'_, PyAny>>,
@@ -2230,20 +2292,12 @@ pub fn mavlink_connection(
         return Connection::new_object(py, Link::WsClient(link), "mavwebsocket_client", device.to_string(), source_system, source_component);
     }
     // Not built yet. pymavlink also opens these; each needs its own piece:
-    //  * csv:                  pymavlink's CSVReader for CSV exports.
     //  * *.bin, *.px4log, and text *.log: DataFlash logs (DFReader). Corvus
     //    reads ArduPilot .bin logs through its own log service instead.
     //  * mavmmaplog's per-type index: a plain tlog read gives the same
     //    messages, only without the seek-ahead recv_match acceleration.
     // Until then they fail here with a message that says so, rather than
     // falling through to the serial or UDP branch below.
-    for prefix in ["csv:"] {
-        if device.starts_with(prefix) {
-            return Err(PyNotImplementedError::new_err(format!(
-                "corvus_link does not support {prefix} links yet"
-            )));
-        }
-    }
     let lower = device.to_lowercase();
     if lower.ends_with(".bin") || lower.ends_with(".px4log") {
         return Err(PyNotImplementedError::new_err(

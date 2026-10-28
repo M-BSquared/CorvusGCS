@@ -94,7 +94,7 @@ Built: `udpin:`, `udpout:`, `udpbcast:`, `udp:` (and a bare `host:port`),
 `uds:` and `unix:` (POSIX), `mcast:`, a `.elf` or `/bin/` executable as a
 child process (POSIX), tlog and raw MAVLink log files, and MAVLink over
 WebSocket: `ws:host:port[:resource]`, `wss:host:port[:resource]` and
-`wsserver:host:port`.
+`wsserver:host:port`; and CSV files as `csv:path[:option=value...]`.
 
 The WebSocket links carry MAVLink in binary messages; a text frame is
 ignored. The client reconnects when the connection is reset and tries again
@@ -109,6 +109,16 @@ CA and a server certificate it signed. Building with
 `--no-default-features` leaves TLS (and its C compiler requirement) out; a
 `wss:` link then raises `NotImplementedError`. The default build has TLS.
 
+`csv:` reads a CSV file as messages (pymavlink's `CSVReader`): the first row
+names the columns, every later row is a message of type `CSV` (the
+`message_type` option renames it), numbers are numbers and everything else
+stays text, and the first column is the timestamp in microseconds. Options
+are `separator` (`;` by default, `separator=:` for a colon, the
+`CSV_SEPARATOR` environment variable overrides it) and `message_type`. Rows
+are cut as Python's `csv.reader` cuts them. The `timestamp_expression`
+option and `recv_match` conditions need pymavlink's expression evaluator and
+raise `NotImplementedError`.
+
 Dependencies added for this: `tungstenite` (the WebSocket protocol, with
 only its handshake feature), `rustls` with the `ring` provider, and
 `rustls-native-certs`. The standard library has neither a WebSocket codec nor
@@ -117,7 +127,6 @@ TLS.
 Not built yet. They fail with `NotImplementedError` and a message that says
 so, rather than falling through to the serial or UDP branch:
 
-- `csv:`: pymavlink's CSV log reader.
 - DataFlash logs: `*.bin`, `*.px4log`, and text `*.log` starting with `FMT,`
   (pymavlink's `DFReader`). Corvus reads ArduPilot `.bin` logs through its
   own log service.
@@ -156,6 +165,12 @@ pymavlink stays in the `test` dependency group as the reference:
   second client after the first left, bad device strings, and `wss:` against
   a TLS server with a throwaway CA (refused untrusted, refused for the wrong
   host name, carrying data once trusted).
+- `tests/test_corvus_link_csv.py` reads random CSV files (quoted and
+  multi-line fields, blank lines, CRLF and CR, a byte order mark, an open
+  quote at the end, every separator, every spelling of a number) and 3000
+  strings of raw quotes and line ends through pymavlink's `CSVReader` and
+  corvus_link, and compares the rows, the messages, the count, the rewind,
+  every `recv_match` form, the device options and the ways opening fails.
 - `tests/test_param_engine_parity.py` runs the parameter protocol Corvus had
   in Python (kept in `tests/reference/`) and the Rust engine through the same
   PARAM_VALUE streams, downloads, writes, reads, verifies and uploads, and
