@@ -135,15 +135,17 @@ pub fn show(ui: &mut egui::Ui, rect: Rect, mission: bool, active: Page) -> Optio
                 }
                 let (label, icon) = page.item();
                 let g = style::galley(ui, label, 9.0, Weight::W600, label_c, 0.7);
-                let total = 21.0 + 4.0 + g.size().y;
+                // the icon is 16 px: ui.icon writes it inline, over the 21 px
+                // of the stylesheet
+                let total = 16.0 + 4.0 + g.size().y;
                 let top = r.center().y - total / 2.0;
                 icons::paint(
                     ui,
                     icon,
-                    Rect::from_min_size(Pos2::new(r.center().x - 10.5, top), Vec2::splat(21.0)),
+                    Rect::from_min_size(Pos2::new(r.center().x - 8.0, top), Vec2::splat(16.0)),
                     icon_c,
                 );
-                painter.galley(Pos2::new(r.center().x - g.size().x / 2.0, top + 25.0), g, label_c);
+                painter.galley(Pos2::new(r.center().x - g.size().x / 2.0, top + 20.0), g, label_c);
                 if resp.clicked() {
                     clicked = Some(page);
                 }

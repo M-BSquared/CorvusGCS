@@ -140,14 +140,32 @@ impl<'a> Button<'a> {
                 Stroke::new(1.0, style::critical().gamma_multiply(0.30)),
             ),
         };
-        let alpha = if self.enabled { 1.0 } else { 0.45 };
+        // `.btn:disabled { opacity: .45 }` fades the whole button as one
+        // group: the label is the label blended into the page, not a label
+        // drawn thinly over the faded fill
+        let under = style::surface_1();
+        let fade = |c: Color32| {
+            if self.enabled {
+                c
+            } else if c.a() == 255 {
+                let mix = |a: u8, b: u8| (f32::from(a) * 0.45 + f32::from(b) * 0.55).round() as u8;
+                Color32::from_rgb(mix(c.r(), under.r()), mix(c.g(), under.g()), mix(c.b(), under.b()))
+            } else {
+                c.gamma_multiply(0.45)
+            }
+        };
         let painter = ui.painter();
         {
             let r = rect;
-            painter.rect_filled(r, style::RADIUS_BTN, fill.gamma_multiply(alpha));
-            painter.rect_stroke(r, style::RADIUS_BTN, stroke, egui::StrokeKind::Inside);
+            painter.rect_filled(r, style::RADIUS_BTN, fade(fill));
+            painter.rect_stroke(
+                r,
+                style::RADIUS_BTN,
+                Stroke::new(stroke.width, fade(stroke.color)),
+                egui::StrokeKind::Inside,
+            );
         }
-        let g = self.text(ui, text.gamma_multiply(alpha));
+        let g = self.text(ui, fade(text));
         let icon_w = if self.icon.is_some() { self.icon_size() } else { 0.0 };
         let gap = if self.icon.is_some() && !self.label.is_empty() {
             7.0
@@ -158,9 +176,13 @@ impl<'a> Button<'a> {
         let x = rect.center().x - total / 2.0;
         if let Some(icon) = self.icon {
             let r = Rect::from_min_size(Pos2::new(x, rect.center().y - icon_w / 2.0), Vec2::splat(icon_w));
-            icons::paint(ui, icon, r, text.gamma_multiply(alpha));
+            icons::paint(ui, icon, r, fade(text));
         }
-        painter.galley(Pos2::new(x + icon_w + gap, rect.center().y - g.size().y / 2.0), g, text);
+        painter.galley(
+            Pos2::new(x + icon_w + gap, rect.center().y - g.size().y / 2.0),
+            g,
+            fade(text),
+        );
         resp.clicked()
     }
 }
@@ -329,7 +351,9 @@ pub fn select_padded(
         );
     }
     let current = choices.iter().find(|c| c.value == selected);
+    // an empty value is the prompt row ("Select serial port"), not a choice
     let (text, color) = match current {
+        Some(c) if c.value.is_empty() => (c.label.as_str(), style::text_3()),
         Some(c) => (c.label.as_str(), style::text_1()),
         None => (placeholder, style::text_3()),
     };
@@ -591,8 +615,8 @@ pub fn dot(painter: &egui::Painter, c: Pos2, color: Color32, lit: bool) {
     if lit {
         painter.circle_filled(
             c,
-            3.5 + 4.0,
-            Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), 30),
+            3.5 + 3.0,
+            Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), 24),
         );
     }
     painter.circle_filled(c, 3.5, color);

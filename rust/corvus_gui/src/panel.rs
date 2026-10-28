@@ -266,7 +266,7 @@ impl Panel {
             self.ssh_loading = None;
             self.ssh_list = Some(r.unwrap_or_else(|_| serde_json::json!({ "failed": true })));
         }
-        let header = link::section_header(ui, rect, "SSH Access");
+        let header = link::section_header(ui, rect, "SSH Access", 28.0);
         let add = Rect::from_min_size(
             Pos2::new(header.right() - 12.0 - 28.0, header.center().y - 14.0),
             Vec2::splat(28.0),

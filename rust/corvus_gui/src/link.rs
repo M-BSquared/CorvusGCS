@@ -368,7 +368,7 @@ impl LinkTab {
     pub fn show(&mut self, ui: &mut egui::Ui, rect: Rect, state: &Value) {
         let ctx = ui.ctx().clone();
         self.take_answers();
-        let header = section_header(ui, rect, "Connection");
+        let header = section_header(ui, rect, "Connection", 0.0);
         let content = Rect::from_min_max(Pos2::new(rect.left(), header.bottom()), rect.max);
         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(content));
         egui::ScrollArea::vertical()
@@ -379,7 +379,8 @@ impl LinkTab {
                 let left = content.left() + 12.0;
                 let w = content.width() - 24.0;
                 let mut y = top + 12.0;
-                y = self.status_card(ui, &ctx, left, y, w, state) + 12.0;
+                // the empty list of recent links is a flex item too: one more gap
+                y = self.status_card(ui, &ctx, left, y, w, state) + 24.0;
                 y = self.new_card(ui, &ctx, left, y, w, state) + 12.0;
                 y = self.share_card(ui, &ctx, left, y, w) + 12.0;
                 ui.allocate_space(Vec2::new(w, y - top));
@@ -408,8 +409,8 @@ impl LinkTab {
             None => self.error.clone(),
         };
         let auto = auto_info(state, &status);
-        let row_h = 28.0;
-        let why_h = if conn.is_empty() && auto.is_none() { 0.0 } else { 18.0 };
+        let row_h = 26.0;
+        let why_h = if conn.is_empty() && auto.is_none() { 0.0 } else { 17.0 };
         let err_h = if error.is_empty() { 0.0 } else { 8.0 + 1.0 + 15.4 };
         let h = 12.0 * 2.0
             + row_h
@@ -664,7 +665,7 @@ impl LinkTab {
                 }
             }
             cy = seg.bottom() + 10.0;
-            let field_h = 2.0 + 18.0 + 12.0 * 1.21;
+            let field_h = 2.0 + 18.0 + 12.0 * 1.32;
             if !self.net {
                 cy = field_label(ui, inner_x, cy, "Port") + 5.0;
                 let sel = Rect::from_min_size(Pos2::new(inner_x, cy), Vec2::new(iw - 28.0 - 6.0, field_h));
@@ -904,9 +905,11 @@ fn field_label(ui: &egui::Ui, x: f32, y: f32, text: &str) -> f32 {
 }
 
 /// `.panel-section-header` with its title; returns its rect.
-pub fn section_header(ui: &egui::Ui, rect: Rect, title: &str) -> Rect {
+/// `.panel-section-header`: 11 px above and below the title or the tallest
+/// of its actions (`actions_h`, 0 when it has none), a hairline under it.
+pub fn section_header(ui: &egui::Ui, rect: Rect, title: &str, actions_h: f32) -> Rect {
     let g = style::galley(ui, title, 12.0, Weight::W600, style::text_1(), 0.4);
-    let h = 11.0 * 2.0 + g.size().y.max(28.0) + 1.0;
+    let h = 11.0 * 2.0 + g.size().y.max(15.0).max(actions_h) + 1.0;
     let r = Rect::from_min_size(rect.min, Vec2::new(rect.width(), h));
     let painter = ui.painter();
     painter.galley(
