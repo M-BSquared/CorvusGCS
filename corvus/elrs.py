@@ -34,15 +34,16 @@ CRC-8/DVB-S2 over type and payload.
 from __future__ import annotations
 
 import logging
-import math
-import struct
+import sys
 import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
-from . import autopilot as autopilot_dialect
+from corvus_link import elrs as _elrs
+
+from . import autopilot as autopilot_dialect  # noqa: F401 - read by the Rust engine
 
 logger = logging.getLogger("corvus.elrs")
 
@@ -89,12 +90,7 @@ JOIN_TIMEOUT_S = 2.0
 
 def crc8_dvb_s2(data: bytes) -> int:
     """CRC-8/DVB-S2 (polynomial 0xD5), the checksum every CRSF frame carries."""
-    crc = 0
-    for byte in data:
-        crc ^= byte
-        for _ in range(8):
-            crc = ((crc << 1) ^ 0xD5) & 0xFF if crc & 0x80 else (crc << 1) & 0xFF
-    return crc
+    return _elrs.crc8_dvb_s2(data)
 
 
 @dataclass(frozen=True)
@@ -108,158 +104,32 @@ class CrsfFrame:
 
 def build_frame(frame_type: int, payload: bytes, address: int = ADDR_FLIGHT_CONTROLLER) -> bytes:
     """Encode one CRSF frame. Used by the tests, and by a future uplink."""
-    body = bytes([frame_type]) + bytes(payload)
-    if len(body) + 3 > MAX_FRAME_LEN:
-        raise ValueError(f"CRSF frame too long ({len(body) + 3} > {MAX_FRAME_LEN} bytes)")
-    return bytes([address, len(body) + 1]) + body + bytes([crc8_dvb_s2(body)])
+    return _elrs.build_frame(frame_type, payload, address)
 
 
-class CrsfParser:
-    """Turns a CRSF byte stream into frames, resynchronising on garbage.
-
-    A telemetry mirror is a plain serial line: it starts mid-frame, drops
-    bytes and carries noise. Anything that is not a well-formed frame with a
-    matching CRC costs one byte of resync, never an exception.
-    """
-
-    def __init__(self) -> None:
-        self._buf = bytearray()
-        self.frames_ok = 0
-        self.crc_errors = 0
-
-    def feed(self, data: bytes) -> list[CrsfFrame]:
-        """Add *data* and return every complete frame it finished."""
-        self._buf.extend(data)
-        frames: list[CrsfFrame] = []
-        buf = self._buf
-        while len(buf) >= 2:
-            length = buf[1]
-            if buf[0] not in SYNC_ADDRESSES or not MIN_LENGTH_FIELD <= length <= MAX_FRAME_LEN - 2:
-                del buf[0]
-                continue
-            total = length + 2
-            if len(buf) < total:
-                break
-            body = bytes(buf[2:total - 1])
-            if crc8_dvb_s2(body) != buf[total - 1]:
-                self.crc_errors += 1
-                del buf[0]
-                continue
-            frames.append(CrsfFrame(buf[0], body[0], body[1:]))
-            self.frames_ok += 1
-            del buf[:total]
-        return frames
+CrsfParser = _elrs.CrsfParser
 
 
-def decode_gps(payload: bytes) -> dict[str, Any] | None:
-    """GPS (0x02): position, ground speed, course, altitude and satellites.
 
-    Altitude travels as metres plus 1000, so -1000 m to 64535 m fit an
-    unsigned field. A position of exactly 0, 0 is what a flight controller
-    sends before its first fix, and is reported as no fix.
-    """
-    if len(payload) < 15:
-        return None
-    lat, lon, speed, course, alt, sats = struct.unpack(">iiHHHB", payload[:15])
-    fix = not (lat == 0 and lon == 0)
-    return {
-        "lat": lat / 1e7,
-        "lon": lon / 1e7,
-        "groundspeed": speed / 36.0,  # km/h * 10 -> m/s
-        "heading": (course / 100.0) % 360.0,
-        "altitude_amsl": float(alt - 1000),
-        "satellites": sats,
-        "fix": fix,
-    }
+decode_gps = _elrs.decode_gps
 
 
-def decode_vario(payload: bytes) -> dict[str, Any] | None:
-    """Vario (0x07): climb rate in cm/s."""
-    if len(payload) < 2:
-        return None
-    (climb,) = struct.unpack(">h", payload[:2])
-    return {"vspeed": climb / 100.0}
+decode_vario = _elrs.decode_vario
 
 
-def decode_battery(payload: bytes) -> dict[str, Any] | None:
-    """Battery (0x08): voltage, current, mAh drawn and percent remaining."""
-    if len(payload) < 8:
-        return None
-    voltage, current = struct.unpack(">HH", payload[:4])
-    used = int.from_bytes(payload[4:7], "big")
-    return {
-        "battery_voltage": voltage / 10.0,
-        "battery_current": current / 10.0,
-        "battery_used_mah": used,
-        "battery_percent": min(100, payload[7]),
-    }
+decode_battery = _elrs.decode_battery
 
 
-def decode_baro_altitude(payload: bytes) -> dict[str, Any] | None:
-    """Barometric altitude (0x09), relative to where the flight controller armed.
-
-    The 16-bit field packs two ranges: with the top bit clear it is decimetres
-    offset by 10000 (-1000 m to 2276.7 m), with it set it is whole metres.
-    The optional vertical speed that follows is not decoded; VARIO carries it.
-    """
-    if len(payload) < 2:
-        return None
-    (packed,) = struct.unpack(">H", payload[:2])
-    if packed & 0x8000:
-        alt = float(packed & 0x7FFF)
-    else:
-        alt = (packed - 10000) / 10.0
-    return {"altitude_rel": alt}
+decode_baro_altitude = _elrs.decode_baro_altitude
 
 
-def decode_link_statistics(payload: bytes) -> dict[str, Any] | None:
-    """Link statistics (0x14): RSSI, link quality and SNR in both directions.
-
-    RSSI travels as positive dBm and is negated here, so the snapshot holds
-    the number an operator reads on the handset (-70, not 70).
-    """
-    if len(payload) < 10:
-        return None
-    (rssi1, rssi2, lq, snr, antenna, rf_mode, tx_power,
-     down_rssi, down_lq, down_snr) = struct.unpack(">BBBbBBBBBb", payload[:10])
-    return {
-        "uplink_rssi_1": -rssi1,
-        "uplink_rssi_2": -rssi2,
-        "uplink_lq": lq,
-        "uplink_snr": snr,
-        "active_antenna": antenna,
-        "rf_mode": rf_mode,
-        "uplink_tx_power": tx_power,
-        "downlink_rssi": -down_rssi,
-        "downlink_lq": down_lq,
-        "downlink_snr": down_snr,
-    }
+decode_link_statistics = _elrs.decode_link_statistics
 
 
-def decode_attitude(payload: bytes) -> dict[str, Any] | None:
-    """Attitude (0x1E): pitch, roll and yaw in radians * 10000.
-
-    Returned in degrees, like the store. Yaw is wrapped to 0 to 360 so it can
-    stand in for the heading when the GPS frame has none yet.
-    """
-    if len(payload) < 6:
-        return None
-    pitch, roll, yaw = struct.unpack(">hhh", payload[:6])
-    return {
-        "pitch": math.degrees(pitch / 10000.0),
-        "roll": math.degrees(roll / 10000.0),
-        "yaw": math.degrees(yaw / 10000.0) % 360.0,
-    }
+decode_attitude = _elrs.decode_attitude
 
 
-def decode_flight_mode(payload: bytes) -> dict[str, Any] | None:
-    """Flight mode (0x21): a NUL-terminated name, as the flight controller spells it.
-
-    PX4 and ArduPilot fill it with their own short labels, and Betaflight
-    appends ``*`` when disarmed. The name is shown, never sent back as a mode.
-    """
-    name = payload.split(b"\x00", 1)[0].decode("ascii", "replace").strip()
-    return {"mode_label": name} if name else None
+decode_flight_mode = _elrs.decode_flight_mode
 
 
 DECODERS: dict[int, Callable[[bytes], dict[str, Any] | None]] = {
@@ -273,15 +143,7 @@ DECODERS: dict[int, Callable[[bytes], dict[str, Any] | None]] = {
 }
 
 
-def decode_frame(frame: CrsfFrame) -> dict[str, Any] | None:
-    """Decode one frame into snapshot fields, or None for a type not shown."""
-    decoder = DECODERS.get(frame.type)
-    if decoder is None:
-        return None
-    try:
-        return decoder(frame.payload)
-    except (struct.error, ValueError):
-        return None
+decode_frame = _elrs.decode_frame
 
 
 class ElrsTelemetry:
@@ -322,11 +184,7 @@ class ElrsTelemetry:
 
     def feed(self, data: bytes) -> int:
         """Parse raw bytes from the link and apply every frame. Returns the frame count."""
-        with self._lock:
-            frames = self._parser.feed(data)
-            for frame in frames:
-                self._apply_locked(frame)
-            return len(frames)
+        return _engine.feed(self, data)
 
     def apply(self, frame: CrsfFrame) -> None:
         """Apply one already parsed frame."""
@@ -334,39 +192,11 @@ class ElrsTelemetry:
             self._apply_locked(frame)
 
     def _apply_locked(self, frame: CrsfFrame) -> None:
-        fields = decode_frame(frame)
-        if not fields:
-            return
-        now = self._clock()
-        self._last_frame = now
-        if frame.type == TYPE_GPS:
-            if fields.pop("fix"):
-                self._data["position"] = [fields.pop("lat"), fields.pop("lon")]
-                self._last_position = now
-            else:
-                fields.pop("lat")
-                fields.pop("lon")
-                fields.pop("altitude_amsl")
-                fields.pop("heading")
-            self._data.update(fields)
-        elif frame.type == TYPE_LINK_STATISTICS:
-            self._data["link"] = fields
-        else:
-            self._data.update(fields)
+        _engine.apply_locked(self, frame)
 
     def snapshot(self) -> dict[str, Any]:
         """A copy of the current state, with ``stale`` set from the clock."""
-        with self._lock:
-            out = dict(self._data)
-            out["link"] = dict(self._data["link"])
-            if out["position"] is not None:
-                out["position"] = list(out["position"])
-            last = self._last_position
-            out["stale"] = last is None or self._clock() - last > STALE_S
-            out["has_position"] = out["position"] is not None
-            out["frames_ok"] = self._parser.frames_ok
-            out["crc_errors"] = self._parser.crc_errors
-            return out
+        return _engine.snapshot(self)
 
 
 class ByteSource(Protocol):
@@ -408,55 +238,17 @@ class ElrsTelemetryReader:
 
     def start(self) -> None:
         """Open the source and start reading. Refused while :data:`ENABLED` is False."""
-        if not ENABLED:
-            raise RuntimeError("ExpressLRS telemetry is not enabled in this build")
-        if self.running:
-            return
-        self._stop.clear()
-        source = self._open_source()
-        with self._source_lock:
-            self._source = source
-        self._thread = threading.Thread(target=self._run, name="corvus-elrs", daemon=True)
-        self._thread.start()
+        _engine.start(self)
 
     def stop(self, timeout: float = JOIN_TIMEOUT_S) -> None:
         """Stop reading, close the source and join the thread. Safe to call twice."""
-        self._stop.set()
-        self._close_source()
-        thread = self._thread
-        if thread is not None and thread is not threading.current_thread():
-            thread.join(timeout)
-        self._thread = None
+        _engine.stop(self, timeout)
 
     def _close_source(self) -> None:
-        with self._source_lock:
-            source, self._source = self._source, None
-        if source is not None:
-            try:
-                source.close()
-            except Exception:
-                logger.debug("Closing the ExpressLRS source failed", exc_info=True)
+        _engine.close_source(self)
 
     def _run(self) -> None:
-        while not self._stop.is_set():
-            with self._source_lock:
-                source = self._source
-            if source is None:
-                break
-            try:
-                data = source.read(READ_CHUNK)
-            except Exception:
-                if not self._stop.is_set():
-                    logger.warning("ExpressLRS telemetry source failed", exc_info=True)
-                break
-            if not data:
-                continue
-            if self.telemetry.feed(data) and self._on_update is not None:
-                try:
-                    self._on_update(self.telemetry.snapshot())
-                except Exception:
-                    logger.exception("ExpressLRS update callback failed")
-        self._close_source()
+        _engine.run(self)
 
 
 # How an ExpressLRS link carries data. "crsf" is the default every ELRS
@@ -511,39 +303,7 @@ def plan_fly_to(
     ``MavlinkBridge`` connection and its own fly-to path applies; this
     function is what a CRSF-only link would ask to grey the control.
     """
-    if link_mode not in LINK_MODES:
-        return FlyToPlan(False, f"Unknown ExpressLRS link mode: {link_mode!r}")
-    if link_mode == "crsf":
-        return FlyToPlan(
-            False,
-            "Not available over CRSF telemetry. Switch the ExpressLRS link to "
-            "MAVLink mode (ELRS 3.5 or later) to send a position.",
-        )
-    try:
-        lat_f, lon_f, alt_f = float(lat), float(lon), float(alt_agl)
-    except (TypeError, ValueError):
-        return FlyToPlan(False, "Point is not a number")
-    if isinstance(lat, bool) or isinstance(lon, bool) or isinstance(alt_agl, bool):
-        return FlyToPlan(False, "Point is not a number")
-    if not all(math.isfinite(v) for v in (lat_f, lon_f, alt_f)):
-        return FlyToPlan(False, "Point is not a number")
-    if not (-90.0 <= lat_f <= 90.0 and -180.0 <= lon_f <= 180.0):
-        return FlyToPlan(False, "Point is outside valid coordinates")
-    dialect = autopilot_dialect.dialect_for_stack(stack)
-    nan = float("nan")
-    params = (-1.0, float(DO_REPOSITION_CHANGE_MODE), 0.0, nan)
-    if dialect.reposition_altitude_frame(mav_type) == "relative":
-        frame, z = MAV_FRAME_GLOBAL_RELATIVE_ALT, alt_f
-    else:
-        if home_alt_amsl is None:
-            return FlyToPlan(False, "No home altitude yet to convert the height above ground")
-        frame, z = MAV_FRAME_GLOBAL, float(home_alt_amsl) + alt_f
-    return FlyToPlan(
-        True,
-        command=MAV_CMD_DO_REPOSITION,
-        frame=frame,
-        params=params,
-        x=int(round(lat_f * 1e7)),
-        y=int(round(lon_f * 1e7)),
-        z=z,
-    )
+    return _engine.plan_fly_to(link_mode, stack, mav_type, lat, lon, alt_agl, home_alt_amsl)
+
+
+_engine = _elrs.ElrsEngine(sys.modules[__name__])

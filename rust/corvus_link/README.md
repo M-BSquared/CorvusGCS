@@ -62,6 +62,7 @@ pymavlink does.
 | Auto-connect: the port classification and pick (USB before SiK, by device name, never a bootloader or a phantom), the startup resolver (command line, USB, SiK, configured, UDP fallback), the mid-session suggestion, and the watcher: one dial per appearance while idle, a suggestion while busy, a manual connect winning the session, a link followed to the name its device came back under, the bootloader notice; its thread on a `CoreThread` | `src/bridge/autoconnect.rs` (`corvus_link.bridge`) | `corvus/autoconnect.py` keeps the data classes, `SessionState` with its lock, and the watcher's store, bridge and busy list readers |
 | RTK corrections: RTCM 3 framing with CRC-24Q, GPS_RTCM_DATA fragments, every UBX message that makes a u-blox receiver a base (F9 CFG-VALSET and M8P CFG-TMODE3), the NAV-SVIN and MON-VER reports, the settings resolver; the NTRIP client (request with Basic auth, the response header, the stream over its own TCP socket); the base's serial port (corvus_link's own, opened straight at its baud rate); the session (search, identify, survey, inject, recover, undo on the way out) on a `CoreThread` named `rtk-base`; and the bridge's injection with its counters | `src/rtk/` (`corvus_link.rtk`), `src/bridge/rtcm.rs` | `corvus/rtk.py` keeps the constants, `corvus/rtk_service.py` the `RtkService` object with its lock and state |
 | SiK radio configuration: reading a radio's `ATI5`/`ATI7`/`ATI` replies, the baud and RSSI conversions, comparing the two ends and the copy to the remote, validating a write (enum, range, whole numbers, an inverted band), the AT/RT write plan; and the AT dialogue itself: `+++` with its guard times, a reply ended by silence, the baud scan, reading, applying and factory reset, and handing the port and the MAVLink bridge over and back around a session. The serial port is corvus_link's own, opened straight at the radio's baud rate | `src/sik.rs` (`corvus_link.sik`) | `corvus/sik_config.py` keeps the register table, labels and hints and the page description; `corvus/sik_service.py` keeps `SikSession`, `SikService` (gate, status, load, save, reset) and the bridge restart |
+| ExpressLRS telemetry over CRSF (dormant: switched off and imported by nothing): the CRC-8/DVB-S2 checksum, the frame builder and the resynchronising parser, the decoders for GPS, vario, battery, barometric altitude, link statistics, attitude and flight mode, the thread-safe telemetry snapshot with its stale position, the reader on a `CoreThread` named `corvus-elrs`, and the fly-to planner for an ELRS link | `src/elrs.rs` (`corvus_link.elrs`) | `corvus/elrs.py` keeps the switch, the constants, `CrsfFrame`, `FlyToPlan`, `ElrsTelemetry` and `ElrsTelemetryReader` with their locks and state |
 | The parameter workers (batch upload, download watchdog, metadata download) on `CoreThread`s through `start_thread` | `src/bridge/thread.rs` | `corvus/mavlink_params.py` and `corvus/param_metadata.py` keep the work itself; the metadata file is still decompressed and parsed in Python |
 
 The link's threads are `CoreThread`s (`src/bridge/thread.rs`): native
@@ -207,6 +208,12 @@ pymavlink stays in the `test` dependency group as the reference:
   baud scan, refused commands, silent or failing ports, the bridge stopped
   and restarted around them, armed or not) on a fake clock with every
   command, log line and bridge event compared.
+- `tests/test_elrs_parity.py` does it for ExpressLRS: the checksum and the
+  frame builder with odd arguments, the parser on random streams cut at
+  random, every decoder on payloads of every length, the telemetry
+  snapshot over random frame streams on a fake clock, the reader thread
+  against scripted sources, and the fly-to planner for every link mode,
+  stack and point.
 - `tests/test_param_threads_parity.py` does it for the parameter workers:
   uploads with valid and broken lists, armed and disarmed, a second upload
   while one runs, the watchdog with the bridge running or not, and the

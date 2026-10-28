@@ -13,6 +13,7 @@ use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyModule};
 
 mod bridge;
+mod elrs;
 mod link;
 mod protocol;
 mod rtk;
@@ -232,5 +233,6 @@ fn corvus_link(m: &Bound<'_, PyModule>) -> PyResult<()> {
     bridge::register(py, m)?;
     rtk::register(py, m)?;
     sik::register(py, m)?;
+    elrs::register(py, m)?;
     Ok(())
 }
