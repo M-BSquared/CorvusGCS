@@ -10,6 +10,8 @@
 mod app;
 mod backend;
 mod bg;
+mod check;
+mod checklist;
 mod console;
 mod flight;
 mod fonts;
@@ -30,6 +32,8 @@ mod panel;
 mod params;
 mod safety;
 mod schema_form;
+mod sensor_view;
+mod sensors;
 mod setup;
 mod sse;
 mod stream;
@@ -74,7 +78,7 @@ fn parse_args() -> Result<Args, String> {
             "--page" => args.page = Some(value("--page")?),
             "--scroll" => args.scroll = value("--scroll")?.parse().ok(),
             "-h" | "--help" => {
-                println!("usage: corvus-gcs [--server http://host:port] [--root DIR] [--python PATH] [--page setup|parameters|safety|motors] [--scroll PX]");
+                println!("usage: corvus-gcs [--server http://host:port] [--root DIR] [--python PATH] [--page setup|parameters|safety|safety:SENSOR|motors] [--scroll PX]");
                 std::process::exit(0);
             }
             other => return Err(format!("unknown argument {other}")),

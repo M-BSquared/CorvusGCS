@@ -11,7 +11,7 @@ uses, so the backend does not change for it:
 cargo run --release                                   # start serve.py here and show it
 cargo run --release -- --server http://10.0.0.5:8080  # a backend elsewhere
 cargo run --release -- --root DIR --python PATH       # where serve.py is, what runs it
-cargo run --release -- --page motors --scroll 560     # open on a page (setup, parameters, safety, motors), scrolled
+cargo run --release -- --page motors --scroll 560     # open on a page (setup, parameters, safety, safety:SENSOR, motors), scrolled
 ```
 
 Locally, `serve.py` runs as a child on a free port. Every way out (window
@@ -37,7 +37,11 @@ SIGKILL if it is still there after 8 s. If the window does not close within
 | `src/setup.rs` | the Setup page: head, vehicle card, the tile grid and the sub-pages (`src/js/setup.js`) |
 | `src/params.rs` | the Parameters page: download, search, filter, defaults, edit and apply (`src/js/setup-parameters.js`) |
 | `src/motors.rs` | the Motors page: the airframe drawing, the motor table with output assignment, the motor test, frame size, protocol forms (`src/js/setup-motors.js`) |
-| `src/safety.rs` | the Safety & Sensors page: the backend's description in two stacks, the landing preset, the sensor tiles (`src/js/setup-safety.js`) |
+| `src/safety.rs` | the Safety & Sensors page: the backend's description in two stacks, the landing preset, the sensor tiles, Check values and the checklist card (`src/js/setup-safety.js`) |
+| `src/sensors.rs` | the sensor model and its rules: the write chain of a switch, the presets, the extra parameters kept in `~/.corvus/safety-extra.json` |
+| `src/sensor_view.rs` | a sensor page drawn: Status card, Hardware card with the write table, the parameters you add by name |
+| `src/check.rs` | Check values: read back, write again what did not stick, the result card (`src/js/setup-shared.js`) |
+| `src/checklist.rs` | the preflight checklists: config block, Setup card and the dialog the lists are written in (`src/js/checklist-editor.js`) |
 | `src/schema_form.rs` | the schema-driven form the backend describes (enum, number, sign, bitmask), shared by the Safety and Motors pages (`src/js/setup-shared.js`) |
 | `src/pagekit.rs` | page furniture: header, section title, tile, back button, segmented control |
 | `src/notify.rs` | the notification board, its read and dismiss rules, the command dedupe and the toasts (`src/js/topbar.js`) |

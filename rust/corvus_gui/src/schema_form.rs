@@ -29,6 +29,8 @@ pub struct Look {
     pub label_max: f32,
     pub pad: f32,
     pub hint_as_info: bool,
+    /// `.safety-extra-field`: the label is a parameter name, in mono.
+    pub mono_label: bool,
 }
 
 impl Look {
@@ -38,6 +40,15 @@ impl Look {
         label_max: 230.0,
         pad: 7.0,
         hint_as_info: false,
+        mono_label: false,
+    };
+    /// A parameter the operator named on a sensor page.
+    pub const EXTRA: Look = Look {
+        label_min: 140.0,
+        label_max: 230.0,
+        pad: 3.0,
+        hint_as_info: false,
+        mono_label: true,
     };
     /// `.motors-field`: short labels, hints behind an icon.
     pub const MOTORS: Look = Look {
@@ -45,6 +56,7 @@ impl Look {
         label_max: 170.0,
         pad: 5.0,
         hint_as_info: true,
+        mono_label: false,
     };
 }
 
@@ -189,6 +201,11 @@ pub struct FormState {
     writes: Vec<Write>,
     /// Parameters written since the last read, so the page can re-read.
     pub written: bool,
+    /// What the operator asked for, until a check confirms it (a refused
+    /// field snaps back and cannot remember it).
+    pub wanted: std::collections::BTreeMap<String, f64>,
+    /// Where the last row drawn by `show_with` ended, for what follows it.
+    pub last_end: f32,
     errors: Vec<String>,
 }
 
@@ -206,7 +223,32 @@ impl FormState {
         !self.writes.is_empty()
     }
 
+    /// Puts each checked value's outcome next to its field, where it was typed.
+    pub fn mark_checked(&mut self, rows: &[crate::check::Row]) {
+        for r in rows {
+            self.status.insert(
+                r.name.clone(),
+                if r.ok {
+                    ("ok", crate::check::outcome(r))
+                } else {
+                    (
+                        "err",
+                        format!(
+                            "wanted {}, vehicle holds {}",
+                            crate::check::format_checked(r.wanted),
+                            crate::check::format_checked(r.after)
+                        ),
+                    )
+                },
+            );
+        }
+    }
+
     fn write(&mut self, ctx: &egui::Context, server: &Server, f: &Field, value: f64) {
+        self.wanted.insert(f.param.clone(), value);
+        for n in &f.also {
+            self.wanted.insert(n.clone(), value);
+        }
         self.status.insert(f.param.clone(), ("pending", "saving".into()));
         self.shown.insert(f.param.clone(), value);
         let (s, name, also) = (server.clone(), f.param.clone(), f.also.clone());
@@ -521,7 +563,12 @@ impl FormState {
             let h = pad + row_h + hint.as_ref().map_or(0.0, |g| 6.0 + g.size().y) + pad;
             let top = y + pad;
             // the label, centred on the control
-            let lg = kit::wrapped_weight(ui, &f.label, 12.0, Weight::W400, style::text_1(), label_w, 1.2);
+            let lg = if look.mono_label {
+                ui.painter()
+                    .layout(f.label.clone(), style::mono(11.5), style::text_1(), label_w)
+            } else {
+                kit::wrapped_weight(ui, &f.label, 12.0, Weight::W400, style::text_1(), label_w, 1.2)
+            };
             let lh = lg.size().y;
             let lw = lg.size().x;
             painter.galley(Pos2::new(x, top + (row_h - lh) / 2.0), lg, style::text_1());
@@ -556,8 +603,14 @@ impl FormState {
                     _ => style::nav(),
                 };
                 let g = style::galley(ui, &text, 10.5, Weight::W400, color, 0.0);
-                painter.galley(Pos2::new(ux, top + (control_h - g.size().y) / 2.0), g, color);
+                ux += g.size().x;
+                painter.galley(
+                    Pos2::new(ux - g.size().x, top + (control_h - g.size().y) / 2.0),
+                    g,
+                    color,
+                );
             }
+            self.last_end = ux;
             if let Some(g) = hint {
                 painter.galley(Pos2::new(cx, top + row_h + 6.0), g, style::text_3());
             }

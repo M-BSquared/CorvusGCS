@@ -27,6 +27,23 @@ pub fn header(ui: &egui::Ui, x: f32, y: f32, title: &str, subtitle: &str) -> f32
     bottom
 }
 
+/// `.page-header` in a column `w` wide, the subtitle wrapping when it is
+/// longer than the column (the `.setup-head` row gives it what the buttons
+/// leave). Returns the bottom.
+pub fn header_wrapped(ui: &egui::Ui, x: f32, y: f32, w: f32, title: &str, subtitle: &str) -> f32 {
+    let t = style::galley(ui, title, 22.0, Weight::W700, style::text_1(), 0.5);
+    let th = t.size().y;
+    ui.painter().galley(Pos2::new(x, y), t, style::text_1());
+    let mut bottom = y + th;
+    if !subtitle.is_empty() {
+        let s = crate::kit::wrapped_weight(ui, subtitle, 13.0, Weight::W400, style::text_3(), w, 1.21);
+        let sh = s.size().y;
+        ui.painter().galley(Pos2::new(x, bottom + 4.0), s, style::text_3());
+        bottom += 4.0 + sh;
+    }
+    bottom
+}
+
 /// `.page-section-title`: 13 px uppercase, a rule under it; returns the
 /// y the content starts at.
 pub fn section_title(ui: &egui::Ui, x: f32, y: f32, w: f32, text: &str) -> f32 {

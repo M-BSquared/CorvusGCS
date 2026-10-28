@@ -34,6 +34,8 @@ const ICONS: &[(&str, &str)] = &[
     ("file-text", "FileText"),
     ("settings", "Settings"),
     ("plug", "Plug"),
+    ("list-checks", "ListChecks"),
+    ("heading", "Heading"),
     ("cable", "Cable"),
     ("network", "Network"),
     ("refresh-cw", "RefreshCw"),

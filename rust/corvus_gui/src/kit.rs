@@ -20,6 +20,8 @@ pub enum Variant {
     Inert,
     /// `.btn.link-disconnect`: outlined in the critical colour.
     DangerOutline,
+    /// `.btn[data-variant="danger"]`: the critical colour, filled.
+    Danger,
 }
 
 /// One button: `label` with an optional icon before it. `size_sm` is
@@ -123,6 +125,15 @@ impl<'a> Button<'a> {
                 Stroke::NONE,
             ),
             Variant::Inert => (style::surface_3(), style::text_3(), Stroke::NONE),
+            Variant::Danger => (
+                if hover {
+                    style::critical().gamma_multiply(0.85)
+                } else {
+                    style::critical()
+                },
+                Color32::WHITE,
+                Stroke::new(1.0, style::tint(0.08)),
+            ),
             Variant::DangerOutline => (
                 style::critical().gamma_multiply(if hover { 0.12 } else { 0.07 }),
                 style::critical(),
@@ -415,6 +426,50 @@ pub fn checkbox(
         return true;
     }
     false
+}
+
+/// A `.ui-toggle`: a 38 by 22 pill, the accent when on, with a 16 px knob.
+/// Drawn at `at`; returns true when pressed (the caller flips what it holds).
+pub fn switch(
+    ui: &mut egui::Ui,
+    at: Pos2,
+    on: bool,
+    enabled: bool,
+    id: impl std::hash::Hash + std::fmt::Debug,
+) -> bool {
+    let rect = Rect::from_min_size(at, Vec2::new(38.0, 22.0));
+    let resp = ui.interact(
+        rect,
+        ui.scope_id().with(id),
+        if enabled {
+            egui::Sense::click()
+        } else {
+            egui::Sense::hover()
+        },
+    );
+    let fade = if enabled { 1.0 } else { 0.5 };
+    let (fill, line) = if on {
+        (style::accent(), style::accent())
+    } else if resp.hovered() && enabled {
+        (style::input(0.6), style::border_strong())
+    } else {
+        (style::input(0.6), style::border())
+    };
+    let painter = ui.painter();
+    painter.rect(
+        rect,
+        255,
+        fill.gamma_multiply(fade),
+        Stroke::new(1.0, line.gamma_multiply(fade)),
+        egui::StrokeKind::Inside,
+    );
+    let knob = if on { style::text_inverted() } else { style::text_3() };
+    painter.circle_filled(
+        Pos2::new(rect.left() + 11.0 + if on { 16.0 } else { 0.0 }, rect.center().y),
+        8.0,
+        knob.gamma_multiply(fade),
+    );
+    enabled && resp.clicked()
 }
 
 /// Text wrapped to `width`, for hints and notes.

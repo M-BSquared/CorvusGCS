@@ -24,6 +24,12 @@ impl<T: Send + 'static> Pending<T> {
         Pending(slot)
     }
 
+    /// An answer that is already here, for tests.
+    #[cfg(test)]
+    pub fn ready(v: T) -> Pending<T> {
+        Pending(Arc::new(Mutex::new(Some(v))))
+    }
+
     /// The answer, once, when it is there.
     pub fn take(&self) -> Option<T> {
         self.0.lock().ok().and_then(|mut s| s.take())

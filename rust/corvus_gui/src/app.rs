@@ -191,10 +191,11 @@ pub fn run(
     let sources = http::get_json(&server, "/api/tiles/sources").unwrap_or(Value::Null);
     let start_page = match page {
         Some("setup") | Some("parameters") | Some("safety") | Some("motors") => Page::Setup,
+        Some(p) if p.starts_with("safety:") => Page::Setup,
         _ => Page::Home,
     };
     let open_page = page
-        .filter(|p| matches!(*p, "parameters" | "safety" | "motors"))
+        .filter(|p| matches!(*p, "parameters" | "safety" | "motors") || p.starts_with("safety:"))
         .map(String::from);
     let options = eframe::NativeOptions {
         renderer: eframe::Renderer::Glow,

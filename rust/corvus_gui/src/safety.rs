@@ -8,20 +8,25 @@
 //!
 //! Whole here: Flight limits, Return to Launch, Failsafe actions, the
 //! Landing fields and its Fast landing preset, the Geofence action, the
-//! sensor tiles with their state, reading and re-reading, and the armed gate.
-//! Not yet: drawing the geofence area, the landing zone graphic, the sensor
-//! pages (presets, drivers, extra parameters), Check values and the
+//! sensor tiles with their state and the sensor pages behind them (switch,
+//! drivers, ports, hardware presets, extra parameters), Check values, reading
+//! and re-reading, and the armed gate.
+//! Not yet: drawing the geofence area, the landing zone graphic and the
 //! preflight checklist card.
 
 use eframe::egui::{self, Pos2, Rect, Stroke, Vec2};
 use serde_json::{json, Value};
 
 use crate::bg::Pending;
+use crate::check::{self, Check};
+use crate::checklist::Checklist;
 use crate::http::{self, Server};
 use crate::icons;
 use crate::kit::{self, Button, Variant};
 use crate::pagekit;
 use crate::schema_form::{self, Field, FormState};
+use crate::sensor_view::{self, Event, SensorUi};
+use crate::sensors::{self, Extras, Preset, Toggle};
 use crate::style::{self, Weight};
 
 /// One card of the description.
@@ -34,6 +39,8 @@ pub struct Section {
     pub fields: Vec<Field>,
     pub actions: Vec<Action>,
     pub sensor: Option<Sensor>,
+    pub toggle: Option<Toggle>,
+    pub presets: Vec<Preset>,
 }
 
 /// A one press preset on a form card.
@@ -61,6 +68,8 @@ pub struct Doc {
     pub error: String,
     pub received: u64,
     pub sections: Vec<Section>,
+    /// The parameters the operator named, with whether the firmware has each.
+    pub extra: Vec<(Field, bool)>,
 }
 
 /// Reads `GET /api/safety`.
@@ -114,6 +123,8 @@ pub fn parse_doc(v: &Value) -> Doc {
                             state: sensor_state(t),
                             detail: t.get("detail").and_then(Value::as_str).unwrap_or("").into(),
                         }),
+                        toggle: toggle.map(sensors::parse_toggle),
+                        presets: sensors::parse_presets(s.get("presets").unwrap_or(&Value::Null)),
                     }
                 })
                 .collect()
@@ -124,7 +135,47 @@ pub fn parse_doc(v: &Value) -> Doc {
         error: v.get("error").and_then(Value::as_str).unwrap_or("").to_string(),
         received: v.get("received").and_then(Value::as_u64).unwrap_or(0),
         sections,
+        extra: v
+            .get("extra")
+            .and_then(Value::as_array)
+            .map(|a| {
+                a.iter()
+                    .filter_map(|e| {
+                        let present = e.get("present") == Some(&Value::Bool(true));
+                        let f = schema_form::parse_fields(&Value::Array(vec![e.clone()])).pop()?;
+                        Some((f, present))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default(),
     }
+}
+
+/// `renderedParams`: each parameter the sections show, with its card.
+pub fn rendered_params(doc: &Doc) -> std::collections::HashMap<String, String> {
+    let mut out = std::collections::HashMap::new();
+    for s in &doc.sections {
+        for f in &s.fields {
+            out.insert(f.param.clone(), s.title.clone());
+        }
+    }
+    out
+}
+
+/// `fieldParams`: every editable parameter of the description.
+pub fn field_params(doc: &Doc) -> Vec<String> {
+    let mut names: Vec<String> = Vec::new();
+    let all = doc
+        .sections
+        .iter()
+        .flat_map(|s| s.fields.iter())
+        .chain(doc.extra.iter().map(|(f, _)| f));
+    for f in all {
+        if !names.contains(&f.param) {
+            names.push(f.param.clone());
+        }
+    }
+    names
 }
 
 /// `sensorState`: the toggle's own word when it has one, else on or off.
@@ -173,6 +224,19 @@ enum Card {
     Section(usize),
     Sensors,
     Empty,
+    SensorStatus(usize),
+    SensorHardware(usize),
+    SensorParams(usize),
+    Checklist,
+}
+
+/// A chain of writes on its way: a sensor's switch or a preset.
+struct Chain {
+    /// `on` for a switch, `None` for a preset.
+    on: Option<bool>,
+    label: String,
+    reboot: bool,
+    done: Pending<Result<(), String>>,
 }
 
 /// The page's state.
@@ -185,10 +249,24 @@ pub struct SafetyPage {
     action_status: std::collections::HashMap<String, (&'static str, String)>,
     action: Option<(String, Pending<Result<(), String>>)>,
     errors: Vec<String>,
+    /// The sensor whose page is open.
+    view: Option<String>,
+    sensors: SensorUi,
+    extras: Extras,
+    chain: Option<Chain>,
+    check: Check,
+    checklist: Checklist,
+    /// The last check, as the card at the top shows it.
+    check_card: Option<check::Summary>,
+    /// The last check's verdict, to say once the re-read has landed.
+    check_say: Option<check::Summary>,
+    /// The next read goes to the vehicle, not the cache.
+    fresh: bool,
 }
 
 impl SafetyPage {
     pub fn new(server: Server, ctx: &egui::Context) -> SafetyPage {
+        let server_for_list = server.clone();
         let mut p = SafetyPage {
             server,
             doc: None,
@@ -198,6 +276,15 @@ impl SafetyPage {
             action_status: Default::default(),
             action: None,
             errors: Vec::new(),
+            view: None,
+            sensors: SensorUi::default(),
+            extras: Extras::load_default(),
+            chain: None,
+            check: Check::default(),
+            checklist: Checklist::new(server_for_list, ctx),
+            check_card: None,
+            check_say: None,
+            fresh: false,
         };
         p.load(ctx);
         p
@@ -206,7 +293,35 @@ impl SafetyPage {
     pub fn take_errors(&mut self) -> Vec<String> {
         let mut e = std::mem::take(&mut self.errors);
         e.extend(self.form.take_errors());
+        e.extend(self.checklist.take_errors());
         e
+    }
+
+    /// Whether a sensor's page is open, so the back button leads to the
+    /// overview and not out of the page.
+    pub fn in_sensor(&self) -> bool {
+        self.view.is_some()
+    }
+
+    pub fn close_sensor(&mut self) {
+        self.view = None;
+    }
+
+    pub fn open_sensor(&mut self, id: &str) {
+        self.view = Some(id.to_string());
+        self.sensors.status = ("", String::new());
+        self.sensors.preset_status = ("", String::new());
+        self.sensors.extra_status = ("", String::new());
+    }
+
+    /// The section of the open sensor page, if the description still has it.
+    fn open_section(&self) -> Option<usize> {
+        let id = self.view.as_ref()?;
+        self.doc
+            .as_ref()?
+            .sections
+            .iter()
+            .position(|s| &s.id == id && s.sensor.is_some())
     }
 
     fn load(&mut self, ctx: &egui::Context) {
@@ -215,12 +330,26 @@ impl SafetyPage {
         }
         self.status = ("pending", "Reading safety configuration\u{2026}".into());
         let s = self.server.clone();
-        self.loading = Some(Pending::spawn(ctx, move || http::get_json(&s, "/api/safety")));
+        let mut query = Vec::new();
+        let extra = self.extras.all();
+        if !extra.is_empty() {
+            query.push(format!("extra={}", extra.join(",")));
+        }
+        if std::mem::take(&mut self.fresh) {
+            query.push("fresh=1".into());
+        }
+        let path = if query.is_empty() {
+            "/api/safety".to_string()
+        } else {
+            format!("/api/safety?{}", query.join("&"))
+        };
+        self.loading = Some(Pending::spawn(ctx, move || http::get_json(&s, &path)));
     }
 
     fn take_answers(&mut self, ctx: &egui::Context) {
         if let Some(r) = self.loading.as_ref().and_then(Pending::take) {
             self.loading = None;
+            self.sensors.shown_on = None;
             match r {
                 Ok(v) => {
                     let doc = parse_doc(&v);
@@ -236,6 +365,7 @@ impl SafetyPage {
                             },
                         )
                     };
+                    self.extras.prune(&rendered_params(&doc));
                     self.doc = Some(doc);
                 }
                 Err(e) => {
@@ -250,10 +380,22 @@ impl SafetyPage {
                     );
                 }
             }
+            if let Some(c) = self.check_say.take() {
+                self.status = (c.cls, c.text);
+            }
+            // A sensor that disappeared between reads leaves no page about nothing.
+            if self.view.is_some() && self.open_section().is_none() {
+                self.view = None;
+            }
         }
         if let Some(doc) = &mut self.doc {
             for s in &mut doc.sections {
                 self.form.take_answers(&mut s.fields);
+            }
+            let mut extra: Vec<Field> = doc.extra.iter().map(|(f, _)| f.clone()).collect();
+            self.form.take_answers(&mut extra);
+            for ((f, _), live) in doc.extra.iter_mut().zip(extra) {
+                f.value = live.value;
             }
         }
         if let Some((key, p)) = &self.action {
@@ -273,29 +415,197 @@ impl SafetyPage {
                 self.load(ctx);
             }
         }
+        if let Some(c) = self
+            .chain
+            .as_ref()
+            .and_then(|c| c.done.take().map(|r| (c.on, c.label.clone(), c.reboot, r)))
+        {
+            let (on, label, reboot, r) = c;
+            self.chain = None;
+            match r {
+                Ok(()) => match on {
+                    Some(on) => {
+                        let word = if on { "enabled" } else { "disabled" };
+                        self.sensors.status = (
+                            "ok",
+                            if reboot {
+                                format!("{word}. Reboot the autopilot for the driver to start")
+                            } else {
+                                word.to_string()
+                            },
+                        );
+                    }
+                    None => {
+                        self.sensors.preset_status = (
+                            "ok",
+                            if reboot {
+                                "applied. Reboot the autopilot for the driver to start".into()
+                            } else {
+                                "applied".into()
+                            },
+                        )
+                    }
+                },
+                Err(e) => {
+                    let msg = if e.is_empty() { "write failed".to_string() } else { e };
+                    if on.is_some() {
+                        self.sensors.status = ("err", msg.clone());
+                        self.errors.push(format!("Could not configure {label}: {msg}"));
+                    } else {
+                        self.sensors.preset_status = ("err", msg.clone());
+                        self.errors.push(format!("Could not apply {label}: {msg}"));
+                    }
+                }
+            }
+            self.load(ctx);
+        }
+        if let Some(summary) = self.check.take(&mut self.form.wanted) {
+            self.form.mark_checked(&summary.rows);
+            self.check_card = Some(summary.clone());
+            self.check_say = Some(summary);
+            self.fresh = true;
+            self.load(ctx);
+        }
     }
 
     fn run_action(&mut self, ctx: &egui::Context, key: String, a: &Action) {
         self.action_status
             .insert(key.clone(), ("pending", "applying\u{2026}".into()));
+        for (n, v) in &a.writes {
+            self.form.wanted.insert(n.clone(), *v);
+        }
         let (s, writes) = (self.server.clone(), a.writes.clone());
-        self.action = Some((
-            key,
-            Pending::spawn(ctx, move || {
-                for (name, value) in writes {
-                    let d = http::post_json(&s, "/api/params/set", &json!({ "name": name, "value": value }))?;
-                    if d.get("ok") != Some(&Value::Bool(true)) {
-                        return Err(format!(
-                            "{name}: {}",
-                            d.get("error")
-                                .and_then(Value::as_str)
-                                .unwrap_or("Command rejected by vehicle")
-                        ));
+        self.action = Some((key, Pending::spawn(ctx, move || write_all(&s, writes))));
+    }
+
+    /// `runWrites`: each write in order, every one wanted before the first
+    /// is sent so a write lost halfway can be confirmed by Check values.
+    fn run_chain(
+        &mut self,
+        ctx: &egui::Context,
+        on: Option<bool>,
+        label: &str,
+        reboot: bool,
+        writes: Vec<(String, f64)>,
+    ) {
+        if writes.is_empty() {
+            return;
+        }
+        for (n, v) in &writes {
+            self.form.wanted.insert(n.clone(), *v);
+        }
+        let s = self.server.clone();
+        let status = (
+            "pending",
+            if on == Some(false) {
+                "disabling\u{2026}"
+            } else if on == Some(true) {
+                "enabling\u{2026}"
+            } else {
+                "applying\u{2026}"
+            }
+            .to_string(),
+        );
+        if on.is_some() {
+            self.sensors.status = status;
+        } else {
+            self.sensors.preset_status = status;
+        }
+        self.chain = Some(Chain {
+            on,
+            label: label.to_string(),
+            reboot,
+            done: Pending::spawn(ctx, move || write_all(&s, writes)),
+        });
+    }
+
+    /// What the operator did on the open sensor page.
+    fn handle(&mut self, ctx: &egui::Context, i: usize, event: Event, state_armed: bool) {
+        let Some(doc) = &self.doc else { return };
+        let Some(section) = doc.sections.get(i).cloned() else {
+            return;
+        };
+        let Some(t) = section.toggle.clone() else { return };
+        let sid = section.id.clone();
+        match event {
+            Event::Switch(_) | Event::Repick => {
+                let on = match event {
+                    Event::Switch(on) => on,
+                    _ => {
+                        if self.sensors.shown_on.unwrap_or(t.enabled) {
+                            true
+                        } else {
+                            return;
+                        }
+                    }
+                };
+                if state_armed {
+                    return;
+                }
+                let driver_id = self.sensors.driver_id(&sid, &t);
+                let driver = t.drivers.iter().find(|d| d.id == driver_id);
+                let port = self.sensors.port_text(&sid, &t);
+                match sensors::sensor_writes(&t, driver, &port, on) {
+                    Ok(writes) => {
+                        if writes.is_empty() {
+                            self.sensors.status = ("", String::new());
+                        } else {
+                            self.run_chain(ctx, Some(on), &t.label, t.reboot, writes);
+                        }
+                    }
+                    Err(msg) => {
+                        self.sensors.status = ("err", msg.clone());
+                        self.sensors.shown_on = None;
+                        if !msg.starts_with("pick the") {
+                            self.errors.push(format!("Could not configure {}: {msg}", t.label));
+                        }
                     }
                 }
-                Ok(())
-            }),
-        ));
+            }
+            Event::Apply(id) => {
+                let Some(p) = section.presets.iter().find(|p| p.id == id) else {
+                    return;
+                };
+                if state_armed {
+                    return;
+                }
+                let port = if p.serial {
+                    self.sensors.preset_port_text(&sid, &t)
+                } else {
+                    String::new()
+                };
+                match sensors::preset_writes(&t, p, &port) {
+                    Ok(writes) => {
+                        if writes.is_empty() {
+                            self.sensors.preset_status = ("", String::new());
+                        } else {
+                            self.run_chain(ctx, None, &p.label, p.reboot, writes);
+                        }
+                    }
+                    Err(msg) => {
+                        self.sensors.preset_status = ("err", msg.clone());
+                        if !msg.starts_with("pick the") {
+                            self.errors.push(format!("Could not apply {}: {msg}", p.label));
+                        }
+                    }
+                }
+            }
+            Event::AddExtra(name) => {
+                let rendered = rendered_params(doc);
+                let problem = self.extras.problem(&sid, &name, &rendered);
+                if problem.is_empty() {
+                    self.extras.add(&sid, &name);
+                    self.sensors.extra_text.clear();
+                    self.sensors.extra_status = ("", String::new());
+                    self.load(ctx);
+                } else {
+                    self.sensors.extra_status = ("err", problem);
+                }
+            }
+            Event::RemoveExtra(name) => {
+                self.extras.remove(&sid, &name);
+            }
+        }
     }
 
     /// Draws the page's head and cards from `y`; returns the bottom.
@@ -303,24 +613,79 @@ impl SafetyPage {
         let ctx = ui.ctx().clone();
         self.take_answers(&ctx);
         let armed = state.get("armed") == Some(&Value::Bool(true));
-        // .setup-head: the header, with Reload and the status at its right.
-        let bottom = pagekit::header(
-            ui,
-            x,
-            y,
-            "Safety & Sensors",
-            "Flight limits, failsafe actions, and the sensors they rely on",
-        );
+        let open = self.open_section();
+        // .setup-head: the header, with Reload and Check values and the
+        // status at its right.
+        let (title, subtitle) = match (open, &self.doc) {
+            (Some(i), Some(doc)) => {
+                let s = &doc.sections[i];
+                (
+                    if s.title.is_empty() {
+                        "Sensor".to_string()
+                    } else {
+                        s.title.clone()
+                    },
+                    s.hint.clone(),
+                )
+            }
+            _ => (
+                "Safety & Sensors".to_string(),
+                "Flight limits, failsafe actions, and the sensors they rely on".to_string(),
+            ),
+        };
+        let checking = self.check.busy();
+        let busy_read = self.loading.is_some() || checking;
+        let check_btn = Button::new("Check values", Variant::Secondary)
+            .icon("list-checks")
+            .small()
+            .title("Read every value back from the vehicle, write again what did not stick, and show what the vehicle holds now")
+            .enabled(
+                !busy_read
+                    && self.doc.as_ref().is_some_and(|d| d.connected && !field_params(d).is_empty()),
+            );
         let reload = Button::new("Reload", Variant::Primary)
             .icon("refresh-cw")
             .small()
-            .enabled(self.loading.is_none());
+            .enabled(!busy_read);
         let (rw, rh) = (reload.width(ui), reload.height());
+        let cw = check_btn.width(ui);
+        let status_w = style::galley(ui, &self.status.1, 11.5, Weight::W400, style::text_2(), 0.0)
+            .size()
+            .x
+            .min(420.0);
+        let head_w = (w - (status_w + 10.0 + rw + 10.0 + cw) - 24.0).max(280.0).min(w);
+        let bottom = pagekit::header_wrapped(ui, x, y, head_w, &title, &subtitle);
+        let mut left = x + w - cw;
+        if check_btn.show(
+            ui,
+            Rect::from_min_size(Pos2::new(left, bottom - rh), Vec2::new(cw, rh)),
+            "safetycheck",
+        ) {
+            if let Some(doc) = &self.doc {
+                let names = field_params(doc);
+                let wanted = self.form.wanted.clone();
+                self.status = (
+                    "pending",
+                    if wanted.is_empty() {
+                        "Reading every value back from the vehicle\u{2026}".to_string()
+                    } else {
+                        format!(
+                            "Checking {} {} on the vehicle\u{2026}",
+                            wanted.len(),
+                            if wanted.len() == 1 { "change" } else { "changes" }
+                        )
+                    },
+                );
+                self.check.start(&ctx, &self.server, &wanted, names);
+            }
+        }
+        left -= 10.0 + rw;
         if reload.show(
             ui,
-            Rect::from_min_size(Pos2::new(x + w - rw, bottom - rh), Vec2::new(rw, rh)),
+            Rect::from_min_size(Pos2::new(left, bottom - rh), Vec2::new(rw, rh)),
             "safetyreload",
         ) {
+            self.check_card = None;
             self.load(&ctx);
         }
         let color = match self.status.0 {
@@ -330,7 +695,7 @@ impl SafetyPage {
         };
         let sg = style::galley(ui, &self.status.1, 11.5, Weight::W400, color, 0.0);
         ui.painter().galley(
-            Pos2::new(x + w - rw - 10.0 - sg.size().x, bottom - rh / 2.0 - sg.size().y / 2.0),
+            Pos2::new(left - 10.0 - sg.size().x, bottom - rh / 2.0 - sg.size().y / 2.0),
             sg,
             color,
         );
@@ -357,9 +722,22 @@ impl SafetyPage {
             y = r.bottom() + 4.0;
         }
         let Some(doc) = self.doc.clone() else { return y };
+        if let Some(c) = self.check_card.clone() {
+            y = check::card(ui, x, y, w, &c) + 14.0;
+        }
         // the cards, in the order the web page lays them out
         let mut order: Vec<(Card, usize)> = Vec::new();
-        if doc.sections.is_empty() {
+        if let Some(i) = open {
+            let s = &doc.sections[i];
+            let problems = s.toggle.as_ref().map_or(0, |t| t.problems.len());
+            order.push((Card::SensorStatus(i), 6 + problems));
+            if !s.presets.is_empty() {
+                order.push((Card::SensorHardware(i), 10));
+            }
+            if !s.fields.is_empty() {
+                order.push((Card::SensorParams(i), form_weight(s)));
+            }
+        } else if doc.sections.is_empty() {
             order.push((Card::Empty, 4));
         } else {
             let fence = doc.sections.iter().position(|s| s.kind == "geofence");
@@ -385,6 +763,9 @@ impl SafetyPage {
                 order.push((Card::Sensors, 3 + 2 * sensors));
             }
         }
+        if open.is_none() {
+            order.push((Card::Checklist, 8));
+        }
         let weights: Vec<usize> = order.iter().map(|(_, w)| *w).collect();
         let n_stacks = stacks(w, order.len());
         let cut = if n_stacks == 1 {
@@ -395,6 +776,7 @@ impl SafetyPage {
         let col_w = (w - 14.0 * (n_stacks as f32 - 1.0)) / n_stacks as f32;
         let mut bottoms = [y; 2];
         let mut cards = order.into_iter().map(|(c, _)| c).collect::<Vec<_>>().into_iter();
+        let mut events: Vec<(usize, Event)> = Vec::new();
         #[allow(clippy::needless_range_loop)]
         for col in 0..n_stacks {
             let count = if col == 0 { cut } else { usize::MAX };
@@ -402,10 +784,14 @@ impl SafetyPage {
             let mut cy = y;
             for _ in 0..count {
                 let Some(card) = cards.next() else { break };
-                cy = self.card(ui, &ctx, &doc, card, cx, cy, col_w, armed) + 14.0;
+                cy = self.card(ui, &ctx, &doc, card, cx, cy, col_w, armed, &mut events) + 14.0;
             }
             bottoms[col] = cy - 14.0;
         }
+        for (i, e) in events {
+            self.handle(&ctx, i, e, armed);
+        }
+        self.checklist.dialog(&ctx);
         bottoms[0].max(bottoms[1]).max(y)
     }
 
@@ -420,6 +806,7 @@ impl SafetyPage {
         y: f32,
         w: f32,
         armed: bool,
+        events: &mut Vec<(usize, Event)>,
     ) -> f32 {
         let painter = ui.painter().clone();
         let bg = painter.add(egui::Shape::Noop);
@@ -488,6 +875,74 @@ impl SafetyPage {
                     cy += 10.0 + g.size().y;
                 }
             }
+            Card::Checklist => {
+                cy = pagekit::section_title(ui, ix, cy, iw, "Preflight checklist") - 2.0;
+                cy = self.checklist.card_body(ui, ctx, ix, cy, iw);
+            }
+            Card::SensorStatus(i) => {
+                let section = &doc.sections[i];
+                cy = pagekit::section_title(ui, ix, cy, iw, "Status") - 2.0;
+                if let Some(t) = &section.toggle {
+                    let mut local = Vec::new();
+                    cy = sensor_view::status_box(ui, &mut self.sensors, &section.id, t, ix, cy, iw, armed, &mut local);
+                    events.extend(local.into_iter().map(|e| (i, e)));
+                }
+            }
+            Card::SensorHardware(i) => {
+                let section = &doc.sections[i];
+                cy = pagekit::section_title(ui, ix, cy, iw, "Hardware") - 2.0;
+                if let Some(t) = &section.toggle {
+                    let mut extra = doc.extra.clone();
+                    if let Some(live) = self.doc.as_ref() {
+                        extra = live.extra.clone();
+                    }
+                    let mut local = Vec::new();
+                    let busy = self.chain.is_some() || self.form.busy();
+                    cy = sensor_view::hardware_body(
+                        ui,
+                        ctx,
+                        &self.server.clone(),
+                        &mut self.sensors,
+                        &mut self.form,
+                        &self.extras,
+                        &extra,
+                        &section.id,
+                        &section.title,
+                        t,
+                        &section.presets,
+                        ix,
+                        cy,
+                        iw,
+                        armed,
+                        busy,
+                        &mut local,
+                    );
+                    events.extend(local.into_iter().map(|e| (i, e)));
+                }
+            }
+            Card::SensorParams(i) => {
+                cy = pagekit::section_title(ui, ix, cy, iw, "Parameters") - 2.0;
+                let g = kit::wrapped_weight(
+                    ui,
+                    "Every field writes its parameter to the vehicle as soon as you leave it. \
+                     A preset fills these in; changing one afterwards is expected.",
+                    10.5,
+                    Weight::W400,
+                    style::text_3(),
+                    iw,
+                    1.4,
+                );
+                painter.galley(Pos2::new(ix, cy), g.clone(), style::text_3());
+                cy += g.size().y + 10.0;
+                let fields = self
+                    .doc
+                    .as_ref()
+                    .and_then(|d| d.sections.get(i))
+                    .map_or_else(|| doc.sections[i].fields.clone(), |s| s.fields.clone());
+                cy = self
+                    .form
+                    .show(ui, ctx, &self.server.clone(), &fields, ix, cy, iw, armed);
+            }
             Card::Sensors => {
                 cy = pagekit::section_title(ui, ix, cy, iw, "Sensors") - 2.0;
                 let g = kit::wrapped_weight(ui, "Each sensor has its own page: pick the module you actually fitted and its whole setup is written for you, or set every parameter by hand.", 10.5, Weight::W400, style::text_3(), iw, 1.4);
@@ -508,7 +963,7 @@ impl SafetyPage {
                     );
                     bottom = bottom.max(r.bottom());
                     if sensor_tile(ui, r, s) {
-                        self.status = ("pending", "The sensor pages are in the web interface for now.".into());
+                        self.open_sensor(&s.id);
                     }
                 }
                 cy = bottom;
@@ -591,6 +1046,22 @@ impl SafetyPage {
     }
 }
 
+/// Writes each parameter in order and stops at the first one refused.
+fn write_all(server: &Server, writes: Vec<(String, f64)>) -> Result<(), String> {
+    for (name, value) in writes {
+        let d = http::post_json(server, "/api/params/set", &json!({ "name": name, "value": value }))?;
+        if d.get("ok") != Some(&Value::Bool(true)) {
+            return Err(format!(
+                "{name}: {}",
+                d.get("error")
+                    .and_then(Value::as_str)
+                    .unwrap_or("Command rejected by vehicle")
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// One sensor tile: icon, title, description and the state pill.
 fn sensor_tile(ui: &mut egui::Ui, r: Rect, s: &Section) -> bool {
     let sensor = s.sensor.clone().unwrap_or(Sensor {
@@ -599,9 +1070,7 @@ fn sensor_tile(ui: &mut egui::Ui, r: Rect, s: &Section) -> bool {
         state: "off",
         detail: String::new(),
     });
-    let resp = ui
-        .interact(r, ui.scope_id().with(("sensor", &s.id)), egui::Sense::click())
-        .on_hover_text("The sensor page is in the web interface for now");
+    let resp = ui.interact(r, ui.scope_id().with(("sensor", &s.id)), egui::Sense::click());
     let (fill, stroke) = if resp.hovered() {
         (style::glass(0.95), style::tint(0.15))
     } else {
@@ -748,6 +1217,8 @@ mod tests {
                 writes: vec![("P".into(), 1.0), ("Q".into(), 2.0)],
             }],
             sensor: None,
+            toggle: None,
+            presets: vec![],
         };
         assert_eq!(form_weight(&s), 2 + (3 + 2) + 1 + 2);
     }

@@ -139,9 +139,19 @@ impl SetupPage {
 
     /// Opens a tile's page, as clicking it does.
     pub fn open(&mut self, id: &str, ctx: &egui::Context) {
+        let (id, sensor) = match id.split_once(':') {
+            Some((page, sensor)) => (page, Some(sensor)),
+            None => (id, None),
+        };
         self.view = match id {
             "parameters" => View::Parameters(Box::new(ParamsPage::new(self.server.clone(), ctx))),
-            "safety" => View::Safety(Box::new(SafetyPage::new(self.server.clone(), ctx))),
+            "safety" => {
+                let mut page = SafetyPage::new(self.server.clone(), ctx);
+                if let Some(sensor) = sensor {
+                    page.open_sensor(sensor);
+                }
+                View::Safety(Box::new(page))
+            }
             "motors" => View::Motors(Box::new(MotorsPage::new(self.server.clone(), ctx))),
             other => match TILES.iter().find(|t| t.0 == other) {
                 Some(t) => View::Elsewhere(t.2),
@@ -186,9 +196,18 @@ impl SetupPage {
                     y = grid(ui, x, y, w, &mut self.view, &self.server);
                 }
                 View::Parameters(_) | View::Safety(_) | View::Motors(_) | View::Elsewhere(_) => {
-                    let (bh, back) = pagekit::back_button(ui, Pos2::new(x, y), "Setup");
+                    let in_sensor = matches!(&self.view, View::Safety(p) if p.in_sensor());
+                    let (bh, back) = pagekit::back_button(
+                        ui,
+                        Pos2::new(x, y),
+                        if in_sensor { "Safety & Sensors" } else { "Setup" },
+                    );
                     y += bh + 18.0;
-                    if back {
+                    if back && in_sensor {
+                        if let View::Safety(p) = &mut self.view {
+                            p.close_sensor();
+                        }
+                    } else if back {
                         self.view = View::Tiles;
                     } else if let View::Motors(p) = &mut self.view {
                         y = p.show(ui, x, y, w, state, now);
