@@ -48,7 +48,10 @@ that come and go between firmware versions.
 from __future__ import annotations
 
 import re
+import sys
 from typing import Any
+
+from corvus_link import sik as _sik
 
 # The serial speed a SiK radio leaves the factory on, and the one Mission
 # Planner's instructions tell every operator to select. It is the first baud a
@@ -318,18 +321,12 @@ def baud_from_register(value: int) -> int:
     in neither falls back to kbps, which is the reading that at least keeps the
     magnitude right.
     """
-    number = int(value)
-    if number > 2000:
-        return number
-    return _BAUD_BY_REGISTER.get(number, number * 1000)
+    return _engine.baud_from_register(value)
 
 
 def register_from_baud(baud: int) -> int:
     """The inverse of :func:`baud_from_register`, for a real baud rate."""
-    number = int(baud)
-    if number in _REGISTER_BY_BAUD:
-        return _REGISTER_BY_BAUD[number]
-    return number // 1000 if number >= 2000 else number
+    return _engine.register_from_baud(baud)
 
 
 def rssi_to_dbm(rssi: float) -> float:
@@ -340,7 +337,7 @@ def rssi_to_dbm(rssi: float) -> float:
     operator actually has — is this margin comfortable — and not good enough to
     quote in a regulatory filing.
     """
-    return (float(rssi) / 1.9) - 127.0
+    return _engine.rssi_to_dbm(rssi)
 
 
 # ---------------------------------------------------------------------------
@@ -355,17 +352,7 @@ def parse_registers(text: str) -> dict[str, dict[str, Any]]:
     the escape landed, and with line endings that differ between firmware
     builds. Anything that does not look like a register line is simply not one.
     """
-    out: dict[str, dict[str, Any]] = {}
-    for line in str(text or "").replace("\r", "\n").split("\n"):
-        match = _ATI5_RE.match(line)
-        if match is None:
-            continue
-        number, name, value = match.group(1), match.group(2).upper(), match.group(3)
-        try:
-            out[name] = {"number": int(number), "value": int(value)}
-        except ValueError:  # pragma: no cover - the regex already constrains both
-            continue
-    return out
+    return _engine.parse_registers(text)
 
 
 def parse_rssi(text: str) -> dict[str, Any] | None:
@@ -377,23 +364,7 @@ def parse_rssi(text: str) -> dict[str, Any] | None:
     number that answers "will this reach": the SiK guidance is that range
     doubles for every 6 dB of it.
     """
-    match = _RSSI_RE.search(str(text or ""))
-    if match is None:
-        return None
-    local_rssi, remote_rssi, local_noise, remote_noise = (
-        int(match.group(i)) for i in (1, 2, 3, 4)
-    )
-    return {
-        "local_rssi": local_rssi,
-        "remote_rssi": remote_rssi,
-        "local_noise": local_noise,
-        "remote_noise": remote_noise,
-        "local_dbm": round(rssi_to_dbm(local_rssi), 1),
-        "remote_dbm": round(rssi_to_dbm(remote_rssi), 1),
-        # (signal - noise) / 2 is the SiK rule of thumb for fade margin in dB.
-        "local_margin_db": round((local_rssi - local_noise) / 2.0, 1),
-        "remote_margin_db": round((remote_rssi - remote_noise) / 2.0, 1),
-    }
+    return _engine.parse_rssi(text)
 
 
 def parse_version(text: str) -> str:
@@ -403,14 +374,7 @@ def parse_version(text: str) -> str:
     ``RFD SiK 2.7 on RFD900P``. Echoed commands and bare ``OK`` acknowledgements
     are not it.
     """
-    for line in str(text or "").replace("\r", "\n").split("\n"):
-        candidate = line.strip()
-        if not candidate or candidate.upper() in {"OK", "ERROR"}:
-            continue
-        if candidate.upper().startswith(("AT", "RT")):
-            continue
-        return candidate
-    return ""
+    return _engine.parse_version(text)
 
 
 # ---------------------------------------------------------------------------
@@ -502,26 +466,7 @@ def compare(local: dict[str, Any], remote: dict[str, Any] | None) -> list[dict[s
     unreachable partner is reported by the caller as its own condition, not as
     eight simultaneous mismatches.
     """
-    if not remote:
-        return []
-    local_values = local.get("values") or {}
-    remote_values = remote.get("values") or {}
-    out: list[dict[str, Any]] = []
-    for spec in REGISTERS:
-        name = spec["name"]
-        if name not in MUST_MATCH:
-            continue
-        if name not in local_values or name not in remote_values:
-            continue
-        if int(local_values[name]) == int(remote_values[name]):
-            continue
-        out.append({
-            "name": name,
-            "label": spec.get("label", name),
-            "local": int(local_values[name]),
-            "remote": int(remote_values[name]),
-        })
-    return out
+    return _engine.compare(local, remote)
 
 
 def copy_to_remote(local: dict[str, Any], remote: dict[str, Any] | None) -> dict[str, int]:
@@ -534,16 +479,7 @@ def copy_to_remote(local: dict[str, Any], remote: dict[str, Any] | None) -> dict
     aircraft radio on a Pixhawk TELEM port has good reason to differ from the
     one on the USB cable.
     """
-    if not remote:
-        return {}
-    local_values = local.get("values") or {}
-    remote_values = remote.get("values") or {}
-    return {
-        name: int(local_values[name])
-        for name in sorted(MUST_MATCH)
-        if name in local_values and name in remote_values
-        and int(local_values[name]) != int(remote_values[name])
-    }
+    return _engine.copy_to_remote(local, remote)
 
 
 # ---------------------------------------------------------------------------
@@ -566,55 +502,11 @@ def validate_writes(settings: dict[str, Any],
     the radio commits the ones it accepted and reboots into a configuration
     nobody asked for.
     """
-    if not isinstance(settings, dict):
-        raise SikConfigError("settings must be an object")
-
-    writes: list[dict[str, Any]] = []
-    for name, raw in settings.items():
-        key = str(name).upper()
-        entry = present.get(key)
-        if entry is None:
-            raise SikConfigError(f"this radio has no {key} setting")
-        if key in READ_ONLY:
-            raise SikConfigError(f"{key} is set by the radio firmware and cannot be written")
-
-        if isinstance(raw, bool) or not isinstance(raw, (int, float)):
-            raise SikConfigError(f"{key} must be a number")
-        value = int(raw)
-        if value != raw:
-            raise SikConfigError(f"{key} must be a whole number")
-
-        spec = _BY_NAME.get(key)
-        if spec is not None:
-            _check_against_spec(spec, key, value)
-
-        if value != int(entry["value"]):
-            writes.append({"name": key, "register": int(entry["number"]), "value": value})
-
-    _check_band(settings, present)
-    # Ascending register order so a log of the session reads the way ATI5 does.
-    writes.sort(key=lambda w: w["register"])
-    return writes
+    return _engine.validate_writes(settings, present)
 
 
 def _check_against_spec(spec: dict[str, Any], key: str, value: int) -> None:
-    kind = spec.get("kind")
-    if kind == "enum":
-        allowed = _option_values(spec)
-        if value not in allowed:
-            # Named rather than listed when the list is long: an operator who
-            # typed 100 for the air rate needs to know 96 and 128 exist, not to
-            # read all thirteen back.
-            raise SikConfigError(
-                f"{spec.get('label', key)} does not accept {value}; "
-                f"allowed values are {', '.join(str(v) for v in allowed)}"
-            )
-        return
-    low, high = spec.get("min"), spec.get("max")
-    if low is not None and value < low:
-        raise SikConfigError(f"{spec.get('label', key)} must be at least {low}")
-    if high is not None and value > high:
-        raise SikConfigError(f"{spec.get('label', key)} must be at most {high}")
+    _engine.check_against_spec(spec, key, value)
 
 
 def _check_band(settings: dict[str, Any], present: dict[str, dict[str, Any]]) -> None:
@@ -625,22 +517,7 @@ def _check_band(settings: dict[str, Any], present: dict[str, dict[str, Any]]) ->
     the band just as surely as one who sends both. A radio given max <= min
     stops transmitting entirely and has to be recovered over a cable.
     """
-    def resolve(name: str) -> int | None:
-        if name in settings:
-            try:
-                return int(settings[name])
-            except (TypeError, ValueError):
-                return None
-        entry = present.get(name)
-        return None if entry is None else int(entry["value"])
-
-    low, high = resolve("MIN_FREQ"), resolve("MAX_FREQ")
-    if low is None or high is None:
-        return
-    if high <= low:
-        raise SikConfigError(
-            "the maximum frequency must be above the minimum frequency"
-        )
+    _engine.check_band(settings, present)
 
 
 def write_plan(writes: list[dict[str, Any]], remote: bool) -> list[str]:
@@ -654,13 +531,7 @@ def write_plan(writes: list[dict[str, Any]], remote: bool) -> list[str]:
     the exception, which takes hold immediately and then reverts unless it was
     written).
     """
-    prefix = "RT" if remote else "AT"
-    commands = [f"{prefix}S{w['register']}={w['value']}" for w in writes]
-    if not commands:
-        return []
-    commands.append(f"{prefix}&W")
-    commands.append(f"{prefix}Z")
-    return commands
+    return _engine.write_plan(writes, remote)
 
 
 def schema() -> dict[str, Any]:
@@ -688,3 +559,6 @@ def schema() -> dict[str, Any]:
         "bauds": list(BAUD_CANDIDATES),
         "default_baud": DEFAULT_BAUD,
     }
+
+
+_engine = _sik.SikConfigEngine(sys.modules[__name__])

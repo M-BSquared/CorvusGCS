@@ -95,7 +95,8 @@ shell, on board log format.
   commands (calibration, motor test, autotune, reboot), Remote ID, the
   telemetry handlers, the flight commands, the bridge's receive path, its status
   reporting, its connection cycle, the fleet tracker, the forwarder,
-  auto-connect and RTK with its NTRIP client (on Rust threads) are engines in
+  auto-connect, RTK with its NTRIP client and SiK radio configuration (on Rust
+  threads) are engines in
   `corvus_link` (`rust/corvus_link/src/protocol/`); the `corvus/mavlink_*.py`
   module of the same name is each one's seat on the bridge. A protocol change goes into the engine and keeps the
   `tests/test_*_parity.py` files green against the Python references in

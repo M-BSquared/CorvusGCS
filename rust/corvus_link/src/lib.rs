@@ -16,6 +16,7 @@ mod bridge;
 mod link;
 mod protocol;
 mod rtk;
+mod sik;
 mod wire;
 
 use link::{connection, transport};
@@ -230,5 +231,6 @@ fn corvus_link(m: &Bound<'_, PyModule>) -> PyResult<()> {
     protocol::flight::register(py, m)?;
     bridge::register(py, m)?;
     rtk::register(py, m)?;
+    sik::register(py, m)?;
     Ok(())
 }

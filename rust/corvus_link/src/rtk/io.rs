@@ -97,6 +97,10 @@ impl SerialPort {
         py.allow_threads(|| self.port.write_timeout(&data, timeout)).map_err(|e| PyOSError::new_err(e.to_string()))
     }
 
+    fn reset_input_buffer(&self) -> PyResult<()> {
+        self.port.reset_input().map_err(|e| PyOSError::new_err(e.to_string()))
+    }
+
     fn flush(&self) {}
 
     fn close(&self) {

@@ -102,7 +102,8 @@ until a tool and its permission are added there on purpose.
   receive path, command transaction, status reporting (STATUSTEXT, kill
   switch, preflight report), its own requests and signing, tlog, the vehicle
   list's tracker, the second station forwarder, auto-connect, RTK (with the
-  NTRIP client and the base's serial port) and the connection cycle, whose
+  NTRIP client and the base's serial port), SiK radio configuration and the
+  connection cycle, whose
   threads are
   Rust threads (`corvus_link.params`, `.missions`,
   `.ftp`, `.logs`, `.shell`, `.setup`, `.remote_id`, `.telemetry`, `.flight`,

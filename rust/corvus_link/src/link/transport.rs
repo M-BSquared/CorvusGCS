@@ -734,6 +734,26 @@ impl Serial {
         }
     }
 
+    /// Drop what the driver has received and not been read, pyserial's
+    /// `reset_input_buffer`.
+    pub fn reset_input(&self) -> io::Result<()> {
+        if self.closed.load(Ordering::SeqCst) {
+            return Err(io::Error::new(io::ErrorKind::Other, "Attempting to use a port that is not open"));
+        }
+        #[cfg(unix)]
+        if let Some(fd) = *lock(&self.fd) {
+            crate::link::serial_posix::flush_input(fd);
+        }
+        #[cfg(windows)]
+        {
+            use serialport::SerialPort;
+            if let Some(port) = lock(&self.port).as_ref() {
+                port.clear(serialport::ClearBuffer::Input).map_err(io::Error::from)?;
+            }
+        }
+        Ok(())
+    }
+
     /// Bytes the driver holds that have not been read, pyserial's
     /// `in_waiting`.
     pub fn waiting(&self) -> io::Result<usize> {

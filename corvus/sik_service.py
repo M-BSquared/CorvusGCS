@@ -46,10 +46,15 @@ flash needs for its minutes-long upload.
 from __future__ import annotations
 
 import logging
+import sys
 import threading
-import time
+import time  # noqa: F401 - the engine reads the clock here
+from types import SimpleNamespace
 from typing import Any, TYPE_CHECKING
 from collections.abc import Callable
+
+from corvus_link import rtk as _rtk
+from corvus_link import sik as _sik
 
 from . import sik_config
 from .serial_ports import classify_serial_device, is_windows_com_port
@@ -60,10 +65,9 @@ if TYPE_CHECKING:  # avoid an import cycle at runtime
 
 logger = logging.getLogger("corvus.sik")
 
-try:  # pragma: no cover - import-time guard, mirrors firmware_uploader
-    import serial as _serial  # type: ignore[import-not-found]
-except ImportError:  # pragma: no cover
-    _serial = None  # type: ignore[assignment]
+# The serial port a session opens: corvus_link's own, opened straight at the
+# radio's baud rate. A test replaces this to hand in a fake port.
+_serial: Any = SimpleNamespace(Serial=_rtk.SerialPort)
 
 # Silence the radio requires either side of ``+++`` before it accepts the
 # sequence as an escape rather than as data. The firmware default is 1000 ms;
@@ -122,29 +126,7 @@ class SikSession:
         because a partner radio's traffic may still be arriving between them. So
         the end of a reply is defined the only way it can be: by silence.
         """
-        deadline = time.monotonic() + timeout
-        chunks: list[bytes] = []
-        last = time.monotonic()
-        while time.monotonic() < deadline:
-            waiting = 0
-            try:
-                waiting = int(getattr(self._port, "in_waiting", 0) or 0)
-            except Exception:  # noqa: BLE001 - a closing port reports nothing
-                waiting = 0
-            data = b""
-            if waiting:
-                try:
-                    data = self._port.read(waiting) or b""
-                except Exception as exc:  # noqa: BLE001
-                    raise SikError(f"serial read failed: {exc}") from exc
-            if data:
-                chunks.append(data)
-                last = time.monotonic()
-            elif chunks and (time.monotonic() - last) >= IDLE_S:
-                break
-            else:
-                time.sleep(0.02)
-        return b"".join(chunks).decode("ascii", errors="replace")
+        return _engine.read_reply(self, timeout)
 
     def command(self, text: str, timeout: float | None = None) -> str:
         """Send one AT/RT command and return whatever came back.
@@ -154,16 +136,7 @@ class SikSession:
         the shape they are looking for, and an echo that *is* present is useful
         evidence in a log when a radio is not answering.
         """
-        remote = text.upper().startswith("RT")
-        if timeout is None:
-            timeout = REMOTE_TIMEOUT_S if remote else LOCAL_TIMEOUT_S
-        try:
-            self._port.reset_input_buffer()
-            self._port.write((text + "\r\n").encode("ascii"))
-            self._port.flush()
-        except Exception as exc:  # noqa: BLE001
-            raise SikError(f"serial write failed: {exc}") from exc
-        return self._read_reply(timeout)
+        return _engine.command(self, text, timeout)
 
     # -- the dialogue ---------------------------------------------------
 
@@ -181,26 +154,7 @@ class SikSession:
         without a second guard interval, so the retry only runs when the radio
         really is still passing data.
         """
-        for attempt in range(1, max(1, int(attempts)) + 1):
-            try:
-                self._port.reset_input_buffer()
-            except Exception:  # noqa: BLE001
-                pass
-            time.sleep(GUARD_S)
-            try:
-                self._port.write(b"+++")
-                self._port.flush()
-            except Exception as exc:  # noqa: BLE001
-                raise SikError(f"serial write failed: {exc}") from exc
-            time.sleep(GUARD_S)
-            reply = self._read_reply(LOCAL_TIMEOUT_S)
-            if "OK" in reply.upper():
-                return True
-            # Already in command mode? A banner comes back for ATI either way.
-            if sik_config.parse_version(self.command("ATI")):
-                return True
-            logger.debug("sik: +++ attempt %d got %r", attempt, reply)
-        return False
+        return _engine.enter_command_mode(self, attempts)
 
     def leave_command_mode(self) -> None:
         """``ATO`` — hand the port back to the telemetry stream.
@@ -210,10 +164,7 @@ class SikSession:
         leaves command mode on its own at the next power cycle. Failing a
         completed configuration over the exit is not worth it.
         """
-        try:
-            self.command("ATO", timeout=0.4)
-        except Exception:  # noqa: BLE001
-            logger.debug("sik: ATO failed", exc_info=True)
+        _engine.leave_command_mode(self)
 
     def read_radio(self, remote: bool) -> dict[str, Any] | None:
         """Read one end of the link: version, board and every register.
@@ -222,20 +173,11 @@ class SikSession:
         ordinary case of a partner that is switched off, out of range, or
         already misconfigured, and is reported as such rather than as an error.
         """
-        prefix = "RT" if remote else "AT"
-        registers = sik_config.parse_registers(self.command(f"{prefix}I5"))
-        if not registers:
-            return None
-        version = sik_config.parse_version(self.command(f"{prefix}I"))
-        board = sik_config.parse_version(self.command(f"{prefix}I2"))
-        return sik_config.describe_radio(registers, version=version, board=board)
+        return _engine.read_radio(self, remote)
 
     def read_link_quality(self) -> dict[str, Any] | None:
         """``ATI7`` — signal and noise at both ends, or ``None`` if unreported."""
-        try:
-            return sik_config.parse_rssi(self.command("ATI7"))
-        except SikError:
-            return None
+        return _engine.read_link_quality(self)
 
     def apply(self, writes: list[dict[str, Any]], remote: bool) -> None:
         """Run a write plan, checking each command before sending the next.
@@ -247,15 +189,7 @@ class SikSession:
         and, if an air setting was among them, one that can no longer be reached
         over the air to fix.
         """
-        for command in sik_config.write_plan(writes, remote):
-            reply = self.command(command)
-            if command.upper().endswith("Z"):
-                # ATZ/RTZ reboots; there is no reply worth checking and the
-                # radio is briefly absent from the port.
-                time.sleep(REBOOT_S)
-                continue
-            if "ERROR" in reply.upper():
-                raise SikError(f"the radio rejected {command}")
+        _engine.apply(self, writes, remote)
 
     def factory_reset(self, remote: bool) -> None:
         """``AT&F`` then write and reboot — back to the firmware's defaults.
@@ -266,13 +200,7 @@ class SikSession:
         way of a window in which neither is reachable from the other and the
         remote one is on an aircraft.
         """
-        prefix = "RT" if remote else "AT"
-        reply = self.command(f"{prefix}&F")
-        if "ERROR" in reply.upper():
-            raise SikError("the radio rejected the factory reset")
-        self.command(f"{prefix}&W")
-        self.command(f"{prefix}Z")
-        time.sleep(REBOOT_S)
+        _engine.factory_reset(self, remote)
 
 
 class SikService:
@@ -405,37 +333,7 @@ class SikService:
 
     def _run_locked(self, device: str, baud: int | None,
                     body: Callable[[SikSession, int], dict[str, Any]]) -> dict[str, Any]:
-        mavlink = self.mavlink
-        owns_link = (
-            mavlink is not None
-            and _same_device(device, mavlink.serial_device())
-            and mavlink.is_running()
-        )
-        restore_conn = mavlink.connection_string() if owns_link else ""
-        if owns_link:
-            logger.info("sik: stopping the MAVLink bridge to configure %s", device)
-            try:
-                mavlink.stop()
-            except Exception:  # noqa: BLE001 - the bridge may already be down
-                logger.debug("sik: bridge stop raised", exc_info=True)
-
-        session: SikSession | None = None
-        port: Any = None
-        try:
-            port, session, reached_baud = self._open(device, baud)
-            result = body(session, reached_baud)
-            result.setdefault("device", device)
-            result.setdefault("baud", reached_baud)
-            return result
-        finally:
-            if session is not None:
-                session.leave_command_mode()
-            if port is not None:
-                try:
-                    port.close()
-                except Exception:  # noqa: BLE001
-                    logger.debug("sik: closing %s raised", device, exc_info=True)
-            self._restart_bridge(restore_conn)
+        return _engine.run_locked(self, device, baud, body)
 
     def _open(self, device: str, baud: int | None) -> tuple[Any, SikSession, int]:
         """Open *device* and escape into command mode, finding the baud if needed.
@@ -453,36 +351,7 @@ class SikService:
         that does not answer costs a full guard interval — so the caller's own
         baud gets the retry and the guesses after it get one attempt each.
         """
-        if _serial is None:  # pragma: no cover - guarded by _gate
-            raise SikError(NO_SERIAL_MESSAGE)
-        candidates: list[int] = []
-        for candidate in [baud] + list(sik_config.BAUD_CANDIDATES):
-            if candidate and int(candidate) not in candidates:
-                candidates.append(int(candidate))
-
-        last_error = ""
-        for index, candidate in enumerate(candidates):
-            try:
-                port = _serial.Serial(device, baudrate=candidate, timeout=0.1,
-                                      write_timeout=2.0)
-            except Exception as exc:  # noqa: BLE001 - pyserial raises broadly
-                last_error = str(exc)
-                continue
-            session = SikSession(port)
-            if session.enter_command_mode(attempts=2 if index == 0 else 1):
-                return port, session, candidate
-            try:
-                port.close()
-            except Exception:  # noqa: BLE001
-                pass
-            last_error = f"no answer at {candidate} baud"
-
-        raise SikError(
-            f"could not reach a radio on {device} ({last_error}). Check that this "
-            "is the radio's port, that nothing else has it open, and that the "
-            "radio has power."
-            if last_error else f"could not reach a radio on {device}"
-        )
+        return tuple(_engine.open(self, device, baud))
 
     def _restart_bridge(self, conn: str) -> None:
         """Put the MAVLink bridge back on the port this session borrowed."""
@@ -649,3 +518,6 @@ def _same_device(left: str, right: str) -> bool:
     if is_windows_com_port(left) or is_windows_com_port(right):
         return left.lower() == right.lower()
     return left == right
+
+
+_engine = _sik.SikServiceEngine(sys.modules[__name__])
