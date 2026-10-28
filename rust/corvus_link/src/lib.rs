@@ -14,6 +14,7 @@ use pyo3::types::{PyDict, PyModule};
 
 mod bridge;
 mod elrs;
+mod flash;
 mod link;
 mod protocol;
 mod rtk;
@@ -234,5 +235,6 @@ fn corvus_link(m: &Bound<'_, PyModule>) -> PyResult<()> {
     rtk::register(py, m)?;
     sik::register(py, m)?;
     elrs::register(py, m)?;
+    flash::register(py, m)?;
     Ok(())
 }

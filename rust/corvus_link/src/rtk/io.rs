@@ -59,14 +59,14 @@ fn os_error(py: Python<'_>, err: &io::Error) -> PyErr {
 pub struct SerialPort {
     port: Serial,
     timeout: f64,
-    write_timeout: f64,
+    write_timeout: Option<f64>,
 }
 
 #[pymethods]
 impl SerialPort {
     #[new]
-    #[pyo3(signature = (port, baudrate, timeout = 0.5, write_timeout = 2.0))]
-    fn new(py: Python<'_>, port: String, baudrate: u32, timeout: f64, write_timeout: f64) -> PyResult<Self> {
+    #[pyo3(signature = (port, baudrate, timeout = 0.5, write_timeout = None))]
+    fn new(py: Python<'_>, port: String, baudrate: u32, timeout: f64, write_timeout: Option<f64>) -> PyResult<Self> {
         let device = port.clone();
         match py.allow_threads(move || Serial::open_direct(&device, baudrate)) {
             Ok(port) => Ok(SerialPort { port, timeout, write_timeout }),
@@ -94,7 +94,11 @@ impl SerialPort {
     fn write(&self, py: Python<'_>, data: &Bound<'_, PyAny>) -> PyResult<usize> {
         let data = bytes_of(data)?;
         let timeout = self.write_timeout;
-        py.allow_threads(|| self.port.write_timeout(&data, timeout)).map_err(|e| PyOSError::new_err(e.to_string()))
+        py.allow_threads(|| match timeout {
+            Some(t) => self.port.write_timeout(&data, t),
+            None => self.port.write(&data),
+        })
+        .map_err(|e| PyOSError::new_err(e.to_string()))
     }
 
     fn reset_input_buffer(&self) -> PyResult<()> {

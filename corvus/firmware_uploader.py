@@ -33,12 +33,17 @@ import io
 import json
 import logging
 import os
+import sys
 import threading
-import time
+import time  # noqa: F401 - the engine reads the clock here
 import zipfile
 import zlib
+from types import SimpleNamespace
 from typing import Any, NamedTuple
 from collections.abc import Callable
+
+from corvus_link import flash as _flash
+from corvus_link import rtk as _rtk
 
 from .mavlink_bridge import MavlinkBridge
 from .serial_ports import is_windows_com_port
@@ -48,10 +53,9 @@ logger = logging.getLogger("corvus.firmware")
 # pyserial is a hard dependency (the serial port listing uses it), but import lazily with a
 # clear sentinel so the module imports cleanly even in environments where it is
 # temporarily unavailable (e.g. a unit test that monkeypatches the serial layer).
-try:  # pragma: no cover - import-time guard
-    import serial as _serial  # type: ignore[import-not-found]
-except ImportError:  # pragma: no cover
-    _serial = None  # type: ignore[assignment]
+# The serial port the uploader opens: corvus_link's own, straight at the
+# bootloader's baud rate. A test replaces this to hand in a fake port.
+_serial: Any = SimpleNamespace(Serial=_rtk.SerialPort)
 
 
 # ---------------------------------------------------------------------------
@@ -127,7 +131,7 @@ def _bl_crc32(data: bytes, state: int = 0) -> int:
     zlib's init cancels its pre-XOR, and XORing the result with 0xFFFFFFFF
     cancels its post-XOR, yielding exactly ``fold(data, state)``.
     """
-    return (zlib.crc32(data, state ^ 0xFFFFFFFF) ^ 0xFFFFFFFF) & 0xFFFFFFFF
+    return _flash.bl_crc32(data, state)
 
 
 class FirmwareImage(NamedTuple):
@@ -374,39 +378,15 @@ class FirmwareUploader:
         short read timeout so the cancel flag is re-checked every ~1 s even
         during a multi-second erase.
         """
-        deadline = time.monotonic() + timeout_s
-        buf = bytearray()
-        while len(buf) < n:
-            if self._cancel.is_set():
-                return None
-            if time.monotonic() >= deadline:
-                break
-            try:
-                chunk = self._serial.read(n - len(buf))
-            except Exception:  # noqa: BLE001 - port closed/errored -> treat as timeout
-                return None
-            if chunk:
-                buf.extend(chunk)
-        return bytes(buf) if len(buf) == n else None
+        return _flash_engine.recv_exact(self, n, timeout_s)
 
     def _expect_insync_ok(self, timeout_s: float) -> bool:
         """Read a 2-byte ``INSYNC <status>`` reply and return True on OK."""
-        b = self._recv_exact(2, timeout_s)
-        if b is None or len(b) < 2:
-            return False
-        if b[0] != INSYNC:
-            return False
-        if b[1] == BAD_SILICON:
-            logger.error("bootloader reports bad silicon (F4 < Rev 3)")
-            return False
-        return b[1] == OK
+        return _flash_engine.expect_insync_ok(self, timeout_s)
 
     def _drain(self) -> None:
         """Discard any pending input so the next command starts in sync."""
-        try:
-            self._serial.reset_input_buffer()
-        except Exception:  # noqa: BLE001 - best-effort
-            pass
+        _flash_engine.drain(self)
 
     # ------------------------------------------------------------------
     # Protocol steps
@@ -438,40 +418,11 @@ class FirmwareUploader:
 
     def _open_device(self, device: str) -> bool:
         """Poll for the device then open it, retrying on transient busy."""
-        if _serial is None:
-            raise RuntimeError("pyserial is not available; cannot open the bootloader device")
-        deadline = time.monotonic() + self._connect_timeout_s
-        while time.monotonic() < deadline and not self._cancel.is_set():
-            if self._device_present(device):
-                for _ in range(5):  # device may be transiently busy right after re-enumeration
-                    if self._cancel.is_set():
-                        return False
-                    try:
-                        self._serial = _serial.Serial(
-                            device, baudrate=self._baud, timeout=READ_TIMEOUT_S,
-                        )
-                        return True
-                    except Exception:
-                        time.sleep(0.2)
-                return False  # present but could not be opened
-            time.sleep(0.1)
-        return False
+        return _flash_engine.open_device(self, device)
 
     def _sync(self) -> bool:
         """Establish sync with the bootloader (GETSYNC, retried a few times)."""
-        for _ in range(5):
-            if self._cancel.is_set():
-                return False
-            self._drain()
-            try:
-                self._serial.write(bytes([GET_SYNC, EOC]))
-                self._serial.flush()
-            except Exception:  # noqa: BLE001
-                return False
-            if self._expect_insync_ok(timeout_s=1.0):
-                return True
-            time.sleep(0.1)
-        return False
+        return _flash_engine.sync(self)
 
     def _get_device_info(self, info_id: int) -> int | None:
         """One GET_DEVICE query: the 4-byte value, or None when not answered.
@@ -479,16 +430,7 @@ class FirmwareUploader:
         A refused, short or missing reply drains the input so its leftovers
         cannot be read as the answer to the next command.
         """
-        try:
-            self._serial.write(bytes([GET_DEVICE, info_id, EOC]))
-            self._serial.flush()
-            raw = self._recv_exact(4, timeout_s=INFO_TIMEOUT_S)
-            if raw is not None and self._expect_insync_ok(timeout_s=1.0):
-                return int.from_bytes(raw, "little")
-        except Exception:  # noqa: BLE001 - best-effort
-            pass
-        self._drain()
-        return None
+        return _flash_engine.get_device_info(self, info_id)
 
     def _identify_best_effort(self) -> None:
         """Fetch board info for the board check and the verify CRC.
@@ -499,28 +441,7 @@ class FirmwareUploader:
         are swallowed and the input buffer is drained afterwards so a partial
         reply cannot desync the subsequent CHIP_ERASE.
         """
-        board_id = self._get_device_info(INFO_BOARD_ID)
-        if board_id is None:
-            logger.warning("bootloader did not report a board id; board check skipped")
-        else:
-            self._board_id = board_id
-            logger.info("bootloader board id: %d", board_id)
-        size = self._get_device_info(INFO_FLASH_SIZE)
-        if size is not None:
-            if 0 < size <= MAX_BOOTLOADER_FLASH_BYTES:
-                self._fw_maxsize = size
-            else:
-                logger.error("bootloader reported invalid flash size: %d", size)
-        try:
-            self._serial.write(bytes([GET_CHIP, EOC]))
-            self._serial.flush()
-            chip = self._recv_exact(4, timeout_s=1.0)
-            if chip is not None:
-                self._recv_exact(2, timeout_s=0.5)  # INSYNC OK
-                logger.info("bootloader chip id: %s", chip.hex())
-        except Exception:  # noqa: BLE001 - best-effort
-            pass
-        self._drain()
+        _flash_engine.identify_best_effort(self)
 
     def _board_refusal(self) -> str | None:
         """Operator message when the image is for another board, else None.
@@ -529,71 +450,19 @@ class FirmwareUploader:
         and drives the wrong pins, so the bootloader's own id is the only
         reliable answer. Unknown on either side keeps the old behaviour.
         """
-        board, wanted = self._board_id, self._image_board_id
-        if board is None or wanted is None:
-            return None
-        if board_ids_compatible(board, wanted):
-            if board != wanted:
-                logger.info("board id %d accepts firmware for board id %d", board, wanted)
-            return None
-        logger.error("firmware board id %d does not match bootloader board id %d", wanted, board)
-        return (
-            f"This firmware is for board id {wanted}, but the connected bootloader "
-            f"reports board id {board}. Nothing was erased."
-        )
+        return _flash_engine.board_refusal(self)
 
     def _erase(self) -> bool:
         """Send CHIP_ERASE and wait (up to ERASE_TIMEOUT_S) for INSYNC OK."""
-        try:
-            self._serial.write(bytes([CHIP_ERASE, EOC]))
-            self._serial.flush()
-        except Exception:  # noqa: BLE001
-            return False
-        # Erase blocks for several seconds; the bootloader sends nothing until
-        # done, then a single INSYNC <status> pair.
-        return self._expect_insync_ok(timeout_s=ERASE_TIMEOUT_S)
+        return _flash_engine.erase(self)
 
     def _program(self, image: bytes) -> bool:
         """Stream the image in PROG_MULTI blocks, checking cancel between each."""
-        total = len(image)
-        offset = 0
-        last_pct = -1
-        while offset < total:
-            if self._cancel.is_set():
-                self._set("cancelled", self._percent, "Flash cancelled")
-                return False
-            block = image[offset:offset + PROG_MULTI_MAX]
-            count = len(block)
-            try:
-                self._serial.write(bytes([PROG_MULTI, count]) + block + bytes([EOC]))
-                self._serial.flush()
-            except Exception:  # noqa: BLE001
-                self._set("failed", self._percent, f"program failed at offset {offset}")
-                return False
-            if not self._expect_insync_ok(timeout_s=5.0):
-                if self._cancel.is_set():
-                    self._set("cancelled", self._percent, "Flash cancelled")
-                else:
-                    self._set("failed", self._percent, f"program failed at offset {offset}")
-                return False
-            offset += count
-            pct = round(100 * offset / total) if total else 100
-            if pct != last_pct:
-                last_pct = pct
-                self._set("programming", pct, f"Programming… {pct}%")
-        return True
+        return _flash_engine.program(self, image)
 
     def _compute_expected_crc(self, image: bytes) -> int:
         """Bootloader CRC over the image padded with 0xFF to fw_maxsize."""
-        state = _bl_crc32(image, 0)
-        if self._fw_maxsize is not None and self._fw_maxsize > len(image):
-            remaining = self._fw_maxsize - len(image)
-            padding = b"\xff" * 65536
-            while remaining:
-                chunk = padding[:min(remaining, len(padding))]
-                state = _bl_crc32(chunk, state)
-                remaining -= len(chunk)
-        return state & 0xFFFFFFFF
+        return _flash_engine.compute_expected_crc(self, image)
 
     def _verify(self, image: bytes) -> bool | None:
         """Compare the bootloader's flash CRC to the expected value.
@@ -604,113 +473,18 @@ class FirmwareUploader:
         ``<crc:4 LE> INSYNC OK``
         (data first, then the status pair) per ``bl.c`` PROTO_GET_CRC.
         """
-        try:
-            self._serial.write(bytes([GET_CRC, EOC]))
-            self._serial.flush()
-        except Exception:  # noqa: BLE001
-            return None
-        crc_bytes = self._recv_exact(4, timeout_s=5.0)
-        if crc_bytes is None:
-            logger.warning("bootloader did not return a CRC; skipping verify")
-            return None
-        if not self._expect_insync_ok(timeout_s=2.0):
-            logger.warning("GET_CRC missing INSYNC/OK; skipping verify")
-            return None
-        if self._fw_maxsize is None or self._fw_maxsize <= 0:
-            logger.warning("board fw_maxsize unknown; skipping CRC verify")
-            return None
-        reported = int.from_bytes(crc_bytes, "little")
-        expected = self._compute_expected_crc(image)
-        if reported == expected:
-            return True
-        logger.error("firmware CRC mismatch: got 0x%08x expected 0x%08x", reported, expected)
-        return False
+        return _flash_engine.verify(self, image)
 
     def _reboot(self) -> bool:
         """Send REBOOT and report whether the command reached the serial link."""
-        try:
-            self._serial.write(bytes([REBOOT, EOC]))
-            self._serial.flush()
-        except Exception:  # noqa: BLE001
-            return False
-        # bl.c sends sync_response() before jumping to the app, so the pair
-        # usually arrives — but the board resets immediately after, so a read
-        # timeout is normal and tolerated.
-        self._expect_insync_ok(timeout_s=2.0)
-        return True
+        return _flash_engine.reboot(self)
 
     # ------------------------------------------------------------------
     # Orchestrator
     # ------------------------------------------------------------------
 
     def _run(self, device: str, image: bytes) -> bool:
-        if self._cancel.is_set():
-            self._set("cancelled", 0, "Flash cancelled")
-            return False
+        return _flash_engine.run(self, device, image)
 
-        self._set("connecting", 0, f"Waiting for bootloader on {device}…")
-        if not self._open_device(device):
-            if self._cancel.is_set():
-                self._set("cancelled", 0, "Flash cancelled")
-            else:
-                self._set("failed", 0, f"bootloader device not available: {device}")
-            return False
 
-        self._set("syncing", 0, "Synchronising with bootloader…")
-        if not self._sync():
-            self._set("failed", 0, "bootloader sync failed")
-            return False
-
-        self._identify_best_effort()
-
-        refusal = self._board_refusal()
-        if refusal:
-            self._set("failed", 0, refusal)
-            return False
-
-        if self._fw_maxsize is None:
-            self._set("failed", 0, "could not determine bootloader flash size")
-            return False
-        if len(image) > self._fw_maxsize:
-            self._set(
-                "failed", 0,
-                f"firmware image ({len(image)} bytes) exceeds board flash limit "
-                f"({self._fw_maxsize} bytes)",
-            )
-            return False
-
-        if self._cancel.is_set():
-            self._set("cancelled", 0, "Flash cancelled")
-            return False
-        self._set("erasing", 0, "Erasing…")
-        if not self._erase():
-            if self._cancel.is_set():
-                self._set("cancelled", 0, "Flash cancelled")
-            else:
-                self._set("failed", 0, "erase failed")
-            return False
-
-        self._set("programming", 0, "Programming…")
-        if not self._program(image):
-            return False  # _program already set cancelled/failed (no RESET sent)
-
-        self._set("verifying", self._percent, "Verifying…")
-        verify = self._verify(image)
-        if verify is not True:
-            message = (
-                "firmware CRC mismatch, not booting" if verify is False
-                else "firmware CRC verification unavailable, not booting"
-            )
-            self._set("failed", self._percent, message)
-            return False
-
-        if self._cancel.is_set():
-            self._set("cancelled", self._percent, "Flash cancelled")
-            return False
-
-        self._set("booting", 100, "Booting new firmware…")
-        if not self._reboot():
-            self._set("failed", self._percent, "bootloader reboot command failed")
-            return False
-        self._set("done", 100, "Firmware flashed successfully")
-        return True
+_flash_engine = _flash.UploaderEngine(sys.modules[__name__])

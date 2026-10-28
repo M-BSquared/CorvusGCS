@@ -25,13 +25,16 @@ skipped and that port is flashed directly. Everything else is unchanged.
 from __future__ import annotations
 
 import logging
+import sys
 import threading
 from typing import Any, TYPE_CHECKING
 from collections.abc import Callable
 
+from corvus_link import flash as _flash
+
 from .firmware_catalog import FirmwareCatalog
-from .firmware_uploader import FirmwareUploader, parse_firmware_image
-from .serial_ports import is_bootloader_port
+from .firmware_uploader import FirmwareUploader, parse_firmware_image  # noqa: F401 - read by the Rust engine
+from .serial_ports import is_bootloader_port  # noqa: F401 - read by the Rust engine
 
 if TYPE_CHECKING:  # avoid an import cycle at runtime
     from .mavlink_bridge import MavlinkBridge
@@ -93,20 +96,7 @@ class FlashService:
 
     def bootloader_ports(self) -> list[dict[str, Any]]:
         """Serial ports whose descriptor says "flight controller in its bootloader"."""
-        lister = self._list_ports or getattr(self.mavlink, "list_serial_ports", None)
-        if lister is None:
-            return []
-        try:
-            rows = lister() or []
-        except Exception:  # noqa: BLE001 - enumeration is best-effort
-            logger.debug("bootloader port enumeration failed", exc_info=True)
-            return []
-        return [
-            row for row in rows
-            if is_bootloader_port(str(row.get("device", "") or ""),
-                                  str(row.get("hwid", "") or ""),
-                                  str(row.get("description", "") or ""))
-        ]
+        return _engine.bootloader_ports(self)
 
     def bootloader_device(self) -> str:
         """The one bootloader port that may be flashed without a link, or "".
@@ -116,12 +106,7 @@ class FlashService:
         only when there is exactly one: with two boards waiting, guessing is
         how the wrong one gets erased.
         """
-        if self._store.get_snapshot().get("connected"):
-            return ""
-        ports = self.bootloader_ports()
-        if len(ports) != 1:
-            return ""
-        return str(ports[0].get("device", "") or "")
+        return _engine.bootloader_device(self)
 
     # ------------------------------------------------------------------
     # Status (HTTP GET /api/firmware/status)
@@ -164,17 +149,7 @@ class FlashService:
         exactly the same terms as a direct upload — the gate is a safety
         property, not a per-endpoint detail.
         """
-        if self.mavlink is None:
-            return "no autopilot connection"
-        if not self.bootloader_device():
-            if not self.mavlink.is_direct_usb():
-                return NON_USB_GATE_MESSAGE.format(transport=self.mavlink.transport())
-            if self._store.get_snapshot().get("armed"):
-                return "cannot flash while armed"
-        with self._lock:
-            if self._state in BUSY_STATES:
-                return "flash already in progress"
-        return None
+        return _engine.gate(self)
 
     def start(self, firmware_bytes: bytes) -> bool:
         """Synchronous gate check, then spawn the worker. Returns False on refusal.
@@ -183,39 +158,7 @@ class FlashService:
         exact reason. Firmware is parsed here (in the calling thread) so a bad
         archive yields a 409 immediately, not a mid-flash failure.
         """
-        refusal = self._gate()
-        if refusal:
-            self.last_error = refusal
-            return False
-        # Parse now so an invalid archive is rejected before we reboot the FC.
-        try:
-            image, board_id = parse_firmware_image(firmware_bytes)
-        except ValueError as exc:
-            self.last_error = str(exc)
-            return False
-        if not image:
-            self.last_error = "empty firmware image"
-            return False
-        with self._lock:
-            if self._shutting_down:
-                self.last_error = "flash service is shutting down"
-                return False
-            if self._state in BUSY_STATES:
-                self.last_error = "flash already in progress"
-                return False
-            conn = self.mavlink.connection_string()
-            bootloader = self.bootloader_device()
-            self._cancel.clear()
-            self._state = "flashing"
-            self._percent = 0
-            self._message = "Preparing to flash…"
-            self._worker = threading.Thread(
-                target=self._run, args=(conn, image, board_id, bootloader), name="firmware-flash",
-                daemon=True,
-            )
-            self._worker.start()
-        self._notify_listeners({"state": "flashing", "percent": 0, "message": "Preparing to flash…"})
-        return True
+        return _engine.start(self, firmware_bytes)
 
     def start_release(self, release_tag: str, board_name: str) -> bool:
         """Download one catalogue image, then flash it. False on refusal.
@@ -229,78 +172,11 @@ class FlashService:
         because a download that finished into a vehicle that has since armed
         must not flash. The gate is therefore re-checked after the download.
         """
-        if self.catalog is None:
-            self.last_error = "firmware catalogue unavailable"
-            return False
-        refusal = self._gate()
-        if refusal:
-            self.last_error = refusal
-            return False
-        entry = self.catalog.resolve(release_tag, board_name)
-        if entry is None:
-            self.last_error = "unknown firmware release or board"
-            return False
-        message = f"Downloading {entry.get('name', '')}…"
-        with self._lock:
-            if self._shutting_down:
-                self.last_error = "flash service is shutting down"
-                return False
-            if self._state in BUSY_STATES:
-                self.last_error = "flash already in progress"
-                return False
-            conn = self.mavlink.connection_string()
-            bootloader = self.bootloader_device()
-            self._cancel.clear()
-            self._state = "downloading"
-            self._percent = 0
-            self._message = message
-            self._worker = threading.Thread(
-                target=self._run_release, args=(conn, entry, bootloader),
-                name="firmware-download", daemon=True,
-            )
-            self._worker.start()
-        self._notify_listeners({"state": "downloading", "percent": 0, "message": message})
-        return True
+        return _engine.start_release(self, release_tag, board_name)
 
     def _run_release(self, conn: str, entry: dict[str, Any], bootloader: str = "") -> None:
         """Download worker: fetch (or reuse the cache), then hand off to _run."""
-        name = str(entry.get("name", ""))
-        try:
-            cached = self.catalog.cached_path(name) is not None
-            if cached:
-                self._set("downloading", 100, f"Using cached {name}")
-
-            def on_progress(done: int, total: int) -> None:
-                percent = int(done * 100 / total) if total > 0 else 0
-                self._set("downloading", min(99, percent),
-                          f"Downloading {name}: {done // 1024} KB")
-
-            raw = self.catalog.download(
-                entry, on_progress=None if cached else on_progress, cancel=self._cancel,
-            )
-            if self._cancel.is_set():
-                self._set("cancelled", 0, "Download cancelled")
-                return
-            image, board_id = parse_firmware_image(raw)
-            if not image:
-                self._set("failed", 0, "empty firmware image")
-                return
-        except ValueError as exc:
-            self._set("failed", 0, str(exc))
-            return
-        except Exception:  # noqa: BLE001 - the worker must never propagate
-            logger.exception("firmware download worker crashed")
-            self._set("failed", 0, "firmware download failed unexpectedly")
-            return
-
-        # Re-check the gate: the download took time, and the vehicle may have
-        # armed or the cable may have been pulled since the operator pressed go.
-        refusal = self._gate_for_resume(bootloader)
-        if refusal:
-            self._set("failed", 0, refusal)
-            return
-        self._set("flashing", 0, "Preparing to flash…")
-        self._run(conn, image, board_id, bootloader)
+        _engine.run_release(self, conn, entry, bootloader)
 
     def _gate_for_resume(self, bootloader: str = "") -> str | None:
         """The gate, minus the busy check — this job IS the busy one.
@@ -308,17 +184,7 @@ class FlashService:
         A flash that started on a board in its bootloader resumes only while
         that same board is still the one waiting there.
         """
-        if self.mavlink is None:
-            return "no autopilot connection"
-        if bootloader:
-            if self.bootloader_device() != bootloader:
-                return "the controller left its bootloader"
-            return None
-        if not self.mavlink.is_direct_usb():
-            return NON_USB_GATE_MESSAGE.format(transport=self.mavlink.transport())
-        if self._store.get_snapshot().get("armed"):
-            return "cannot flash while armed"
-        return None
+        return _engine.gate_for_resume(self, bootloader)
 
     # ------------------------------------------------------------------
     # Worker
@@ -334,47 +200,7 @@ class FlashService:
         there is nothing to reboot, so the reboot is skipped and that port is
         flashed.
         """
-        uploader: FirmwareUploader | None = None
-        try:
-            if bootloader:
-                self._set("flashing", 0, "Controller found in its bootloader…")
-            else:
-                self._set("flashing", 0, "Rebooting autopilot into bootloader…")
-                if not self.mavlink.reboot_to_bootloader():
-                    self._set("failed", 0, "Reboot to bootloader rejected. Is the vehicle armed?")
-                    return
-            # Release the bridge so the uploader can own the serial device.
-            try:
-                self.mavlink.stop()
-            except Exception:  # noqa: BLE001 - bridge may already be tearing down
-                logger.debug("mavlink.stop() during flash raised", exc_info=True)
-            device = bootloader or self.mavlink.serial_device()
-            if not device:
-                self._set("failed", 0, "no serial device for bootloader")
-                return
-            uploader = FirmwareUploader(on_progress=self._on_uploader_progress, cancel=self._cancel)
-            with self._lock:
-                self._uploader = uploader
-            ok = uploader.run(device, image, board_id=board_id)
-            if self._cancel.is_set():
-                self._set("cancelled", self._percent, "Flash cancelled")
-            elif ok:
-                self._set("done", 100, "Firmware flashed successfully")
-            else:
-                self._set("failed", self._percent, self._message or "flash failed")
-        except Exception:  # noqa: BLE001 - the worker must never propagate
-            logger.exception("firmware flash worker crashed")
-            self._set("failed", self._percent, "flash failed unexpectedly")
-        finally:
-            if uploader is not None:
-                try:
-                    uploader.shutdown()
-                except Exception:  # noqa: BLE001
-                    pass
-                with self._lock:
-                    if self._uploader is uploader:
-                        self._uploader = None
-            self._reconnect(conn)
+        _engine.run(self, conn, image, board_id, bootloader)
 
     def _reconnect(self, conn: str) -> None:
         """Restart the MAVLink bridge so the GCS reconnects to the flashed FC.
@@ -382,13 +208,7 @@ class FlashService:
         Skipped during shutdown (the bridge is being torn down anyway; respawning
         it would race the stop sequence).
         """
-        if self._shutting_down or not conn or self.mavlink is None:
-            return
-        try:
-            self.mavlink.set_connection(conn)
-            self.mavlink.start()
-        except Exception:  # noqa: BLE001 - best-effort reconnect
-            logger.debug("mavlink reconnect after flash failed", exc_info=True)
+        _engine.reconnect(self, conn)
 
     # ------------------------------------------------------------------
     # Cancel / shutdown
@@ -396,32 +216,11 @@ class FlashService:
 
     def cancel(self) -> bool:
         """Cancel a running download or flash. False when nothing is running."""
-        with self._lock:
-            if self._state not in BUSY_STATES:
-                return False
-        self._cancel.set()
-        return True
+        return _engine.cancel(self)
 
     def shutdown(self) -> None:
         """Idempotent teardown: cancel the worker, join it, reset state. Never raises."""
-        with self._lock:
-            self._shutting_down = True
-            self._cancel.set()
-            uploader = self._uploader
-            worker = self._worker
-        if uploader is not None:
-            try:
-                uploader.shutdown()
-            except Exception:  # noqa: BLE001
-                pass
-        if worker is not None:
-            try:
-                worker.join(timeout=3.0)
-            except Exception:  # noqa: BLE001
-                pass
-            self._worker = None
-        with self._lock:
-            self._state = "idle"
+        _engine.shutdown(self)
 
     # ------------------------------------------------------------------
     # Listeners (SSE fan-out)
@@ -471,3 +270,6 @@ class FlashService:
             "percent": percent,
             "message": message,
         })
+
+
+_engine = _flash.FlashEngine(sys.modules[__name__])
