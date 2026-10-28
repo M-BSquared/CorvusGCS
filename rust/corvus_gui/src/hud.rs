@@ -211,13 +211,16 @@ impl Hud {
             Pos2::new(rect.left() + PAD + 3.0, grid_top),
             Pos2::new(rect.right() - PAD - 3.0, rect.bottom() - PAD - 3.0),
         );
-        painter.rect(
-            grid,
-            style::RADIUS_BTN,
-            style::border_soft(),
-            Stroke::new(1.0, style::border_soft()),
-            egui::StrokeKind::Inside,
-        );
+        {
+            let r = grid;
+            painter.rect_filled(r, style::RADIUS_BTN, style::border_soft());
+            painter.rect_stroke(
+                r,
+                style::RADIUS_BTN,
+                Stroke::new(1.0, style::border_soft()),
+                egui::StrokeKind::Inside,
+            );
+        }
         let inner = grid.shrink(1.0);
         let cw = (inner.width() - 1.0) / 2.0;
         let ch = cell_height(ui);

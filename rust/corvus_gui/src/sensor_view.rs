@@ -127,13 +127,16 @@ fn pick(
     if !armed {
         return kit::select(ui, rect, choices, current, "", false, title, id);
     }
-    ui.painter().rect(
-        rect,
-        style::RADIUS_BTN,
-        style::surface_2(),
-        Stroke::new(1.0, style::border()),
-        egui::StrokeKind::Inside,
-    );
+    {
+        let r = rect;
+        ui.painter().rect_filled(r, style::RADIUS_BTN, style::surface_2());
+        ui.painter().rect_stroke(
+            r,
+            style::RADIUS_BTN,
+            Stroke::new(1.0, style::border()),
+            egui::StrokeKind::Inside,
+        );
+    }
     let label = choices
         .iter()
         .find(|c| c.value == current)

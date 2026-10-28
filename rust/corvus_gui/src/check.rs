@@ -185,8 +185,8 @@ impl Check {
 pub fn card(ui: &egui::Ui, x: f32, y: f32, w: f32, check: &Summary) -> f32 {
     let painter = ui.painter().clone();
     let bg = painter.add(egui::Shape::Noop);
-    let (ix, iw) = (x + 18.0, w - 36.0);
-    let mut cy = pagekit::section_title(ui, ix, y + 18.0, iw, "Check result");
+    let (ix, iw) = (x + 19.0, w - 38.0);
+    let mut cy = pagekit::section_title(ui, ix, y + 19.0, iw, "Check result");
     let color = if check.cls == "ok" {
         style::healthy()
     } else {
@@ -254,7 +254,7 @@ pub fn card(ui: &egui::Ui, x: f32, y: f32, w: f32, check: &Summary) -> f32 {
             );
         }
     }
-    let rect = Rect::from_min_max(Pos2::new(x, y), Pos2::new(x + w, cy + 18.0));
+    let rect = Rect::from_min_max(Pos2::new(x, y), Pos2::new(x + w, cy + 19.0));
     painter.set(bg, egui::Shape::rect_filled(rect, style::RADIUS, style::glass(0.82)));
     painter.rect_stroke(
         rect,

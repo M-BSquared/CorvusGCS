@@ -418,13 +418,16 @@ impl LinkTab {
             + 2.0;
         let card = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, h));
         let painter = ui.painter().clone();
-        painter.rect(
-            card,
-            style::RADIUS,
-            style::surface_2(),
-            Stroke::new(1.0, style::border()),
-            egui::StrokeKind::Inside,
-        );
+        {
+            let r = card;
+            painter.rect_filled(r, style::RADIUS, style::surface_2());
+            painter.rect_stroke(
+                r,
+                style::RADIUS,
+                Stroke::new(1.0, style::border()),
+                egui::StrokeKind::Inside,
+            );
+        }
         let inner = card.shrink(13.0);
         let cy = inner.top() + row_h / 2.0;
         let dot_c = match dot {
@@ -617,13 +620,16 @@ impl LinkTab {
                 Pos2::new(inner_x, cy),
                 Vec2::new(iw, 3.0 * 2.0 + 2.0 + 6.0 * 2.0 + 11.0 * 1.21),
             );
-            painter.rect(
-                seg,
-                style::RADIUS_BTN,
-                style::glass(0.82),
-                Stroke::new(1.0, style::tint(0.09)),
-                egui::StrokeKind::Inside,
-            );
+            {
+                let r = seg;
+                painter.rect_filled(r, style::RADIUS_BTN, style::glass(0.82));
+                painter.rect_stroke(
+                    r,
+                    style::RADIUS_BTN,
+                    Stroke::new(1.0, style::tint(0.09)),
+                    egui::StrokeKind::Inside,
+                );
+            }
             let half = (seg.width() - 2.0 - 6.0 - 3.0) / 2.0;
             for (i, (icon, label, is_net)) in [("cable", "Serial", false), ("network", "UDP / TCP", true)]
                 .into_iter()
@@ -719,13 +725,11 @@ impl LinkTab {
                     } else {
                         (style::glass(0.82), style::tint(0.09))
                     };
-                    painter.rect(
-                        row,
-                        style::RADIUS_BTN,
-                        fill,
-                        Stroke::new(1.0, stroke),
-                        egui::StrokeKind::Inside,
-                    );
+                    {
+                        let r = row;
+                        painter.rect_filled(r, style::RADIUS_BTN, fill);
+                        painter.rect_stroke(r, style::RADIUS_BTN, Stroke::new(1.0, stroke), egui::StrokeKind::Inside);
+                    }
                     let ng = style::galley(
                         ui,
                         name,

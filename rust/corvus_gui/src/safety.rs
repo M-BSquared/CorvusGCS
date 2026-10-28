@@ -699,7 +699,7 @@ impl SafetyPage {
             sg,
             color,
         );
-        let mut y = bottom + 22.0;
+        let mut y = bottom + 26.0;
         if armed {
             let g = kit::wrapped_weight(
                 ui,
@@ -711,13 +711,15 @@ impl SafetyPage {
                 1.4,
             );
             let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, g.size().y + 24.0));
-            ui.painter().rect(
-                r,
-                style::RADIUS_BTN,
-                style::warning_dark(),
-                Stroke::new(1.0, style::warning()),
-                egui::StrokeKind::Inside,
-            );
+            {
+                ui.painter().rect_filled(r, style::RADIUS_BTN, style::warning_dark());
+                ui.painter().rect_stroke(
+                    r,
+                    style::RADIUS_BTN,
+                    Stroke::new(1.0, style::warning()),
+                    egui::StrokeKind::Inside,
+                );
+            }
             ui.painter().galley(r.min + Vec2::new(14.0, 12.0), g, style::warning());
             y = r.bottom() + 4.0;
         }
@@ -748,7 +750,7 @@ impl SafetyPage {
                 }
                 if s.id == "rtl" {
                     if let Some(f) = fence {
-                        order.push((Card::Section(f), form_weight(&doc.sections[f])));
+                        order.push((Card::Section(f), 14 + form_weight(&doc.sections[f])));
                         fence_placed = true;
                     }
                 }
@@ -756,7 +758,7 @@ impl SafetyPage {
                 order.push((Card::Section(i), weight));
             }
             if let (Some(f), false) = (fence, fence_placed) {
-                order.push((Card::Section(f), form_weight(&doc.sections[f])));
+                order.push((Card::Section(f), 14 + form_weight(&doc.sections[f])));
             }
             let sensors = doc.sections.iter().filter(|s| s.sensor.is_some()).count();
             if sensors > 0 {
@@ -810,20 +812,22 @@ impl SafetyPage {
     ) -> f32 {
         let painter = ui.painter().clone();
         let bg = painter.add(egui::Shape::Noop);
-        let (ix, iw) = (x + 18.0, w - 36.0);
-        let mut cy = y + 18.0;
+        let (ix, iw) = (x + 19.0, w - 38.0);
+        let mut cy = y + 19.0;
         match card {
             Card::Empty => {
                 cy = pagekit::section_title(ui, ix, cy, iw, "Safety & Sensors");
                 let g = kit::wrapped_weight(ui, "Connect to a vehicle to read its safety limits, failsafe actions and sensor configuration. The page shows only what the connected firmware actually reports.", 12.0, Weight::W400, style::text_2(), iw - 28.0, 1.55);
                 let r = Rect::from_min_size(Pos2::new(ix, cy - 2.0), Vec2::new(iw, g.size().y + 24.0));
-                painter.rect(
-                    r,
-                    style::RADIUS_BTN,
-                    style::surface_2(),
-                    Stroke::new(1.0, style::border_soft()),
-                    egui::StrokeKind::Inside,
-                );
+                {
+                    painter.rect_filled(r, style::RADIUS_BTN, style::surface_2());
+                    painter.rect_stroke(
+                        r,
+                        style::RADIUS_BTN,
+                        Stroke::new(1.0, style::border_soft()),
+                        egui::StrokeKind::Inside,
+                    );
+                }
                 painter.galley(r.min + Vec2::new(14.0, 12.0), g, style::text_2());
                 cy = r.bottom();
             }
@@ -969,7 +973,7 @@ impl SafetyPage {
                 cy = bottom;
             }
         }
-        let rect = Rect::from_min_max(Pos2::new(x, y), Pos2::new(x + w, cy + 18.0));
+        let rect = Rect::from_min_max(Pos2::new(x, y), Pos2::new(x + w, cy + 19.0));
         painter.set(bg, egui::Shape::rect_filled(rect, style::RADIUS, style::glass(0.82)));
         painter.rect_stroke(
             rect,
@@ -1077,13 +1081,10 @@ fn sensor_tile(ui: &mut egui::Ui, r: Rect, s: &Section) -> bool {
         (style::glass(0.82), style::tint(0.09))
     };
     let p = ui.painter().clone();
-    p.rect(
-        r,
-        style::RADIUS,
-        fill,
-        Stroke::new(1.0, stroke),
-        egui::StrokeKind::Inside,
-    );
+    {
+        p.rect_filled(r, style::RADIUS, fill);
+        p.rect_stroke(r, style::RADIUS, Stroke::new(1.0, stroke), egui::StrokeKind::Inside);
+    }
     let inner = r.shrink2(Vec2::new(16.0, 14.0));
     let icon_box = Rect::from_min_size(inner.min, Vec2::splat(34.0));
     p.rect_filled(icon_box, style::RADIUS_BTN, style::accent_dark());
@@ -1120,7 +1121,11 @@ fn sensor_tile(ui: &mut egui::Ui, r: Rect, s: &Section) -> bool {
         "on" | "partial" => (color.gamma_multiply(0.12), color.gamma_multiply(0.45)),
         _ => (egui::Color32::TRANSPARENT, style::border_soft()),
     };
-    p.rect(pill, 255, pf, Stroke::new(1.0, ps), egui::StrokeKind::Inside);
+    {
+        let r = pill;
+        p.rect_filled(r, 255, pf);
+        p.rect_stroke(r, 255, Stroke::new(1.0, ps), egui::StrokeKind::Inside);
+    }
     p.galley(pill.min + Vec2::new(7.0, 2.0), pg, color);
     if !sensor.detail.is_empty() {
         let dg = style::galley(ui, &sensor.detail, 11.0, Weight::W400, style::text_3(), 0.0);

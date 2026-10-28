@@ -630,7 +630,7 @@ impl MotorsPage {
             sg,
             color,
         );
-        let mut y = bottom + 22.0;
+        let mut y = bottom + 26.0;
         if armed {
             let g = kit::wrapped_weight(
                 ui,
@@ -642,13 +642,15 @@ impl MotorsPage {
                 1.4,
             );
             let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, g.size().y + 24.0));
-            ui.painter().rect(
-                r,
-                style::RADIUS_BTN,
-                style::warning_dark(),
-                Stroke::new(1.0, style::warning()),
-                egui::StrokeKind::Inside,
-            );
+            {
+                ui.painter().rect_filled(r, style::RADIUS_BTN, style::warning_dark());
+                ui.painter().rect_stroke(
+                    r,
+                    style::RADIUS_BTN,
+                    Stroke::new(1.0, style::warning()),
+                    egui::StrokeKind::Inside,
+                );
+            }
             ui.painter().galley(r.min + Vec2::new(14.0, 12.0), g, style::warning());
             y = r.bottom() + 4.0;
         }
@@ -697,25 +699,30 @@ impl MotorsPage {
 
     fn empty_card(&mut self, ui: &mut egui::Ui, x: f32, y: f32, w: f32) -> f32 {
         let painter = ui.painter().clone();
-        let (ix, iw) = (x + 18.0, w - 36.0);
-        let mut cy = pagekit::section_title(ui, ix, y + 18.0, iw, "Motors") - 2.0;
+        let (ix, iw) = (x + 19.0, w - 38.0);
+        let mut cy = pagekit::section_title(ui, ix, y + 19.0, iw, "Motors") - 2.0;
         let g = kit::wrapped_weight(ui, "Connect to a vehicle to read its motor configuration. The page shows only what the connected firmware actually reports.", 12.0, Weight::W400, style::text_2(), iw - 28.0, 1.55);
         let r = Rect::from_min_size(Pos2::new(ix, cy), Vec2::new(iw, g.size().y + 24.0));
-        let card = Rect::from_min_max(Pos2::new(x, y), Pos2::new(x + w, r.bottom() + 18.0));
-        painter.rect(
-            card,
-            style::RADIUS,
-            style::glass(0.82),
-            Stroke::new(1.0, style::tint(0.09)),
-            egui::StrokeKind::Inside,
-        );
-        painter.rect(
-            r,
-            style::RADIUS_BTN,
-            style::surface_2(),
-            Stroke::new(1.0, style::border_soft()),
-            egui::StrokeKind::Inside,
-        );
+        let card = Rect::from_min_max(Pos2::new(x, y), Pos2::new(x + w, r.bottom() + 19.0));
+        {
+            let r = card;
+            painter.rect_filled(r, style::RADIUS, style::glass(0.82));
+            painter.rect_stroke(
+                r,
+                style::RADIUS,
+                Stroke::new(1.0, style::tint(0.09)),
+                egui::StrokeKind::Inside,
+            );
+        }
+        {
+            painter.rect_filled(r, style::RADIUS_BTN, style::surface_2());
+            painter.rect_stroke(
+                r,
+                style::RADIUS_BTN,
+                Stroke::new(1.0, style::border_soft()),
+                egui::StrokeKind::Inside,
+            );
+        }
         painter.galley(r.min + Vec2::new(14.0, 12.0), g, style::text_2());
         cy = card.bottom();
         cy
@@ -734,8 +741,8 @@ impl MotorsPage {
     ) -> f32 {
         let painter = ui.painter().clone();
         let bg = painter.add(Shape::Noop);
-        let (ix, iw) = (x + 18.0, w - 36.0);
-        let mut cy = pagekit::section_title(ui, ix, y + 18.0, iw, "Airframe") - 2.0;
+        let (ix, iw) = (x + 19.0, w - 38.0);
+        let mut cy = pagekit::section_title(ui, ix, y + 19.0, iw, "Airframe") - 2.0;
         let sensors = &doc.sensors;
         let measured = motor_span(&doc.motors) >= MIN_SPAN_M;
         let span = if measured {
@@ -805,10 +812,10 @@ impl MotorsPage {
             );
             let gh = g.size().y;
             let gw = g.size().x;
-            painter.galley(Pos2::new(info_x, iy), g, style::text_3());
+            painter.galley(Pos2::new(info_x, iy + (16.0 - gh) / 2.0), g, style::text_3());
             crate::popover::info(
                 ui,
-                Pos2::new(info_x + gw + 4.0 + 8.0, iy + gh / 2.0),
+                Pos2::new(info_x + gw + 4.0 + 8.0, iy + 8.0),
                 "Airframe preset",
                 "The preset rewrites a whole configuration and needs a reboot, so it is changed in Parameters, not here.",
                 "presetinfo",
@@ -825,18 +832,18 @@ impl MotorsPage {
         painter.set(
             bg,
             Shape::rect_filled(
-                Rect::from_min_max(Pos2::new(x, y), Pos2::new(x + w, cy + 18.0)),
+                Rect::from_min_max(Pos2::new(x, y), Pos2::new(x + w, cy + 19.0)),
                 style::RADIUS,
                 style::glass(0.82),
             ),
         );
         painter.rect_stroke(
-            Rect::from_min_max(Pos2::new(x, y), Pos2::new(x + w, cy + 18.0)),
+            Rect::from_min_max(Pos2::new(x, y), Pos2::new(x + w, cy + 19.0)),
             style::RADIUS,
             Stroke::new(1.0, style::tint(0.09)),
             egui::StrokeKind::Inside,
         );
-        cy + 18.0
+        cy + 19.0
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -850,34 +857,67 @@ impl MotorsPage {
         w: f32,
         armed: bool,
     ) -> f32 {
-        // Label over control, side by side, wrapping.
+        // Label over control, side by side, wrapping (`.motors-geometry`): a
+        // label row 16 px tall when the label carries a hint icon, a 4 px
+        // gap, then the control; 8 px between rows, 14 between fields.
         let (mut cx, mut cy, mut row_h) = (x, y, 0.0f32);
+        let server = self.server.clone();
         for f in fields {
             let lg = style::galley(ui, &f.label.to_uppercase(), 10.0, Weight::W600, style::text_3(), 0.7);
-            let control_h: f32 = 2.0 + 12.0 + 12.0 * 1.21;
-            let widest = match &f.kind {
+            let hinted = !f.hint.is_empty();
+            let label_row_h = if hinted { 16.0 } else { lg.size().y };
+            let label_row_w = lg.size().x + if hinted { 6.0 + 16.0 } else { 0.0 };
+            let (control_w, control_h) = match &f.kind {
                 schema_form::Kind::Enum(o) | schema_form::Kind::Sign(o) => {
-                    o.iter()
-                        .map(|(_, l)| style::galley(ui, l, 12.0, Weight::W400, style::text_1(), 0.0).size().x)
-                        .fold(0.0, f32::max)
-                        + 33.0
+                    let current = o
+                        .iter()
+                        .find(|(v, _)| *v == f.value.round() as i64)
+                        .map_or(0.0, |(_, l)| {
+                            style::galley(ui, l, 12.0, Weight::W400, style::text_1(), 0.0).size().x
+                        });
+                    ((current + 9.0 + 26.0 + 2.0).clamp(130.0, 260.0), 29.0)
                 }
-                _ => 80.0,
+                _ => (80.0, 30.0),
             };
-            let cw = widest.max(lg.size().x);
+            let cw = control_w.max(label_row_w);
             if cx > x && cx + cw > x + w {
                 cx = x;
                 cy += row_h + 8.0;
                 row_h = 0.0;
             }
-            ui.painter().galley(Pos2::new(cx, cy), lg.clone(), style::text_3());
-            let top = cy + lg.size().y + 4.0;
-            let server = self.server.clone();
-            let end = self
-                .form
-                .control(ui, ctx, &server, f, Pos2::new(cx, top), cw, control_h, armed, true);
-            let _ = end;
-            row_h = row_h.max(lg.size().y + 4.0 + control_h);
+            ui.painter().galley(
+                Pos2::new(cx, cy + (label_row_h - lg.size().y) / 2.0),
+                lg.clone(),
+                style::text_3(),
+            );
+            if hinted {
+                crate::popover::info(
+                    ui,
+                    Pos2::new(cx + lg.size().x + 6.0 + 8.0, cy + 8.0),
+                    &f.label,
+                    &f.hint,
+                    ("geohint", &f.param),
+                );
+            }
+            let top = cy + label_row_h + 4.0;
+            let (sw, nw) = match &f.kind {
+                schema_form::Kind::Enum(_) | schema_form::Kind::Sign(_) => (Some(control_w), None),
+                _ => (None, Some(80.0)),
+            };
+            self.form.control_with(
+                ui,
+                ctx,
+                &server,
+                f,
+                Pos2::new(cx, top),
+                cw,
+                control_h,
+                armed,
+                false,
+                sw,
+                nw,
+            );
+            row_h = row_h.max(label_row_h + 4.0 + control_h);
             cx += cw + 14.0;
         }
         cy + row_h
@@ -998,25 +1038,30 @@ impl MotorsPage {
             }
             "rover" => {
                 let r = Rect::from_min_max(at(c - 52.0, c - 96.0), at(c + 52.0, c + 96.0));
-                painter.rect(
-                    r,
-                    18.0 * sc,
-                    style::surface_2(),
-                    Stroke::new(1.5 * sc, style::border()),
-                    egui::StrokeKind::Inside,
-                );
+                {
+                    painter.rect_filled(r, 18.0 * sc, style::surface_2());
+                    painter.rect_stroke(
+                        r,
+                        18.0 * sc,
+                        Stroke::new(1.5 * sc, style::border()),
+                        egui::StrokeKind::Inside,
+                    );
+                }
                 for (sx, sy) in [(-1.0, -1.0), (1.0, -1.0), (-1.0, 1.0), (1.0, 1.0)] {
                     let w = Rect::from_min_max(
                         at(c + sx * 68.0 - 11.0, c + sy * 62.0 - 22.0),
                         at(c + sx * 68.0 + 11.0, c + sy * 62.0 + 22.0),
                     );
-                    painter.rect(
-                        w,
-                        7.0 * sc,
-                        style::surface_3(),
-                        Stroke::new(1.5 * sc, style::border()),
-                        egui::StrokeKind::Inside,
-                    );
+                    {
+                        let r = w;
+                        painter.rect_filled(r, 7.0 * sc, style::surface_3());
+                        painter.rect_stroke(
+                            r,
+                            7.0 * sc,
+                            Stroke::new(1.5 * sc, style::border()),
+                            egui::StrokeKind::Inside,
+                        );
+                    }
                 }
             }
             "helicopter" => {
@@ -1049,13 +1094,15 @@ impl MotorsPage {
             let q = p(sensor_point(s, span, &doc.sensors));
             if s.kind == "fc" {
                 let r = Rect::from_center_size(q, Vec2::new(18.0, 12.0) * sc);
-                painter.rect(
-                    r,
-                    3.0 * sc,
-                    style::accent_dim(),
-                    Stroke::new(2.0 * sc, style::accent_bright()),
-                    egui::StrokeKind::Inside,
-                );
+                {
+                    painter.rect_filled(r, 3.0 * sc, style::accent_dim());
+                    painter.rect_stroke(
+                        r,
+                        3.0 * sc,
+                        Stroke::new(2.0 * sc, style::accent_bright()),
+                        egui::StrokeKind::Inside,
+                    );
+                }
                 let g = style::galley(ui, &s.tag, 10.0 * sc, Weight::W700, style::text_2(), 0.4 * sc);
                 painter.galley(
                     Pos2::new(q.x - 13.0 * sc - g.size().x, q.y - g.size().y / 2.0),
@@ -1190,31 +1237,33 @@ impl MotorsPage {
         );
         let mut cy = y + 1.0 + 8.0;
         let head = style::galley(ui, "Frame size", 11.5, Weight::W600, style::text_2(), 0.0);
-        let hh = head.size().y;
         let hw = head.size().x;
-        painter.galley(Pos2::new(x, cy), head, style::text_2());
+        painter.galley(Pos2::new(x, cy + (16.0 - head.size().y) / 2.0), head, style::text_2());
         if frame.adjustable && !frame.hint.is_empty() {
             crate::popover::info(
                 ui,
-                Pos2::new(x + hw + 5.0 + 8.0, cy + hh / 2.0),
+                Pos2::new(x + hw + 6.0 + 8.0, cy + 8.0),
                 "Frame size",
                 &frame.hint,
                 "framehint",
             );
         }
-        cy += hh.max(16.0) + 6.0;
+        cy += 16.0 + 6.0;
         if !frame.adjustable {
             let g = kit::wrapped_weight(ui, &frame.note, 10.5, Weight::W400, style::text_3(), w, 1.4);
             painter.galley(Pos2::new(x, cy), g.clone(), style::text_3());
             return cy + g.size().y;
         }
         let mut dx = x;
-        let field_h: f32 = 2.0 + 12.0 + 12.0 * 1.21;
+        let field_h: f32 = 30.0;
         let row_top = cy;
         let mut row_bottom = cy;
         for (key, label, value) in &frame.dims {
-            let lg = style::galley(ui, label, 11.0, Weight::W400, style::text_2(), 0.0);
-            let block_w = lg.size().x.max(76.0 + 5.0 + 8.0);
+            let lg = style::galley(ui, &label.to_uppercase(), 10.0, Weight::W600, style::text_3(), 0.7);
+            let unit_w = style::galley(ui, "m", 11.0, Weight::W400, style::text_3(), 0.0)
+                .size()
+                .x;
+            let block_w = lg.size().x.max(76.0 + 5.0 + unit_w);
             if dx > x && dx + block_w > x + w {
                 dx = x;
                 row_bottom += 8.0;
@@ -1224,28 +1273,30 @@ impl MotorsPage {
             } else {
                 row_top
             };
-            painter.galley(Pos2::new(dx, top), lg.clone(), style::text_2());
-            let r = Rect::from_min_size(Pos2::new(dx, top + lg.size().y + 4.0), Vec2::new(76.0, field_h));
+            painter.galley(Pos2::new(dx, top), lg.clone(), style::text_3());
+            let r = Rect::from_min_size(Pos2::new(dx, top + lg.size().y + 5.0), Vec2::new(76.0, field_h));
             let mut text = self
                 .frame_text
                 .get(*key)
                 .cloned()
                 .unwrap_or_else(|| schema_form::format_number(*value));
             if armed {
-                painter.rect(
-                    r,
-                    style::RADIUS_BTN,
-                    style::surface_2(),
-                    Stroke::new(1.0, style::border()),
-                    egui::StrokeKind::Inside,
-                );
+                {
+                    painter.rect_filled(r, style::RADIUS_BTN, style::surface_2());
+                    painter.rect_stroke(
+                        r,
+                        style::RADIUS_BTN,
+                        Stroke::new(1.0, style::border()),
+                        egui::StrokeKind::Inside,
+                    );
+                }
                 painter.galley(
                     Pos2::new(r.left() + 8.0, r.center().y - 8.0),
                     style::galley_mono(ui, &text, 12.0, style::text_3()),
                     style::text_3(),
                 );
             } else {
-                let resp = kit::text_field(ui, r, &mut text, "", true, ("frame", *key));
+                let resp = kit::text_field_padded(ui, r, &mut text, "", true, ("frame", *key), 9.0);
                 if resp.changed() {
                     self.frame_text.insert((*key).to_string(), text.clone());
                     self.frame_status = ("", String::new());
@@ -1255,7 +1306,7 @@ impl MotorsPage {
                 }
             }
             painter.galley(
-                Pos2::new(r.right() + 5.0, r.center().y - 7.0),
+                Pos2::new(r.right() + 5.0, r.center().y - 7.5),
                 style::galley(ui, "m", 11.0, Weight::W400, style::text_3(), 0.0),
                 style::text_3(),
             );
@@ -1337,18 +1388,18 @@ impl MotorsPage {
             style::text_2(),
             0.0,
         );
-        let (hh, hw) = (head.size().y, head.size().x);
-        painter.galley(Pos2::new(x, cy), head, style::text_2());
+        let hw = head.size().x;
+        painter.galley(Pos2::new(x, cy + (16.0 - head.size().y) / 2.0), head, style::text_2());
         if !doc.position_hint.is_empty() {
             crate::popover::info(
                 ui,
-                Pos2::new(x + hw + 5.0 + 8.0, cy + hh / 2.0),
+                Pos2::new(x + hw + 6.0 + 8.0, cy + 8.0),
                 "Flight controller and GPS",
                 &doc.position_hint,
                 "sensorhint",
             );
         }
-        cy += hh.max(16.0) + 6.0;
+        cy += 16.0 + 6.0;
         let mut cols: Vec<(String, String)> = Vec::new();
         for s in &doc.sensors {
             for f in &s.fields {
@@ -1357,17 +1408,21 @@ impl MotorsPage {
                 }
             }
         }
+        // `.motors-sensor-name`: 12 px medium, the hint icon after it, 14 px
+        // of room to its right
         let name_w = doc
             .sensors
             .iter()
             .map(|s| {
-                style::galley(ui, &s.label, 12.0, Weight::W600, style::text_1(), 0.0)
+                style::galley(ui, &s.label, 12.0, Weight::W500, style::text_1(), 0.0)
                     .size()
                     .x
+                    + if s.hint.is_empty() { 0.0 } else { 6.0 + 16.0 }
+                    + 14.0
             })
-            .fold(0.0, f32::max)
-            + 8.0;
+            .fold(0.0, f32::max);
         let col_w = 76.0;
+        let table_w = name_w + col_w * cols.len() as f32;
         let mut hx = x + name_w;
         for (label, unit) in &cols {
             let text = if unit.is_empty() {
@@ -1380,23 +1435,28 @@ impl MotorsPage {
                 .galley(Pos2::new(hx + 4.0, cy), g, style::text_3());
             hx += col_w;
         }
-        cy += 16.0;
+        cy += 18.5;
         painter.hline(
-            egui::Rangef::new(x, hx.min(x + w)),
-            cy + 0.5,
+            egui::Rangef::new(x, x + table_w.min(w)),
+            cy - 0.5,
             Stroke::new(1.0, style::border_soft()),
         );
-        cy += 1.0;
-        let field_h: f32 = 2.0 + 10.0 + 12.0 * 1.21;
+        let field_h: f32 = 28.0;
         let server = self.server.clone();
-        for s in &doc.sensors {
-            let row_h = field_h + 8.0;
-            let g = style::galley(ui, &s.label, 12.0, Weight::W600, style::text_1(), 0.0);
-            painter.galley(Pos2::new(x + 4.0, cy + (row_h - g.size().y) / 2.0), g, style::text_1());
+        let last = doc.sensors.len().saturating_sub(1);
+        for (si, s) in doc.sensors.iter().enumerate() {
+            let row_h = 4.0 + field_h + 4.0 + 1.0;
+            let g = style::galley(ui, &s.label, 12.0, Weight::W500, style::text_1(), 0.0);
+            let mid = cy + 4.0 + field_h / 2.0;
+            painter.galley(Pos2::new(x, mid - g.size().y / 2.0), g.clone(), style::text_1());
             if !s.hint.is_empty() {
-                let hr = Rect::from_min_size(Pos2::new(x, cy), Vec2::new(name_w, row_h));
-                ui.interact(hr, ui.scope_id().with(("sh", &s.label)), egui::Sense::hover())
-                    .on_hover_text(s.hint.as_str());
+                crate::popover::info(
+                    ui,
+                    Pos2::new(x + g.size().x + 6.0 + 8.0, mid),
+                    &s.label,
+                    &s.hint,
+                    ("sensorrowhint", &s.label),
+                );
             }
             let mut cx = x + name_w;
             for (label, _) in &cols {
@@ -1415,7 +1475,7 @@ impl MotorsPage {
                 } else {
                     let d = style::galley(ui, "\u{2014}", 12.0, Weight::W400, style::text_3(), 0.0);
                     painter.galley(
-                        Pos2::new(cx + col_w / 2.0 - d.size().x / 2.0, cy + (row_h - d.size().y) / 2.0),
+                        Pos2::new(cx + col_w / 2.0 - d.size().x / 2.0, mid - d.size().y / 2.0),
                         d,
                         style::text_3(),
                     );
@@ -1423,11 +1483,13 @@ impl MotorsPage {
                 cx += col_w;
             }
             cy += row_h;
-            painter.hline(
-                egui::Rangef::new(x, hx.min(x + w)),
-                cy - 0.5,
-                Stroke::new(1.0, style::border_soft()),
-            );
+            if si < last {
+                painter.hline(
+                    egui::Rangef::new(x, x + table_w.min(w)),
+                    cy - 0.5,
+                    Stroke::new(1.0, style::border_soft()),
+                );
+            }
         }
         cy
     }
@@ -1445,9 +1507,9 @@ impl MotorsPage {
     ) -> f32 {
         let painter = ui.painter().clone();
         let bg = painter.add(Shape::Noop);
-        let (ix, iw) = (x + 18.0, w - 36.0);
+        let (ix, iw) = (x + 19.0, w - 38.0);
         // the head: the title and the count actions, a rule under it
-        let title = pagekit::section_title(ui, ix, y + 18.0, iw, "Motors");
+        let title = pagekit::section_title(ui, ix, y + 19.0, iw, "Motors");
         let count = doc.motors.len();
         if !doc.fixed_count {
             let add = Button::new("Add motor", Variant::Secondary)
@@ -1459,7 +1521,7 @@ impl MotorsPage {
                 .small()
                 .enabled(!armed && count > 1 && self.count_req.is_none());
             let (aw, rw, bh) = (add.width(ui), rem.width(ui), add.height());
-            let rr = Rect::from_min_size(Pos2::new(ix + iw - rw, y + 18.0 - 4.0), Vec2::new(rw, bh));
+            let rr = Rect::from_min_size(Pos2::new(ix + iw - rw, y + 19.0 - 4.0), Vec2::new(rw, bh));
             let ar = Rect::from_min_size(Pos2::new(rr.left() - 8.0 - aw, rr.top()), Vec2::new(aw, bh));
             let note = style::galley(
                 ui,
@@ -1493,28 +1555,47 @@ impl MotorsPage {
         }
         let mut cy = title - 2.0;
         let cols = columns(&doc.motors);
-        let (chip_w, out_w) = (52.0, 124.0);
-        let col_ws: Vec<f32> = cols
+        // table-layout: auto, as the browser sizes it: a column is as wide as
+        // its header or its control, plus the 4 px padding each side
+        let header_w = |ui: &egui::Ui, text: &str| {
+            style::galley(ui, text, 10.0, Weight::W600, style::text_3(), 0.7)
+                .size()
+                .x
+        };
+        let chip_w = (header_w(ui, "MOTOR") + 8.0).max(36.0);
+        let out_w = 124.0;
+        let mut col_ws: Vec<f32> = cols
             .iter()
-            .map(|(_, label, unit)| {
+            .map(|(pin, label, unit)| {
                 let text = if unit.is_empty() {
                     label.to_uppercase()
                 } else {
                     format!("{} {}", label.to_uppercase(), unit)
                 };
-                (style::galley(ui, &text, 10.0, Weight::W600, style::text_3(), 0.7)
-                    .size()
-                    .x
-                    + 12.0)
-                    .max(76.0)
+                let field = doc.motors.iter().find_map(|m| {
+                    let list = if *pin { &m.output_fields } else { &m.fields };
+                    list.iter().find(|f| &f.label == label)
+                });
+                let control = field.map_or(0.0, |f| FormState::compact_width(ui, f));
+                (header_w(ui, &text) + 8.0).max(control + 8.0)
             })
             .collect();
-        let total_w = chip_w + out_w + col_ws.iter().sum::<f32>();
-        let field_h: f32 = 2.0 + 10.0 + 12.0 * 1.21;
         let pins = cols.iter().filter(|c| c.0).count();
-        let header_h = 16.0 + if pins > 0 { 16.0 } else { 0.0 };
-        let row_h = field_h + 8.0 + 12.0;
-        let body_h = header_h + 1.0 + doc.motors.len() as f32 * row_h + 12.0;
+        if pins > 0 {
+            // the group header spans the pin columns, and stretches the last
+            let group = header_w(ui, "OUTPUT PIN LIMITS") + 8.0;
+            let have: f32 = col_ws[cols.len() - pins..].iter().sum();
+            if group > have {
+                if let Some(last) = col_ws.last_mut() {
+                    *last += group - have;
+                }
+            }
+        }
+        let total_w = chip_w + out_w + col_ws.iter().sum::<f32>();
+        let field_h: f32 = 28.0;
+        let header_h = 19.0 + if pins > 0 { 15.5 } else { 0.0 };
+        let row_h = 4.0 + field_h + 4.0 + 1.0;
+        let body_h = header_h + doc.motors.len() as f32 * row_h;
         let area = Rect::from_min_size(Pos2::new(ix, cy), Vec2::new(iw, body_h));
         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(area));
         child.set_clip_rect(area);
@@ -1536,7 +1617,7 @@ impl MotorsPage {
                         hy + 15.0,
                         Stroke::new(1.0, style::border()),
                     );
-                    hy += 16.0;
+                    hy += 15.5;
                 }
                 let mut hx = ix;
                 for (label, w) in [("MOTOR", chip_w), ("OUTPUT", out_w)] {
@@ -1554,28 +1635,28 @@ impl MotorsPage {
                     painter.galley(Pos2::new(hx + 4.0, hy), g, style::text_3());
                     hx += cw;
                 }
-                hy += 16.0;
+                hy += 19.0;
                 painter.hline(
                     egui::Rangef::new(ix, ix + total_w),
-                    hy + 0.5,
+                    hy - 0.5,
                     Stroke::new(1.0, style::border_soft()),
                 );
-                hy += 1.0;
-                for m in &doc.motors {
+                let last_motor = doc.motors.len().saturating_sub(1);
+                for (mi, m) in doc.motors.iter().enumerate() {
                     let row = Rect::from_min_size(Pos2::new(ix, hy), Vec2::new(total_w, row_h));
                     let rr = ui.interact(row, ui.scope_id().with(("mrow", m.number)), egui::Sense::click());
                     let selected = self.selected == m.number;
                     let testing = self.testing == m.number;
                     if selected {
-                        painter.rect_filled(row, style::RADIUS_BTN, style::accent_dim());
+                        painter.rect_filled(row, 0, style::accent_dim());
                     } else if rr.hovered() {
-                        painter.rect_filled(row, style::RADIUS_BTN, style::surface_2());
+                        painter.rect_filled(row, 0, style::surface_2());
                     }
                     if rr.clicked() {
                         self.selected = m.number;
                     }
                     // the chip
-                    let cc = Pos2::new(ix + chip_w / 2.0, hy + (field_h + 8.0) / 2.0);
+                    let cc = Pos2::new(ix + 4.0 + 14.0, hy + 4.0 + field_h / 2.0);
                     let (chip_fill, chip_stroke) = if testing {
                         (style::critical_dark(), style::critical())
                     } else if selected {
@@ -1585,32 +1666,35 @@ impl MotorsPage {
                     } else {
                         (style::surface_2(), style::border())
                     };
-                    painter.circle(cc, 14.0, chip_fill, Stroke::new(2.0, chip_stroke));
+                    painter.circle(cc, 13.0, chip_fill, Stroke::new(2.0, chip_stroke));
                     let ng = style::galley(ui, &m.number.to_string(), 12.5, Weight::W700, style::text_1(), 0.0);
                     painter.galley(cc - ng.size() / 2.0, ng, style::text_1());
                     // the output
                     let held = m.output.as_ref().map_or(String::new(), |o| format!("{}:{}", o.0, o.1));
-                    let sel = Rect::from_min_size(Pos2::new(ix + chip_w + 4.0, hy + 4.0), Vec2::new(116.0, field_h));
+                    let sel = Rect::from_min_size(Pos2::new(ix + chip_w + 4.0, hy + 4.0), Vec2::new(116.0, 27.0));
                     let choices = output_options(&doc.outputs, m.number);
                     if armed {
                         let label = choices
                             .iter()
                             .find(|c| c.value == held)
                             .map_or(String::new(), |c| c.label.clone());
-                        painter.rect(
-                            sel,
-                            style::RADIUS_BTN,
-                            style::surface_2(),
-                            Stroke::new(1.0, style::border()),
-                            egui::StrokeKind::Inside,
-                        );
+                        {
+                            let r = sel;
+                            painter.rect_filled(r, style::RADIUS_BTN, style::surface_2());
+                            painter.rect_stroke(
+                                r,
+                                style::RADIUS_BTN,
+                                Stroke::new(1.0, style::border()),
+                                egui::StrokeKind::Inside,
+                            );
+                        }
                         let g = style::galley(ui, &label, 12.0, Weight::W400, style::text_3(), 0.0);
                         ui.painter_at(sel.shrink2(Vec2::new(7.0, 0.0))).galley(
                             Pos2::new(sel.left() + 7.0, sel.center().y - g.size().y / 2.0),
                             g,
                             style::text_3(),
                         );
-                    } else if let Some(v) = kit::select(
+                    } else if let Some(v) = kit::select_padded(
                         ui,
                         sel,
                         &choices,
@@ -1619,6 +1703,7 @@ impl MotorsPage {
                         false,
                         &format!("Output for {}", m.label),
                         ("out", m.number),
+                        (7.0, 24.0),
                     ) {
                         if v != held && self.assign.is_none() {
                             let body = match parse_output(&v) {
@@ -1696,11 +1781,13 @@ impl MotorsPage {
                         cx += col_w;
                     }
                     hy += row_h;
-                    painter.hline(
-                        egui::Rangef::new(ix, ix + total_w),
-                        hy - 0.5,
-                        Stroke::new(1.0, style::border_soft()),
-                    );
+                    if mi < last_motor {
+                        painter.hline(
+                            egui::Rangef::new(ix, ix + total_w),
+                            hy - 0.5,
+                            Stroke::new(1.0, style::border_soft()),
+                        );
+                    }
                 }
                 ui.allocate_space(Vec2::new(total_w, body_h));
             });
@@ -1708,18 +1795,18 @@ impl MotorsPage {
         painter.set(
             bg,
             Shape::rect_filled(
-                Rect::from_min_max(Pos2::new(x, y), Pos2::new(x + w, cy + 18.0)),
+                Rect::from_min_max(Pos2::new(x, y), Pos2::new(x + w, cy + 19.0)),
                 style::RADIUS,
                 style::glass(0.82),
             ),
         );
         painter.rect_stroke(
-            Rect::from_min_max(Pos2::new(x, y), Pos2::new(x + w, cy + 18.0)),
+            Rect::from_min_max(Pos2::new(x, y), Pos2::new(x + w, cy + 19.0)),
             style::RADIUS,
             Stroke::new(1.0, style::tint(0.09)),
             egui::StrokeKind::Inside,
         );
-        cy + 18.0
+        cy + 19.0
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1736,8 +1823,8 @@ impl MotorsPage {
     ) -> f32 {
         let painter = ui.painter().clone();
         let bg = painter.add(Shape::Noop);
-        let (ix, iw) = (x + 18.0, w - 36.0);
-        let mut cy = pagekit::section_title(ui, ix, y + 18.0, iw, "Motor test") - 2.0;
+        let (ix, iw) = (x + 19.0, w - 38.0);
+        let mut cy = pagekit::section_title(ui, ix, y + 19.0, iw, "Motor test") - 2.0;
         // the danger strip
         let t = style::galley(
             ui,
@@ -1758,13 +1845,16 @@ impl MotorsPage {
         );
         let strip_h = 14.0 + t.size().y.max(d.size().y);
         let strip = Rect::from_min_size(Pos2::new(ix, cy), Vec2::new(iw, strip_h));
-        painter.rect(
-            strip,
-            style::RADIUS_BTN,
-            style::critical_dark(),
-            Stroke::new(1.0, style::critical()),
-            egui::StrokeKind::Inside,
-        );
+        {
+            let r = strip;
+            painter.rect_filled(r, style::RADIUS_BTN, style::critical_dark());
+            painter.rect_stroke(
+                r,
+                style::RADIUS_BTN,
+                Stroke::new(1.0, style::critical()),
+                egui::StrokeKind::Inside,
+            );
+        }
         painter.galley(
             Pos2::new(strip.left() + 10.0, strip.top() + 7.0),
             t.clone(),
@@ -1904,18 +1994,18 @@ impl MotorsPage {
         painter.set(
             bg,
             Shape::rect_filled(
-                Rect::from_min_max(Pos2::new(x, y), Pos2::new(x + w, cy + 18.0)),
+                Rect::from_min_max(Pos2::new(x, y), Pos2::new(x + w, cy + 19.0)),
                 style::RADIUS,
                 style::glass(0.82),
             ),
         );
         painter.rect_stroke(
-            Rect::from_min_max(Pos2::new(x, y), Pos2::new(x + w, cy + 18.0)),
+            Rect::from_min_max(Pos2::new(x, y), Pos2::new(x + w, cy + 19.0)),
             style::RADIUS,
             Stroke::new(1.0, style::tint(0.09)),
             egui::StrokeKind::Inside,
         );
-        cy + 18.0
+        cy + 19.0
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1931,8 +2021,8 @@ impl MotorsPage {
     ) -> f32 {
         let painter = ui.painter().clone();
         let bg = painter.add(Shape::Noop);
-        let (ix, iw) = (x + 18.0, w - 36.0);
-        let mut cy = pagekit::section_title(ui, ix, y + 18.0, iw, &s.title) - 2.0;
+        let (ix, iw) = (x + 19.0, w - 38.0);
+        let mut cy = pagekit::section_title(ui, ix, y + 19.0, iw, &s.title) - 2.0;
         if !s.hint.is_empty() {
             let g = kit::wrapped_weight(ui, &s.hint, 10.5, Weight::W400, style::text_3(), iw, 1.4);
             painter.galley(Pos2::new(ix, cy), g.clone(), style::text_3());
@@ -1945,18 +2035,18 @@ impl MotorsPage {
         painter.set(
             bg,
             Shape::rect_filled(
-                Rect::from_min_max(Pos2::new(x, y), Pos2::new(x + w, cy + 18.0)),
+                Rect::from_min_max(Pos2::new(x, y), Pos2::new(x + w, cy + 19.0)),
                 style::RADIUS,
                 style::glass(0.82),
             ),
         );
         painter.rect_stroke(
-            Rect::from_min_max(Pos2::new(x, y), Pos2::new(x + w, cy + 18.0)),
+            Rect::from_min_max(Pos2::new(x, y), Pos2::new(x + w, cy + 19.0)),
             style::RADIUS,
             Stroke::new(1.0, style::tint(0.09)),
             egui::StrokeKind::Inside,
         );
-        cy + 18.0
+        cy + 19.0
     }
 }
 

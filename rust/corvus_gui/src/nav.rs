@@ -172,13 +172,11 @@ pub fn placeholder(ui: &egui::Ui, rect: Rect, page: Page) {
     let h = 52.0 + 14.0 + title.size().y + 14.0 + desc.size().y;
     let mut y = rect.center().y - h / 2.0;
     let tile = Rect::from_center_size(Pos2::new(rect.center().x, y + 26.0), Vec2::splat(52.0));
-    painter.rect(
-        tile,
-        14,
-        style::surface_2(),
-        egui::Stroke::new(1.0, style::border()),
-        egui::StrokeKind::Inside,
-    );
+    {
+        let r = tile;
+        painter.rect_filled(r, 14, style::surface_2());
+        painter.rect_stroke(r, 14, egui::Stroke::new(1.0, style::border()), egui::StrokeKind::Inside);
+    }
     icons::paint(
         ui,
         icon,

@@ -462,13 +462,15 @@ impl ConsoleTab {
                 egui::StrokeKind::Inside,
             );
         }
-        painter.rect(
-            r,
-            style::RADIUS_BTN,
-            style::glass(0.82),
-            Stroke::new(1.0, if focused { style::accent() } else { style::tint(0.09) }),
-            egui::StrokeKind::Inside,
-        );
+        {
+            painter.rect_filled(r, style::RADIUS_BTN, style::glass(0.82));
+            painter.rect_stroke(
+                r,
+                style::RADIUS_BTN,
+                Stroke::new(1.0, if focused { style::accent() } else { style::tint(0.09) }),
+                egui::StrokeKind::Inside,
+            );
+        }
         icons::paint(
             ui,
             "search",
@@ -575,13 +577,15 @@ impl ConsoleTab {
 
     fn paint_stream(&self, ui: &mut egui::Ui, r: Rect) {
         let painter = ui.painter().clone();
-        painter.rect(
-            r,
-            style::RADIUS_BTN,
-            style::terminal_bg(),
-            Stroke::new(1.0, style::border_soft()),
-            egui::StrokeKind::Inside,
-        );
+        {
+            painter.rect_filled(r, style::RADIUS_BTN, style::terminal_bg());
+            painter.rect_stroke(
+                r,
+                style::RADIUS_BTN,
+                Stroke::new(1.0, style::border_soft()),
+                egui::StrokeKind::Inside,
+            );
+        }
         let inner = r.shrink2(Vec2::new(12.0, 8.0));
         let lines = self.visible();
         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner));

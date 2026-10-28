@@ -142,13 +142,11 @@ impl<'a> Button<'a> {
         };
         let alpha = if self.enabled { 1.0 } else { 0.45 };
         let painter = ui.painter();
-        painter.rect(
-            rect,
-            style::RADIUS_BTN,
-            fill.gamma_multiply(alpha),
-            stroke,
-            egui::StrokeKind::Inside,
-        );
+        {
+            let r = rect;
+            painter.rect_filled(r, style::RADIUS_BTN, fill.gamma_multiply(alpha));
+            painter.rect_stroke(r, style::RADIUS_BTN, stroke, egui::StrokeKind::Inside);
+        }
         let g = self.text(ui, text.gamma_multiply(alpha));
         let icon_w = if self.icon.is_some() { self.icon_size() } else { 0.0 };
         let gap = if self.icon.is_some() && !self.label.is_empty() {
@@ -202,6 +200,20 @@ pub fn text_field(
     mono: bool,
     id: impl std::hash::Hash + std::fmt::Debug,
 ) -> egui::Response {
+    text_field_padded(ui, rect, text, placeholder, mono, id, 11.0)
+}
+
+/// `text_field` with the control's own side padding: 10 px by default, 6 in
+/// a table cell.
+pub fn text_field_padded(
+    ui: &mut egui::Ui,
+    rect: Rect,
+    text: &mut String,
+    placeholder: &str,
+    mono: bool,
+    id: impl std::hash::Hash + std::fmt::Debug,
+    pad: f32,
+) -> egui::Response {
     let id = ui.scope_id().with(id);
     let focused = ui.memory(|m| m.has_focus(id));
     let painter = ui.painter().clone();
@@ -213,19 +225,22 @@ pub fn text_field(
             egui::StrokeKind::Inside,
         );
     }
-    painter.rect(
-        rect,
-        style::RADIUS_BTN,
-        style::input(0.6),
-        Stroke::new(1.0, if focused { style::accent() } else { style::border() }),
-        egui::StrokeKind::Inside,
-    );
+    {
+        let r = rect;
+        painter.rect_filled(r, style::RADIUS_BTN, style::input(0.6));
+        painter.rect_stroke(
+            r,
+            style::RADIUS_BTN,
+            Stroke::new(1.0, if focused { style::accent() } else { style::border() }),
+            egui::StrokeKind::Inside,
+        );
+    }
     let font = if mono {
         style::mono(12.0)
     } else {
         style::font(12.0, Weight::W400)
     };
-    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect.shrink2(Vec2::new(11.0, 0.0))));
+    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect.shrink2(Vec2::new(pad, 0.0))));
     let edit = egui::TextEdit::singleline(text)
         .id(id)
         .frame(egui::Frame::NONE)
@@ -233,7 +248,7 @@ pub fn text_field(
         .text_color(style::text_1())
         .hint_text(egui::RichText::new(placeholder).color(style::text_3()))
         .align(egui::Align2::LEFT_CENTER)
-        .desired_width(rect.width() - 22.0)
+        .desired_width(rect.width() - 2.0 * pad)
         .min_size(Vec2::new(0.0, rect.height()));
     child.add(edit)
 }
@@ -270,6 +285,23 @@ pub fn select(
     title: &str,
     id: impl std::hash::Hash + std::fmt::Debug,
 ) -> Option<String> {
+    select_padded(ui, rect, choices, selected, placeholder, mono, title, id, (11.0, 26.0))
+}
+
+/// `select` with the control's own padding: `.field-select` pads 10 px left
+/// and leaves 26 on the right for the chevron; a table cell pads 7 and 24.
+#[allow(clippy::too_many_arguments)]
+pub fn select_padded(
+    ui: &mut egui::Ui,
+    rect: Rect,
+    choices: &[Choice],
+    selected: &str,
+    placeholder: &str,
+    mono: bool,
+    title: &str,
+    id: impl std::hash::Hash + std::fmt::Debug,
+    pad: (f32, f32),
+) -> Option<String> {
     let id = ui.scope_id().with(id);
     let open_id = id.with("open");
     let mut open = ui.ctx().data(|d| d.get_temp::<bool>(open_id).unwrap_or(false));
@@ -286,13 +318,16 @@ pub fn select(
             egui::StrokeKind::Inside,
         );
     }
-    painter.rect(
-        rect,
-        style::RADIUS_BTN,
-        style::input(0.6),
-        Stroke::new(1.0, if open { style::accent() } else { style::border() }),
-        egui::StrokeKind::Inside,
-    );
+    {
+        let r = rect;
+        painter.rect_filled(r, style::RADIUS_BTN, style::input(0.6));
+        painter.rect_stroke(
+            r,
+            style::RADIUS_BTN,
+            Stroke::new(1.0, if open { style::accent() } else { style::border() }),
+            egui::StrokeKind::Inside,
+        );
+    }
     let current = choices.iter().find(|c| c.value == selected);
     let (text, color) = match current {
         Some(c) => (c.label.as_str(), style::text_1()),
@@ -303,9 +338,9 @@ pub fn select(
     } else {
         style::galley(ui, text, 12.0, Weight::W400, color, 0.0)
     };
-    let clip = Rect::from_min_max(rect.min, Pos2::new(rect.right() - 26.0, rect.bottom()));
+    let clip = Rect::from_min_max(rect.min, Pos2::new(rect.right() - pad.1, rect.bottom()));
     ui.painter_at(clip).galley(
-        Pos2::new(rect.left() + 11.0, rect.center().y - g.size().y / 2.0),
+        Pos2::new(rect.left() + pad.0, rect.center().y - g.size().y / 2.0),
         g,
         color,
     );
@@ -320,11 +355,26 @@ pub fn select(
     }
     let mut picked = None;
     if open {
+        // `.ui-menu` of `.option-item` rows: 5 px padding, rows of 7 px 8 px
+        // with a 7 px state dot and an 8 px gap, as wide as its widest row
         let row_h = 7.0 * 2.0 + 12.0 * 1.21;
-        let menu = Rect::from_min_size(
-            rect.left_bottom() + Vec2::new(0.0, 4.0),
-            Vec2::new(rect.width(), 10.0 + row_h * choices.len() as f32),
-        );
+        let label_font = |ui: &egui::Ui, label: &str, color: Color32| {
+            if mono {
+                style::galley_mono(ui, label, 12.0, color)
+            } else {
+                style::galley(ui, label, 12.0, Weight::W500, color, 0.0)
+            }
+        };
+        let widest = choices
+            .iter()
+            .map(|c| label_font(ui, &c.label, style::text_2()).size().x)
+            .fold(0.0, f32::max);
+        let width = rect.width().max(10.0 + 16.0 + 7.0 + 8.0 + widest);
+        let screen = ui.ctx().content_rect();
+        let full = 10.0 + row_h * choices.len() as f32;
+        let room = (screen.bottom() - rect.bottom() - 4.0 - 8.0).max(row_h * 3.0);
+        let height = full.min(room);
+        let menu = Rect::from_min_size(rect.left_bottom() + Vec2::new(0.0, 4.0), Vec2::new(width, height));
         egui::Area::new(id.with("menu"))
             .order(egui::Order::Foreground)
             .fixed_pos(menu.min)
@@ -332,41 +382,63 @@ pub fn select(
                 let painter = ui.painter().clone();
                 style::glass_panel(&painter, "selectmenu", menu, style::RADIUS, 0.6);
                 ui.allocate_rect(menu, egui::Sense::hover());
-                for (i, c) in choices.iter().enumerate() {
-                    let r = Rect::from_min_size(
-                        menu.min + Vec2::new(5.0, 5.0 + i as f32 * row_h),
-                        Vec2::new(menu.width() - 10.0, row_h),
-                    );
-                    let sense = if c.enabled {
-                        egui::Sense::click()
-                    } else {
-                        egui::Sense::hover()
-                    };
-                    let row = ui.interact(r, id.with(("row", i)), sense);
-                    let active = c.value == selected;
-                    if active {
-                        painter.rect_filled(r, style::RADIUS_BTN, style::accent_dark());
-                    } else if row.hovered() && c.enabled {
-                        painter.rect_filled(r, style::RADIUS_BTN, style::tint(0.06));
-                    }
-                    let color = if !c.enabled {
-                        style::text_3()
-                    } else if active || row.hovered() {
-                        style::text_1()
-                    } else {
-                        style::text_2()
-                    };
-                    let g = if mono {
-                        style::galley_mono(ui, &c.label, 12.0, color)
-                    } else {
-                        style::galley(ui, &c.label, 12.0, Weight::W400, color, 0.0)
-                    };
-                    ui.painter_at(r)
-                        .galley(Pos2::new(r.left() + 8.0, r.center().y - g.size().y / 2.0), g, color);
-                    if row.clicked() && c.enabled {
-                        picked = Some(c.value.clone());
-                    }
-                }
+                let inner = menu.shrink(5.0);
+                let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner));
+                child.set_clip_rect(inner);
+                egui::ScrollArea::vertical()
+                    .id_salt(id.with("scroll"))
+                    .auto_shrink([false, false])
+                    .show(&mut child, |ui| {
+                        let origin = ui.max_rect().min;
+                        for (i, c) in choices.iter().enumerate() {
+                            let r = Rect::from_min_size(
+                                origin + Vec2::new(0.0, i as f32 * row_h),
+                                Vec2::new(inner.width(), row_h),
+                            );
+                            let sense = if c.enabled {
+                                egui::Sense::click()
+                            } else {
+                                egui::Sense::hover()
+                            };
+                            let row = ui.interact(r, id.with(("row", i)), sense);
+                            let active = c.value == selected;
+                            if active {
+                                ui.painter().rect_filled(r, style::RADIUS_BTN, style::accent_dark());
+                                ui.painter().rect_stroke(
+                                    r,
+                                    style::RADIUS_BTN,
+                                    Stroke::new(2.0, style::accent_bright()),
+                                    egui::StrokeKind::Inside,
+                                );
+                            } else if row.hovered() && c.enabled {
+                                ui.painter().rect_filled(r, style::RADIUS_BTN, style::tint(0.06));
+                            }
+                            let color = if !c.enabled {
+                                style::text_3()
+                            } else if active || row.hovered() {
+                                style::text_1()
+                            } else {
+                                style::text_2()
+                            };
+                            let dot_color = if active { style::accent() } else { style::text_3() };
+                            dot(
+                                ui.painter(),
+                                Pos2::new(r.left() + 8.0 + 3.5, r.center().y),
+                                dot_color,
+                                active,
+                            );
+                            let g = label_font(ui, &c.label, color);
+                            ui.painter().galley(
+                                Pos2::new(r.left() + 8.0 + 7.0 + 8.0, r.center().y - g.size().y / 2.0),
+                                g,
+                                color,
+                            );
+                            if row.clicked() && c.enabled {
+                                picked = Some(c.value.clone());
+                            }
+                        }
+                        ui.allocate_space(Vec2::new(inner.width(), full - 10.0));
+                    });
                 let outside = ui.input(|i| i.pointer.any_pressed())
                     && !ui
                         .input(|i| i.pointer.interact_pos())
@@ -408,13 +480,11 @@ pub fn checkbox(
         let c = bx.left_top() + Vec2::new(11.0, 4.2);
         painter.line(vec![a, b, c], Stroke::new(1.8, Color32::WHITE));
     } else {
-        painter.rect(
-            bx,
-            3,
-            style::surface_1(),
-            Stroke::new(1.0, style::border_strong()),
-            egui::StrokeKind::Inside,
-        );
+        {
+            let r = bx;
+            painter.rect_filled(r, 3, style::surface_1());
+            painter.rect_stroke(r, 3, Stroke::new(1.0, style::border_strong()), egui::StrokeKind::Inside);
+        }
     }
     painter.galley(
         Pos2::new(bx.right() + 8.0, at.y + (h - g.size().y) / 2.0),
@@ -456,13 +526,16 @@ pub fn switch(
         (style::input(0.6), style::border())
     };
     let painter = ui.painter();
-    painter.rect(
-        rect,
-        255,
-        fill.gamma_multiply(fade),
-        Stroke::new(1.0, line.gamma_multiply(fade)),
-        egui::StrokeKind::Inside,
-    );
+    {
+        let r = rect;
+        painter.rect_filled(r, 255, fill.gamma_multiply(fade));
+        painter.rect_stroke(
+            r,
+            255,
+            Stroke::new(1.0, line.gamma_multiply(fade)),
+            egui::StrokeKind::Inside,
+        );
+    }
     let knob = if on { style::text_inverted() } else { style::text_3() };
     painter.circle_filled(
         Pos2::new(rect.left() + 11.0 + if on { 16.0 } else { 0.0 }, rect.center().y),

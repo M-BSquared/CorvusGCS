@@ -308,6 +308,22 @@ impl FormState {
         }
     }
 
+    /// How wide the control of a field is in a table cell: 68 px for a number
+    /// and a select as wide as its widest option, as `control` draws it.
+    pub fn compact_width(ui: &egui::Ui, f: &Field) -> f32 {
+        match &f.kind {
+            Kind::Enum(opts) | Kind::Sign(opts) => {
+                let widest = opts
+                    .iter()
+                    .map(|(_, l)| style::galley(ui, l, 12.0, Weight::W400, style::text_1(), 0.0).size().x)
+                    .fold(0.0, f32::max);
+                widest + 7.0 + 24.0 + 2.0
+            }
+            Kind::Number => 68.0,
+            Kind::Bitmask(_) => 0.0,
+        }
+    }
+
     /// Draws the control of one field at `at`, `cw` wide at most and
     /// `control_h` tall, and returns the x its right edge ends at. `compact`
     /// is the table cell: numbers 68 px wide and selects as narrow as their
@@ -324,6 +340,26 @@ impl FormState {
         control_h: f32,
         armed: bool,
         compact: bool,
+    ) -> f32 {
+        self.control_with(ui, ctx, server, f, at, cw, control_h, armed, compact, None, None)
+    }
+
+    /// `control` with the widths a page's own CSS gives its select
+    /// (`select_w`) and its number input (`number_w`).
+    #[allow(clippy::too_many_arguments)]
+    pub fn control_with(
+        &mut self,
+        ui: &mut egui::Ui,
+        ctx: &egui::Context,
+        server: &Server,
+        f: &Field,
+        at: Pos2,
+        cw: f32,
+        control_h: f32,
+        armed: bool,
+        compact: bool,
+        select_w: Option<f32>,
+        number_w: Option<f32>,
     ) -> f32 {
         let painter = ui.painter().clone();
         let (cx, top) = (at.x, at.y);
@@ -349,31 +385,33 @@ impl FormState {
                     .iter()
                     .map(|(_, l)| style::galley(ui, l, 12.0, Weight::W400, style::text_1(), 0.0).size().x)
                     .fold(0.0, f32::max);
-                let sw = if compact {
+                let sw = select_w.unwrap_or(if compact {
                     (widest + 7.0 + 24.0 + 2.0).min(cw)
                 } else {
                     (widest + 11.0 + 26.0 + 2.0).clamp(150.0, 300.0).min(cw)
-                };
+                });
                 let r = Rect::from_min_size(Pos2::new(cx, top), Vec2::new(sw, control_h));
                 if armed {
                     let label = choices
                         .iter()
                         .find(|c| c.value == current.to_string())
                         .map_or(String::new(), |c| c.label.clone());
-                    painter.rect(
-                        r,
-                        style::RADIUS_BTN,
-                        style::surface_2(),
-                        Stroke::new(1.0, style::border()),
-                        egui::StrokeKind::Inside,
-                    );
+                    {
+                        painter.rect_filled(r, style::RADIUS_BTN, style::surface_2());
+                        painter.rect_stroke(
+                            r,
+                            style::RADIUS_BTN,
+                            Stroke::new(1.0, style::border()),
+                            egui::StrokeKind::Inside,
+                        );
+                    }
                     let g = style::galley(ui, &label, 12.0, Weight::W400, style::text_3(), 0.0);
                     ui.painter_at(r.shrink2(Vec2::new(11.0, 0.0))).galley(
                         Pos2::new(r.left() + 11.0, r.center().y - g.size().y / 2.0),
                         g,
                         style::text_3(),
                     );
-                } else if let Some(v) = kit::select(
+                } else if let Some(v) = kit::select_padded(
                     ui,
                     r,
                     &choices,
@@ -382,6 +420,7 @@ impl FormState {
                     false,
                     &f.param,
                     ("sf", &f.param),
+                    if compact { (7.0, 24.0) } else { (11.0, 26.0) },
                 ) {
                     let picked: i64 = v.parse().unwrap_or(0);
                     if picked != current && !self.busy() {
@@ -398,7 +437,7 @@ impl FormState {
             Kind::Number => {
                 let r = Rect::from_min_size(
                     Pos2::new(cx, top),
-                    Vec2::new(if compact { 68.0 } else { 110.0 }, control_h),
+                    Vec2::new(number_w.unwrap_or(if compact { 68.0 } else { 110.0 }), control_h),
                 );
                 let mut text = self
                     .texts
@@ -411,13 +450,15 @@ impl FormState {
                     String::new()
                 };
                 if armed {
-                    painter.rect(
-                        r,
-                        style::RADIUS_BTN,
-                        style::surface_2(),
-                        Stroke::new(1.0, style::border()),
-                        egui::StrokeKind::Inside,
-                    );
+                    {
+                        painter.rect_filled(r, style::RADIUS_BTN, style::surface_2());
+                        painter.rect_stroke(
+                            r,
+                            style::RADIUS_BTN,
+                            Stroke::new(1.0, style::border()),
+                            egui::StrokeKind::Inside,
+                        );
+                    }
                     let g = style::galley_mono(ui, &text, 12.0, style::text_3());
                     painter.galley(
                         Pos2::new(r.left() + 9.0, r.center().y - g.size().y / 2.0),
@@ -425,7 +466,15 @@ impl FormState {
                         style::text_3(),
                     );
                 } else {
-                    let resp = kit::text_field(ui, r, &mut text, "", true, ("sf", &f.param));
+                    let resp = kit::text_field_padded(
+                        ui,
+                        r,
+                        &mut text,
+                        "",
+                        true,
+                        ("sf", &f.param),
+                        if compact { 6.0 } else { 11.0 },
+                    );
                     if resp.changed() {
                         self.texts.insert(f.param.clone(), text.clone());
                         self.status.remove(&f.param);
@@ -490,13 +539,16 @@ impl FormState {
                     } else {
                         let mut dim = on;
                         let r = Rect::from_min_size(Pos2::new(bx, by), Vec2::new(lw, 18.0));
-                        painter.rect(
-                            Rect::from_min_size(Pos2::new(bx, by + 2.0), Vec2::splat(14.0)),
-                            3,
-                            if dim { style::text_3() } else { style::surface_2() },
-                            Stroke::new(1.0, style::border_strong()),
-                            egui::StrokeKind::Inside,
-                        );
+                        {
+                            let r = Rect::from_min_size(Pos2::new(bx, by + 2.0), Vec2::splat(14.0));
+                            painter.rect_filled(r, 3, if dim { style::text_3() } else { style::surface_2() });
+                            painter.rect_stroke(
+                                r,
+                                3,
+                                Stroke::new(1.0, style::border_strong()),
+                                egui::StrokeKind::Inside,
+                            );
+                        }
                         let g = style::galley(ui, label, 11.5, Weight::W400, style::text_3(), 0.0);
                         painter.galley(
                             Pos2::new(bx + 20.0, r.center().y - g.size().y / 2.0),
@@ -547,10 +599,36 @@ impl FormState {
         look: Look,
     ) -> f32 {
         let painter = ui.painter().clone();
-        let label_w = look.label_max.min((w * 0.5).max(look.label_min));
-        let cx = x + label_w + 12.0;
-        let cw = w - label_w - 12.0;
         for (i, f) in fields.iter().enumerate() {
+            // Each row is a grid of its own: the label column takes what
+            // the control leaves, between the Look's floor and ceiling.
+            let natural = match &f.kind {
+                Kind::Number => {
+                    110.0
+                        + if f.unit.is_empty() {
+                            0.0
+                        } else {
+                            8.0 + style::galley(ui, &f.unit, 11.0, Weight::W400, style::text_3(), 0.0)
+                                .size()
+                                .x
+                        }
+                }
+                Kind::Enum(_) | Kind::Sign(_) | Kind::Bitmask(_) => {
+                    let widest = match &f.kind {
+                        Kind::Enum(o) | Kind::Sign(o) => o
+                            .iter()
+                            .map(|(_, l)| style::galley(ui, l, 12.0, Weight::W400, style::text_1(), 0.0).size().x)
+                            .fold(0.0, f32::max),
+                        _ => 90.0,
+                    };
+                    (widest + 11.0 + 26.0 + 2.0).clamp(150.0, 300.0)
+                }
+            };
+            let label_w = (w - 12.0 - natural)
+                .clamp(look.label_min, look.label_max)
+                .min(w * 0.5 + 40.0);
+            let cx = x + label_w + 12.0;
+            let cw = w - label_w - 12.0;
             let pad = look.pad;
             let control_h: f32 = 2.0 + 12.0 + 12.0 * 1.21;
             let hint = (!f.hint.is_empty() && !look.hint_as_info)

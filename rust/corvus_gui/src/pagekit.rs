@@ -49,8 +49,8 @@ pub fn header_wrapped(ui: &egui::Ui, x: f32, y: f32, w: f32, title: &str, subtit
 pub fn section_title(ui: &egui::Ui, x: f32, y: f32, w: f32, text: &str) -> f32 {
     let g = style::galley(ui, &text.to_uppercase(), 13.0, Weight::W600, style::text_2(), 0.6);
     let h = g.size().y;
-    ui.painter().galley(Pos2::new(x, y), g, style::text_2());
-    let rule = y + h + 8.0;
+    ui.painter().galley(Pos2::new(x, y + 1.0), g, style::text_2());
+    let rule = y + h + 9.0;
     ui.painter().hline(
         egui::Rangef::new(x, x + w),
         rule + 0.5,
@@ -76,13 +76,11 @@ pub fn tile(ui: &mut egui::Ui, rect: Rect, icon: &'static str, title: &str, desc
         (style::glass(0.82), style::tint(0.09))
     };
     let painter = ui.painter().clone();
-    painter.rect(
-        rect,
-        style::RADIUS,
-        fill,
-        Stroke::new(1.0, stroke),
-        egui::StrokeKind::Inside,
-    );
+    {
+        let r = rect;
+        painter.rect_filled(r, style::RADIUS, fill);
+        painter.rect_stroke(r, style::RADIUS, Stroke::new(1.0, stroke), egui::StrokeKind::Inside);
+    }
     let inner = rect.shrink2(Vec2::new(20.0, 18.0));
     let box_ = Rect::from_min_size(Pos2::new(inner.left(), rect.center().y - 20.0), Vec2::splat(40.0));
     painter.rect_filled(box_, style::RADIUS_BTN, style::accent_dark());
@@ -152,13 +150,16 @@ pub fn segmented(
     let h = 3.0 * 2.0 + 2.0 + 5.0 * 2.0 + 11.0 * 1.21;
     let w = 2.0 + 6.0 + widths.iter().sum::<f32>() + 3.0 * (items.len() as f32 - 1.0);
     let rect = Rect::from_min_size(at, Vec2::new(w, h));
-    painter.rect(
-        rect,
-        style::RADIUS_BTN,
-        style::glass(0.82),
-        Stroke::new(1.0, style::tint(0.09)),
-        egui::StrokeKind::Inside,
-    );
+    {
+        let r = rect;
+        painter.rect_filled(r, style::RADIUS_BTN, style::glass(0.82));
+        painter.rect_stroke(
+            r,
+            style::RADIUS_BTN,
+            Stroke::new(1.0, style::tint(0.09)),
+            egui::StrokeKind::Inside,
+        );
+    }
     let mut x = rect.left() + 4.0;
     let mut clicked = None;
     for (i, ((label, _count, enabled), (lg, cg))) in items.iter().zip(gals).enumerate() {

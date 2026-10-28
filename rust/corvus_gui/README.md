@@ -12,6 +12,10 @@ cargo run --release                                   # start serve.py here and 
 cargo run --release -- --server http://10.0.0.5:8080  # a backend elsewhere
 cargo run --release -- --root DIR --python PATH       # where serve.py is, what runs it
 cargo run --release -- --page motors --scroll 560     # open on a page (setup, parameters, safety, safety:SENSOR, motors), scrolled
+# looking at it without a hand on the mouse
+CORVUS_GUI_SHOT=out.png cargo run -- --page motors     # save the window's own pixels after 9 s and quit
+CORVUS_GUI_HOVER=600,50 cargo run                      # hold the pointer there (a hover card, a hint)
+CORVUS_GUI_CLICK=560,310 cargo run -- --page motors    # press there once, at 6 s (an open menu)
 ```
 
 Locally, `serve.py` runs as a child on a free port. Every way out (window

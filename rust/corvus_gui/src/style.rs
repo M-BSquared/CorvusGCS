@@ -380,10 +380,21 @@ pub fn glass_panel(
     use std::hash::{BuildHasher, BuildHasherDefault};
     let radius = radius.into();
     let id = BuildHasherDefault::<std::collections::hash_map::DefaultHasher>::default().hash_one(key);
-    crate::frost::copy_backdrop(painter, id, rect, crate::frost::soft());
+    // The backdrop's edge is antialiased, so its last pixel row shows the raw
+    // map through the fill, a bright hairline on a dark theme. It reaches a
+    // pixel past the panel so the rim is covered as the interior is.
+    let reach = rect.expand(1.0);
+    let wide = egui::CornerRadius {
+        nw: radius.nw.saturating_add(1),
+        ne: radius.ne.saturating_add(1),
+        sw: radius.sw.saturating_add(1),
+        se: radius.se.saturating_add(1),
+    };
+    crate::frost::copy_backdrop(painter, id, reach, crate::frost::soft());
     painter.add(shadow_pop().as_shape(rect, radius));
-    crate::frost::draw_backdrop(painter, id, rect, radius, crate::frost::soft());
-    painter.rect(rect, radius, glass(fill), glass_stroke(), egui::StrokeKind::Inside);
+    crate::frost::draw_backdrop(painter, id, reach, wide, crate::frost::soft());
+    painter.rect_filled(rect, radius, glass(fill));
+    painter.rect_stroke(rect, radius, glass_stroke(), egui::StrokeKind::Inside);
 }
 
 /// `border: 1px solid rgb(var(--tint-rgb) / 0.06)`.

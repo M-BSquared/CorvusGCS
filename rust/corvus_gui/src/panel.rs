@@ -287,13 +287,16 @@ impl Panel {
         let list = self.ssh_list.clone().unwrap_or(Value::Null);
         if list.get("failed").is_some() {
             let card = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, 13.0 * 2.0 + 18.0));
-            painter.rect(
-                card,
-                style::RADIUS,
-                style::surface_2(),
-                Stroke::new(1.0, style::border()),
-                egui::StrokeKind::Inside,
-            );
+            {
+                let r = card;
+                painter.rect_filled(r, style::RADIUS, style::surface_2());
+                painter.rect_stroke(
+                    r,
+                    style::RADIUS,
+                    Stroke::new(1.0, style::border()),
+                    egui::StrokeKind::Inside,
+                );
+            }
             let g = style::galley(
                 ui,
                 "Could not load connections.",
@@ -313,13 +316,16 @@ impl Panel {
         for (i, dev) in devices.iter().enumerate() {
             let connected = dev.get("connected") == Some(&Value::Bool(true));
             let card = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, 13.0 * 2.0 + 34.0 + 10.0 + 38.0));
-            painter.rect(
-                card,
-                style::RADIUS,
-                style::surface_2(),
-                Stroke::new(1.0, style::border()),
-                egui::StrokeKind::Inside,
-            );
+            {
+                let r = card;
+                painter.rect_filled(r, style::RADIUS, style::surface_2());
+                painter.rect_stroke(
+                    r,
+                    style::RADIUS,
+                    Stroke::new(1.0, style::border()),
+                    egui::StrokeKind::Inside,
+                );
+            }
             let inner = card.shrink(13.0);
             let tile = Rect::from_min_size(inner.min, Vec2::splat(34.0));
             painter.rect_filled(tile, style::RADIUS_BTN, style::surface_3());
@@ -419,13 +425,11 @@ fn plugins_empty(ui: &egui::Ui, rect: Rect) {
     let h = 52.0 + 14.0 + title.size().y + 14.0 + desc.size().y;
     let mut y = rect.center().y - h / 2.0;
     let tile = Rect::from_center_size(Pos2::new(rect.center().x, y + 26.0), Vec2::splat(52.0));
-    painter.rect(
-        tile,
-        14,
-        style::surface_2(),
-        Stroke::new(1.0, style::border()),
-        egui::StrokeKind::Inside,
-    );
+    {
+        let r = tile;
+        painter.rect_filled(r, 14, style::surface_2());
+        painter.rect_stroke(r, 14, Stroke::new(1.0, style::border()), egui::StrokeKind::Inside);
+    }
     icons::paint(
         ui,
         "puzzle",

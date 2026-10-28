@@ -202,7 +202,7 @@ impl SetupPage {
                         Pos2::new(x, y),
                         if in_sensor { "Safety & Sensors" } else { "Setup" },
                     );
-                    y += bh + 18.0;
+                    y += bh + 22.0;
                     if back && in_sensor {
                         if let View::Safety(p) = &mut self.view {
                             p.close_sensor();
@@ -237,13 +237,15 @@ impl SetupPage {
                             1.55,
                         );
                         let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, g.size().y + 24.0));
-                        ui.painter().rect(
-                            r,
-                            style::RADIUS_BTN,
-                            style::surface_2(),
-                            Stroke::new(1.0, style::border_soft()),
-                            egui::StrokeKind::Inside,
-                        );
+                        {
+                            ui.painter().rect_filled(r, style::RADIUS_BTN, style::surface_2());
+                            ui.painter().rect_stroke(
+                                r,
+                                style::RADIUS_BTN,
+                                Stroke::new(1.0, style::border_soft()),
+                                egui::StrokeKind::Inside,
+                            );
+                        }
                         ui.painter().galley(r.min + Vec2::new(14.0, 12.0), g, style::text_2());
                         y = r.bottom();
                     }
@@ -294,13 +296,16 @@ fn head(
         let card_h = 14.0 + 2.0 + gal[0].0.size().y + 2.0 + gal[0].1.size().y;
         let card = Rect::from_min_size(Pos2::new(x + w - card_w, bottom - card_h), Vec2::new(card_w, card_h));
         let p = ui.painter();
-        p.rect(
-            card,
-            style::RADIUS,
-            style::glass(0.82),
-            Stroke::new(1.0, style::tint(0.09)),
-            egui::StrokeKind::Inside,
-        );
+        {
+            let r = card;
+            p.rect_filled(r, style::RADIUS, style::glass(0.82));
+            p.rect_stroke(
+                r,
+                style::RADIUS,
+                Stroke::new(1.0, style::tint(0.09)),
+                egui::StrokeKind::Inside,
+            );
+        }
         let mut fx = card.left() + 1.0;
         for (i, (l, v)) in gal.into_iter().enumerate() {
             if i > 0 {
@@ -317,7 +322,7 @@ fn head(
     } else {
         let _ = side(ui, x + w, bottom);
     }
-    bottom + 22.0
+    bottom + 26.0
 }
 
 /// The Parameters actions: Export and Import, which need the file dialogs

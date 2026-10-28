@@ -33,6 +33,8 @@ struct App {
     telemetry: Telemetry,
     units: Units,
     top_speeds: topbar_cards::TopSpeeds,
+    shot_sent: bool,
+    click_stage: u8,
     map: Map,
     hud: Hud,
     flight: FlightBar,
@@ -125,10 +127,64 @@ impl App {
     }
 }
 
+impl App {
+    /// `CORVUS_GUI_SHOT=file.png` saves the window's own pixels once
+    /// `CORVUS_GUI_SHOT_AFTER` seconds (9 by default) have passed, and quits.
+    fn shoot(&mut self, ctx: &egui::Context, raw_input: &egui::RawInput) {
+        let Ok(path) = std::env::var("CORVUS_GUI_SHOT") else {
+            return;
+        };
+        let after: f64 = std::env::var("CORVUS_GUI_SHOT_AFTER")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(9.0);
+        if raw_input.time.unwrap_or(0.0) > after && !self.shot_sent {
+            self.shot_sent = true;
+            ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::ScreenshotCallback::new(
+                move |image| {
+                    let (w, h) = (image.width() as u32, image.height() as u32);
+                    let bytes: Vec<u8> = image.pixels.iter().flat_map(|c| c.to_array()).collect();
+                    if let Some(img) = image::RgbaImage::from_raw(w, h, bytes) {
+                        let _ = img.save(&path);
+                    }
+                    std::process::exit(0);
+                },
+            )));
+        }
+        ctx.request_repaint();
+    }
+}
+
 impl eframe::App for App {
     /// `CORVUS_GUI_HOVER=x,y` holds the pointer there, so a hover card or a
     /// hint can be looked at without a hand on the mouse.
-    fn raw_input_hook(&mut self, _ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+    fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+        self.shoot(ctx, raw_input);
+        // CORVUS_GUI_CLICK=x,y presses there once, at 6 s, for a menu to look at.
+        if let Some(p) = std::env::var("CORVUS_GUI_CLICK").ok().and_then(|v| {
+            let (x, y) = v.split_once(',')?;
+            Some(egui::pos2(x.trim().parse().ok()?, y.trim().parse().ok()?))
+        }) {
+            let t = raw_input.time.unwrap_or(0.0);
+            raw_input.events.push(egui::Event::PointerMoved(p));
+            if t > 6.0 && self.click_stage == 0 {
+                self.click_stage = 1;
+                raw_input.events.push(egui::Event::PointerButton {
+                    pos: p,
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers: Default::default(),
+                });
+            } else if self.click_stage == 1 {
+                self.click_stage = 2;
+                raw_input.events.push(egui::Event::PointerButton {
+                    pos: p,
+                    button: egui::PointerButton::Primary,
+                    pressed: false,
+                    modifiers: Default::default(),
+                });
+            }
+        }
         if let Some(p) = std::env::var("CORVUS_GUI_HOVER").ok().and_then(|v| {
             let (x, y) = v.split_once(',')?;
             Some(egui::pos2(x.trim().parse().ok()?, y.trim().parse().ok()?))
@@ -250,6 +306,8 @@ pub fn run(
                 telemetry,
                 units,
                 top_speeds: Default::default(),
+                shot_sent: false,
+                click_stage: 0,
                 map,
                 hud: Hud::default(),
                 flight,

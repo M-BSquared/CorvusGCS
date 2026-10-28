@@ -774,7 +774,7 @@ impl ParamsPage {
         let ctx = ui.ctx().clone();
         self.take_answers(&ctx, now);
         let armed = Self::armed(state);
-        let pad = 18.0;
+        let pad = 19.0;
         let painter = ui.painter().clone();
         let bg = painter.add(egui::Shape::Noop);
         let ix = x + pad;
@@ -819,13 +819,16 @@ impl ParamsPage {
         };
         let g = kit::wrapped_weight(ui, &text, 12.0, Weight::W400, style::text_2(), w - 28.0, 1.55);
         let box_ = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, g.size().y + 24.0));
-        ui.painter().rect(
-            box_,
-            style::RADIUS_BTN,
-            style::surface_2(),
-            Stroke::new(1.0, style::border_soft()),
-            egui::StrokeKind::Inside,
-        );
+        {
+            let r = box_;
+            ui.painter().rect_filled(r, style::RADIUS_BTN, style::surface_2());
+            ui.painter().rect_stroke(
+                r,
+                style::RADIUS_BTN,
+                Stroke::new(1.0, style::border_soft()),
+                egui::StrokeKind::Inside,
+            );
+        }
         ui.painter().galley(Pos2::new(x + 14.0, y + 12.0), g, style::text_2());
         y = box_.bottom() + 12.0;
         let busy = self.start.is_some();
@@ -855,13 +858,11 @@ impl ParamsPage {
         y = pagekit::section_title(ui, x, y, w, "Downloading Parameters");
         let bar = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, 8.0));
         let painter = ui.painter();
-        painter.rect(
-            bar,
-            4,
-            style::surface_3(),
-            Stroke::new(1.0, style::border_soft()),
-            egui::StrokeKind::Inside,
-        );
+        {
+            let r = bar;
+            painter.rect_filled(r, 4, style::surface_3());
+            painter.rect_stroke(r, 4, Stroke::new(1.0, style::border_soft()), egui::StrokeKind::Inside);
+        }
         let pct = if count > 0 {
             ((received as f64 / count as f64) * 100.0).round().min(100.0)
         } else {
@@ -910,13 +911,15 @@ impl ParamsPage {
                 1.4,
             );
             let r = Rect::from_min_size(Pos2::new(x, y + 12.0), Vec2::new(w, g.size().y + 24.0));
-            ui.painter().rect(
-                r,
-                style::RADIUS_BTN,
-                style::warning_dark(),
-                Stroke::new(1.0, style::warning()),
-                egui::StrokeKind::Inside,
-            );
+            {
+                ui.painter().rect_filled(r, style::RADIUS_BTN, style::warning_dark());
+                ui.painter().rect_stroke(
+                    r,
+                    style::RADIUS_BTN,
+                    Stroke::new(1.0, style::warning()),
+                    egui::StrokeKind::Inside,
+                );
+            }
             ui.painter().galley(r.min + Vec2::new(14.0, 12.0), g, style::warning());
             y = r.bottom();
         }
@@ -1090,13 +1093,16 @@ impl ParamsPage {
     fn pending_bar(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, x: f32, y: f32, w: f32, armed: bool) -> f32 {
         let n = self.pending.len();
         let bar = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, 10.0 * 2.0 + 29.0));
-        ui.painter().rect(
-            bar,
-            style::RADIUS_BTN,
-            style::surface_1(),
-            Stroke::new(1.0, style::nav()),
-            egui::StrokeKind::Inside,
-        );
+        {
+            let r = bar;
+            ui.painter().rect_filled(r, style::RADIUS_BTN, style::surface_1());
+            ui.painter().rect_stroke(
+                r,
+                style::RADIUS_BTN,
+                Stroke::new(1.0, style::nav()),
+                egui::StrokeKind::Inside,
+            );
+        }
         let text = format!("{n} unsaved change{}", if n == 1 { "" } else { "s" });
         let g = style::galley(ui, &text, 12.0, Weight::W600, style::text_1(), 0.0);
         ui.painter().galley(
@@ -1233,13 +1239,16 @@ impl ParamsPage {
                     .iter()
                     .find(|c| c.value == draft)
                     .map_or(draft.clone(), |c| c.label.clone());
-                painter.rect(
-                    field,
-                    style::RADIUS_BTN,
-                    style::surface_2(),
-                    Stroke::new(1.0, style::border()),
-                    egui::StrokeKind::Inside,
-                );
+                {
+                    let r = field;
+                    painter.rect_filled(r, style::RADIUS_BTN, style::surface_2());
+                    painter.rect_stroke(
+                        r,
+                        style::RADIUS_BTN,
+                        Stroke::new(1.0, style::border()),
+                        egui::StrokeKind::Inside,
+                    );
+                }
                 painter.galley(
                     Pos2::new(field.left() + 11.0, field.center().y - 8.0),
                     style::galley(ui, &label, 12.0, Weight::W400, style::text_2(), 0.0),
@@ -1265,13 +1274,16 @@ impl ParamsPage {
                 );
             }
             if armed {
-                painter.rect(
-                    field,
-                    style::RADIUS_BTN,
-                    style::surface_2(),
-                    Stroke::new(1.0, style::border()),
-                    egui::StrokeKind::Inside,
-                );
+                {
+                    let r = field;
+                    painter.rect_filled(r, style::RADIUS_BTN, style::surface_2());
+                    painter.rect_stroke(
+                        r,
+                        style::RADIUS_BTN,
+                        Stroke::new(1.0, style::border()),
+                        egui::StrokeKind::Inside,
+                    );
+                }
                 painter.galley(
                     Pos2::new(field.left() + 9.0, field.center().y - 8.0),
                     style::galley_mono(ui, &text, 12.0, style::text_2()),

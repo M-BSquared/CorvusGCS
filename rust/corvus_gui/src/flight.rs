@@ -492,13 +492,11 @@ impl FlightBar {
                 egui::StrokeKind::Inside,
             );
         }
-        painter.rect(
-            rect,
-            style::RADIUS_BTN,
-            fill.gamma_multiply(alpha),
-            stroke,
-            egui::StrokeKind::Inside,
-        );
+        {
+            let r = rect;
+            painter.rect_filled(r, style::RADIUS_BTN, fill.gamma_multiply(alpha));
+            painter.rect_stroke(r, style::RADIUS_BTN, stroke, egui::StrokeKind::Inside);
+        }
         let color = if placeholder { style::text_3() } else { style::text_1() };
         painter.galley(
             Pos2::new(rect.left() + 11.0, rect.center().y - text.size().y / 2.0),
