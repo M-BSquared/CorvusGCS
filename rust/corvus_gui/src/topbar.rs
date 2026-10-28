@@ -49,11 +49,11 @@ pub struct Block {
     pub title: String,
 }
 
-fn s<'a>(state: &'a Value, key: &str) -> &'a str {
+pub(crate) fn s<'a>(state: &'a Value, key: &str) -> &'a str {
     state.get(key).and_then(Value::as_str).unwrap_or("")
 }
 
-fn num(state: &Value, key: &str) -> f64 {
+pub(crate) fn num(state: &Value, key: &str) -> f64 {
     match state.get(key) {
         Some(Value::Number(n)) => n.as_f64().unwrap_or(0.0),
         Some(Value::String(t)) => t.trim().parse().unwrap_or(f64::NAN),
@@ -62,7 +62,7 @@ fn num(state: &Value, key: &str) -> f64 {
     }
 }
 
-fn truthy(state: &Value, key: &str) -> bool {
+pub(crate) fn truthy(state: &Value, key: &str) -> bool {
     match state.get(key) {
         Some(Value::Bool(b)) => *b,
         Some(Value::Number(n)) => n.as_f64().is_some_and(|v| v != 0.0 && !v.is_nan()),
@@ -294,7 +294,7 @@ pub fn mode_label(state: &Value) -> String {
     "STANDBY".into()
 }
 
-fn has_fix(state: &Value) -> bool {
+pub(crate) fn has_fix(state: &Value) -> bool {
     let fix = s(state, "gps_fix");
     !fix.is_empty() && fix != "NO_GPS" && fix != "NO_FIX"
 }
@@ -405,7 +405,7 @@ pub fn blocks(state: &Value, units: &Units) -> Vec<Block> {
             },
             sub: format!("{} AMSL", units.length.symbol),
             tone: Tone::Plain,
-            title: "Altitude above mean sea level".into(),
+            title: String::new(),
         },
         Block {
             label: "Groundspeed",
@@ -456,6 +456,7 @@ pub fn show(
     rect: Rect,
     logo: &egui::ImageSource<'static>,
     blocks: &[Block],
+    cards: &[Option<crate::popover::Content>],
     notifications: &crate::notify::Summary,
     board_open: bool,
 ) -> bool {
@@ -511,8 +512,18 @@ pub fn show(
         let w = label.size().x.max(value_w) + 24.0;
         let block = Rect::from_min_max(Pos2::new(x, rect.top()), Pos2::new(x + w, rect.bottom() - 1.0));
         let id = ui.scope_id().with(("tb", i));
-        let response = ui.interact(block, id, egui::Sense::hover());
-        if response.hovered() {
+        let card = cards.get(i).and_then(|c| c.as_ref());
+        let response = ui.interact(
+            block,
+            id,
+            if card.is_some() {
+                egui::Sense::click()
+            } else {
+                egui::Sense::hover()
+            },
+        );
+        let open = crate::popover::is_open(ui.ctx(), id);
+        if response.hovered() || open {
             painter.rect_filled(block, 0, style::surface_hover());
         } else if let Some(fill) = tile(b) {
             painter.rect_filled(block, 0, fill);
@@ -535,7 +546,14 @@ pub fn show(
                 style::text_2(),
             );
         }
-        if !b.title.is_empty() {
+        if let Some(card) = card {
+            let look = if matches!(b.label, "GPS" | "Battery") {
+                crate::popover::Look::Tight
+            } else {
+                crate::popover::Look::Narrow
+            };
+            crate::popover::drive(ui.ctx(), id, &response, card, look);
+        } else if !b.title.is_empty() {
             response.on_hover_text(&b.title);
         }
         x += w;

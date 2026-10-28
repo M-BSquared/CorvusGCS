@@ -30,6 +30,7 @@ mod notify_ui;
 mod pagekit;
 mod panel;
 mod params;
+mod popover;
 mod safety;
 mod schema_form;
 mod sensor_view;
@@ -40,6 +41,7 @@ mod stream;
 mod style;
 mod telemetry;
 mod topbar;
+mod topbar_cards;
 mod track;
 mod units;
 

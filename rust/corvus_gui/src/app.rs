@@ -20,7 +20,7 @@ use crate::panel::Panel;
 use crate::setup::SetupPage;
 use crate::telemetry::Telemetry;
 use crate::units::Units;
-use crate::{fonts, style, topbar};
+use crate::{fonts, style, topbar, topbar_cards};
 
 /// The mark ships in two cuts (themes.css `--logo-mark`): black for the
 /// light themes, white for the dark ones.
@@ -32,6 +32,7 @@ struct App {
     board: Board,
     telemetry: Telemetry,
     units: Units,
+    top_speeds: topbar_cards::TopSpeeds,
     map: Map,
     hud: Hud,
     flight: FlightBar,
@@ -70,12 +71,13 @@ impl App {
         let summary = self.board.summary(now);
 
         let blocks = topbar::blocks(&state, &self.units);
+        let cards = topbar_cards::all(&state, &self.units, &mut self.top_speeds);
         egui::Panel::top("topbar")
             .exact_size(topbar::HEIGHT)
             .frame(egui::Frame::NONE)
             .show(ui, |ui| {
                 let rect = ui.max_rect();
-                if topbar::show(ui, rect, &self.logo, &blocks, &summary, self.board.open) {
+                if topbar::show(ui, rect, &self.logo, &blocks, &cards, &summary, self.board.open) {
                     let open = !self.board.open;
                     self.board.set_open(open, now);
                 }
@@ -124,6 +126,17 @@ impl App {
 }
 
 impl eframe::App for App {
+    /// `CORVUS_GUI_HOVER=x,y` holds the pointer there, so a hover card or a
+    /// hint can be looked at without a hand on the mouse.
+    fn raw_input_hook(&mut self, _ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+        if let Some(p) = std::env::var("CORVUS_GUI_HOVER").ok().and_then(|v| {
+            let (x, y) = v.split_once(',')?;
+            Some(egui::pos2(x.trim().parse().ok()?, y.trim().parse().ok()?))
+        }) {
+            raw_input.events.push(egui::Event::PointerMoved(p));
+        }
+    }
+
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.draw(ui);
     }
@@ -236,6 +249,7 @@ pub fn run(
                 board: Board::default(),
                 telemetry,
                 units,
+                top_speeds: Default::default(),
                 map,
                 hud: Hud::default(),
                 flight,

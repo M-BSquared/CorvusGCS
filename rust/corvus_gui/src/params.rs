@@ -18,7 +18,6 @@ use serde_json::{json, Value};
 
 use crate::bg::Pending;
 use crate::http::{self, Server};
-use crate::icons;
 use crate::kit::{self, Button, Choice, Variant};
 use crate::pagekit;
 use crate::style::{self, Weight};
@@ -1174,21 +1173,15 @@ impl ParamsPage {
         if modified {
             np.galley(Pos2::new(name_x + 0.5, top), mono.clone(), style::text_1());
         }
-        let info = Rect::from_center_size(
+        crate::popover::info(
+            ui,
             Pos2::new(
                 (name_x + mono.size().x + 5.0 + 8.0).min(name_x + name_w - 8.0),
                 top + name_h / 2.0,
             ),
-            Vec2::splat(16.0),
-        );
-        let ir = ui
-            .interact(info, ui.scope_id().with(("pinfo", &name)), egui::Sense::hover())
-            .on_hover_text(info_text(&name, meta.as_ref(), p.kind));
-        icons::paint(
-            ui,
-            "info",
-            info.shrink(1.5),
-            if ir.hovered() { style::accent() } else { style::text_3() },
+            &name,
+            &info_text(&name, meta.as_ref(), p.kind),
+            ("pinfo", &name),
         );
         if !desc.is_empty() {
             let dg = style::galley(ui, &desc, 11.0, Weight::W400, style::text_3(), 0.0);

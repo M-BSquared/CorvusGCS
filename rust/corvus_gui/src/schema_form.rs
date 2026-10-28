@@ -573,18 +573,12 @@ impl FormState {
             let lw = lg.size().x;
             painter.galley(Pos2::new(x, top + (row_h - lh) / 2.0), lg, style::text_1());
             if look.hint_as_info && !f.hint.is_empty() {
-                let r = Rect::from_center_size(
-                    Pos2::new((x + lw + 5.0 + 8.0).min(x + label_w - 8.0), top + row_h / 2.0),
-                    Vec2::splat(16.0),
-                );
-                let hr = ui
-                    .interact(r, ui.scope_id().with(("fi", &f.param)), egui::Sense::hover())
-                    .on_hover_text(f.hint.as_str());
-                crate::icons::paint(
+                crate::popover::info(
                     ui,
-                    "info",
-                    r.shrink(1.5),
-                    if hr.hovered() { style::accent() } else { style::text_3() },
+                    Pos2::new((x + lw + 5.0 + 8.0).min(x + label_w - 8.0), top + row_h / 2.0),
+                    &f.label,
+                    &f.hint,
+                    ("fi", &f.param),
                 );
             }
             let status = self.status.get(&f.param).cloned();

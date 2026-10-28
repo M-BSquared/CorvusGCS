@@ -21,7 +21,6 @@ use serde_json::{json, Value};
 
 use crate::bg::Pending;
 use crate::http::{self, Server};
-use crate::icons;
 use crate::kit::{self, Button, Choice, Variant};
 use crate::pagekit;
 use crate::schema_form::{self, Field, FormState, Look};
@@ -807,9 +806,13 @@ impl MotorsPage {
             let gh = g.size().y;
             let gw = g.size().x;
             painter.galley(Pos2::new(info_x, iy), g, style::text_3());
-            let r = Rect::from_center_size(Pos2::new(info_x + gw + 4.0 + 8.0, iy + gh / 2.0), Vec2::splat(16.0));
-            ui.interact(r, ui.scope_id().with("presetinfo"), egui::Sense::hover()).on_hover_text("The preset rewrites a whole configuration and needs a reboot, so it is changed in Parameters, not here.");
-            icons::paint(ui, "info", r.shrink(1.5), style::text_3());
+            crate::popover::info(
+                ui,
+                Pos2::new(info_x + gw + 4.0 + 8.0, iy + gh / 2.0),
+                "Airframe preset",
+                "The preset rewrites a whole configuration and needs a reboot, so it is changed in Parameters, not here.",
+                "presetinfo",
+            );
             iy += gh.max(16.0) + 10.0;
         }
         if let Some(frame) = &doc.frame {
@@ -1191,10 +1194,13 @@ impl MotorsPage {
         let hw = head.size().x;
         painter.galley(Pos2::new(x, cy), head, style::text_2());
         if frame.adjustable && !frame.hint.is_empty() {
-            let r = Rect::from_center_size(Pos2::new(x + hw + 5.0 + 8.0, cy + hh / 2.0), Vec2::splat(16.0));
-            ui.interact(r, ui.scope_id().with("framehint"), egui::Sense::hover())
-                .on_hover_text(frame.hint.as_str());
-            icons::paint(ui, "info", r.shrink(1.5), style::text_3());
+            crate::popover::info(
+                ui,
+                Pos2::new(x + hw + 5.0 + 8.0, cy + hh / 2.0),
+                "Frame size",
+                &frame.hint,
+                "framehint",
+            );
         }
         cy += hh.max(16.0) + 6.0;
         if !frame.adjustable {
@@ -1334,10 +1340,13 @@ impl MotorsPage {
         let (hh, hw) = (head.size().y, head.size().x);
         painter.galley(Pos2::new(x, cy), head, style::text_2());
         if !doc.position_hint.is_empty() {
-            let r = Rect::from_center_size(Pos2::new(x + hw + 5.0 + 8.0, cy + hh / 2.0), Vec2::splat(16.0));
-            ui.interact(r, ui.scope_id().with("sensorhint"), egui::Sense::hover())
-                .on_hover_text(doc.position_hint.as_str());
-            icons::paint(ui, "info", r.shrink(1.5), style::text_3());
+            crate::popover::info(
+                ui,
+                Pos2::new(x + hw + 5.0 + 8.0, cy + hh / 2.0),
+                "Flight controller and GPS",
+                &doc.position_hint,
+                "sensorhint",
+            );
         }
         cy += hh.max(16.0) + 6.0;
         let mut cols: Vec<(String, String)> = Vec::new();

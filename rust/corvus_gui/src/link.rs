@@ -754,15 +754,7 @@ impl LinkTab {
                         cg,
                         style::text_3(),
                     );
-                    let ir = ui
-                        .interact(info, ui.scope_id().with(("presetinfo", i)), egui::Sense::hover())
-                        .on_hover_text(*note);
-                    icons::paint(
-                        ui,
-                        "info",
-                        info.shrink(1.5),
-                        if ir.hovered() { style::accent() } else { style::text_3() },
-                    );
+                    crate::popover::info(ui, info.center(), name, note, ("presetinfo", i));
                     if resp.clicked() {
                         self.custom = (*conn).to_string();
                     }
