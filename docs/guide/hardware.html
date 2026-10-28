@@ -196,6 +196,67 @@
   Refused while armed.
 </p>
 
+<h3 id="bluetooth">Bluetooth modules</h3>
+<p>
+  A Bluetooth Classic telemetry module (HC-05, HC-06 and the modules built on
+  them) shows up as a serial port once it is paired, so it connects like any
+  other radio: pick the port, set the baud rate the module was configured to
+  (often 9600, 57600 or 115200) and press <strong>Connect</strong>. DTR and
+  RTS do not apply. A Bluetooth Low Energy module is not a serial port and is
+  not supported.
+</p>
+
+<h2 id="expresslrs">ExpressLRS and Betaflight</h2>
+<p>
+  An ExpressLRS link that carries MAVLink shows where the aircraft is and how
+  it is doing, on the map and in the instruments, like any other radio. This is
+  <strong>Betaflight compatible</strong>: Betaflight sends MAVLink telemetry on
+  a serial port, an ExpressLRS receiver passes it down the link, and the
+  transmitter module hands it to Corvus over USB.
+</p>
+
+<h3 id="elrs-connect">Connecting</h3>
+<ol>
+  <li>Plug the transmitter module in over USB and set it to pass MAVLink telemetry through.</li>
+  <li>In the Link panel, pick the port and choose <strong>ExpressLRS (MAVLink)</strong> under <strong>Radio</strong>. The baud rate becomes 460800, the usual MAVLink rate of ExpressLRS. Change it if you set another one in the module.</li>
+  <li>Leave <strong>Flight controller</strong> on <strong>Betaflight</strong> for a Betaflight aircraft. A PX4 or ArduPilot aircraft behind the same link names itself and is detected as that.</li>
+  <li>Press <strong>Connect</strong>.</li>
+</ol>
+
+<h3 id="elrs-dtr">DTR and RTS</h3>
+<p>
+  Most transmitter modules are an ESP32 or ESP8285 behind a USB serial chip,
+  and that chip's DTR and RTS lines are wired to the reset and boot pins.
+  Opening a port normally pulls both, which restarts the module, or drops it
+  into its bootloader, every time you connect. For ExpressLRS both lines are
+  therefore <strong>Off</strong> by default, and they are set before the port
+  opens, not after. Each line can also be switched <strong>On</strong> or left
+  to the operating system's default.
+</p>
+
+<h3 id="elrs-betaflight">What Betaflight can do here</h3>
+<p>
+  Betaflight sends telemetry and does not answer commands, parameters or
+  missions over MAVLink. Corvus shows position, attitude, speed, altitude,
+  battery and link quality, and greys out the Setup tiles that need more:
+  First Setup, Calibration, Radio Control, PID Tuning, Motors, Safety &amp;
+  Sensors, Battery &amp; Power, RTK GPS, Remote ID, Parameters and Firmware.
+  Each says it is not for Betaflight. Configure the aircraft in the Betaflight
+  Configurator. Telemetry Radio, Video and the Betaflight page stay available.
+</p>
+
+<h3 id="elrs-msp">Reading the controller</h3>
+<p>
+  The <strong>Betaflight</strong> tile in Setup reads a flight controller over
+  MSP, Betaflight's own configuration protocol, on its <strong>USB</strong>
+  port. That is a second cable next to the telemetry link, because the UART
+  that carries MAVLink does not speak MSP. Pick the port and press
+  <strong>Read controller</strong>: Corvus shows the firmware and board, the
+  sensors it found, the loop time, the PID and rate profiles in use and the
+  battery. Reading changes nothing on the controller. To change a setting, use
+  the Betaflight Configurator.
+</p>
+
 <h2 id="rtk">RTK GPS</h2>
 <p>
   Centimetre positioning, set up by plugging in a base station. RTK is off
@@ -315,6 +376,7 @@
   <p class="guide-toc-title" id="toc-title">On this page</p>
   <ul>
     <li><a href="#sik-radio">Telemetry radio</a></li>
+    <li><a href="#expresslrs">ExpressLRS and Betaflight</a></li>
     <li><a href="#rtk">RTK GPS</a></li>
     <li><a href="#remote-id">Remote ID</a></li>
   </ul>

@@ -93,6 +93,7 @@ _EXPECTED_GET = {
     "/api/languages/strings",
     "/api/firmware/catalog",
     "/api/sik/status",
+    "/api/betaflight/status",
     "/api/rtk/status",
     # Camera video: the page's state, and one frame per request (a long poll,
     # so a camera never holds one of the browser's six connections for good).
@@ -214,6 +215,9 @@ _EXPECTED_POST = {
     # SiK radio sessions are POST including the read: loading settings takes the
     # serial port from the bridge and puts a radio into command mode, which is a
     # side effect on the telemetry link and not a fetch.
+    # Opens a serial port and asks a flight controller questions; it changes
+    # nothing on it, but it is not a fetch either.
+    "/api/betaflight/read",
     "/api/sik/load",
     "/api/sik/save",
     "/api/sik/reset",

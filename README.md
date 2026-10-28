@@ -15,7 +15,7 @@
 
 <div align="center">
   <!-- corvus:version-badge -->
-  <img src="https://img.shields.io/badge/Version-2026.10.44-f7ebe1?style=for-the-badge" height="28" alt="Version 2026.10.44" />
+  <img src="https://img.shields.io/badge/Version-2026.10.45-f7ebe1?style=for-the-badge" height="28" alt="Version 2026.10.45" />
   <img width="8" />
   <!-- <a href="https://www.python.org/" target="_blank"><img src="https://img.shields.io/badge/Python_3.12%2B-3776AB?logo=python&logoColor=white&style=for-the-badge" height="28" alt="Python 3.12+" /></a>
   <img width="8" />
@@ -249,6 +249,12 @@ Its source is plain HTML in [`docs/guide`](docs/guide).
 Primary target: **PX4 v1.16, v1.17, v1.18.** Secondary target: **ArduPilot
 4.3 to 4.6** for Copter, Plane, Rover/Boat and Sub. Older PX4 (v1.12 to v1.15)
 works on a best-effort basis.
+
+**Betaflight** is supported for telemetry over MAVLink, for example through an
+ExpressLRS link: you see where the aircraft is and how it is doing. Betaflight
+takes no parameters or commands over MAVLink, so the Setup tiles that need
+them are greyed out with the reason. See
+[ExpressLRS and Betaflight](https://m-bsquared.github.io/CorvusGCS/guide/hardware.html#expresslrs).
 
 Corvus detects the stack and firmware version on connect, loads the matching
 parameter set, and refuses to send a command or write a parameter the

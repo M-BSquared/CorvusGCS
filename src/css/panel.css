@@ -603,6 +603,8 @@ button.link-card-title:focus-visible {
 .link-kind:focus-visible { outline: 2px solid var(--accent-bright); outline-offset: -2px; }
 .link-kind-fields { display: flex; flex-direction: column; gap: 10px; }
 .link-kind-fields[hidden] { display: none; }
+.link-elrs { display: flex; flex-direction: column; gap: 10px; }
+.link-elrs[hidden] { display: none; }
 .link-field { display: flex; flex-direction: column; gap: 5px; }
 .link-field-label {
   font-size: 10px; font-weight: 600; letter-spacing: 0.7px; color: var(--text-3);

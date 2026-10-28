@@ -39,6 +39,7 @@ from pymavlink import mavutil
 STACK_PX4 = "px4"
 STACK_ARDUPILOT = "ardupilot"
 STACK_GENERIC = "generic"
+STACK_BETAFLIGHT = "betaflight"
 
 # MAV_AUTOPILOT ids, spelled out for the same reason MAV_AUTOPILOT_MAP is:
 # this number is what decides which dialect a flight is flown with, and it must
@@ -55,6 +56,17 @@ _NAME_TO_STACK: dict[str, str] = {
     "apm": STACK_ARDUPILOT,
     "arducopter": STACK_ARDUPILOT,
     "arduplane": STACK_ARDUPILOT,
+    "betaflight": STACK_BETAFLIGHT,
+}
+
+# What a link can tell us about the flight controller when its heartbeat does
+# not. Betaflight sends MAV_AUTOPILOT_GENERIC like INAV and a companion
+# computer do, so the id alone cannot name it: the operator says so when
+# choosing the link (``fc=betaflight`` on a ``serial:`` string). The hint only
+# ever fills in a stack that would be generic; an autopilot that names itself
+# PX4 or ArduPilot is believed over any hint.
+_HINT_TO_STACK: dict[str, str] = {
+    "betaflight": STACK_BETAFLIGHT,
 }
 
 
@@ -689,6 +701,13 @@ class Dialect:
     stack: str = STACK_PX4
     label: str = "PX4"
 
+    # Setup tiles this stack cannot serve, by tile id, each with the sentence
+    # the greyed tile carries. Empty for a stack that does everything the
+    # pages do. Reported, not hidden: "not for Betaflight" is an answer.
+    setup_unavailable: dict[str, str] = {}
+    # A stack that only reports. No parameters, no commands, no missions.
+    telemetry_only: bool = False
+
     # Capability flags, surfaced verbatim at GET /api/capabilities so the UI
     # can hide a control rather than offer one the vehicle will refuse.
     supports_shell: bool = True
@@ -997,6 +1016,8 @@ class Dialect:
             "vehicle": vehicle_class(mav_type),
             "ground": is_ground_vehicle(mav_type),
             "label": self.label,
+            "telemetry_only": self.telemetry_only,
+            "setup_unavailable": dict(self.setup_unavailable),
             "shell": self.supports_shell,
             "esc_calibration": self.supports_esc_calibration,
             "accel_cal_prompted": self.accel_cal_positions_are_prompted,
@@ -1435,10 +1456,42 @@ class GenericDialect(Dialect):
         ))
 
 
+# Every tile of the Setup page that reads or writes the flight controller
+# through MAVLink. Betaflight is configured with its own Configurator over MSP,
+# so none of them can reach it from here.
+_BETAFLIGHT_SETUP_UNAVAILABLE = {
+    tile: "Not for Betaflight. Use the Betaflight Configurator for this."
+    for tile in (
+        "firstsetup", "calibration", "control", "tuning", "motors", "safety",
+        "battery", "rtk", "remoteid", "parameters", "firmware",
+    )
+}
+
+
+class BetaflightDialect(GenericDialect):
+    """Betaflight's MAVLink telemetry: where the aircraft is, and how it is doing.
+
+    Betaflight sends HEARTBEAT, SYS_STATUS, ATTITUDE, GPS_RAW_INT,
+    GLOBAL_POSITION_INT, VFR_HUD and RC_CHANNELS on a serial port set to
+    MAVLink telemetry, typically through an ExpressLRS link, and answers
+    nothing sent back: no parameter protocol, no command handler, no mission
+    protocol. So this is the generic dialect with every setup page reported
+    unavailable, and the commands it would otherwise offer refused up front.
+    """
+
+    stack = STACK_BETAFLIGHT
+    label = "Betaflight"
+    telemetry_only = True
+    setup_unavailable = _BETAFLIGHT_SETUP_UNAVAILABLE
+
+    def autotune_plan(self, mav_type: int, enable: bool) -> CommandPlan:
+        return CommandPlan(unsupported="Betaflight takes no commands over MAVLink")
+
 _DIALECTS: dict[str, Dialect] = {
     STACK_PX4: PX4Dialect(),
     STACK_ARDUPILOT: ArduPilotDialect(),
     STACK_GENERIC: GenericDialect(),
+    STACK_BETAFLIGHT: BetaflightDialect(),
 }
 
 
@@ -1447,6 +1500,14 @@ def dialect_for_stack(stack: str) -> Dialect:
     return _DIALECTS.get(stack, _DIALECTS[STACK_GENERIC])
 
 
-def dialect_for(autopilot: Any) -> Dialect:
-    """The dialect for a MAV_AUTOPILOT id, or for the name already stored."""
-    return dialect_for_stack(stack_for_autopilot(autopilot))
+def dialect_for(autopilot: Any, hint: str = "") -> Dialect:
+    """The dialect for a MAV_AUTOPILOT id, or for the name already stored.
+
+    *hint* is what the link said about the flight controller (see
+    ``_HINT_TO_STACK``). It decides only when the heartbeat itself does not
+    name a stack.
+    """
+    stack = stack_for_autopilot(autopilot)
+    if stack == STACK_GENERIC:
+        stack = _HINT_TO_STACK.get(str(hint or "").strip().lower(), stack)
+    return dialect_for_stack(stack)

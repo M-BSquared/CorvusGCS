@@ -413,7 +413,45 @@
                         <option value="57600" selected>57600 (SiK Radio v3)</option>
                         <option value="115200">115200</option>
                         <option value="230400">230400</option>
+                        <option value="460800">460800 (ExpressLRS MAVLink)</option>
+                        <option value="921600">921600</option>
                       </select>
+                    </div>
+                    <div class="link-field">
+                      <label class="link-field-label" for="linkProfile">Radio</label>
+                      <select class="field-select link-select" id="linkProfile" autocomplete="off" aria-label="Radio link type">
+                        <option value="" selected>Flight controller or SiK radio</option>
+                        <option value="elrs">ExpressLRS (MAVLink)</option>
+                      </select>
+                    </div>
+                    <!-- ExpressLRS: a transmitter module behind a USB serial
+                         chip resets when the port opens with DTR and RTS
+                         asserted, so the lines are chosen before it opens. -->
+                    <div class="link-elrs" id="linkElrsFields" hidden>
+                      <div class="link-field">
+                        <label class="link-field-label" for="linkFc">Flight controller</label>
+                        <select class="field-select link-select" id="linkFc" autocomplete="off" aria-label="Flight controller firmware">
+                          <option value="betaflight" selected>Betaflight</option>
+                          <option value="">PX4, ArduPilot or other (detected)</option>
+                        </select>
+                      </div>
+                      <div class="link-field">
+                        <label class="link-field-label" for="linkDtr">DTR</label>
+                        <select class="field-select link-select" id="linkDtr" autocomplete="off" aria-label="DTR line">
+                          <option value="off" selected>Off (does not reset the module)</option>
+                          <option value="on">On</option>
+                          <option value="default">Operating system default</option>
+                        </select>
+                      </div>
+                      <div class="link-field">
+                        <label class="link-field-label" for="linkRts">RTS</label>
+                        <select class="field-select link-select" id="linkRts" autocomplete="off" aria-label="RTS line">
+                          <option value="off" selected>Off (does not reset the module)</option>
+                          <option value="on">On</option>
+                          <option value="default">Operating system default</option>
+                        </select>
+                      </div>
+                      <div class="link-hint" id="linkElrsHint">Betaflight compatible. Connect the transmitter module over USB with MAVLink telemetry on. Betaflight sends telemetry only, so the Setup pages that need parameters stay greyed out.</div>
                     </div>
                   </div>
 
@@ -647,6 +685,7 @@
 <script src="js/setup-battery.js" defer></script>
 <script src="js/setup-sik.js" defer></script>
 <script src="js/setup-rtk.js" defer></script>
+<script src="js/setup-betaflight.js" defer></script>
 <script src="js/setup-video.js" defer></script>
 <script src="js/setup-remoteid.js" defer></script>
 <script src="js/setup-parameters.js" defer></script>

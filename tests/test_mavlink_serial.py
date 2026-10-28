@@ -137,6 +137,29 @@ def test_list_serial_ports_falls_back_to_glob_when_comports_empty(
     assert ports[0]["hwid"] == ""
 
 
+def test_list_serial_ports_fallback_finds_a_paired_bluetooth_module(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setitem(sys.modules, "serial", None)
+    monkeypatch.setitem(sys.modules, "serial.tools", None)
+    monkeypatch.setitem(sys.modules, "serial.tools.list_ports", None)
+
+    import glob
+
+    asked: list[str] = []
+
+    def fake_glob(pattern: str) -> list[str]:
+        asked.append(pattern)
+        return {"/dev/rfcomm*": ["/dev/rfcomm0"], "/dev/cu.HC-*": ["/dev/cu.HC-05-DevB"]}.get(pattern, [])
+
+    monkeypatch.setattr(glob, "glob", fake_glob)
+
+    ports = MavlinkBridge.list_serial_ports()
+
+    assert [p["device"] for p in ports] == ["/dev/cu.HC-05-DevB", "/dev/rfcomm0"]
+    assert "/dev/rfcomm*" in asked and "/dev/cu.HC-*" in asked
+
+
 def test_list_serial_ports_never_raises(monkeypatch: pytest.MonkeyPatch) -> None:
     import serial.tools.list_ports as list_ports
 

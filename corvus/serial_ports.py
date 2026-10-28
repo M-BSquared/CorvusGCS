@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import re
 from collections.abc import Iterable
+from dataclasses import dataclass
 
 # Serial nodes that are never an autopilot or a radio, and that bury the one
 # that is. /dev/ttyS* are the Linux 8250 platform ports (always phantom on a
@@ -230,15 +231,105 @@ def is_windows_com_port(device: str) -> bool:
     return bool(_WINDOWS_COM_RE.match(str(device or "").strip()))
 
 
+SERIAL_LINES = ("on", "off", "default")
+SERIAL_FIRMWARE_HINTS = ("betaflight",)
+SERIAL_LINKS = ("elrs",)
+
+
+@dataclass(frozen=True)
+class SerialOptions:
+    """What a ``serial:`` string says beyond the device and the baud.
+
+    ``dtr`` and ``rts`` are the control lines held while the port is open:
+    True asserts, False releases, None leaves them to the operating system.
+    ``firmware`` names a flight controller whose MAVLink heartbeat does not say
+    what it is (Betaflight announces ``MAV_AUTOPILOT_GENERIC``); ``link`` names
+    the radio the port belongs to. Both are hints, and a heartbeat that names
+    its autopilot always wins over them.
+    """
+
+    dtr: bool | None = None
+    rts: bool | None = None
+    firmware: str = ""
+    link: str = ""
+
+    @property
+    def sets_lines(self) -> bool:
+        """True when a control line has to be held, so the plain opener will not do."""
+        return self.dtr is not None or self.rts is not None
+
+
+def _split_query(text: str) -> tuple[str, str]:
+    base, _, query = text.partition("?")
+    return base, query
+
+
+def _parse_query(query: str) -> dict[str, str]:
+    pairs: dict[str, str] = {}
+    for part in query.split("&"):
+        key, _, value = part.partition("=")
+        key = key.strip().lower()
+        if key:
+            pairs[key] = value.strip().lower()
+    return pairs
+
+
+def _line_state(value: str | None) -> bool | None:
+    return {"on": True, "off": False}.get(value or "")
+
+
+def parse_serial_options(conn: str) -> SerialOptions:
+    """The options of ``serial:<device>:<baud>?dtr=off&rts=off&fc=betaflight``. Never raises.
+
+    A value that is not understood is dropped rather than guessed at;
+    :func:`validate_serial_options` is the strict reading.
+    """
+    pairs = _parse_query(_split_query(str(conn or ""))[1])
+    firmware = pairs.get("fc", "")
+    link = pairs.get("link", "")
+    return SerialOptions(
+        dtr=_line_state(pairs.get("dtr")),
+        rts=_line_state(pairs.get("rts")),
+        firmware=firmware if firmware in SERIAL_FIRMWARE_HINTS else "",
+        link=link if link in SERIAL_LINKS else "",
+    )
+
+
+def validate_serial_options(conn: str) -> None:
+    """Raise ValueError for an option value the opener would otherwise ignore."""
+    pairs = _parse_query(_split_query(str(conn or ""))[1])
+    for key in ("dtr", "rts"):
+        if key in pairs and pairs[key] not in SERIAL_LINES:
+            raise ValueError(f"{key} must be one of: {', '.join(SERIAL_LINES)}")
+    if pairs.get("fc", "") not in ("", *SERIAL_FIRMWARE_HINTS):
+        raise ValueError(f"fc must be one of: {', '.join(SERIAL_FIRMWARE_HINTS)}")
+    if pairs.get("link", "") not in ("", *SERIAL_LINKS):
+        raise ValueError(f"link must be one of: {', '.join(SERIAL_LINKS)}")
+
+
+def serial_query(options: SerialOptions) -> str:
+    """The ``?...`` tail for *options*, empty when there is nothing to say."""
+    parts: list[str] = []
+    if options.link:
+        parts.append(f"link={options.link}")
+    for key, state in (("dtr", options.dtr), ("rts", options.rts)):
+        if state is not None:
+            parts.append(f"{key}={'on' if state else 'off'}")
+    if options.firmware:
+        parts.append(f"fc={options.firmware}")
+    return "?" + "&".join(parts) if parts else ""
+
+
 def split_serial_connection(conn: str) -> tuple[str, int]:
-    """``serial:<device>[:<baud>]`` -> ``(device, baud)``. Never raises.
+    """``serial:<device>[:<baud>][?options]`` -> ``(device, baud)``. Never raises.
 
     The baud is the last ``:``-separated field only when it is all digits, so a
     device name with a colon in it (``COM3`` never has one, a Linux by-path
     node does) keeps it. Without a numeric baud the whole remainder is the
-    device and the baud is :data:`DEFAULT_SERIAL_BAUD`.
+    device and the baud is :data:`DEFAULT_SERIAL_BAUD`. The options after ``?``
+    are read by :func:`parse_serial_options` and never part of either.
     """
-    text = str(conn or "")
+    text = _split_query(str(conn or ""))[0]
     rest = text[len("serial:"):] if text.startswith("serial:") else text
     if ":" in rest:
         device, _, baud_str = rest.rpartition(":")

@@ -114,8 +114,11 @@ from .serial_ports import (  # noqa: F401 - re-exported
     is_phantom_device,
     is_rtk_device,
     is_windows_com_port,
+    parse_serial_options,
     split_serial_connection,
+    validate_serial_options,
 )
+from .serial_open import open_serial_link
 from .state_store import VehicleStateStore
 from .mavlink_inspector import MessageScope
 from .tlog import TlogWriter
@@ -654,6 +657,7 @@ class MavlinkBridge(
                 raise ValueError("serial connection requires a device path")
             if not isinstance(baud, int) or baud <= 0:
                 raise ValueError("serial connection requires a numeric baud rate")
+            validate_serial_options(conn_str)
 
     def set_connection(self, conn_str: str) -> None:
         # The server passes raw JSON here; validate before storing so an
@@ -701,6 +705,9 @@ class MavlinkBridge(
                     # globbing "tty.*" as well would list every port twice.
                     "/dev/ttyUSB*", "/dev/ttyACM*", "/dev/serial/by-id/*",
                     "/dev/cu.usbmodem*", "/dev/cu.usbserial*", "/dev/cu.SLAB_*",
+                    # A paired Bluetooth Classic module (HC-05, HC-06 and the
+                    # telemetry modules built on them) is a serial port too.
+                    "/dev/rfcomm*", "/dev/cu.HC-*",
                 ):
                     devices.extend(glob.glob(pattern))
                 ports = [
@@ -1212,11 +1219,9 @@ class MavlinkBridge(
                 # mavserial takes the bare device path + a baud kwarg; the
                 # ``serial:`` prefix is only a user-facing convention here.
                 device, baud = self._parse_serial(self._conn_str)
-                opened = mavutil.mavlink_connection(
-                    device,
-                    baud=baud,
-                    source_system=GCS_SYSTEM_ID,
-                    source_component=GCS_COMPONENT_ID,
+                opened = open_serial_link(
+                    device, baud, parse_serial_options(self._conn_str),
+                    GCS_SYSTEM_ID, GCS_COMPONENT_ID,
                 )
             else:
                 opened = mavutil.mavlink_connection(
@@ -1493,6 +1498,12 @@ class MavlinkBridge(
                 getattr(hb, "get_srcComponent", lambda: "?")(),
             )
 
+    def _firmware_hint(self) -> str:
+        """The flight controller the operator said this serial link ends in, or ""."""
+        if not self._is_serial():
+            return ""
+        return parse_serial_options(self._conn_str).firmware
+
     def _latch_dialect(self, autopilot_id: Any, mav_type: Any) -> bool:
         """Pick the flight-stack dialect this link will be flown with.
 
@@ -1506,7 +1517,7 @@ class MavlinkBridge(
             type_id = int(mav_type)
         except (TypeError, ValueError):
             type_id = 0
-        dialect = autopilot_dialect.dialect_for(autopilot_id)
+        dialect = autopilot_dialect.dialect_for(autopilot_id, self._firmware_hint())
         changed = dialect is not self._dialect or type_id != self._mav_type_id
         if dialect is not self._dialect:
             # Another stack's release number says nothing about this one.
