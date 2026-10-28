@@ -20,6 +20,7 @@ mod http;
 mod hud;
 mod icons;
 mod kit;
+mod landing;
 mod link;
 mod map;
 mod maprail;

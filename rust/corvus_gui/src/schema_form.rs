@@ -219,6 +219,16 @@ impl FormState {
         self.status.get(param).cloned()
     }
 
+    /// What a field holds as it is typed: the typed text when it reads as a
+    /// number of zero or more, else the stored value. `None` for a blank or
+    /// invalid entry (`landingValues`).
+    pub fn live_value(&self, f: &Field) -> Option<f64> {
+        match self.texts.get(&f.param) {
+            Some(t) => t.trim().parse::<f64>().ok().filter(|n| n.is_finite() && *n >= 0.0),
+            None => Some(self.shown.get(&f.param).copied().unwrap_or(f.value)),
+        }
+    }
+
     pub fn busy(&self) -> bool {
         !self.writes.is_empty()
     }

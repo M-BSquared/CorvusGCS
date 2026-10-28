@@ -11,7 +11,7 @@
 //! sensor tiles with their state and the sensor pages behind them (switch,
 //! drivers, ports, hardware presets, extra parameters), Check values, reading
 //! and re-reading, and the armed gate.
-//! Not yet: drawing the geofence area, the landing zone graphic and the
+//! Not yet: drawing the geofence area and the
 //! preflight checklist card.
 
 use eframe::egui::{self, Pos2, Rect, Stroke, Vec2};
@@ -830,6 +830,40 @@ impl SafetyPage {
                 }
                 painter.galley(r.min + Vec2::new(14.0, 12.0), g, style::text_2());
                 cy = r.bottom();
+            }
+            Card::Section(i) if doc.sections[i].id == "landing" => {
+                let section = doc.sections[i].clone();
+                let fields = self
+                    .doc
+                    .as_ref()
+                    .and_then(|d| d.sections.get(i))
+                    .map_or_else(|| section.fields.clone(), |s| s.fields.clone());
+                let key = format!(
+                    "{}:{}",
+                    section.id,
+                    section.actions.first().map_or("", |a| a.id.as_str())
+                );
+                let busy = self.action.is_some() || self.form.busy();
+                let out = crate::landing::show(
+                    ui,
+                    ctx,
+                    &self.server.clone(),
+                    &mut self.form,
+                    &section,
+                    &fields,
+                    self.action_status.get(&key),
+                    ix,
+                    cy,
+                    iw,
+                    armed,
+                    busy,
+                );
+                if out.apply {
+                    if let Some(a) = section.actions.first() {
+                        self.run_action(ctx, key, a);
+                    }
+                }
+                cy = out.bottom;
             }
             Card::Section(i) => {
                 let section = doc.sections[i].clone();
