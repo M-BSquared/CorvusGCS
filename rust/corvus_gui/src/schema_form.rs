@@ -22,6 +22,32 @@ use crate::http::{self, Server};
 use crate::kit::{self, Choice};
 use crate::style::{self, Weight};
 
+/// How a form looks: the label column, the row rhythm and where hints go.
+#[derive(Debug, Clone, Copy)]
+pub struct Look {
+    pub label_min: f32,
+    pub label_max: f32,
+    pub pad: f32,
+    pub hint_as_info: bool,
+}
+
+impl Look {
+    /// `.safety-field`: labels are sentences, hints are printed.
+    pub const SAFETY: Look = Look {
+        label_min: 140.0,
+        label_max: 230.0,
+        pad: 7.0,
+        hint_as_info: false,
+    };
+    /// `.motors-field`: short labels, hints behind an icon.
+    pub const MOTORS: Look = Look {
+        label_min: 110.0,
+        label_max: 170.0,
+        pad: 5.0,
+        hint_as_info: true,
+    };
+}
+
 /// What a field edits.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Kind {
@@ -171,6 +197,11 @@ impl FormState {
         std::mem::take(&mut self.errors)
     }
 
+    /// The status line of a parameter's last write.
+    pub fn status_of(&self, param: &str) -> Option<(&'static str, String)> {
+        self.status.get(param).cloned()
+    }
+
     pub fn busy(&self) -> bool {
         !self.writes.is_empty()
     }
@@ -235,11 +266,233 @@ impl FormState {
         }
     }
 
+    /// Draws the control of one field at `at`, `cw` wide at most and
+    /// `control_h` tall, and returns the x its right edge ends at. `compact`
+    /// is the table cell: numbers 68 px wide and selects as narrow as their
+    /// text.
+    #[allow(clippy::too_many_arguments)]
+    pub fn control(
+        &mut self,
+        ui: &mut egui::Ui,
+        ctx: &egui::Context,
+        server: &Server,
+        f: &Field,
+        at: Pos2,
+        cw: f32,
+        control_h: f32,
+        armed: bool,
+        compact: bool,
+    ) -> f32 {
+        let painter = ui.painter().clone();
+        let (cx, top) = (at.x, at.y);
+        let shown = self.shown.get(&f.param).copied().unwrap_or(f.value);
+        let mut ux = cx;
+        match &f.kind {
+            Kind::Enum(opts) | Kind::Sign(opts) => {
+                let sign = matches!(f.kind, Kind::Sign(_));
+                let current = if sign {
+                    if shown < 0.0 {
+                        -1
+                    } else {
+                        1
+                    }
+                } else {
+                    shown.round() as i64
+                };
+                let choices: Vec<Choice> = opts
+                    .iter()
+                    .map(|(v, l)| Choice::new(v.to_string(), l.clone()))
+                    .collect();
+                let widest = opts
+                    .iter()
+                    .map(|(_, l)| style::galley(ui, l, 12.0, Weight::W400, style::text_1(), 0.0).size().x)
+                    .fold(0.0, f32::max);
+                let sw = if compact {
+                    (widest + 7.0 + 24.0 + 2.0).min(cw)
+                } else {
+                    (widest + 11.0 + 26.0 + 2.0).clamp(150.0, 300.0).min(cw)
+                };
+                let r = Rect::from_min_size(Pos2::new(cx, top), Vec2::new(sw, control_h));
+                if armed {
+                    let label = choices
+                        .iter()
+                        .find(|c| c.value == current.to_string())
+                        .map_or(String::new(), |c| c.label.clone());
+                    painter.rect(
+                        r,
+                        style::RADIUS_BTN,
+                        style::surface_2(),
+                        Stroke::new(1.0, style::border()),
+                        egui::StrokeKind::Inside,
+                    );
+                    let g = style::galley(ui, &label, 12.0, Weight::W400, style::text_3(), 0.0);
+                    ui.painter_at(r.shrink2(Vec2::new(11.0, 0.0))).galley(
+                        Pos2::new(r.left() + 11.0, r.center().y - g.size().y / 2.0),
+                        g,
+                        style::text_3(),
+                    );
+                } else if let Some(v) = kit::select(
+                    ui,
+                    r,
+                    &choices,
+                    &current.to_string(),
+                    "",
+                    false,
+                    &f.param,
+                    ("sf", &f.param),
+                ) {
+                    let picked: i64 = v.parse().unwrap_or(0);
+                    if picked != current && !self.busy() {
+                        let next = if sign {
+                            signed_value(f.value, picked, 1.0)
+                        } else {
+                            picked as f64
+                        };
+                        self.write(ctx, server, f, next);
+                    }
+                }
+                ux = r.right() + 8.0;
+            }
+            Kind::Number => {
+                let r = Rect::from_min_size(
+                    Pos2::new(cx, top),
+                    Vec2::new(if compact { 68.0 } else { 110.0 }, control_h),
+                );
+                let mut text = self
+                    .texts
+                    .get(&f.param)
+                    .cloned()
+                    .unwrap_or_else(|| format_number(shown));
+                let problem = if self.texts.contains_key(&f.param) {
+                    range_problem(f, &text)
+                } else {
+                    String::new()
+                };
+                if armed {
+                    painter.rect(
+                        r,
+                        style::RADIUS_BTN,
+                        style::surface_2(),
+                        Stroke::new(1.0, style::border()),
+                        egui::StrokeKind::Inside,
+                    );
+                    let g = style::galley_mono(ui, &text, 12.0, style::text_3());
+                    painter.galley(
+                        Pos2::new(r.left() + 9.0, r.center().y - g.size().y / 2.0),
+                        g,
+                        style::text_3(),
+                    );
+                } else {
+                    let resp = kit::text_field(ui, r, &mut text, "", true, ("sf", &f.param));
+                    if resp.changed() {
+                        self.texts.insert(f.param.clone(), text.clone());
+                        self.status.remove(&f.param);
+                    }
+                    if !problem.is_empty() {
+                        painter.rect_stroke(
+                            r,
+                            style::RADIUS_BTN,
+                            Stroke::new(1.0, style::critical()),
+                            egui::StrokeKind::Inside,
+                        );
+                    }
+                    let committed = resp.lost_focus();
+                    if committed && self.texts.contains_key(&f.param) {
+                        let p = range_problem(f, &text);
+                        if p.is_empty() && !self.busy() {
+                            let v: f64 = text.trim().parse().unwrap_or(f.value);
+                            if v == f.value {
+                                self.texts.remove(&f.param);
+                            } else {
+                                self.write(ctx, server, f, v);
+                            }
+                        } else if !p.is_empty() {
+                            self.status.insert(f.param.clone(), ("err", p));
+                        }
+                    }
+                }
+                ux = r.right() + 8.0;
+            }
+            Kind::Bitmask(bits) => {
+                let word = shown.max(0.0);
+                let mut bx = cx;
+                let mut by = top;
+                for (bit, label) in bits {
+                    let lw = 14.0
+                        + 6.0
+                        + style::galley(ui, label, 11.5, Weight::W400, style::text_1(), 0.0)
+                            .size()
+                            .x;
+                    if bx + lw > cx + cw && bx > cx {
+                        bx = cx;
+                        by += 18.0 + 4.0;
+                    }
+                    let mut on = (word as u64 as u32) & (1u32 << bit) != 0;
+                    let was = on;
+                    let resp_on = !armed;
+                    if resp_on {
+                        if kit::checkbox(
+                            ui,
+                            Pos2::new(bx, by),
+                            lw + 8.0,
+                            label,
+                            &mut on,
+                            false,
+                            ("bit", &f.param, bit),
+                        ) && on != was
+                            && !self.busy()
+                        {
+                            let next = with_bit(f.value, *bit, on);
+                            self.write(ctx, server, f, next);
+                        }
+                    } else {
+                        let mut dim = on;
+                        let r = Rect::from_min_size(Pos2::new(bx, by), Vec2::new(lw, 18.0));
+                        painter.rect(
+                            Rect::from_min_size(Pos2::new(bx, by + 2.0), Vec2::splat(14.0)),
+                            3,
+                            if dim { style::text_3() } else { style::surface_2() },
+                            Stroke::new(1.0, style::border_strong()),
+                            egui::StrokeKind::Inside,
+                        );
+                        let g = style::galley(ui, label, 11.5, Weight::W400, style::text_3(), 0.0);
+                        painter.galley(
+                            Pos2::new(bx + 20.0, r.center().y - g.size().y / 2.0),
+                            g,
+                            style::text_3(),
+                        );
+                        dim = false;
+                        let _ = dim;
+                    }
+                    bx += lw + 14.0;
+                }
+            }
+        }
+        ux
+    }
+
+    /// Draws `fields` as a `.pform-grid` with the Safety page's look; see
+    /// `show_with`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn show(
+        &mut self,
+        ui: &mut egui::Ui,
+        ctx: &egui::Context,
+        server: &Server,
+        fields: &[Field],
+        x: f32,
+        y: f32,
+        w: f32,
+        armed: bool,
+    ) -> f32 {
+        self.show_with(ui, ctx, server, fields, x, y, w, armed, Look::SAFETY)
+    }
+
     /// Draws `fields` as a `.pform-grid` in `x .. x + w` from `y`; returns the
     /// bottom. `label_w` is the label column (`minmax(140px, 230px)` on the
     /// Safety page).
     #[allow(clippy::too_many_arguments)]
-    pub fn show(
+    pub fn show_with(
         &mut self,
         ui: &mut egui::Ui,
         ctx: &egui::Context,
@@ -249,15 +502,16 @@ impl FormState {
         mut y: f32,
         w: f32,
         armed: bool,
+        look: Look,
     ) -> f32 {
         let painter = ui.painter().clone();
-        let label_w = 230.0f32.min((w * 0.5).max(140.0));
+        let label_w = look.label_max.min((w * 0.5).max(look.label_min));
         let cx = x + label_w + 12.0;
         let cw = w - label_w - 12.0;
         for (i, f) in fields.iter().enumerate() {
-            let pad = 7.0;
+            let pad = look.pad;
             let control_h: f32 = 2.0 + 12.0 + 12.0 * 1.21;
-            let hint = (!f.hint.is_empty())
+            let hint = (!f.hint.is_empty() && !look.hint_as_info)
                 .then(|| kit::wrapped_weight(ui, &f.hint, 10.5, Weight::W400, style::text_3(), cw, 1.4));
             let bits_h = match &f.kind {
                 Kind::Bitmask(bits) => Some(bits_height(bits.len(), cw)),
@@ -268,184 +522,27 @@ impl FormState {
             let top = y + pad;
             // the label, centred on the control
             let lg = kit::wrapped_weight(ui, &f.label, 12.0, Weight::W400, style::text_1(), label_w, 1.2);
-            painter.galley(Pos2::new(x, top + (row_h - lg.size().y) / 2.0), lg, style::text_1());
-            let status = self.status.get(&f.param).cloned();
-            let shown = self.shown.get(&f.param).copied().unwrap_or(f.value);
-            let mut ux = cx;
-            match &f.kind {
-                Kind::Enum(opts) | Kind::Sign(opts) => {
-                    let sign = matches!(f.kind, Kind::Sign(_));
-                    let current = if sign {
-                        if shown < 0.0 {
-                            -1
-                        } else {
-                            1
-                        }
-                    } else {
-                        shown.round() as i64
-                    };
-                    let choices: Vec<Choice> = opts
-                        .iter()
-                        .map(|(v, l)| Choice::new(v.to_string(), l.clone()))
-                        .collect();
-                    let widest = opts
-                        .iter()
-                        .map(|(_, l)| style::galley(ui, l, 12.0, Weight::W400, style::text_1(), 0.0).size().x)
-                        .fold(0.0, f32::max);
-                    let sw = (widest + 11.0 + 26.0 + 2.0).clamp(150.0, 300.0).min(cw);
-                    let r = Rect::from_min_size(Pos2::new(cx, top), Vec2::new(sw, control_h));
-                    if armed {
-                        let label = choices
-                            .iter()
-                            .find(|c| c.value == current.to_string())
-                            .map_or(String::new(), |c| c.label.clone());
-                        painter.rect(
-                            r,
-                            style::RADIUS_BTN,
-                            style::surface_2(),
-                            Stroke::new(1.0, style::border()),
-                            egui::StrokeKind::Inside,
-                        );
-                        let g = style::galley(ui, &label, 12.0, Weight::W400, style::text_3(), 0.0);
-                        ui.painter_at(r.shrink2(Vec2::new(11.0, 0.0))).galley(
-                            Pos2::new(r.left() + 11.0, r.center().y - g.size().y / 2.0),
-                            g,
-                            style::text_3(),
-                        );
-                    } else if let Some(v) = kit::select(
-                        ui,
-                        r,
-                        &choices,
-                        &current.to_string(),
-                        "",
-                        false,
-                        &f.param,
-                        ("sf", &f.param),
-                    ) {
-                        let picked: i64 = v.parse().unwrap_or(0);
-                        if picked != current && !self.busy() {
-                            let next = if sign {
-                                signed_value(f.value, picked, 1.0)
-                            } else {
-                                picked as f64
-                            };
-                            self.write(ctx, server, f, next);
-                        }
-                    }
-                    ux = r.right() + 8.0;
-                }
-                Kind::Number => {
-                    let r = Rect::from_min_size(Pos2::new(cx, top), Vec2::new(110.0, control_h));
-                    let mut text = self
-                        .texts
-                        .get(&f.param)
-                        .cloned()
-                        .unwrap_or_else(|| format_number(shown));
-                    let problem = if self.texts.contains_key(&f.param) {
-                        range_problem(f, &text)
-                    } else {
-                        String::new()
-                    };
-                    if armed {
-                        painter.rect(
-                            r,
-                            style::RADIUS_BTN,
-                            style::surface_2(),
-                            Stroke::new(1.0, style::border()),
-                            egui::StrokeKind::Inside,
-                        );
-                        let g = style::galley_mono(ui, &text, 12.0, style::text_3());
-                        painter.galley(
-                            Pos2::new(r.left() + 9.0, r.center().y - g.size().y / 2.0),
-                            g,
-                            style::text_3(),
-                        );
-                    } else {
-                        let resp = kit::text_field(ui, r, &mut text, "", true, ("sf", &f.param));
-                        if resp.changed() {
-                            self.texts.insert(f.param.clone(), text.clone());
-                            self.status.remove(&f.param);
-                        }
-                        if !problem.is_empty() {
-                            painter.rect_stroke(
-                                r,
-                                style::RADIUS_BTN,
-                                Stroke::new(1.0, style::critical()),
-                                egui::StrokeKind::Inside,
-                            );
-                        }
-                        let committed = resp.lost_focus();
-                        if committed && self.texts.contains_key(&f.param) {
-                            let p = range_problem(f, &text);
-                            if p.is_empty() && !self.busy() {
-                                let v: f64 = text.trim().parse().unwrap_or(f.value);
-                                if v == f.value {
-                                    self.texts.remove(&f.param);
-                                } else {
-                                    self.write(ctx, server, f, v);
-                                }
-                            } else if !p.is_empty() {
-                                self.status.insert(f.param.clone(), ("err", p));
-                            }
-                        }
-                    }
-                    ux = r.right() + 8.0;
-                }
-                Kind::Bitmask(bits) => {
-                    let word = shown.max(0.0);
-                    let mut bx = cx;
-                    let mut by = top;
-                    for (bit, label) in bits {
-                        let lw = 14.0
-                            + 6.0
-                            + style::galley(ui, label, 11.5, Weight::W400, style::text_1(), 0.0)
-                                .size()
-                                .x;
-                        if bx + lw > cx + cw && bx > cx {
-                            bx = cx;
-                            by += 18.0 + 4.0;
-                        }
-                        let mut on = (word as u64 as u32) & (1u32 << bit) != 0;
-                        let was = on;
-                        let resp_on = !armed;
-                        if resp_on {
-                            if kit::checkbox(
-                                ui,
-                                Pos2::new(bx, by),
-                                lw + 8.0,
-                                label,
-                                &mut on,
-                                false,
-                                ("bit", &f.param, bit),
-                            ) && on != was
-                                && !self.busy()
-                            {
-                                let next = with_bit(f.value, *bit, on);
-                                self.write(ctx, server, f, next);
-                            }
-                        } else {
-                            let mut dim = on;
-                            let r = Rect::from_min_size(Pos2::new(bx, by), Vec2::new(lw, 18.0));
-                            painter.rect(
-                                Rect::from_min_size(Pos2::new(bx, by + 2.0), Vec2::splat(14.0)),
-                                3,
-                                if dim { style::text_3() } else { style::surface_2() },
-                                Stroke::new(1.0, style::border_strong()),
-                                egui::StrokeKind::Inside,
-                            );
-                            let g = style::galley(ui, label, 11.5, Weight::W400, style::text_3(), 0.0);
-                            painter.galley(
-                                Pos2::new(bx + 20.0, r.center().y - g.size().y / 2.0),
-                                g,
-                                style::text_3(),
-                            );
-                            dim = false;
-                            let _ = dim;
-                        }
-                        bx += lw + 14.0;
-                    }
-                }
+            let lh = lg.size().y;
+            let lw = lg.size().x;
+            painter.galley(Pos2::new(x, top + (row_h - lh) / 2.0), lg, style::text_1());
+            if look.hint_as_info && !f.hint.is_empty() {
+                let r = Rect::from_center_size(
+                    Pos2::new((x + lw + 5.0 + 8.0).min(x + label_w - 8.0), top + row_h / 2.0),
+                    Vec2::splat(16.0),
+                );
+                let hr = ui
+                    .interact(r, ui.scope_id().with(("fi", &f.param)), egui::Sense::hover())
+                    .on_hover_text(f.hint.as_str());
+                crate::icons::paint(
+                    ui,
+                    "info",
+                    r.shrink(1.5),
+                    if hr.hovered() { style::accent() } else { style::text_3() },
+                );
             }
+            let status = self.status.get(&f.param).cloned();
+            let ux = self.control(ui, ctx, server, f, Pos2::new(cx, top), cw, control_h, armed, false);
+            let mut ux = ux;
             if !f.unit.is_empty() && !matches!(f.kind, Kind::Bitmask(_)) {
                 let g = style::galley(ui, &f.unit, 11.0, Weight::W400, style::text_3(), 0.0);
                 let uw = g.size().x;

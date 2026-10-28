@@ -9,6 +9,7 @@ use serde_json::Value;
 
 use crate::http::Server;
 use crate::kit::{Button, Variant};
+use crate::motors::MotorsPage;
 use crate::pagekit;
 use crate::params::ParamsPage;
 use crate::safety::SafetyPage;
@@ -100,6 +101,7 @@ enum View {
     Tiles,
     Parameters(Box<ParamsPage>),
     Safety(Box<SafetyPage>),
+    Motors(Box<MotorsPage>),
     Elsewhere(&'static str),
 }
 
@@ -107,6 +109,8 @@ enum View {
 pub struct SetupPage {
     server: Server,
     view: View,
+    /// A scroll offset to open at (the --scroll flag, for looking at a page).
+    initial_scroll: Option<f32>,
 }
 
 impl SetupPage {
@@ -114,6 +118,7 @@ impl SetupPage {
         SetupPage {
             server,
             view: View::Tiles,
+            initial_scroll: None,
         }
     }
 
@@ -122,8 +127,14 @@ impl SetupPage {
         match &mut self.view {
             View::Parameters(p) => p.take_errors(),
             View::Safety(p) => p.take_errors(),
+            View::Motors(p) => p.take_errors(),
             _ => Vec::new(),
         }
+    }
+
+    /// Opens the page scrolled by `px`.
+    pub fn scroll_to(&mut self, px: f32) {
+        self.initial_scroll = Some(px);
     }
 
     /// Opens a tile's page, as clicking it does.
@@ -131,6 +142,7 @@ impl SetupPage {
         self.view = match id {
             "parameters" => View::Parameters(Box::new(ParamsPage::new(self.server.clone(), ctx))),
             "safety" => View::Safety(Box::new(SafetyPage::new(self.server.clone(), ctx))),
+            "motors" => View::Motors(Box::new(MotorsPage::new(self.server.clone(), ctx))),
             other => match TILES.iter().find(|t| t.0 == other) {
                 Some(t) => View::Elsewhere(t.2),
                 None => View::Tiles,
@@ -148,73 +160,78 @@ impl SetupPage {
         ui.painter().rect_filled(rect, 0, style::bg());
         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
         child.set_clip_rect(rect);
-        egui::ScrollArea::vertical()
+        let mut area = egui::ScrollArea::vertical()
             .id_salt("setupscroll")
-            .auto_shrink([false, false])
-            .show(&mut child, |ui| {
-                let x = rect.left() + pagekit::PAD_X;
-                let w = rect.width() - 2.0 * pagekit::PAD_X;
-                let top = ui.max_rect().top();
-                let mut y = top + pagekit::PAD_Y;
-                match &mut self.view {
-                    View::Tiles => {
+            .auto_shrink([false, false]);
+        if let Some(px) = self.initial_scroll.take() {
+            area = area.vertical_scroll_offset(px);
+        }
+        area.show(&mut child, |ui| {
+            let x = rect.left() + pagekit::PAD_X;
+            let w = rect.width() - 2.0 * pagekit::PAD_X;
+            let top = ui.max_rect().top();
+            let mut y = top + pagekit::PAD_Y;
+            match &mut self.view {
+                View::Tiles => {
+                    y = head(
+                        ui,
+                        x,
+                        y,
+                        w,
+                        "Setup",
+                        "Vehicle configuration and calibration",
+                        Some(state),
+                        |_, _, _| 0.0,
+                    );
+                    y = grid(ui, x, y, w, &mut self.view, &self.server);
+                }
+                View::Parameters(_) | View::Safety(_) | View::Motors(_) | View::Elsewhere(_) => {
+                    let (bh, back) = pagekit::back_button(ui, Pos2::new(x, y), "Setup");
+                    y += bh + 18.0;
+                    if back {
+                        self.view = View::Tiles;
+                    } else if let View::Motors(p) = &mut self.view {
+                        y = p.show(ui, x, y, w, state, now);
+                    } else if let View::Safety(p) = &mut self.view {
+                        y = p.show(ui, x, y, w, state);
+                    } else if let View::Parameters(p) = &mut self.view {
                         y = head(
                             ui,
                             x,
                             y,
                             w,
-                            "Setup",
-                            "Vehicle configuration and calibration",
-                            Some(state),
-                            |_, _, _| 0.0,
+                            "Parameters",
+                            "Every parameter with its default. Change values, load and save parameter files",
+                            None,
+                            actions,
                         );
-                        y = grid(ui, x, y, w, &mut self.view, &self.server);
-                    }
-                    View::Parameters(_) | View::Safety(_) | View::Elsewhere(_) => {
-                        let (bh, back) = pagekit::back_button(ui, Pos2::new(x, y), "Setup");
-                        y += bh + 18.0;
-                        if back {
-                            self.view = View::Tiles;
-                        } else if let View::Safety(p) = &mut self.view {
-                            y = p.show(ui, x, y, w, state);
-                        } else if let View::Parameters(p) = &mut self.view {
-                            y = head(
-                                ui,
-                                x,
-                                y,
-                                w,
-                                "Parameters",
-                                "Every parameter with its default. Change values, load and save parameter files",
-                                None,
-                                actions,
-                            );
-                            y = p.show(ui, x, y, w, state, now);
-                        } else if let View::Elsewhere(name) = &self.view {
-                            y = head(ui, x, y, w, name, "", None, |_, _, _| 0.0);
-                            let g = crate::kit::wrapped_weight(
-                                ui,
-                                "This page is not in the native interface yet. It is still in the web interface.",
-                                12.0,
-                                Weight::W400,
-                                style::text_2(),
-                                w - 28.0,
-                                1.55,
-                            );
-                            let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, g.size().y + 24.0));
-                            ui.painter().rect(
-                                r,
-                                style::RADIUS_BTN,
-                                style::surface_2(),
-                                Stroke::new(1.0, style::border_soft()),
-                                egui::StrokeKind::Inside,
-                            );
-                            ui.painter().galley(r.min + Vec2::new(14.0, 12.0), g, style::text_2());
-                            y = r.bottom();
-                        }
+                        y = p.show(ui, x, y, w, state, now);
+                    } else if let View::Elsewhere(name) = &self.view {
+                        y = head(ui, x, y, w, name, "", None, |_, _, _| 0.0);
+                        let g = crate::kit::wrapped_weight(
+                            ui,
+                            "This page is not in the native interface yet. It is still in the web interface.",
+                            12.0,
+                            Weight::W400,
+                            style::text_2(),
+                            w - 28.0,
+                            1.55,
+                        );
+                        let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, g.size().y + 24.0));
+                        ui.painter().rect(
+                            r,
+                            style::RADIUS_BTN,
+                            style::surface_2(),
+                            Stroke::new(1.0, style::border_soft()),
+                            egui::StrokeKind::Inside,
+                        );
+                        ui.painter().galley(r.min + Vec2::new(14.0, 12.0), g, style::text_2());
+                        y = r.bottom();
                     }
                 }
-                ui.allocate_space(Vec2::new(rect.width() - 1.0, y + pagekit::PAD_Y - top));
-            });
+            }
+            ui.allocate_space(Vec2::new(rect.width() - 1.0, y + pagekit::PAD_Y - top));
+        });
     }
 }
 
@@ -333,6 +350,7 @@ fn grid(ui: &mut egui::Ui, x: f32, y: f32, w: f32, view: &mut View, server: &Ser
             *view = match *id {
                 "parameters" => View::Parameters(Box::new(ParamsPage::new(server.clone(), ui.ctx()))),
                 "safety" => View::Safety(Box::new(SafetyPage::new(server.clone(), ui.ctx()))),
+                "motors" => View::Motors(Box::new(MotorsPage::new(server.clone(), ui.ctx()))),
                 _ => View::Elsewhere(title),
             };
         }

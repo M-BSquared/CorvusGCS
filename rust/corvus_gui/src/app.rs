@@ -159,7 +159,12 @@ pub fn unwrap_config(answer: &Value) -> Value {
 }
 
 /// Opens the window on `server` and runs until it is closed.
-pub fn run(server: Server, context: &'static OnceLock<egui::Context>, page: Option<&str>) -> ExitCode {
+pub fn run(
+    server: Server,
+    context: &'static OnceLock<egui::Context>,
+    page: Option<&str>,
+    scroll: Option<f32>,
+) -> ExitCode {
     let config = http::get_json(&server, "/api/config")
         .map(|c| unwrap_config(&c))
         .unwrap_or(Value::Null);
@@ -185,10 +190,12 @@ pub fn run(server: Server, context: &'static OnceLock<egui::Context>, page: Opti
         .unwrap_or(1.0) as f32;
     let sources = http::get_json(&server, "/api/tiles/sources").unwrap_or(Value::Null);
     let start_page = match page {
-        Some("setup") | Some("parameters") | Some("safety") => Page::Setup,
+        Some("setup") | Some("parameters") | Some("safety") | Some("motors") => Page::Setup,
         _ => Page::Home,
     };
-    let open_page = page.filter(|p| matches!(*p, "parameters" | "safety")).map(String::from);
+    let open_page = page
+        .filter(|p| matches!(*p, "parameters" | "safety" | "motors"))
+        .map(String::from);
     let options = eframe::NativeOptions {
         renderer: eframe::Renderer::Glow,
         viewport: egui::ViewportBuilder::default()
@@ -237,6 +244,9 @@ pub fn run(server: Server, context: &'static OnceLock<egui::Context>, page: Opti
                     let mut s = SetupPage::new(server.clone());
                     if let Some(p) = &open_page {
                         s.open(p, &ctx);
+                    }
+                    if let Some(px) = scroll {
+                        s.scroll_to(px);
                     }
                     s
                 },

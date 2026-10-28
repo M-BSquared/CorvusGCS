@@ -21,6 +21,7 @@ mod kit;
 mod link;
 mod map;
 mod maprail;
+mod motors;
 mod nav;
 mod notify;
 mod notify_ui;
@@ -58,6 +59,7 @@ struct Args {
     root: Option<PathBuf>,
     python: Option<PathBuf>,
     page: Option<String>,
+    scroll: Option<f32>,
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -70,8 +72,9 @@ fn parse_args() -> Result<Args, String> {
             "--root" => args.root = Some(PathBuf::from(value("--root")?)),
             "--python" => args.python = Some(PathBuf::from(value("--python")?)),
             "--page" => args.page = Some(value("--page")?),
+            "--scroll" => args.scroll = value("--scroll")?.parse().ok(),
             "-h" | "--help" => {
-                println!("usage: corvus-gcs [--server http://host:port] [--root DIR] [--python PATH] [--page setup|parameters|safety]");
+                println!("usage: corvus-gcs [--server http://host:port] [--root DIR] [--python PATH] [--page setup|parameters|safety|motors] [--scroll PX]");
                 std::process::exit(0);
             }
             other => return Err(format!("unknown argument {other}")),
@@ -143,7 +146,7 @@ fn main() -> ExitCode {
         }
     };
 
-    let code = app::run(server, &CONTEXT, args.page.as_deref());
+    let code = app::run(server, &CONTEXT, args.page.as_deref(), args.scroll);
     // The interface (and with it the telemetry thread) is gone; now the
     // backend, SIGTERM first.
     drop(local);

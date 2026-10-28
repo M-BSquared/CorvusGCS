@@ -56,6 +56,7 @@ const ICONS: &[(&str, &str)] = &[
     ("box", "Box"),
     ("ruler", "Ruler"),
     ("info", "Info"),
+    ("octagon-x", "OctagonX"),
     ("radar", "Radar"),
     ("check-check", "CheckCheck"),
     ("scan", "Scan"),
