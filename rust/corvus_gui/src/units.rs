@@ -119,6 +119,18 @@ impl Units {
         }
     }
 
+    /// A trip or a range (`formatDistance`): the length unit below the
+    /// distance unit's switch point, else the distance unit to two decimals.
+    pub fn format_distance(&self, m: f64) -> String {
+        if !m.is_finite() {
+            return String::new();
+        }
+        if m < self.distance.short_below {
+            return format!("{} {}", js_round(m * self.length.per_si), self.length.symbol);
+        }
+        format!("{} {}", js_to_fixed(m * self.distance.per_si, 2), self.distance.symbol)
+    }
+
     /// A speed, one decimal unless told otherwise.
     pub fn format_speed(&self, ms: f64, digits: usize, signed: bool, bare: bool) -> String {
         if !ms.is_finite() {

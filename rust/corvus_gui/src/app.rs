@@ -114,6 +114,7 @@ impl App {
                 if self.page == Page::Home {
                     let mut map_ui = ui.new_child(egui::UiBuilder::new().max_rect(main));
                     map_ui.set_clip_rect(main);
+                    self.map.measure.units = self.units;
                     self.map.show(&mut map_ui, &state);
                     let inset = if vw.max959 { 12.0 } else { 16.0 };
                     let corner = main.max - egui::vec2(inset, inset);

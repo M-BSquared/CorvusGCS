@@ -95,6 +95,8 @@ pub struct Map {
     pub regions_visible: bool,
     regions_load: Option<crate::bg::Pending<Result<Value, String>>>,
     regions_asked: f64,
+    /// The distance tool.
+    pub measure: crate::measure::Measure,
     /// 3D mode: the tilted view, made when it is first switched on.
     three: Option<Map3d>,
     three_d: bool,
@@ -130,6 +132,7 @@ impl Map {
             regions_visible: false,
             regions_load: None,
             regions_asked: f64::NEG_INFINITY,
+            measure: crate::measure::Measure::default(),
             three: None,
             three_d: false,
             view: None,
@@ -214,9 +217,6 @@ impl Map {
         }
     }
 
-    /// Draws the tilted view into the whole of `ui`.
-    fn show_3d(
-        &mut self,
     /// Makes the 3D view when it is first needed, looking where the flat map does.
     fn ensure_three(&mut self, ctx: &egui::Context) {
         if self.three.is_some() {
@@ -230,6 +230,9 @@ impl Map {
         self.three = Some(t);
     }
 
+    /// Draws the tilted view into the whole of `ui`.
+    fn show_3d(
+        &mut self,
         ui: &mut egui::Ui,
         state: &Value,
         vehicle: Option<(f64, f64)>,
@@ -307,14 +310,6 @@ impl Map {
         }
     }
 
-    /// Draws the map into the whole of `ui`.
-    pub fn show(&mut self, ui: &mut egui::Ui, state: &Value) {
-        let vehicle = (state.get("connected") == Some(&Value::Bool(true)))
-            .then(|| real_fix(state.get("position")))
-            .flatten();
-        let home = real_fix(state.get("home"));
-        let target = state.get("heading").and_then(Value::as_f64).unwrap_or(0.0) as f32;
-        let dt = ui.input(|i| i.stable_dt).min(0.1);
     /// Shows or hides the outlines of the downloaded areas; showing asks the
     /// backend for them again.
     pub fn set_regions_visible(&mut self, on: bool) {
@@ -363,8 +358,8 @@ impl Map {
         ctx.request_repaint_after(std::time::Duration::from_secs(1));
     }
 
-        let heading = match self.heading {
-            Some(h) => {
+    /// Draws the map into the whole of `ui`.
+    pub fn show(&mut self, ui: &mut egui::Ui, state: &Value) {
         let now = ui.input(|i| i.time);
         self.poll_regions(&ui.ctx().clone(), now);
         let terrain = self.terrain_ids();
@@ -407,6 +402,8 @@ impl Map {
         let fence = self.env.get();
         let outline = (fence.show_on_map && fence.polygon.len() >= 3).then_some(fence.polygon);
         let layers = Layers {
+            measure: &mut self.measure,
+            regions,
             outline,
             track: &self.track,
             home,
@@ -474,6 +471,8 @@ impl Map {
     }
 }
 
+    measure: &'a mut crate::measure::Measure,
+    regions: Vec<crate::regions::Merged>,
 struct Layers<'a> {
     /// The geofence area, when the Home map is asked to show it.
     outline: Option<Vec<[f64; 2]>>,
@@ -700,9 +699,95 @@ impl Plugin for Layers<'_> {
 }
 
 #[cfg(test)]
+        if self.measure.active {
+            drive_measure(ui, response, projector, self.measure);
+            paint_measure(&painter, ui, projector, rect, self.measure);
+        }
 mod tests {
     use super::*;
     use serde_json::json;
+/// Clicks, the pointer and the keys of the distance tool.
+fn drive_measure(ui: &egui::Ui, response: &egui::Response, projector: &Projector, m: &mut crate::measure::Measure) {
+    let at = |p: Pos2| {
+        let a = projector.unproject(p.to_vec2());
+        [a.x(), a.y()]
+    };
+    if response.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair);
+        if let Some(p) = response.hover_pos() {
+            m.hover(at(p));
+        }
+    }
+    if response.clicked() {
+        if let Some(p) = response.interact_pointer_pos() {
+            m.click(at(p));
+        }
+    }
+    if response.secondary_clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+        m.back();
+    }
+}
+
+/// `measure-casing`, `-line` and `-points`, and the label on the line
+/// (`.map-measure-label`).
+fn paint_measure(
+    painter: &egui::Painter,
+    ui: &egui::Ui,
+    projector: &Projector,
+    rect: egui::Rect,
+    m: &crate::measure::Measure,
+) {
+    let at = |p: [f64; 2]| {
+        screen(
+            projector,
+            rect,
+            &Point {
+                lng: p[0],
+                lat: p[1],
+                alt: None,
+            },
+        )
+    };
+    let accent = style::accent();
+    if let Some(line) = m.line() {
+        let (a, b) = (at(line.from), at(line.to));
+        painter.line_segment([a, b], Stroke::new(6.0, Color32::from_black_alpha(140)));
+        painter.line_segment([a, b], Stroke::new(3.0, accent));
+        let (dist, heading) = m.label(&line);
+        let dg = painter.layout_no_wrap(dist, style::font(12.0, style::Weight::W600), style::text_1());
+        let hg = painter.layout_no_wrap(heading.clone(), style::font(11.0, style::Weight::W500), style::text_2());
+        let gap = if heading.is_empty() { 0.0 } else { 6.0 };
+        let w = dg.size().x + gap + hg.size().x + 16.0 + 2.0;
+        let h = dg.size().y.max(hg.size().y) + 6.0 + 2.0;
+        let mid = at(crate::measure::midpoint(line.from, line.to));
+        let chip = egui::Rect::from_min_size(Pos2::new(mid.x - w / 2.0, mid.y - 10.0 - h), Vec2::new(w, h));
+        painter.rect_filled(chip, style::RADIUS_BTN, style::glass(0.85));
+        painter.rect_stroke(
+            chip,
+            style::RADIUS_BTN,
+            Stroke::new(1.0, style::tint(0.1)),
+            egui::StrokeKind::Inside,
+        );
+        let base = chip.bottom() - 1.0 - 3.0;
+        painter.galley(
+            Pos2::new(chip.left() + 9.0, base - dg.size().y),
+            dg.clone(),
+            style::text_1(),
+        );
+        painter.galley(
+            Pos2::new(chip.left() + 9.0 + dg.size().x + gap, base - hg.size().y),
+            hg,
+            style::text_2(),
+        );
+    }
+    for p in m.points() {
+        let c = at(*p);
+        painter.circle_filled(c, 5.5 + 1.25, accent);
+        painter.circle_filled(c, 5.5 - 1.25, Color32::WHITE);
+    }
+    let _ = ui;
+}
+
 
     #[test]
     fn the_source_is_described_from_the_backend() {
@@ -758,6 +843,11 @@ mod tests {
             three_d: false,
             view: None,
         };
+            regions: Vec::new(),
+            regions_visible: false,
+            regions_load: None,
+            regions_asked: f64::NEG_INFINITY,
+            measure: crate::measure::Measure::default(),
         let _ = ctx;
         m.update(&json!({"connected": true, "armed": false, "position": [11.6, 48.1]}));
         assert!(!m.first_fix);

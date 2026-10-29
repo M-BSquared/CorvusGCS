@@ -49,7 +49,7 @@ impl Item {
     fn works(self) -> bool {
         matches!(
             self,
-            Item::ZoomIn | Item::ZoomOut | Item::Center | Item::Layers | Item::Regions
+            Item::ZoomIn | Item::ZoomOut | Item::Center | Item::Layers | Item::Regions | Item::Measure
         )
     }
 }
@@ -131,7 +131,8 @@ impl MapRail {
                 .on_hover_text(title);
             let active = (item == Item::Center && map.follow)
                 || (item == Item::Layers && self.layers_open)
-                || (item == Item::Regions && map.regions_visible);
+                || (item == Item::Regions && map.regions_visible)
+                || (item == Item::Measure && map.measure.active);
             let (fill, color) = if active {
                 (style::accent_dark(), style::text_1())
             } else if resp.hovered() && works {
@@ -153,6 +154,10 @@ impl MapRail {
                     Item::ZoomOut => map.zoom(-1),
                     Item::Center => map.recenter(state),
                     Item::Layers => self.layers_open = !self.layers_open,
+                    Item::Measure => {
+                        let on = !map.measure.active;
+                        map.measure.set_active(on);
+                    }
                     Item::Regions => {
                         let on = !map.regions_visible;
                         map.set_regions_visible(on);
@@ -315,6 +320,6 @@ mod tests {
         assert_eq!(items(true).len(), 8);
         assert_eq!(*items(false).last().unwrap(), Item::ThreeD);
         assert_eq!(items(true)[3], Item::Divider);
-        assert!(Item::Layers.works() && Item::Regions.works() && !Item::Measure.works());
+        assert!(Item::Layers.works() && Item::Regions.works() && Item::Measure.works());
     }
 }

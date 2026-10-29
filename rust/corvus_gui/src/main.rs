@@ -29,6 +29,7 @@ mod link;
 mod map;
 mod map3d;
 mod maprail;
+mod measure;
 mod modal;
 mod motors;
 mod nav;
