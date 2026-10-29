@@ -108,15 +108,17 @@ enum View {
 /// The page's state.
 pub struct SetupPage {
     server: Server,
+    env: crate::geofence::Env,
     view: View,
     /// A scroll offset to open at (the --scroll flag, for looking at a page).
     initial_scroll: Option<f32>,
 }
 
 impl SetupPage {
-    pub fn new(server: Server) -> SetupPage {
+    pub fn new(server: Server, env: crate::geofence::Env) -> SetupPage {
         SetupPage {
             server,
+            env,
             view: View::Tiles,
             initial_scroll: None,
         }
@@ -146,7 +148,7 @@ impl SetupPage {
         self.view = match id {
             "parameters" => View::Parameters(Box::new(ParamsPage::new(self.server.clone(), ctx))),
             "safety" => {
-                let mut page = SafetyPage::new(self.server.clone(), ctx);
+                let mut page = SafetyPage::new(self.server.clone(), ctx, self.env.clone());
                 if let Some(sensor) = sensor {
                     page.open_sensor(sensor);
                 }
@@ -193,7 +195,7 @@ impl SetupPage {
                         Some(state),
                         |_, _, _| 0.0,
                     );
-                    y = grid(ui, x, y, w, &mut self.view, &self.server);
+                    y = grid(ui, x, y, w, &mut self.view, &self.server, &self.env);
                 }
                 View::Parameters(_) | View::Safety(_) | View::Motors(_) | View::Elsewhere(_) => {
                     let in_sensor = matches!(&self.view, View::Safety(p) if p.in_sensor());
@@ -358,7 +360,15 @@ fn actions(ui: &mut egui::Ui, right: f32, bottom: f32) -> f32 {
 }
 
 /// The tile grid.
-fn grid(ui: &mut egui::Ui, x: f32, y: f32, w: f32, view: &mut View, server: &Server) -> f32 {
+fn grid(
+    ui: &mut egui::Ui,
+    x: f32,
+    y: f32,
+    w: f32,
+    view: &mut View,
+    server: &Server,
+    env: &crate::geofence::Env,
+) -> f32 {
     let cols = columns(w);
     let tile_w = (w - 14.0 * (cols as f32 - 1.0)) / cols as f32;
     let tile_h = 18.0 * 2.0 + (14.0 * 1.21f32 + 3.0 + 2.0 * 11.5 * 1.45).max(40.0);
@@ -373,7 +383,7 @@ fn grid(ui: &mut egui::Ui, x: f32, y: f32, w: f32, view: &mut View, server: &Ser
         if pagekit::tile(ui, r, icon, title, desc) {
             *view = match *id {
                 "parameters" => View::Parameters(Box::new(ParamsPage::new(server.clone(), ui.ctx()))),
-                "safety" => View::Safety(Box::new(SafetyPage::new(server.clone(), ui.ctx()))),
+                "safety" => View::Safety(Box::new(SafetyPage::new(server.clone(), ui.ctx(), env.clone()))),
                 "motors" => View::Motors(Box::new(MotorsPage::new(server.clone(), ui.ctx()))),
                 _ => View::Elsewhere(title),
             };

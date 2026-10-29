@@ -11,8 +11,8 @@
 //! sensor tiles with their state and the sensor pages behind them (switch,
 //! drivers, ports, hardware presets, extra parameters), Check values, reading
 //! and re-reading, and the armed gate.
-//! Not yet: drawing the geofence area and the
-//! preflight checklist card.
+//! The geofence card and its large editor are `geofence_card.rs`; the
+//! Landing card is `landing.rs`; the preflight checklist is `checklist.rs`.
 
 use eframe::egui::{self, Pos2, Rect, Stroke, Vec2};
 use serde_json::{json, Value};
@@ -20,6 +20,8 @@ use serde_json::{json, Value};
 use crate::bg::Pending;
 use crate::check::{self, Check};
 use crate::checklist::Checklist;
+use crate::geofence::Env;
+use crate::geofence_card::{GeofenceCard, Props};
 use crate::http::{self, Server};
 use crate::icons;
 use crate::kit::{self, Button, Variant};
@@ -41,6 +43,10 @@ pub struct Section {
     pub sensor: Option<Sensor>,
     pub toggle: Option<Toggle>,
     pub presets: Vec<Preset>,
+    /// The geofence section: why the action does nothing, and the writes that
+    /// make a stored area act.
+    pub inactive: String,
+    pub enable_writes: Vec<(String, f64)>,
 }
 
 /// A one press preset on a form card.
@@ -125,6 +131,18 @@ pub fn parse_doc(v: &Value) -> Doc {
                         }),
                         toggle: toggle.map(sensors::parse_toggle),
                         presets: sensors::parse_presets(s.get("presets").unwrap_or(&Value::Null)),
+                        inactive: text("inactive"),
+                        enable_writes: s
+                            .get("enable_writes")
+                            .and_then(Value::as_array)
+                            .map(|a| {
+                                a.iter()
+                                    .filter_map(|w| {
+                                        Some((w.get("param")?.as_str()?.to_string(), w.get("value")?.as_f64()?))
+                                    })
+                                    .collect()
+                            })
+                            .unwrap_or_default(),
                     }
                 })
                 .collect()
@@ -228,6 +246,8 @@ enum Card {
     SensorHardware(usize),
     SensorParams(usize),
     Checklist,
+    /// The geofence card, with its section when the vehicle gave one.
+    Geofence(Option<usize>),
 }
 
 /// A chain of writes on its way: a sensor's switch or a preset.
@@ -256,6 +276,7 @@ pub struct SafetyPage {
     chain: Option<Chain>,
     check: Check,
     checklist: Checklist,
+    geofence: GeofenceCard,
     /// The last check, as the card at the top shows it.
     check_card: Option<check::Summary>,
     /// The last check's verdict, to say once the re-read has landed.
@@ -265,8 +286,9 @@ pub struct SafetyPage {
 }
 
 impl SafetyPage {
-    pub fn new(server: Server, ctx: &egui::Context) -> SafetyPage {
+    pub fn new(server: Server, ctx: &egui::Context, env: Env) -> SafetyPage {
         let server_for_list = server.clone();
+        let server_for_fence = server.clone();
         let mut p = SafetyPage {
             server,
             doc: None,
@@ -282,6 +304,7 @@ impl SafetyPage {
             chain: None,
             check: Check::default(),
             checklist: Checklist::new(server_for_list, ctx),
+            geofence: GeofenceCard::new(server_for_fence, env, ctx),
             check_card: None,
             check_say: None,
             fresh: false,
@@ -294,6 +317,7 @@ impl SafetyPage {
         let mut e = std::mem::take(&mut self.errors);
         e.extend(self.form.take_errors());
         e.extend(self.checklist.take_errors());
+        e.extend(self.geofence.take_errors());
         e
     }
 
@@ -347,6 +371,11 @@ impl SafetyPage {
     }
 
     fn take_answers(&mut self, ctx: &egui::Context) {
+        self.geofence.poll(ctx);
+        if self.geofence.take_reload() {
+            self.fresh = true;
+            self.load(ctx);
+        }
         if let Some(r) = self.loading.as_ref().and_then(Pending::take) {
             self.loading = None;
             self.sensors.shown_on = None;
@@ -741,6 +770,7 @@ impl SafetyPage {
             }
         } else if doc.sections.is_empty() {
             order.push((Card::Empty, 4));
+            order.push((Card::Geofence(None), 14 + 2));
         } else {
             let fence = doc.sections.iter().position(|s| s.kind == "geofence");
             let mut fence_placed = false;
@@ -750,7 +780,7 @@ impl SafetyPage {
                 }
                 if s.id == "rtl" {
                     if let Some(f) = fence {
-                        order.push((Card::Section(f), 14 + form_weight(&doc.sections[f])));
+                        order.push((Card::Geofence(Some(f)), 14 + form_weight(&doc.sections[f])));
                         fence_placed = true;
                     }
                 }
@@ -758,7 +788,7 @@ impl SafetyPage {
                 order.push((Card::Section(i), weight));
             }
             if let (Some(f), false) = (fence, fence_placed) {
-                order.push((Card::Section(f), 14 + form_weight(&doc.sections[f])));
+                order.push((Card::Geofence(Some(f)), 14 + form_weight(&doc.sections[f])));
             }
             let sensors = doc.sections.iter().filter(|s| s.sensor.is_some()).count();
             if sensors > 0 {
@@ -786,7 +816,7 @@ impl SafetyPage {
             let mut cy = y;
             for _ in 0..count {
                 let Some(card) = cards.next() else { break };
-                cy = self.card(ui, &ctx, &doc, card, cx, cy, col_w, armed, &mut events) + 14.0;
+                cy = self.card(ui, &ctx, &doc, card, cx, cy, col_w, armed, state, &mut events) + 14.0;
             }
             bottoms[col] = cy - 14.0;
         }
@@ -794,6 +824,7 @@ impl SafetyPage {
             self.handle(&ctx, i, e, armed);
         }
         self.checklist.dialog(&ctx);
+        self.geofence.overlay(&ctx, state, doc.connected, armed);
         bottoms[0].max(bottoms[1]).max(y)
     }
 
@@ -808,6 +839,7 @@ impl SafetyPage {
         y: f32,
         w: f32,
         armed: bool,
+        state: &Value,
         events: &mut Vec<(usize, Event)>,
     ) -> f32 {
         let painter = ui.painter().clone();
@@ -830,6 +862,30 @@ impl SafetyPage {
                 }
                 painter.galley(r.min + Vec2::new(14.0, 12.0), g, style::text_2());
                 cy = r.bottom();
+            }
+            Card::Geofence(section) => {
+                let section = section.map(|i| doc.sections[i].clone());
+                let live = section.as_ref().and_then(|s| {
+                    self.doc
+                        .as_ref()
+                        .and_then(|d| d.sections.iter().find(|x| x.id == s.id))
+                        .map(|x| x.fields.clone())
+                });
+                let fields = live.unwrap_or_else(|| section.as_ref().map(|s| s.fields.clone()).unwrap_or_default());
+                let title = section.as_ref().map_or("Geofence", |s| s.title.as_str());
+                cy = pagekit::section_title(ui, ix, cy, iw, title) - 2.0;
+                let props = Props {
+                    hint: section.as_ref().map_or("", |s| s.hint.as_str()),
+                    inactive: section.as_ref().map_or("", |s| s.inactive.as_str()),
+                    enable_writes: section.as_ref().map_or(&[], |s| s.enable_writes.as_slice()),
+                    fields: &fields,
+                    connected: doc.connected,
+                    armed,
+                };
+                let server = self.server.clone();
+                cy = self
+                    .geofence
+                    .show_body(ui, ctx, &server, &mut self.form, &props, state, ix, cy, iw);
             }
             Card::Section(i) if doc.sections[i].id == "landing" => {
                 let section = doc.sections[i].clone();
@@ -1085,7 +1141,7 @@ impl SafetyPage {
 }
 
 /// Writes each parameter in order and stops at the first one refused.
-fn write_all(server: &Server, writes: Vec<(String, f64)>) -> Result<(), String> {
+pub(crate) fn write_all(server: &Server, writes: Vec<(String, f64)>) -> Result<(), String> {
     for (name, value) in writes {
         let d = http::post_json(server, "/api/params/set", &json!({ "name": name, "value": value }))?;
         if d.get("ok") != Some(&Value::Bool(true)) {
@@ -1258,6 +1314,8 @@ mod tests {
             sensor: None,
             toggle: None,
             presets: vec![],
+            inactive: String::new(),
+            enable_writes: vec![],
         };
         assert_eq!(form_weight(&s), 2 + (3 + 2) + 1 + 2);
     }

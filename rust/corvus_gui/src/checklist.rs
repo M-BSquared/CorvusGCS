@@ -376,7 +376,7 @@ impl Checklist {
                 );
                 cy += 1.0 + 12.0;
             }
-            let lg = style::galley(ui, label, 12.0, Weight::W400, style::text_1(), 0.0);
+            let lg = style::galley(ui, label, 12.0, Weight::W600, style::text_1(), 0.0);
             let row_h = lg.size().y.max(22.0);
             painter.galley(Pos2::new(x, cy + (row_h - lg.size().y) / 2.0), lg, style::text_1());
             if kit::switch(ui, Pos2::new(x + w - 38.0, cy), *on, *enabled, ("clswitch", i)) {

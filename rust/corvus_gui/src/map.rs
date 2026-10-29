@@ -25,11 +25,11 @@ const FIRST_FIX_ZOOM: f64 = 16.0;
 const FOLLOW_BOX_FRACTION: f32 = 0.4;
 const DEFAULT_SOURCE: &str = "satellite";
 
-struct CorvusTiles {
-    base: String,
-    id: String,
-    attribution: &'static str,
-    max_zoom: u8,
+pub(crate) struct CorvusTiles {
+    pub(crate) base: String,
+    pub(crate) id: String,
+    pub(crate) attribution: &'static str,
+    pub(crate) max_zoom: u8,
 }
 
 impl TileSource for CorvusTiles {
@@ -55,7 +55,7 @@ impl TileSource for CorvusTiles {
 }
 
 /// A source's credit and top zoom from `/api/tiles/sources`.
-fn describe(sources: &Value, id: &str) -> (String, u8) {
+pub(crate) fn describe(sources: &Value, id: &str) -> (String, u8) {
     let entry = sources
         .get("sources")
         .and_then(Value::as_array)
@@ -76,6 +76,7 @@ fn describe(sources: &Value, id: &str) -> (String, u8) {
 /// The map and what it remembers between frames.
 pub struct Map {
     server: Server,
+    env: crate::geofence::Env,
     sources: Value,
     /// The base layer shown, a source id of `/api/tiles/sources`.
     pub source: String,
@@ -98,12 +99,13 @@ fn real_fix(v: Option<&Value>) -> Option<(f64, f64)> {
 }
 
 impl Map {
-    pub fn new(ctx: &egui::Context, server: &Server, sources: &Value) -> Map {
+    pub fn new(ctx: &egui::Context, server: &Server, sources: &Value, env: crate::geofence::Env) -> Map {
         let mut memory = MapMemory::default();
         let _ = memory.set_zoom(DEFAULT_ZOOM);
         memory.center_at(walkers::lon_lat(DEFAULT_CENTER.0, DEFAULT_CENTER.1));
         let mut map = Map {
             server: server.clone(),
+            env,
             sources: sources.clone(),
             source: String::new(),
             tiles: None,
@@ -236,7 +238,10 @@ impl Map {
         let my_position = vehicle.map_or(walkers::lon_lat(DEFAULT_CENTER.0, DEFAULT_CENTER.1), |(lng, lat)| {
             walkers::lon_lat(lng, lat)
         });
+        let fence = self.env.get();
+        let outline = (fence.show_on_map && fence.polygon.len() >= 3).then_some(fence.polygon);
         let layers = Layers {
+            outline,
             track: &self.track,
             home,
             vehicle,
@@ -298,6 +303,8 @@ impl Map {
 }
 
 struct Layers<'a> {
+    /// The geofence area, when the Home map is asked to show it.
+    outline: Option<Vec<[f64; 2]>>,
     track: &'a Track,
     home: Option<(f64, f64)>,
     vehicle: Option<(f64, f64)>,
@@ -412,6 +419,35 @@ impl Plugin for Layers<'_> {
     fn run(self: Box<Self>, ui: &mut egui::Ui, response: &egui::Response, projector: &Projector, _memory: &MapMemory) {
         let rect = response.rect;
         let painter = ui.painter_at(rect);
+        if let Some(poly) = &self.outline {
+            // setPolygonOverlay: --warning, 3 px, dashed 2 to 1.5, fill at 6 percent
+            let pts: Vec<Pos2> = poly
+                .iter()
+                .map(|c| {
+                    screen(
+                        projector,
+                        rect,
+                        &Point {
+                            lng: c[0],
+                            lat: c[1],
+                            alt: None,
+                        },
+                    )
+                })
+                .collect();
+            let warning = style::warning();
+            let mut mesh = egui::Mesh::default();
+            for p in &pts {
+                mesh.colored_vertex(*p, warning.gamma_multiply(0.06));
+            }
+            for t in crate::geofence_card::triangulate(&pts) {
+                mesh.add_triangle(t[0] as u32, t[1] as u32, t[2] as u32);
+            }
+            painter.add(mesh);
+            let mut closed = pts.clone();
+            closed.push(pts[0]);
+            painter.extend(Shape::dashed_line(&closed, Stroke::new(3.0, warning), 6.0, 4.5));
+        }
         for flight in &self.track.past {
             let pts: Vec<Pos2> = track::smooth(flight)
                 .iter()
@@ -482,6 +518,7 @@ mod tests {
         let ctx = egui::Context::default();
         let mut m = Map {
             server: Server::local(1),
+            env: crate::geofence::Env::new(Value::Null),
             sources: Value::Null,
             source: String::new(),
             tiles: None,

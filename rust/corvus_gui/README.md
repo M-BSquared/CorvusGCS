@@ -16,6 +16,7 @@ cargo run --release -- --page motors --scroll 560     # open on a page (setup, p
 CORVUS_GUI_SHOT=out.png cargo run -- --page motors     # save the window's own pixels after 9 s and quit
 CORVUS_GUI_HOVER=600,50 cargo run                      # hold the pointer there (a hover card, a hint)
 CORVUS_GUI_CLICK=560,310 cargo run -- --page motors    # press there once, at 6 s (an open menu)
+CORVUS_GUI_CLICK="178,472;400,200;enter" cargo run    # several presses, half a second apart; enter is the key
 ```
 
 Locally, `serve.py` runs as a child on a free port. Every way out (window
@@ -45,6 +46,8 @@ SIGKILL if it is still there after 8 s. If the window does not close within
 | `src/sensors.rs` | the sensor model and its rules: the write chain of a switch, the presets, the extra parameters kept in `~/.corvus/safety-extra.json` |
 | `src/sensor_view.rs` | a sensor page drawn: Status card, Hardware card with the write table, the parameters you add by name |
 | `src/check.rs` | Check values: read back, write again what did not stick, the result card (`src/js/setup-shared.js`) |
+| `src/geofence.rs` | the geofence area the station keeps, its geometry (corners, crossing, area, framing) and the one shared copy (`src/js/geofence.js`) |
+| `src/geofence_card.rs` | the Geofence card: the small map, drawing, dragging and adding corners, upload and removal, the large editor (`src/js/setup-geofence.js`) |
 | `src/landing.rs` | the Landing card: the descent as one bar, the fields beside each stretch, the brackets with their lengths (`landingCard` of `src/js/setup-safety.js`) |
 | `src/popover.rs` | the hint icon and the sheet it opens, the cards of the top bar: hover intent, pinning, one at a time, placement (`Corvus.ui.popover`, `infoHint`) |
 | `src/topbar_cards.rs` | the cards behind GPS, Battery, Altitude, Groundspeed and Vertical speed (`src/js/topbar.js`) |

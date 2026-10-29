@@ -20,7 +20,7 @@ use crate::panel::Panel;
 use crate::setup::SetupPage;
 use crate::telemetry::Telemetry;
 use crate::units::Units;
-use crate::{fonts, style, topbar, topbar_cards};
+use crate::{fonts, geofence, style, topbar, topbar_cards};
 
 /// The mark ships in two cuts (themes.css `--logo-mark`): black for the
 /// light themes, white for the dark ones.
@@ -34,7 +34,7 @@ struct App {
     units: Units,
     top_speeds: topbar_cards::TopSpeeds,
     shot_sent: bool,
-    click_stage: u8,
+    click_stage: u32,
     map: Map,
     hud: Hud,
     flight: FlightBar,
@@ -160,29 +160,56 @@ impl eframe::App for App {
     /// hint can be looked at without a hand on the mouse.
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
         self.shoot(ctx, raw_input);
-        // CORVUS_GUI_CLICK=x,y presses there once, at 6 s, for a menu to look at.
-        if let Some(p) = std::env::var("CORVUS_GUI_CLICK").ok().and_then(|v| {
-            let (x, y) = v.split_once(',')?;
-            Some(egui::pos2(x.trim().parse().ok()?, y.trim().parse().ok()?))
-        }) {
+        // CORVUS_GUI_CLICK="x,y;x,y;enter" presses at each point in turn, the
+        // first at 6 s and one more every half second, for a menu or a drawn
+        // shape to look at; `enter` presses the Enter key.
+        if let Ok(list) = std::env::var("CORVUS_GUI_CLICK") {
+            let steps: Vec<&str> = list.split(';').map(str::trim).collect();
             let t = raw_input.time.unwrap_or(0.0);
-            raw_input.events.push(egui::Event::PointerMoved(p));
-            if t > 6.0 && self.click_stage == 0 {
-                self.click_stage = 1;
-                raw_input.events.push(egui::Event::PointerButton {
-                    pos: p,
-                    button: egui::PointerButton::Primary,
-                    pressed: true,
-                    modifiers: Default::default(),
-                });
-            } else if self.click_stage == 1 {
-                self.click_stage = 2;
-                raw_input.events.push(egui::Event::PointerButton {
-                    pos: p,
-                    button: egui::PointerButton::Primary,
-                    pressed: false,
-                    modifiers: Default::default(),
-                });
+            let k = (self.click_stage / 2) as usize;
+            if let Some(step) = steps.get(k) {
+                let point = step
+                    .split_once(',')
+                    .and_then(|(x, y)| Some(egui::pos2(x.trim().parse().ok()?, y.trim().parse().ok()?)));
+                if let Some(p) = point {
+                    raw_input.events.push(egui::Event::PointerMoved(p));
+                }
+                let due = t > 6.0 + 0.5 * k as f64;
+                if self.click_stage.is_multiple_of(2) && due {
+                    self.click_stage += 1;
+                    match point {
+                        Some(p) => raw_input.events.push(egui::Event::PointerButton {
+                            pos: p,
+                            button: egui::PointerButton::Primary,
+                            pressed: true,
+                            modifiers: Default::default(),
+                        }),
+                        None => raw_input.events.push(egui::Event::Key {
+                            key: egui::Key::Enter,
+                            physical_key: Some(egui::Key::Enter),
+                            pressed: true,
+                            repeat: false,
+                            modifiers: Default::default(),
+                        }),
+                    }
+                } else if self.click_stage % 2 == 1 {
+                    self.click_stage += 1;
+                    match point {
+                        Some(p) => raw_input.events.push(egui::Event::PointerButton {
+                            pos: p,
+                            button: egui::PointerButton::Primary,
+                            pressed: false,
+                            modifiers: Default::default(),
+                        }),
+                        None => raw_input.events.push(egui::Event::Key {
+                            key: egui::Key::Enter,
+                            physical_key: Some(egui::Key::Enter),
+                            pressed: false,
+                            repeat: false,
+                            modifiers: Default::default(),
+                        }),
+                    }
+                }
             }
         }
         if let Some(p) = std::env::var("CORVUS_GUI_HOVER").ok().and_then(|v| {
@@ -285,7 +312,9 @@ pub fn run(
             style::apply(&ctx);
             let repaint = ctx.clone();
             let telemetry = Telemetry::start(server.clone(), move || repaint.request_repaint());
-            let map = Map::new(&ctx, &server, &sources);
+            let env = geofence::Env::new(sources.clone());
+            env.load(&ctx, &server);
+            let map = Map::new(&ctx, &server, &sources, env.clone());
             let flight = FlightBar::new(server.clone(), &ctx);
             ctx.set_zoom_factor(scale);
             let panel = Panel::new(server.clone(), &ctx, &config);
@@ -314,7 +343,7 @@ pub fn run(
                 logo,
                 page: start_page,
                 setup: {
-                    let mut s = SetupPage::new(server.clone());
+                    let mut s = SetupPage::new(server.clone(), env.clone());
                     if let Some(p) = &open_page {
                         s.open(p, &ctx);
                     }

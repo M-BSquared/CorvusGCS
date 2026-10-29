@@ -16,6 +16,8 @@ mod console;
 mod flight;
 mod fonts;
 mod frost;
+mod geofence;
+mod geofence_card;
 mod http;
 mod hud;
 mod icons;
