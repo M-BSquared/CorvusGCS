@@ -77,7 +77,9 @@ SIGKILL if it is still there after 8 s. If the window does not close within
 ## The 3D map
 
 `walkers` draws a flat map only, so 3D mode (`src/js/map.js` `set3D`) has a
-renderer of its own, drawn with egui meshes and no GPU code of its own.
+renderer of its own: OpenGL in an egui paint callback (`src/map3d/gpu.rs`),
+with a depth buffer (`depth_buffer: 24` of the window). Meshes are built once
+on the CPU and stay on the GPU; a frame is uniforms and draw calls.
 
 - **Space.** Everything is in metres east, north and up around the view
   centre (`camera3d.rs`), which is exact enough for a view of tens of
@@ -93,9 +95,15 @@ renderer of its own, drawn with egui meshes and no GPU code of its own.
   reads, so its cache serves offline. The imagery is the base layer's own
   tiles from the same proxy, draped by texture coordinates. A tile whose
   data has not come yet is drawn from its nearest ancestor, never left out.
-- **Order.** egui has no depth buffer. Leaves are drawn far to near, and the
-  quads inside a leaf far to near, which is right for a height field seen from
-  above the ground and wrong only for the camera inside a valley wall.
+- **Depth.** The depth buffer settles what hides what: a ridge hides the
+  valley behind it, a building the one beyond. The callback clears depth inside
+  its clip, draws the ground opaque and the buildings blended after it.
+  Imagery is a mipmapped, anisotropic texture per tile; hillshade is baked
+  into a per vertex shade.
+- **Meshes.** A leaf is a 16 by 16 grid plus skirts around its north west
+  corner, made once per elevation tile (`build_leaf`); its place is a uniform,
+  so panning moves nothing on the GPU. Heights are f32 around the leaf's own
+  origin, which keeps millimetres at tens of kilometres.
 - **Elevation models.** The catalogue is `terrain` of `/api/tiles/sources`
   with the web's choice rule (`terrainFor`: the operator's pick, else the one
   of the map service, else the preferred Copernicus, else SRTM). The
@@ -112,10 +120,10 @@ renderer of its own, drawn with egui meshes and no GPU code of its own.
   imagery has not come, and the buildings.
 - **Buildings.** The full 3D (the panel's switch, kept as `three_d_detail`)
   reads the cells of `/api/buildings/15/x/y.json` for the ground in view,
-  nearest first, 36 at most, from zoom 14. A cell the backend has not got yet
+  nearest first, 36 at most, from zoom 14. Each cell becomes one mesh once the
+  terrain under it is loaded. A cell the backend has not got yet
   (`pending`, or `unavailable` offline) is asked for again every 3 s. Walls
-  facing the camera and the roofs go into one mesh, far to near, 6000
-  buildings at most, in the web's slate at 85 percent opacity with each wall
+  and roofs of a cell go into one mesh, 4000 buildings at most, in the web's slate at 85 percent opacity with each wall
   darker toward its foot. The cells are gzipped as the backend stores them,
   which is why `flate2` is a dependency (already in the build through `png`).
   A building sits on the terrain height at its middle.

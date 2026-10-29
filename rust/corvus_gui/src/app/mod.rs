@@ -266,6 +266,7 @@ impl eframe::App for App {
     fn on_exit(&mut self, gl: Option<&eframe::glow::Context>) {
         if let Some(gl) = gl {
             crate::ui::frost::destroy(gl);
+            crate::map3d::gpu::destroy(gl);
         }
         self.telemetry.stop();
         self.panel.shut_down();
@@ -342,6 +343,8 @@ pub fn run(
         .map(String::from);
     let options = eframe::NativeOptions {
         renderer: eframe::Renderer::Glow,
+        // The 3D map's depth test.
+        depth_buffer: 24,
         viewport: egui::ViewportBuilder::default()
             .with_title(title(&server))
             .with_inner_size(window_size().unwrap_or([1440.0, 900.0]))

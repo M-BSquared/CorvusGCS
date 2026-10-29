@@ -103,9 +103,32 @@ impl Camera {
         (pos, r, u, f)
     }
 
-    /// Where the camera is, in the same metres.
-    pub fn eye(&self) -> V3 {
-        self.basis().0
+    /// The projection as a 4x4 matrix in OpenGL's column-major order, from
+    /// local metres to clip space. Depth runs from the cut `project` makes
+    /// to 60 camera distances, which reaches past the farthest ground drawn.
+    pub fn view_projection(&self) -> [f32; 16] {
+        let (pos, r, u, f) = self.basis();
+        let (w, h) = self.size;
+        let focal = self.focal();
+        let near = self.distance() * 0.02;
+        let far = self.distance() * 60.0;
+        let a = (far + near) / (far - near);
+        let b = -2.0 * far * near / (far - near);
+        let row = |v: V3, s: f64| [v[0] * s, v[1] * s, v[2] * s, -dot(v, pos) * s];
+        let rf = row(f, 1.0);
+        let rows = [
+            row(r, 2.0 * focal / w),
+            row(u, 2.0 * focal / h),
+            [rf[0] * a, rf[1] * a, rf[2] * a, rf[3] * a + b],
+            rf,
+        ];
+        let mut m = [0f32; 16];
+        for c in 0..4 {
+            for (i, row) in rows.iter().enumerate() {
+                m[c * 4 + i] = row[c] as f32;
+            }
+        }
+        m
     }
 
     /// Metres east, north and up of a position, up from `ground`.
@@ -189,6 +212,27 @@ mod tests {
             bearing,
             size: (800.0, 600.0),
             ground: 500.0,
+        }
+    }
+
+    #[test]
+    fn the_matrix_lands_where_project_does() {
+        for (pitch, bearing) in [(0.0, 0.0), (60.0, 0.0), (45.0, 200.0), (80.0, 90.0)] {
+            let c = cam(pitch, bearing);
+            let m = c.view_projection();
+            for p in [[0.0, 0.0, 0.0], [120.0, -300.0, 40.0], [-80.0, 150.0, -20.0]] {
+                let Some(s) = c.project(p) else { continue };
+                let v = |i: usize| (0..3).map(|k| f64::from(m[k * 4 + i]) * p[k]).sum::<f64>() + f64::from(m[12 + i]);
+                let (x, y, z, w) = (v(0), v(1), v(2), v(3));
+                let (nx, ny, nz) = (x / w, y / w, z / w);
+                let sx = (nx + 1.0) / 2.0 * c.size.0;
+                let sy = (1.0 - ny) / 2.0 * c.size.1;
+                assert!(
+                    (sx - s.x).abs() < 0.05 && (sy - s.y).abs() < 0.05,
+                    "{pitch} {bearing} {p:?}"
+                );
+                assert!((-1.0..=1.0).contains(&nz), "inside the depth range");
+            }
         }
     }
 

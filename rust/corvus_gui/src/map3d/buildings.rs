@@ -10,10 +10,11 @@
 
 use std::io::Read;
 
-use eframe::egui::{self, Color32, Mesh, Pos2};
+use eframe::egui::Pos2;
 use serde_json::Value;
 
-use crate::map3d::camera::{Camera, V3};
+use crate::map3d::camera::mercator;
+use crate::map3d::gpu::{MeshData, FLOATS};
 
 /// `BUILDING_CELL_Z`: the grid the backend addresses cells on.
 pub const CELL_Z: u8 = 15;
@@ -21,9 +22,8 @@ pub const CELL_Z: u8 = 15;
 pub const MIN_ZOOM: f64 = 14.0;
 /// `BUILDING_MAX_CELLS`.
 pub const MAX_CELLS: usize = 36;
-/// What one frame extrudes at most, the nearest first. The web map holds
-/// 20000 in a GPU source; here every one is projected each frame.
-pub const MAX_DRAWN: usize = 6000;
+/// What one cell extrudes at most.
+pub const MAX_DRAWN: usize = 4000;
 /// `BUILDING_RETRY_MS`.
 pub const RETRY_SECS: u64 = 3;
 /// `BUILDING_COLOR`.
@@ -117,87 +117,18 @@ pub fn cells_in(bbox: (f64, f64, f64, f64), centre: (f64, f64)) -> Vec<(u32, u32
     out
 }
 
-fn scaled(c: [u8; 3], k: f32, alpha: f32) -> Color32 {
-    let f = |v: u8| (f32::from(v) * k).clamp(0.0, 255.0) as u8;
-    Color32::from_rgba_unmultiplied(f(c[0]), f(c[1]), f(c[2]), (alpha * 255.0) as u8)
+/// `BUILDING_COLOR` as the shader's base colour.
+pub fn color() -> [f32; 3] {
+    [
+        COLOR[0] as f32 / 255.0,
+        COLOR[1] as f32 / 255.0,
+        COLOR[2] as f32 / 255.0,
+    ]
 }
 
-/// Walls and roofs of `list` in one mesh, drawn far to near. `ground` gives
-/// the terrain height at a position. Walls facing away are left out; each
-/// wall darkens toward its foot, which is the only cue that these are
-/// volumes (`fill-extrusion-vertical-gradient`).
-pub fn extrude(cam: &Camera, origin: Pos2, list: &[&Building], ground: &dyn Fn(f64, f64) -> f64) -> Mesh {
-    let eye = camera_position(cam);
-    let mut items: Vec<(f64, &Building, f64)> = list
-        .iter()
-        .map(|b| {
-            let (lng, lat) = centroid(&b.ring);
-            let g = ground(lng, lat);
-            let c = cam.local_of(lng, lat, g);
-            let d = (c[0] - eye[0]).powi(2) + (c[1] - eye[1]).powi(2) + (c[2] - eye[2]).powi(2);
-            (d, *b, g)
-        })
-        .collect();
-    items.sort_by(|a, b| b.0.total_cmp(&a.0));
-    let mut mesh = Mesh::default();
-    let at = |s: crate::map3d::camera::Screen| Pos2::new(origin.x + s.x as f32, origin.y + s.y as f32);
-    for (_, b, g) in items {
-        let base = g + b.min_height;
-        let top = g + b.height;
-        let local: Vec<(V3, V3)> = b
-            .ring
-            .iter()
-            .map(|(lng, lat)| (cam.local_of(*lng, *lat, base), cam.local_of(*lng, *lat, top)))
-            .collect();
-        let area: f64 = (0..local.len())
-            .map(|i| {
-                let (p, q) = (local[i].0, local[(i + 1) % local.len()].0);
-                p[0] * q[1] - q[0] * p[1]
-            })
-            .sum();
-        let sign = if area >= 0.0 { 1.0 } else { -1.0 };
-        for i in 0..local.len() {
-            let (a, b2) = (local[i], local[(i + 1) % local.len()]);
-            let (dx, dy) = (b2.0[0] - a.0[0], b2.0[1] - a.0[1]);
-            let normal = (dy * sign, -dx * sign);
-            let len = (normal.0 * normal.0 + normal.1 * normal.1).sqrt();
-            if len < 1e-6 {
-                continue;
-            }
-            let (mx, my) = ((a.0[0] + b2.0[0]) / 2.0, (a.0[1] + b2.0[1]) / 2.0);
-            if normal.0 * (eye[0] - mx) + normal.1 * (eye[1] - my) <= 0.0 {
-                continue;
-            }
-            let lit = 0.78 + 0.22 * ((normal.0 * -0.45 + normal.1 * 0.89) / len).max(0.0) as f32;
-            let (Some(p0), Some(p1), Some(p2), Some(p3)) =
-                (cam.project(a.0), cam.project(b2.0), cam.project(b2.1), cam.project(a.1))
-            else {
-                continue;
-            };
-            let v = mesh.vertices.len() as u32;
-            for (s, k) in [(p0, 0.62), (p1, 0.62), (p2, 1.0), (p3, 1.0)] {
-                mesh.colored_vertex(at(s), scaled(COLOR, lit * k, OPACITY));
-            }
-            mesh.add_triangle(v, v + 1, v + 2);
-            mesh.add_triangle(v, v + 2, v + 3);
-        }
-        let roof: Vec<Option<Pos2>> = local.iter().map(|p| cam.project(p.1).map(at)).collect();
-        if roof.iter().all(Option::is_some) {
-            let pts: Vec<Pos2> = roof.into_iter().flatten().collect();
-            let v = mesh.vertices.len() as u32;
-            for p in &pts {
-                mesh.colored_vertex(*p, scaled(COLOR, 1.06, OPACITY));
-            }
-            for t in crate::setup::geofence_card::triangulate(&pts) {
-                mesh.add_triangle(v + t[0] as u32, v + t[1] as u32, v + t[2] as u32);
-            }
-        }
-    }
-    mesh
-}
-
-fn camera_position(cam: &Camera) -> V3 {
-    cam.eye()
+/// `fill-extrusion-opacity`.
+pub const fn opacity() -> f32 {
+    OPACITY
 }
 
 fn centroid(ring: &[(f64, f64)]) -> (f64, f64) {
@@ -208,11 +139,73 @@ fn centroid(ring: &[(f64, f64)]) -> (f64, f64) {
     )
 }
 
-/// What a frame of buildings is painted into.
-pub fn paint(painter: &egui::Painter, mesh: Mesh) {
-    if !mesh.is_empty() {
-        painter.add(egui::Shape::mesh(mesh));
+/// Walls and roofs of one cell as a mesh around `origin` (web mercator
+/// metres). `ground` gives the terrain height at a position; the mesh is
+/// only worth building once it knows it for the first building, which
+/// `None` here reports. Each wall darkens toward its foot, which is the only
+/// cue that these are volumes (`fill-extrusion-vertical-gradient`), and
+/// walls facing north-west are lit a little more.
+pub fn cell_mesh(list: &[Building], origin: (f64, f64), ground: &dyn Fn(f64, f64) -> Option<f64>) -> Option<MeshData> {
+    let mut verts: Vec<f32> = Vec::new();
+    let mut indices: Vec<u32> = Vec::new();
+    let push = |verts: &mut Vec<f32>, x: f64, y: f64, z: f64, shade: f32| {
+        verts.extend_from_slice(&[x as f32, y as f32, z as f32, 0.0, 0.0, shade]);
+        (verts.len() / FLOATS - 1) as u32
+    };
+    let mut resolved = false;
+    for b in list.iter().take(MAX_DRAWN) {
+        let (lng, lat) = centroid(&b.ring);
+        let g = match ground(lng, lat) {
+            Some(g) => {
+                resolved = true;
+                g
+            }
+            None if resolved => continue,
+            None => return None,
+        };
+        let (base, top) = (g + b.min_height, g + b.height);
+        let ring: Vec<(f64, f64)> = b
+            .ring
+            .iter()
+            .map(|(lng, lat)| {
+                let (x, y) = mercator(*lng, *lat);
+                (x - origin.0, y - origin.1)
+            })
+            .collect();
+        let area: f64 = (0..ring.len())
+            .map(|i| {
+                let (p, q) = (ring[i], ring[(i + 1) % ring.len()]);
+                p.0 * q.1 - q.0 * p.1
+            })
+            .sum();
+        let sign = if area >= 0.0 { 1.0 } else { -1.0 };
+        for i in 0..ring.len() {
+            let (a, c) = (ring[i], ring[(i + 1) % ring.len()]);
+            let (dx, dy) = (c.0 - a.0, c.1 - a.1);
+            let (nx, ny) = (dy * sign, -dx * sign);
+            let len = (nx * nx + ny * ny).sqrt();
+            if len < 1e-9 {
+                continue;
+            }
+            let lit = 0.78 + 0.22 * ((nx * -0.45 + ny * 0.89) / len).max(0.0) as f32;
+            let v = [
+                push(&mut verts, a.0, a.1, base, lit * 0.62),
+                push(&mut verts, c.0, c.1, base, lit * 0.62),
+                push(&mut verts, c.0, c.1, top, lit),
+                push(&mut verts, a.0, a.1, top, lit),
+            ];
+            indices.extend_from_slice(&[v[0], v[1], v[2], v[0], v[2], v[3]]);
+        }
+        let pts: Vec<Pos2> = ring.iter().map(|(x, y)| Pos2::new(*x as f32, *y as f32)).collect();
+        let first = verts.len() / FLOATS;
+        for p in &ring {
+            push(&mut verts, p.0, p.1, top, 1.06);
+        }
+        for t in crate::setup::geofence_card::triangulate(&pts) {
+            indices.extend_from_slice(&[(first + t[0]) as u32, (first + t[1]) as u32, (first + t[2]) as u32]);
+        }
     }
+    (!indices.is_empty()).then(|| MeshData::new(verts, indices))
 }
 
 #[cfg(test)]
@@ -264,25 +257,28 @@ mod tests {
     }
 
     #[test]
-    fn a_house_gets_front_walls_and_a_roof() {
-        let cam = Camera {
-            lng: 11.0005,
-            lat: 48.0005,
-            zoom: 18.0,
-            pitch: 60.0,
-            bearing: 0.0,
-            size: (800.0, 600.0),
-            ground: 0.0,
-        };
+    fn a_house_gets_four_walls_and_a_roof() {
         let b = Building {
             ring: vec![(11.0, 48.0), (11.001, 48.0), (11.001, 48.001), (11.0, 48.001)],
             height: 10.0,
             min_height: 0.0,
         };
-        let mesh = extrude(&cam, Pos2::ZERO, &[&b], &|_, _| 0.0);
-        let walls = (mesh.vertices.len() - 4) / 4;
-        assert!((1..=2).contains(&walls), "only the walls that face the camera: {walls}");
-        assert_eq!(mesh.indices.len() % 3, 0);
-        assert!(!mesh.is_empty());
+        let origin = mercator(11.0, 48.0);
+        let m = cell_mesh(&[b], origin, &|_, _| Some(500.0)).unwrap();
+        // 4 walls of 4 vertices and a roof of 4 vertices; 8 wall and 2 roof triangles.
+        assert_eq!(m.verts.len() / FLOATS, 20);
+        assert_eq!(m.indices.len(), 30);
+        let tops = m.verts.chunks(FLOATS).map(|v| v[2]).fold(0.0f32, f32::max);
+        assert!((tops - 510.0).abs() < 1e-3, "the roof is 10 m over the ground: {tops}");
+    }
+
+    #[test]
+    fn a_cell_waits_for_the_terrain() {
+        let b = Building {
+            ring: vec![(11.0, 48.0), (11.001, 48.0), (11.0, 48.001)],
+            height: 5.0,
+            min_height: 0.0,
+        };
+        assert!(cell_mesh(&[b], (0.0, 0.0), &|_, _| None).is_none());
     }
 }

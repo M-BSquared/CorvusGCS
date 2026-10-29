@@ -5,6 +5,7 @@
 
 pub mod buildings;
 pub mod camera;
+pub mod gpu;
 pub mod panel;
 pub mod terrain;
 pub mod tile_cache;
@@ -12,22 +13,24 @@ pub mod tile_cache;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use eframe::egui::{self, Color32, Mesh, Pos2, Rect, Stroke, TextureHandle, TextureOptions, Vec2};
+use eframe::egui::{self, Color32, Mesh, Pos2, Rect, Stroke, Vec2};
+use eframe::egui_glow;
 
 use crate::data::track::{self, Point, Track};
 use crate::map3d::buildings::Building;
 use crate::map3d::camera::{Camera, V3};
-use crate::map3d::terrain::Terrain;
+use crate::map3d::gpu::{MeshData, Scene, FLOATS};
+use crate::map3d::terrain::{DemTile, Terrain};
 use crate::map3d::tile_cache::{Key, TileCache};
 use crate::net::bg::Pending;
 use crate::net::http;
 use crate::net::http::Server;
 
 /// A leaf is split while it would cover more than this many pixels.
-const SPLIT_PX: f64 = 360.0;
+const SPLIT_PX: f64 = 230.0;
 /// Quads per side of a leaf.
 const GRID: usize = 16;
-const MAX_LEAVES: usize = 420;
+const MAX_LEAVES: usize = 900;
 const TEXTURES: usize = 400;
 const IMAGE_CACHE: usize = 600;
 /// `HILLSHADE_EXAGGERATION` of the web map, a little stronger as the shade is
@@ -88,8 +91,33 @@ pub struct Map3d {
     /// The full 3D: buildings as well as relief (`three_d_detail`).
     pub full: bool,
     buildings: Option<TileCache<Vec<Building>>>,
-    textures: HashMap<Key, TextureHandle>,
+    /// The id the GPU knows each tile's image by; the image is held so the
+    /// id means that one image for as long as it is listed.
+    tex_ids: HashMap<Key, (Arc<egui::ColorImage>, u64)>,
     used: Vec<Key>,
+    leaf_meshes: HashMap<(u8, u32, u32), LeafMesh>,
+    cell_meshes: HashMap<(u32, u32), CellMesh>,
+    frame: u64,
+}
+
+/// An elevation tile and the part `(u0, v0, size)` of it a leaf covers.
+type Dem = (Arc<DemTile>, (f64, f64, f64));
+
+/// The mesh of one leaf, and the elevation it was made from.
+struct LeafMesh {
+    dem: Option<Dem>,
+    mesh: Arc<MeshData>,
+    used: u64,
+}
+
+/// A cell of buildings by its grid position.
+type Cell = ((u32, u32), Arc<Vec<Building>>);
+
+/// The mesh of one cell of buildings, and the answer it was made from.
+struct CellMesh {
+    cell: Arc<Vec<Building>>,
+    mesh: Option<Arc<MeshData>>,
+    used: u64,
 }
 
 /// Web mercator metres of tile corner `(x + u, y + v)` at zoom `z`.
@@ -126,8 +154,11 @@ impl Map3d {
                 let s = server.clone();
                 Pending::spawn(ctx, move || http::get_json(&s, "/api/config"))
             }),
-            textures: HashMap::new(),
+            tex_ids: HashMap::new(),
             used: Vec::new(),
+            leaf_meshes: HashMap::new(),
+            cell_meshes: HashMap::new(),
+            frame: 0,
         }
     }
 
@@ -145,7 +176,7 @@ impl Map3d {
         if self.source != id {
             self.source = id.to_string();
             self.imagery.clear();
-            self.textures.clear();
+            self.tex_ids.clear();
         }
         self.max_zoom = max_zoom;
     }
@@ -355,7 +386,7 @@ impl Map3d {
 
     /// The imagery of a leaf or its nearest ancestor that is here, and the
     /// part of it the leaf covers.
-    fn imagery_for(&mut self, ctx: &egui::Context, l: Leaf) -> Option<(egui::TextureId, Rect)> {
+    fn imagery_for(&mut self, l: Leaf) -> Option<(gpu::Texture, Rect)> {
         let top = l.z.min(self.max_zoom);
         let mut want = true;
         // A coarse ancestor is asked for too, so there is always something to
@@ -367,29 +398,99 @@ impl Map3d {
             }
             let (z, x, y) = (top - d, l.x >> d, l.y >> d);
             let key: Key = (self.source.clone(), z, x, y);
-            if let Some(tex) = self.textures.get(&key) {
-                self.used.push(key);
-                return Some((tex.id(), uv_of(l, z)));
-            }
             let found = if want {
                 self.imagery.get(&key)
             } else {
                 self.imagery.peek(&key)
             };
             want = false;
-            if let Some(img) = found {
-                let tex = ctx.load_texture(
-                    format!("img{}/{}/{}", z, x, y),
-                    Arc::unwrap_or_clone(img),
-                    TextureOptions::LINEAR,
-                );
-                let id = tex.id();
-                self.textures.insert(key.clone(), tex);
+            if let Some(image) = found {
+                let id = match self.tex_ids.get(&key) {
+                    Some((held, id)) if Arc::ptr_eq(held, &image) => *id,
+                    _ => {
+                        let id = gpu::next_id();
+                        self.tex_ids.insert(key.clone(), (image.clone(), id));
+                        id
+                    }
+                };
                 self.used.push(key);
-                return Some((id, uv_of(l, z)));
+                return Some((gpu::Texture { id, image }, uv_of(l, z)));
             }
         }
         None
+    }
+
+    /// The elevation for a leaf from the model in use, else the default.
+    fn dem_for(&self, l: Leaf) -> Option<Dem> {
+        self.terrain
+            .as_ref()
+            .and_then(|t| t.tile_for(l.z, l.x, l.y))
+            .or_else(|| self.fallback.as_ref().and_then(|t| t.tile_for(l.z, l.x, l.y)))
+    }
+
+    /// The mesh of a leaf: made once, again only when its elevation changes.
+    fn leaf_mesh(&mut self, l: Leaf) -> (Arc<MeshData>, bool) {
+        let dem = self.dem_for(l);
+        let key = (l.z, l.x, l.y);
+        if let Some(m) = self.leaf_meshes.get_mut(&key) {
+            let same = match (&m.dem, &dem) {
+                (None, None) => true,
+                (Some((a, ra)), Some((b, rb))) => Arc::ptr_eq(a, b) && ra == rb,
+                _ => false,
+            };
+            if same {
+                m.used = self.frame;
+                return (m.mesh.clone(), dem.is_none());
+            }
+        }
+        let k = self.cam.lat.to_radians().cos();
+        let mesh = Arc::new(build_leaf(l, dem.as_ref(), k));
+        self.leaf_meshes.insert(
+            key,
+            LeafMesh {
+                dem: dem.clone(),
+                mesh: mesh.clone(),
+                used: self.frame,
+            },
+        );
+        (mesh, dem.is_none())
+    }
+
+    /// The items of the ground in view.
+    fn ground_items(&mut self, leaves: &[Leaf]) -> Vec<gpu::Item> {
+        self.used.clear();
+        let mut items = Vec::with_capacity(leaves.len());
+        for l in leaves {
+            let imagery = self.imagery_for(*l);
+            let (mesh, flat) = self.leaf_mesh(*l);
+            let (mx, my) = tile_mercator(l.z, f64::from(l.x), f64::from(l.y));
+            let (texture, uv) = match imagery {
+                Some((t, uv)) => (Some(t), [uv.min.x, uv.min.y, uv.width(), uv.height()]),
+                None => (None, [0.0, 0.0, 1.0, 1.0]),
+            };
+            items.push(gpu::Item {
+                mesh,
+                origin: (mx, my),
+                texture,
+                uv,
+                flat,
+                color: [
+                    f32::from(GROUND_COLOR[0]) / 255.0,
+                    f32::from(GROUND_COLOR[1]) / 255.0,
+                    f32::from(GROUND_COLOR[2]) / 255.0,
+                ],
+                alpha: 1.0,
+            });
+        }
+        if self.tex_ids.len() > TEXTURES {
+            let keep: std::collections::HashSet<&Key> = self.used.iter().collect();
+            self.tex_ids.retain(|k, _| keep.contains(k));
+        }
+        if self.leaf_meshes.len() > MAX_LEAVES * 3 {
+            let frame = self.frame;
+            self.leaf_meshes.retain(|_, m| m.used + 30 >= frame);
+        }
+        items
     }
 
     /// Draws the view into `rect`.
@@ -436,6 +537,7 @@ impl Map3d {
         {
             self.cam.ground = h;
         }
+        self.frame += 1;
         let painter = ui.painter_at(rect);
         painter.rect_filled(
             rect,
@@ -443,169 +545,44 @@ impl Map3d {
             Color32::from_rgb(GROUND_COLOR[0], GROUND_COLOR[1], GROUND_COLOR[2]),
         );
         let horizon = self.paint_sky(&painter, rect);
-        let mut leaves = self.leaves();
-        let cam = self.cam;
-        let depth = |l: &Leaf| {
-            let c = self.corners(*l);
-            let mid = [(c[0][0] + c[2][0]) / 2.0, (c[0][1] + c[2][1]) / 2.0, c[0][2]];
-            cam.project(mid).map_or(0.0, |s| s.depth)
-        };
-        leaves.sort_by(|a, b| depth(b).total_cmp(&depth(a)));
-        self.used.clear();
-        for l in &leaves {
-            self.draw_leaf(ui.ctx(), &painter, origin, *l);
-        }
-        if self.textures.len() > TEXTURES {
-            let keep: std::collections::HashSet<&Key> = self.used.iter().collect();
-            self.textures.retain(|k, _| keep.contains(k));
-        }
+        let leaves = self.leaves();
+        let ground_items = self.ground_items(&leaves);
+        let building_items = self.building_items();
         self.imagery.trim();
         for t in self.terrain.iter().chain(self.fallback.iter()) {
             t.trim();
         }
+        let scene = Scene {
+            mvp: self.cam.view_projection(),
+            centre: crate::map3d::camera::mercator(self.cam.lng, self.cam.lat),
+            k: self.cam.lat.to_radians().cos(),
+            ground: self.cam.ground,
+            ground_items,
+            building_items,
+        };
+        painter.add(egui::PaintCallback {
+            rect,
+            callback: Arc::new(egui_glow::CallbackFn::new(move |_, p| {
+                // SAFETY: egui_glow calls this on its own context, inside its paint.
+                unsafe { gpu::paint(p.gl(), &scene) }
+            })),
+        });
         if let Some(y) = horizon {
             haze(&painter, rect, y);
         }
-        self.paint_buildings(&painter, origin);
-        self.paint_layers(&painter, origin, layers);
+        if let Some(why) = gpu::failure() {
+            let text = format!("The 3D map cannot draw on this OpenGL: {why}");
+            painter.text(
+                rect.center(),
+                egui::Align2::CENTER_CENTER,
+                text,
+                egui::FontId::proportional(13.0),
+                crate::ui::style::text_2(),
+            );
+        }
+        self.paint_layers(&painter, rect.min, layers);
         self.paint_credit(ui, rect);
         Input { dragged }
-    }
-
-    fn draw_leaf(&mut self, ctx: &egui::Context, painter: &egui::Painter, origin: Pos2, l: Leaf) {
-        let imagery = self.imagery_for(ctx, l);
-        let (tex, uv) = imagery.unwrap_or((
-            egui::TextureId::default(),
-            Rect::from_min_max(egui::epaint::WHITE_UV, egui::epaint::WHITE_UV),
-        ));
-        let plain = imagery.is_none();
-        let c = self.cam;
-        let k = c.lat.to_radians().cos();
-        let (cx, cy) = crate::map3d::camera::mercator(c.lng, c.lat);
-        let dem = self
-            .terrain
-            .as_ref()
-            .and_then(|t| t.tile_for(l.z, l.x, l.y))
-            .or_else(|| self.fallback.as_ref().and_then(|t| t.tile_for(l.z, l.x, l.y)));
-        let n = GRID + 1;
-        let mut heights = vec![c.ground as f32; n * n];
-        if let Some((tile, (u0, v0, size))) = &dem {
-            for j in 0..n {
-                for i in 0..n {
-                    let (u, v) = (i as f64 / GRID as f64, j as f64 / GRID as f64);
-                    heights[j * n + i] = tile.sample(u0 + u * size, v0 + v * size);
-                }
-            }
-        }
-        let step = 2.0 * std::f64::consts::PI * crate::map3d::camera::R / 2f64.powi(l.z as i32) * k / GRID as f64;
-        let shade_at = |i: usize, j: usize| -> f32 {
-            if dem.is_none() {
-                return 1.0;
-            }
-            let h = |i: usize, j: usize| heights[j * n + i] as f64;
-            let (i0, i1) = (i.saturating_sub(1), (i + 1).min(GRID));
-            let (j0, j1) = (j.saturating_sub(1), (j + 1).min(GRID));
-            let dzde = (h(i1, j) - h(i0, j)) / ((i1 - i0) as f64 * step);
-            let dzdn = -(h(i, j1) - h(i, j0)) / ((j1 - j0) as f64 * step);
-            let len = (dzde * dzde + dzdn * dzdn + 1.0).sqrt();
-            let lit = (-dzde * LIGHT[0] - dzdn * LIGHT[1] + LIGHT[2]) / len;
-            1.0 - SHADE * ((LIGHT[2] - lit) / LIGHT[2]).clamp(0.0, 1.0) as f32
-        };
-        let mut pts: Vec<Option<(Pos2, f64)>> = Vec::with_capacity(n * n);
-        for j in 0..=GRID {
-            for i in 0..=GRID {
-                let (u, v) = (i as f64 / GRID as f64, j as f64 / GRID as f64);
-                let (mx, my) = tile_mercator(l.z, l.x as f64 + u, l.y as f64 + v);
-                let p = [(mx - cx) * k, (my - cy) * k, heights[j * n + i] as f64 - c.ground];
-                pts.push(
-                    c.project(p)
-                        .map(|s| (Pos2::new(origin.x + s.x as f32, origin.y + s.y as f32), s.depth)),
-                );
-            }
-        }
-        let mut quads: Vec<(f64, usize, usize)> = Vec::new();
-        for j in 0..GRID {
-            for i in 0..GRID {
-                let ids = [
-                    j * (GRID + 1) + i,
-                    j * (GRID + 1) + i + 1,
-                    (j + 1) * (GRID + 1) + i + 1,
-                    (j + 1) * (GRID + 1) + i,
-                ];
-                if ids.iter().all(|k| pts[*k].is_some()) {
-                    let d: f64 = ids.iter().map(|k| pts[*k].map_or(0.0, |p| p.1)).sum::<f64>() / 4.0;
-                    quads.push((d, i, j));
-                }
-            }
-        }
-        quads.sort_by(|a, b| b.0.total_cmp(&a.0));
-        let mut mesh = egui::Mesh::with_texture(tex);
-        let tint = |shade: f32, plain: bool| {
-            if plain {
-                let [r, g, b] = GROUND_COLOR;
-                let f = |v: u8| (f32::from(v) * shade) as u8;
-                Color32::from_rgb(f(r), f(g), f(b))
-            } else {
-                let g = (shade * 255.0) as u8;
-                Color32::from_rgb(g, g, g)
-            }
-        };
-        // Skirts: the edges of a leaf hang down, so a neighbour from another
-        // elevation model or another level of detail leaves no crack between.
-        let drop = (step * GRID as f64 * 0.05).max(25.0);
-        let low = |i: usize, j: usize| -> Option<Pos2> {
-            let (u, v) = (i as f64 / GRID as f64, j as f64 / GRID as f64);
-            let (mx, my) = tile_mercator(l.z, l.x as f64 + u, l.y as f64 + v);
-            let p = [
-                (mx - cx) * k,
-                (my - cy) * k,
-                heights[j * n + i] as f64 - c.ground - drop,
-            ];
-            c.project(p)
-                .map(|s| Pos2::new(origin.x + s.x as f32, origin.y + s.y as f32))
-        };
-        let mut edges: Vec<((usize, usize), (usize, usize))> = Vec::new();
-        for t in 0..GRID {
-            edges.push(((t, 0), (t + 1, 0)));
-            edges.push(((t, GRID), (t + 1, GRID)));
-            edges.push(((0, t), (0, t + 1)));
-            edges.push(((GRID, t), (GRID, t + 1)));
-        }
-        for ((ai, aj), (bi, bj)) in edges {
-            let (Some((pa, _)), Some((pb, _)), Some(la), Some(lb)) =
-                (pts[aj * n + ai], pts[bj * n + bi], low(ai, aj), low(bi, bj))
-            else {
-                continue;
-            };
-            let base = mesh.vertices.len() as u32;
-            for (pos, (i, j)) in [(pa, (ai, aj)), (pb, (bi, bj)), (lb, (bi, bj)), (la, (ai, aj))] {
-                let (u, v) = (i as f32 / GRID as f32, j as f32 / GRID as f32);
-                mesh.vertices.push(egui::epaint::Vertex {
-                    pos,
-                    uv: Pos2::new(uv.min.x + u * uv.width(), uv.min.y + v * uv.height()),
-                    color: tint(shade_at(i, j) * 0.75, plain),
-                });
-            }
-            mesh.indices
-                .extend([base, base + 1, base + 2, base, base + 2, base + 3]);
-        }
-        for (_, i, j) in quads {
-            let base = mesh.vertices.len() as u32;
-            for (di, dj) in [(0, 0), (1, 0), (1, 1), (0, 1)] {
-                let (ii, jj) = (i + di, j + dj);
-                let (pos, _) = pts[jj * (GRID + 1) + ii].expect("a drawn quad has its corners");
-                let (u, v) = (ii as f32 / GRID as f32, jj as f32 / GRID as f32);
-                let sh = shade_at(ii, jj);
-                mesh.vertices.push(egui::epaint::Vertex {
-                    pos,
-                    uv: Pos2::new(uv.min.x + u * uv.width(), uv.min.y + v * uv.height()),
-                    color: tint(sh, plain),
-                });
-            }
-            mesh.indices
-                .extend([base, base + 1, base + 2, base, base + 2, base + 3]);
-        }
-        painter.add(egui::Shape::mesh(mesh));
     }
 
     /// `setSky`: the sky over the horizon in the theme's own greys. At 60
@@ -640,11 +617,12 @@ impl Map3d {
         Some(rect.top() + y)
     }
 
-    /// The OSM buildings of the cells in view, extruded, when the full 3D is
-    /// on and the zoom is close enough for them to be more than slivers.
-    fn paint_buildings(&mut self, painter: &egui::Painter, origin: Pos2) {
+    /// The OSM buildings of the cells in view, when the full 3D is on and
+    /// the zoom is close enough for them to be more than slivers. A cell is
+    /// built into a mesh once, when the terrain under it is here.
+    fn building_items(&mut self) -> Vec<gpu::Item> {
         if !self.full || self.cam.zoom < buildings::MIN_ZOOM {
-            return;
+            return Vec::new();
         }
         let (min, max) = self.ground_box();
         let (w, s) = self.cam.geo_of(min.0, min.1);
@@ -659,25 +637,61 @@ impl Map3d {
                 buildings::decode,
             )
         });
-        let mut list: Vec<Arc<Vec<Building>>> = Vec::new();
+        let mut cells: Vec<Cell> = Vec::new();
         for (x, y) in buildings::cells_in((w, s, e, n), (self.cam.lng, self.cam.lat)) {
             if let Some(cell) = cache.get(&("b".to_string(), buildings::CELL_Z, x, y)) {
-                list.push(cell);
+                cells.push(((x, y), cell));
             }
         }
         cache.trim();
-        let mut drawn: Vec<&Building> = Vec::new();
-        'cells: for cell in &list {
-            for b in cell.iter() {
-                if drawn.len() >= buildings::MAX_DRAWN {
-                    break 'cells;
-                }
-                drawn.push(b);
+        let mut items = Vec::new();
+        for ((x, y), cell) in cells {
+            let fresh = self
+                .cell_meshes
+                .get(&(x, y))
+                .is_some_and(|m| Arc::ptr_eq(&m.cell, &cell) && (m.mesh.is_some() || cell.is_empty()));
+            if !fresh {
+                let origin = tile_mercator(buildings::CELL_Z, f64::from(x), f64::from(y));
+                let this = &*self;
+                let mesh = buildings::cell_mesh(&cell, origin, &|lng, lat| this.ground_height(lng, lat)).map(Arc::new);
+                self.cell_meshes.insert(
+                    (x, y),
+                    CellMesh {
+                        cell: cell.clone(),
+                        mesh,
+                        used: self.frame,
+                    },
+                );
+            }
+            let Some(entry) = self.cell_meshes.get_mut(&(x, y)) else {
+                continue;
+            };
+            entry.used = self.frame;
+            if let Some(mesh) = &entry.mesh {
+                items.push(gpu::Item {
+                    mesh: mesh.clone(),
+                    origin: tile_mercator(buildings::CELL_Z, f64::from(x), f64::from(y)),
+                    texture: None,
+                    uv: [0.0, 0.0, 1.0, 1.0],
+                    flat: false,
+                    color: buildings::color(),
+                    alpha: buildings::opacity(),
+                });
             }
         }
-        let this = &*self;
-        let mesh = buildings::extrude(&this.cam, origin, &drawn, &|lng, lat| this.ground_at(lng, lat));
-        buildings::paint(painter, mesh);
+        if self.cell_meshes.len() > buildings::MAX_CELLS * 4 {
+            let frame = self.frame;
+            self.cell_meshes.retain(|_, m| m.used + 30 >= frame);
+        }
+        items
+    }
+
+    /// The loaded terrain's height at a position, `None` while none is here.
+    fn ground_height(&self, lng: f64, lat: f64) -> Option<f64> {
+        self.terrain
+            .as_ref()
+            .and_then(|t| t.height_at(lng, lat, 13.0))
+            .or_else(|| self.fallback.as_ref().and_then(|t| t.height_at(lng, lat, 13.0)))
     }
 
     /// The elevation credit and the ground height at the centre, a pill above
@@ -772,6 +786,80 @@ fn haze(painter: &egui::Painter, rect: Rect, horizon: f32) {
     m.add_triangle(0, 1, 2);
     m.add_triangle(1, 3, 2);
     painter.add(egui::Shape::mesh(m));
+}
+
+/// The mesh of a leaf: a `GRID` by `GRID` height field with a skirt hanging
+/// from each edge, around the leaf's north-west corner. Texture coordinates
+/// run 0 to 1 over the leaf; the shade bakes the hillshade in.
+fn build_leaf(l: Leaf, dem: Option<&Dem>, k: f64) -> MeshData {
+    let n = GRID + 1;
+    let mut heights = vec![0f32; n * n];
+    if let Some((tile, (u0, v0, size))) = dem {
+        for j in 0..n {
+            for i in 0..n {
+                let (u, v) = (i as f64 / GRID as f64, j as f64 / GRID as f64);
+                heights[j * n + i] = tile.sample(u0 + u * size, v0 + v * size);
+            }
+        }
+    }
+    let side = 2.0 * std::f64::consts::PI * crate::map3d::camera::R / 2f64.powi(i32::from(l.z));
+    let step = side * k / GRID as f64;
+    let shade_at = |i: usize, j: usize| -> f32 {
+        if dem.is_none() {
+            return 1.0;
+        }
+        let h = |i: usize, j: usize| f64::from(heights[j * n + i]);
+        let (i0, i1) = (i.saturating_sub(1), (i + 1).min(GRID));
+        let (j0, j1) = (j.saturating_sub(1), (j + 1).min(GRID));
+        let dzde = (h(i1, j) - h(i0, j)) / ((i1 - i0) as f64 * step);
+        let dzdn = -(h(i, j1) - h(i, j0)) / ((j1 - j0) as f64 * step);
+        let len = (dzde * dzde + dzdn * dzdn + 1.0).sqrt();
+        let lit = (-dzde * LIGHT[0] - dzdn * LIGHT[1] + LIGHT[2]) / len;
+        1.0 - SHADE * ((LIGHT[2] - lit) / LIGHT[2]).clamp(0.0, 1.0) as f32
+    };
+    let vertex = |i: usize, j: usize, drop: f32, shade: f32| -> [f32; FLOATS] {
+        let (u, v) = (i as f32 / GRID as f32, j as f32 / GRID as f32);
+        [
+            (f64::from(u) * side) as f32,
+            (-f64::from(v) * side) as f32,
+            heights[j * n + i] - drop,
+            u,
+            v,
+            shade,
+        ]
+    };
+    let mut verts: Vec<f32> = Vec::with_capacity(n * n * FLOATS * 2);
+    let mut indices: Vec<u32> = Vec::with_capacity(GRID * GRID * 6 + GRID * 24);
+    for j in 0..n {
+        for i in 0..n {
+            verts.extend_from_slice(&vertex(i, j, 0.0, shade_at(i, j)));
+        }
+    }
+    for j in 0..GRID {
+        for i in 0..GRID {
+            let a = (j * n + i) as u32;
+            let (b, c, d) = (a + 1, a + n as u32 + 1, a + n as u32);
+            indices.extend_from_slice(&[a, b, c, a, c, d]);
+        }
+    }
+    // Skirts: the edges of a leaf hang down, so a neighbour from another
+    // elevation model or another level of detail leaves no crack between.
+    let drop = (step * GRID as f64 * 0.05).max(25.0) as f32;
+    let mut edges: Vec<((usize, usize), (usize, usize))> = Vec::new();
+    for t in 0..GRID {
+        edges.push(((t, 0), (t + 1, 0)));
+        edges.push(((t, GRID), (t + 1, GRID)));
+        edges.push(((0, t), (0, t + 1)));
+        edges.push(((GRID, t), (GRID, t + 1)));
+    }
+    for ((ai, aj), (bi, bj)) in edges {
+        let base = (verts.len() / FLOATS) as u32;
+        for (i, j, dr) in [(ai, aj, 0.0), (bi, bj, 0.0), (bi, bj, drop), (ai, aj, drop)] {
+            verts.extend_from_slice(&vertex(i, j, dr, shade_at(i, j) * 0.75));
+        }
+        indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+    }
+    MeshData::new(verts, indices)
 }
 
 /// The part of ancestor tile at zoom `z` that leaf `l` covers, in texture
