@@ -69,6 +69,9 @@ SIGKILL if it is still there after 8 s. If the window does not close within
 | `src/setup/tuning.rs` | the PID Tuning page: the readiness chips, the run strip, the autotune card, one block per loop (live graphs, gains, its tune button) and the autotune settings (`src/js/setup-tuning.js`) |
 | `src/setup/tuning_model.rs` | its rules: when an autotune can start and what stands in its way, the reboot the module waits for, the bar, the graph buffers of 600 samples |
 | `src/ui/chart.rs` | a line chart in the look of the web's Plotly graphs: auto ranged axes, nice ticks, grid, a dotted setpoint beside the response |
+| `src/setup/rtk.rs` | the RTK GPS page: the route the corrections take (base, this station, the aircraft's receiver) polled once a second, the survey bar and its sentence, and the settings (survey or known mark, NTRIP caster) (`src/js/setup-rtk.js`) |
+| `src/setup/rtk_model.rs` | its words and rules: states, the survey sentence, the rows, the request body; checked against `rtk_cases.json`, what the web helpers answered |
+| `src/ui/formfield.rs` | `Corvus.ui.field`: the small caption, a 32.5 px box or select, and the hint under it, shared by the plain form pages |
 | `src/setup/sensors.rs` | the sensor model and its rules: the write chain of a switch, the presets, the extra parameters kept in `~/.corvus/safety-extra.json` |
 | `src/setup/sensor_view.rs` | a sensor page drawn: Status card, Hardware card with the write table, the parameters you add by name |
 | `src/setup/check.rs` | Check values: read back, write again what did not stick, the result card (`src/js/setup-shared.js`) |

@@ -1,7 +1,7 @@
 //! The Setup page (src/js/setup.js, setup.css): the head with the vehicle
 //! card, the grid of twelve tiles, and the sub-pages behind them.
 //!
-//! Parameters, Safety & Sensors, Motors, Battery & Power, Calibration, Radio Control and PID Tuning are whole. The
+//! Parameters, Safety & Sensors, Motors, Battery & Power, Calibration, Radio Control, PID Tuning and RTK GPS are whole. The
 //! other tiles open a notice that the page is still in the web interface.
 
 pub mod battery;
@@ -22,6 +22,8 @@ pub mod radio;
 pub mod radio_model;
 pub mod rc_drawing;
 pub mod rc_transmitter;
+pub mod rtk;
+pub mod rtk_model;
 pub mod safety;
 pub mod schema_form;
 pub mod sensor_view;
@@ -38,6 +40,7 @@ use crate::setup::calibration::CalibrationPage;
 use crate::setup::motors::MotorsPage;
 use crate::setup::params::ParamsPage;
 use crate::setup::radio::RadioPage;
+use crate::setup::rtk::RtkPage;
 use crate::setup::safety::SafetyPage;
 use crate::setup::tuning::TuningPage;
 use crate::ui::card;
@@ -140,6 +143,7 @@ enum View {
     Calibration(Box<CalibrationPage>),
     Radio(Box<RadioPage>),
     Tuning(Box<TuningPage>),
+    Rtk(Box<RtkPage>),
     Elsewhere(&'static str),
 }
 
@@ -175,6 +179,7 @@ impl SetupPage {
             View::Calibration(p) => p.take_errors(),
             View::Radio(p) => p.take_errors(),
             View::Tuning(p) => p.take_errors(),
+            View::Rtk(p) => p.take_errors(),
             _ => Vec::new(),
         }
     }
@@ -224,6 +229,7 @@ impl SetupPage {
             "calibration" => View::Calibration(Box::new(CalibrationPage::new(self.server.clone(), ctx))),
             "control" => View::Radio(Box::new(RadioPage::new(self.server.clone(), ctx))),
             "tuning" => View::Tuning(Box::new(TuningPage::new(self.server.clone(), ctx))),
+            "rtk" => View::Rtk(Box::new(RtkPage::new(self.server.clone(), ctx))),
             other => match TILES.iter().find(|t| t.0 == other) {
                 Some(t) => View::Elsewhere(t.2),
                 None => View::Tiles,
@@ -280,6 +286,7 @@ impl SetupPage {
                 | View::Calibration(_)
                 | View::Radio(_)
                 | View::Tuning(_)
+                | View::Rtk(_)
                 | View::Elsewhere(_) => {
                     let in_sensor = matches!(&self.view, View::Safety(p) if p.in_sensor());
                     let in_wizard = matches!(&self.view, View::Calibration(p) if p.in_wizard())
@@ -322,6 +329,8 @@ impl SetupPage {
                     } else if let View::Radio(p) = &mut self.view {
                         y = p.show(ui, x, y, w, state, now);
                     } else if let View::Tuning(p) = &mut self.view {
+                        y = p.show(ui, x, y, w, state, now);
+                    } else if let View::Rtk(p) = &mut self.view {
                         y = p.show(ui, x, y, w, state, now);
                     } else if let View::Safety(p) = &mut self.view {
                         y = p.show(ui, x, y, w, state, checklist);
@@ -465,6 +474,7 @@ fn grid(
                 "calibration" => View::Calibration(Box::new(CalibrationPage::new(server.clone(), ui.ctx()))),
                 "control" => View::Radio(Box::new(RadioPage::new(server.clone(), ui.ctx()))),
                 "tuning" => View::Tuning(Box::new(TuningPage::new(server.clone(), ui.ctx()))),
+                "rtk" => View::Rtk(Box::new(RtkPage::new(server.clone(), ui.ctx()))),
                 _ => View::Elsewhere(title),
             };
         }

@@ -34,6 +34,7 @@ pub struct TextField<'a> {
     align_right: bool,
     name: &'static str,
     focus: Option<Color32>,
+    secret: bool,
 }
 
 impl<'a> TextField<'a> {
@@ -51,6 +52,7 @@ impl<'a> TextField<'a> {
             align_right: false,
             name: "field",
             focus: None,
+            secret: false,
         }
     }
 
@@ -104,6 +106,12 @@ impl<'a> TextField<'a> {
     /// The border on focus, in place of the accent.
     pub fn focus_color(mut self, color: Color32) -> Self {
         self.focus = Some(color);
+        self
+    }
+
+    /// Shows dots in place of the text (`type="password"`).
+    pub fn secret(mut self, on: bool) -> Self {
+        self.secret = on;
         self
     }
 
@@ -222,6 +230,7 @@ impl<'a> TextField<'a> {
             } else {
                 Align2::LEFT_CENTER
             })
+            .password(self.secret)
             .desired_width(text_rect.width())
             .min_size(Vec2::new(0.0, rect.height()));
         child.add(edit)

@@ -3,6 +3,7 @@ pub mod chart;
 pub mod chip;
 pub mod field;
 pub mod fonts;
+pub mod formfield;
 pub mod frost;
 pub mod icons;
 pub mod kit;
