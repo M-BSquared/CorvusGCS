@@ -41,7 +41,9 @@ SIGKILL if it is still there after 8 s. If the window does not close within
 | `src/flight.rs` | the flight bar, takeoff card and mode picker (`src/js/app.js`) |
 | `src/style.rs` | the design tokens of the six themes (light, light-orange, green, blue, pink, orange) and the type |
 | `src/setup.rs` | the Setup page: head, vehicle card, the tile grid and the sub-pages (`src/js/setup.js`) |
-| `src/params.rs` | the Parameters page: download, search, filter, defaults, edit and apply (`src/js/setup-parameters.js`) |
+| `src/params.rs` | the Parameters page: header actions, download, search, filter, defaults, edit and apply, rows that stack under 721 px (`src/js/setup-parameters.js`) |
+| `src/params_dialogs.rs`, `src/params_files.rs` | Export, Import and the reboot confirmation, and the three file formats with the import preview; Import asks for a file path because a native window has no picker without a dependency |
+| `src/modal.rs` | the `.modal` card shared by those dialogs |
 | `src/motors.rs` | the Motors page: the airframe drawing, the motor table with output assignment, the motor test, frame size, protocol forms (`src/js/setup-motors.js`) |
 | `src/safety.rs` | the Safety & Sensors page: the backend's description in two stacks, the landing preset, the sensor tiles, Check values and the checklist card (`src/js/setup-safety.js`) |
 | `src/sensors.rs` | the sensor model and its rules: the write chain of a switch, the presets, the extra parameters kept in `~/.corvus/safety-extra.json` |

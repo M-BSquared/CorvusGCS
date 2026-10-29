@@ -1,14 +1,13 @@
 //! The Setup page (src/js/setup.js, setup.css): the head with the vehicle
 //! card, the grid of twelve tiles, and the sub-pages behind them.
 //!
-//! Parameters is whole except Export, Import and Reboot. The other tiles
-//! open a notice that the page is still in the web interface.
+//! Parameters, Safety & Sensors and Motors are whole. The other tiles open a
+//! notice that the page is still in the web interface.
 
 use eframe::egui::{self, Pos2, Rect, Stroke, Vec2};
 use serde_json::Value;
 
 use crate::http::Server;
-use crate::kit::{Button, Variant};
 use crate::motors::MotorsPage;
 use crate::pagekit;
 use crate::params::ParamsPage;
@@ -134,6 +133,14 @@ impl SetupPage {
         }
     }
 
+    /// Notices for the notification board.
+    pub fn take_notes(&mut self) -> Vec<String> {
+        match &mut self.view {
+            View::Parameters(p) => p.take_notes(),
+            _ => Vec::new(),
+        }
+    }
+
     /// Opens the page scrolled by `px`.
     pub fn scroll_to(&mut self, px: f32) {
         self.initial_scroll = Some(px);
@@ -223,16 +230,6 @@ impl SetupPage {
                     } else if let View::Safety(p) = &mut self.view {
                         y = p.show(ui, x, y, w, state, checklist);
                     } else if let View::Parameters(p) = &mut self.view {
-                        y = head(
-                            ui,
-                            x,
-                            y,
-                            w,
-                            "Parameters",
-                            "Every parameter with its default. Change values, load and save parameter files",
-                            None,
-                            actions,
-                        );
                         y = p.show(ui, x, y, w, state, now);
                     } else if let View::Elsewhere(name) = &self.view {
                         y = head(ui, x, y, w, name, "", None, |_, _, _| 0.0);
@@ -349,38 +346,6 @@ fn head(
         bottom
     };
     result + 26.0
-}
-
-/// The Parameters actions: Export and Import, which need the file dialogs
-/// that are not in this build yet.
-fn actions(ui: &mut egui::Ui, right: f32, bottom: f32) -> f32 {
-    let mut x = right;
-    for (label, icon, title) in [
-        (
-            "Import",
-            "upload",
-            "Write a parameter file to the vehicle (not in this build yet)",
-        ),
-        (
-            "Export",
-            "download",
-            "Save the parameters to a file (not in this build yet)",
-        ),
-    ] {
-        let b = Button::new(label, Variant::Secondary)
-            .icon(icon)
-            .enabled(false)
-            .title(title);
-        let (bw, bh) = (b.width(ui) + 4.0, b.height());
-        x -= bw;
-        b.show(
-            ui,
-            Rect::from_min_size(Pos2::new(x, bottom - bh), Vec2::new(bw, bh)),
-            label,
-        );
-        x -= 10.0;
-    }
-    right - x
 }
 
 /// The tile grid.

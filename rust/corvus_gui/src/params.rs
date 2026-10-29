@@ -7,8 +7,8 @@
 //! shortest precision that still round-trips through a 32 bit float, an
 //! integer type takes whole numbers in its range only, a draft outside the
 //! firmware's own min and max is allowed with a warning, and nothing is
-//! written while the vehicle is armed. Files (Export, Import) and the
-//! reboot button are not in this build yet.
+//! written while the vehicle is armed. Export, Import and the autopilot
+//! reboot sit in the header, their dialogs in `params_dialogs`.
 
 use std::cmp::Ordering;
 use std::collections::HashMap;
@@ -20,6 +20,9 @@ use crate::bg::Pending;
 use crate::http::{self, Server};
 use crate::kit::{self, Button, Choice, Variant};
 use crate::pagekit;
+use crate::params_dialogs::{self as dialogs, ExportDlg, ImportDlg};
+use crate::params_files as files;
+use crate::responsive::Vw;
 use crate::style::{self, Weight};
 
 /// Rows drawn at once.
@@ -431,6 +434,40 @@ enum MetaState {
 }
 
 type Row = (String, &'static str);
+
+/// Where the cells of one row go, relative to the row's top left.
+struct Metrics {
+    w: f32,
+    h: f32,
+    name_x: f32,
+    name_w: f32,
+    name_cy: f32,
+    value_x: f32,
+    value_w: f32,
+    default_x: f32,
+    default_text_w: f32,
+    reset_x: f32,
+    apply_x: f32,
+    apply_w: f32,
+    status_x: f32,
+    status_w: f32,
+    ctl_cy: f32,
+    status_cy: f32,
+}
+
+enum Dialog {
+    Reboot,
+    Export(ExportDlg),
+    Import(ImportDlg),
+}
+
+/// An import being written; the result is read once a second.
+struct Upload {
+    start: Option<Pending<Result<(), String>>>,
+    poll: Option<Pending<Result<Value, String>>>,
+    last_poll: f64,
+    began: bool,
+}
 type WriteInFlight = (String, f64, Pending<Result<(), String>>);
 
 /// The page's state.
@@ -454,6 +491,12 @@ pub struct ParamsPage {
     last_meta_poll: f64,
     writes: Vec<WriteInFlight>,
     errors: Vec<String>,
+    notes: Vec<String>,
+    dialog: Option<Dialog>,
+    act: (&'static str, String),
+    upload: Option<Upload>,
+    reboot: Option<Pending<Result<(), String>>>,
+    refresh: Option<Pending<Result<Value, String>>>,
 }
 
 impl ParamsPage {
@@ -479,7 +522,18 @@ impl ParamsPage {
             last_meta_poll: 0.0,
             writes: Vec::new(),
             errors: Vec::new(),
+            notes: Vec::new(),
+            dialog: None,
+            act: ("", String::new()),
+            upload: None,
+            reboot: None,
+            refresh: None,
         }
+    }
+
+    /// Notices for the notification board.
+    pub fn take_notes(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.notes)
     }
 
     /// Errors for the notification board.
@@ -701,6 +755,7 @@ impl ParamsPage {
                 }
             }
         }
+        self.take_file_answers(ctx, now);
         // The ~1 s polls while something is on its way.
         if matches!(self.phase, Phase::Downloading { .. }) && self.poll.is_none() && now - self.last_poll >= POLL_SECS {
             self.last_poll = now;
@@ -719,9 +774,416 @@ impl ParamsPage {
         if matches!(self.phase, Phase::Downloading { .. })
             || matches!(self.meta_state, MetaState::Loading { .. })
             || !self.writes.is_empty()
+            || self.upload.is_some()
+            || self.reboot.is_some()
         {
             ctx.request_repaint_after(std::time::Duration::from_millis(250));
         }
+    }
+
+    fn take_file_answers(&mut self, ctx: &egui::Context, now: f64) {
+        let mut saved: Option<(String, u64)> = None;
+        if let Some(Dialog::Export(d)) = &mut self.dialog {
+            if let Some(r) = d.target.as_ref().and_then(Pending::take) {
+                d.target = None;
+                if let Ok(t) = r {
+                    let get = |k: &str| t.get(k).and_then(Value::as_str).unwrap_or("").to_string();
+                    if d.name.is_empty() {
+                        d.name = get("filename");
+                    }
+                    if d.dir.is_empty() {
+                        d.dir = get("dir");
+                    }
+                    let f = get("format");
+                    d.format = if files::FORMATS.iter().any(|x| x.id == f) {
+                        f
+                    } else {
+                        files::format_from_name(&d.name).unwrap_or("qgc").to_string()
+                    };
+                }
+            }
+            if let Some(r) = d.save.as_ref().and_then(Pending::take) {
+                d.save = None;
+                match r {
+                    Ok(res) => {
+                        saved = Some((
+                            res.get("path").and_then(Value::as_str).unwrap_or("").to_string(),
+                            res.get("param_count").and_then(Value::as_u64).unwrap_or(0),
+                        ));
+                    }
+                    Err(e) => d.message = Some(if e.is_empty() { "Export failed".into() } else { e }),
+                }
+            }
+        }
+        if let Some((path, count)) = saved {
+            self.dialog = None;
+            self.act = ("ok", format!("Saved {count} parameters to {path}"));
+            self.notes.push(format!("Parameters exported to {path}"));
+        }
+        if let Some(r) = self.reboot.as_ref().and_then(Pending::take) {
+            self.reboot = None;
+            match r {
+                Ok(()) => {
+                    self.notes
+                        .push("The autopilot is rebooting. The link returns in a few seconds.".into());
+                    self.params.clear();
+                    self.meta = None;
+                    self.meta_state = MetaState::Idle;
+                    self.phase = Phase::Prompt { incomplete: None };
+                    self.status = None;
+                }
+                Err(e) => self.errors.push(format!(
+                    "Reboot refused: {}",
+                    if e.is_empty() { "no answer".to_string() } else { e }
+                )),
+            }
+        }
+        let mut finished: Option<Value> = None;
+        let mut failed: Option<String> = None;
+        if let Some(u) = &mut self.upload {
+            if let Some(r) = u.start.as_ref().and_then(Pending::take) {
+                u.start = None;
+                match r {
+                    Ok(()) => u.began = true,
+                    Err(e) => failed = Some(if e.is_empty() { "Upload failed".into() } else { e }),
+                }
+            }
+            if let Some(r) = u.poll.as_ref().and_then(Pending::take) {
+                u.poll = None;
+                if let Ok(v) = r {
+                    if matches!(
+                        v.get("state").and_then(Value::as_str),
+                        Some("upload_complete" | "interrupted")
+                    ) {
+                        finished = Some(v);
+                    }
+                }
+            }
+            if u.began && u.poll.is_none() && finished.is_none() && now - u.last_poll >= POLL_SECS {
+                u.last_poll = now;
+                let s = self.server.clone();
+                u.poll = Some(Pending::spawn(ctx, move || {
+                    http::get_json(&s, "/api/params/upload/result")
+                }));
+            }
+        }
+        if let Some(e) = failed {
+            self.upload = None;
+            self.act = ("err", e.clone());
+            self.errors.push(e);
+        }
+        if let Some(r) = finished {
+            self.upload = None;
+            let written = r.get("written").and_then(Value::as_u64).unwrap_or(0) as usize;
+            let bad = r.get("failed").and_then(Value::as_u64).unwrap_or(0);
+            let interrupted = r.get("state").and_then(Value::as_str) == Some("interrupted");
+            if bad == 0 && !interrupted {
+                let t = format!("Uploaded {}", files::plural(written, "parameter"));
+                self.act = ("ok", t.clone());
+                self.notes.push(t);
+            } else {
+                let mut t = format!("Uploaded {written}, {bad} failed");
+                if interrupted {
+                    t.push_str(", the link dropped before the end");
+                }
+                let names: Vec<&str> = r
+                    .get("errors")
+                    .and_then(Value::as_array)
+                    .map(|a| {
+                        a.iter()
+                            .filter_map(|e| e.get("name").and_then(Value::as_str))
+                            .take(3)
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                if !names.is_empty() {
+                    t.push_str(&format!(": {}", names.join(", ")));
+                }
+                self.act = (if written > 0 { "ok" } else { "err" }, t.clone());
+                self.errors.push(t);
+            }
+            let s = self.server.clone();
+            self.refresh = Some(Pending::spawn(ctx, move || http::get_json(&s, "/api/params")));
+        }
+        if let Some(r) = self.refresh.as_ref().and_then(Pending::take) {
+            self.refresh = None;
+            if let Ok(d) = r {
+                let list = Self::read_params(&d);
+                if d.get("complete") == Some(&Value::Bool(true)) && !list.is_empty() {
+                    self.set_params(list);
+                }
+            }
+        }
+    }
+
+    fn open_export(&mut self, ctx: &egui::Context) {
+        let s = self.server.clone();
+        self.dialog = Some(Dialog::Export(ExportDlg::new(Pending::spawn(ctx, move || {
+            http::get_json(&s, "/api/params/export/target")
+        }))));
+    }
+
+    fn do_export(&mut self, ctx: &egui::Context) {
+        let only = matches!(&self.dialog, Some(Dialog::Export(d)) if d.only_modified);
+        let list: Vec<Value> = self
+            .params
+            .iter()
+            .filter(|p| !only || self.is_modified(p))
+            .map(|p| json!({"name": p.name, "value": p.value, "type": p.kind}))
+            .collect();
+        let s = self.server.clone();
+        if let Some(Dialog::Export(d)) = &mut self.dialog {
+            if list.is_empty() {
+                d.message = Some("Nothing to export: every parameter is at its default.".into());
+                return;
+            }
+            d.message = None;
+            let body = json!({
+                "filename": d.name.trim(),
+                "dir": d.dir.trim(),
+                "format": d.format,
+                "params": list,
+            });
+            d.save = Some(Pending::spawn(ctx, move || {
+                http::post_json(&s, "/api/params/export", &body)
+            }));
+        }
+    }
+
+    fn read_import(&mut self) {
+        let loaded = matches!(self.phase, Phase::Editor) && !self.params.is_empty();
+        let Some(Dialog::Import(d)) = &mut self.dialog else {
+            return;
+        };
+        let raw = d.path.trim();
+        let path = match (raw.strip_prefix("~/"), std::env::var_os("HOME")) {
+            (Some(rest), Some(home)) => std::path::Path::new(&home).join(rest),
+            _ => std::path::PathBuf::from(raw),
+        };
+        let file = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("the file")
+            .to_string();
+        let text = match std::fs::read(&path) {
+            Ok(b) => String::from_utf8_lossy(&b).into_owned(),
+            Err(e) => {
+                d.message = Some(format!("Could not read file: {e}"));
+                return;
+            }
+        };
+        match files::parse(&text, &file) {
+            Ok(parsed) => {
+                let meta = &self.meta;
+                let reboot = |n: &str| meta.as_ref().and_then(|m| m.get(n)).is_some_and(|m| m.reboot_required);
+                let set = if loaded { Some(self.params.as_slice()) } else { None };
+                d.message = None;
+                d.preview = Some((files::preview(&parsed, set, &reboot), file));
+            }
+            Err(e) => d.message = Some(e),
+        }
+    }
+
+    fn start_upload(&mut self, ctx: &egui::Context, list: Vec<(String, f64)>) {
+        let body: Vec<Value> = list.iter().map(|(n, v)| json!({"name": n, "value": v})).collect();
+        self.act = (
+            "pending",
+            format!("Uploading {}\u{2026}", files::plural(list.len(), "parameter")),
+        );
+        let s = self.server.clone();
+        self.upload = Some(Upload {
+            start: Some(Pending::spawn(ctx, move || {
+                let d = http::post_json(&s, "/api/params/upload", &json!({"params": body}))?;
+                if d.get("ok") == Some(&Value::Bool(true)) {
+                    Ok(())
+                } else {
+                    Err(d
+                        .get("error")
+                        .and_then(Value::as_str)
+                        .unwrap_or("Upload failed")
+                        .to_string())
+                }
+            })),
+            poll: None,
+            last_poll: 0.0,
+            began: false,
+        });
+    }
+
+    fn start_reboot(&mut self, ctx: &egui::Context) {
+        let s = self.server.clone();
+        self.reboot = Some(Pending::spawn(ctx, move || {
+            let d = http::post_json(&s, "/api/mavlink/reboot", &json!({}))?;
+            if d.get("ok") == Some(&Value::Bool(false)) {
+                Err(d.get("error").and_then(Value::as_str).unwrap_or("").to_string())
+            } else {
+                Ok(())
+            }
+        }));
+    }
+
+    /// The dialog that is open, drawn over the page.
+    fn dialogs(&mut self, ctx: &egui::Context, armed: bool) {
+        let total = self.params.len();
+        let modified = self
+            .meta
+            .as_ref()
+            .map(|_| self.params.iter().filter(|p| self.is_modified(p)).count());
+        let mut close = false;
+        let mut go = false;
+        match &mut self.dialog {
+            None => return,
+            Some(Dialog::Reboot) => {
+                let (c, g) = dialogs::reboot(ctx);
+                close = c;
+                go = g;
+            }
+            Some(Dialog::Export(d)) => match dialogs::export(ctx, d, total, modified) {
+                dialogs::Out::Close => close = true,
+                dialogs::Out::Go => go = true,
+                dialogs::Out::None => {}
+            },
+            Some(Dialog::Import(d)) => match dialogs::import(ctx, d, armed) {
+                dialogs::Out::Close => close = true,
+                dialogs::Out::Go => go = true,
+                dialogs::Out::None => {}
+            },
+        }
+        if go {
+            match &self.dialog {
+                Some(Dialog::Reboot) => {
+                    self.start_reboot(ctx);
+                    close = true;
+                }
+                Some(Dialog::Export(_)) => self.do_export(ctx),
+                Some(Dialog::Import(d)) if d.preview.is_none() => self.read_import(),
+                Some(Dialog::Import(d)) => {
+                    let list = d.preview.as_ref().map(|(p, _)| p.to_write.clone()).unwrap_or_default();
+                    self.start_upload(ctx, list);
+                    close = true;
+                }
+                None => {}
+            }
+        }
+        if close {
+            self.dialog = None;
+        }
+    }
+
+    /// `.setup-head` of the page: the title, and the actions on the
+    /// subtitle's line (under the title when it would be left under 280 px).
+    fn head(&mut self, ui: &mut egui::Ui, x: f32, y: f32, w: f32, armed: bool) -> f32 {
+        let editor = matches!(self.phase, Phase::Editor) && !self.params.is_empty();
+        let uploading = self.upload.is_some();
+        let export = Button::new("Export", Variant::Primary)
+            .icon("download")
+            .small()
+            .bold()
+            .enabled(editor)
+            .title("Save the parameters to a file");
+        let import = Button::new("Import", Variant::Primary)
+            .icon("upload")
+            .small()
+            .bold()
+            .enabled(!armed && !uploading)
+            .title("Write a parameter file (.params, .param or .json) to the vehicle");
+        let reboot = Button::new("Reboot autopilot", Variant::Secondary)
+            .icon("power")
+            .small()
+            .bold()
+            .enabled(!armed && self.reboot.is_none());
+        let bh = export.height();
+        let color = match self.act.0 {
+            "ok" => style::healthy(),
+            "err" => style::critical(),
+            _ => style::nav(),
+        };
+        let sg = kit::wrapped_weight(ui, &self.act.1, 11.5, Weight::W400, color, 420.0, 1.3);
+        let has_status = !self.act.1.is_empty();
+        let widths = [
+            if has_status { sg.size().x } else { 0.0 },
+            export.width(ui),
+            import.width(ui),
+            reboot.width(ui),
+        ];
+        let one_line: f32 = widths.iter().filter(|v| **v > 0.0).sum::<f32>()
+            + 10.0 * (widths.iter().filter(|v| **v > 0.0).count() as f32 - 1.0);
+        let wrap = w - one_line - 24.0 < 280.0;
+        let head_w = if wrap { w } else { (w - one_line - 24.0).min(w) };
+        let head_bottom = pagekit::header_wrapped(
+            ui,
+            x,
+            y,
+            head_w,
+            "Parameters",
+            "Every parameter with its default. Change values, load and save parameter files",
+        );
+        let mut lines: Vec<Vec<usize>> = vec![Vec::new()];
+        let mut used = 0.0;
+        for (i, iw) in widths.iter().enumerate() {
+            if *iw <= 0.0 {
+                continue;
+            }
+            let line = lines.last_mut().unwrap();
+            if !line.is_empty() && used + 10.0 + iw > w {
+                lines.push(vec![i]);
+                used = *iw;
+            } else {
+                used += if line.is_empty() { 0.0 } else { 10.0 };
+                used += iw;
+                line.push(i);
+            }
+        }
+        let line_w = |l: &Vec<usize>| l.iter().map(|i| widths[*i]).sum::<f32>() + 10.0 * (l.len() as f32 - 1.0);
+        let block_w = lines.iter().map(line_w).fold(0.0, f32::max);
+        let line_h = |l: &Vec<usize>| {
+            if l.contains(&0) {
+                sg.size().y.max(bh)
+            } else {
+                bh
+            }
+        };
+        let block_h: f32 = lines.iter().map(line_h).sum::<f32>() + 10.0 * (lines.len() as f32 - 1.0);
+        let (bx, top, bottom) = if wrap {
+            (x, head_bottom + 10.0, head_bottom + 10.0 + block_h)
+        } else {
+            (x + w - block_w, head_bottom - block_h, head_bottom)
+        };
+        let mut ly = top;
+        let mut buttons = [Some(export), Some(import), Some(reboot)];
+        let mut presses = [false; 3];
+        for l in &lines {
+            let mut cx = bx + block_w - line_w(l);
+            let h = line_h(l);
+            for &i in l {
+                if i == 0 {
+                    ui.painter()
+                        .galley(Pos2::new(cx, ly + (h - sg.size().y) / 2.0), sg.clone(), color);
+                } else if let Some(b) = buttons[i - 1].take() {
+                    presses[i - 1] = b.show(
+                        ui,
+                        Rect::from_min_size(Pos2::new(cx, ly + (h - bh) / 2.0), Vec2::new(widths[i], bh)),
+                        ("paramsact", i),
+                    );
+                }
+                cx += widths[i] + 10.0;
+            }
+            ly += h + 10.0;
+        }
+        if presses[0] {
+            self.open_export(&ui.ctx().clone());
+        }
+        if presses[1] {
+            self.dialog = Some(Dialog::Import(ImportDlg {
+                path: String::new(),
+                message: None,
+                preview: None,
+            }));
+        }
+        if presses[2] {
+            self.dialog = Some(Dialog::Reboot);
+        }
+        bottom + 26.0
     }
 
     fn write(&mut self, ctx: &egui::Context, name: &str, value: f64) {
@@ -774,6 +1236,9 @@ impl ParamsPage {
         let ctx = ui.ctx().clone();
         self.take_answers(&ctx, now);
         let armed = Self::armed(state);
+        let narrow = Vw::of(&ctx).max720;
+        let y = self.head(ui, x, y, w, armed);
+        self.dialogs(&ctx, armed);
         let pad = 19.0;
         let painter = ui.painter().clone();
         let bg = painter.add(egui::Shape::Noop);
@@ -783,7 +1248,7 @@ impl ParamsPage {
         match self.phase.clone() {
             Phase::Prompt { incomplete } => cy = self.prompt(ui, &ctx, ix, cy, iw, incomplete),
             Phase::Downloading { received, count } => cy = self.progress(ui, ix, cy, iw, received, count),
-            Phase::Editor => cy = self.editor(ui, &ctx, ix, cy, iw, armed),
+            Phase::Editor => cy = self.editor(ui, &ctx, ix, cy, iw, armed, narrow),
         }
         let card = Rect::from_min_max(Pos2::new(x, y), Pos2::new(x + w, cy + pad));
         painter.set(bg, egui::Shape::rect_filled(card, style::RADIUS, style::glass(0.82)));
@@ -881,7 +1346,17 @@ impl ParamsPage {
         y + pagekit::text(ui, Pos2::new(x, y), &label, 12.0, Weight::W400, style::text_2())
     }
 
-    fn editor(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, x: f32, mut y: f32, w: f32, armed: bool) -> f32 {
+    #[allow(clippy::too_many_arguments)]
+    fn editor(
+        &mut self,
+        ui: &mut egui::Ui,
+        ctx: &egui::Context,
+        x: f32,
+        mut y: f32,
+        w: f32,
+        armed: bool,
+        narrow: bool,
+    ) -> f32 {
         // .params-head: the section title and a Reload button.
         let title = format!("Parameters ({})", self.params.len());
         let reload = Button::new("Reload", Variant::Secondary)
@@ -964,28 +1439,41 @@ impl ParamsPage {
         );
         let cg = style::galley(ui, &count_text, 11.0, Weight::W400, style::text_3(), 0.0);
         let seg_w = pagekit::segmented_width(ui, &items);
-        // The segmented control and the count sit at the right.
-        let seg_x = x + w - cg.size().x - 10.0 - seg_w;
-        let (seg_rect, clicked2) = pagekit::segmented(ui, Pos2::new(seg_x, y + 4.0), &items, sel, "pfilter");
-        if let Some(i) = clicked2 {
-            self.mode = [Mode::All, Mode::Modified, Mode::Pending][i];
+        let search_h = field_h.max(34.5);
+        let seg_h = 3.0 * 2.0 + 2.0 + 5.0 * 2.0 + 11.0 * 1.21;
+        let widths = [200.0, seg_w, cg.size().x];
+        let heights = [search_h, seg_h, cg.size().y];
+        y += 4.0;
+        for line in toolbar_lines(w, seg_w, cg.size().x) {
+            let lh = line.iter().map(|i| heights[*i]).fold(0.0, f32::max);
+            let rest: f32 = line.iter().filter(|i| **i != 0).map(|i| widths[*i] + 10.0).sum();
+            let mut cx = x;
+            for &i in &line {
+                let iw = if i == 0 { (w - rest).max(0.0) } else { widths[i] };
+                let at = Pos2::new(cx, y + (lh - heights[i]) / 2.0);
+                match i {
+                    0 => {
+                        kit::text_field(
+                            ui,
+                            Rect::from_min_size(at, Vec2::new(iw, search_h)),
+                            &mut self.search,
+                            "Search names and descriptions\u{2026}",
+                            false,
+                            "paramsearch",
+                        );
+                    }
+                    1 => {
+                        if let (_, Some(k)) = pagekit::segmented(ui, at, &items, sel, "pfilter") {
+                            self.mode = [Mode::All, Mode::Modified, Mode::Pending][k];
+                        }
+                    }
+                    _ => ui.painter().galley(at, cg.clone(), style::text_3()),
+                }
+                cx += iw + 10.0;
+            }
+            y += lh + 10.0;
         }
-        let search_w = (seg_x - 10.0 - x).max(120.0);
-        let search = Rect::from_min_size(Pos2::new(x, y + 4.0), Vec2::new(search_w, field_h.max(34.5)));
-        kit::text_field(
-            ui,
-            search,
-            &mut self.search,
-            "Search names and descriptions\u{2026}",
-            false,
-            "paramsearch",
-        );
-        ui.painter().galley(
-            Pos2::new(x + w - cg.size().x, y + 4.0 + (seg_rect.height() - cg.size().y) / 2.0),
-            cg,
-            style::text_3(),
-        );
-        y += 4.0 + seg_rect.height().max(field_h) + 6.0;
+        y += -10.0 + 6.0;
         ui.painter().hline(
             egui::Rangef::new(x, x + w),
             y + 0.5,
@@ -993,11 +1481,11 @@ impl ParamsPage {
         );
         y += 1.0;
         // the rows
-        let row_h = if self.meta.is_some() { 48.0 } else { 44.0 };
         for &i in filtered.iter().take(CAP) {
             let p = self.params[i].clone();
-            self.row(ui, ctx, Pos2::new(x, y), w, row_h, &p, armed);
-            y += row_h;
+            let m = self.metrics(ui, &p, w, narrow);
+            self.row(ui, ctx, Pos2::new(x, y), &m, &p, armed);
+            y += m.h;
         }
         let note = if filtered.len() > CAP {
             Some(format!(
@@ -1133,24 +1621,144 @@ impl ParamsPage {
         bar.bottom()
     }
 
+    fn draft_of(&self, p: &Param) -> String {
+        self.pending
+            .get(&p.name)
+            .cloned()
+            .unwrap_or_else(|| format_value(p.value, p.kind))
+    }
+
+    /// The row's status text: the draft's problem, the last answer, or the
+    /// draft's warning.
+    fn status_of(&self, p: &Param, parsed: &Draft, changed: bool) -> (String, egui::Color32) {
+        match (parsed, self.row_status.get(&p.name)) {
+            (Draft::Bad(e), _) => (e.clone(), style::critical()),
+            (_, Some((t, cls))) => (
+                t.clone(),
+                match *cls {
+                    "ok" => style::healthy(),
+                    "err" => style::critical(),
+                    "pending" => style::nav(),
+                    _ => style::text_3(),
+                },
+            ),
+            (Draft::Ok { warn, .. }, None) if changed && !warn.is_empty() => (warn.clone(), style::warning()),
+            _ => (String::new(), style::text_3()),
+        }
+    }
+
+    /// Where a row's cells go, `.params-row`: five columns at
+    /// `minmax(150px, 1.5fr) minmax(120px, 1fr) 96px 64px 84px`, or from 720
+    /// px down `minmax(0, 1fr) auto auto` with the name above, the value,
+    /// default and Apply beside each other and the status below. Padding is
+    /// `7px 6px 7px 9px`, the gap 10.
+    fn metrics(&self, ui: &egui::Ui, p: &Param, w: f32, narrow: bool) -> Metrics {
+        let meta = self.meta_of(&p.name);
+        let inner_l = 9.0;
+        let inner_w = w - 9.0 - 6.0;
+        if !narrow {
+            let h = if self.meta.is_some() { 48.0 } else { 44.0 };
+            let free = inner_w - 96.0 - 64.0 - 84.0 - 4.0 * 10.0;
+            let name_w = (free * 0.6).max(150.0);
+            let value_w = (free * 0.4).max(120.0);
+            let value_x = inner_l + name_w + 10.0;
+            let default_x = value_x + value_w + 10.0;
+            let apply_x = default_x + 96.0 + 10.0;
+            return Metrics {
+                w,
+                h,
+                name_x: inner_l,
+                name_w,
+                name_cy: h / 2.0,
+                value_x,
+                value_w,
+                default_x,
+                default_text_w: 96.0 - 28.0,
+                reset_x: default_x + 96.0 - 24.0,
+                apply_x,
+                apply_w: 64.0,
+                status_x: apply_x + 64.0 + 10.0,
+                status_w: 84.0,
+                ctl_cy: h / 2.0,
+                status_cy: h / 2.0,
+            };
+        }
+        let name_h = ui
+            .painter()
+            .layout_no_wrap("M".into(), style::mono(12.0), style::text_1())
+            .size()
+            .y;
+        let has_desc = meta.is_some_and(|m| !m.short_desc.is_empty());
+        let name_block = name_h + if has_desc { 2.0 + 11.0 * 1.35 } else { 0.0 };
+        let draft = self.draft_of(p);
+        let parsed = parse_draft(&draft, p, meta);
+        let changed = match &parsed {
+            Draft::Ok { value, .. } => !values_equal(*value, p.value, p.kind),
+            Draft::Bad(_) => true,
+        };
+        let default = meta.and_then(|m| m.default);
+        let at_default =
+            default.is_some_and(|d| matches!(&parsed, Draft::Ok { value, .. } if values_equal(*value, d, p.kind)));
+        let default_text_w = default.map_or(0.0, |d| {
+            style::galley_mono(ui, &format_value(d, p.kind), 11.5, style::text_3())
+                .size()
+                .x
+        });
+        let default_w = match default {
+            Some(_) if !at_default => default_text_w + 4.0 + 24.0,
+            Some(_) => default_text_w,
+            None => 0.0,
+        };
+        let apply = Button::new("Apply", Variant::Primary).small();
+        let (apply_w, apply_h) = (apply.width(ui), apply.height());
+        let field_h: f32 = 2.0 + 12.0 + 12.0 * 1.21;
+        let ctl_h = field_h
+            .max(apply_h)
+            .max(if default.is_some() && !at_default { 24.0 } else { 0.0 });
+        let (text, _) = self.status_of(p, &parsed, changed);
+        let status_h = if text.is_empty() {
+            0.0
+        } else {
+            kit::wrapped_weight(ui, &text, 10.5, Weight::W400, style::text_3(), inner_w, 1.2)
+                .size()
+                .y
+        };
+        let value_w = (inner_w - default_w - apply_w - 20.0).max(60.0);
+        let default_x = inner_l + value_w + 10.0;
+        let ctl_top = 7.0 + name_block + 10.0;
+        let status_top = ctl_top + ctl_h + 10.0;
+        Metrics {
+            w,
+            h: status_top + status_h + 7.0 + 1.0,
+            name_x: inner_l,
+            name_w: inner_w,
+            name_cy: 7.0 + name_block / 2.0,
+            value_x: inner_l,
+            value_w,
+            default_x,
+            default_text_w,
+            reset_x: default_x + default_text_w + 4.0,
+            apply_x: default_x + default_w + 10.0,
+            apply_w,
+            status_x: inner_l,
+            status_w: inner_w,
+            ctl_cy: ctl_top + ctl_h / 2.0,
+            status_cy: status_top + status_h / 2.0,
+        }
+    }
+
     #[allow(clippy::too_many_arguments)]
-    fn row(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, at: Pos2, w: f32, h: f32, p: &Param, armed: bool) {
+    fn row(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, at: Pos2, m: &Metrics, p: &Param, armed: bool) {
+        let (w, h) = (m.w, m.h);
         let meta = self.meta_of(&p.name).cloned();
         let name = p.name.clone();
         let modified = self.is_modified(p);
         let painter = ui.painter().clone();
         let row = Rect::from_min_size(at, Vec2::new(w, h));
-        // grid: minmax(150px, 1.5fr) minmax(120px, 1fr) 96px 64px 84px; gap 10;
-        // padding 7px 6px 7px 9px
-        let inner_l = row.left() + 9.0;
-        let inner_w = w - 9.0 - 6.0 - 96.0 - 64.0 - 84.0 - 4.0 * 10.0;
-        let name_w = (inner_w * 0.6).max(150.0);
-        let value_w = (inner_w * 0.4).max(120.0);
-        let name_x = inner_l;
-        let value_x = name_x + name_w + 10.0;
-        let default_x = value_x + value_w + 10.0;
-        let apply_x = default_x + 96.0 + 10.0;
-        let status_x = apply_x + 64.0 + 10.0;
+        let left = row.left();
+        let (name_x, name_w, value_x, value_w) = (left + m.name_x, m.name_w, left + m.value_x, m.value_w);
+        let (default_x, apply_x, status_x) = (left + m.default_x, left + m.apply_x, left + m.status_x);
+        let ctl_y = row.top() + m.ctl_cy;
         painter.hline(
             row.x_range(),
             row.bottom() - 0.5,
@@ -1172,7 +1780,7 @@ impl ParamsPage {
         let desc = meta.as_ref().map(|m| m.short_desc.clone()).unwrap_or_default();
         let name_h = mono.size().y;
         let desc_h = if desc.is_empty() { 0.0 } else { 2.0 + 11.0 * 1.35 };
-        let top = row.center().y - (name_h + desc_h) / 2.0;
+        let top = row.top() + m.name_cy - (name_h + desc_h) / 2.0;
         let clip = Rect::from_min_size(Pos2::new(name_x, row.top()), Vec2::new(name_w, h));
         let np = ui.painter_at(clip);
         np.galley(Pos2::new(name_x, top), mono.clone(), style::text_1());
@@ -1210,7 +1818,7 @@ impl ParamsPage {
         };
         let field_h: f32 = 2.0 + 12.0 + 12.0 * 1.21;
         let field = Rect::from_min_size(
-            Pos2::new(value_x, row.center().y - field_h / 2.0),
+            Pos2::new(value_x, ctl_y - field_h / 2.0),
             Vec2::new(value_w - unit_w, field_h),
         );
         let parsed = parse_draft(&draft, p, meta.as_ref());
@@ -1338,7 +1946,7 @@ impl ParamsPage {
         if !unit.is_empty() {
             let g = style::galley(ui, &unit, 11.0, Weight::W400, style::text_3(), 0.0);
             painter.galley(
-                Pos2::new(field.right() + 6.0, row.center().y - g.size().y / 2.0),
+                Pos2::new(field.right() + 6.0, ctl_y - g.size().y / 2.0),
                 g,
                 style::text_3(),
             );
@@ -1349,19 +1957,12 @@ impl ParamsPage {
             let g = style::galley_mono(ui, &format_value(d, p.kind), 11.5, style::text_3());
             ui.painter_at(Rect::from_min_size(
                 Pos2::new(default_x, row.top()),
-                Vec2::new(96.0 - 28.0, h),
+                Vec2::new(m.default_text_w, h),
             ))
-            .galley(
-                Pos2::new(default_x, row.center().y - g.size().y / 2.0),
-                g,
-                style::text_3(),
-            );
+            .galley(Pos2::new(default_x, ctl_y - g.size().y / 2.0), g, style::text_3());
             let at_default = matches!(&parsed, Draft::Ok { value, .. } if values_equal(*value, d, p.kind));
             if !at_default {
-                let r = Rect::from_min_size(
-                    Pos2::new(default_x + 96.0 - 24.0, row.center().y - 12.0),
-                    Vec2::splat(24.0),
-                );
+                let r = Rect::from_min_size(Pos2::new(left + m.reset_x, ctl_y - 12.0), Vec2::splat(24.0));
                 if !armed
                     && kit::icon_btn(
                         ui,
@@ -1384,31 +1985,21 @@ impl ParamsPage {
         let bh = apply.height();
         if apply.show(
             ui,
-            Rect::from_min_size(Pos2::new(apply_x, row.center().y - bh / 2.0), Vec2::new(64.0, bh)),
+            Rect::from_min_size(Pos2::new(apply_x, ctl_y - bh / 2.0), Vec2::new(m.apply_w, bh)),
             ("papplyrow", &name),
         ) {
             if let Draft::Ok { value, .. } = &parsed {
                 self.write(ctx, &name, *value);
             }
         }
-        // the status
-        let (text, color) = match (&parsed, self.row_status.get(&name)) {
-            (Draft::Bad(e), _) => (e.clone(), style::critical()),
-            (_, Some((t, cls))) => (
-                t.clone(),
-                match *cls {
-                    "ok" => style::healthy(),
-                    "err" => style::critical(),
-                    "pending" => style::nav(),
-                    _ => style::text_3(),
-                },
-            ),
-            (Draft::Ok { warn, .. }, None) if changed && !warn.is_empty() => (warn.clone(), style::warning()),
-            _ => (String::new(), style::text_3()),
-        };
+        let (text, color) = self.status_of(p, &parsed, changed);
         if !text.is_empty() {
-            let g = kit::wrapped_weight(ui, &text, 10.5, Weight::W400, color, 84.0, 1.2);
-            painter.galley(Pos2::new(status_x, row.center().y - g.size().y / 2.0), g, color);
+            let g = kit::wrapped_weight(ui, &text, 10.5, Weight::W400, color, m.status_w, 1.2);
+            painter.galley(
+                Pos2::new(status_x, row.top() + m.status_cy - g.size().y / 2.0),
+                g,
+                color,
+            );
         }
         if let Some(t) = new_text {
             let back_to_current = matches!(parse_draft(&t, p, meta.as_ref()), Draft::Ok { value, .. } if values_equal(value, p.value, p.kind));
@@ -1422,6 +2013,23 @@ impl ParamsPage {
     }
 }
 
+/// `.params-toolbar` is a wrapping flex row of the search (basis 200), the
+/// filter and the count: which of them share a line at width `w`.
+fn toolbar_lines(w: f32, seg: f32, count: f32) -> Vec<Vec<usize>> {
+    let mut lines = vec![vec![0]];
+    let mut used = 200.0;
+    for (i, iw) in [(1, seg), (2, count)] {
+        if used + 10.0 + iw <= w {
+            used += 10.0 + iw;
+            lines.last_mut().unwrap().push(i);
+        } else {
+            lines.push(vec![i]);
+            used = iw;
+        }
+    }
+    lines
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1432,6 +2040,13 @@ mod tests {
             value,
             kind,
         }
+    }
+
+    #[test]
+    fn the_toolbar_wraps_like_a_flex_row() {
+        assert_eq!(toolbar_lines(600.0, 180.0, 70.0), vec![vec![0, 1, 2]]);
+        assert_eq!(toolbar_lines(400.0, 180.0, 70.0), vec![vec![0, 1], vec![2]]);
+        assert_eq!(toolbar_lines(300.0, 180.0, 70.0), vec![vec![0], vec![1, 2]]);
     }
 
     #[test]
