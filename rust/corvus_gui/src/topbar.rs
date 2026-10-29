@@ -721,6 +721,22 @@ pub fn show(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_row_that_fits_keeps_its_items_and_one_that_does_not_shrinks_them_in_proportion() {
+        let items = [(100.0, 0.0), (200.0, 0.0), (100.0, 0.0)];
+        assert_eq!(shrink(&items, 400.0), vec![100.0, 200.0, 100.0]);
+        let w = shrink(&items, 300.0);
+        assert!((w[0] - 75.0).abs() < 0.01 && (w[1] - 150.0).abs() < 0.01 && (w[2] - 75.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn an_item_at_its_floor_stays_and_the_others_take_its_share() {
+        let items = [(100.0, 90.0), (100.0, 0.0)];
+        let w = shrink(&items, 150.0);
+        assert_eq!(w[0], 90.0);
+        assert!((w[1] - 60.0).abs() < 0.01);
+    }
     use serde_json::json;
 
     #[test]
