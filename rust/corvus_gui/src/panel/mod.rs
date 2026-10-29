@@ -164,6 +164,11 @@ impl Panel {
 
     /// `app.js`: under 960 the panel folds, from 1280 it opens again, unless
     /// the operator has pressed its handle.
+    /// The whole console as text, for the Logs page.
+    pub fn console_transcript(&self) -> String {
+        self.console.transcript()
+    }
+
     pub fn follow_window(&mut self, vw: &crate::app::responsive::Vw) {
         if self.user_toggled {
             return;

@@ -81,6 +81,7 @@ SIGKILL if it is still there after 8 s. If the window does not close within
 | `src/settings/data_cards.rs` | the Data pill: parameter folder and defaults copy, flight review sensitivity, export, import and reset of the settings file (`src/js/settings-transfer.js`) |
 | `src/settings/about.rs`, `src/settings/credits.rs` | the Plugins and About pills, the update check, and the credits dialog with the native interface's own crate list (`src/js/credits.js`) |
 | `src/settings/dialogs.rs` | the dialogs open over the page and the company logo card |
+| `src/logs/mod.rs` | the Logs page: the last 30 console lines, Export log through `POST /api/console/save` and Copy (`renderLogsPage` of `src/js/sidenav.js`) |
 | `src/ui/form.rs` | the form vocabulary of a page that is a column of cards: `Form` cursor, section, card, field with caption and hint, switch field, option cards, stepped slider, pills, rows, messages, actions |
 | `src/notify/mod.rs` | the notification board, its read and dismiss rules, the command dedupe and the toasts (`src/js/topbar.js`) |
 | `src/notify/overlay.rs` | the NOTIFICATIONS pill, the board and the toast stack |

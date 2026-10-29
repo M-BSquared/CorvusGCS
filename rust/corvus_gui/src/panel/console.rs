@@ -60,6 +60,17 @@ pub struct Line {
     pub text: String,
 }
 
+/// One record as a transcript line (`formatLine` of `src/js/panel.js`):
+/// timestamp, level tag, message.
+pub fn format_line(l: &Line) -> String {
+    let tag = if l.level.is_empty() {
+        String::new()
+    } else {
+        format!("[{}] ", l.level)
+    };
+    format!("{}  {tag}{}", l.ts, l.text)
+}
+
 /// panel.js normalizeCommand: newlines and NULs to spaces, the verb lower
 /// case, the rest's runs of space collapsed except for a raw shell line.
 pub fn normalize_command(text: &str) -> String {
@@ -228,6 +239,13 @@ impl ConsoleTab {
             history: Vec::new(),
             hist_idx: 0,
         }
+    }
+
+    /// Every line of the buffer as a transcript, a filter typed into the tab
+    /// notwithstanding (`consoleText({all: true})`).
+    pub fn transcript(&self) -> String {
+        let b = self.buffer.lock().expect("console");
+        b.lines.iter().map(format_line).collect::<Vec<_>>().join("\n")
     }
 
     /// Ends the console stream.
@@ -609,6 +627,17 @@ impl ConsoleTab {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_transcript_line_is_timestamp_level_and_text() {
+        let l = |level: &str| Line {
+            ts: "12:00:01".into(),
+            level: level.into(),
+            text: "Armed".into(),
+        };
+        assert_eq!(format_line(&l("info")), "12:00:01  [info] Armed");
+        assert_eq!(format_line(&l("")), "12:00:01  Armed");
+    }
 
     #[test]
     fn commands_are_normalised_as_panel_js_does() {

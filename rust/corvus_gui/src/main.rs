@@ -10,6 +10,7 @@
 mod app;
 mod data;
 mod home;
+mod logs;
 mod map;
 mod map3d;
 mod net;

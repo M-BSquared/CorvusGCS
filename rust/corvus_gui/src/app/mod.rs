@@ -17,6 +17,7 @@ use crate::data::units::Units;
 use crate::home::flight::FlightBar;
 use crate::home::hud::Hud;
 use crate::home::{topbar, topbar_cards};
+use crate::logs::LogsPage;
 use crate::map::rail::MapRail;
 use crate::map::Map;
 use crate::net::http::{self, Server};
@@ -48,6 +49,7 @@ struct App {
     page: Page,
     setup: SetupPage,
     settings: SettingsPage,
+    logs: LogsPage,
     mission_page: bool,
     panel: Panel,
     rail: MapRail,
@@ -204,6 +206,9 @@ impl App {
                     self.checklist.window(&mut map_ui, ui.ctx(), main, below);
                 } else if self.page == Page::Setup {
                     self.setup.show(ui, main, &state, now, &mut self.checklist);
+                } else if self.page == Page::Logs {
+                    let transcript = self.panel.console_transcript();
+                    self.logs.show(ui, main, &transcript);
                 } else if self.page == Page::Settings {
                     self.settings.show(ui, main);
                 } else {
@@ -212,6 +217,9 @@ impl App {
                 if let Some(page) = nav::show(ui, rail, self.mission_page, self.page, !vw.max1279) {
                     if page == Page::Setup && self.page == Page::Setup {
                         self.setup.reset();
+                    }
+                    if page == Page::Logs && self.page != Page::Logs {
+                        self.logs.reset();
                     }
                     if page == Page::Settings && self.page != Page::Settings {
                         self.settings.enter(ui.ctx());
@@ -488,6 +496,7 @@ pub fn run(
                     }
                     s
                 },
+                logs: LogsPage::new(server.clone()),
                 settings: {
                     let mut s = SettingsPage::new(server.clone(), &config);
                     if let Some(tab) = page.and_then(|p| p.strip_prefix("settings:")) {
