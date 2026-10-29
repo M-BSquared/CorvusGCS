@@ -15,7 +15,10 @@ use crate::http::{self, Server};
 use crate::icons;
 use crate::kit::{self, Button, Variant};
 use crate::link::{self, LinkTab};
+use crate::ssh_session::{self, SshSession};
+use crate::ssh_window::TermWindow;
 use crate::style::{self, Weight};
+use crate::term_view::{self, TermState};
 
 /// The grip's range.
 const MIN_WIDTH: f32 = 320.0;
@@ -72,6 +75,25 @@ pub struct Panel {
     console: ConsoleTab,
     ssh_list: Option<Value>,
     ssh_loading: Option<Pending<Result<Value, String>>>,
+    ssh_connecting: Option<SshConnecting>,
+    ssh_error: Option<(String, String)>,
+    ssh_open: Option<SshTab>,
+    windows: Vec<TermWindow>,
+    disconnecting: Vec<Pending<Result<Value, String>>>,
+}
+
+/// A connect request on its way, and where the terminal goes when it is up.
+struct SshConnecting {
+    conn: Value,
+    to_window: bool,
+    answer: Pending<Result<Value, String>>,
+}
+
+/// The terminal that fills the SSH tab.
+struct SshTab {
+    conn: Value,
+    session: SshSession,
+    state: TermState,
 }
 
 impl Panel {
@@ -95,6 +117,35 @@ impl Panel {
             ssh_tab: flag("ssh_tab"),
             ssh_list: None,
             ssh_loading: None,
+            ssh_connecting: None,
+            ssh_error: None,
+            ssh_open: None,
+            windows: Vec::new(),
+            disconnecting: Vec::new(),
+        }
+    }
+
+    /// The terminal windows, drawn over the whole app.
+    pub fn windows(&mut self, ctx: &egui::Context) {
+        let mut gone: Vec<(usize, bool)> = Vec::new();
+        for (i, w) in self.windows.iter_mut().enumerate() {
+            match w.show(ctx) {
+                crate::ssh_window::Out::Close => gone.push((i, false)),
+                crate::ssh_window::Out::Disconnect => gone.push((i, true)),
+                crate::ssh_window::Out::None => {}
+            }
+        }
+        for (i, end) in gone.into_iter().rev() {
+            let w = self.windows.remove(i);
+            if end {
+                self.disconnecting
+                    .push(ssh_session::disconnect(ctx, &self.server, &w.name));
+                self.ssh_list = None;
+            }
+        }
+        self.disconnecting.retain(|p| p.take().is_none());
+        if !self.disconnecting.is_empty() {
+            ctx.request_repaint_after(std::time::Duration::from_millis(250));
         }
     }
 
@@ -123,6 +174,8 @@ impl Panel {
     /// Ends the panel's streams.
     pub fn shut_down(&mut self) {
         self.console.shut_down();
+        self.ssh_open = None;
+        self.windows.clear();
     }
 
     /// Draws the panel into `rect` (its full current width).
@@ -269,6 +322,139 @@ impl Panel {
         }
     }
 
+    fn start_connect(&mut self, ctx: &egui::Context, conn: Value, connected: bool, to_window: bool) {
+        let name = conn.get("name").and_then(Value::as_str).unwrap_or("").to_string();
+        self.ssh_error = None;
+        if connected {
+            if to_window {
+                self.open_window(ctx, &conn);
+            } else {
+                self.open_tab(ctx, conn);
+            }
+            return;
+        }
+        self.ssh_connecting = Some(SshConnecting {
+            conn,
+            to_window,
+            answer: ssh_session::connect(ctx, &self.server, &name),
+        });
+    }
+
+    fn open_tab(&mut self, ctx: &egui::Context, conn: Value) {
+        let name = conn.get("name").and_then(Value::as_str).unwrap_or("").to_string();
+        self.ssh_open = Some(SshTab {
+            session: SshSession::attach(ctx, &self.server, &name, 80, 24),
+            conn,
+            state: TermState::default(),
+        });
+    }
+
+    fn open_window(&mut self, ctx: &egui::Context, conn: &Value) {
+        let name = conn.get("name").and_then(Value::as_str).unwrap_or("");
+        if self.windows.iter().any(|w| w.name == name) {
+            return;
+        }
+        let nth = self.windows.len();
+        self.windows.push(TermWindow::new(ctx, &self.server, conn, nth));
+    }
+
+    /// The SSH tab in `terminal-mode`: one card holding the header, the
+    /// terminal and DISCONNECT, filling the tab.
+    fn ssh_terminal(&mut self, ui: &mut egui::Ui, rect: Rect) {
+        let Some(tab) = self.ssh_open.as_mut() else {
+            return;
+        };
+        let painter = ui.painter().clone();
+        let card = rect.shrink(10.0);
+        painter.rect_filled(card, style::RADIUS, style::surface_2());
+        painter.rect_stroke(
+            card,
+            style::RADIUS,
+            Stroke::new(1.0, style::border()),
+            egui::StrokeKind::Inside,
+        );
+        let inner = card.shrink(13.0);
+        let tile = Rect::from_min_size(inner.min, Vec2::splat(34.0));
+        painter.rect_filled(tile, style::RADIUS_BTN, style::surface_3());
+        icons::paint(
+            ui,
+            "server",
+            Rect::from_center_size(tile.center(), Vec2::splat(17.0)),
+            style::text_2(),
+        );
+        let name = tab
+            .conn
+            .get("title")
+            .or_else(|| tab.conn.get("name"))
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string();
+        let alive = !tab.session.is_closed();
+        let status = if alive { "CONNECTED" } else { "OFFLINE" };
+        let sc = if alive { style::healthy() } else { style::text_3() };
+        let sg = style::galley(ui, status, 10.0, Weight::W600, sc, 0.7);
+        let tools = 2.0 * 28.0 - 6.0;
+        let sx = inner.right() - tools - 8.0 - sg.size().x;
+        painter.galley(Pos2::new(sx, tile.center().y - sg.size().y / 2.0), sg, sc);
+        kit::dot(&painter, Pos2::new(sx - 6.0 - 3.5, tile.center().y), sc, alive);
+        let clip = Rect::from_min_max(
+            Pos2::new(tile.right() + 10.0, tile.top()),
+            Pos2::new(sx - 20.0, tile.bottom()),
+        );
+        let ng = style::galley(ui, &name, 13.0, Weight::W600, style::text_1(), 0.0);
+        let hg = style::galley_mono(ui, &ssh_address(&tab.conn), 11.0, style::text_2());
+        let th = ng.size().y + 1.0 + hg.size().y;
+        let tp = ui.painter_at(clip);
+        tp.galley(
+            Pos2::new(clip.left(), tile.center().y - th / 2.0),
+            ng.clone(),
+            style::text_1(),
+        );
+        tp.galley(
+            Pos2::new(clip.left(), tile.center().y - th / 2.0 + ng.size().y + 1.0),
+            hg,
+            style::text_2(),
+        );
+        let mut pop = false;
+        let bx = inner.right() - 28.0;
+        if kit::icon_btn(
+            ui,
+            Rect::from_min_size(Pos2::new(bx - 22.0, tile.center().y - 14.0), Vec2::splat(28.0)),
+            "square-arrow-out-up-right",
+            "Also open it in a terminal window of its own",
+            false,
+            "sshpop",
+        ) {
+            pop = true;
+        }
+        let disc = Button::new("DISCONNECT", Variant::Secondary);
+        let dh = disc.height();
+        let disc_rect = Rect::from_min_size(
+            Pos2::new(inner.left(), inner.bottom() - dh),
+            Vec2::new(inner.width(), dh),
+        );
+        let term = Rect::from_min_max(
+            Pos2::new(inner.left(), tile.bottom() + 10.0),
+            Pos2::new(inner.right(), disc_rect.top() - 10.0),
+        );
+        term_view::show(ui, term, &mut tab.session, &mut tab.state, "sshtab", true);
+        let mut end = false;
+        if disc.show(ui, disc_rect, "sshdisconnect") {
+            end = true;
+        }
+        let conn = tab.conn.clone();
+        if pop {
+            self.open_window(ui.ctx(), &conn);
+        }
+        if end {
+            let name = conn.get("name").and_then(Value::as_str).unwrap_or("").to_string();
+            self.disconnecting
+                .push(ssh_session::disconnect(ui.ctx(), &self.server, &name));
+            self.ssh_open = None;
+            self.ssh_list = None;
+        }
+    }
+
     fn load_ssh(&mut self, ctx: &egui::Context) {
         let server = self.server.clone();
         self.ssh_loading = Some(Pending::spawn(ctx, move || {
@@ -283,6 +469,46 @@ impl Panel {
         if let Some(r) = self.ssh_loading.as_ref().and_then(Pending::take) {
             self.ssh_loading = None;
             self.ssh_list = Some(r.unwrap_or_else(|_| serde_json::json!({ "failed": true })));
+        }
+        if let Some(c) = self.ssh_connecting.as_ref() {
+            if let Some(r) = c.answer.take() {
+                let c = self.ssh_connecting.take().expect("connecting");
+                let name = c.conn.get("name").and_then(Value::as_str).unwrap_or("").to_string();
+                match r {
+                    Ok(v)
+                        if v.get("ok") == Some(&Value::Bool(true))
+                            && v.get("connected") == Some(&Value::Bool(true)) =>
+                    {
+                        let mut conn = c.conn.clone();
+                        for k in ["host", "port", "username"] {
+                            if let (Some(x), Some(o)) = (v.get(k), conn.as_object_mut()) {
+                                o.insert(k.into(), x.clone());
+                            }
+                        }
+                        self.ssh_error = None;
+                        self.ssh_list = None;
+                        if c.to_window {
+                            self.open_window(ui.ctx(), &conn);
+                        } else {
+                            self.open_tab(ui.ctx(), conn);
+                        }
+                    }
+                    Ok(v) => {
+                        let e = v
+                            .get("error")
+                            .and_then(Value::as_str)
+                            .unwrap_or("Connection failed")
+                            .to_string();
+                        self.ssh_error = Some((name, e));
+                    }
+                    Err(e) => self.ssh_error = Some((name, e)),
+                }
+            } else {
+                ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
+            }
+        }
+        if self.ssh_open.is_some() {
+            return self.ssh_terminal(ui, rect);
         }
         let header = link::section_header(ui, rect, "SSH Access", 28.0);
         let add = Rect::from_min_size(
@@ -333,7 +559,13 @@ impl Panel {
             .unwrap_or_default();
         for (i, dev) in devices.iter().enumerate() {
             let connected = dev.get("connected") == Some(&Value::Bool(true));
-            let card = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, 13.0 * 2.0 + 34.0 + 10.0 + 38.0));
+            let error = self
+                .ssh_error
+                .as_ref()
+                .filter(|(n, _)| Some(n.as_str()) == dev.get("name").and_then(Value::as_str))
+                .map(|(_, e)| kit::wrapped_weight(ui, e, 11.0, Weight::W400, style::critical(), w - 26.0, 1.35));
+            let error_h = error.as_ref().map_or(0.0, |g| g.size().y + 8.0);
+            let card = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, 13.0 * 2.0 + 34.0 + 10.0 + 38.0 + error_h));
             {
                 let r = card;
                 painter.rect_filled(r, style::RADIUS, style::surface_2());
@@ -384,26 +616,57 @@ impl Panel {
             );
             // CONNECT and the two square buttons: the terminal is its own step.
             let row_y = tile.bottom() + 10.0;
-            let b = Button::new(if connected { "OPEN TERMINAL" } else { "CONNECT" }, Variant::Primary)
-                .enabled(false)
-                .title("The SSH terminal is not in this build yet");
+            let busy = self.ssh_connecting.is_some();
+            let this_busy = self
+                .ssh_connecting
+                .as_ref()
+                .is_some_and(|c| c.conn.get("name") == dev.get("name"));
+            let label = if this_busy {
+                "CONNECTING \u{2026}"
+            } else if connected {
+                "OPEN TERMINAL"
+            } else {
+                "CONNECT"
+            };
+            let b = Button::new(label, Variant::Primary).enabled(!busy);
             let r = Rect::from_min_size(
                 Pos2::new(inner.left(), row_y),
                 Vec2::new(inner.width() - 2.0 * (34.0 + 8.0), b.height()),
             );
             let bh = b.height();
-            b.show(ui, r, ("sshconnect", i));
-            for (j, icon) in ["chevron-right", "pencil"].into_iter().enumerate() {
-                let ir = Rect::from_min_size(
-                    Pos2::new(r.right() + 8.0 + j as f32 * 42.0, row_y + (bh - 34.0) / 2.0),
-                    Vec2::splat(34.0),
-                );
-                icons::paint(
-                    ui,
-                    icon,
-                    Rect::from_center_size(ir.center(), Vec2::splat(15.0)),
-                    style::text_3().gamma_multiply(0.45),
-                );
+            if b.show(ui, r, ("sshconnect", i)) {
+                self.start_connect(ui.ctx(), dev.clone(), connected, false);
+            }
+            let ir = Rect::from_min_size(Pos2::new(r.right() + 8.0, row_y + (bh - 34.0) / 2.0), Vec2::splat(34.0));
+            if kit::icon_btn(
+                ui,
+                ir,
+                "chevron-right",
+                if connected {
+                    "Open it in a terminal window of its own"
+                } else {
+                    "Connect and open it in a terminal window of its own"
+                },
+                false,
+                ("sshwin", i),
+            ) && !busy
+            {
+                self.start_connect(ui.ctx(), dev.clone(), connected, true);
+            }
+            let er = Rect::from_min_size(
+                Pos2::new(r.right() + 8.0 + 42.0, row_y + (bh - 34.0) / 2.0),
+                Vec2::splat(34.0),
+            );
+            icons::paint(
+                ui,
+                "pencil",
+                Rect::from_center_size(er.center(), Vec2::splat(15.0)),
+                style::text_3().gamma_multiply(0.45),
+            );
+            ui.interact(er, ui.scope_id().with(("sshedit", i)), egui::Sense::hover())
+                .on_hover_text("Editing a connection is not in this build yet");
+            if let Some(g) = error {
+                painter.galley(Pos2::new(inner.left(), row_y + bh + 8.0), g, style::critical());
             }
             y = card.bottom() + 10.0;
         }

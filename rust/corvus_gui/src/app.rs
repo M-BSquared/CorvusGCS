@@ -137,6 +137,7 @@ impl App {
                 let mut panel_ui = ui.new_child(egui::UiBuilder::new().max_rect(panel));
                 panel_ui.set_clip_rect(panel);
                 self.panel.show(&mut panel_ui, panel, &state);
+                self.panel.windows(ui.ctx());
             });
         self.checklist.dialog(ui.ctx());
         let screen = ui.ctx().content_rect();

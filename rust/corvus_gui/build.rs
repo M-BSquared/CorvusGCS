@@ -88,6 +88,9 @@ const ICONS: &[(&str, &str)] = &[
     ("octagon-alert", "OctagonAlert"),
     ("triangle-alert", "TriangleAlert"),
     ("trash-2", "Trash2"),
+    ("square-terminal", "SquareTerminal"),
+    ("minimize-2", "Minimize2"),
+    ("square-arrow-out-up-right", "SquareArrowOutUpRight"),
 ];
 
 fn main() {
