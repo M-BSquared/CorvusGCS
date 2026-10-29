@@ -279,7 +279,8 @@ impl Map {
             self.follow = false;
         }
         if std::env::var_os("CORVUS_GUI_3D_PANEL").is_some() {
-            let anchor = egui::Rect::from_center_size(Pos2::new(rect.right() - 36.0, rect.top() + 249.0), Vec2::splat(34.0));
+            let anchor =
+                egui::Rect::from_center_size(Pos2::new(rect.right() - 36.0, rect.top() + 249.0), Vec2::splat(34.0));
             let ctx = ui.ctx().clone();
             let (t, sources) = self.three_settings(&ctx);
             crate::threed_panel::show(ui, anchor, t, sources);
@@ -439,10 +440,10 @@ impl Map {
                 let n: Vec<f64> = v.split(',').filter_map(|x| x.trim().parse().ok()).collect();
                 if let (3..=5, Some(t)) = (n.len(), self.three.as_mut()) {
                     t.start_at(n[0], n[1], n[2], n.get(3).copied().unwrap_or(0.0));
-                    self.follow = false;
                     if let Some(p) = n.get(4) {
                         t.cam.pitch = *p;
                     }
+                    self.follow = false;
                 }
             }
         }
@@ -689,13 +690,7 @@ pub(crate) fn paint_home(painter: &egui::Painter, c: Pos2) {
 }
 
 impl Plugin for Layers<'_> {
-    fn run(
-        self: Box<Self>,
-        ui: &mut egui::Ui,
-        response: &egui::Response,
-        projector: &Projector,
-        _memory: &MapMemory,
-    ) {
+    fn run(self: Box<Self>, ui: &mut egui::Ui, response: &egui::Response, projector: &Projector, _memory: &MapMemory) {
         let rect = response.rect;
         let painter = ui.painter_at(rect);
         if let Some(poly) = &self.outline {
@@ -753,12 +748,18 @@ impl Plugin for Layers<'_> {
             );
         }
         if let Some(p) = *self.pin {
-            let c = screen(projector, rect, &Point { lng: p[0], lat: p[1], alt: None });
+            let c = screen(
+                projector,
+                rect,
+                &Point {
+                    lng: p[0],
+                    lat: p[1],
+                    alt: None,
+                },
+            );
             paint_pin(&painter, c);
             if response.clicked()
-                && response
-                    .interact_pointer_pos()
-                    .is_some_and(|q| q.distance(c) <= 11.0)
+                && response.interact_pointer_pos().is_some_and(|q| q.distance(c) <= 11.0)
                 && !self.measure.active
             {
                 *self.pin = None;
