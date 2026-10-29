@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Build Corvus GCS as a Linux AppImage (Ubuntu/Debian x86_64).
 #
-# Bundles a relocatable CPython (venv --copies + host stdlib + libpython) and
-# the PySide6/QtWebEngine wheels, then packs them with appimagetool. No conda on
-# the build host; only stdlib python3 -m venv + pip are used.
+# Bundles the native Rust interface (rust/corvus_gui, built with cargo) and the
+# backend it starts as its child: a relocatable CPython (venv --copies + host
+# stdlib + libpython) with the `headless` dependencies and corvus_link, then
+# packs them with appimagetool. No Qt, no web engine. No conda on the build
+# host; only stdlib python3 -m venv + pip, and a Rust toolchain (rustup, cargo).
 #
 # Version is read exclusively from the repo-root VERSION file — never hardcoded.
 
@@ -27,6 +29,10 @@ echo "Output:  $OUTPUT"
 echo ""
 
 command -v python3 >/dev/null 2>&1 || { echo "ERROR: python3 not found" >&2; exit 1; }
+command -v cargo >/dev/null 2>&1 || {
+    echo "ERROR: cargo not found; install Rust from https://rustup.rs" >&2
+    exit 1
+}
 
 PY_MAJOR="$(python3 -c 'import sys; print(sys.version_info.major)')"
 PY_MINOR="$(python3 -c 'import sys; print(sys.version_info.minor)')"
@@ -51,7 +57,8 @@ fi
 MISSING=""
 for required in \
     VERSION pyproject.toml LICENSE.md \
-    corvus src assets plugins assets/CorvusGCS_logo.png
+    corvus src assets plugins assets/CorvusGCS_logo.png serve.py \
+    rust/corvus_gui/Cargo.toml rust/corvus_link/Cargo.toml
 do
     [ -e "$REPO_DIR/$required" ] || MISSING="$MISSING  $required"
 done
@@ -127,7 +134,7 @@ else
     echo "WARNING: libpython${PY_MM}.so.1.0 not found at $PY_LIBDIR (host likely static-libpython)"
 fi
 
-# ---- 3. pip-install deps (pyproject.toml's `app` group) ---------------------
+# ---- 3. pip-install deps (pyproject.toml's `headless` group) ---------------------
 PIP_LOG="$BUILD_DIR/pip-install.log"
 mkdir -p "$BUILD_DIR"
 : > "$PIP_LOG"
@@ -136,13 +143,13 @@ if ! "$APPDIR/usr/bin/python3" -m pip install --upgrade pip >>"$PIP_LOG" 2>&1; t
     echo "ERROR: pip self-upgrade failed; log: $PIP_LOG" >&2
     exit 1
 fi
-# pyproject.toml's `app` group, not a hand-written list: this script used to
+# pyproject.toml's `headless` group, not a hand-written list: this script used to
 # install the five runtime packages with NO version floors, so the Linux
 # artifact could be built against a pymavlink older than the >=2.4 the code
 # needs and nothing would catch it until the field.
 #
 # Which source, in order: $CORVUS_REQUIREMENTS, then requirements.lock if the
-# repo has one, then the `app` group. The lock is what makes a release
+# repo has one, then the `headless` group. The lock is what makes a release
 # rebuildable — the group states floors, so installing from it in six months
 # resolves to whatever is newest then. Every build writes the set it actually
 # installed to dist/*.lock; promoting one to requirements.lock at tag time
@@ -159,7 +166,7 @@ if [ -n "$REQUIREMENTS" ]; then
     DEPS_ARGS=(-r "$REQUIREMENTS")
     DEPS_LABEL="$(basename "$REQUIREMENTS")"
 else
-    DEPS_ARGS=(--group "$REPO_DIR/pyproject.toml:app")
+    DEPS_ARGS=(--group "$REPO_DIR/pyproject.toml:headless")
     DEPS_LABEL="pyproject.toml [app]"
 fi
 LOCK_OUT="$REPO_DIR/dist/Corvus_GCS-${VERSION}-x86_64.lock"
@@ -190,23 +197,37 @@ mkdir -p "$REPO_DIR/dist"
 }
 if [ -f "$LOCK_OUT" ]; then echo "    (resolved set: $LOCK_OUT)"; fi
 
-# ---- 3b. Qt: the modules Corvus loads ---------------------------------------
-# The PySide6 wheels carry every Qt module, the Designer/Assistant/Linguist
-# tools and the files for building bindings. tools/qt_bundle.py takes out what
-# nothing in Corvus loads, read from the binaries' own DT_NEEDED entries, and
-# fails the build if anything left would miss a library it links.
-echo ">>> Trimming PySide6 to the Qt modules Corvus loads ..."
-python3 "$REPO_DIR/tools/qt_bundle.py" prune "$APPDIR/usr/lib/python$PY_MM/site-packages"
-# The rest the wheels bring and Corvus never reads: lxml, pip, Qt translations and Chromium locales but en-US and de.
+# ---- 3b. trim what the wheels bring and nothing reads ------------------------
+# But `all`, lxml and pip: tools/bundle_trim.py (see its docstring), which
+# also fails the build if the `all` dialect or corvus_link is gone.
 echo ">>> Trimming what the app never loads ..."
 python3 "$REPO_DIR/tools/bundle_trim.py" "$APPDIR/usr/lib/python$PY_MM/site-packages"
 rm -f "$APPDIR"/usr/bin/pip "$APPDIR"/usr/bin/pip3 "$APPDIR"/usr/bin/pip3.*
 
-# ---- 3c. the system libraries Qt and Python link but a clean host lacks -----
-# Qt's X11 platform plugin links libxcb-cursor, libxkbcommon-x11 and six more
-# that the PySide6 wheels leave to the system. A machine without them cannot
-# open a window at all; Qt aborts at startup. Copied in here, and the build
-# fails if anything the app cannot start without is still unresolved.
+# ---- 3c. the interface --------------------------------------------------------
+# rust/corvus_gui, built for this host. rust-toolchain.toml in that folder pins
+# the Rust it needs, so cargo runs from there and rustup fetches it on first
+# use. The fonts and icons are cut out of src/vendor by its build.rs and the
+# logos are read from assets/, so the binary carries them. It links the C
+# library and the OpenGL, X11 and Wayland libraries are opened at run time from
+# the host, which every desktop that can show a window has.
+echo ">>> Building the interface (rust/corvus_gui, release) ..."
+GUI_LOG="$BUILD_DIR/cargo-gui-linux.log"
+mkdir -p "$BUILD_DIR"
+: > "$GUI_LOG"
+if ! ( cd "$REPO_DIR/rust/corvus_gui" \
+        && CARGO_TARGET_DIR="$BUILD_DIR/cargo-gui" cargo build --release --locked ) >>"$GUI_LOG" 2>&1; then
+    echo "ERROR: the interface did not build; log: $GUI_LOG" >&2
+    tail -n 30 "$GUI_LOG" >&2 || true
+    exit 1
+fi
+install -m 0755 "$BUILD_DIR/cargo-gui/release/corvus-gcs" "$APPDIR/usr/bin/corvus-gcs-ui"
+
+# ---- 3d. the system libraries the AppDir links but a clean host lacks ---------
+# Read from the binaries' own DT_NEEDED entries: whatever the interpreter, its
+# extension modules and the interface link and the AppDir does not carry is
+# copied in from this host, and the build fails if anything the app cannot
+# start without is still unresolved.
 echo ">>> Bundling the system libraries the AppDir links ..."
 python3 "$REPO_DIR/tools/appimage_libs.py" bundle "$APPDIR"
 
@@ -264,32 +285,20 @@ PY_SITE="${PY_BASE}site-packages"
 export PYTHONHOME="$APPDIR/usr"
 export PYTHONPATH="$APPDIR:$PY_SITE"
 
-# Qt6 is bundled inside the PySide6 wheel (site-packages/PySide6/Qt/). Point the
-# Qt plugin/resource loaders and the dynamic linker at it so the bundled Qt is
-# used despite the random /tmp/.mount_<XXXX> AppImage mount path.
-PYSIDE6_QT="$PY_SITE/PySide6/Qt"
-export QT_PLUGIN_PATH="$PYSIDE6_QT/plugins"
-export QT_QPA_PLATFORM_PLUGIN_PATH="$PYSIDE6_QT/plugins"
-export QTWEBENGINE_RESOURCES_PATH="$PYSIDE6_QT/resources"
-if [ -d "$PYSIDE6_QT/resources/qtwebengine_dictionaries" ]; then
-    export QTWEBENGINE_DICTIONARIES_PATH="$PYSIDE6_QT/resources/qtwebengine_dictionaries"
-fi
-export LD_LIBRARY_PATH="$PYSIDE6_QT/lib:$APPDIR/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+# The interpreter's own libraries (libpython) sit under usr/lib.
+export LD_LIBRARY_PATH="$APPDIR/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
-# AppImage cannot use the Chromium setuid sandbox. Handed over in a variable of
-# its own: app.py appends it to its GPU fallback flags, which it only applies
-# when QTWEBENGINE_CHROMIUM_FLAGS is unset (setting that here dropped them).
-export CORVUS_LAUNCHER_CHROMIUM_FLAGS="--no-sandbox --disable-gpu-sandbox --disable-setuid-sandbox --disable-dev-shm-usage"
-
-# Ensure a writable HOME for Qt/Chromium profile+cache when none is set/unwritable.
+# Ensure a writable HOME for the config, tile cache and logs when none is set/unwritable.
 if [ -z "${HOME:-}" ] || [ ! -w "${HOME:-}" ]; then
     export HOME="${XDG_CACHE_HOME:-${TMPDIR:-/tmp}}/corvus-gcs"
     mkdir -p "$HOME" 2>/dev/null || true
 fi
 
-# exec replaces the shell so SIGINT/SIGTERM reach python directly, letting
-# corvus/app.py's signal handlers tear down cleanly (no zombies, no leaked sockets).
-exec "$APPDIR/usr/bin/python3" "$APPDIR/corvus/app.py" "$@"
+# exec replaces the shell so SIGINT/SIGTERM reach the interface directly. It
+# starts serve.py with the bundled interpreter as its child and takes it down
+# on every way out (no zombies, no leaked sockets). The caller's flags come
+# last, so they can still override --root and --python.
+exec "$APPDIR/usr/bin/corvus-gcs-ui" --root "$APPDIR" --python "$APPDIR/usr/bin/python3" "$@"
 APPRUN_EOF
 chmod 0755 "$APPDIR/AppRun"
 
@@ -297,7 +306,8 @@ chmod 0755 "$APPDIR/AppRun"
 # StartupWMClass is how a dock ties the running window to this entry. An
 # integrator (appimaged, AppImageLauncher) installs the file under a new name,
 # appimagekit_<hash>-corvus-gcs.desktop, so the window's app id, which
-# corvus/app.py sets to corvus-gcs, can no longer find it by file name alone.
+# the interface sets to corvus-gcs (src/app/mod.rs), can no longer find it by
+# file name alone.
 cat > "$APPDIR/corvus-gcs.desktop" <<'DESKTOP_EOF'
 [Desktop Entry]
 Name=Corvus GCS
@@ -326,20 +336,8 @@ if command -v convert >/dev/null 2>&1; then
     convert "$LOGO" -resize 256x256 -background none -gravity center \
         -extent 256x256 "PNG32:$ICON"
 else
-    echo ">>> ImageMagick 'convert' not found; rendering the icon with the bundled Qt"
-    "$APPDIR/usr/bin/python3" - "$LOGO" "$ICON" <<'PY'
-import sys
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QImage, QPainter
-src = QImage(sys.argv[1]).scaled(256, 256, Qt.AspectRatioMode.KeepAspectRatio,
-                                 Qt.TransformationMode.SmoothTransformation)
-out = QImage(256, 256, QImage.Format.Format_ARGB32)
-out.fill(Qt.GlobalColor.transparent)
-p = QPainter(out)
-p.drawImage((256 - src.width()) // 2, (256 - src.height()) // 2, src)
-p.end()
-sys.exit(0 if out.save(sys.argv[2], "PNG") else 1)
-PY
+    echo ">>> ImageMagick 'convert' not found; fitting the icon with tools/png_icon.py"
+    python3 "$REPO_DIR/tools/png_icon.py" "$LOGO" "$ICON" 256
 fi
 ICON_SIZE="$(python3 -c 'import struct, sys; d = open(sys.argv[1], "rb").read(24); print("%dx%d" % struct.unpack(">II", d[16:24]))' "$ICON")"
 if [ "$ICON_SIZE" != "256x256" ]; then

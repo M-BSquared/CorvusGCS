@@ -15,7 +15,7 @@
 
 <div align="center">
   <!-- corvus:version-badge -->
-  <img src="https://img.shields.io/badge/Version-2026.10.92-f7ebe1?style=for-the-badge" height="28" alt="Version 2026.10.92" />
+  <img src="https://img.shields.io/badge/Version-2026.10.93-f7ebe1?style=for-the-badge" height="28" alt="Version 2026.10.93" />
   <img width="8" />
   <!-- <a href="https://www.python.org/" target="_blank"><img src="https://img.shields.io/badge/Python_3.12%2B-3776AB?logo=python&logoColor=white&style=for-the-badge" height="28" alt="Python 3.12+" /></a>
   <img width="8" />
@@ -185,18 +185,19 @@ More on the <a href="https://m-bsquared.github.io/CorvusGCS/#screenshots">websit
 
 Download the build for your machine from the
 [latest release](https://github.com/M-BSquared/CorvusGCS/releases/latest) and
-run it. Python, Qt and every dependency are already inside.
+run it. Python and every dependency are already inside.
 
 | Platform | File | First launch |
 |---|---|---|
-| **macOS** 15 or later (Apple Silicon) | `Corvus_GCS-<version>-macOS-arm64.dmg` | Drag to Applications. Not notarized: allow it once under **System Settings → Privacy & Security → Open Anyway**. |
+| **macOS** 12 or later (Apple Silicon) | `Corvus_GCS-<version>-macOS-arm64.dmg` | Drag to Applications. Not notarized: allow it once under **System Settings → Privacy & Security → Open Anyway**. |
 | **Linux** (x86_64) | `Corvus_GCS-<version>-x86_64.AppImage` | `chmod +x` it, then run it. |
 | **Windows** (x64) | `Corvus_GCS-<version>-windows-x64.zip` | Unzip anywhere and run `Corvus GCS.exe`. SmartScreen asks once: *More info → Run anyway*. |
 
 **From source** (Python 3.12+ and a Rust toolchain, for the MAVLink module in
-[`rust/corvus_link`](rust/corvus_link)), one command creates `.venv/`, installs
+[`rust/corvus_link`](rust/corvus_link) and the interface in
+[`rust/corvus_gui`](rust/corvus_gui)), one command creates `.venv/`, installs
 every dependency from [`pyproject.toml`](pyproject.toml), builds the MAVLink
-module and opens the app:
+module and the interface and opens the app:
 
 ```bash
 ./run.sh
@@ -344,7 +345,7 @@ In short, and without replacing the terms in [`LICENSE.md`](LICENSE.md):
 - **You may not** sell it, or offer it to third parties as a paid product or
   service.
 
-Third-party components (paramiko, pyserial, PySide6/Qt, the MAVLink message
+Third-party components (paramiko, pyserial, egui, the MAVLink message
 definitions and the Rust libraries in the MAVLink module, MapLibre GL JS, Plotly, Lucide, xterm.js, and the Inter and JetBrains Mono typefaces) keep
 the licenses of their own authors. Map, elevation and building data belong to
 their providers (Esri, OpenStreetMap contributors, Copernicus and others) and

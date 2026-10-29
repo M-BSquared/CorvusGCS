@@ -5,9 +5,14 @@
 # platforms make that the shortest honest path: an AppImage is a squashfs of a
 # tree you lay out yourself, and a .app is a directory with rules about where
 # dylibs may point. Windows has neither constraint and one well-trodden tool,
-# so this uses PyInstaller rather than reinventing the same 300 lines in
-# PowerShell. The result is the same shape as the other two: one directory that
-# runs on a machine with no Python and no internet.
+# so the backend (serve.py) is frozen with PyInstaller rather than reinventing
+# the same 300 lines in PowerShell. The interface is the Rust app
+# (rust/corvus_gui, built with cargo), which starts that backend as its child.
+# The result is the same shape as the other two: one directory that runs on a
+# machine with no Python and no internet.
+#
+#   Corvus GCS\Corvus GCS.exe      the interface
+#   Corvus GCSackend\            the frozen backend, started by the interface
 #
 #   Windows x64  ->  dist\Corvus GCS\Corvus GCS.exe
 #                ->  Corvus_GCS-<version>-windows-x64.zip   (with -Zip)
@@ -18,7 +23,7 @@
 # Version is read exclusively from the repo-root VERSION file - never
 # hardcoded, exactly as build-appimage.sh and build-macos-app.sh do.
 #
-# Why onedir and not --onefile: --onefile unpacks the whole Qt payload into a
+# Why onedir and not --onefile: --onefile unpacks the whole backend into a
 # temp directory on every launch, which costs several seconds and defeats the
 # "ready to fly in seconds" property the project is built around. A folder
 # starts immediately.
@@ -55,8 +60,12 @@ Write-Host ""
 $Missing = @()
 foreach ($required in @(
     "VERSION", "pyproject.toml", "LICENSE.md",
-    "corvus", "src", "assets", "plugins", "assets\CorvusGCS_logo.png")) {
+    "corvus", "src", "assets", "plugins", "assets\CorvusGCS_logo.png", "serve.py",
+    "rust\corvus_gui\Cargo.toml", "rust\corvus_link\Cargo.toml")) {
     if (-not (Test-Path (Join-Path $RepoDir $required))) { $Missing += $required }
+}
+if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
+    throw "cargo not found; install Rust from https://rustup.rs and run this again."
 }
 if ($Missing.Count -gt 0) {
     throw ("the bundle is assembled from files that are not in the repo: " +
@@ -112,21 +121,19 @@ if (-not (Test-Path $VenvPy)) {
     }
 }
 
-# The runtime list is pyproject.toml's `app` group, which every other
-# installer also reads. The build-time tools - PyInstaller, and Pillow to cut
-# the .ico - are its `package-windows` group: named in the same file, never
-# shipped as a runtime dependency. Pillow used to be installed by CI into the
-# host interpreter, which the icon step below never runs, so no release
-# artifact ever carried the mark.
+# The runtime list is pyproject.toml's `headless` group, which every other
+# installer also reads. The build-time tool - PyInstaller - is its
+# `package-windows` group: named in the same file, never shipped as a runtime
+# dependency.
 #
 # Which runtime source, in order: $env:CORVUS_REQUIREMENTS, then
-# requirements.lock if the repo has one, then the `app` group. The lock is
+# requirements.lock if the repo has one, then the `headless` group. The lock is
 # what makes a release rebuildable - the group states floors, so installing
 # from it in six months resolves to whatever is newest then. Every build
 # writes the set it actually installed to dist\*.lock; promoting one to
 # requirements.lock at tag time pins the next rebuild to it.
 #
-# "${Pyproject}:app", braced: unbraced, PowerShell would read "$Pyproject:app"
+# "${Pyproject}:headless", braced: unbraced, PowerShell would read "$Pyproject:app"
 # as a scope-qualified variable named app and pass pip an empty string.
 $Pyproject = Join-Path $RepoDir "pyproject.toml"
 $Requirements = $env:CORVUS_REQUIREMENTS
@@ -139,8 +146,8 @@ if ($Requirements) {
     $DepsArgs = @("-r", $Requirements)
     $DepsLabel = Split-Path -Leaf $Requirements
 } else {
-    $DepsArgs = @("--group", "${Pyproject}:app")
-    $DepsLabel = "pyproject.toml [app]"
+    $DepsArgs = @("--group", "${Pyproject}:headless")
+    $DepsLabel = "pyproject.toml [headless]"
 }
 $LockOut = Join-Path $DistDir "Corvus_GCS-$Version-windows-x64.lock"
 Write-Host ">>> Installing $DepsLabel plus pyproject.toml [package-windows] ..."
@@ -173,47 +180,22 @@ if ($LASTEXITCODE -eq 0) {
     Write-Host "WARNING: could not write $LockOut"
 }
 
-# ---- 3. icon ----------------------------------------------------------------
-# Optional on purpose: a missing icon is a cosmetic loss, and failing the whole
-# release build over one is the wrong trade. Uses a checked-in .ico when there
-# is one, else renders from the PNG with the build venv's Pillow.
-$Ico = Join-Path $RepoDir "assets\corvus-gcs.ico"
-if (-not (Test-Path $Ico)) {
-    $Png = Join-Path $RepoDir "assets\CorvusGCS_logo.png"
-    $IcoScript = @"
-import sys
-try:
-    from PIL import Image
-except ImportError:
-    sys.exit(3)
-img = Image.open(r'$Png').convert('RGBA')
-img.save(r'$Ico', sizes=[(16,16),(32,32),(48,48),(64,64),(128,128),(256,256)])
-"@
-    & $VenvPy -c $IcoScript 2>&1 | Out-Null
-    if ($LASTEXITCODE -eq 0 -and (Test-Path $Ico)) {
-        Write-Host ">>> Icon rendered from CorvusGCS_logo.png"
-    } else {
-        Write-Host ">>> No icon (Pillow unavailable); building with the default"
-        $Ico = ""
-    }
-}
-
-# ---- 4. entry point ---------------------------------------------------------
-# PyInstaller wants a script, not a module path. corvus/app.py is not usable
-# directly because it is imported as part of the `corvus` package; this stub
-# gives the analyser a plain top-level script that pulls the package in.
-$Entry = Join-Path $BuildDir "corvus_gcs_main.py"
+# ---- 3. backend entry point -------------------------------------------------
+# PyInstaller wants a script. serve.py is the backend's own entry, but a
+# windowed build has no console, so this stub gives both streams a file first
+# and then runs serve.py's main().
+$Entry = Join-Path $BuildDir "corvus_backend_main.py"
 $EntrySource = @'
-"""Frozen entry point. Generated by build-windows.ps1 - not used elsewhere."""
+"""Frozen backend entry point. Generated by build-windows.ps1 - not used elsewhere."""
 import multiprocessing
 import os
 import sys
 
-# A --windowed build has no console, so sys.stdout and sys.stderr are None.
-# Nothing here prints, but logging.basicConfig() writes to a stream, and a
-# handler pointed at None silently drops every line - which leaves an operator
-# whose app failed to start with no way to find out why. Give both streams a
-# file next to the rest of Corvus' state before anything imports logging.
+# A windowed build has no console, so sys.stdout and sys.stderr are None.
+# logging.basicConfig() writes to a stream, and a handler pointed at None
+# silently drops every line - which leaves an operator whose backend failed to
+# start with no way to find out why. Give both streams a file next to the rest
+# of Corvus' state before anything imports logging.
 if sys.stderr is None or sys.stdout is None:
     try:
         _dir = os.path.expanduser("~/.corvus")
@@ -225,24 +207,24 @@ if sys.stderr is None or sys.stdout is None:
         if sys.stderr is None:
             sys.stderr = _log
     except OSError:
-        pass  # a read-only home must not stop the app from starting
+        pass  # a read-only home must not stop the backend from starting
 
-from corvus.app import main  # noqa: E402 - must follow the stream fixup
+import serve  # noqa: E402 - must follow the stream fixup
 
 if __name__ == "__main__":
-    # Qt's WebEngine spawns helper processes; without this the frozen exe
-    # re-runs the whole application in each child instead of the helper.
     multiprocessing.freeze_support()
-    sys.exit(main())
+    sys.exit(serve.main())
 '@
 Set-Content -Path $Entry -Value $EntrySource -Encoding UTF8
 
-# ---- 5. package -------------------------------------------------------------
+# ---- 4. package -------------------------------------------------------------
 # corvus/version.py resolves VERSION as parent.parent of its own __file__, and
 # server.py resolves src/ the same way, so the three have to land beside the
 # package inside the bundle - which is exactly where "path;." puts them.
-Write-Host ">>> Running PyInstaller ..."
+Write-Host ">>> Running PyInstaller (the backend) ..."
 if (Test-Path $AppDir) { Remove-Item -Recurse -Force $AppDir }
+$BackendDist = Join-Path $BuildDir "backend-dist"
+if (Test-Path $BackendDist) { Remove-Item -Recurse -Force $BackendDist }
 
 # Only the plugins .gitignore lets back in, without their tests\: a plugin
 # installed into plugins\ for development is not part of the release.
@@ -258,8 +240,8 @@ if ($LASTEXITCODE -ne 0) { throw "bundling the assets failed" }
 
 $PyiArgs = @(
     "--noconfirm", "--clean", "--windowed",
-    "--name", $AppName,
-    "--distpath", $DistDir,
+    "--name", "corvus-backend",
+    "--distpath", $BackendDist,
     "--workpath", (Join-Path $BuildDir "work"),
     "--specpath", $BuildDir,
     "--paths", $RepoDir,
@@ -276,19 +258,11 @@ $PyiArgs = @(
     # lands beside them. Operator plugins live in %USERPROFILE%\.corvus\plugins
     # and are never bundled.
     "--add-data", "$PluginStage;plugins",
-    "--hidden-import", "corvus.app",
+    "--hidden-import", "serve",
     # corvus_link registers corvus_link.mavutil at import time, which the
     # analyser cannot see; collecting the package keeps the extension whole.
-    "--collect-all", "corvus_link",
-    # QtWebEngine links the QtQml and QtQuick libraries, and PyInstaller
-    # collects those as libraries either way. Their Python modules are never
-    # imported, and their hooks would add PySide6's whole QML tree (Qt3D,
-    # Charts, Location and more) to the bundle for nothing.
-    "--exclude-module", "PySide6.QtQml",
-    "--exclude-module", "PySide6.QtQuick",
-    "--exclude-module", "PySide6.QtQuickWidgets"
+    "--collect-all", "corvus_link"
 )
-if ($Ico) { $PyiArgs += @("--icon", $Ico) }
 # lxml came in with pymavlink and nothing Corvus ships loads it
 # (tools/bundle_trim.py).
 $PyiArgs += @("--exclude-module", "lxml")
@@ -297,33 +271,61 @@ $PyiArgs += $Entry
 & $VenvPy -m PyInstaller @PyiArgs
 if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed" }
 
-$Exe = Join-Path $AppDir "$AppName.exe"
-if (-not (Test-Path $Exe)) { throw "expected $Exe, which PyInstaller did not produce" }
+$BackendExe = Join-Path $BackendDist "corvus-backend\corvus-backend.exe"
+if (-not (Test-Path $BackendExe)) { throw "expected $BackendExe, which PyInstaller did not produce" }
 
-# Qt translations, Chromium locales but
-# en-US and de: data files PyInstaller collects and the app never reads.
+# The folder the operator gets: the interface beside the backend it starts.
+New-Item -ItemType Directory -Force -Path $AppDir | Out-Null
+Move-Item (Join-Path $BackendDist "corvus-backend") (Join-Path $AppDir "backend")
+
+# The interface. rust-toolchain.toml in rust\corvus_gui pins the Rust it needs,
+# so cargo runs from there and rustup fetches it on first use. The fonts and
+# icons are cut out of src\vendor by its build.rs and the logos are read from
+# assets\, so the executable carries them. No version literal: the window
+# title asks the backend.
+Write-Host ">>> Building the interface (rust\corvus_gui, release) ..."
+$GuiLog = Join-Path $BuildDir "cargo-gui.log"
+Push-Location (Join-Path $RepoDir "rust\corvus_gui")
+try {
+    $env:CARGO_TARGET_DIR = Join-Path $BuildDir "cargo-gui"
+    & cargo build --release --locked *> $GuiLog
+    if ($LASTEXITCODE -ne 0) {
+        Get-Content $GuiLog -Tail 30
+        throw "the interface did not build; log: $GuiLog"
+    }
+} finally {
+    Pop-Location
+}
+$Exe = Join-Path $AppDir "$AppName.exe"
+Copy-Item (Join-Path $BuildDir "cargo-gui\release\corvus-gcs.exe") $Exe
+
+# the bundled Python's data files PyInstaller collects and the app never reads:
+# lxml, pip and the pymavlink dialects but `all`.
 Write-Host ">>> Trimming what the app never loads ..."
-& $VenvPy (Join-Path $RepoDir "tools\bundle_trim.py") (Join-Path $AppDir "_internal")
+& $VenvPy (Join-Path $RepoDir "tools\bundle_trim.py") (Join-Path $AppDir "backend\_internal")
 if ($LASTEXITCODE -ne 0) { throw "trimming the bundle failed" }
 
-# ---- 6. verify --------------------------------------------------------------
+# ---- 5. verify --------------------------------------------------------------
 # The failure this catches is the one that matters: a bundle that builds and
-# then cannot import Qt, corvus_link or the app itself on a machine without them.
+# then cannot import corvus_link or the backend on a machine without them.
 # It runs against the bundled interpreter payload, not the build venv.
 if (-not $NoVerify) {
     Write-Host ">>> Verifying the bundle ..."
     foreach ($needed in @("VERSION", "LICENSE.md", "src\index.html", "assets", "plugins")) {
-        $p = Join-Path $AppDir "_internal\$needed"
+        $p = Join-Path $AppDir "backend\_internal\$needed"
         if (-not (Test-Path $p)) { throw "bundle is missing $needed (looked at $p)" }
     }
-    $stamped = (Get-Content (Join-Path $AppDir "_internal\VERSION") -Raw).Trim()
+    $stamped = (Get-Content (Join-Path $AppDir "backend\_internal\VERSION") -Raw).Trim()
     if ($stamped -ne $Version) {
         throw "bundled VERSION is '$stamped', expected '$Version'"
+    }
+    foreach ($exe in @($Exe, (Join-Path $AppDir "backend\corvus-backend.exe"))) {
+        if (-not (Test-Path $exe)) { throw "bundle is missing $exe" }
     }
     Write-Host "    payload     : VERSION, LICENSE.md, src\, assets\, plugins\ present and in sync"
 }
 
-# ---- 7. zip -----------------------------------------------------------------
+# ---- 6. zip -----------------------------------------------------------------
 if ($Zip) {
     Write-Host ">>> Zipping to $Zipfile ..."
     if (Test-Path $Zipfile) { Remove-Item -Force $Zipfile }

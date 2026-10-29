@@ -138,16 +138,20 @@ until a tool and its permission are added there on purpose.
 
 ## Platforms & packaging
 
-Corvus GCS ships as a self-contained desktop artifact per platform. Both
-artifacts run the *same* `corvus/app.py` (PySide6 + QtWebEngine wrapper) and both
-derive their version from the one `VERSION` read at build time.
+Corvus GCS ships as a self-contained desktop artifact per platform. Every
+artifact is the native Rust interface (`rust/corvus_gui`, egui, built with
+cargo) plus the backend it starts as its child (`serve.py` with a bundled
+CPython, or frozen by PyInstaller on Windows); all of them derive their version
+from the one `VERSION` read at build time. The Qt window around the web
+interface (`corvus/app.py`, `./run.sh --web`) stays in the repository for
+development until the native interface has every page; no bundle ships it.
 
 `./build.sh` is the one entry point: it dispatches to the platform script for
 the current host and fails loudly rather than pretending to cross-build.
 
 | Platform | Script | Artifact | Notes |
 | --- | --- | --- | --- |
-| Linux x86_64 | `./build.sh` -> `build-appimage.sh` | `dist/Corvus_GCS-<version>-x86_64.AppImage` | `appimagetool`, bundled CPython + Qt |
+| Linux x86_64 | `./build.sh` -> `build-appimage.sh` | `dist/Corvus_GCS-<version>-x86_64.AppImage` | `appimagetool`, bundled CPython + the Rust interface |
 | macOS (arm64 / x86_64) | `./build.sh --dmg` -> `build-macos-app.sh` | `dist/Corvus GCS.app` (+ `dist/Corvus_GCS-<version>-macOS-<arch>.dmg`) | relocatable framework CPython, ad-hoc codesigned |
 | Windows x64 | `.\build-windows.ps1 [-Zip]` | `dist\Corvus GCS\` (+ `dist\Corvus_GCS-<version>-windows-x64.zip`) | PyInstaller, not a hand-relocated interpreter; `./build.sh` from a Windows shell points here rather than cross-building |
 
@@ -168,29 +172,29 @@ narrows the machines the artifact runs on.
 
 Shared packaging invariants — a violation of any of these is a build bug:
 
-- **Self-contained.** Bundled CPython + stdlib + PySide6/QtWebEngine +
-  corvus_link/paramiko/pyserial. No system Python, no conda, no Qt install on the
-  target machine.
-- **PySide6, never PyQt6.** The Qt binding is PySide6 (LGPL v3). PyQt6 is GPL
-  v3, and the GPL does not combine with the Sustainable Use License, so
-  bringing it back is a licence violation, not a library choice. The LGPL
-  texts ship in `assets/licenses/`, which every bundle carries. The AppImage
-  and the `.app` trim the PySide6 wheels with `tools/qt_bundle.py`, which keeps
-  what the imported modules, the Qt plugins and QtWebEngine link and fails the
-  build if anything left would miss a library; a new Qt import in
-  `corvus/app.py` goes into its `MODULES` too. The Windows build leaves the
-  never imported `QtQml`, `QtQuick` and `QtQuickWidgets` modules out of
-  PyInstaller (`--exclude-module`), whose hooks would otherwise pack PySide6's
-  whole QML tree. macOS 15 is the floor (`LSMinimumSystemVersion`), because
-  PySide6 6.10 and later is built for it.
-- **Only what runs.** After the Qt trim, `tools/bundle_trim.py` takes out
-  lxml, pip, Qt translations, Chromium locales but `en-US` and `de`,
-  Chromium's DevTools pack, the other architecture's V8 snapshot, and the
-  framework copies pip writes where macOS expects symlinks. It fails the build
-  if `en-US.pak` or the compiled `corvus_link` module is gone. Code that loads
-  a `QTranslator`, lxml or opens the web inspector has to change that tool in
-  the same commit. `tools/qt_bundle.py` keeps a PySide6 Python module only when
-  Python loads it; the Qt libraries QtWebEngine links stay without theirs.
+- **Self-contained.** Bundled CPython + stdlib + corvus_link/paramiko/pyserial
+  (the `headless` group) and the compiled interface. No system Python, no
+  conda, no Qt on the target machine. The interface opens OpenGL, X11 and
+  Wayland from the machine it runs on, as every desktop program does.
+- **No Qt in a bundle.** The interface is egui on OpenGL (glow) with a 24 bit
+  depth buffer for the 3D map; nothing in a bundle links Qt or a web engine.
+  The one place Qt remains is `corvus/app.py` behind `./run.sh --web`, and
+  there the rule stands: PySide6 (LGPL v3), never PyQt6 (GPL v3, which does not
+  combine with the Sustainable Use License). macOS 12 is the floor
+  (`MIN_MACOS` in `build-macos-app.sh`, read by both cargo and `Info.plist`).
+- **Only what runs.** `tools/bundle_trim.py` takes out lxml, pip, every
+  pymavlink dialect but `all`, and the other architecture's slices where a
+  wheel carries two. It fails the build if the `all` dialect or the compiled
+  `corvus_link` module is gone.
+- **The interface is built by cargo, locked.** `cargo build --release
+  --locked` from `rust/corvus_gui` (its `rust-toolchain.toml` pins the Rust),
+  into a target folder under `build/`. Fonts and icons are cut out of
+  `src/vendor` by its `build.rs` and the logos are read from `assets/`, so the
+  binary carries them. A macOS bundle holds a launcher
+  (`Contents/MacOS/corvus-gcs`, `tools/macos_launcher.c`) that sets the
+  interpreter's environment and `exec`s `corvus-gcs-ui`; the AppImage's
+  `AppRun` does the same; the Windows folder holds `Corvus GCS.exe` beside
+  `backend\corvus-backend.exe`, which the interface finds without flags.
 - **corvus_link is built, not downloaded.** Every installer (`run.sh`, the
   three build scripts, CI) runs `pip install <repo>/rust/corvus_link` after
   its dependency group, so a build machine needs a Rust toolchain (cargo);
@@ -208,8 +212,9 @@ Shared packaging invariants — a violation of any of these is a build bug:
   a copy of its terms, so a bundle without it is a licence violation, not a
   cosmetic omission. Both platform scripts copy it; neither may stop.
 - **Signal-transparent launcher.** The platform launcher (`AppRun`,
-  `Contents/MacOS/corvus-gcs`) `exec`s the bundled interpreter so `SIGINT` /
-  `SIGTERM` reach `corvus/app.py` directly and its handlers tear down cleanly.
+  `Contents/MacOS/corvus-gcs`) `exec`s the interface so `SIGINT` / `SIGTERM`
+  reach it directly; it sends the backend SIGTERM, then SIGKILL after a grace
+  period, and so tears everything down cleanly.
 - **No version literal** in any script, launcher, `Info.plist`, or desktop
   entry — every one of them reads `VERSION`.
 - Artifacts (`build/`, `dist/`, `*.AppImage`, `*.dmg`) are gitignored and never

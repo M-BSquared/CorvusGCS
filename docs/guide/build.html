@@ -153,8 +153,11 @@
 <h1>Build the apps</h1>
 <p class="doc-lead">
   The release files are built by the same scripts you can run yourself. Each
-  produces a self-contained bundle with a Python interpreter, Qt and every
-  runtime dependency inside, named from the <code>VERSION</code> file.
+  produces a self-contained bundle with the native interface, a Python
+  interpreter and every runtime dependency inside, named from the
+  <code>VERSION</code> file. The interface is the Rust program in
+  <code>rust/corvus_gui</code>, built with cargo; the build machine therefore
+  needs a Rust toolchain from <a href="https://rustup.rs">rustup.rs</a>.
 </p>
 
 <h2 id="entry-points">Entry points</h2>
@@ -211,10 +214,9 @@
   be moved into a bundle and is rejected with a clear error.
 </p>
 <p>
-  The app needs macOS 15 or later, because the Qt it ships (PySide6) is built
-  for it. The bundle keeps only the architecture of the Mac it is built on and
-  only the Qt modules Corvus uses (<code>tools/qt_bundle.py</code>), and the
-  build stops if anything left would miss a library it needs.
+  The app needs macOS 12 or later. The bundle keeps only the architecture of
+  the Mac it is built on, and the build stops if the interface, the launcher
+  or the interpreter is of another one.
 </p>
 <p>
   The bundle is ad hoc signed. To sign it with a developer certificate, set
@@ -241,25 +243,24 @@
 <h2 id="windows">Windows</h2>
 <p>
   Needs a 64 bit python.org CPython 3.12 or newer on <code>PATH</code> and
-  about 2 GB of free disk for Qt. A conda interpreter is rejected, because its
+  a Rust toolchain. A conda interpreter is rejected, because its
   DLLs live outside its own folder and cannot be packaged.
 </p>
 <p>
   Unlike the other two, the Windows bundle is built with PyInstaller rather
   than a hand relocated interpreter: Windows puts no constraint on where a DLL
-  may point, so there is nothing for the extra work to buy. The icon
-  (<code>assets\corvus-gcs.ico</code>) is generated from the logo with Pillow,
-  which the build installs into its own environment along with PyInstaller. If
-  that step fails, the build still succeeds with the default icon.
+  may point, so there is nothing for the extra work to buy. PyInstaller freezes
+  the backend into <code>backend\corvus-backend.exe</code>, and the interface
+  (<code>Corvus GCS.exe</code>) beside it starts that as its child.
 </p>
 
 <h2 id="rules">What every build guarantees</h2>
 <ul>
-  <li><strong>Self-contained.</strong> No system Python, conda, Qt or Rust is needed on the target machine.</li>
+  <li><strong>Self-contained.</strong> No system Python, conda or Rust is needed on the target machine, and no Qt is shipped.</li>
   <li><strong>Offline at run time.</strong> The build may download wheels and tools once; the running app never needs the network.</li>
   <li><strong>One version.</strong> Every file name, window title and launcher reads the one <code>VERSION</code> file; no script carries a version of its own.</li>
   <li><strong>The licence travels with it.</strong> <code>LICENSE.md</code> is inside every bundle, because the licence requires that whoever receives the software also receives its terms.</li>
-  <li><strong>Clean signals.</strong> The launcher hands over to the bundled Python, so quitting from the operating system reaches Corvus's own shutdown directly.</li>
+  <li><strong>Clean signals.</strong> The launcher hands over to the interface, so quitting from the operating system reaches Corvus's own shutdown directly, and the interface then stops the backend.</li>
 </ul>
 
 <h2 id="ci">Continuous integration</h2>

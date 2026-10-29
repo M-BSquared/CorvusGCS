@@ -38,10 +38,10 @@ GITHUB_CI = ROOT / ".github" / "workflows" / "build.yml"
 # Everything that installs Python packages, and the group each one installs.
 INSTALLERS = {
     ROOT / "run.sh": ['--group "$REPO_DIR/pyproject.toml:dev"'],
-    ROOT / "build-appimage.sh": ['--group "$REPO_DIR/pyproject.toml:app"'],
-    ROOT / "build-macos-app.sh": ['--group "$REPO_DIR/pyproject.toml:app"'],
+    ROOT / "build-appimage.sh": ['--group "$REPO_DIR/pyproject.toml:headless"'],
+    ROOT / "build-macos-app.sh": ['--group "$REPO_DIR/pyproject.toml:headless"'],
     ROOT / "build-windows.ps1": [
-        '"--group", "${Pyproject}:app"',
+        '"--group", "${Pyproject}:headless"',
         '--group "${Pyproject}:package-windows"',
     ],
     GITHUB_CI: ["pip install --group test", "pip install --group lint"],
@@ -195,18 +195,13 @@ def test_no_installer_hardcodes_the_dependency_list() -> None:
                     )
 
 
-def test_the_windows_build_tools_are_installed_where_they_are_used() -> None:
-    """Pillow went into CI's host interpreter; the icon step runs the venv's.
-
-    So the Windows release artifact never carried the mark. The build tools
-    are a pyproject group installed into the same build venv that renders the
-    .ico and runs PyInstaller.
-    """
-    tools = _group("package-windows")
-    assert {"pyinstaller", "Pillow"} <= set(tools)
+def test_the_windows_build_tool_is_installed_where_it_is_used() -> None:
+    """PyInstaller freezes the backend; it is a pyproject group installed into
+    the same build venv that runs it, not a package CI puts on the host."""
+    assert set(_group("package-windows")) == {"pyinstaller"}
     ps1 = (ROOT / "build-windows.ps1").read_text(encoding="utf-8")
-    assert "& $VenvPy -c $IcoScript" in ps1
-    assert "Pillow" not in GITHUB_CI.read_text(encoding="utf-8").split("windows-app:")[1]
+    assert "-m PyInstaller" in ps1 and "cargo build --release --locked" in ps1
+    assert "pyinstaller" not in GITHUB_CI.read_text(encoding="utf-8").split("windows-app:")[1].lower()
 
 
 def test_the_macos_build_no_longer_parses_yaml_with_a_regex() -> None:

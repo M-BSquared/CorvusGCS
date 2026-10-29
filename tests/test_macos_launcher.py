@@ -38,7 +38,9 @@ def test_the_launcher_and_interpreter_must_be_one_architecture() -> None:
     assert 'thin_to_arch "$FW_DST/Python"' in SCRIPT
     assert 'it must be $ARCH only' in SCRIPT
     check = SCRIPT.index('it must be $ARCH only')
-    assert '"$APP/Contents/MacOS/corvus-gcs" "$PYROOT/bin/python3"' in SCRIPT[check - 400:check]
+    checked = SCRIPT[check - 500:check]
+    for binary in ('"$APP/Contents/MacOS/corvus-gcs"', '"$APP/Contents/MacOS/corvus-gcs-ui"', '"$PYROOT/bin/python3"'):
+        assert binary in checked
 
 
 def test_every_binary_is_checked_for_libraries_from_the_build_mac() -> None:
@@ -66,15 +68,15 @@ def test_tkinter_is_not_bundled() -> None:
 
 @pytest.mark.skipif(sys.platform != "darwin" or not shutil.which("cc"),
                     reason="compiles and runs the launcher; macOS with a C compiler only")
-def test_the_launcher_starts_the_bundled_interpreter(tmp_path: Path) -> None:
+def test_the_launcher_starts_the_interface_with_the_bundled_interpreter(tmp_path: Path) -> None:
     contents = tmp_path / "with space" / "Corvus GCS.app" / "Contents"
     (contents / "MacOS").mkdir(parents=True)
     res = contents / "Resources"
     (res / "python" / "lib" / "python3.12" / "site-packages").mkdir(parents=True)
-    (res / "app" / "corvus").mkdir(parents=True)
-    (res / "app" / "corvus" / "app.py").write_text("")
-    fake = res / "python" / "bin" / "python3"
-    fake.parent.mkdir(parents=True)
+    (res / "app").mkdir(parents=True)
+    (res / "python" / "bin").mkdir(parents=True)
+    (res / "python" / "bin" / "python3").write_text("")
+    fake = contents / "MacOS" / "corvus-gcs-ui"
     fake.write_text('#!/bin/sh\nprintf "%s\\n" "$PWD" "$PYTHONHOME" "$PYTHONPATH" '
                     '"$PYTHONDONTWRITEBYTECODE" "$@"\n')
     fake.chmod(0o755)
@@ -90,7 +92,14 @@ def test_the_launcher_starts_the_bundled_interpreter(tmp_path: Path) -> None:
     assert lines[1] == str(real / "python")
     assert lines[2] == f"{real / 'app'}:{real / 'python' / 'lib' / 'python3.12' / 'site-packages'}"
     assert lines[3] == "1"
-    assert lines[4:] == [str(real / "app" / "corvus" / "app.py"), "8001", "udp:0.0.0.0:14550"]
+    assert lines[4:] == [
+        "--root",
+        str(real / "app"),
+        "--python",
+        str(real / "python" / "bin" / "python3"),
+        "8001",
+        "udp:0.0.0.0:14550",
+    ]
 
 
 @pytest.mark.skipif(sys.platform != "darwin" or not shutil.which("cc"),

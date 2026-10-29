@@ -77,31 +77,20 @@ def test_every_bundle_carries_the_qt_licences():
     assert "licenses" in tool.SHIPPED
 
 
-def test_both_unix_builds_trim_pyside6():
-    appimage = (ROOT / "build-appimage.sh").read_text(encoding="utf-8")
+def test_no_build_script_ships_qt():
+    """The bundles carry the Rust interface; Qt stays behind ./run.sh --web."""
+    for name in ("build-appimage.sh", "build-macos-app.sh", "build-windows.ps1"):
+        text = (ROOT / name).read_text(encoding="utf-8")
+        assert "PySide6" not in text.replace("No Qt", ""), name
+        assert "qt_bundle" not in text, name
+        assert "cargo build --release --locked" in text, name
+
+
+def test_macos_floor_is_one_value_for_cargo_and_the_plist():
     macos = (ROOT / "build-macos-app.sh").read_text(encoding="utf-8")
-    for text in (appimage, macos):
-        assert 'tools/qt_bundle.py" prune' in text
-    assert 'PYSIDE6_QT="$PY_SITE/PySide6/Qt"' in appimage
-    assert 'ditto --arch "$ARCH"' in macos
-
-
-def test_the_windows_build_leaves_out_only_modules_nothing_imports():
-    """The QML modules' hooks pull PySide6's whole QML tree into the zip.
-
-    Leaving them out is safe exactly as long as nothing imports them; a
-    module the app starts using must come off this list.
-    """
-    ps1 = (ROOT / "build-windows.ps1").read_text(encoding="utf-8")
-    excluded = set(re.findall(r'"--exclude-module", "PySide6\.(Qt\w+)"', ps1))
-    assert excluded == {"QtQml", "QtQuick", "QtQuickWidgets"}
-    assert not excluded & set(qt_bundle.MODULES)
-
-
-def test_macos_15_is_the_floor_and_ci_builds_on_it():
-    """PySide6 6.10+ binaries are built for macOS 15, whatever the wheel tag says."""
-    macos = (ROOT / "build-macos-app.sh").read_text(encoding="utf-8")
-    assert '"LSMinimumSystemVersion": "15.0"' in macos
+    assert 'MIN_MACOS="12.0"' in macos
+    assert '"LSMinimumSystemVersion": minimum' in macos
+    assert 'MACOSX_DEPLOYMENT_TARGET="$MIN_MACOS"' in macos
     ci = (ROOT / ".github" / "workflows" / "build.yml").read_text(encoding="utf-8")
     job = ci.split("  macos-app:", 1)[1].split("\n  # ---", 1)[0]
     assert "runs-on: macos-15" in job

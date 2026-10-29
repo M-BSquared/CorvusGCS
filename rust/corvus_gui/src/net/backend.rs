@@ -30,6 +30,10 @@ pub struct Launch {
     pub root: PathBuf,
     /// The Python interpreter to run it with.
     pub python: PathBuf,
+    /// A frozen backend that runs by itself (the Windows bundle's
+    /// `backend/corvus-backend.exe`), which takes the place of `python` and
+    /// `serve.py`.
+    pub frozen: Option<PathBuf>,
 }
 
 impl Launch {
@@ -53,7 +57,27 @@ impl Launch {
                 PathBuf::from(if cfg!(windows) { "python" } else { "python3" })
             }
         });
-        Ok(Launch { root, python })
+        Ok(Launch {
+            root,
+            python,
+            frozen: None,
+        })
+    }
+
+    /// The frozen backend beside the executable, when this is a bundle that
+    /// carries one: `<dir>/backend/corvus-backend` (`.exe` on Windows).
+    pub fn bundled(exe_dir: &Path) -> Option<Launch> {
+        let root = exe_dir.join("backend");
+        let exe = root.join(if cfg!(windows) {
+            "corvus-backend.exe"
+        } else {
+            "corvus-backend"
+        });
+        exe.is_file().then(|| Launch {
+            root,
+            python: PathBuf::new(),
+            frozen: Some(exe),
+        })
     }
 }
 
@@ -71,13 +95,21 @@ pub fn free_port() -> std::io::Result<u16> {
 impl Backend {
     /// Starts `serve.py <port>` and waits until it answers.
     pub fn start(launch: &Launch, port: u16) -> Result<Backend, String> {
-        let child = Command::new(&launch.python)
-            .arg(launch.root.join("serve.py"))
+        let mut command = match &launch.frozen {
+            Some(exe) => Command::new(exe),
+            None => {
+                let mut c = Command::new(&launch.python);
+                c.arg(launch.root.join("serve.py"));
+                c
+            }
+        };
+        let program = launch.frozen.as_ref().unwrap_or(&launch.python);
+        let child = command
             .arg(port.to_string())
             .current_dir(&launch.root)
             .stdin(Stdio::null())
             .spawn()
-            .map_err(|e| format!("could not start {}: {e}", launch.python.display()))?;
+            .map_err(|e| format!("could not start {}: {e}", program.display()))?;
         CHILD_PID.store(child.id(), Ordering::SeqCst);
         let mut backend = Backend {
             child: Some(child),
@@ -185,6 +217,24 @@ mod tests {
         assert!(launch.root.join("serve.py").is_file());
         assert_eq!(launch.python, PathBuf::from("/bin/true"));
         assert!(Launch::find(Path::new("/"), None).is_err());
+    }
+
+    #[test]
+    fn a_frozen_backend_beside_the_executable_is_found() {
+        let dir = std::env::temp_dir().join(format!("corvus-bundled-{}", std::process::id()));
+        let backend = dir.join("backend");
+        std::fs::create_dir_all(&backend).unwrap();
+        assert!(Launch::bundled(&dir).is_none(), "nothing there yet");
+        let name = if cfg!(windows) {
+            "corvus-backend.exe"
+        } else {
+            "corvus-backend"
+        };
+        std::fs::write(backend.join(name), "").unwrap();
+        let launch = Launch::bundled(&dir).expect("found");
+        assert_eq!(launch.frozen, Some(backend.join(name)));
+        assert_eq!(launch.root, backend);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[cfg(unix)]

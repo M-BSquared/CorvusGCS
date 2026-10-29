@@ -108,7 +108,16 @@ fn main() -> ExitCode {
                     .and_then(|p| p.parent().map(PathBuf::from))
                     .unwrap_or_else(|| PathBuf::from("."))
             });
-            let started = net::backend::Launch::find(&start, args.python.clone()).and_then(|launch| {
+            // A bundle carries its backend: frozen beside the executable on
+            // Windows. A checkout, or flags that say where it is, use serve.py.
+            let bundled = (args.root.is_none() && args.python.is_none())
+                .then(|| net::backend::Launch::bundled(&start))
+                .flatten();
+            let found = match bundled {
+                Some(launch) => Ok(launch),
+                None => net::backend::Launch::find(&start, args.python.clone()),
+            };
+            let started = found.and_then(|launch| {
                 let port = net::backend::free_port().map_err(|e| format!("no free port: {e}"))?;
                 net::backend::Backend::start(&launch, port)
             });

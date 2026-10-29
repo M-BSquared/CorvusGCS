@@ -51,6 +51,32 @@ struct App {
     rail: MapRail,
 }
 
+/// The id a dock ties the window to its launcher entry by: `corvus-gcs`, as the
+/// AppImage's desktop entry names it, or `CORVUS_APP_ID` (the source checkout's
+/// `corvus-gcs-dev`, which `run.sh` sets).
+fn app_id() -> String {
+    std::env::var("CORVUS_APP_ID")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "corvus-gcs".to_string())
+}
+
+/// The window icon where the platform takes one from the window (Linux, and
+/// Windows when run bare); the bundles carry their own.
+fn window_icon() -> egui::IconData {
+    image::load_from_memory(LOGO_FOR_DARK).map_or_else(
+        |_| egui::IconData::default(),
+        |img| {
+            let img = img.to_rgba8();
+            egui::IconData {
+                width: img.width(),
+                height: img.height(),
+                rgba: img.into_raw(),
+            }
+        },
+    )
+}
+
 fn now_ms() -> f64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -347,6 +373,8 @@ pub fn run(
         depth_buffer: 24,
         viewport: egui::ViewportBuilder::default()
             .with_title(title(&server))
+            .with_app_id(app_id())
+            .with_icon(window_icon())
             .with_inner_size(window_size().unwrap_or([1440.0, 900.0]))
             .with_min_inner_size(if window_size().is_some() {
                 [320.0, 300.0]

@@ -1,8 +1,14 @@
 #!/usr/bin/env bash
 # Corvus GCS — run the desktop app from source.
 #
-#   ./run.sh [PORT] [MAVLINK_CONNECTION]
+#   ./run.sh [corvus-gcs flags]    e.g. ./run.sh --page motors
+#   ./run.sh --web [PORT] [MAVLINK_CONNECTION]   # the Qt window around the web UI
 #   ./run.sh --desktop-entry      # Linux: add this checkout to the app launcher
+#
+# The desktop app is the native Rust interface (rust/corvus_gui). It starts the
+# backend (serve.py, from .venv) as its child and takes it down on every way
+# out. It is built with cargo from rust/corvus_gui, whose rust-toolchain.toml
+# pins the Rust it needs; rustup installs that on the first run.
 #
 # The first run creates .venv from a Python >= 3.12 and installs the `dev`
 # group from pyproject.toml into it. Later runs re-install only when
@@ -118,5 +124,22 @@ if [ "$WANT" != "$HAVE" ]; then
     fi
 fi
 
-# exec, so SIGINT/SIGTERM reach corvus/app.py's own handlers directly.
-exec "$PY" "$REPO_DIR/corvus/app.py" "$@"
+# The web interface in its Qt window, kept while the native one is completed.
+if [ "${1:-}" = "--web" ]; then
+    shift
+    # exec, so SIGINT/SIGTERM reach corvus/app.py's own handlers directly.
+    exec "$PY" "$REPO_DIR/corvus/app.py" "$@"
+fi
+
+command -v cargo >/dev/null 2>&1 || {
+    echo "ERROR: cargo not found; install Rust from https://rustup.rs" >&2
+    exit 1
+}
+# cargo is a no-op when nothing changed. Its own output goes to the terminal:
+# the first build compiles for a couple of minutes.
+( cd "$REPO_DIR/rust/corvus_gui" && cargo build --release --quiet )
+BIN="$REPO_DIR/rust/corvus_gui/target/release/corvus-gcs"
+[ -x "$BIN" ] || BIN="$BIN.exe"
+# exec, so SIGINT/SIGTERM reach the interface's own handlers directly, which
+# take the backend down.
+CORVUS_APP_ID=corvus-gcs-dev exec "$BIN" --root "$REPO_DIR" --python "$PY" "$@"

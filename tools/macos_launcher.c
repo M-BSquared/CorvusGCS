@@ -9,10 +9,12 @@
  * Rosetta instead. Compiled by build-macos-app.sh for the bundle's own
  * architecture, so the process is native from the first instruction.
  *
- * It sets what the interpreter needs to find itself inside the bundle, wherever
- * the bundle is (translocated, on a read-only disk image), and execs it, so
- * SIGINT and SIGTERM reach corvus/app.py directly and its handlers tear down
- * cleanly.
+ * It sets what the bundled interpreter needs to find itself inside the bundle,
+ * wherever the bundle is (translocated, on a read-only disk image), and execs
+ * the Rust interface (Contents/MacOS/corvus-gcs-ui), which starts that
+ * interpreter on serve.py as its child. exec, so SIGINT and SIGTERM reach the
+ * interface directly and its handlers take the backend down cleanly. The
+ * child inherits the environment set here.
  */
 #include <dirent.h>
 #include <limits.h>
@@ -70,10 +72,10 @@ int main(int argc, char *argv[])
     if (!version[0])
         return fail("bundled python3.x not found under", lib);
 
-    char path[2 * PATH_MAX + 2], python[PATH_MAX], script[PATH_MAX];
+    char path[2 * PATH_MAX + 2], python[PATH_MAX], ui[PATH_MAX];
     snprintf(path, sizeof path, "%s:%s/%s/site-packages", app, lib, version);
     snprintf(python, sizeof python, "%s/bin/python3", home);
-    snprintf(script, sizeof script, "%s/corvus/app.py", app);
+    snprintf(ui, sizeof ui, "%s/MacOS/corvus-gcs-ui", contents);
 
     /* PYTHONHOME overrides the stale pyvenv.cfg `home =`; PYTHONPATH re-adds
      * the site-packages PYTHONHOME bypasses, and the app root for `corvus`.
@@ -85,14 +87,19 @@ int main(int argc, char *argv[])
     if (chdir(app) != 0)
         return fail("cannot enter", app);
 
-    char **args = calloc((size_t)argc + 2, sizeof *args);
+    /* --root and --python first, so a caller's own flags can still override. */
+    char **args = calloc((size_t)argc + 6, sizeof *args);
     if (!args)
         return fail("out of memory", NULL);
-    args[0] = python;
-    args[1] = script;
+    int n = 0;
+    args[n++] = ui;
+    args[n++] = "--root";
+    args[n++] = app;
+    args[n++] = "--python";
+    args[n++] = python;
     for (int i = 1; i < argc; i++)
-        args[i + 1] = argv[i];
-    execv(python, args);
+        args[n++] = argv[i];
+    execv(ui, args);
     perror("corvus-gcs: exec");
     return 1;
 }

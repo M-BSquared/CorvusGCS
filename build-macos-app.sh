@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # Build Corvus GCS as a macOS application bundle (.app, optionally a .dmg).
 #
-# Mirrors build-appimage.sh: a relocatable CPython (venv --copies + host stdlib
-# + the framework's Python dylib) plus the PySide6/QtWebEngine wheels, packed into
-# a standard .app layout. No conda on the build host; only a framework python3
-# with `-m venv` + pip is used.
+# Mirrors build-appimage.sh: the native Rust interface (rust/corvus_gui, built
+# with cargo) and the backend it starts as its child: a relocatable CPython
+# (venv --copies + host stdlib + the framework's Python dylib) with the
+# `headless` dependencies and corvus_link, packed into a standard .app layout.
+# No Qt, no web engine. No conda on the build host; only a framework python3
+# with `-m venv` + pip, and a Rust toolchain (rustup, cargo).
 #
 # Version is read exclusively from the repo-root VERSION file — never hardcoded.
 #
@@ -29,6 +31,9 @@ APP_OUT="$DIST_DIR/$APP_NAME.app"
 # ownership claim macOS shows to the user, and it follows LICENSE.md.
 BUNDLE_ID="de.mbsquared.corvus.gcs"
 ARCH="$(uname -m)"
+# The oldest macOS the interface and the bundled Python run on. Both the
+# Rust build and Info.plist read it, so they cannot disagree.
+MIN_MACOS="12.0"
 # Artifacts go to dist/, which is gitignored — not to the repo root.
 # Two finished .dmg files (600 MB between them) were sitting in the
 # checkout from builds two weeks old, because this is where they landed.
@@ -60,10 +65,10 @@ echo "Bundle:  $APP_OUT"
 echo ""
 
 [ "$(uname -s)" = "Darwin" ] || { echo "ERROR: this build must run on macOS" >&2; exit 1; }
-for tool in rsync install_name_tool otool codesign sips iconutil ditto lipo cc; do
+for tool in rsync install_name_tool otool codesign sips iconutil ditto lipo cc cargo; do
     command -v "$tool" >/dev/null 2>&1 || {
         echo "ERROR: '$tool' not found — install the Xcode command line tools:" >&2
-        echo "       xcode-select --install" >&2
+        echo "       xcode-select --install   (and rustup from https://rustup.rs for cargo)" >&2
         exit 1
     }
 done
@@ -77,7 +82,8 @@ done
 MISSING=""
 for required in \
     VERSION pyproject.toml LICENSE.md \
-    corvus src assets plugins assets/CorvusGCS_logo.png
+    corvus src assets plugins assets/CorvusGCS_logo.png serve.py \
+    rust/corvus_gui/Cargo.toml rust/corvus_link/Cargo.toml
 do
     [ -e "$REPO_DIR/$required" ] || MISSING="$MISSING  $required"
 done
@@ -147,14 +153,14 @@ PY_FW_DIR="$PY_FW_PREFIX/Python.framework/Versions/$PY_MM"
 echo ">>> Interpreter: $PYBIN (python $PY_MM, framework at $PY_FW_DIR)"
 
 # ---- runtime deps -----------------------------------------------------------
-# pyproject.toml's `app` group, read by pip itself. This used to be a Python
+# pyproject.toml's `headless` group, read by pip itself. This used to be a Python
 # regex that screen-scraped a conda environment file's pip: block — against a
 # YAML file it could not actually parse — with a hardcoded fallback list for
 # when that failed. It was the only build script that tried to stay in sync,
 # and it did so by guessing at a format.
 #
 # Which source, in order: $CORVUS_REQUIREMENTS, then requirements.lock if the
-# repo has one, then the `app` group. The lock is what makes a release
+# repo has one, then the `headless` group. The lock is what makes a release
 # rebuildable — the group states floors, so installing from it in six months
 # resolves to whatever is newest then, and the "same" tag produces a different
 # binary. Every build writes the set it actually installed to dist/*.lock
@@ -172,8 +178,8 @@ if [ -n "$REQUIREMENTS" ]; then
     DEPS_ARGS=(-r "$REQUIREMENTS")
     DEPS_LABEL="$(basename "$REQUIREMENTS")"
 else
-    DEPS_ARGS=(--group "$REPO_DIR/pyproject.toml:app")
-    DEPS_LABEL="pyproject.toml [app]"
+    DEPS_ARGS=(--group "$REPO_DIR/pyproject.toml:headless")
+    DEPS_LABEL="pyproject.toml [headless]"
 fi
 LOCK_OUT="$DIST_DIR/Corvus_GCS-${VERSION}-macOS-${ARCH}.lock"
 echo ">>> Runtime deps: $DEPS_LABEL"
@@ -251,28 +257,10 @@ mkdir -p "$DIST_DIR"
 }
 if [ -f "$LOCK_OUT" ]; then echo "    (resolved set: $LOCK_OUT)"; fi
 
-# ---- 3b. Qt: this architecture, the modules Corvus loads --------------------
-# The PySide6 wheels are universal2: every Qt binary carries an arm64 and an
-# x86_64 slice, and the bundle is built for one of them. ditto keeps the slice
-# for $ARCH and drops the other, which halves Qt without touching a byte of
-# the slice that stays, its signature included. Then tools/qt_bundle.py takes
-# out the Qt modules, plugins and tools nothing in Corvus loads, and fails the
-# build if anything left would miss a library it links.
+# ---- 3b. trim what the wheels bring and nothing reads ------------------------
+# But `all`, lxml and pip: tools/bundle_trim.py (see its docstring), which
+# also fails the build if the `all` dialect or corvus_link is gone.
 SITE_PKGS="$PYROOT/lib/python$PY_MM/site-packages"
-echo ">>> Thinning PySide6 to $ARCH ..."
-for pkg in PySide6 shiboken6; do
-    [ -d "$SITE_PKGS/$pkg" ] || { echo "ERROR: $pkg is not installed in the bundle" >&2; exit 1; }
-    rm -rf "$SITE_PKGS/$pkg.thin"
-    ditto --arch "$ARCH" "$SITE_PKGS/$pkg" "$SITE_PKGS/$pkg.thin"
-    rm -rf "$SITE_PKGS/$pkg"
-    mv "$SITE_PKGS/$pkg.thin" "$SITE_PKGS/$pkg"
-done
-echo ">>> Trimming PySide6 to the Qt modules Corvus loads ..."
-"$PYBIN" "$REPO_DIR/tools/qt_bundle.py" prune "$SITE_PKGS"
-# The rest the wheels bring and Corvus never reads:
-# but `all`, lxml, pip, Qt translations, Chromium locales but en-US and de,
-# Chromium's DevTools, the other architecture's V8 snapshot, and the framework
-# copies pip wrote out where the layout wants symlinks.
 echo ">>> Trimming what the app never loads ..."
 "$PYBIN" "$REPO_DIR/tools/bundle_trim.py" "$SITE_PKGS"
 rm -f "$PYROOT"/bin/pip "$PYROOT"/bin/pip3 "$PYROOT"/bin/pip3.*
@@ -551,6 +539,25 @@ if [ -f "$REPO_DIR/serve.py" ]; then
     cp -aX "$REPO_DIR/serve.py" "$APPROOT/serve.py"
 fi
 
+# ---- 6b. the interface ------------------------------------------------------
+# rust/corvus_gui, native for $ARCH. rust-toolchain.toml in that folder pins the
+# Rust it needs, so cargo runs from there and rustup fetches it on first use.
+# The fonts and icons are cut out of src/vendor by its build.rs and the logos
+# are read from assets/, so the binary carries them. No version literal: the
+# window title asks the backend.
+echo ">>> Building the interface (rust/corvus_gui, release) ..."
+GUI_LOG="$BUILD_DIR/cargo-gui-macos.log"
+: > "$GUI_LOG"
+if ! ( cd "$REPO_DIR/rust/corvus_gui" \
+        && MACOSX_DEPLOYMENT_TARGET="$MIN_MACOS" CARGO_TARGET_DIR="$BUILD_DIR/cargo-gui" \
+           cargo build --release --locked ) >>"$GUI_LOG" 2>&1; then
+    echo "ERROR: the interface did not build; log: $GUI_LOG" >&2
+    tail -n 30 "$GUI_LOG" >&2 || true
+    exit 1
+fi
+cp -X "$BUILD_DIR/cargo-gui/release/corvus-gcs" "$APP/Contents/MacOS/corvus-gcs-ui"
+chmod 0755 "$APP/Contents/MacOS/corvus-gcs-ui"
+
 # ---- 7. icon ----------------------------------------------------------------
 echo ">>> Generating icon ..."
 LOGO="$REPO_DIR/assets/CorvusGCS_logo.png"
@@ -571,9 +578,9 @@ rm -rf "$ICONSET"
 
 # ---- 8. Info.plist (version read from VERSION, never a literal) ------------
 echo ">>> Writing Info.plist ..."
-"$PYBIN" - "$APP/Contents/Info.plist" "$APP_NAME" "$BUNDLE_ID" "$VERSION" <<'PY'
+"$PYBIN" - "$APP/Contents/Info.plist" "$APP_NAME" "$BUNDLE_ID" "$VERSION" "$MIN_MACOS" <<'PY'
 import plistlib, sys
-path, name, bundle_id, version = sys.argv[1:5]
+path, name, bundle_id, version, minimum = sys.argv[1:6]
 pl = {
     "CFBundleName": name,
     "CFBundleDisplayName": name,
@@ -585,9 +592,7 @@ pl = {
     "CFBundleShortVersionString": version,
     "CFBundleVersion": version,
     "LSApplicationCategoryType": "public.app-category.utilities",
-    # PySide6 6.10 and later is built for macOS 15 (its own binaries say so,
-    # whatever its wheel tag claims), and 15 is the oldest macOS supported.
-    "LSMinimumSystemVersion": "15.0",
+    "LSMinimumSystemVersion": minimum,
     "NSHighResolutionCapable": True,
     "NSRequiresAquaSystemAppearance": False,
     # Follows LICENSE.md: the copyright is the author's. ASCII-folded because
@@ -602,12 +607,11 @@ printf 'APPL????' > "$APP/Contents/PkgInfo"
 # ---- 9. launcher ------------------------------------------------------------
 # A native executable compiled for $ARCH, not a script: LaunchServices starts a
 # script bundle under Rosetta on Apple Silicon, and the interpreter then cannot
-# load this bundle's Qt (see tools/macos_launcher.c). No version literal;
-# pythonX.Y is read at runtime. No QTWEBENGINE_CHROMIUM_FLAGS either:
-# corvus/app.py picks the macOS set itself and applies it only when that
-# variable is unset.
+# run what is in this bundle (see tools/macos_launcher.c). It sets the
+# interpreter's environment and execs Contents/MacOS/corvus-gcs-ui, the Rust
+# interface. No version literal; pythonX.Y is read at runtime.
 echo ">>> Compiling launcher for $ARCH ..."
-cc -arch "$ARCH" -mmacosx-version-min=15.0 -Os -Wall -Wextra -Werror \
+cc -arch "$ARCH" -mmacosx-version-min="$MIN_MACOS" -Os -Wall -Wextra -Werror \
     -o "$APP/Contents/MacOS/corvus-gcs" "$REPO_DIR/tools/macos_launcher.c" \
     || { echo "ERROR: the launcher did not compile" >&2; exit 1; }
 chmod 0755 "$APP/Contents/MacOS/corvus-gcs"
@@ -684,7 +688,7 @@ fi
 if [ "$VERIFY" -eq 1 ]; then
     echo ">>> Verifying the bundled runtime ..."
     # PYTHONDONTWRITEBYTECODE, because this step runs the bundled interpreter
-    # INSIDE the bundle that was just signed. Importing Qt and corvus_link writes
+    # INSIDE the bundle that was just signed. Importing corvus_link and the backend writes
     # __pycache__/*.pyc next to their sources, and a file added after signing
     # breaks the seal: `codesign --verify` then lists a few hundred "file
     # added" lines for an .app that had signed cleanly a second earlier.
@@ -697,19 +701,12 @@ import sys
 import serial, paramiko                      # noqa: F401
 import ssl, hashlib, sqlite3, lzma, ctypes   # noqa: F401  (the stdlib's own native libraries)
 from corvus_link import mavutil              # noqa: F401  (MAVLink, the Rust extension)
-# Every module corvus/app.py imports, from the trimmed Qt.
-from PySide6 import QtCore, QtGui, QtWidgets, QtNetwork  # noqa: F401
-from PySide6 import QtWebChannel, QtWebEngineCore, QtWebEngineWidgets  # noqa: F401
-# The windows out of the app need qwebchannel.js, which Qt keeps inside the
-# QtWebChannel library as a resource.
-channel_js = QtCore.QFile(":/qtwebchannel/qwebchannel.js")
-assert channel_js.open(QtCore.QIODevice.OpenModeFlag.ReadOnly), "qwebchannel.js missing"
+import corvus.server                          # noqa: F401  (the backend the interface starts)
 from corvus.version import get_version
 print("    interpreter : %s" % sys.version.split()[0])
 print("    prefix      : %s" % sys.prefix)
 print("    corvus      : %s" % get_version())
-print("    qt          : %s (PySide6 %s)" % (QtCore.qVersion(), __import__("PySide6").__version__))
-print("    imports     : pyserial, paramiko, corvus_link, PySide6 QtWebEngine OK")
+print("    imports     : pyserial, paramiko, corvus_link, corvus.server OK")
 PY
     then
         echo "ERROR: the bundled runtime failed its import check" >&2
@@ -723,34 +720,21 @@ PY
     # not for what pip put inside the bundle. Nothing else here checks that the
     # two agree, so an x86_64 Qt wheel in a bundle called arm64 would ship
     # silently and only fail on the operator's Mac. Check the two heaviest
-    # native payloads: the interpreter itself and QtWebEngineCore.
+    # native payload: the interpreter itself.
     echo ">>> Verifying the bundle is $ARCH ..."
     arch_of() {  # <mach-o path> -> the architectures it actually contains
         lipo -archs "$1" 2>/dev/null || file -b "$1"
     }
-    SITE="$PYROOT/lib/python$PY_MM/site-packages"
-    QT_CORE="$(/usr/bin/find "$SITE/PySide6" -name 'QtWebEngineCore' -type f 2>/dev/null | head -1)"
-    # The launcher and the interpreter must be $ARCH and nothing else: a
-    # second slice is what lets a Rosetta start pick the wrong one.
-    for binary in "$APP/Contents/MacOS/corvus-gcs" "$PYROOT/bin/python3"; do
+    # The launcher, the interface and the interpreter must be $ARCH and
+    # nothing else: a second slice is what lets a Rosetta start pick the
+    # wrong one.
+    for binary in "$APP/Contents/MacOS/corvus-gcs" "$APP/Contents/MacOS/corvus-gcs-ui" "$PYROOT/bin/python3"; do
         archs="$(arch_of "$binary")"
         if [ "$archs" != "$ARCH" ]; then
             echo "ERROR: $binary is [$archs]; it must be $ARCH only." >&2
             exit 1
         fi
-    done
-    for binary in "$PYROOT/bin/python3" ${QT_CORE:+"$QT_CORE"}; do
-        [ -f "$binary" ] || continue
-        archs="$(arch_of "$binary")"
-        case " $archs " in
-            *" $ARCH "*) echo "    $(basename "$binary"): $archs" ;;
-            *)
-                echo "ERROR: $binary is [$archs], but this bundle is named $ARCH." >&2
-                echo "       The interpreter or the Qt wheels came from the wrong" >&2
-                echo "       architecture. Check which python was picked above." >&2
-                exit 1
-                ;;
-        esac
+        echo "    $(basename "$binary"): $archs"
     done
 
     # Last, so it also catches anything the import check above wrote into the

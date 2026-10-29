@@ -9,8 +9,9 @@ for ``wss:``) are present, and a signal stops it cleanly. Afterwards the
 bundle's signature must still verify, because a run that wrote a file into
 the bundle would break the seal an operator's Mac checks.
 
-The window itself is started only when ``CORVUS_BUNDLE_GUI=1``, because it
-needs a desktop session and the default HTTP port.
+The interface itself (``Contents/MacOS/corvus-gcs``, the Rust app that starts
+that backend as its child) is started only when ``CORVUS_BUNDLE_GUI=1``,
+because it needs a desktop session.
 """
 from __future__ import annotations
 
@@ -64,7 +65,7 @@ def run_in_bundle(code: str, home: Path, *args: str) -> subprocess.CompletedProc
 
 def test_the_bundle_carries_its_own_version_and_runtime(tmp_path: Path) -> None:
     done = run_in_bundle(
-        "import sys; from corvus.version import get_version; import corvus_link, PySide6; "
+        "import sys; from corvus.version import get_version; import corvus_link; "
         "print(get_version()); print(sys.prefix)", tmp_path)
     assert done.returncode == 0, done.stderr
     version, prefix = done.stdout.split("\n")[:2]
@@ -116,18 +117,25 @@ def test_running_the_bundle_leaves_its_signature_intact() -> None:
 
 
 @pytest.mark.skipif(os.environ.get("CORVUS_BUNDLE_GUI") != "1", reason="starts the window; set CORVUS_BUNDLE_GUI=1")
-def test_the_window_starts_serves_and_quits_on_a_signal(tmp_path: Path) -> None:
-    if not ports_are_free(8000):
-        pytest.skip("the default HTTP port 8000 is in use (is Corvus GCS already running?)")
-    process = subprocess.Popen([str(BUNDLE / "Contents" / "MacOS" / "corvus-gcs")], env={**os.environ, "HOME": str(tmp_path)},
+def test_the_interface_starts_its_backend_and_takes_it_down_on_a_signal(tmp_path: Path) -> None:
+    process = subprocess.Popen([str(BUNDLE / "Contents" / "MacOS" / "corvus-gcs")],
+                               env={**os.environ, "HOME": str(tmp_path), "CORVUS_ALLOW_MULTI": "1"},
                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    python = str(PYROOT / "bin" / "python3")
+
+    def backends() -> list[str]:
+        out = subprocess.run(["pgrep", "-f", python], capture_output=True, text=True).stdout
+        return out.split()
+
     try:
-        assert wait_for(lambda: get(8000, "/api/version")["product"] == "Corvus GCS", 60)
+        assert wait_for(lambda: bool(backends()), 60), "the interface did not start the backend"
+        assert process.poll() is None
         process.send_signal(signal.SIGTERM)
-        deadline = time.monotonic() + 15
+        deadline = time.monotonic() + 20
         while process.poll() is None and time.monotonic() < deadline:
             time.sleep(0.2)
-        assert process.poll() is not None, "the window did not quit"
+        assert process.poll() is not None, "the interface did not quit"
+        assert wait_for(lambda: not backends(), 15), "the backend outlived the interface"
     finally:
         if process.poll() is None:
             process.kill()

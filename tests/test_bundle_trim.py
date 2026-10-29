@@ -164,10 +164,12 @@ def test_a_framework_copy_that_differs_is_left_alone(tmp_path):
     assert (fw / "Helpers" / "QtWebEngineProcess").read_text() == "signed"
 
 
-def test_every_build_script_runs_the_trim_after_the_qt_prune():
+def test_every_build_script_runs_the_trim_and_ships_no_qt():
     for script in ("build-macos-app.sh", "build-appimage.sh"):
         text = (ROOT / script).read_text()
-        assert text.index("tools/qt_bundle.py\" prune") < text.index("tools/bundle_trim.py\""), script
+        assert "tools/bundle_trim.py\"" in text, script
+        assert "qt_bundle.py" not in text and "PySide6" not in text, script
+        assert "pyproject.toml:headless" in text, script
     windows = (ROOT / "build-windows.ps1").read_text()
     assert windows.index("-m PyInstaller") < windows.index("tools\\bundle_trim.py")
     assert '"--exclude-module", "lxml"' in windows

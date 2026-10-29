@@ -44,7 +44,9 @@ headless = [
     # of the bootloader device.
     "pyserial>=3.5",
 ]
-# The desktop app: what every packaged build ships. PySide6 (LGPL v3), not
+# The Qt window around the web interface (`./run.sh --web`, corvus/app.py), kept
+# while the native interface (rust/corvus_gui) is completed; no packaged build
+# ships it. PySide6 (LGPL v3), not
 # PyQt6 (GPL v3), because the GPL does not combine with the Sustainable Use
 # License. Essentials carries QtCore/Gui/Widgets/Network, Addons QtWebChannel
 # and QtPositioning, and WebEngine QtWebEngineCore/Widgets: since 6.12 the web
@@ -79,11 +81,10 @@ dev = [
     { include-group = "test" },
     { include-group = "lint" },
 ]
-# Build-time only, for build-windows.ps1's build venv: the packager, and
-# Pillow to cut the .ico from the logo. Never shipped as a runtime dependency.
+# Build-time only, for build-windows.ps1's build venv: the packager that
+# freezes the backend. Never shipped as a runtime dependency.
 package-windows = [
     "pyinstaller>=6.3",
-    "Pillow>=10.0",
 ]
 
 [tool.pytest.ini_options]
