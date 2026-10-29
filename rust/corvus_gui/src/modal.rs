@@ -11,6 +11,7 @@ use crate::style::{self, Weight};
 pub enum Size {
     Sm,
     Md,
+    Lg,
 }
 
 impl Size {
@@ -18,6 +19,7 @@ impl Size {
         match self {
             Size::Sm => 360.0,
             Size::Md => 420.0,
+            Size::Lg => 560.0,
         }
     }
 }

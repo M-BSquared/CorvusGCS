@@ -61,6 +61,8 @@ mod threed_panel;
 mod term_emu;
 mod term_view;
 mod tile_cache;
+mod tiles_card;
+mod tiles_model;
 mod topbar;
 mod topbar_cards;
 mod track;

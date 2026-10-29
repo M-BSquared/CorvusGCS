@@ -38,6 +38,11 @@ SIGKILL if it is still there after 8 s. If the window does not close within
 | `src/units.rs` | display units from the config's `ui.units`, rounded the way the web interface rounds |
 | `src/topbar.rs` | the status bar, word for word the web interface's (`src/js/topbar.js`) |
 | `src/map.rs` | the map (walkers) on the backend's tile proxy, vehicle and home markers |
+| `src/maprail.rs` | the rail and the two buttons beside it: zoom, centre, layers, downloaded areas, measure, the clear track disc |
+| `src/regions.rs` | the downloaded areas of `/api/tiles/regions`, merged as the web map merges them (`map.js`) |
+| `src/measure.rs` | the distance tool: great circle distance, bearing and the two click rule (`map-measure.js`) |
+| `src/map_search.rs`, `src/search_card.rs` | the place search: coordinate notations read offline, area names, `/api/geocode`, the box and its list (`map-search.js`) |
+| `src/tiles_model.rs`, `src/tiles_card.rs` | the offline map dialog: tile counts and sizes, the download and its jobs, the areas on this laptop (`tiles.js`) |
 | `src/camera3d.rs`, `src/map3d.rs`, `src/terrain.rs`, `src/tile_cache.rs`, `src/threed_panel.rs` | the 3D map: camera maths, the tilted ground of imagery and elevation tiles with hillshade and skirts, the elevation model choice, the tile cache behind both, and the 3D panel (`src/js/map.js` 3D mode) |
 | `src/track.rs` | the flown track, recorded and smoothed as `src/js/map.js` does |
 | `src/hud.rs` | compass, attitude indicator and readouts (`src/js/instruments.js`) |

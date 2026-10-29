@@ -76,6 +76,7 @@ pub fn items(measure: bool) -> Vec<Item> {
 #[derive(Default)]
 pub struct MapRail {
     search: crate::search_card::SearchCard,
+    tiles: crate::tiles_card::TilesCard,
     layers_open: bool,
     pub measure: bool,
 }
@@ -179,19 +180,36 @@ impl MapRail {
             Vec2::splat(BTN),
         );
         glass_box(&painter, ("trigger", 0), download);
-        ui.interact(download, ui.scope_id().with(("trigger", 0)), egui::Sense::hover())
-            .on_hover_text("Download offline map (not in this build yet)");
+        let dresp = ui
+            .interact(download, ui.scope_id().with(("trigger", 0)), egui::Sense::click())
+            .on_hover_text("Download offline map");
+        let (dfill, dcolor) = if self.tiles.open {
+            (style::accent_dark(), style::accent_bright())
+        } else if dresp.hovered() {
+            (style::surface_hover(), style::text_1())
+        } else {
+            (Color32::TRANSPARENT, style::text_2())
+        };
+        painter.rect_filled(download, style::RADIUS, dfill);
         icons::paint(
             ui,
             "download",
             Rect::from_center_size(download.center(), Vec2::splat(17.0)),
-            style::text_2().gamma_multiply(0.4),
+            dcolor,
         );
+        if dresp.clicked() {
+            if self.tiles.open {
+                self.tiles.close_dialog();
+            } else {
+                self.tiles.open(ui.ctx(), map, area);
+            }
+        }
         let search = download.translate(Vec2::new(-(BTN + GAP), 0.0));
         let units = map.measure.units;
         self.search.show(ui, search, area, map, &units);
 
         self.track_clear(ui, area, map);
+        self.tiles.show(ui.ctx(), area, map);
 
         if self.layers_open {
             if let Some(anchor) = layers_anchor {
