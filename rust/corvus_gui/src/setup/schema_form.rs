@@ -79,6 +79,16 @@ impl Look {
         control_min: 0.0,
         number: None,
     };
+    /// `.tune-field`: a wider label column for names of an axis and a term.
+    pub const TUNING: Look = Look {
+        label_min: 150.0,
+        label_max: 240.0,
+        pad: 7.0,
+        hint_as_info: false,
+        mono_label: false,
+        control_min: 0.0,
+        number: None,
+    };
     /// `.battery-field`: a 220 px control column, 150 px inputs.
     pub const BATTERY: Look = Look {
         label_min: 140.0,

@@ -169,28 +169,59 @@ pub fn head_actions(
     buttons: Vec<Button<'_>>,
     id: &str,
 ) -> (f32, Option<usize>) {
+    head_actions_with(ui, x, y, w, title, subtitle, status, buttons, Vec::new(), 0.0, id)
+}
+
+/// `head_actions` with chips at the left of the actions (the readiness strip
+/// of Calibration and PID Tuning, `.setup-head .params-actions > .calib-ready`)
+/// and the actions standing `drop` lower than the title's bottom.
+#[allow(clippy::too_many_arguments)]
+pub fn head_actions_with(
+    ui: &mut egui::Ui,
+    x: f32,
+    y: f32,
+    w: f32,
+    title: &str,
+    subtitle: &str,
+    status: &(&'static str, String),
+    buttons: Vec<Button<'_>>,
+    lead: Vec<crate::ui::chip::Chip>,
+    drop: f32,
+    id: &str,
+) -> (f32, Option<usize>) {
     let sizes: Vec<(f32, f32)> = buttons.iter().map(|b| (b.width(ui), b.height())).collect();
+    let chip_sizes: Vec<Vec2> = lead.iter().map(|c| c.measure(ui)).collect();
     let rh = sizes.iter().map(|s| s.1).fold(0.0, f32::max);
     let color = status_color(status.0);
     let sg = style::galley(ui, &status.1, 11.5, Weight::W400, color, 0.0);
     let status_w = sg.size().x.min(420.0);
     let gap = if status_w > 0.0 { 10.0 } else { 0.0 };
     let buttons_w: f32 = sizes.iter().map(|s| s.0).sum::<f32>() + 10.0 * sizes.len().saturating_sub(1) as f32;
-    let actions_w = status_w + gap + buttons_w;
+    let chips_w: f32 = if chip_sizes.is_empty() {
+        0.0
+    } else {
+        chip_sizes.iter().map(|s| s.x).sum::<f32>() + 8.0 * (chip_sizes.len() - 1) as f32 + 10.0
+    };
+    let actions_w = chips_w + status_w + gap + buttons_w;
     let wrap = w - actions_w - 24.0 < 280.0;
     let head_w = if wrap { w } else { (w - actions_w - 24.0).min(w) };
     let head_bottom = header_wrapped(ui, x, y, head_w, title, subtitle);
     let (ay, bottom) = if wrap {
         (head_bottom + 10.0, head_bottom + 12.0 + rh)
     } else {
-        (head_bottom - rh, head_bottom)
+        (head_bottom - rh + drop, head_bottom + drop)
     };
-    let (status_x, mut bx) = if wrap {
-        (x, x + status_w + gap)
+    let (mut cx, status_x, mut bx) = if wrap {
+        (x, x + chips_w + 0.0, x + chips_w + status_w + gap)
     } else {
         let first = x + w - buttons_w;
-        (first - gap - sg.size().x, first)
+        let status_x = first - gap - sg.size().x;
+        (status_x - chips_w, status_x, first)
     };
+    for (c, s) in lead.iter().zip(&chip_sizes) {
+        c.paint(ui, Pos2::new(cx, ay + (rh - s.y) / 2.0));
+        cx += s.x + 8.0;
+    }
     let mut pressed = None;
     for (i, b) in buttons.into_iter().enumerate() {
         let (bw, bh) = sizes[i];

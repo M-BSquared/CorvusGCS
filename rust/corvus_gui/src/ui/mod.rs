@@ -1,4 +1,5 @@
 pub mod card;
+pub mod chart;
 pub mod chip;
 pub mod field;
 pub mod fonts;

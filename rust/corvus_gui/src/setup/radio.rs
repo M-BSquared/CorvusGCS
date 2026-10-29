@@ -289,7 +289,7 @@ impl RadioPage {
     /// Draws the page from `y`; returns the bottom.
     pub fn show(&mut self, ui: &mut egui::Ui, x: f32, y: f32, w: f32, state: &Value, now: f64) -> f32 {
         let ctx = ui.ctx().clone();
-        let now_ms = now * 1000.0;
+        let now_ms = now;
         self.now = now_ms;
         self.latest = state
             .get("rc_channels")
