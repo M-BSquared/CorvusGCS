@@ -82,6 +82,10 @@ SIGKILL if it is still there after 8 s. If the window does not close within
 | `src/settings/about.rs`, `src/settings/credits.rs` | the Plugins and About pills, the update check, and the credits dialog with the native interface's own crate list (`src/js/credits.js`) |
 | `src/settings/dialogs.rs` | the dialogs open over the page and the company logo card |
 | `src/logs/mod.rs` | the Logs page: the last 30 console lines, Export log through `POST /api/console/save` and Copy (`renderLogsPage` of `src/js/sidenav.js`) |
+| `src/analysis/mod.rs`, `src/analysis/model.rs` | the Analysis page: live telemetry tiles, the download folder, the four tiles, the status poll and its jobs, and the rules (sizes, local times, rates, sorting, findings, summary facts) with the web's expected text in tests (`src/js/analysis.js`) |
+| `src/analysis/lists.rs`, `src/analysis/scope.rs`, `src/analysis/review.rs` | the vehicle log list with sequential download and erase, the recorded tlogs, Live Messages, and Flight Review and Telemetry Review: summary, mode strip, findings, plots by group, the aircraft's messages |
+| `src/analysis/plot.rs` | the plotting module that stands in for Plotly: linear axes with nice ticks, lines, markers and steps, flight mode bands, threshold line, legend, hover read out, drag to zoom and double click to reset, long traces reduced per pixel column |
+| `src/data/clock.rs` | calendar dates from Unix times, UTC and local |
 | `src/ui/form.rs` | the form vocabulary of a page that is a column of cards: `Form` cursor, section, card, field with caption and hint, switch field, option cards, stepped slider, pills, rows, messages, actions |
 | `src/notify/mod.rs` | the notification board, its read and dismiss rules, the command dedupe and the toasts (`src/js/topbar.js`) |
 | `src/notify/overlay.rs` | the NOTIFICATIONS pill, the board and the toast stack |
@@ -109,6 +113,16 @@ share one config. Differences that follow from a native window:
   web interface; the native pages follow as their consumers learn the keys.
   Theme, size, units, the Mission entry, the distance tool, the console and
   SSH tabs and the base layer are live.
+
+## Analysis
+
+The review's ground track is drawn as a chart with equal axes. The web page's
+Satellite switch, which lays the same path over imagery, is not in the native
+page yet. A ULog from outside the download folder is opened by its path, and
+posted to the backend as bytes the way the web page posts a picked file.
+`--page analysis:ulog`, `analysis:tlog`, `analysis:review` and
+`analysis:scope` open a view, `--page logs` and `--page settings:map` the
+other pages, with `--scroll` for how far down.
 
 ## The 3D map
 

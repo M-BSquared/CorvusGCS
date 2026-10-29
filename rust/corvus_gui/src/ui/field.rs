@@ -18,6 +18,8 @@ pub enum Surface {
     /// A search box floating over the map: frosted glass whose alpha is for
     /// the unfocused and the focused state, a ring-less accent border.
     Floating { rest: f32, focus: f32 },
+    /// Nothing painted: the caller draws the box (a row whose input is bare).
+    Bare,
 }
 
 /// A single-line text field.
@@ -156,6 +158,7 @@ impl<'a> TextField<'a> {
                     egui::StrokeKind::Inside,
                 );
             }
+            Surface::Bare => {}
             Surface::Glass => {
                 if focused {
                     painter.rect_stroke(

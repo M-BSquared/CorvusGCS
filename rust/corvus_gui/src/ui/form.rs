@@ -403,6 +403,41 @@ pub fn block_button(ui: &mut egui::Ui, f: &mut Form, button: kit::Button<'_>, id
     pressed
 }
 
+/// `.params-desc` (an inset box of explaining text) or, with a tone, the amber
+/// `.params-banner`.
+pub fn box_note(ui: &egui::Ui, f: &mut Form, text: &str, tone: Tone) {
+    let (fill, line, color, size, lh) = match tone {
+        Tone::Warn => (style::warning_dark(), style::warning(), style::warning(), 11.5, 1.4),
+        _ => (style::surface_2(), style::border_soft(), style::text_2(), 12.0, 1.55),
+    };
+    let g = kit::wrapped_weight(ui, text, size, Weight::W400, color, f.w - 28.0, lh);
+    let rect = f.rect(g.size().y + 24.0);
+    ui.painter().rect_filled(rect, style::RADIUS_BTN, fill);
+    ui.painter().rect_stroke(
+        rect,
+        style::RADIUS_BTN,
+        Stroke::new(1.0, line),
+        egui::StrokeKind::Inside,
+    );
+    ui.painter().galley(rect.min + Vec2::new(14.0, 12.0), g, color);
+    f.y = rect.bottom();
+    f.stacked_switch = false;
+}
+
+/// A title as `.logs-head .page-section-title`: 13 px capitals with the rule
+/// under the words only. Returns the box's width and height.
+pub fn head_title(ui: &egui::Ui, at: Pos2, text: &str) -> (f32, f32) {
+    let g = style::galley(ui, &text.to_uppercase(), 13.0, Weight::W600, style::text_2(), 0.6);
+    let (w, h) = (g.size().x, g.size().y);
+    ui.painter().galley(at, g, style::text_2());
+    ui.painter().hline(
+        egui::Rangef::new(at.x, at.x + w),
+        at.y + h + 8.5,
+        Stroke::new(1.0, style::border_soft()),
+    );
+    (w, h + 9.0)
+}
+
 /// One option of `option_cards`.
 #[derive(Clone, Debug)]
 pub struct Opt {

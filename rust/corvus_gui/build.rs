@@ -107,6 +107,19 @@ const ICONS: &[(&str, &str)] = &[
     ("palette", "Palette"),
     ("panels-top-left", "PanelsTopLeft"),
     ("save", "Save"),
+    ("arrow-up-from-line", "ArrowUpFromLine"),
+    ("move-vertical", "MoveVertical"),
+    ("compass", "Compass"),
+    ("plane", "Plane"),
+    ("rotate-3d", "Rotate3d"),
+    ("battery-medium", "BatteryMedium"),
+    ("satellite", "Satellite"),
+    ("folder", "Folder"),
+    ("hard-drive-download", "HardDriveDownload"),
+    ("file-clock", "FileClock"),
+    ("eraser", "Eraser"),
+    ("arrow-right", "ArrowRight"),
+    ("chart-spline", "ChartSpline"),
 ];
 
 fn main() {

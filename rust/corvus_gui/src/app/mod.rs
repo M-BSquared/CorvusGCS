@@ -11,6 +11,7 @@ use std::sync::OnceLock;
 use eframe::egui;
 use serde_json::Value;
 
+use crate::analysis::AnalysisPage;
 use crate::app::nav::Page;
 use crate::data::telemetry::Telemetry;
 use crate::data::units::Units;
@@ -50,6 +51,7 @@ struct App {
     setup: SetupPage,
     settings: SettingsPage,
     logs: LogsPage,
+    analysis: AnalysisPage,
     mission_page: bool,
     panel: Panel,
     rail: MapRail,
@@ -149,6 +151,9 @@ impl App {
         {
             self.board.add_local("critical", &e, now);
         }
+        for e in self.analysis.take_errors() {
+            self.board.add_local("critical", &e, now);
+        }
         for e in self.settings.take_errors() {
             self.board.add_local("critical", &e, now);
         }
@@ -206,6 +211,8 @@ impl App {
                     self.checklist.window(&mut map_ui, ui.ctx(), main, below);
                 } else if self.page == Page::Setup {
                     self.setup.show(ui, main, &state, now, &mut self.checklist);
+                } else if self.page == Page::Analysis {
+                    self.analysis.show(ui, main, &state, &self.units);
                 } else if self.page == Page::Logs {
                     let transcript = self.panel.console_transcript();
                     self.logs.show(ui, main, &transcript);
@@ -217,6 +224,9 @@ impl App {
                 if let Some(page) = nav::show(ui, rail, self.mission_page, self.page, !vw.max1279) {
                     if page == Page::Setup && self.page == Page::Setup {
                         self.setup.reset();
+                    }
+                    if self.page == Page::Analysis && page != Page::Analysis {
+                        self.analysis.reset();
                     }
                     if page == Page::Logs && self.page != Page::Logs {
                         self.logs.reset();
@@ -425,7 +435,7 @@ pub fn run(
         Some(p) if p.starts_with("safety:") => Page::Setup,
         Some(p) if p == "settings" || p.starts_with("settings:") => Page::Settings,
         Some("logs") => Page::Logs,
-        Some("analysis") => Page::Analysis,
+        Some(p) if p == "analysis" || p.starts_with("analysis:") => Page::Analysis,
         _ => Page::Home,
     };
     let open_page = page
@@ -497,6 +507,16 @@ pub fn run(
                     s
                 },
                 logs: LogsPage::new(server.clone()),
+                analysis: {
+                    let mut a = AnalysisPage::new(server.clone());
+                    if let Some(view) = page.and_then(|p| p.strip_prefix("analysis:")) {
+                        a.open(view);
+                    }
+                    if let Some(px) = scroll {
+                        a.scroll(px);
+                    }
+                    a
+                },
                 settings: {
                     let mut s = SettingsPage::new(server.clone(), &config);
                     if let Some(tab) = page.and_then(|p| p.strip_prefix("settings:")) {

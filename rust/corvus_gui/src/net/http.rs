@@ -235,6 +235,28 @@ pub fn post_json(server: &Server, path: &str, body: &serde_json::Value) -> Resul
     json_body(server, path, r)
 }
 
+/// GET a JSON document that may take a while to be made (a log read into
+/// plots); `wait` bounds each read.
+pub fn get_json_wait(server: &Server, path: &str, wait: Duration) -> Result<serde_json::Value, String> {
+    let r = request(server, "GET", path, None, "application/json", wait)
+        .map_err(|e| format!("{}{path}: {e}", server.url()))?;
+    json_body(server, path, r)
+}
+
+/// `encodeURIComponent`: everything but letters, digits and `-_.!~*'()` as
+/// percent escapes of its UTF-8 bytes.
+pub fn encode_component(s: &str) -> String {
+    let mut out = String::new();
+    for b in s.bytes() {
+        if b.is_ascii_alphanumeric() || b"-_.!~*'()".contains(&b) {
+            out.push(b as char);
+        } else {
+            out.push_str(&format!("%{b:02X}"));
+        }
+    }
+    out
+}
+
 /// POST raw bytes (a file) and read the JSON answer; `wait` bounds each read,
 /// for a conversion the backend does before it answers.
 pub fn post_bytes(server: &Server, path: &str, body: &[u8], wait: Duration) -> Result<serde_json::Value, String> {

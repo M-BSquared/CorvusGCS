@@ -182,7 +182,7 @@ impl SettingsPage {
                     None => {
                         self.dialog = None;
                         self.say("logo", "Uploading\u{2026}", Tone::Plain);
-                        let q = super::map_cards::pct(&name);
+                        let q = crate::net::http::encode_component(&name);
                         self.act_bytes(ctx, "logo", &name, &format!("/api/branding/logo?name={q}"), bytes);
                     }
                 },

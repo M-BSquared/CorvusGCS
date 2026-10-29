@@ -584,11 +584,15 @@ impl SettingsPage {
                     if let Ok(mut p) = progress.lock() {
                         *p = format!("Loading {} of {}: {fname}\u{2026}", i + 1, files.len());
                     }
-                    let mut query = format!("filename={}&crs={}", pct(&fname), pct(&crs));
+                    let mut query = format!(
+                        "filename={}&crs={}",
+                        crate::net::http::encode_component(&fname),
+                        crate::net::http::encode_component(&crs)
+                    );
                     if let Some(m) = &model_id {
-                        query.push_str(&format!("&model={}", pct(m)));
+                        query.push_str(&format!("&model={}", crate::net::http::encode_component(m)));
                     } else if !name.is_empty() {
-                        query.push_str(&format!("&name={}", pct(&name)));
+                        query.push_str(&format!("&name={}", crate::net::http::encode_component(&name)));
                     }
                     let r = std::fs::read(path).map_err(|e| e.to_string()).and_then(|bytes| {
                         crate::net::http::post_bytes(
@@ -972,28 +976,15 @@ fn expand_paths(raw: &str) -> Vec<std::path::PathBuf> {
     }
 }
 
-/// `encodeURIComponent`.
-pub(super) fn pct(s: &str) -> String {
-    let mut out = String::new();
-    for b in s.bytes() {
-        if b.is_ascii_alphanumeric() || b"-_.!~*'()".contains(&b) {
-            out.push(b as char);
-        } else {
-            out.push_str(&format!("%{b:02X}"));
-        }
-    }
-    out
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn query_values_are_escaped_like_encode_uri_component() {
-        assert_eq!(pct("a b&c.tif"), "a%20b%26c.tif");
-        assert_eq!(pct("K\u{f6}ln"), "K%C3%B6ln");
-        assert_eq!(pct("25832"), "25832");
+        assert_eq!(crate::net::http::encode_component("a b&c.tif"), "a%20b%26c.tif");
+        assert_eq!(crate::net::http::encode_component("K\u{f6}ln"), "K%C3%B6ln");
+        assert_eq!(crate::net::http::encode_component("25832"), "25832");
     }
 
     #[test]
