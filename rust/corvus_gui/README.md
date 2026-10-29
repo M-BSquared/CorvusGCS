@@ -66,6 +66,40 @@ SIGKILL if it is still there after 8 s. If the window does not close within
 | `src/frost.rs` | the frosted glass under every `.glass` surface |
 | `src/fonts.rs`, `src/icons.rs`, `build.rs` | Inter, JetBrains Mono and the Lucide icons, from the web's own files |
 
+## The 3D map
+
+`walkers` draws a flat map only, so 3D mode (`src/js/map.js` `set3D`) has a
+renderer of its own, drawn with egui meshes and no GPU code of its own.
+
+- **Space.** Everything is in metres east, north and up around the view
+  centre (`camera3d.rs`), which is exact enough for a view of tens of
+  kilometres and keeps the maths in plain `f64`. The camera looks at the
+  centre from a distance that gives the same metres per pixel as the flat map
+  at the same zoom, tilted by `THREE_D_PITCH` (60 degrees), at the map's
+  bearing, with MapLibre's 36.87 degree field of view.
+- **Ground.** A quadtree of web mercator tiles, split while a tile would
+  cover more than about 380 px, so the near ground is fine and the horizon
+  coarse. Each leaf is a 16 by 16 grid of quads. Heights come from the
+  elevation tiles (`terrain.rs`, terrarium or mapbox packing, PNG or WebP,
+  256 or 512 px) through `/api/tiles/<dem>/z/x/y.png`, the proxy the web map
+  reads, so its cache serves offline. The imagery is the base layer's own
+  tiles from the same proxy, draped by texture coordinates. A tile whose
+  data has not come yet is drawn from its nearest ancestor, never left out.
+- **Order.** egui has no depth buffer. Leaves are drawn far to near, and the
+  quads inside a leaf far to near, which is right for a height field seen from
+  above the ground and wrong only for the camera inside a valley wall.
+- **Elevation models.** The catalogue is `terrain` of `/api/tiles/sources`
+  with the web's choice rule (`terrainFor`: the operator's pick, else the one
+  of the map service, else the preferred Copernicus, else SRTM). The
+  operator's own models (GeoTIFF, XYZ) are served by the backend as the same
+  tiles, so they need no reader here.
+- **Slices.** 1: the camera, flat ground with imagery, the vehicle, home and
+  track in 3D, drag to pan, right drag to turn and tilt. 2: terrain heights.
+  3: the elevation model list, the height readout and the user's own models.
+  Buildings, the sky details and the surface models of the full 3D mode come
+  after.
+- **Switching it on.** `Map::set_three_d`; the rail button calls it.
+
 ## Looking like the web interface
 
 Every measure is taken from the CSS with one CSS pixel as one egui point,

@@ -176,10 +176,53 @@ impl MapRail {
             );
         }
 
+        self.track_clear(ui, area, map);
+
         if self.layers_open {
             if let Some(anchor) = layers_anchor {
                 self.layers_menu(ui, anchor, map);
             }
+        }
+    }
+
+    /// `.track-clear`: a quiet 25 px disc above the attribution, only while
+    /// there is a track to clear.
+    fn track_clear(&mut self, ui: &mut egui::Ui, area: Rect, map: &mut Map) {
+        if !map.track.has_line() {
+            return;
+        }
+        let r = Rect::from_min_size(
+            Pos2::new(area.left() + INSET, area.bottom() - INSET - 30.0 - 25.0),
+            Vec2::splat(25.0),
+        );
+        let resp = ui
+            .interact(r, ui.scope_id().with("trackclear"), egui::Sense::click())
+            .on_hover_text("Clear the flown track");
+        let hot = resp.hovered();
+        let painter = ui.painter().clone();
+        style::glass_panel(&painter, "trackclear", r, 255u8, 0.75);
+        let (color, alpha) = if hot {
+            (style::critical(), 1.0)
+        } else {
+            (style::text_2(), 0.85)
+        };
+        if hot {
+            painter.rect_filled(r, 255u8, style::critical().gamma_multiply(0.14));
+            painter.rect_stroke(
+                r,
+                255u8,
+                Stroke::new(1.0, style::critical().gamma_multiply(0.45)),
+                egui::StrokeKind::Inside,
+            );
+        }
+        icons::paint(
+            ui,
+            "trash-2",
+            Rect::from_center_size(r.center(), Vec2::splat(14.0)),
+            color.gamma_multiply(alpha),
+        );
+        if resp.clicked() {
+            map.track.clear();
         }
     }
 

@@ -285,8 +285,8 @@ impl Map {
             return;
         }
         let g = style::galley(ui, self.attribution, 10.0, style::Weight::W400, style::text_2(), 0.0);
-        let size = Vec2::new(g.size().x + 4.0 + 9.0, 10.0 * 1.4 + 8.0);
-        let pill = egui::Rect::from_min_size(Pos2::new(rect.left() + 10.0, rect.bottom() - 10.0 - size.y), size);
+        let size = Vec2::new(g.size().x + 4.0 + 9.0, 25.0);
+        let pill = egui::Rect::from_min_size(Pos2::new(rect.left() + 14.0, rect.bottom() - 14.0 - size.y), size);
         let painter = ui.painter_at(rect);
         style::glass_panel(&painter, "attribution", pill, egui::CornerRadius::same(255), 0.38);
         painter.galley(
@@ -318,7 +318,7 @@ fn screen(projector: &Projector, _rect: egui::Rect, p: &Point) -> Pos2 {
 
 /// One flight as the web map draws it: a soft glow, a dark casing and the
 /// coloured core, so the line reads on grass and on a red roof alike.
-fn paint_flight(painter: &egui::Painter, pts: &[Pos2], color: Color32, past: bool) {
+pub(crate) fn paint_flight(painter: &egui::Painter, pts: &[Pos2], color: Color32, past: bool) {
     if pts.len() < 2 {
         return;
     }
@@ -347,7 +347,7 @@ fn paint_flight(painter: &egui::Painter, pts: &[Pos2], color: Color32, past: boo
 
 /// The vehicle marker (map.js buildVehicleMarker, 48 px): a blurred halo,
 /// the heading cone, a white ring, the red body and a white centre dot.
-fn paint_vehicle(painter: &egui::Painter, c: Pos2, heading: f32) {
+pub(crate) fn paint_vehicle(painter: &egui::Painter, c: Pos2, heading: f32) {
     for (r, a) in [(17.0, 0.07), (14.0, 0.07), (11.0, 0.08)] {
         painter.circle_filled(c, r, style::rgba(style::vehicle_rgb(), a));
     }
@@ -389,7 +389,7 @@ fn paint_vehicle(painter: &egui::Painter, c: Pos2, heading: f32) {
 
 /// The home marker (buildHomeMarker, 32 px): crosshair ticks, a white ring,
 /// a green pad and an H in strokes.
-fn paint_home(painter: &egui::Painter, c: Pos2) {
+pub(crate) fn paint_home(painter: &egui::Painter, c: Pos2) {
     let at = |x: f32, y: f32| c + Vec2::new(x - 16.0, y - 16.0);
     let tick = Stroke::new(1.6, Color32::from_rgba_unmultiplied(15, 139, 80, 204));
     for (a, b) in [

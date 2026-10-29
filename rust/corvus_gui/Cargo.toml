@@ -18,7 +18,7 @@ path = "src/main.rs"
 eframe = { version = "0.37", features = ["glow"] }
 # The SVG loader draws the Lucide icons the web interface uses.
 egui_extras = { version = "0.37", features = ["svg", "image"] }
-image = { version = "0.25", default-features = false, features = ["png"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
 # The map: slippy tiles from the backend's own tile proxy (offline cache).
 walkers = "0.63"
 serde_json = "1"

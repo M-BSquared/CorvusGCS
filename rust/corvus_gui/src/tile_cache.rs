@@ -1,0 +1,191 @@
+//! Map tiles fetched and decoded on worker threads, kept in a bounded cache.
+//!
+//! `get` is the whole interface for a frame: it answers from the cache and
+//! otherwise queues the tile, newest first, and the frame that finds it
+//! there picks it up. Requests nobody repeats age out of the queue.
+
+use std::collections::{HashMap, VecDeque};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Condvar, Mutex};
+use std::thread::JoinHandle;
+use std::time::{Duration, Instant};
+
+use eframe::egui;
+
+use crate::http::{self, Server};
+
+/// A tile: source id, zoom, column and row.
+pub type Key = (String, u8, u32, u32);
+
+const WORKERS: usize = 6;
+const QUEUE_MAX: usize = 96;
+const RETRY_AFTER: Duration = Duration::from_secs(20);
+
+enum Slot<T> {
+    Loading,
+    Ready(Arc<T>),
+    Failed(Instant),
+}
+
+struct Inner<T> {
+    slots: HashMap<Key, Slot<T>>,
+    order: VecDeque<Key>,
+    queue: VecDeque<Key>,
+}
+
+struct Shared<T> {
+    inner: Mutex<Inner<T>>,
+    wake: Condvar,
+    stop: AtomicBool,
+}
+
+/// A cache of decoded tiles of type `T`.
+pub struct TileCache<T: Send + Sync + 'static> {
+    shared: Arc<Shared<T>>,
+    capacity: usize,
+    threads: Vec<JoinHandle<()>>,
+}
+
+impl<T: Send + Sync + 'static> TileCache<T> {
+    /// Fetches through `server` and decodes with `decode`; repaints `ctx`
+    /// whenever a tile lands.
+    pub fn new(
+        ctx: &egui::Context,
+        server: &Server,
+        capacity: usize,
+        decode: impl Fn(&[u8]) -> Option<T> + Send + Sync + 'static,
+    ) -> TileCache<T> {
+        let shared = Arc::new(Shared {
+            inner: Mutex::new(Inner {
+                slots: HashMap::new(),
+                order: VecDeque::new(),
+                queue: VecDeque::new(),
+            }),
+            wake: Condvar::new(),
+            stop: AtomicBool::new(false),
+        });
+        let decode = Arc::new(decode);
+        let threads = (0..WORKERS)
+            .map(|i| {
+                let (sh, srv, ctx, dec) = (shared.clone(), server.clone(), ctx.clone(), decode.clone());
+                std::thread::Builder::new()
+                    .name(format!("tiles-{i}"))
+                    .spawn(move || worker(sh, srv, ctx, dec))
+                    .expect("a tile worker starts")
+            })
+            .collect();
+        TileCache {
+            shared,
+            capacity,
+            threads,
+        }
+    }
+
+    /// The tile when it is here; queues it when it is not.
+    pub fn get(&self, key: &Key) -> Option<Arc<T>> {
+        let mut g = self.shared.inner.lock().ok()?;
+        match g.slots.get(key) {
+            Some(Slot::Ready(t)) => return Some(t.clone()),
+            Some(Slot::Loading) => {
+                if let Some(i) = g.queue.iter().position(|k| k == key) {
+                    let k = g.queue.remove(i).expect("position is in range");
+                    g.queue.push_back(k);
+                }
+                return None;
+            }
+            Some(Slot::Failed(at)) if at.elapsed() < RETRY_AFTER => return None,
+            _ => {}
+        }
+        g.slots.insert(key.clone(), Slot::Loading);
+        g.queue.push_back(key.clone());
+        while g.queue.len() > QUEUE_MAX {
+            if let Some(old) = g.queue.pop_front() {
+                g.slots.remove(&old);
+            }
+        }
+        drop(g);
+        self.shared.wake.notify_one();
+        None
+    }
+
+    /// The tile when it is here, never queueing it.
+    pub fn peek(&self, key: &Key) -> Option<Arc<T>> {
+        match self.shared.inner.lock().ok()?.slots.get(key) {
+            Some(Slot::Ready(t)) => Some(t.clone()),
+            _ => None,
+        }
+    }
+
+    /// Drops every tile, for a changed source.
+    pub fn clear(&self) {
+        if let Ok(mut g) = self.shared.inner.lock() {
+            g.slots.clear();
+            g.order.clear();
+            g.queue.clear();
+        }
+    }
+
+    /// Evicts the oldest tiles past the capacity.
+    pub fn trim(&self) {
+        if let Ok(mut g) = self.shared.inner.lock() {
+            while g.order.len() > self.capacity {
+                if let Some(old) = g.order.pop_front() {
+                    g.slots.remove(&old);
+                }
+            }
+        }
+    }
+}
+
+impl<T: Send + Sync + 'static> Drop for TileCache<T> {
+    fn drop(&mut self) {
+        self.shared.stop.store(true, Ordering::SeqCst);
+        self.shared.wake.notify_all();
+        for t in self.threads.drain(..) {
+            let _ = t.join();
+        }
+    }
+}
+
+fn worker<T: Send + Sync + 'static>(
+    shared: Arc<Shared<T>>,
+    server: Server,
+    ctx: egui::Context,
+    decode: Arc<dyn Fn(&[u8]) -> Option<T> + Send + Sync>,
+) {
+    loop {
+        let key = {
+            let Ok(mut g) = shared.inner.lock() else {
+                return;
+            };
+            loop {
+                if shared.stop.load(Ordering::SeqCst) {
+                    return;
+                }
+                if let Some(k) = g.queue.pop_back() {
+                    break k;
+                }
+                g = match shared.wake.wait_timeout(g, Duration::from_millis(250)) {
+                    Ok((g, _)) => g,
+                    Err(_) => return,
+                };
+            }
+        };
+        let path = format!("/api/tiles/{}/{}/{}/{}.png", key.0, key.1, key.2, key.3);
+        let tile = http::get_bytes(&server, &path).and_then(|b| decode(&b));
+        if let Ok(mut g) = shared.inner.lock() {
+            if g.slots.contains_key(&key) {
+                match tile {
+                    Some(t) => {
+                        g.slots.insert(key.clone(), Slot::Ready(Arc::new(t)));
+                        g.order.push_back(key);
+                    }
+                    None => {
+                        g.slots.insert(key, Slot::Failed(Instant::now()));
+                    }
+                }
+            }
+        }
+        ctx.request_repaint();
+    }
+}

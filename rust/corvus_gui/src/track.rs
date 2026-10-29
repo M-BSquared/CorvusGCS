@@ -166,6 +166,20 @@ impl Track {
         }
     }
 
+    /// Discards every flight, past and present.
+    pub fn clear(&mut self) {
+        self.past.clear();
+        self.current.clear();
+        self.window.clear();
+        self.revision += 1;
+    }
+
+    /// Whether there is a track to clear: a flight under way needs two
+    /// points to be a line (`updateTrackControl`).
+    pub fn has_line(&self) -> bool {
+        self.current.len() >= 2 || !self.past.is_empty()
+    }
+
     /// Closes the flight in progress; a single point is not a flight.
     pub fn start_new_flight(&mut self) -> bool {
         let closed = self.current.len() >= 2;
@@ -372,5 +386,19 @@ mod tests {
             .map(|&(lng, lat)| Point { lng, lat, alt: None })
             .collect();
         assert_eq!(smooth(&legs), legs);
+    }
+
+    #[test]
+    fn clearing_drops_every_flight() {
+        let mut t = Track::default();
+        t.record(11.0, 48.0, None, None);
+        assert!(!t.has_line(), "one point is not a line");
+        t.record(11.001, 48.0, None, None);
+        t.start_new_flight();
+        assert!(t.has_line());
+        let before = t.revision;
+        t.clear();
+        assert!(!t.has_line() && t.past.is_empty() && t.current.is_empty());
+        assert!(t.revision > before);
     }
 }

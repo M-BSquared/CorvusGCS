@@ -208,6 +208,18 @@ pub fn get_json(server: &Server, path: &str) -> Result<serde_json::Value, String
     json_body(server, path, r)
 }
 
+/// GET a binary body (a map tile), `None` unless the answer is a 200.
+pub fn get_bytes(server: &Server, path: &str) -> Option<Vec<u8>> {
+    use std::io::Read;
+    let mut r = request(server, "GET", path, None, "*/*", Duration::from_secs(15)).ok()?;
+    if r.status != 200 {
+        return None;
+    }
+    let mut out = Vec::new();
+    r.body.read_to_end(&mut out).ok()?;
+    Some(out)
+}
+
 /// POST a JSON document and read the JSON answer.
 pub fn post_json(server: &Server, path: &str, body: &serde_json::Value) -> Result<serde_json::Value, String> {
     let text = body.to_string();
