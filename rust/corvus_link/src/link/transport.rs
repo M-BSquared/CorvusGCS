@@ -738,7 +738,10 @@ impl Serial {
     /// `reset_input_buffer`.
     pub fn reset_input(&self) -> io::Result<()> {
         if self.closed.load(Ordering::SeqCst) {
-            return Err(io::Error::new(io::ErrorKind::Other, "Attempting to use a port that is not open"));
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                "Attempting to use a port that is not open",
+            ));
         }
         #[cfg(unix)]
         if let Some(fd) = *lock(&self.fd) {
@@ -758,7 +761,10 @@ impl Serial {
     /// `in_waiting`.
     pub fn waiting(&self) -> io::Result<usize> {
         if self.closed.load(Ordering::SeqCst) {
-            return Err(io::Error::new(io::ErrorKind::Other, "Attempting to use a port that is not open"));
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                "Attempting to use a port that is not open",
+            ));
         }
         #[cfg(unix)]
         {
@@ -776,7 +782,10 @@ impl Serial {
             use serialport::SerialPort;
             let guard = lock(&self.port);
             let Some(port) = guard.as_ref() else {
-                return Err(io::Error::new(io::ErrorKind::Other, "Attempting to use a port that is not open"));
+                return Err(io::Error::new(
+                    io::ErrorKind::Other,
+                    "Attempting to use a port that is not open",
+                ));
             };
             Ok(port.bytes_to_read().map_err(io::Error::from)? as usize)
         }
@@ -788,10 +797,15 @@ impl Serial {
         let deadline = std::time::Instant::now() + Duration::from_secs_f64(timeout.max(0.0));
         let mut out = Vec::new();
         while out.len() < n {
-            let left = deadline.saturating_duration_since(std::time::Instant::now()).as_secs_f64();
+            let left = deadline
+                .saturating_duration_since(std::time::Instant::now())
+                .as_secs_f64();
             if !self.wait_readable(left) {
                 if self.closed.load(Ordering::SeqCst) {
-                    return Err(io::Error::new(io::ErrorKind::Other, "Attempting to use a port that is not open"));
+                    return Err(io::Error::new(
+                        io::ErrorKind::Other,
+                        "Attempting to use a port that is not open",
+                    ));
                 }
                 break;
             }
@@ -809,7 +823,10 @@ impl Serial {
         #[cfg(unix)]
         {
             if self.closed.load(Ordering::SeqCst) {
-                return Err(io::Error::new(io::ErrorKind::Other, "Attempting to use a port that is not open"));
+                return Err(io::Error::new(
+                    io::ErrorKind::Other,
+                    "Attempting to use a port that is not open",
+                ));
             }
             let _guard = lock(&self.write_lock);
             let Some(fd) = *lock(&self.fd) else {
@@ -824,7 +841,9 @@ impl Serial {
                     match err.kind() {
                         io::ErrorKind::Interrupted => continue,
                         io::ErrorKind::WouldBlock => {
-                            let left = deadline.saturating_duration_since(std::time::Instant::now()).as_secs_f64();
+                            let left = deadline
+                                .saturating_duration_since(std::time::Instant::now())
+                                .as_secs_f64();
                             if left <= 0.0 || !wait_writable(fd, left) {
                                 return Err(io::Error::new(io::ErrorKind::TimedOut, "Write timeout"));
                             }

@@ -53,7 +53,9 @@ fn number(raw: &Bound<'_, PyAny>, default: f64, lo: f64, hi: f64) -> PyResult<f6
     let py = raw.py();
     let value = match py_float(raw) {
         Ok(v) => v,
-        Err(err) if err.is_instance_of::<PyTypeError>(py) || err.is_instance_of::<PyValueError>(py) => return Ok(default),
+        Err(err) if err.is_instance_of::<PyTypeError>(py) || err.is_instance_of::<PyValueError>(py) => {
+            return Ok(default)
+        }
         Err(err) => return Err(err),
     };
     if !value.is_finite() {
@@ -148,11 +150,24 @@ pub fn settings<'py>(raw: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyDict>> {
     out.set_item("baud", count(&get(raw, "baud")?, 0, 0, 4_000_000)?)?;
     out.set_item(
         "survey_accuracy",
-        py_round(number(&get(raw, "survey_accuracy")?, DEFAULT_SURVEY_ACCURACY_M, SURVEY_ACCURACY_MIN_M, SURVEY_ACCURACY_MAX_M)?, 3),
+        py_round(
+            number(
+                &get(raw, "survey_accuracy")?,
+                DEFAULT_SURVEY_ACCURACY_M,
+                SURVEY_ACCURACY_MIN_M,
+                SURVEY_ACCURACY_MAX_M,
+            )?,
+            3,
+        ),
     )?;
     out.set_item(
         "survey_duration",
-        count(&get(raw, "survey_duration")?, DEFAULT_SURVEY_DURATION_S, SURVEY_DURATION_MIN_S, SURVEY_DURATION_MAX_S)?,
+        count(
+            &get(raw, "survey_duration")?,
+            DEFAULT_SURVEY_DURATION_S,
+            SURVEY_DURATION_MIN_S,
+            SURVEY_DURATION_MAX_S,
+        )?,
     )?;
     if get(raw, "msm7")?.is_instance_of::<PyBool>() {
         out.set_item("msm7", get(raw, "msm7")?)?;
@@ -160,10 +175,22 @@ pub fn settings<'py>(raw: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyDict>> {
     let fixed = get(raw, "fixed")?;
     if fixed.is_instance_of::<PyDict>() {
         let f = PyDict::new(py);
-        f.set_item("latitude", py_round(number(&get(&fixed, "latitude")?, 0.0, -90.0, 90.0)?, 9))?;
-        f.set_item("longitude", py_round(number(&get(&fixed, "longitude")?, 0.0, -180.0, 180.0)?, 9))?;
-        f.set_item("altitude", py_round(number(&get(&fixed, "altitude")?, 0.0, -1000.0, 20000.0)?, 4))?;
-        f.set_item("accuracy", py_round(number(&get(&fixed, "accuracy")?, 0.1, 0.001, 100.0)?, 4))?;
+        f.set_item(
+            "latitude",
+            py_round(number(&get(&fixed, "latitude")?, 0.0, -90.0, 90.0)?, 9),
+        )?;
+        f.set_item(
+            "longitude",
+            py_round(number(&get(&fixed, "longitude")?, 0.0, -180.0, 180.0)?, 9),
+        )?;
+        f.set_item(
+            "altitude",
+            py_round(number(&get(&fixed, "altitude")?, 0.0, -1000.0, 20000.0)?, 4),
+        )?;
+        f.set_item(
+            "accuracy",
+            py_round(number(&get(&fixed, "accuracy")?, 0.1, 0.001, 100.0)?, 4),
+        )?;
         out.set_item("fixed", f)?;
     }
     let ntrip = get(raw, "ntrip")?;
@@ -185,10 +212,18 @@ pub fn settings<'py>(raw: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyDict>> {
 pub fn public_settings<'py>(settings: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyDict>> {
     let py = settings.py();
     let out = PyDict::new(py);
-    let source = if settings.is_truthy()? { settings.clone() } else { PyDict::new(py).into_any() };
+    let source = if settings.is_truthy()? {
+        settings.clone()
+    } else {
+        PyDict::new(py).into_any()
+    };
     for item in source.call_method0("items")?.try_iter()? {
         let (k, v): (Bound<'py, PyAny>, Bound<'py, PyAny>) = item?.extract()?;
-        let v = if v.is_instance_of::<PyDict>() { py.get_type::<PyDict>().call1((v,))? } else { v };
+        let v = if v.is_instance_of::<PyDict>() {
+            py.get_type::<PyDict>().call1((v,))?
+        } else {
+            v
+        };
         out.set_item(k, v)?;
     }
     if let Some(ntrip) = out.get_item("ntrip")? {
@@ -203,7 +238,11 @@ pub fn public_settings<'py>(settings: &Bound<'py, PyAny>) -> PyResult<Bound<'py,
 
 fn float_or_zero(fixed: &Bound<'_, PyAny>, key: &str) -> PyResult<f64> {
     let v = get(fixed, key)?;
-    if v.is_truthy()? { py_float(&v) } else { Ok(0.0) }
+    if v.is_truthy()? {
+        py_float(&v)
+    } else {
+        Ok(0.0)
+    }
 }
 
 /// Why a fixed base position cannot be used, or "".
@@ -222,7 +261,11 @@ pub fn fixed_position_problem(fixed: &Bound<'_, PyAny>) -> PyResult<&'static str
 
 fn blank(ntrip: &Bound<'_, PyAny>, key: &str) -> PyResult<bool> {
     let v = get(ntrip, key)?;
-    let v = if v.is_truthy()? { v } else { PyString::new(ntrip.py(), "").into_any() };
+    let v = if v.is_truthy()? {
+        v
+    } else {
+        PyString::new(ntrip.py(), "").into_any()
+    };
     Ok(!v.str()?.call_method0("strip")?.is_truthy()?)
 }
 
@@ -241,7 +284,11 @@ pub fn ntrip_problem(ntrip: &Bound<'_, PyAny>) -> PyResult<&'static str> {
 /// How far along a survey is, 0 to 100, held at 99 until the receiver says
 /// valid.
 #[pyfunction]
-pub fn survey_progress(survey: &Bound<'_, PyAny>, target_duration: &Bound<'_, PyAny>, target_accuracy: &Bound<'_, PyAny>) -> PyResult<i64> {
+pub fn survey_progress(
+    survey: &Bound<'_, PyAny>,
+    target_duration: &Bound<'_, PyAny>,
+    target_accuracy: &Bound<'_, PyAny>,
+) -> PyResult<i64> {
     let py = survey.py();
     if !survey.is_truthy()? {
         return Ok(0);
@@ -251,16 +298,28 @@ pub fn survey_progress(survey: &Bound<'_, PyAny>, target_duration: &Bound<'_, Py
     }
     let int = py.get_type::<PyInt>();
     let raw = get(survey, "duration")?;
-    let raw = if raw.is_truthy()? { raw } else { 0i64.into_pyobject(py)?.into_any() };
+    let raw = if raw.is_truthy()? {
+        raw
+    } else {
+        0i64.into_pyobject(py)?.into_any()
+    };
     let duration = int.call1((raw,))?;
-    let duration = if duration.gt(0)? { duration } else { 0i64.into_pyobject(py)?.into_any() };
+    let duration = if duration.gt(0)? {
+        duration
+    } else {
+        0i64.into_pyobject(py)?.into_any()
+    };
     let acc = get(survey, "accuracy")?;
     let accuracy = if acc.is_truthy()? { py_float(&acc)? } else { 0.0 };
     let target = int.call1((target_duration,))?;
     let one = 1i64.into_pyobject(py)?.into_any();
     let target = if target.gt(&one)? { target } else { one };
     let by_time = 100.0 * py_float(&duration)? / py_float(&target)?;
-    let target_accuracy: Option<f64> = if accuracy > 0.0 { Some(target_accuracy.extract()?) } else { None };
+    let target_accuracy: Option<f64> = if accuracy > 0.0 {
+        Some(target_accuracy.extract()?)
+    } else {
+        None
+    };
     let by_accuracy = if let Some(target_accuracy) = target_accuracy.filter(|t| *t > 0.0) {
         let ratio = target_accuracy / accuracy;
         100.0 * if ratio < 1.0 { ratio } else { 1.0 }
@@ -272,7 +331,9 @@ pub fn survey_progress(survey: &Bound<'_, PyAny>, target_duration: &Bound<'_, Py
         return Err(PyValueError::new_err("cannot convert float NaN to integer"));
     }
     if least.is_infinite() {
-        return Err(pyo3::exceptions::PyOverflowError::new_err("cannot convert float infinity to integer"));
+        return Err(pyo3::exceptions::PyOverflowError::new_err(
+            "cannot convert float infinity to integer",
+        ));
     }
     Ok((least.trunc() as i64).clamp(0, 99))
 }

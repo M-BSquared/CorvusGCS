@@ -73,7 +73,11 @@ fn py_bytes<'py>(py: Python<'py>, values: &[Bound<'py, PyAny>]) -> PyResult<Boun
 /// Encode one CRSF frame.
 #[pyfunction]
 #[pyo3(signature = (frame_type, payload, address = None))]
-fn build_frame<'py>(frame_type: &Bound<'py, PyAny>, payload: &Bound<'py, PyAny>, address: Option<&Bound<'py, PyAny>>) -> PyResult<Bound<'py, PyAny>> {
+fn build_frame<'py>(
+    frame_type: &Bound<'py, PyAny>,
+    payload: &Bound<'py, PyAny>,
+    address: Option<&Bound<'py, PyAny>>,
+) -> PyResult<Bound<'py, PyAny>> {
     let py = frame_type.py();
     let address = match address {
         Some(a) => a.clone(),
@@ -82,7 +86,10 @@ fn build_frame<'py>(frame_type: &Bound<'py, PyAny>, payload: &Bound<'py, PyAny>,
     let body = py_bytes(py, &[frame_type.clone()])?.add(py.get_type::<PyBytes>().call1((payload,))?)?;
     let n = body.len()?;
     if n + 3 > MAX_FRAME_LEN {
-        return Err(PyValueError::new_err(format!("CRSF frame too long ({} > {MAX_FRAME_LEN} bytes)", n + 3)));
+        return Err(PyValueError::new_err(format!(
+            "CRSF frame too long ({} > {MAX_FRAME_LEN} bytes)",
+            n + 3
+        )));
     }
     let head = py_bytes(py, &[address, (n + 1).into_pyobject(py)?.into_any()])?;
     let crc = py_bytes(py, &[crc8(&bytes_of(&body)?).into_pyobject(py)?.into_any()])?;
@@ -104,7 +111,11 @@ pub struct CrsfParser {
 impl CrsfParser {
     #[new]
     fn new() -> Self {
-        CrsfParser { buf: Vec::new(), frames_ok: 0, crc_errors: 0 }
+        CrsfParser {
+            buf: Vec::new(),
+            frames_ok: 0,
+            crc_errors: 0,
+        }
     }
 
     #[getter]
@@ -132,7 +143,11 @@ impl CrsfParser {
                 self.buf.remove(0);
                 continue;
             }
-            frames.append(frame_type.call1((self.buf[0], self.buf[2], PyBytes::new(py, &self.buf[3..total - 1])))?)?;
+            frames.append(frame_type.call1((
+                self.buf[0],
+                self.buf[2],
+                PyBytes::new(py, &self.buf[3..total - 1]),
+            ))?)?;
             self.frames_ok += 1;
             self.buf.drain(..total);
         }
@@ -198,7 +213,11 @@ fn baro_altitude<'py>(py: Python<'py>, p: &[u8]) -> PyResult<Option<Bound<'py, P
         return Ok(None);
     }
     let packed = be_u16(p, 0);
-    let alt = if packed & 0x8000 != 0 { (packed & 0x7FFF) as f64 } else { (packed as i64 - 10000) as f64 / 10.0 };
+    let alt = if packed & 0x8000 != 0 {
+        (packed & 0x7FFF) as f64
+    } else {
+        (packed as i64 - 10000) as f64 / 10.0
+    };
     let d = PyDict::new(py);
     d.set_item("altitude_rel", alt)?;
     Ok(Some(d))
@@ -239,7 +258,10 @@ fn is_py_space(c: char) -> bool {
 
 fn flight_mode<'py>(py: Python<'py>, p: &[u8]) -> PyResult<Option<Bound<'py, PyDict>>> {
     let end = p.iter().position(|&b| b == 0).unwrap_or(p.len());
-    let text: String = p[..end].iter().map(|&b| if b < 0x80 { b as char } else { '\u{FFFD}' }).collect();
+    let text: String = p[..end]
+        .iter()
+        .map(|&b| if b < 0x80 { b as char } else { '\u{FFFD}' })
+        .collect();
     let name = text.trim_matches(is_py_space);
     if name.is_empty() {
         return Ok(None);
@@ -307,11 +329,18 @@ impl ElrsEngine {
 
     fn log_exception(&self, py: Python<'_>, level: &str, text: &str, err: &PyErr) -> PyResult<()> {
         let kwargs = kw(py, &[("exc_info", err.value(py).clone().into_any().unbind())])?;
-        self.env(py).getattr("logger")?.call_method(level, (text,), Some(&kwargs))?;
+        self.env(py)
+            .getattr("logger")?
+            .call_method(level, (text,), Some(&kwargs))?;
         Ok(())
     }
 
-    fn plan<'py>(&self, py: Python<'py>, args: &[Bound<'py, PyAny>], kwargs: &[(&str, PyObject)]) -> PyResult<Bound<'py, PyAny>> {
+    fn plan<'py>(
+        &self,
+        py: Python<'py>,
+        args: &[Bound<'py, PyAny>],
+        kwargs: &[(&str, PyObject)],
+    ) -> PyResult<Bound<'py, PyAny>> {
         let plan = self.env(py).getattr("FlyToPlan")?;
         let kwargs = kw(py, kwargs)?;
         plan.call(PyTuple::new(py, args)?, Some(&kwargs))
@@ -386,7 +415,11 @@ impl ElrsEngine {
                 out.set_item("position", py.get_type::<PyList>().call1((position,))?)?;
             }
             let last = telemetry.getattr("_last_position")?;
-            let stale = last.is_none() || telemetry.call_method0("_clock")?.sub(&last)?.gt(env.getattr("STALE_S")?)?;
+            let stale = last.is_none()
+                || telemetry
+                    .call_method0("_clock")?
+                    .sub(&last)?
+                    .gt(env.getattr("STALE_S")?)?;
             out.set_item("stale", stale)?;
             out.set_item("has_position", !out.get_item("position")?.is_none())?;
             let parser = telemetry.getattr("_parser")?;
@@ -402,7 +435,9 @@ impl ElrsEngine {
     fn start(&self, reader: &Bound<'_, PyAny>) -> PyResult<()> {
         let py = reader.py();
         if !self.env(py).getattr("ENABLED")?.is_truthy()? {
-            return Err(PyRuntimeError::new_err("ExpressLRS telemetry is not enabled in this build"));
+            return Err(PyRuntimeError::new_err(
+                "ExpressLRS telemetry is not enabled in this build",
+            ));
         }
         if reader.getattr("running")?.is_truthy()? {
             return Ok(());
@@ -475,7 +510,9 @@ impl ElrsEngine {
             let telemetry = reader.getattr("telemetry")?;
             if telemetry.call_method1("feed", (data,))?.is_truthy()? && !reader.getattr("_on_update")?.is_none() {
                 let update = (|| -> PyResult<()> {
-                    reader.getattr("_on_update")?.call1((telemetry.call_method0("snapshot")?,))?;
+                    reader
+                        .getattr("_on_update")?
+                        .call1((telemetry.call_method0("snapshot")?,))?;
                     Ok(())
                 })();
                 match update {
@@ -511,7 +548,10 @@ impl ElrsEngine {
         let env = self.env(py);
         let text = |s: &str| PyString::new(py, s).into_any();
         if !env.getattr("LINK_MODES")?.contains(link_mode)? {
-            return self.refuse(py, PyString::new(py, "Unknown ExpressLRS link mode: {!r}").call_method1("format", (link_mode,))?);
+            return self.refuse(
+                py,
+                PyString::new(py, "Unknown ExpressLRS link mode: {!r}").call_method1("format", (link_mode,))?,
+            );
         }
         if link_mode.eq("crsf")? {
             return self.refuse(
@@ -522,27 +562,52 @@ impl ElrsEngine {
         let floats = (|| -> PyResult<(f64, f64, f64)> { Ok((py_float(lat)?, py_float(lon)?, py_float(alt_agl)?)) })();
         let (lat_f, lon_f, alt_f) = match floats {
             Ok(v) => v,
-            Err(err) if caught_by(py, &err, &["TypeError", "ValueError"]) => return self.refuse(py, text("Point is not a number")),
+            Err(err) if caught_by(py, &err, &["TypeError", "ValueError"]) => {
+                return self.refuse(py, text("Point is not a number"))
+            }
             Err(err) => return Err(err),
         };
-        if [lat, lon, alt_agl].iter().any(|v| v.is_instance_of::<PyBool>()) || ![lat_f, lon_f, alt_f].iter().all(|v| v.is_finite()) {
+        if [lat, lon, alt_agl].iter().any(|v| v.is_instance_of::<PyBool>())
+            || ![lat_f, lon_f, alt_f].iter().all(|v| v.is_finite())
+        {
             return self.refuse(py, text("Point is not a number"));
         }
         if !((-90.0..=90.0).contains(&lat_f) && (-180.0..=180.0).contains(&lon_f)) {
             return self.refuse(py, text("Point is outside valid coordinates"));
         }
-        let dialect = env.getattr("autopilot_dialect")?.call_method1("dialect_for_stack", (stack,))?;
-        let params = PyTuple::new(py, [-1.0, env.getattr("DO_REPOSITION_CHANGE_MODE")?.extract::<f64>()?, 0.0, f64::NAN])?;
-        let (frame, z): (Bound<'py, PyAny>, f64) = if dialect.call_method1("reposition_altitude_frame", (mav_type,))?.eq("relative")? {
+        let dialect = env
+            .getattr("autopilot_dialect")?
+            .call_method1("dialect_for_stack", (stack,))?;
+        let params = PyTuple::new(
+            py,
+            [
+                -1.0,
+                env.getattr("DO_REPOSITION_CHANGE_MODE")?.extract::<f64>()?,
+                0.0,
+                f64::NAN,
+            ],
+        )?;
+        let (frame, z): (Bound<'py, PyAny>, f64) = if dialect
+            .call_method1("reposition_altitude_frame", (mav_type,))?
+            .eq("relative")?
+        {
             (env.getattr("MAV_FRAME_GLOBAL_RELATIVE_ALT")?, alt_f)
         } else {
             match home_alt_amsl {
                 None => return self.refuse(py, text("No home altitude yet to convert the height above ground")),
-                Some(h) if h.is_none() => return self.refuse(py, text("No home altitude yet to convert the height above ground")),
+                Some(h) if h.is_none() => {
+                    return self.refuse(py, text("No home altitude yet to convert the height above ground"))
+                }
                 Some(h) => (env.getattr("MAV_FRAME_GLOBAL")?, py_float(h)? + alt_f),
             }
         };
-        let to_e7 = |v: f64| -> PyObject { ((v * 1e7).round_ties_even() as i64).into_pyobject(py).expect("ints convert").into_any().unbind() };
+        let to_e7 = |v: f64| -> PyObject {
+            ((v * 1e7).round_ties_even() as i64)
+                .into_pyobject(py)
+                .expect("ints convert")
+                .into_any()
+                .unbind()
+        };
         self.plan(
             py,
             &[true.into_pyobject(py)?.to_owned().into_any()],
@@ -575,4 +640,40 @@ pub fn register(py: Python<'_>, parent: &Bound<'_, PyModule>) -> PyResult<()> {
     parent.add_submodule(&m)?;
     py.import("sys")?.getattr("modules")?.set_item("corvus_link.elrs", &m)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn crc8_dvb_s2_matches_its_check_value() {
+        assert_eq!(crc8(b"123456789"), 0xBC);
+        assert_eq!(crc8(b""), 0);
+    }
+
+    #[test]
+    fn modulo_takes_the_sign_of_the_divisor_like_python() {
+        assert_eq!(py_mod(370.0, 360.0), 10.0);
+        assert_eq!(py_mod(-10.0, 360.0), 350.0);
+        assert_eq!(py_mod(720.0, 360.0), 0.0);
+        assert!(py_mod(-0.0, 360.0).is_sign_positive());
+        assert_eq!(py_mod(-1e-20, 360.0), 360.0);
+    }
+
+    #[test]
+    fn a_flight_mode_name_ends_at_the_first_nul_and_loses_its_spaces() {
+        let text = |b: &[u8]| {
+            let end = b.iter().position(|&x| x == 0).unwrap_or(b.len());
+            b[..end]
+                .iter()
+                .map(|&x| if x < 0x80 { x as char } else { '\u{FFFD}' })
+                .collect::<String>()
+                .trim_matches(is_py_space)
+                .to_string()
+        };
+        assert_eq!(text(b"ACRO\0junk"), "ACRO");
+        assert_eq!(text(b"  HOLD \x1f"), "HOLD");
+        assert_eq!(text(b"\0"), "");
+    }
 }

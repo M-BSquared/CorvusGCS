@@ -67,7 +67,11 @@ impl AutoConnectEngine {
     /// phantom and a pseudo terminal are dropped.
     fn classify_ports<'py>(&self, py: Python<'py>, rows: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyList>> {
         let out = PyList::empty(py);
-        let rows = if rows.is_truthy()? { rows.clone() } else { PyTuple::empty(py).into_any() };
+        let rows = if rows.is_truthy()? {
+            rows.clone()
+        } else {
+            PyTuple::empty(py).into_any()
+        };
         let from_row = self.helper(py, "PortInfo")?.getattr("from_row")?;
         let phantom = self.helper(py, "is_phantom_device")?;
         for row in rows.try_iter()? {
@@ -90,7 +94,11 @@ impl AutoConnectEngine {
         let py = port.py();
         Ok(!self
             .helper(py, "is_bootloader_port")?
-            .call1((port.getattr("device")?, port.getattr("hwid")?, port.getattr("description")?))?
+            .call1((
+                port.getattr("device")?,
+                port.getattr("hwid")?,
+                port.getattr("description")?,
+            ))?
             .is_truthy()?)
     }
 
@@ -111,7 +119,11 @@ impl AutoConnectEngine {
     /// `serial:<device>:<baud>`.
     fn serial_connection_string(&self, device: &Bound<'_, PyAny>, baud: &Bound<'_, PyAny>) -> PyResult<String> {
         let py = device.py();
-        Ok(format!("serial:{}:{}", device.str()?, py.get_type::<pyo3::types::PyInt>().call1((baud,))?.str()?))
+        Ok(format!(
+            "serial:{}:{}",
+            device.str()?,
+            py.get_type::<pyo3::types::PyInt>().call1((baud,))?.str()?
+        ))
     }
 
     /// The device of a `serial:` connection string, else "".
@@ -145,9 +157,16 @@ impl AutoConnectEngine {
                 continue;
             }
             if let Some(hit) = self.pick(ports, kind)? {
-                return Ok(PyTuple::new(py, [hit.getattr("device")?, self.helper(py, "DEFAULT_BAUD")?, obj(py, kind).into_bound(py)])?
-                    .into_any()
-                    .unbind());
+                return Ok(PyTuple::new(
+                    py,
+                    [
+                        hit.getattr("device")?,
+                        self.helper(py, "DEFAULT_BAUD")?,
+                        obj(py, kind).into_bound(py),
+                    ],
+                )?
+                .into_any()
+                .unbind());
             }
         }
         Ok(py.None())
@@ -209,7 +228,10 @@ impl AutoConnectEngine {
             return decision.call1((conn, self.reason_for(py, &kind)?, detail));
         }
         if self.is_valid(configured, validator)? {
-            return decision.call1((configured.str()?.call_method0("strip")?, self.helper(py, "REASON_CONFIGURED")?));
+            return decision.call1((
+                configured.str()?.call_method0("strip")?,
+                self.helper(py, "REASON_CONFIGURED")?,
+            ));
         }
         if udp_fallback_enabled && self.is_valid(udp_fallback, validator)? {
             return decision.call1((udp_fallback, self.helper(py, "REASON_UDP_FALLBACK")?));
@@ -219,12 +241,23 @@ impl AutoConnectEngine {
 
     /// A device worth offering while the link is busy, or None; never once
     /// the operator chose a link by hand, never the one already connected.
-    fn suggest_connection<'py>(&self, snapshot: &Bound<'py, PyAny>, ports: &Bound<'py, PyAny>, session: &Bound<'py, PyAny>) -> PyResult<PyObject> {
+    fn suggest_connection<'py>(
+        &self,
+        snapshot: &Bound<'py, PyAny>,
+        ports: &Bound<'py, PyAny>,
+        session: &Bound<'py, PyAny>,
+    ) -> PyResult<PyObject> {
         let py = snapshot.py();
         if !session.getattr("enabled")?.is_truthy()? || session.getattr("manual_override")?.is_truthy()? {
             return Ok(py.None());
         }
-        let kwargs = kw(py, &[("usb_enabled", session.getattr("usb")?.unbind()), ("sik_enabled", session.getattr("sik")?.unbind())])?;
+        let kwargs = kw(
+            py,
+            &[
+                ("usb_enabled", session.getattr("usb")?.unbind()),
+                ("sik_enabled", session.getattr("sik")?.unbind()),
+            ],
+        )?;
         let pick = self.helper(py, "pick_usb_serial")?.call((ports,), Some(&kwargs))?;
         if pick.is_none() {
             return Ok(py.None());
@@ -232,7 +265,11 @@ impl AutoConnectEngine {
         let device = pick.get_item(0)?;
         let kind: String = pick.get_item(2)?.extract()?;
         let link = snapshot.call_method1("get", ("link_connection", ""))?;
-        let link = if link.is_truthy()? { link.str()?.into_any() } else { obj(py, "").into_bound(py) };
+        let link = if link.is_truthy()? {
+            link.str()?.into_any()
+        } else {
+            obj(py, "").into_bound(py)
+        };
         if self.same_port(py, &device, &self.serial_device(&link)?)? {
             return Ok(py.None());
         }
@@ -254,7 +291,8 @@ impl AutoConnectEngine {
     fn start(&self, watcher: &Bound<'_, PyAny>) -> PyResult<()> {
         let py = watcher.py();
         if !watcher.getattr("_session")?.getattr("enabled")?.is_truthy()? {
-            self.logger(py)?.call_method1("info", ("autoconnect: watcher not started (disabled in config)",))?;
+            self.logger(py)?
+                .call_method1("info", ("autoconnect: watcher not started (disabled in config)",))?;
             return Ok(());
         }
         let current = watcher.getattr("_thread")?;
@@ -275,12 +313,16 @@ impl AutoConnectEngine {
     fn run(&self, watcher: &Bound<'_, PyAny>) -> PyResult<()> {
         let py = watcher.py();
         while !thread::shutting_down()
-            && !watcher.getattr("_stop_event")?.call_method1("wait", (watcher.getattr("_poll_s")?,))?.is_truthy()?
+            && !watcher
+                .getattr("_stop_event")?
+                .call_method1("wait", (watcher.getattr("_poll_s")?,))?
+                .is_truthy()?
         {
             match watcher.call_method0("tick") {
                 Err(err) if err.is_instance_of::<PyException>(py) => {
                     let kwargs = kw(py, &[("exc_info", err.value(py).clone().into_any().unbind())])?;
-                    self.logger(py)?.call_method("error", ("autoconnect: watcher iteration failed",), Some(&kwargs))?;
+                    self.logger(py)?
+                        .call_method("error", ("autoconnect: watcher iteration failed",), Some(&kwargs))?;
                 }
                 Err(err) => return Err(err),
                 Ok(_) => {}
@@ -293,17 +335,30 @@ impl AutoConnectEngine {
     fn tick(&self, watcher: &Bound<'_, PyAny>) -> PyResult<String> {
         let py = watcher.py();
         let session = watcher.getattr("_session")?;
-        if watcher.getattr("_stop_event")?.call_method0("is_set")?.is_truthy()? || !session.getattr("enabled")?.is_truthy()? {
+        if watcher.getattr("_stop_event")?.call_method0("is_set")?.is_truthy()?
+            || !session.getattr("enabled")?.is_truthy()?
+        {
             return Ok("disabled".into());
         }
         let manual = session.getattr("manual_override")?.is_truthy()?;
         if !watcher.getattr("_bridge")?.call_method0("is_running")?.is_truthy()? {
-            return Ok(if manual { "noop: manual-override" } else { "noop: bridge-stopped" }.into());
+            return Ok(if manual {
+                "noop: manual-override"
+            } else {
+                "noop: bridge-stopped"
+            }
+            .into());
         }
         let snapshot = watcher.call_method0("_snapshot")?;
         let status = snapshot.call_method1("get", ("link_status", ""))?;
-        let status = if status.is_truthy()? { status.str()?.call_method0("lower")? } else { obj(py, "").into_bound(py) };
-        let mut ports = self.helper(py, "classify_ports")?.call1((watcher.getattr("_list_ports")?.call0()?,))?;
+        let status = if status.is_truthy()? {
+            status.str()?.call_method0("lower")?
+        } else {
+            obj(py, "").into_bound(py)
+        };
+        let mut ports = self
+            .helper(py, "classify_ports")?
+            .call1((watcher.getattr("_list_ports")?.call0()?,))?;
         let mut busy = Vec::new();
         for d in watcher.call_method0("_busy")?.try_iter()? {
             let d = d?;
@@ -353,7 +408,13 @@ impl AutoConnectEngine {
             return Ok("noop: manual-override".into());
         }
         let idle = idle_states.contains(&status)? && watcher.call_method0("_is_stale")?.is_truthy()?;
-        let kwargs = kw(py, &[("usb_enabled", session.getattr("usb")?.unbind()), ("sik_enabled", session.getattr("sik")?.unbind())])?;
+        let kwargs = kw(
+            py,
+            &[
+                ("usb_enabled", session.getattr("usb")?.unbind()),
+                ("sik_enabled", session.getattr("sik")?.unbind()),
+            ],
+        )?;
         let pick = self.helper(py, "pick_usb_serial")?.call((&ports,), Some(&kwargs))?;
         if pick.is_none() {
             watcher.call_method1("_publish_suggestion", (py.None(),))?;
@@ -361,12 +422,21 @@ impl AutoConnectEngine {
             return Ok(format!("noop: {}", self.helper(py, "REASON_NO_CANDIDATE")?.str()?));
         }
         if !idle {
-            let suggestion = self.helper(py, "suggest_connection")?.call1((&snapshot, &ports, &session))?;
-            let published = watcher.call_method1("_publish_suggestion", (&suggestion,))?.is_truthy()?;
+            let suggestion = self
+                .helper(py, "suggest_connection")?
+                .call1((&snapshot, &ports, &session))?;
+            let published = watcher
+                .call_method1("_publish_suggestion", (&suggestion,))?
+                .is_truthy()?;
             if suggestion.is_none() {
                 return Ok("noop: fresh-heartbeat".into());
             }
-            return Ok(if published { "suggested" } else { "noop: suggestion-unchanged" }.into());
+            return Ok(if published {
+                "suggested"
+            } else {
+                "noop: suggestion-unchanged"
+            }
+            .into());
         }
         watcher.call_method1("_auto_dial", (pick,))?.extract()
     }
@@ -388,20 +458,34 @@ impl AutoConnectEngine {
             if !err.is_instance_of::<pyo3::exceptions::PyValueError>(py) {
                 return Err(err);
             }
-            self.logger(py)?.call_method1("warning", ("autoconnect: refusing %s (%s)", conn.as_str(), err.value(py)))?;
+            self.logger(py)?.call_method1(
+                "warning",
+                ("autoconnect: refusing %s (%s)", conn.as_str(), err.value(py)),
+            )?;
             session.setattr("last_dial_key", conn.as_str())?;
             return Ok("noop: invalid".into());
         }
         let reason = self.reason_for(py, &kind)?;
-        self.logger(py)?
-            .call_method1("info", ("autoconnect: dialling winner=%s reason=%s detail=%s", conn.as_str(), &reason, &device))?;
+        self.logger(py)?.call_method1(
+            "info",
+            (
+                "autoconnect: dialling winner=%s reason=%s detail=%s",
+                conn.as_str(),
+                &reason,
+                &device,
+            ),
+        )?;
         session.setattr("last_dial_key", conn.as_str())?;
         if let Err(err) = bridge.call_method1("switch_connection", (conn.as_str(),)) {
             if !err.is_instance_of::<PyException>(py) {
                 return Err(err);
             }
             let kwargs = kw(py, &[("exc_info", err.value(py).clone().into_any().unbind())])?;
-            self.logger(py)?.call_method("error", ("autoconnect: dial of %s failed", conn.as_str()), Some(&kwargs))?;
+            self.logger(py)?.call_method(
+                "error",
+                ("autoconnect: dial of %s failed", conn.as_str()),
+                Some(&kwargs),
+            )?;
             return Ok("dial-failed".into());
         }
         session.call_method1("note_decision", (&reason, conn.as_str()))?;
@@ -417,18 +501,28 @@ impl AutoConnectEngine {
         let session = watcher.getattr("_session")?;
         let bridge = watcher.getattr("_bridge")?;
         let old = self.serial_device(link)?;
-        let baud = self.helper(py, "split_serial_connection")?.call1((link,))?.get_item(1)?;
+        let baud = self
+            .helper(py, "split_serial_connection")?
+            .call1((link,))?
+            .get_item(1)?;
         let conn = self.serial_connection_string(&port.getattr("device")?, &baud)?;
         if let Err(err) = bridge.call_method1("validate_connection", (conn.as_str(),)) {
             if !err.is_instance_of::<pyo3::exceptions::PyValueError>(py) {
                 return Err(err);
             }
-            self.logger(py)?.call_method1("warning", ("autoconnect: refusing %s (%s)", conn.as_str(), err.value(py)))?;
+            self.logger(py)?.call_method1(
+                "warning",
+                ("autoconnect: refusing %s (%s)", conn.as_str(), err.value(py)),
+            )?;
             return Ok("noop: invalid".into());
         }
         self.logger(py)?.call_method1(
             "info",
-            ("autoconnect: %s is gone, following the same device to %s", &old, port.getattr("device")?),
+            (
+                "autoconnect: %s is gone, following the same device to %s",
+                &old,
+                port.getattr("device")?,
+            ),
         )?;
         session.setattr("last_dial_key", conn.as_str())?;
         if let Err(err) = bridge.call_method1("switch_connection", (conn.as_str(),)) {
@@ -436,12 +530,19 @@ impl AutoConnectEngine {
                 return Err(err);
             }
             let kwargs = kw(py, &[("exc_info", err.value(py).clone().into_any().unbind())])?;
-            self.logger(py)?.call_method("error", ("autoconnect: dial of %s failed", conn.as_str()), Some(&kwargs))?;
+            self.logger(py)?.call_method(
+                "error",
+                ("autoconnect: dial of %s failed", conn.as_str()),
+                Some(&kwargs),
+            )?;
             return Ok("dial-failed".into());
         }
         let identity = watcher.getattr("_link_identity")?;
         if !identity.is_none() {
-            watcher.setattr("_link_identity", PyTuple::new(py, [obj(py, conn.as_str()).into_bound(py), identity.get_item(1)?])?)?;
+            watcher.setattr(
+                "_link_identity",
+                PyTuple::new(py, [obj(py, conn.as_str()).into_bound(py), identity.get_item(1)?])?,
+            )?;
         }
         let reason = if session.getattr("manual_override")?.is_truthy()? {
             self.helper(py, "REASON_MANUAL")?
@@ -459,7 +560,13 @@ impl AutoConnectEngine {
     }
 
     /// Note the USB identity of the port the link is on; never a bootloader's.
-    fn remember_identity(&self, watcher: &Bound<'_, PyAny>, link: &Bound<'_, PyAny>, device: &Bound<'_, PyAny>, ports: &Bound<'_, PyAny>) -> PyResult<()> {
+    fn remember_identity(
+        &self,
+        watcher: &Bound<'_, PyAny>,
+        link: &Bound<'_, PyAny>,
+        device: &Bound<'_, PyAny>,
+        ports: &Bound<'_, PyAny>,
+    ) -> PyResult<()> {
         let py = watcher.py();
         for port in ports.try_iter()? {
             let port = port?;
@@ -476,7 +583,13 @@ impl AutoConnectEngine {
 
     /// The one present port carrying the identity the link's device had;
     /// two candidates is no answer.
-    fn moved_port(&self, watcher: &Bound<'_, PyAny>, link: &Bound<'_, PyAny>, device: &Bound<'_, PyAny>, ports: &Bound<'_, PyAny>) -> PyResult<PyObject> {
+    fn moved_port(
+        &self,
+        watcher: &Bound<'_, PyAny>,
+        link: &Bound<'_, PyAny>,
+        device: &Bound<'_, PyAny>,
+        ports: &Bound<'_, PyAny>,
+    ) -> PyResult<PyObject> {
         let py = watcher.py();
         let remembered = watcher.getattr("_link_identity")?;
         if remembered.is_none() || remembered.get_item(0)?.ne(link)? {
@@ -494,14 +607,22 @@ impl AutoConnectEngine {
                 matches.push(port);
             }
         }
-        Ok(if matches.len() == 1 { matches.remove(0).unbind() } else { py.None() })
+        Ok(if matches.len() == 1 {
+            matches.remove(0).unbind()
+        } else {
+            py.None()
+        })
     }
 
     /// Push or clear `link_suggestion`; True when it changed.
     fn publish_suggestion(&self, watcher: &Bound<'_, PyAny>, suggestion: &Bound<'_, PyAny>) -> PyResult<bool> {
         let py = watcher.py();
         let session = watcher.getattr("_session")?;
-        let key = if suggestion.is_truthy()? { suggestion.getattr("connection_string")? } else { py.None().into_bound(py) };
+        let key = if suggestion.is_truthy()? {
+            suggestion.getattr("connection_string")?
+        } else {
+            py.None().into_bound(py)
+        };
         if key.eq(session.getattr("last_suggestion_key")?)? {
             return Ok(false);
         }
@@ -509,10 +630,18 @@ impl AutoConnectEngine {
         if !suggestion.is_none() {
             self.logger(py)?.call_method1(
                 "info",
-                ("autoconnect: suggestion-published device=%s kind=%s", suggestion.getattr("device")?, suggestion.getattr("kind")?),
+                (
+                    "autoconnect: suggestion-published device=%s kind=%s",
+                    suggestion.getattr("device")?,
+                    suggestion.getattr("kind")?,
+                ),
             )?;
         }
-        let value = if suggestion.is_truthy()? { suggestion.call_method0("as_dict")?.unbind() } else { py.None() };
+        let value = if suggestion.is_truthy()? {
+            suggestion.call_method0("as_dict")?.unbind()
+        } else {
+            py.None()
+        };
         let kwargs = kw(py, &[("link_suggestion", value)])?;
         watcher.call_method("_update_store", (), Some(&kwargs))?;
         Ok(true)
@@ -525,13 +654,26 @@ impl AutoConnectEngine {
         let mut found = None;
         for port in ports.try_iter()? {
             let port = port?;
-            if bootloader.call1((port.getattr("device")?, port.getattr("hwid")?, port.getattr("description")?))?.is_truthy()? {
+            if bootloader
+                .call1((
+                    port.getattr("device")?,
+                    port.getattr("hwid")?,
+                    port.getattr("description")?,
+                ))?
+                .is_truthy()?
+            {
                 found = Some(port);
                 break;
             }
         }
-        let held = watcher.call_method0("_snapshot")?.call_method1("get", ("link_bootloader",))?;
-        let held = if held.is_truthy()? { held } else { PyDict::new(py).into_any() };
+        let held = watcher
+            .call_method0("_snapshot")?
+            .call_method1("get", ("link_bootloader",))?;
+        let held = if held.is_truthy()? {
+            held
+        } else {
+            PyDict::new(py).into_any()
+        };
         let current = held.call_method1("get", ("device",))?;
         let device = match &found {
             Some(p) => p.getattr("device")?,

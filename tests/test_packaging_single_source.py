@@ -112,7 +112,7 @@ def test_every_installer_builds_corvus_link() -> None:
     }
     for path, needle in needles.items():
         assert needle in path.read_text(encoding="utf-8"), f"{path.name} does not build corvus_link"
-    assert GITHUB_CI.read_text(encoding="utf-8").count("pip install ./rust/corvus_link") == 2
+    assert GITHUB_CI.read_text(encoding="utf-8").count("pip install ./rust/corvus_link") == 3
 
 
 def test_the_pipeline_checks_the_rust_side() -> None:

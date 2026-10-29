@@ -64,7 +64,12 @@ pub fn bytes_of(obj: &Bound<'_, PyAny>) -> PyResult<Vec<u8>> {
         return Ok(b.to_vec());
     }
     let py = obj.py();
-    Ok(py.get_type::<PyBytes>().call1((obj,))?.downcast_into::<PyBytes>()?.as_bytes().to_vec())
+    Ok(py
+        .get_type::<PyBytes>()
+        .call1((obj,))?
+        .downcast_into::<PyBytes>()?
+        .as_bytes()
+        .to_vec())
 }
 
 /// A plain int that fits, as Python would see it (a bool is 0 or 1).
@@ -93,7 +98,11 @@ fn size_field(key: &Bound<'_, PyAny>) -> PyResult<u64> {
 }
 
 fn struct_error(py: Python<'_>, text: String) -> PyErr {
-    match py.import("struct").and_then(|s| s.getattr("error")).and_then(|kind| kind.call1((text,))) {
+    match py
+        .import("struct")
+        .and_then(|s| s.getattr("error"))
+        .and_then(|kind| kind.call1((text,)))
+    {
         Ok(value) => PyErr::from_value(value),
         Err(err) => err,
     }
@@ -109,7 +118,10 @@ fn unpack_pair<'py>(item: &Bound<'py, PyAny>) -> PyResult<(Bound<'py, PyAny>, Bo
         }
     }
     if values.len() < 2 {
-        return Err(PyValueError::new_err(format!("not enough values to unpack (expected 2, got {})", values.len())));
+        return Err(PyValueError::new_err(format!(
+            "not enough values to unpack (expected 2, got {})",
+            values.len()
+        )));
     }
     let b = values.pop().expect("two");
     let a = values.pop().expect("two");
@@ -124,7 +136,10 @@ fn signed_field(obj: &Bound<'_, PyAny>, code: char, lo: i64, hi: i64) -> PyResul
     }
     match obj.extract::<i64>() {
         Ok(v) if (lo..=hi).contains(&v) => Ok(v),
-        _ => Err(struct_error(py, format!("'{code}' format requires {lo} <= number <= {hi}"))),
+        _ => Err(struct_error(
+            py,
+            format!("'{code}' format requires {lo} <= number <= {hi}"),
+        )),
     }
 }
 
@@ -170,7 +185,11 @@ const fn crc24q_table() -> [u32; 256] {
         let mut reg: u32 = (byte as u32) << 16;
         let mut i = 0;
         while i < 8 {
-            reg = if reg & 0x800000 != 0 { (reg << 1) ^ 0x1864CFB } else { reg << 1 };
+            reg = if reg & 0x800000 != 0 {
+                (reg << 1) ^ 0x1864CFB
+            } else {
+                reg << 1
+            };
             i += 1;
         }
         table[byte] = reg & 0xFFFFFF;
@@ -223,7 +242,12 @@ pub struct RtcmFramer {
 
 impl RtcmFramer {
     pub fn new_framer() -> Self {
-        RtcmFramer { buf: Vec::new(), frames: 0, crc_errors: 0, discarded: 0 }
+        RtcmFramer {
+            buf: Vec::new(),
+            frames: 0,
+            crc_errors: 0,
+            discarded: 0,
+        }
     }
 
     pub fn feed_bytes(&mut self, chunk: &[u8]) -> Vec<Vec<u8>> {
@@ -248,7 +272,8 @@ impl RtcmFramer {
             if self.buf.len() < total {
                 break;
             }
-            let expected = ((self.buf[total - 3] as u32) << 16) | ((self.buf[total - 2] as u32) << 8) | self.buf[total - 1] as u32;
+            let expected =
+                ((self.buf[total - 3] as u32) << 16) | ((self.buf[total - 2] as u32) << 8) | self.buf[total - 1] as u32;
             if crc24q_of(&self.buf[..total - 3]) == expected {
                 out.push(self.buf.drain(..total).collect());
                 self.frames += 1;
@@ -286,7 +311,11 @@ impl RtcmFramer {
 
     /// Add *chunk* and return every complete, CRC-valid frame it finished.
     fn feed<'py>(&mut self, py: Python<'py>, chunk: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyList>> {
-        let data = if chunk.is_truthy()? { bytes_of(chunk)? } else { Vec::new() };
+        let data = if chunk.is_truthy()? {
+            bytes_of(chunk)?
+        } else {
+            Vec::new()
+        };
         PyList::new(py, self.feed_bytes(&data).iter().map(|f| PyBytes::new(py, f)))
     }
 
@@ -309,26 +338,39 @@ fn fragments<'py>(frame: &Bound<'py, PyAny>, sequence: &Bound<'py, PyAny>) -> Py
     if len > MAX_MESSAGE_BYTES {
         return Ok(out);
     }
-    let seq_bits = masked(&py_int(sequence)?, 0x1F)? << 3;
-    if len < FRAGMENT_BYTES {
-        out.append((seq_bits, frame))?;
-        return Ok(out);
-    }
-    let mut index = 0u64;
-    let mut start = 0;
-    while start < len {
-        let end = (start + FRAGMENT_BYTES).min(len);
+    let seq_bits = masked(&py_int(sequence)?, 0x1F)?;
+    for (flags, start, end) in fragment_spans(len, seq_bits) {
         let part = frame.get_item(PySlice::new(py, start as isize, end as isize, 1))?;
-        out.append((1 | (index << 1) | seq_bits, part))?;
-        index += 1;
-        start += FRAGMENT_BYTES;
-    }
-    if len % FRAGMENT_BYTES == 0 {
-        out.append((1 | (index << 1) | seq_bits, PyBytes::new(py, b"")))?;
+        out.append((flags, part))?;
     }
     Ok(out)
 }
 
+/// The `(flags, start, end)` of each GPS_RTCM_DATA fragment of a frame of
+/// *len* bytes: one unfragmented message under 180 bytes, otherwise 180 byte
+/// pieces, with an empty one after an exact multiple so the receiver sees
+/// the end. *sequence* is taken modulo 32. Empty for no bytes or more than
+/// four fragments can express.
+pub fn fragment_spans(len: usize, sequence: u64) -> Vec<(u64, usize, usize)> {
+    if len == 0 || len > MAX_MESSAGE_BYTES {
+        return Vec::new();
+    }
+    let seq_bits = (sequence & 0x1F) << 3;
+    if len < FRAGMENT_BYTES {
+        return vec![(seq_bits, 0, len)];
+    }
+    let mut out = Vec::new();
+    let mut start = 0;
+    while start < len {
+        let end = (start + FRAGMENT_BYTES).min(len);
+        out.push((1 | ((out.len() as u64) << 1) | seq_bits, start, end));
+        start += FRAGMENT_BYTES;
+    }
+    if len % FRAGMENT_BYTES == 0 {
+        out.push((1 | ((out.len() as u64) << 1) | seq_bits, len, len));
+    }
+    out
+}
 
 // ---------------------------------------------------------------- UBX ----
 
@@ -361,7 +403,11 @@ pub fn frame_of(class: u8, id: u8, payload: &[u8]) -> Vec<u8> {
 /// One complete UBX message, ready to write to the port.
 #[pyfunction]
 #[pyo3(signature = (msg_class, msg_id, payload = None))]
-fn ubx_frame<'py>(msg_class: &Bound<'py, PyAny>, msg_id: &Bound<'py, PyAny>, payload: Option<&Bound<'py, PyAny>>) -> PyResult<Bound<'py, PyBytes>> {
+fn ubx_frame<'py>(
+    msg_class: &Bound<'py, PyAny>,
+    msg_id: &Bound<'py, PyAny>,
+    payload: Option<&Bound<'py, PyAny>>,
+) -> PyResult<Bound<'py, PyBytes>> {
     let py = msg_class.py();
     let class = masked(msg_class, 0xFF)? as u8;
     let id = masked(msg_id, 0xFF)? as u8;
@@ -439,7 +485,11 @@ impl UbxParser {
 
     /// Add *chunk* and return every complete, checksum-valid message.
     fn feed<'py>(&mut self, py: Python<'py>, chunk: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyList>> {
-        let data = if chunk.is_truthy()? { bytes_of(chunk)? } else { Vec::new() };
+        let data = if chunk.is_truthy()? {
+            bytes_of(chunk)?
+        } else {
+            Vec::new()
+        };
         let out = PyList::empty(py);
         for (class, id, payload) in self.feed_bytes(&data) {
             out.append((class, id, PyBytes::new(py, &payload)))?;
@@ -506,11 +556,18 @@ fn port_keys(key: i64) -> [i64; 2] {
 }
 
 fn msgout<'py>(py: Python<'py>, keys: &[i64], rate: i64) -> Vec<(i64, Bound<'py, PyAny>)> {
-    keys.iter().flat_map(|&k| port_keys(k)).map(|k| (k, int_obj(py, rate))).collect()
+    keys.iter()
+        .flat_map(|&k| port_keys(k))
+        .map(|k| (k, int_obj(py, rate)))
+        .collect()
 }
 
 fn rtcm_key_set(msm7: bool) -> &'static [i64; 6] {
-    if msm7 { &RTCM_MSM7_KEYS } else { &RTCM_MSM4_KEYS }
+    if msm7 {
+        &RTCM_MSM7_KEYS
+    } else {
+        &RTCM_MSM4_KEYS
+    }
 }
 
 fn frames_list<'py>(py: Python<'py>, frames: Vec<Bound<'py, PyBytes>>) -> PyResult<Bound<'py, PyList>> {
@@ -527,7 +584,11 @@ fn stop_output_frames(py: Python<'_>, msm7: bool) -> PyResult<Bound<'_, PyList>>
 /// Configure survey-in: stop the old one, then start the new one.
 #[pyfunction]
 #[pyo3(signature = (duration_s, accuracy_m, msm7 = false))]
-fn survey_in_frames<'py>(duration_s: &Bound<'py, PyAny>, accuracy_m: &Bound<'py, PyAny>, msm7: bool) -> PyResult<Bound<'py, PyList>> {
+fn survey_in_frames<'py>(
+    duration_s: &Bound<'py, PyAny>,
+    accuracy_m: &Bound<'py, PyAny>,
+    msm7: bool,
+) -> PyResult<Bound<'py, PyList>> {
     let py = duration_s.py();
     let stop = valset(&pairs(py, &[(KEY_TMODE_MODE, int_obj(py, 0))])?, None)?;
     let mut items = vec![
@@ -537,7 +598,10 @@ fn survey_in_frames<'py>(duration_s: &Bound<'py, PyAny>, accuracy_m: &Bound<'py,
     ];
     items.extend(msgout(py, &[KEY_MSGOUT_NAV_SVIN_I2C], 5));
     let start = valset(&pairs(py, &items)?, None)?;
-    let mut frames: Vec<Bound<'py, PyBytes>> = stop_output_frames(py, msm7)?.iter().map(|f| f.downcast_into::<PyBytes>().expect("bytes")).collect();
+    let mut frames: Vec<Bound<'py, PyBytes>> = stop_output_frames(py, msm7)?
+        .iter()
+        .map(|f| f.downcast_into::<PyBytes>().expect("bytes"))
+        .collect();
     frames.push(stop);
     frames.push(start);
     frames_list(py, frames)
@@ -597,7 +661,10 @@ fn fixed_position_frames<'py>(
         )?,
         None,
     )?;
-    let mut frames: Vec<Bound<'py, PyBytes>> = stop_output_frames(py, msm7)?.iter().map(|f| f.downcast_into::<PyBytes>().expect("bytes")).collect();
+    let mut frames: Vec<Bound<'py, PyBytes>> = stop_output_frames(py, msm7)?
+        .iter()
+        .map(|f| f.downcast_into::<PyBytes>().expect("bytes"))
+        .collect();
     frames.push(apply);
     frames_list(py, frames)
 }
@@ -611,7 +678,11 @@ fn activate_output_frames(py: Python<'_>, msm7: bool, reduce_rate: bool) -> PyRe
         items.push((KEY_RATE_MEAS, int_obj(py, 1000)));
     }
     items.extend(msgout(py, &[KEY_MSGOUT_RTCM_1005_I2C], RTCM_1005_RATE));
-    let observations: Vec<i64> = rtcm_key_set(msm7).iter().copied().filter(|&k| k != KEY_MSGOUT_RTCM_1005_I2C).collect();
+    let observations: Vec<i64> = rtcm_key_set(msm7)
+        .iter()
+        .copied()
+        .filter(|&k| k != KEY_MSGOUT_RTCM_1005_I2C)
+        .collect();
     items.extend(msgout(py, &observations, 1));
     items.extend(msgout(py, &[KEY_MSGOUT_NAV_SVIN_I2C], 0));
     frames_list(py, vec![valset(&pairs(py, &items)?, None)?])
@@ -633,17 +704,35 @@ fn cfg_msg(class: u8, id: u8, rate: u8) -> Vec<u8> {
 
 /// CFG-MSG: set the output rate of one message on the current port.
 #[pyfunction]
-fn legacy_cfg_msg<'py>(msg_class: &Bound<'py, PyAny>, msg_id: &Bound<'py, PyAny>, rate: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyBytes>> {
+fn legacy_cfg_msg<'py>(
+    msg_class: &Bound<'py, PyAny>,
+    msg_id: &Bound<'py, PyAny>,
+    rate: &Bound<'py, PyAny>,
+) -> PyResult<Bound<'py, PyBytes>> {
     let py = msg_class.py();
-    Ok(PyBytes::new(py, &cfg_msg(masked(msg_class, 0xFF)? as u8, masked(msg_id, 0xFF)? as u8, masked(rate, 0xFF)? as u8)))
+    Ok(PyBytes::new(
+        py,
+        &cfg_msg(
+            masked(msg_class, 0xFF)? as u8,
+            masked(msg_id, 0xFF)? as u8,
+            masked(rate, 0xFF)? as u8,
+        ),
+    ))
 }
 
 fn legacy_set(msm7: bool) -> &'static [u8; 6] {
-    if msm7 { &LEGACY_RTCM_MSM7 } else { &LEGACY_RTCM_MSM4 }
+    if msm7 {
+        &LEGACY_RTCM_MSM7
+    } else {
+        &LEGACY_RTCM_MSM4
+    }
 }
 
 fn legacy_silence(py: Python<'_>, msm7: bool) -> Vec<Bound<'_, PyBytes>> {
-    legacy_set(msm7).iter().map(|&id| PyBytes::new(py, &cfg_msg(UBX_CLASS_RTCM3, id, 0))).collect()
+    legacy_set(msm7)
+        .iter()
+        .map(|&id| PyBytes::new(py, &cfg_msg(UBX_CLASS_RTCM3, id, 0)))
+        .collect()
 }
 
 /// Silence an M8P generation receiver's RTCM output.
@@ -692,7 +781,11 @@ fn tmode3_off(py: Python<'_>) -> PyResult<Bound<'_, PyBytes>> {
 /// CFG-TMODE3 survey-in, for an M8P generation receiver.
 #[pyfunction]
 #[pyo3(signature = (duration_s, accuracy_m, msm7 = false))]
-fn legacy_survey_in_frames<'py>(duration_s: &Bound<'py, PyAny>, accuracy_m: &Bound<'py, PyAny>, msm7: bool) -> PyResult<Bound<'py, PyList>> {
+fn legacy_survey_in_frames<'py>(
+    duration_s: &Bound<'py, PyAny>,
+    accuracy_m: &Bound<'py, PyAny>,
+    msm7: bool,
+) -> PyResult<Bound<'py, PyList>> {
     let py = duration_s.py();
     let mut frames = legacy_silence(py, msm7);
     frames.push(tmode3_off(py)?);
@@ -723,7 +816,19 @@ fn legacy_fixed_position_frames<'py>(
     let accuracy = accuracy_m.clone();
     let z = int_obj(py, 0);
     let acc = tenth_mm(&accuracy)?;
-    frames.push(tmode3(py, 2 | (1 << 8), &lat, &lon, &height, &lat_hp, &lon_hp, &height_hp, &acc, &z, &z)?);
+    frames.push(tmode3(
+        py,
+        2 | (1 << 8),
+        &lat,
+        &lon,
+        &height,
+        &lat_hp,
+        &lon_hp,
+        &height_hp,
+        &acc,
+        &z,
+        &z,
+    )?);
     frames_list(py, frames)
 }
 
@@ -754,7 +859,6 @@ fn legacy_disable_base_frames(py: Python<'_>, msm7: bool) -> PyResult<Bound<'_, 
 fn poll_frame<'py>(msg_class: &Bound<'py, PyAny>, msg_id: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyBytes>> {
     ubx_frame(msg_class, msg_id, None)
 }
-
 
 // --------------------------------------------------------- what comes back
 
@@ -787,7 +891,10 @@ fn is_py_space(c: char) -> bool {
 /// `raw.split(b"\0", 1)[0].decode("ascii", errors="replace").strip()`.
 fn ascii_text(raw: &[u8]) -> String {
     let end = raw.iter().position(|&b| b == 0).unwrap_or(raw.len());
-    let text: String = raw[..end].iter().map(|&b| if b < 0x80 { b as char } else { '\u{FFFD}' }).collect();
+    let text: String = raw[..end]
+        .iter()
+        .map(|&b| if b < 0x80 { b as char } else { '\u{FFFD}' })
+        .collect();
     text.trim_matches(is_py_space).to_string()
 }
 
@@ -817,7 +924,12 @@ pub fn mon_ver_dict<'py>(py: Python<'py>, payload: &[u8]) -> PyResult<Bound<'py,
             let after = line.split_once('=').map(|(_, r)| r).unwrap_or(line.as_str());
             let mut text = after.trim_matches(is_py_space).to_string();
             if text.is_empty() {
-                text = line.chars().skip(7).collect::<String>().trim_matches(is_py_space).to_string();
+                text = line
+                    .chars()
+                    .skip(7)
+                    .collect::<String>()
+                    .trim_matches(is_py_space)
+                    .to_string();
             }
             protocol = match float.call1((text,)) {
                 Ok(v) => v,
@@ -851,19 +963,34 @@ pub fn receiver_label(version: &Bound<'_, PyAny>) -> PyResult<String> {
     }
     let field = |name: &str| -> PyResult<String> {
         let v = version.call_method1("get", (name,))?;
-        let v = if v.is_truthy()? { v } else { pyo3::types::PyString::new(py, "").into_any() };
+        let v = if v.is_truthy()? {
+            v
+        } else {
+            pyo3::types::PyString::new(py, "").into_any()
+        };
         v.str()?.call_method0("strip")?.extract()
     };
     let model = field("model")?;
     let software = field("software")?;
     let protocol = version.call_method1("get", ("protocol",))?;
-    let protocol = if protocol.is_truthy()? { protocol } else { PyFloat::new(py, 0.0).into_any() };
-    let mut parts = vec![if model.is_empty() { "u-blox receiver".to_string() } else { format!("u-blox {model}") }];
+    let protocol = if protocol.is_truthy()? {
+        protocol
+    } else {
+        PyFloat::new(py, 0.0).into_any()
+    };
+    let mut parts = vec![if model.is_empty() {
+        "u-blox receiver".to_string()
+    } else {
+        format!("u-blox {model}")
+    }];
     if !software.is_empty() {
         parts.push(software);
     }
     if protocol.is_truthy()? {
-        let text: String = py.import("builtins")?.call_method1("format", (&protocol, "g"))?.extract()?;
+        let text: String = py
+            .import("builtins")?
+            .call_method1("format", (&protocol, "g"))?
+            .extract()?;
         parts.push(format!("protocol {text}"));
     }
     Ok(parts.join(" \u{b7} "))
@@ -877,10 +1004,18 @@ pub fn supports_valset(version: &Bound<'_, PyAny>) -> PyResult<bool> {
         return Ok(false);
     }
     let protocol = version.call_method1("get", ("protocol",))?;
-    let protocol = if protocol.is_truthy()? { protocol } else { PyFloat::new(py, 0.0).into_any() };
+    let protocol = if protocol.is_truthy()? {
+        protocol
+    } else {
+        PyFloat::new(py, 0.0).into_any()
+    };
     match py_float(&protocol) {
         Ok(v) => Ok(v >= 27.0),
-        Err(err) if err.is_instance_of::<pyo3::exceptions::PyTypeError>(py) || err.is_instance_of::<PyValueError>(py) => Ok(false),
+        Err(err)
+            if err.is_instance_of::<pyo3::exceptions::PyTypeError>(py) || err.is_instance_of::<PyValueError>(py) =>
+        {
+            Ok(false)
+        }
         Err(err) => Err(err),
     }
 }
@@ -913,4 +1048,112 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(receiver_label, m)?)?;
     m.add_function(wrap_pyfunction!(supports_valset, m)?)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn frame(number: u16, body: &[u8]) -> Vec<u8> {
+        let mut payload = vec![(number >> 4) as u8, ((number & 0x0F) << 4) as u8];
+        payload.extend_from_slice(body);
+        let mut out = vec![0xD3, (payload.len() >> 8) as u8 & 0x03, payload.len() as u8];
+        out.extend(payload);
+        let crc = crc24q_of(&out);
+        out.extend_from_slice(&[(crc >> 16) as u8, (crc >> 8) as u8, crc as u8]);
+        out
+    }
+
+    #[test]
+    fn crc24q_matches_the_published_check_value() {
+        assert_eq!(crc24q_of(b"123456789"), 0xCDE703);
+        assert_eq!(crc24q_of(b""), 0);
+    }
+
+    #[test]
+    fn the_message_number_is_the_first_twelve_bits() {
+        assert_eq!(message_number_of(&frame(1005, &[0; 4])), 1005);
+        assert_eq!(message_number_of(&frame(1230, &[0; 4])), 1230);
+        assert_eq!(message_number_of(&[0xD3, 0, 1]), 0);
+    }
+
+    #[test]
+    fn the_framer_finds_a_frame_however_the_stream_is_cut() {
+        let wire: Vec<u8> = [frame(1005, &[1; 19]), frame(1074, &[2; 300]), frame(1230, &[3; 5])].concat();
+        for chunk in [1usize, 2, 3, 7, 64, 500, wire.len()] {
+            let mut framer = RtcmFramer::new_framer();
+            let mut got = Vec::new();
+            for piece in wire.chunks(chunk) {
+                got.extend(framer.feed_bytes(piece));
+            }
+            assert_eq!(got.len(), 3, "chunk size {chunk}");
+            assert_eq!(framer.frames, 3);
+            assert_eq!(framer.crc_errors, 0);
+            assert_eq!(got.concat(), wire);
+        }
+    }
+
+    #[test]
+    fn the_framer_resynchronises_past_noise_and_a_corrupt_frame() {
+        let good = frame(1074, &[9; 40]);
+        let mut bad = frame(1005, &[7; 19]);
+        let last = bad.len() - 1;
+        bad[last] ^= 0xFF;
+        let wire: Vec<u8> = [b"junk, not a frame".to_vec(), bad, good.clone()].concat();
+        let mut framer = RtcmFramer::new_framer();
+        let got = framer.feed_bytes(&wire);
+        assert_eq!(got, vec![good]);
+        assert!(framer.crc_errors >= 1);
+        assert!(framer.discarded > 0);
+    }
+
+    #[test]
+    fn the_framer_never_holds_more_than_two_frames() {
+        let mut framer = RtcmFramer::new_framer();
+        let noise = vec![0xD3u8; 20_000];
+        framer.feed_bytes(&noise);
+        assert!(framer.buf.len() <= MAX_BUFFER);
+    }
+
+    #[test]
+    fn a_ubx_message_has_its_header_length_and_fletcher_checksum() {
+        assert_eq!(
+            poll_bytes_for_test(UBX_CLASS_MON, UBX_ID_MON_VER),
+            [0xB5, 0x62, 0x0A, 0x04, 0x00, 0x00, 0x0E, 0x34]
+        );
+        assert_eq!(checksum(&[0x0A, 0x04, 0x00, 0x00]), (0x0E, 0x34));
+    }
+
+    fn poll_bytes_for_test(class: u8, id: u8) -> Vec<u8> {
+        frame_of(class, id, &[])
+    }
+
+    #[test]
+    fn the_ubx_parser_reads_split_messages_and_skips_a_bad_checksum() {
+        let good = frame_of(UBX_CLASS_NAV, UBX_ID_NAV_SVIN, &[1, 2, 3]);
+        let mut bad = frame_of(UBX_CLASS_CFG, 0x8A, &[9; 4]);
+        let last = bad.len() - 1;
+        bad[last] ^= 0x01;
+        let wire: Vec<u8> = [vec![0x00, 0xB5], bad, good].concat();
+        let mut parser = UbxParser::new_parser();
+        let mut got = Vec::new();
+        for piece in wire.chunks(3) {
+            got.extend(parser.feed_bytes(piece));
+        }
+        assert_eq!(got, vec![(UBX_CLASS_NAV, UBX_ID_NAV_SVIN, vec![1, 2, 3])]);
+    }
+
+    #[test]
+    fn fragments_follow_the_four_piece_rule() {
+        assert!(fragment_spans(0, 0).is_empty());
+        assert_eq!(fragment_spans(179, 3), vec![(3 << 3, 0, 179)]);
+        assert_eq!(fragment_spans(200, 7), vec![(57, 0, 180), (59, 180, 200)]);
+        assert_eq!(
+            fragment_spans(360, 31),
+            vec![(249, 0, 180), (251, 180, 360), (253, 360, 360)]
+        );
+        assert_eq!(fragment_spans(719, 0).len(), 4);
+        assert!(fragment_spans(720, 0).is_empty());
+        assert_eq!(fragment_spans(10, 33)[0].0, 8);
+    }
 }

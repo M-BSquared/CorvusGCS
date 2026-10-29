@@ -62,9 +62,9 @@ impl Record {
         self.len = 0;
     }
 
-    fn add(&mut self, py: Python<'_>, c: char) -> PyResult<()> {
+    fn add(&mut self, c: char) -> Result<(), String> {
         if self.len >= FIELD_LIMIT {
-            return Err(csv_error(py, format!("field larger than field limit ({FIELD_LIMIT})")));
+            return Err(format!("field larger than field limit ({FIELD_LIMIT})"));
         }
         self.field.push(c);
         self.len += 1;
@@ -73,7 +73,11 @@ impl Record {
 }
 
 fn csv_error(py: Python<'_>, text: String) -> PyErr {
-    match py.import("csv").and_then(|m| m.getattr("Error")).and_then(|e| e.call1((text,))) {
+    match py
+        .import("csv")
+        .and_then(|m| m.getattr("Error"))
+        .and_then(|e| e.call1((text,)))
+    {
         Ok(err) => PyErr::from_value(err),
         Err(err) => err,
     }
@@ -82,8 +86,18 @@ fn csv_error(py: Python<'_>, text: String) -> PyErr {
 impl Rows {
     /// One row, or None at the end of the file: `next(csv.reader(...))`.
     fn next_row(&mut self, py: Python<'_>) -> PyResult<Option<Vec<String>>> {
+        self.next_row_text().map_err(|text| csv_error(py, text))
+    }
+
+    /// The same, with the error as text.
+    fn next_row_text(&mut self) -> Result<Option<Vec<String>>, String> {
         let delimiter = self.delimiter;
-        let mut r = Record { state: State::StartRecord, fields: Vec::new(), field: String::new(), len: 0 };
+        let mut r = Record {
+            state: State::StartRecord,
+            fields: Vec::new(),
+            field: String::new(),
+            len: 0,
+        };
         loop {
             if self.pos >= self.text.len() {
                 if r.len != 0 || r.state == State::InQuoted {
@@ -97,18 +111,22 @@ impl Rows {
             let line = &rest[..end];
             self.pos += end;
             for c in line.chars() {
-                Self::process(py, &mut r, Ch::Char(c), delimiter)?;
+                Self::process(&mut r, Ch::Char(c), delimiter)?;
             }
-            Self::process(py, &mut r, Ch::End, delimiter)?;
+            Self::process(&mut r, Ch::End, delimiter)?;
             if r.state == State::StartRecord {
                 return Ok(Some(r.fields));
             }
         }
     }
 
-    fn process(py: Python<'_>, r: &mut Record, c: Ch, delimiter: char) -> PyResult<()> {
+    fn process(r: &mut Record, c: Ch, delimiter: char) -> Result<(), String> {
         let newline = matches!(c, Ch::Char('\n') | Ch::Char('\r'));
-        let after_line = if matches!(c, Ch::End) { State::StartRecord } else { State::EatCrnl };
+        let after_line = if matches!(c, Ch::End) {
+            State::StartRecord
+        } else {
+            State::EatCrnl
+        };
         match r.state {
             State::StartRecord => {
                 if matches!(c, Ch::End) {
@@ -119,9 +137,9 @@ impl Rows {
                     return Ok(());
                 }
                 r.state = State::StartField;
-                Self::start_field(py, r, c, delimiter, newline, after_line)
+                Self::start_field(r, c, delimiter, newline, after_line)
             }
-            State::StartField => Self::start_field(py, r, c, delimiter, newline, after_line),
+            State::StartField => Self::start_field(r, c, delimiter, newline, after_line),
             State::InField => {
                 if newline || matches!(c, Ch::End) {
                     r.save();
@@ -131,7 +149,7 @@ impl Rows {
                         r.save();
                         r.state = State::StartField;
                     } else {
-                        r.add(py, ch)?;
+                        r.add(ch)?;
                     }
                 }
                 Ok(())
@@ -141,7 +159,7 @@ impl Rows {
                     if ch == '"' {
                         r.state = State::QuoteInQuoted;
                     } else {
-                        r.add(py, ch)?;
+                        r.add(ch)?;
                     }
                 }
                 Ok(())
@@ -149,7 +167,7 @@ impl Rows {
             State::QuoteInQuoted => {
                 match c {
                     Ch::Char('"') => {
-                        r.add(py, '"')?;
+                        r.add('"')?;
                         r.state = State::InQuoted;
                     }
                     Ch::Char(ch) if ch == delimiter => {
@@ -161,7 +179,7 @@ impl Rows {
                         r.state = after_line;
                     }
                     Ch::Char(ch) => {
-                        r.add(py, ch)?;
+                        r.add(ch)?;
                         r.state = State::InField;
                     }
                     Ch::End => {}
@@ -175,16 +193,16 @@ impl Rows {
                     r.state = State::StartRecord;
                     Ok(())
                 } else {
-                    Err(csv_error(
-                        py,
-                        "new-line character seen in unquoted field - do you need to open the file with newline=''?".into(),
-                    ))
+                    Err(
+                        "new-line character seen in unquoted field - do you need to open the file with newline=''?"
+                            .into(),
+                    )
                 }
             }
         }
     }
 
-    fn start_field(py: Python<'_>, r: &mut Record, c: Ch, delimiter: char, newline: bool, after_line: State) -> PyResult<()> {
+    fn start_field(r: &mut Record, c: Ch, delimiter: char, newline: bool, after_line: State) -> Result<(), String> {
         if newline || matches!(c, Ch::End) {
             r.save();
             r.state = after_line;
@@ -194,7 +212,7 @@ impl Rows {
             } else if ch == delimiter {
                 r.save();
             } else {
-                r.add(py, ch)?;
+                r.add(ch)?;
                 r.state = State::InField;
             }
         }
@@ -269,12 +287,20 @@ impl CsvMessage {
             if !fmt.timestamp_expression.bind(py).is_none() {
                 return Err(not_evaluated("timestamp expressions"));
             }
-            let first = line.get_item(0).map_err(|_| PyIndexError::new_err("list index out of range"))?;
+            let first = line
+                .get_item(0)
+                .map_err(|_| PyIndexError::new_err("list index out of range"))?;
             return Ok(py.get_type::<PyInt>().call1((first,))?.unbind());
         }
-        let index = fmt.field_offset.bind(py).get_item(field)?.ok_or_else(|| PyKeyError::new_err(field.to_string()))?;
+        let index = fmt
+            .field_offset
+            .bind(py)
+            .get_item(field)?
+            .ok_or_else(|| PyKeyError::new_err(field.to_string()))?;
         let index: isize = index.extract()?;
-        line.get_item(index as usize).map(|v| v.unbind()).map_err(|_| PyIndexError::new_err("list index out of range"))
+        line.get_item(index as usize)
+            .map(|v| v.unbind())
+            .map_err(|_| PyIndexError::new_err("list index out of range"))
     }
 
     fn __traverse__(&self, visit: PyVisit<'_>) -> Result<(), PyTraverseError> {
@@ -333,7 +359,11 @@ impl CsvReader {
             (Some(c), None) => c,
             _ => return Err(PyTypeError::new_err("\"delimiter\" must be a 1-character string")),
         };
-        self.rows = Rows { text, pos: 0, delimiter };
+        self.rows = Rows {
+            text,
+            pos: 0,
+            delimiter,
+        };
         let headings = self.rows.next_row(py)?.ok_or_else(|| PyStopIteration::new_err(()))?;
         let list = PyList::new(py, &headings)?;
         let offsets = PyDict::new(py);
@@ -366,7 +396,14 @@ impl CsvReader {
             }
         }
         let fmt = self.fmt.as_ref().expect("format is read on open").clone_ref(py);
-        let message = Py::new(py, CsvMessage { message_type: self.message_type.clone_ref(py), fmt, line: line.unbind() })?;
+        let message = Py::new(
+            py,
+            CsvMessage {
+                message_type: self.message_type.clone_ref(py),
+                fmt,
+                line: line.unbind(),
+            },
+        )?;
         self.messages.bind(py).set_item(self.message_type.bind(py), &message)?;
         Ok(Some(message))
     }
@@ -433,7 +470,11 @@ impl CsvReader {
         self.rewind_inner(py)?;
         let mut count = 0;
         loop {
-            let more = if count == 0 { self.parse_next(py)?.is_some() } else { self.rows.next_row(py)?.is_some() };
+            let more = if count == 0 {
+                self.parse_next(py)?.is_some()
+            } else {
+                self.rows.next_row(py)?.is_some()
+            };
             if !more {
                 self.rewind_inner(py)?;
                 return Ok(count);
@@ -498,7 +539,9 @@ pub fn open(
         device = device.replace(":separator=:", "");
     }
     let components: Vec<&str> = device.split(':').collect();
-    let filename = components.get(1).ok_or_else(|| PyIndexError::new_err("list index out of range"))?;
+    let filename = components
+        .get(1)
+        .ok_or_else(|| PyIndexError::new_err("list index out of range"))?;
     for nv in &components[2..] {
         let parts: Vec<&str> = nv.split('=').collect();
         match parts.len() {
@@ -522,7 +565,12 @@ pub fn open(
             }
         }
     }
-    if let Some(env) = py.import("os")?.getattr("environ")?.call_method1("get", ("CSV_SEPARATOR",))?.extract::<Option<String>>()? {
+    if let Some(env) = py
+        .import("os")?
+        .getattr("environ")?
+        .call_method1("get", ("CSV_SEPARATOR",))?
+        .extract::<Option<String>>()?
+    {
         separator = env;
     }
     let messages = PyDict::new(py);
@@ -542,7 +590,11 @@ pub fn open(
             messages: messages.clone().unbind(),
             _flightmodes: PyList::empty(py).unbind(),
             fmt: None,
-            rows: Rows { text: String::new(), pos: 0, delimiter: ';' },
+            rows: Rows {
+                text: String::new(),
+                pos: 0,
+                delimiter: ';',
+            },
         },
     )?;
     messages.set_item("MAV", &reader)?;
@@ -553,4 +605,85 @@ pub fn open(
         r.rewind_inner(py)?;
     }
     Ok(reader)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn rows(text: &str, delimiter: char) -> Result<Vec<Vec<String>>, String> {
+        let mut reader = Rows {
+            text: text.to_string(),
+            pos: 0,
+            delimiter,
+        };
+        let mut out = Vec::new();
+        while let Some(row) = reader.next_row_text()? {
+            out.push(row);
+        }
+        Ok(out)
+    }
+
+    fn texts(rows: Vec<Vec<&str>>) -> Vec<Vec<String>> {
+        rows.into_iter()
+            .map(|r| r.into_iter().map(String::from).collect())
+            .collect()
+    }
+
+    #[test]
+    fn plain_rows_split_on_the_delimiter() {
+        assert_eq!(
+            rows("a;b;c\n1;2;3\n", ';').unwrap(),
+            texts(vec![vec!["a", "b", "c"], vec!["1", "2", "3"]])
+        );
+        assert_eq!(rows("a,b\n", ',').unwrap(), texts(vec![vec!["a", "b"]]));
+    }
+
+    #[test]
+    fn the_last_row_needs_no_newline_and_keeps_a_trailing_empty_field() {
+        assert_eq!(rows("a;b", ';').unwrap(), texts(vec![vec!["a", "b"]]));
+        assert_eq!(rows("a;b;", ';').unwrap(), texts(vec![vec!["a", "b", ""]]));
+        assert_eq!(rows("a;b;\n", ';').unwrap(), texts(vec![vec!["a", "b", ""]]));
+    }
+
+    #[test]
+    fn a_blank_line_is_an_empty_row() {
+        assert_eq!(
+            rows("a\n\nb\n", ';').unwrap(),
+            texts(vec![vec!["a"], vec![], vec!["b"]])
+        );
+        assert!(rows("", ';').unwrap().is_empty());
+    }
+
+    #[test]
+    fn quotes_hold_delimiters_newlines_and_doubled_quotes() {
+        assert_eq!(rows("\"a;b\";c\n", ';').unwrap(), texts(vec![vec!["a;b", "c"]]));
+        assert_eq!(
+            rows("\"line1\nline2\";x\n", ';').unwrap(),
+            texts(vec![vec!["line1\nline2", "x"]])
+        );
+        assert_eq!(
+            rows("\"say \"\"hi\"\"\"\n", ';').unwrap(),
+            texts(vec![vec!["say \"hi\""]])
+        );
+        assert_eq!(rows("ab\"c;d\n", ';').unwrap(), texts(vec![vec!["ab\"c", "d"]]));
+        assert_eq!(rows("\"a\"b;c\n", ';').unwrap(), texts(vec![vec!["ab", "c"]]));
+    }
+
+    #[test]
+    fn a_quote_left_open_at_the_end_closes_the_field() {
+        assert_eq!(
+            rows("a;\"never closed", ';').unwrap(),
+            texts(vec![vec!["a", "never closed"]])
+        );
+        assert_eq!(rows("\"", ';').unwrap(), texts(vec![vec![""]]));
+    }
+
+    #[test]
+    fn a_field_over_the_limit_is_refused() {
+        let long = format!("h\n{}\n", "x".repeat(FIELD_LIMIT + 1));
+        assert!(rows(&long, ';').unwrap_err().contains("field larger than field limit"));
+        let fits = format!("h\n{}\n", "x".repeat(FIELD_LIMIT));
+        assert_eq!(rows(&fits, ';').unwrap().len(), 2);
+    }
 }

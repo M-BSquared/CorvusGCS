@@ -51,7 +51,9 @@ const fn crc32_table() -> [u32; 256] {
 static CRC32_TABLE: [u32; 256] = crc32_table();
 
 fn fold(state: u32, data: &[u8]) -> u32 {
-    data.iter().fold(state, |crc, &b| CRC32_TABLE[((crc ^ b as u32) & 0xFF) as usize] ^ (crc >> 8))
+    data.iter().fold(state, |crc, &b| {
+        CRC32_TABLE[((crc ^ b as u32) & 0xFF) as usize] ^ (crc >> 8)
+    })
 }
 
 /// The bootloader's CRC-32: the reflected table, started at *state*, no
@@ -62,7 +64,12 @@ fn bl_crc32(data: &Bound<'_, PyAny>, state: &Bound<'_, PyTuple>) -> PyResult<u32
     let masked: u32 = match state.len() {
         0 => 0,
         1 => state.get_item(0)?.bitand(0xFFFF_FFFFu32)?.extract()?,
-        n => return Err(pyo3::exceptions::PyTypeError::new_err(format!("bl_crc32() takes at most 2 arguments ({} given)", n + 1))),
+        n => {
+            return Err(pyo3::exceptions::PyTypeError::new_err(format!(
+                "bl_crc32() takes at most 2 arguments ({} given)",
+                n + 1
+            )))
+        }
     };
     let buffer: pyo3::buffer::PyBuffer<u8> = pyo3::buffer::PyBuffer::get(data).map_err(|_| {
         pyo3::exceptions::PyTypeError::new_err(format!(
@@ -135,12 +142,24 @@ impl UploaderEngine {
         Ok(())
     }
 
-    fn set(&self, up: &Bound<'_, PyAny>, state: &str, percent: &Bound<'_, PyAny>, message: Bound<'_, PyAny>) -> PyResult<()> {
+    fn set(
+        &self,
+        up: &Bound<'_, PyAny>,
+        state: &str,
+        percent: &Bound<'_, PyAny>,
+        message: Bound<'_, PyAny>,
+    ) -> PyResult<()> {
         up.call_method1("_set", (state, percent, message))?;
         Ok(())
     }
 
-    fn timed<'py>(&self, up: &Bound<'py, PyAny>, name: &str, args: impl pyo3::call::PyCallArgs<'py>, timeout: f64) -> PyResult<Bound<'py, PyAny>> {
+    fn timed<'py>(
+        &self,
+        up: &Bound<'py, PyAny>,
+        name: &str,
+        args: impl pyo3::call::PyCallArgs<'py>,
+        timeout: f64,
+    ) -> PyResult<Bound<'py, PyAny>> {
         let py = up.py();
         let kwargs = kw(py, &[("timeout_s", timeout.into_pyobject(py)?.into_any().unbind())])?;
         up.getattr(name)?.call(args, Some(&kwargs))
@@ -157,7 +176,12 @@ impl UploaderEngine {
 
     /// Read exactly *n* bytes within *timeout_s*, honouring cancel; None on
     /// timeout or cancel.
-    fn recv_exact<'py>(&self, up: &Bound<'py, PyAny>, n: usize, timeout_s: f64) -> PyResult<Option<Bound<'py, PyBytes>>> {
+    fn recv_exact<'py>(
+        &self,
+        up: &Bound<'py, PyAny>,
+        n: usize,
+        timeout_s: f64,
+    ) -> PyResult<Option<Bound<'py, PyBytes>>> {
         let py = up.py();
         let deadline = self.now(py)? + timeout_s;
         let mut buf: Vec<u8> = Vec::new();
@@ -177,7 +201,11 @@ impl UploaderEngine {
                 buf.extend(bytes_of(&chunk)?);
             }
         }
-        Ok(if buf.len() == n { Some(PyBytes::new(py, &buf)) } else { None })
+        Ok(if buf.len() == n {
+            Some(PyBytes::new(py, &buf))
+        } else {
+            None
+        })
     }
 
     /// Read a 2-byte ``INSYNC <status>`` reply; True on OK.
@@ -192,7 +220,8 @@ impl UploaderEngine {
             return Ok(false);
         }
         if b[1] == BAD_SILICON {
-            self.logger(py)?.call_method1("error", ("bootloader reports bad silicon (F4 < Rev 3)",))?;
+            self.logger(py)?
+                .call_method1("error", ("bootloader reports bad silicon (F4 < Rev 3)",))?;
             return Ok(false);
         }
         Ok(b[1] == OK)
@@ -212,7 +241,9 @@ impl UploaderEngine {
         let env = self.env(py);
         let serial = env.getattr("_serial")?;
         if serial.is_none() {
-            return Err(PyRuntimeError::new_err("pyserial is not available; cannot open the bootloader device"));
+            return Err(PyRuntimeError::new_err(
+                "pyserial is not available; cannot open the bootloader device",
+            ));
         }
         let deadline = self.now(py)? + up.getattr("_connect_timeout_s")?.extract::<f64>()?;
         while self.now(py)? < deadline && !self.cancelled(up)? {
@@ -225,7 +256,13 @@ impl UploaderEngine {
                         py,
                         &[
                             ("baudrate", up.getattr("_baud")?.unbind()),
-                            ("timeout", self.constant(py, "READ_TIMEOUT_S")?.into_pyobject(py)?.into_any().unbind()),
+                            (
+                                "timeout",
+                                self.constant(py, "READ_TIMEOUT_S")?
+                                    .into_pyobject(py)?
+                                    .into_any()
+                                    .unbind(),
+                            ),
                         ],
                     )?;
                     match serial.call_method("Serial", (device,), Some(&kwargs)) {
@@ -269,11 +306,16 @@ impl UploaderEngine {
     fn get_device_info<'py>(&self, up: &Bound<'py, PyAny>, info_id: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
         let py = up.py();
         let attempt = (|| -> PyResult<Option<Bound<'py, PyAny>>> {
-            let id: u8 = info_id.extract().map_err(|_| pyo3::exceptions::PyValueError::new_err("bytes must be in range(0, 256)"))?;
+            let id: u8 = info_id
+                .extract()
+                .map_err(|_| pyo3::exceptions::PyValueError::new_err("bytes must be in range(0, 256)"))?;
             self.send(up, &[GET_DEVICE, id, EOC])?;
             let raw = self.timed(up, "_recv_exact", (4,), self.constant(py, "INFO_TIMEOUT_S")?)?;
             if !raw.is_none() && self.timed(up, "_expect_insync_ok", (), 1.0)?.is_truthy()? {
-                return Ok(Some(py.get_type::<pyo3::types::PyInt>().call_method1("from_bytes", (raw, "little"))?));
+                return Ok(Some(
+                    py.get_type::<pyo3::types::PyInt>()
+                        .call_method1("from_bytes", (raw, "little"))?,
+                ));
             }
             Ok(None)
         })();
@@ -294,7 +336,10 @@ impl UploaderEngine {
         let logger = self.logger(py)?;
         let board_id = up.call_method1("_get_device_info", (INFO_BOARD_ID,))?;
         if board_id.is_none() {
-            logger.call_method1("warning", ("bootloader did not report a board id; board check skipped",))?;
+            logger.call_method1(
+                "warning",
+                ("bootloader did not report a board id; board check skipped",),
+            )?;
         } else {
             up.setattr("_board_id", &board_id)?;
             logger.call_method1("info", ("bootloader board id: %d", &board_id))?;
@@ -333,13 +378,27 @@ impl UploaderEngine {
             return Ok(none);
         }
         let logger = self.logger(py)?;
-        if self.env(py).call_method1("board_ids_compatible", (&board, &wanted))?.is_truthy()? {
+        if self
+            .env(py)
+            .call_method1("board_ids_compatible", (&board, &wanted))?
+            .is_truthy()?
+        {
             if board.ne(&wanted)? {
-                logger.call_method1("info", ("board id %d accepts firmware for board id %d", &board, &wanted))?;
+                logger.call_method1(
+                    "info",
+                    ("board id %d accepts firmware for board id %d", &board, &wanted),
+                )?;
             }
             return Ok(none);
         }
-        logger.call_method1("error", ("firmware board id %d does not match bootloader board id %d", &wanted, &board))?;
+        logger.call_method1(
+            "error",
+            (
+                "firmware board id %d does not match bootloader board id %d",
+                &wanted,
+                &board,
+            ),
+        )?;
         fmt(
             py,
             "This firmware is for board id {}, but the connected bootloader reports board id {}. Nothing was erased.",
@@ -355,7 +414,8 @@ impl UploaderEngine {
             Err(err) => return Err(err),
             Ok(()) => {}
         }
-        self.timed(up, "_expect_insync_ok", (), self.constant(py, "ERASE_TIMEOUT_S")?)?.is_truthy()
+        self.timed(up, "_expect_insync_ok", (), self.constant(py, "ERASE_TIMEOUT_S")?)?
+            .is_truthy()
     }
 
     /// Stream the image in PROG_MULTI blocks, checking cancel between each.
@@ -367,7 +427,12 @@ impl UploaderEngine {
         let (mut offset, mut last_pct) = (0usize, -1i64);
         while offset < total {
             if self.cancelled(up)? {
-                self.set(up, "cancelled", &up.getattr("_percent")?, PyString::new(py, "Flash cancelled").into_any())?;
+                self.set(
+                    up,
+                    "cancelled",
+                    &up.getattr("_percent")?,
+                    PyString::new(py, "Flash cancelled").into_any(),
+                )?;
                 return Ok(false);
             }
             let block = &data[offset..(offset + block_max).min(total)];
@@ -385,7 +450,12 @@ impl UploaderEngine {
             }
             if !self.timed(up, "_expect_insync_ok", (), 5.0)?.is_truthy()? {
                 if self.cancelled(up)? {
-                    self.set(up, "cancelled", &up.getattr("_percent")?, PyString::new(py, "Flash cancelled").into_any())?;
+                    self.set(
+                        up,
+                        "cancelled",
+                        &up.getattr("_percent")?,
+                        PyString::new(py, "Flash cancelled").into_any(),
+                    )?;
                 } else {
                     self.set(up, "failed", &up.getattr("_percent")?, failed(offset)?)?;
                 }
@@ -395,7 +465,12 @@ impl UploaderEngine {
             let pct = (100.0 * offset as f64 / total as f64).round_ties_even() as i64;
             if pct != last_pct {
                 last_pct = pct;
-                self.set(up, "programming", &pct.into_pyobject(py)?.into_any(), fmt(py, "Programming\u{2026} {}%", (pct,))?)?;
+                self.set(
+                    up,
+                    "programming",
+                    &pct.into_pyobject(py)?.into_any(),
+                    fmt(py, "Programming\u{2026} {}%", (pct,))?,
+                )?;
             }
         }
         Ok(true)
@@ -443,12 +518,21 @@ impl UploaderEngine {
             logger.call_method1("warning", ("board fw_maxsize unknown; skipping CRC verify",))?;
             return Ok(none);
         }
-        let reported = py.get_type::<pyo3::types::PyInt>().call_method1("from_bytes", (crc, "little"))?;
+        let reported = py
+            .get_type::<pyo3::types::PyInt>()
+            .call_method1("from_bytes", (crc, "little"))?;
         let expected = up.call_method1("_compute_expected_crc", (image,))?;
         if reported.eq(&expected)? {
             return Ok(true.into_pyobject(py)?.to_owned().into_any());
         }
-        logger.call_method1("error", ("firmware CRC mismatch: got 0x%08x expected 0x%08x", &reported, &expected))?;
+        logger.call_method1(
+            "error",
+            (
+                "firmware CRC mismatch: got 0x%08x expected 0x%08x",
+                &reported,
+                &expected,
+            ),
+        )?;
         Ok(false.into_pyobject(py)?.to_owned().into_any())
     }
 
@@ -479,10 +563,20 @@ impl UploaderEngine {
         if cancelled(self)? {
             return Ok(false);
         }
-        self.set(up, "connecting", &zero, fmt(py, "Waiting for bootloader on {}\u{2026}", (device,))?)?;
+        self.set(
+            up,
+            "connecting",
+            &zero,
+            fmt(py, "Waiting for bootloader on {}\u{2026}", (device,))?,
+        )?;
         if !up.call_method1("_open_device", (device,))?.is_truthy()? {
             if !cancelled(self)? {
-                self.set(up, "failed", &zero, fmt(py, "bootloader device not available: {}", (device,))?)?;
+                self.set(
+                    up,
+                    "failed",
+                    &zero,
+                    fmt(py, "bootloader device not available: {}", (device,))?,
+                )?;
             }
             return Ok(false);
         }
@@ -543,7 +637,12 @@ impl UploaderEngine {
         let hundred = 100i64.into_pyobject(py)?.into_any();
         self.set(up, "booting", &hundred, text("Booting new firmware\u{2026}"))?;
         if !up.call_method0("_reboot")?.is_truthy()? {
-            self.set(up, "failed", &up.getattr("_percent")?, text("bootloader reboot command failed"))?;
+            self.set(
+                up,
+                "failed",
+                &up.getattr("_percent")?,
+                text("bootloader reboot command failed"),
+            )?;
             return Ok(false);
         }
         self.set(up, "done", &hundred, text("Firmware flashed successfully"))?;
@@ -596,7 +695,9 @@ impl FlashEngine {
     }
 
     fn busy(&self, svc: &Bound<'_, PyAny>) -> PyResult<bool> {
-        self.env(svc.py()).getattr("BUSY_STATES")?.contains(svc.getattr("_state")?)
+        self.env(svc.py())
+            .getattr("BUSY_STATES")?
+            .contains(svc.getattr("_state")?)
     }
 
     fn log_error(&self, py: Python<'_>, text: &str, err: &PyErr) -> PyResult<()> {
@@ -611,7 +712,13 @@ impl FlashEngine {
         Ok(())
     }
 
-    fn set(&self, svc: &Bound<'_, PyAny>, state: &str, percent: impl Into<PercentArg>, message: Bound<'_, PyAny>) -> PyResult<()> {
+    fn set(
+        &self,
+        svc: &Bound<'_, PyAny>,
+        state: &str,
+        percent: impl Into<PercentArg>,
+        message: Bound<'_, PyAny>,
+    ) -> PyResult<()> {
         let py = svc.py();
         let percent = match percent.into() {
             PercentArg::Number(n) => n.into_pyobject(py)?.into_any().unbind(),
@@ -623,7 +730,14 @@ impl FlashEngine {
 
     fn notify(&self, svc: &Bound<'_, PyAny>, state: &str, message: &Bound<'_, PyAny>) -> PyResult<()> {
         let py = svc.py();
-        let entry = kw(py, &[("state", state.into_pyobject(py)?.into_any().unbind()), ("percent", 0i64.into_pyobject(py)?.into_any().unbind()), ("message", message.clone().unbind())])?;
+        let entry = kw(
+            py,
+            &[
+                ("state", state.into_pyobject(py)?.into_any().unbind()),
+                ("percent", 0i64.into_pyobject(py)?.into_any().unbind()),
+                ("message", message.clone().unbind()),
+            ],
+        )?;
         svc.call_method1("_notify_listeners", (entry,))?;
         Ok(())
     }
@@ -632,7 +746,9 @@ impl FlashEngine {
         let py = svc.py();
         let transport = svc.getattr("mavlink")?.call_method0("transport")?;
         let kwargs = kw(py, &[("transport", transport.unbind())])?;
-        self.env(py).getattr("NON_USB_GATE_MESSAGE")?.call_method("format", (), Some(&kwargs))
+        self.env(py)
+            .getattr("NON_USB_GATE_MESSAGE")?
+            .call_method("format", (), Some(&kwargs))
     }
 }
 
@@ -664,16 +780,27 @@ impl FlashEngine {
             }
             Err(err) => return Err(err),
         };
-        let rows = if rows.is_truthy()? { rows } else { PyList::empty(py).into_any() };
+        let rows = if rows.is_truthy()? {
+            rows
+        } else {
+            PyList::empty(py).into_any()
+        };
         let is_bootloader = self.env(py).getattr("is_bootloader_port")?;
         for row in rows.try_iter()? {
             let row = row?;
             let field = |name: &str| -> PyResult<Bound<'py, PyAny>> {
                 let v = row.call_method1("get", (name, ""))?;
-                let v = if v.is_truthy()? { v } else { PyString::new(py, "").into_any() };
+                let v = if v.is_truthy()? {
+                    v
+                } else {
+                    PyString::new(py, "").into_any()
+                };
                 Ok(v.str()?.into_any())
             };
-            if is_bootloader.call1((field("device")?, field("hwid")?, field("description")?))?.is_truthy()? {
+            if is_bootloader
+                .call1((field("device")?, field("hwid")?, field("description")?))?
+                .is_truthy()?
+            {
                 out.append(row)?;
             }
         }
@@ -684,7 +811,12 @@ impl FlashEngine {
     fn bootloader_device<'py>(&self, svc: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
         let py = svc.py();
         let empty = PyString::new(py, "").into_any();
-        if svc.getattr("_store")?.call_method0("get_snapshot")?.call_method1("get", ("connected",))?.is_truthy()? {
+        if svc
+            .getattr("_store")?
+            .call_method0("get_snapshot")?
+            .call_method1("get", ("connected",))?
+            .is_truthy()?
+        {
             return Ok(empty);
         }
         let ports = svc.call_method0("bootloader_ports")?;
@@ -708,7 +840,12 @@ impl FlashEngine {
             if !mavlink.call_method0("is_direct_usb")?.is_truthy()? {
                 return self.gate_message(svc);
             }
-            if svc.getattr("_store")?.call_method0("get_snapshot")?.call_method1("get", ("armed",))?.is_truthy()? {
+            if svc
+                .getattr("_store")?
+                .call_method0("get_snapshot")?
+                .call_method1("get", ("armed",))?
+                .is_truthy()?
+            {
                 return Ok(PyString::new(py, "cannot flash while armed").into_any());
             }
         }
@@ -720,7 +857,11 @@ impl FlashEngine {
 
     /// The gate minus the busy check: this job is the busy one.
     #[pyo3(signature = (svc, bootloader = None))]
-    fn gate_for_resume<'py>(&self, svc: &Bound<'py, PyAny>, bootloader: Option<&Bound<'py, PyAny>>) -> PyResult<Bound<'py, PyAny>> {
+    fn gate_for_resume<'py>(
+        &self,
+        svc: &Bound<'py, PyAny>,
+        bootloader: Option<&Bound<'py, PyAny>>,
+    ) -> PyResult<Bound<'py, PyAny>> {
         let py = svc.py();
         let none = py.None().into_bound(py);
         let mavlink = svc.getattr("mavlink")?;
@@ -736,7 +877,12 @@ impl FlashEngine {
         if !mavlink.call_method0("is_direct_usb")?.is_truthy()? {
             return self.gate_message(svc);
         }
-        if svc.getattr("_store")?.call_method0("get_snapshot")?.call_method1("get", ("armed",))?.is_truthy()? {
+        if svc
+            .getattr("_store")?
+            .call_method0("get_snapshot")?
+            .call_method1("get", ("armed",))?
+            .is_truthy()?
+        {
             return Ok(PyString::new(py, "cannot flash while armed").into_any());
         }
         Ok(none)
@@ -780,9 +926,17 @@ impl FlashEngine {
             svc.setattr("_percent", 0)?;
             svc.setattr("_message", &preparing)?;
             let target = svc.clone().unbind();
-            let args = (conn.unbind(), image.clone().unbind(), board_id.clone().unbind(), bootloader.unbind());
+            let args = (
+                conn.unbind(),
+                image.clone().unbind(),
+                board_id.clone().unbind(),
+                bootloader.unbind(),
+            );
             let handle = thread::spawn(py, "firmware-flash", move |py| {
-                target.bind(py).call_method1("_run", (args.0.bind(py), args.1.bind(py), args.2.bind(py), args.3.bind(py)))?;
+                target.bind(py).call_method1(
+                    "_run",
+                    (args.0.bind(py), args.1.bind(py), args.2.bind(py), args.3.bind(py)),
+                )?;
                 Ok(())
             })?;
             svc.setattr("_worker", handle)?;
@@ -796,7 +950,12 @@ impl FlashEngine {
     }
 
     /// Download one catalogue image, then flash it.
-    fn start_release(&self, svc: &Bound<'_, PyAny>, release_tag: &Bound<'_, PyAny>, board_name: &Bound<'_, PyAny>) -> PyResult<bool> {
+    fn start_release(
+        &self,
+        svc: &Bound<'_, PyAny>,
+        release_tag: &Bound<'_, PyAny>,
+        board_name: &Bound<'_, PyAny>,
+    ) -> PyResult<bool> {
         let py = svc.py();
         let catalog = svc.getattr("catalog")?;
         if catalog.is_none() {
@@ -833,7 +992,9 @@ impl FlashEngine {
             let target = svc.clone().unbind();
             let args = (conn.unbind(), entry.clone().unbind(), bootloader.unbind());
             let handle = thread::spawn(py, "firmware-download", move |py| {
-                target.bind(py).call_method1("_run_release", (args.0.bind(py), args.1.bind(py), args.2.bind(py)))?;
+                target
+                    .bind(py)
+                    .call_method1("_run_release", (args.0.bind(py), args.1.bind(py), args.2.bind(py)))?;
                 Ok(())
             })?;
             svc.setattr("_worker", handle)?;
@@ -848,7 +1009,13 @@ impl FlashEngine {
 
     /// Download worker: fetch (or reuse the cache), then hand off to `_run`.
     #[pyo3(signature = (svc, conn, entry, bootloader = None))]
-    fn run_release(&self, svc: &Bound<'_, PyAny>, conn: &Bound<'_, PyAny>, entry: &Bound<'_, PyAny>, bootloader: Option<&Bound<'_, PyAny>>) -> PyResult<()> {
+    fn run_release(
+        &self,
+        svc: &Bound<'_, PyAny>,
+        conn: &Bound<'_, PyAny>,
+        entry: &Bound<'_, PyAny>,
+        bootloader: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<()> {
         let py = svc.py();
         let bootloader = match bootloader {
             Some(b) => b.clone(),
@@ -864,20 +1031,36 @@ impl FlashEngine {
             let callback = {
                 let target = svc.clone().unbind();
                 let label = name.clone().unbind();
-                PyCFunction::new_closure(py, None, None, move |args: &Bound<'_, PyTuple>, _kw: Option<&Bound<'_, PyDict>>| -> PyResult<()> {
-                    let py = args.py();
-                    let (done, total): (i64, i64) = (args.get_item(0)?.extract()?, args.get_item(1)?.extract()?);
-                    let percent = if total > 0 { ((done * 100) as f64 / total as f64).trunc() as i64 } else { 0 };
-                    let svc = target.bind(py);
-                    let message = fmt(py, "Downloading {}: {} KB", (label.bind(py), done.div_euclid(1024)))?;
-                    svc.call_method1("_set", ("downloading", percent.min(99), message))?;
-                    Ok(())
-                })?
+                PyCFunction::new_closure(
+                    py,
+                    None,
+                    None,
+                    move |args: &Bound<'_, PyTuple>, _kw: Option<&Bound<'_, PyDict>>| -> PyResult<()> {
+                        let py = args.py();
+                        let (done, total): (i64, i64) = (args.get_item(0)?.extract()?, args.get_item(1)?.extract()?);
+                        let percent = if total > 0 {
+                            ((done * 100) as f64 / total as f64).trunc() as i64
+                        } else {
+                            0
+                        };
+                        let svc = target.bind(py);
+                        let message = fmt(py, "Downloading {}: {} KB", (label.bind(py), done.div_euclid(1024)))?;
+                        svc.call_method1("_set", ("downloading", percent.min(99), message))?;
+                        Ok(())
+                    },
+                )?
             };
             let kwargs = kw(
                 py,
                 &[
-                    ("on_progress", if cached { py.None() } else { callback.into_any().unbind() }),
+                    (
+                        "on_progress",
+                        if cached {
+                            py.None()
+                        } else {
+                            callback.into_any().unbind()
+                        },
+                    ),
                     ("cancel", svc.getattr("_cancel")?.unbind()),
                 ],
             )?;
@@ -902,7 +1085,12 @@ impl FlashEngine {
             }
             Err(err) if is_exception(py, &err) => {
                 self.log_error(py, "firmware download worker crashed", &err)?;
-                return self.set(svc, "failed", 0, PyString::new(py, "firmware download failed unexpectedly").into_any());
+                return self.set(
+                    svc,
+                    "failed",
+                    0,
+                    PyString::new(py, "firmware download failed unexpectedly").into_any(),
+                );
             }
             Err(err) => return Err(err),
         };
@@ -910,14 +1098,26 @@ impl FlashEngine {
         if refusal.is_truthy()? {
             return self.set(svc, "failed", 0, refusal);
         }
-        self.set(svc, "flashing", 0, PyString::new(py, "Preparing to flash\u{2026}").into_any())?;
+        self.set(
+            svc,
+            "flashing",
+            0,
+            PyString::new(py, "Preparing to flash\u{2026}").into_any(),
+        )?;
         svc.call_method1("_run", (conn, image, board_id, bootloader))?;
         Ok(())
     }
 
     /// Upload worker: reboot, stop the bridge, flash, reconnect the bridge.
     #[pyo3(signature = (svc, conn, image, board_id = None, bootloader = None))]
-    fn run(&self, svc: &Bound<'_, PyAny>, conn: &Bound<'_, PyAny>, image: &Bound<'_, PyAny>, board_id: Option<&Bound<'_, PyAny>>, bootloader: Option<&Bound<'_, PyAny>>) -> PyResult<()> {
+    fn run(
+        &self,
+        svc: &Bound<'_, PyAny>,
+        conn: &Bound<'_, PyAny>,
+        image: &Bound<'_, PyAny>,
+        board_id: Option<&Bound<'_, PyAny>>,
+        bootloader: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<()> {
         let py = svc.py();
         let env = self.env(py);
         let board_id = match board_id {
@@ -932,11 +1132,26 @@ impl FlashEngine {
         let body = (|| -> PyResult<()> {
             let mavlink = svc.getattr("mavlink")?;
             if bootloader.is_truthy()? {
-                self.set(svc, "flashing", 0, PyString::new(py, "Controller found in its bootloader\u{2026}").into_any())?;
+                self.set(
+                    svc,
+                    "flashing",
+                    0,
+                    PyString::new(py, "Controller found in its bootloader\u{2026}").into_any(),
+                )?;
             } else {
-                self.set(svc, "flashing", 0, PyString::new(py, "Rebooting autopilot into bootloader\u{2026}").into_any())?;
+                self.set(
+                    svc,
+                    "flashing",
+                    0,
+                    PyString::new(py, "Rebooting autopilot into bootloader\u{2026}").into_any(),
+                )?;
                 if !mavlink.call_method0("reboot_to_bootloader")?.is_truthy()? {
-                    return self.set(svc, "failed", 0, PyString::new(py, "Reboot to bootloader rejected. Is the vehicle armed?").into_any());
+                    return self.set(
+                        svc,
+                        "failed",
+                        0,
+                        PyString::new(py, "Reboot to bootloader rejected. Is the vehicle armed?").into_any(),
+                    );
                 }
             }
             match mavlink.call_method0("stop") {
@@ -944,23 +1159,52 @@ impl FlashEngine {
                 Err(err) => return Err(err),
                 Ok(_) => {}
             }
-            let device = if bootloader.is_truthy()? { bootloader.clone() } else { mavlink.call_method0("serial_device")? };
+            let device = if bootloader.is_truthy()? {
+                bootloader.clone()
+            } else {
+                mavlink.call_method0("serial_device")?
+            };
             if !device.is_truthy()? {
-                return self.set(svc, "failed", 0, PyString::new(py, "no serial device for bootloader").into_any());
+                return self.set(
+                    svc,
+                    "failed",
+                    0,
+                    PyString::new(py, "no serial device for bootloader").into_any(),
+                );
             }
-            let kwargs = kw(py, &[("on_progress", svc.getattr("_on_uploader_progress")?.unbind()), ("cancel", svc.getattr("_cancel")?.unbind())])?;
+            let kwargs = kw(
+                py,
+                &[
+                    ("on_progress", svc.getattr("_on_uploader_progress")?.unbind()),
+                    ("cancel", svc.getattr("_cancel")?.unbind()),
+                ],
+            )?;
             let up = env.getattr("FirmwareUploader")?.call((), Some(&kwargs))?;
             uploader = Some(up.clone());
             self.lock(svc, || svc.setattr("_uploader", &up))?;
             let kwargs = kw(py, &[("board_id", board_id.clone().unbind())])?;
             let ok = up.call_method("run", (&device, image), Some(&kwargs))?;
             if svc.getattr("_cancel")?.call_method0("is_set")?.is_truthy()? {
-                self.set(svc, "cancelled", svc.getattr("_percent")?.unbind(), PyString::new(py, "Flash cancelled").into_any())?;
+                self.set(
+                    svc,
+                    "cancelled",
+                    svc.getattr("_percent")?.unbind(),
+                    PyString::new(py, "Flash cancelled").into_any(),
+                )?;
             } else if ok.is_truthy()? {
-                self.set(svc, "done", 100, PyString::new(py, "Firmware flashed successfully").into_any())?;
+                self.set(
+                    svc,
+                    "done",
+                    100,
+                    PyString::new(py, "Firmware flashed successfully").into_any(),
+                )?;
             } else {
                 let message = svc.getattr("_message")?;
-                let message = if message.is_truthy()? { message } else { PyString::new(py, "flash failed").into_any() };
+                let message = if message.is_truthy()? {
+                    message
+                } else {
+                    PyString::new(py, "flash failed").into_any()
+                };
                 self.set(svc, "failed", svc.getattr("_percent")?.unbind(), message)?;
             }
             Ok(())
@@ -968,7 +1212,12 @@ impl FlashEngine {
         let body = match body {
             Err(err) if is_exception(py, &err) => {
                 self.log_error(py, "firmware flash worker crashed", &err)?;
-                self.set(svc, "failed", svc.getattr("_percent")?.unbind(), PyString::new(py, "flash failed unexpectedly").into_any())
+                self.set(
+                    svc,
+                    "failed",
+                    svc.getattr("_percent")?.unbind(),
+                    PyString::new(py, "flash failed unexpectedly").into_any(),
+                )
             }
             other => other,
         };
@@ -1047,6 +1296,28 @@ pub fn register(py: Python<'_>, parent: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<FlashEngine>()?;
     m.add_function(wrap_pyfunction!(bl_crc32, &m)?)?;
     parent.add_submodule(&m)?;
-    py.import("sys")?.getattr("modules")?.set_item("corvus_link.flash", &m)?;
+    py.import("sys")?
+        .getattr("modules")?
+        .set_item("corvus_link.flash", &m)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_bootloader_crc_is_the_reflected_crc32_without_the_final_xor() {
+        assert_eq!(fold(0, b"123456789"), 0x2DFD_2D88);
+        assert_eq!(fold(0, b""), 0);
+        // The standard CRC-32 is this one started at 0xFFFFFFFF and inverted.
+        assert_eq!(!fold(0xFFFF_FFFF, b"123456789"), 0xCBF4_3926);
+    }
+
+    #[test]
+    fn a_crc_can_be_continued_over_pieces_and_over_padding() {
+        let whole = fold(0, &[b"abcdef".as_slice(), &[0xFF; 1000]].concat());
+        let piecewise = fold(fold(fold(0, b"abc"), b"def"), &[0xFF; 1000]);
+        assert_eq!(whole, piecewise);
+    }
 }

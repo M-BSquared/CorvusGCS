@@ -64,7 +64,10 @@ fn is_gone(e: &io::Error) -> bool {
 }
 
 fn is_unreachable(e: &io::Error) -> bool {
-    matches!(e.kind(), io::ErrorKind::ConnectionRefused | io::ErrorKind::HostUnreachable)
+    matches!(
+        e.kind(),
+        io::ErrorKind::ConnectionRefused | io::ErrorKind::HostUnreachable
+    )
 }
 
 /// Python's `int(text)` for a port, with its message.
@@ -72,12 +75,16 @@ fn parse_port(text: &str) -> Result<u16, WsError> {
     let trimmed = text.trim();
     let digits = trimmed.strip_prefix('+').unwrap_or(trimmed);
     if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit() || b == b'_') {
-        return Err(WsError::Value(format!("invalid literal for int() with base 10: '{text}'")));
+        return Err(WsError::Value(format!(
+            "invalid literal for int() with base 10: '{text}'"
+        )));
     }
-    digits
-        .replace('_', "")
-        .parse::<u16>()
-        .map_err(|_| WsError::Os(io::Error::new(io::ErrorKind::InvalidInput, "bind(): port must be 0-65535.")))
+    digits.replace('_', "").parse::<u16>().map_err(|_| {
+        WsError::Os(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "bind(): port must be 0-65535.",
+        ))
+    })
 }
 
 // -------------------------------------------------------------- stream ----
@@ -147,8 +154,12 @@ fn tls_stream(host: &str, tcp: TcpStream) -> Result<Stream, WsError> {
         .map_err(|e| WsError::Runtime(format!("TLS setup failed: {e}")))?
         .with_root_certificates(roots)
         .with_no_client_auth();
-    let name = ServerName::try_from(host.to_string())
-        .map_err(|e| WsError::Os(io::Error::new(io::ErrorKind::InvalidInput, format!("invalid server name {host}: {e}"))))?;
+    let name = ServerName::try_from(host.to_string()).map_err(|e| {
+        WsError::Os(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("invalid server name {host}: {e}"),
+        ))
+    })?;
     let conn = rustls::ClientConnection::new(Arc::new(config), name)
         .map_err(|e| WsError::Os(io::Error::new(io::ErrorKind::InvalidData, e.to_string())))?;
     Ok(Stream::Tls(Box::new(rustls::StreamOwned::new(conn, tcp))))
@@ -156,7 +167,9 @@ fn tls_stream(host: &str, tcp: TcpStream) -> Result<Stream, WsError> {
 
 #[cfg(not(feature = "tls"))]
 fn tls_stream(_host: &str, _tcp: TcpStream) -> Result<Stream, WsError> {
-    Err(WsError::Unsupported("corvus_link was built without TLS, so wss: links are unavailable".into()))
+    Err(WsError::Unsupported(
+        "corvus_link was built without TLS, so wss: links are unavailable".into(),
+    ))
 }
 
 // -------------------------------------------------------------- client ----
@@ -180,14 +193,19 @@ impl WsClient {
     pub fn open(device: &str) -> Result<WsClient, WsError> {
         let a: Vec<&str> = device.split(':').collect();
         if a.len() < 3 {
-            return Err(WsError::Value("WebSocket ports must be specified as protocol:host:port".into()));
+            return Err(WsError::Value(
+                "WebSocket ports must be specified as protocol:host:port".into(),
+            ));
         }
         let client = WsClient {
             host: a[1].to_string(),
             port: parse_port(a[2])?,
             resource: if a.len() > 3 { a[3].to_string() } else { "/".to_string() },
             tls: a[0].eq_ignore_ascii_case("wss"),
-            state: Mutex::new(ClientState { ws: None, buffer: Vec::new() }),
+            state: Mutex::new(ClientState {
+                ws: None,
+                buffer: Vec::new(),
+            }),
             raw: Mutex::new(None),
         };
         client.connect()?;
@@ -214,12 +232,22 @@ impl WsClient {
         };
         tcp.set_read_timeout(Some(HANDSHAKE_TIMEOUT))?;
         tcp.set_write_timeout(Some(HANDSHAKE_TIMEOUT))?;
-        let stream = if self.tls { tls_stream(&self.host, tcp)? } else { Stream::Plain(tcp) };
-        let resource = if self.resource.starts_with('/') { self.resource.clone() } else { format!("/{}", self.resource) };
+        let stream = if self.tls {
+            tls_stream(&self.host, tcp)?
+        } else {
+            Stream::Plain(tcp)
+        };
+        let resource = if self.resource.starts_with('/') {
+            self.resource.clone()
+        } else {
+            format!("/{}", self.resource)
+        };
         let scheme = if self.tls { "wss" } else { "ws" };
         let uri = format!("{scheme}://{}:{}{resource}", self.host, self.port);
         let (ws, _) = tungstenite::client(uri.as_str(), stream).map_err(|e| match e {
-            HandshakeError::Failure(WsFrameError::Io(io)) if self.tls && io.kind() == io::ErrorKind::InvalidData => WsError::Os(io),
+            HandshakeError::Failure(WsFrameError::Io(io)) if self.tls && io.kind() == io::ErrorKind::InvalidData => {
+                WsError::Os(io)
+            }
             HandshakeError::Failure(WsFrameError::Io(io)) if io.kind() == io::ErrorKind::UnexpectedEof => {
                 WsError::Runtime("WebSocket handshake failed".into())
             }
@@ -292,7 +320,9 @@ impl WsClient {
         let failed = {
             let mut st = lock(&self.state);
             match st.ws.as_mut() {
-                Some(ws) => matches!(ws.send(Message::Binary(buf.to_vec().into())), Err(WsFrameError::Io(e)) if is_gone(&e)),
+                Some(ws) => {
+                    matches!(ws.send(Message::Binary(buf.to_vec().into())), Err(WsFrameError::Io(e)) if is_gone(&e))
+                }
                 None => false,
             }
         };
@@ -450,7 +480,9 @@ impl WsServer {
     pub fn write(&self, buf: &[u8]) {
         let mut peer = lock(&self.peer);
         let gone = match &mut *peer {
-            Peer::Open(ws) => matches!(ws.send(Message::Binary(buf.to_vec().into())), Err(WsFrameError::Io(e)) if is_gone(&e)),
+            Peer::Open(ws) => {
+                matches!(ws.send(Message::Binary(buf.to_vec().into())), Err(WsFrameError::Io(e)) if is_gone(&e))
+            }
             _ => false,
         };
         if gone {
@@ -498,5 +530,43 @@ fn raw_of_listener(listener: &TcpListener) -> RawHandle {
     {
         use std::os::windows::io::AsRawSocket;
         listener.as_raw_socket()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn port(text: &str) -> Result<u16, String> {
+        match parse_port(text) {
+            Ok(p) => Ok(p),
+            Err(WsError::Value(m)) => Err(format!("value: {m}")),
+            Err(WsError::Os(e)) => Err(format!("os: {e}")),
+            Err(_) => Err("other".into()),
+        }
+    }
+
+    #[test]
+    fn a_port_reads_like_pythons_int() {
+        assert_eq!(port("14550"), Ok(14550));
+        assert_eq!(port(" 80 "), Ok(80));
+        assert_eq!(port("+81"), Ok(81));
+        assert_eq!(port("1_0"), Ok(10));
+        assert_eq!(port("0"), Ok(0));
+    }
+
+    #[test]
+    fn a_port_that_is_not_a_number_names_what_was_given() {
+        assert_eq!(
+            port("x"),
+            Err("value: invalid literal for int() with base 10: 'x'".to_string())
+        );
+        assert!(port("").unwrap_err().starts_with("value:"));
+        assert!(port("-1").unwrap_err().starts_with("value:"));
+    }
+
+    #[test]
+    fn a_port_past_the_range_fails_as_the_bind_would() {
+        assert!(port("70000").unwrap_err().starts_with("os:"));
     }
 }

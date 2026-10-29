@@ -187,6 +187,25 @@ pymavlink stays in the `test` dependency group as the reference:
   and field, the index, the parameters, the modes, `recv_match` in every
   form and everything printed along the way. A one-off run of 9000 random
   and mutated logs found no other difference.
+- `tests/test_corvus_link_serial_devices.py` plays the serial devices on a
+  pseudo-terminal, so the real Rust serial port is exercised with no
+  hardware: a SiK radio (the guarded `+++`, the AT dialect, a second escape,
+  the far radio written first, both EEPROMs committed), a PX4 bootloader that
+  fails on request (a flash through to the reboot, another board, a bad CRC,
+  a failing erase, a cancel, an image too large), and a u-blox base that is
+  surveyed, streamed and put back out of base mode.
+- `tests/test_process_lifecycle.py` starts the real `serve.py` with a
+  simulated vehicle and signals it: exit code 0 within seconds, no traceback,
+  ports free again, with the RTK thread holding a live NTRIP stream, and for
+  a process that never stops its link.
+- `tests/test_bundle_smoke.py` runs a built macOS bundle from its own
+  interpreter (version, every Rust feature compiled in, a simulated vehicle,
+  a clean stop, an intact signature); with `CORVUS_BUNDLE_GUI=1` it also starts
+  the window.
+- `cargo test` covers the parts with no Python in them: the checksums
+  (CRC-24Q, the bootloader CRC-32, CRC-8 DVB-S2, UBX Fletcher), the RTCM and
+  UBX framers however a stream is cut, the fragment plan, the CSV row cutter,
+  Python's slicing and number rules, the port parser.
 - `tests/test_param_engine_parity.py` runs the parameter protocol Corvus had
   in Python (kept in `tests/reference/`) and the Rust engine through the same
   PARAM_VALUE streams, downloads, writes, reads, verifies and uploads, and

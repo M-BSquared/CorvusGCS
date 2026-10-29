@@ -34,17 +34,27 @@ fn int_of<'py>(value: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
 
 fn text_of<'py>(value: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
     let py = value.py();
-    let held = if value.is_truthy()? { value.clone() } else { PyString::new(py, "").into_any() };
+    let held = if value.is_truthy()? {
+        value.clone()
+    } else {
+        PyString::new(py, "").into_any()
+    };
     Ok(held.str()?.into_any())
 }
 
 /// `str(text or "").replace("\r", "\n").split("\n")`.
 fn lines_of<'py>(text: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
-    text_of(text)?.call_method1("replace", ("\r", "\n"))?.call_method1("split", ("\n",))
+    text_of(text)?
+        .call_method1("replace", ("\r", "\n"))?
+        .call_method1("split", ("\n",))
 }
 
 fn or_empty_dict(value: Bound<'_, PyAny>) -> PyResult<Bound<'_, PyAny>> {
-    if value.is_truthy()? { Ok(value) } else { Ok(PyDict::new(value.py()).into_any()) }
+    if value.is_truthy()? {
+        Ok(value)
+    } else {
+        Ok(PyDict::new(value.py()).into_any())
+    }
 }
 
 // ------------------------------------------------------------- config ----
@@ -61,7 +71,9 @@ impl SikConfigEngine {
     }
 
     fn error<'py>(&self, py: Python<'py>, text: Bound<'py, PyAny>) -> PyResult<PyErr> {
-        Ok(PyErr::from_value(self.env(py).getattr("SikConfigError")?.call1((text,))?))
+        Ok(PyErr::from_value(
+            self.env(py).getattr("SikConfigError")?.call1((text,))?,
+        ))
     }
 }
 
@@ -134,7 +146,10 @@ impl SikConfigEngine {
     /// An ``ATI7`` link report as signal, noise and fade margin, or None.
     fn parse_rssi<'py>(&self, text: &Bound<'py, PyAny>) -> PyResult<Option<Bound<'py, PyDict>>> {
         let py = text.py();
-        let found = self.env(py).getattr("_RSSI_RE")?.call_method1("search", (text_of(text)?,))?;
+        let found = self
+            .env(py)
+            .getattr("_RSSI_RE")?
+            .call_method1("search", (text_of(text)?,))?;
         if found.is_none() {
             return Ok(None);
         }
@@ -170,7 +185,10 @@ impl SikConfigEngine {
             if upper.eq("OK")? || upper.eq("ERROR")? {
                 continue;
             }
-            if upper.call_method1("startswith", (PyTuple::new(py, ["AT", "RT"])?,))?.is_truthy()? {
+            if upper
+                .call_method1("startswith", (PyTuple::new(py, ["AT", "RT"])?,))?
+                .is_truthy()?
+            {
                 continue;
             }
             return Ok(candidate);
@@ -195,7 +213,10 @@ impl SikConfigEngine {
             if !must_match.contains(&name)? || !local_values.contains(&name)? || !remote_values.contains(&name)? {
                 continue;
             }
-            let (l, r) = (int_of(&local_values.get_item(&name)?)?, int_of(&remote_values.get_item(&name)?)?);
+            let (l, r) = (
+                int_of(&local_values.get_item(&name)?)?,
+                int_of(&remote_values.get_item(&name)?)?,
+            );
             if l.eq(&r)? {
                 continue;
             }
@@ -210,7 +231,11 @@ impl SikConfigEngine {
     }
 
     /// The values that would make the remote radio agree with the local one.
-    fn copy_to_remote<'py>(&self, local: &Bound<'py, PyAny>, remote: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyDict>> {
+    fn copy_to_remote<'py>(
+        &self,
+        local: &Bound<'py, PyAny>,
+        remote: &Bound<'py, PyAny>,
+    ) -> PyResult<Bound<'py, PyDict>> {
         let py = local.py();
         let out = PyDict::new(py);
         if !remote.is_truthy()? {
@@ -219,7 +244,11 @@ impl SikConfigEngine {
         let must_match = self.env(py).getattr("MUST_MATCH")?;
         let local_values = or_empty_dict(local.call_method1("get", ("values",))?)?;
         let remote_values = or_empty_dict(remote.call_method1("get", ("values",))?)?;
-        for name in py.import("builtins")?.call_method1("sorted", (must_match,))?.try_iter()? {
+        for name in py
+            .import("builtins")?
+            .call_method1("sorted", (must_match,))?
+            .try_iter()?
+        {
             let name = name?;
             if local_values.contains(&name)?
                 && remote_values.contains(&name)?
@@ -233,7 +262,11 @@ impl SikConfigEngine {
 
     /// Check requested values against the radio in front of us, ordered for
     /// writing; unchanged registers are dropped.
-    fn validate_writes<'py>(&self, settings: &Bound<'py, PyAny>, present: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyList>> {
+    fn validate_writes<'py>(
+        &self,
+        settings: &Bound<'py, PyAny>,
+        present: &Bound<'py, PyAny>,
+    ) -> PyResult<Bound<'py, PyList>> {
         let py = settings.py();
         let env = self.env(py);
         if !settings.is_instance_of::<PyDict>() {
@@ -251,7 +284,10 @@ impl SikConfigEngine {
                 return Err(self.error(py, fmt(py, "this radio has no {} setting", (&key,))?)?);
             }
             if read_only.contains(&key)? {
-                return Err(self.error(py, fmt(py, "{} is set by the radio firmware and cannot be written", (&key,))?)?);
+                return Err(self.error(
+                    py,
+                    fmt(py, "{} is set by the radio firmware and cannot be written", (&key,))?,
+                )?);
             }
             if raw.is_instance_of::<PyBool>() || !(raw.is_instance_of::<PyInt>() || raw.is_instance_of::<PyFloat>()) {
                 return Err(self.error(py, fmt(py, "{} must be a number", (&key,))?)?);
@@ -278,7 +314,12 @@ impl SikConfigEngine {
         Ok(writes)
     }
 
-    fn check_against_spec(&self, spec: &Bound<'_, PyAny>, key: &Bound<'_, PyAny>, value: &Bound<'_, PyAny>) -> PyResult<()> {
+    fn check_against_spec(
+        &self,
+        spec: &Bound<'_, PyAny>,
+        key: &Bound<'_, PyAny>,
+        value: &Bound<'_, PyAny>,
+    ) -> PyResult<()> {
         let py = spec.py();
         let label = spec.call_method1("get", ("label", key))?;
         if spec.call_method1("get", ("kind",))?.eq("enum")? {
@@ -294,10 +335,17 @@ impl SikConfigEngine {
                 }
             }
             if !found {
-                let names: Vec<String> = allowed.iter().map(|v| v.str().map(|s| s.to_string_lossy().into_owned())).collect::<PyResult<_>>()?;
+                let names: Vec<String> = allowed
+                    .iter()
+                    .map(|v| v.str().map(|s| s.to_string_lossy().into_owned()))
+                    .collect::<PyResult<_>>()?;
                 return Err(self.error(
                     py,
-                    fmt(py, "{} does not accept {}; allowed values are {}", (&label, value, names.join(", ")))?,
+                    fmt(
+                        py,
+                        "{} does not accept {}; allowed values are {}",
+                        (&label, value, names.join(", ")),
+                    )?,
                 )?);
             }
             return Ok(());
@@ -334,7 +382,10 @@ impl SikConfigEngine {
             return Ok(());
         };
         if high.le(&low)? {
-            return Err(self.error(py, PyString::new(py, "the maximum frequency must be above the minimum frequency").into_any())?);
+            return Err(self.error(
+                py,
+                PyString::new(py, "the maximum frequency must be above the minimum frequency").into_any(),
+            )?);
         }
         Ok(())
     }
@@ -346,7 +397,11 @@ impl SikConfigEngine {
         let commands = PyList::empty(py);
         for write in writes.try_iter()? {
             let write = write?;
-            commands.append(fmt(py, "{}S{}={}", (prefix, write.get_item("register")?, write.get_item("value")?))?)?;
+            commands.append(fmt(
+                py,
+                "{}S{}={}",
+                (prefix, write.get_item("register")?, write.get_item("value")?),
+            )?)?;
         }
         if commands.is_empty() {
             return Ok(commands);
@@ -435,7 +490,11 @@ impl SikServiceEngine {
                     Err(err) if caught_by(py, &err, &["AttributeError"]) => 0i64.into_pyobject(py)?.into_any(),
                     Err(err) => return Err(err),
                 };
-                let waiting = if waiting.is_truthy()? { waiting } else { 0i64.into_pyobject(py)?.into_any() };
+                let waiting = if waiting.is_truthy()? {
+                    waiting
+                } else {
+                    0i64.into_pyobject(py)?.into_any()
+                };
                 int_of(&waiting)
             })();
             let waiting = match waiting {
@@ -474,9 +533,17 @@ impl SikServiceEngine {
 
     /// Send one AT/RT command and return whatever came back.
     #[pyo3(signature = (session, text, timeout = None))]
-    fn command<'py>(&self, session: &Bound<'py, PyAny>, text: &Bound<'py, PyAny>, timeout: Option<f64>) -> PyResult<Bound<'py, PyAny>> {
+    fn command<'py>(
+        &self,
+        session: &Bound<'py, PyAny>,
+        text: &Bound<'py, PyAny>,
+        timeout: Option<f64>,
+    ) -> PyResult<Bound<'py, PyAny>> {
         let py = session.py();
-        let remote = text.call_method0("upper")?.call_method1("startswith", ("RT",))?.is_truthy()?;
+        let remote = text
+            .call_method0("upper")?
+            .call_method1("startswith", ("RT",))?
+            .is_truthy()?;
         let timeout = match timeout {
             Some(t) => t,
             None => self.constant(py, if remote { "REMOTE_TIMEOUT_S" } else { "LOCAL_TIMEOUT_S" })?,
@@ -529,10 +596,14 @@ impl SikServiceEngine {
             if reply.call_method0("upper")?.contains("OK")? {
                 return Ok(true);
             }
-            if config.call_method1("parse_version", (session.call_method1("command", ("ATI",))?,))?.is_truthy()? {
+            if config
+                .call_method1("parse_version", (session.call_method1("command", ("ATI",))?,))?
+                .is_truthy()?
+            {
                 return Ok(true);
             }
-            self.logger(py)?.call_method1("debug", ("sik: +++ attempt %d got %r", attempt, &reply))?;
+            self.logger(py)?
+                .call_method1("debug", ("sik: +++ attempt %d got %r", attempt, &reply))?;
         }
         Ok(false)
     }
@@ -553,12 +624,21 @@ impl SikServiceEngine {
         let py = session.py();
         let config = self.config(py)?;
         let prefix = if remote.is_truthy()? { "RT" } else { "AT" };
-        let registers = config.call_method1("parse_registers", (session.call_method1("command", (format!("{prefix}I5"),))?,))?;
+        let registers = config.call_method1(
+            "parse_registers",
+            (session.call_method1("command", (format!("{prefix}I5"),))?,),
+        )?;
         if !registers.is_truthy()? {
             return Ok(py.None().into_bound(py));
         }
-        let version = config.call_method1("parse_version", (session.call_method1("command", (format!("{prefix}I"),))?,))?;
-        let board = config.call_method1("parse_version", (session.call_method1("command", (format!("{prefix}I2"),))?,))?;
+        let version = config.call_method1(
+            "parse_version",
+            (session.call_method1("command", (format!("{prefix}I"),))?,),
+        )?;
+        let board = config.call_method1(
+            "parse_version",
+            (session.call_method1("command", (format!("{prefix}I2"),))?,),
+        )?;
         let kwargs = kw(py, &[("version", version.unbind()), ("board", board.unbind())])?;
         config.call_method("describe_radio", (registers,), Some(&kwargs))
     }
@@ -577,10 +657,18 @@ impl SikServiceEngine {
     /// Run a write plan, checking each command before sending the next.
     fn apply(&self, session: &Bound<'_, PyAny>, writes: &Bound<'_, PyAny>, remote: &Bound<'_, PyAny>) -> PyResult<()> {
         let py = session.py();
-        for command in self.config(py)?.call_method1("write_plan", (writes, remote))?.try_iter()? {
+        for command in self
+            .config(py)?
+            .call_method1("write_plan", (writes, remote))?
+            .try_iter()?
+        {
             let command = command?;
             let reply = session.call_method1("command", (&command,))?;
-            if command.call_method0("upper")?.call_method1("endswith", ("Z",))?.is_truthy()? {
+            if command
+                .call_method0("upper")?
+                .call_method1("endswith", ("Z",))?
+                .is_truthy()?
+            {
                 self.sleep(py, self.constant(py, "REBOOT_S")?)?;
                 continue;
             }
@@ -597,7 +685,11 @@ impl SikServiceEngine {
         let prefix = if remote.is_truthy()? { "RT" } else { "AT" };
         let reply = session.call_method1("command", (format!("{prefix}&F"),))?;
         if reply.call_method0("upper")?.contains("ERROR")? {
-            return Err(self.sik_error(py, PyString::new(py, "the radio rejected the factory reset").into_any(), None)?);
+            return Err(self.sik_error(
+                py,
+                PyString::new(py, "the radio rejected the factory reset").into_any(),
+                None,
+            )?);
         }
         session.call_method1("command", (format!("{prefix}&W"),))?;
         session.call_method1("command", (format!("{prefix}Z"),))?;
@@ -605,7 +697,12 @@ impl SikServiceEngine {
     }
 
     /// Open *device* and escape into command mode, scanning bauds if needed.
-    fn open<'py>(&self, service: &Bound<'py, PyAny>, device: &Bound<'py, PyAny>, baud: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyTuple>> {
+    fn open<'py>(
+        &self,
+        service: &Bound<'py, PyAny>,
+        device: &Bound<'py, PyAny>,
+        baud: &Bound<'py, PyAny>,
+    ) -> PyResult<Bound<'py, PyTuple>> {
         let py = service.py();
         let env = self.env(py);
         let serial = env.getattr("_serial")?;
@@ -652,8 +749,20 @@ impl SikServiceEngine {
                 Err(err) => return Err(err),
             };
             let session = session_type.call1((&port,))?;
-            let kwargs = kw(py, &[("attempts", (if index == 0 { 2i64 } else { 1 }).into_pyobject(py)?.into_any().unbind())])?;
-            if session.call_method("enter_command_mode", (), Some(&kwargs))?.is_truthy()? {
+            let kwargs = kw(
+                py,
+                &[(
+                    "attempts",
+                    (if index == 0 { 2i64 } else { 1 })
+                        .into_pyobject(py)?
+                        .into_any()
+                        .unbind(),
+                )],
+            )?;
+            if session
+                .call_method("enter_command_mode", (), Some(&kwargs))?
+                .is_truthy()?
+            {
                 return PyTuple::new(py, [port, session, candidate.clone()]);
             }
             match port.call_method0("close") {
@@ -687,13 +796,22 @@ impl SikServiceEngine {
         let mavlink = service.getattr("mavlink")?;
         let same_device = env.getattr("_same_device")?;
         let owns_link = !mavlink.is_none()
-            && same_device.call1((device, mavlink.call_method0("serial_device")?))?.is_truthy()?
+            && same_device
+                .call1((device, mavlink.call_method0("serial_device")?))?
+                .is_truthy()?
             && mavlink.call_method0("is_running")?.is_truthy()?;
-        let restore_conn = if owns_link { mavlink.call_method0("connection_string")? } else { PyString::new(py, "").into_any() };
+        let restore_conn = if owns_link {
+            mavlink.call_method0("connection_string")?
+        } else {
+            PyString::new(py, "").into_any()
+        };
         if owns_link {
-            self.logger(py)?.call_method1("info", ("sik: stopping the MAVLink bridge to configure %s", device))?;
+            self.logger(py)?
+                .call_method1("info", ("sik: stopping the MAVLink bridge to configure %s", device))?;
             match mavlink.call_method0("stop") {
-                Err(err) if err.is_instance_of::<PyException>(py) => self.log_debug(py, "sik: bridge stop raised", &err)?,
+                Err(err) if err.is_instance_of::<PyException>(py) => {
+                    self.log_debug(py, "sik: bridge stop raised", &err)?
+                }
                 Err(err) => return Err(err),
                 Ok(_) => {}
             }
@@ -717,7 +835,8 @@ impl SikServiceEngine {
             match p.call_method0("close") {
                 Err(err) if err.is_instance_of::<PyException>(py) => {
                     let kwargs = kw(py, &[("exc_info", err.value(py).clone().into_any().unbind())])?;
-                    self.logger(py)?.call_method("debug", ("sik: closing %s raised", device), Some(&kwargs))?;
+                    self.logger(py)?
+                        .call_method("debug", ("sik: closing %s raised", device), Some(&kwargs))?;
                 }
                 Err(err) => return Err(err),
                 Ok(_) => {}

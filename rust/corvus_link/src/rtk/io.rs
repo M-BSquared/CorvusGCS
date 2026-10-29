@@ -19,7 +19,12 @@ use crate::link::transport::Serial;
 use crate::lock;
 use crate::rtk::wire::bytes_of;
 
-pyo3::create_exception!(corvus_link.rtk, RtkError, PyRuntimeError, "A session could not be run, with the reason an operator can act on.");
+pyo3::create_exception!(
+    corvus_link.rtk,
+    RtkError,
+    PyRuntimeError,
+    "A session could not be run, with the reason an operator can act on."
+);
 
 pub const NTRIP_READ_BYTES: usize = 4096;
 
@@ -69,7 +74,11 @@ impl SerialPort {
     fn new(py: Python<'_>, port: String, baudrate: u32, timeout: f64, write_timeout: Option<f64>) -> PyResult<Self> {
         let device = port.clone();
         match py.allow_threads(move || Serial::open_direct(&device, baudrate)) {
-            Ok(port) => Ok(SerialPort { port, timeout, write_timeout }),
+            Ok(port) => Ok(SerialPort {
+                port,
+                timeout,
+                write_timeout,
+            }),
             Err(e) => Err(match e.errno {
                 Some(code) => PyOSError::new_err((code, e.message)),
                 None => PyOSError::new_err(e.message),
@@ -134,7 +143,9 @@ pub struct TcpSocket {
 
 impl TcpSocket {
     fn stream(&self) -> io::Result<Arc<TcpStream>> {
-        lock(&self.stream).clone().ok_or_else(|| io::Error::from_raw_os_error(9))
+        lock(&self.stream)
+            .clone()
+            .ok_or_else(|| io::Error::from_raw_os_error(9))
     }
 
     fn apply_timeout(&self, stream: &TcpStream) -> io::Result<()> {
@@ -160,7 +171,8 @@ impl TcpSocket {
         let data = bytes_of(data)?;
         let stream = self.stream().map_err(|e| os_error(py, &e))?;
         self.apply_timeout(&stream).map_err(|e| os_error(py, &e))?;
-        py.allow_threads(|| (&*stream).write_all(&data)).map_err(|e| os_error(py, &e))
+        py.allow_threads(|| (&*stream).write_all(&data))
+            .map_err(|e| os_error(py, &e))
     }
 
     fn settimeout(&self, value: Option<f64>) {
@@ -190,10 +202,16 @@ fn address_of(sockaddr: &Bound<'_, PyAny>) -> PyResult<SocketAddr> {
     let host: String = sockaddr.get_item(0)?.extract()?;
     let port: u16 = sockaddr.get_item(1)?.extract()?;
     let host = host.split('%').next().unwrap_or("").to_string();
-    let ip: IpAddr = host.parse().map_err(|_| PyOSError::new_err(format!("unusable address {host}")))?;
+    let ip: IpAddr = host
+        .parse()
+        .map_err(|_| PyOSError::new_err(format!("unusable address {host}")))?;
     Ok(match ip {
         IpAddr::V6(v6) => {
-            let scope: u32 = if sockaddr.len()? >= 4 { sockaddr.get_item(3)?.extract()? } else { 0 };
+            let scope: u32 = if sockaddr.len()? >= 4 {
+                sockaddr.get_item(3)?.extract()?
+            } else {
+                0
+            };
             SocketAddr::V6(SocketAddrV6::new(v6, port, 0, scope))
         }
         v4 => SocketAddr::new(v4, port),
@@ -203,7 +221,12 @@ fn address_of(sockaddr: &Bound<'_, PyAny>) -> PyResult<SocketAddr> {
 /// `socket.create_connection((host, port), timeout)`: every address the
 /// name resolves to in turn, the last error if none answers.
 #[pyfunction]
-pub fn connect_tcp(py: Python<'_>, host: &Bound<'_, PyAny>, port: &Bound<'_, PyAny>, timeout: f64) -> PyResult<TcpSocket> {
+pub fn connect_tcp(
+    py: Python<'_>,
+    host: &Bound<'_, PyAny>,
+    port: &Bound<'_, PyAny>,
+    timeout: f64,
+) -> PyResult<TcpSocket> {
     let socket = py.import("socket")?;
     let infos = socket.call_method1("getaddrinfo", (host, port, 0, socket.getattr("SOCK_STREAM")?))?;
     let mut last: Option<PyErr> = None;
@@ -244,7 +267,13 @@ impl SerialTransport {
     #[new]
     fn new(py: Python<'_>, port: PyObject, device: PyObject, baud: PyObject) -> PyResult<Self> {
         let label = format!("{} @ {}", device.bind(py).str()?, baud.bind(py).str()?);
-        Ok(SerialTransport { port, device, baud, label, pending: PyBytes::new(py, b"").into_any().unbind() })
+        Ok(SerialTransport {
+            port,
+            device,
+            baud,
+            label,
+            pending: PyBytes::new(py, b"").into_any().unbind(),
+        })
     }
 
     #[classattr]
@@ -261,13 +290,21 @@ impl SerialTransport {
         let port = self.port.bind(py);
         let waiting = match port.getattr("in_waiting") {
             Ok(v) if !v.is_truthy().unwrap_or(false) => 0,
-            Ok(v) => py.get_type::<pyo3::types::PyInt>().call1((v,)).and_then(|i| i.extract::<i64>()).unwrap_or(0),
+            Ok(v) => py
+                .get_type::<pyo3::types::PyInt>()
+                .call1((v,))
+                .and_then(|i| i.extract::<i64>())
+                .unwrap_or(0),
             Err(err) if err.is_instance_of::<pyo3::exceptions::PyAttributeError>(py) => 0,
             Err(err) if err.is_instance_of::<pyo3::exceptions::PyException>(py) => 0,
             Err(err) => return Err(err),
         };
         match port.call_method1("read", (waiting.clamp(1, 4096),)) {
-            Ok(data) => Ok(if data.is_truthy()? { data } else { PyBytes::new(py, b"").into_any() }),
+            Ok(data) => Ok(if data.is_truthy()? {
+                data
+            } else {
+                PyBytes::new(py, b"").into_any()
+            }),
             Err(err) if err.is_instance_of::<pyo3::exceptions::PyException>(py) => {
                 Err(rtk_error(py, format!("read failed: {}", err.value(py)), Some(&err)))
             }
@@ -319,7 +356,11 @@ pub struct NtripTransport {
 impl NtripTransport {
     #[new]
     fn new(py: Python<'_>, sock: PyObject, label: PyObject) -> Self {
-        NtripTransport { sock, label, pending: PyBytes::new(py, b"").into_any().unbind() }
+        NtripTransport {
+            sock,
+            label,
+            pending: PyBytes::new(py, b"").into_any().unbind(),
+        }
     }
 
     #[classattr]
@@ -334,11 +375,17 @@ impl NtripTransport {
 
     fn read<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         match self.sock.bind(py).call_method1("recv", (NTRIP_READ_BYTES,)) {
-            Ok(data) => Ok(if data.is_truthy()? { data } else { PyBytes::new(py, b"").into_any() }),
+            Ok(data) => Ok(if data.is_truthy()? {
+                data
+            } else {
+                PyBytes::new(py, b"").into_any()
+            }),
             Err(err) if err.is_instance_of::<PyTimeoutError>(py) => Ok(PyBytes::new(py, b"").into_any()),
-            Err(err) if err.is_instance_of::<PyOSError>(py) => {
-                Err(rtk_error(py, format!("caster read failed: {}", err.value(py)), Some(&err)))
-            }
+            Err(err) if err.is_instance_of::<PyOSError>(py) => Err(rtk_error(
+                py,
+                format!("caster read failed: {}", err.value(py)),
+                Some(&err),
+            )),
             Err(err) => Err(err),
         }
     }
@@ -360,7 +407,9 @@ fn base64(data: &[u8]) -> String {
     const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::new();
     for chunk in data.chunks(3) {
-        let n = ((chunk[0] as u32) << 16) | ((*chunk.get(1).unwrap_or(&0) as u32) << 8) | *chunk.get(2).unwrap_or(&0) as u32;
+        let n = ((chunk[0] as u32) << 16)
+            | ((*chunk.get(1).unwrap_or(&0) as u32) << 8)
+            | *chunk.get(2).unwrap_or(&0) as u32;
         for i in 0..4 {
             if i <= chunk.len() {
                 out.push(TABLE[((n >> (18 - 6 * i)) & 0x3F) as usize] as char);
@@ -386,22 +435,36 @@ pub fn ntrip_request<'py>(
     let template = "GET /{2} HTTP/1.1\r\nHost: {0}:{1}\r\nNtrip-Version: Ntrip/2.0\r\nUser-Agent: NTRIP CorvusGCS/{3}\r\nAccept: */*\r\nConnection: close";
     let mut text = PyString::new(py, template).call_method1("format", (host, port, mountpoint, version))?;
     if username.is_truthy()? || password.is_truthy()? {
-        let raw = PyString::new(py, "{}:{}").call_method1("format", (username, password))?.call_method0("encode")?;
-        let line = format!("\r\nAuthorization: Basic {}", base64(raw.downcast::<PyBytes>()?.as_bytes()));
+        let raw = PyString::new(py, "{}:{}")
+            .call_method1("format", (username, password))?
+            .call_method0("encode")?;
+        let line = format!(
+            "\r\nAuthorization: Basic {}",
+            base64(raw.downcast::<PyBytes>()?.as_bytes())
+        );
         text = text.add(line)?;
     }
     let text = text.add("\r\n\r\n")?;
-    Ok(text.call_method1("encode", ("ascii", "replace"))?.downcast_into::<PyBytes>()?)
+    Ok(text
+        .call_method1("encode", ("ascii", "replace"))?
+        .downcast_into::<PyBytes>()?)
 }
 
 fn is_py_space(c: char) -> bool {
-    matches!(c, '\t' | '\n' | '\x0b' | '\x0c' | '\r' | '\x1c'..='\x1f' | ' ' | '\u{85}' | '\u{a0}')
+    matches!(
+        c,
+        '\t' | '\n' | '\x0b' | '\x0c' | '\r' | '\x1c'..='\x1f' | ' ' | '\u{85}' | '\u{a0}'
+    )
 }
 
 /// Consume the caster's response header and return the bytes after it;
 /// *clock* is the `time` module the deadline is read from.
 #[pyfunction]
-pub fn read_ntrip_header<'py>(sock: &Bound<'py, PyAny>, clock: &Bound<'py, PyAny>, timeout: f64) -> PyResult<Bound<'py, PyBytes>> {
+pub fn read_ntrip_header<'py>(
+    sock: &Bound<'py, PyAny>,
+    clock: &Bound<'py, PyAny>,
+    timeout: f64,
+) -> PyResult<Bound<'py, PyBytes>> {
     let py = sock.py();
     let mut buf: Vec<u8> = Vec::new();
     let deadline = clock.call_method0("monotonic")?.extract::<f64>()? + timeout;
@@ -410,7 +473,11 @@ pub fn read_ntrip_header<'py>(sock: &Bound<'py, PyAny>, clock: &Bound<'py, PyAny
             Ok(c) => c,
             Err(err) if err.is_instance_of::<PyTimeoutError>(py) => continue,
             Err(err) if err.is_instance_of::<PyOSError>(py) => {
-                return Err(rtk_error(py, format!("the caster closed the connection: {}", err.value(py)), Some(&err)));
+                return Err(rtk_error(
+                    py,
+                    format!("the caster closed the connection: {}", err.value(py)),
+                    Some(&err),
+                ));
             }
             Err(err) => return Err(err),
         };

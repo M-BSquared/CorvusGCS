@@ -17,7 +17,9 @@ pub struct RtcmEngine {
 
 impl RtcmEngine {
     fn count(&self, bridge: &Bound<'_, PyAny>, field: &str, by: usize) -> PyResult<()> {
-        within(&bridge.getattr("_rtcm_lock")?, || bridge.setattr(field, bridge.getattr(field)?.add(by)?))
+        within(&bridge.getattr("_rtcm_lock")?, || {
+            bridge.setattr(field, bridge.getattr(field)?.add(by)?)
+        })
     }
 }
 
@@ -51,7 +53,10 @@ impl RtcmEngine {
             self.count(bridge, "_rtcm_dropped", 1)?;
             env.getattr("logger")?.call_method1(
                 "warning",
-                ("RTCM message of %d bytes is too long for GPS_RTCM_DATA; dropped", frame.len()?),
+                (
+                    "RTCM message of %d bytes is too long for GPS_RTCM_DATA; dropped",
+                    frame.len()?,
+                ),
             )?;
             return Ok(false);
         }
@@ -82,7 +87,8 @@ impl RtcmEngine {
                 return Err(err);
             }
             self.count(bridge, "_rtcm_dropped", 1)?;
-            env.getattr("logger")?.call_method1("debug", ("RTCM injection failed: %s", err.value(py)))?;
+            env.getattr("logger")?
+                .call_method1("debug", ("RTCM injection failed: %s", err.value(py)))?;
             return Ok(false);
         }
         let now = env.getattr("time")?.call_method0("monotonic")?;
@@ -105,7 +111,11 @@ impl RtcmEngine {
             d.set_item("bytes", bridge.getattr("_rtcm_bytes")?)?;
             d.set_item("messages", bridge.getattr("_rtcm_messages")?)?;
             d.set_item("dropped", bridge.getattr("_rtcm_dropped")?)?;
-            let age = if last.is_truthy()? { env.getattr("time")?.call_method0("monotonic")?.sub(&last)? } else { py.None().into_bound(py) };
+            let age = if last.is_truthy()? {
+                env.getattr("time")?.call_method0("monotonic")?.sub(&last)?
+            } else {
+                py.None().into_bound(py)
+            };
             d.set_item("age", age)?;
             Ok(d)
         })

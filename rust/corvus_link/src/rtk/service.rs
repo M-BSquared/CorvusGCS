@@ -141,7 +141,8 @@ impl RtkEngine {
         })?;
         svc.setattr("_thread", handle)?;
         let intent = svc.call_method0("_describe_intent")?;
-        self.logger(py)?.call_method1("info", ("RTK service started (%s)", intent))?;
+        self.logger(py)?
+            .call_method1("info", ("RTK service started (%s)", intent))?;
         Ok(())
     }
 
@@ -153,16 +154,25 @@ impl RtkEngine {
         svc.getattr("_restart")?.call_method0("set")?;
         let thread = svc.getattr("_thread")?;
         if !thread.is_none() && thread.call_method0("is_alive")?.is_truthy()? {
-            thread.call_method("join", (), Some(&kw(py, &[("timeout", timeout.into_pyobject(py)?.into_any().unbind())])?))?;
+            thread.call_method(
+                "join",
+                (),
+                Some(&kw(py, &[("timeout", timeout.into_pyobject(py)?.into_any().unbind())])?),
+            )?;
             if thread.call_method0("is_alive")?.is_truthy()? {
                 let transport = svc.getattr("_transport")?;
                 if !transport.is_none() {
                     transport.call_method0("close")?;
                 }
-                thread.call_method("join", (), Some(&kw(py, &[("timeout", 1.0f64.into_pyobject(py)?.into_any().unbind())])?))?;
+                thread.call_method(
+                    "join",
+                    (),
+                    Some(&kw(py, &[("timeout", 1.0f64.into_pyobject(py)?.into_any().unbind())])?),
+                )?;
             }
             if thread.call_method0("is_alive")?.is_truthy()? {
-                self.logger(py)?.call_method1("warning", ("RTK session thread did not stop within %.1fs", timeout))?;
+                self.logger(py)?
+                    .call_method1("warning", ("RTK session thread did not stop within %.1fs", timeout))?;
             }
         }
         svc.setattr("_thread", py.None())?;
@@ -219,8 +229,20 @@ impl RtkEngine {
         let rtk = self.rtk(py)?;
         let settings = svc.call_method0("settings")?;
         let fields = [
-            "_state", "_message", "_error", "_device", "_baud", "_receiver", "_survey", "_warning", "_frames",
-            "_frame_bytes", "_crc_errors", "_last_frame_at", "_started_at", "_messages_seen",
+            "_state",
+            "_message",
+            "_error",
+            "_device",
+            "_baud",
+            "_receiver",
+            "_survey",
+            "_warning",
+            "_frames",
+            "_frame_bytes",
+            "_crc_errors",
+            "_last_frame_at",
+            "_started_at",
+            "_messages_seen",
         ];
         let held: Vec<Bound<'py, PyAny>> = self.locked(svc, || {
             let mut out = Vec::new();
@@ -256,7 +278,11 @@ impl RtkEngine {
         };
         let progress = rtk.call_method1(
             "survey_progress",
-            (&survey, settings.get_item("survey_duration")?, settings.get_item("survey_accuracy")?),
+            (
+                &survey,
+                settings.get_item("survey_duration")?,
+                settings.get_item("survey_accuracy")?,
+            ),
         )?;
         let out = PyDict::new(py);
         out.set_item("enabled", settings.call_method1("get", ("enabled",))?.is_truthy()?)?;
@@ -298,13 +324,39 @@ impl RtkEngine {
         out.set_item("vehicle", vehicle)?;
         out.set_item("ports", svc.call_method0("_candidate_ports")?)?;
         out.set_item("settings", rtk.call_method1("public_settings", (&settings,))?)?;
-        out.set_item("defaults", rtk.call_method1("public_settings", (rtk.call_method0("defaults")?,))?)?;
+        out.set_item(
+            "defaults",
+            rtk.call_method1("public_settings", (rtk.call_method0("defaults")?,))?,
+        )?;
         // Same key order as the Python: the label after the receiver.
         let ordered = PyDict::new(py);
         for key in [
-            "enabled", "state", "message", "error", "warning", "source", "mode", "device", "baud", "receiver",
-            "receiver_label", "survey", "survey_progress", "survey_target", "frames", "frame_bytes", "crc_errors",
-            "source_age", "uptime", "messages", "injected", "link_ready", "vehicle", "ports", "settings", "defaults",
+            "enabled",
+            "state",
+            "message",
+            "error",
+            "warning",
+            "source",
+            "mode",
+            "device",
+            "baud",
+            "receiver",
+            "receiver_label",
+            "survey",
+            "survey_progress",
+            "survey_target",
+            "frames",
+            "frame_bytes",
+            "crc_errors",
+            "source_age",
+            "uptime",
+            "messages",
+            "injected",
+            "link_ready",
+            "vehicle",
+            "ports",
+            "settings",
+            "defaults",
         ] {
             ordered.set_item(key, out.get_item(key)?)?;
         }
@@ -332,12 +384,22 @@ impl RtkEngine {
                 }
                 Err(err) if err.is_instance_of::<PyException>(py) => {
                     self.log_exception(py, "RTK source could not be opened", &err)?;
-                    svc.call_method1("_fail", (format!("could not open the correction source: {}", err.value(py).str()?),))?;
+                    svc.call_method1(
+                        "_fail",
+                        (format!(
+                            "could not open the correction source: {}",
+                            err.value(py).str()?
+                        ),),
+                    )?;
                 }
                 Err(err) => return Err(err),
             }
             if transport.is_none() {
-                let pause = if self.state_is_error(svc)? { "RETRY_INTERVAL_S" } else { "SEARCH_INTERVAL_S" };
+                let pause = if self.state_is_error(svc)? {
+                    "RETRY_INTERVAL_S"
+                } else {
+                    "SEARCH_INTERVAL_S"
+                };
                 self.wait(svc, self.constant(py, pause)?)?;
                 continue;
             }
@@ -345,17 +407,29 @@ impl RtkEngine {
             let receiver = self.locked(svc, || self.copy_or_none(py, svc.getattr("_receiver")?))?;
             let outcome = match svc.call_method1("_run_session", (&transport, &settings, &receiver)) {
                 Ok(_) => Ok(()),
-                Err(err) if self.is_rtk_error(py, &err)? => svc.call_method1("_fail", (err.value(py).str()?,)).map(|_| ()),
-                Err(err) if err.is_instance_of::<PyException>(py) => self
-                    .log_exception(py, "RTK session failed", &err)
-                    .and_then(|_| svc.call_method1("_fail", (format!("the correction session failed: {}", err.value(py).str()?),)).map(|_| ())),
+                Err(err) if self.is_rtk_error(py, &err)? => {
+                    svc.call_method1("_fail", (err.value(py).str()?,)).map(|_| ())
+                }
+                Err(err) if err.is_instance_of::<PyException>(py) => {
+                    self.log_exception(py, "RTK session failed", &err).and_then(|_| {
+                        svc.call_method1(
+                            "_fail",
+                            (format!("the correction session failed: {}", err.value(py).str()?),),
+                        )
+                        .map(|_| ())
+                    })
+                }
                 Err(err) => Err(err),
             };
             svc.call_method1("_release", (&transport, &settings, &receiver))?;
             svc.setattr("_transport", py.None())?;
             outcome?;
             if !self.stopped(svc)? {
-                let pause = if self.state_is_error(svc)? { self.constant(py, "RETRY_INTERVAL_S")? } else { 0.5 };
+                let pause = if self.state_is_error(svc)? {
+                    self.constant(py, "RETRY_INTERVAL_S")?
+                } else {
+                    0.5
+                };
                 self.wait(svc, pause)?;
             }
         }
@@ -372,7 +446,11 @@ impl RtkEngine {
 
     // ------------------------------------------------------------ serial
 
-    fn acquire_serial<'py>(&self, svc: &Bound<'py, PyAny>, settings: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+    fn acquire_serial<'py>(
+        &self,
+        svc: &Bound<'py, PyAny>,
+        settings: &Bound<'py, PyAny>,
+    ) -> PyResult<Bound<'py, PyAny>> {
         let py = svc.py();
         let pinned = settings.call_method1("get", ("device",))?;
         let pinned = if pinned.is_truthy()? { pinned } else { s(py, "") };
@@ -390,7 +468,10 @@ impl RtkEngine {
             if !candidates.is_truthy()? {
                 svc.call_method1(
                     "_publish",
-                    (STATE_SEARCHING, "Looking for a base station. Plug an RTK GNSS receiver into this computer"),
+                    (
+                        STATE_SEARCHING,
+                        "Looking for a base station. Plug an RTK GNSS receiver into this computer",
+                    ),
                 )?;
                 return Ok(none(py));
             }
@@ -398,9 +479,14 @@ impl RtkEngine {
         };
         svc.call_method1("_publish", (STATE_CONNECTING, format!("Opening {}", device.str()?)))?;
         let bauds: Vec<Bound<'py, PyAny>> = if settings.call_method1("get", ("baud",))?.is_truthy()? {
-            vec![py.get_type::<pyo3::types::PyInt>().call1((settings.get_item("baud")?,))?]
+            vec![py
+                .get_type::<pyo3::types::PyInt>()
+                .call1((settings.get_item("baud")?,))?]
         } else {
-            self.rtk(py)?.getattr("BAUD_CANDIDATES")?.try_iter()?.collect::<PyResult<Vec<_>>>()?
+            self.rtk(py)?
+                .getattr("BAUD_CANDIDATES")?
+                .try_iter()?
+                .collect::<PyResult<Vec<_>>>()?
         };
         let silent = "the receiver did not answer";
         let mut last_error = String::new();
@@ -410,7 +496,11 @@ impl RtkEngine {
                 Ok(p) => p,
                 Err(err) if err.is_instance_of::<PyException>(py) => {
                     let text = err.value(py).str()?.to_string();
-                    last_error = if text.is_empty() { err.get_type(py).name()?.to_string() } else { text };
+                    last_error = if text.is_empty() {
+                        err.get_type(py).name()?.to_string()
+                    } else {
+                        text
+                    };
                     continue;
                 }
                 Err(err) => return Err(err),
@@ -433,7 +523,10 @@ impl RtkEngine {
         if !last_error.is_empty() && last_error != silent {
             return Err(self.rtk_error(py, format!("could not open {}: {last_error}", device.str()?))?);
         }
-        let first = bauds.first().cloned().ok_or_else(|| PyException::new_err("no baud rate to try"))?;
+        let first = bauds
+            .first()
+            .cloned()
+            .ok_or_else(|| PyException::new_err("no baud rate to try"))?;
         let port = svc.call_method1("_open_port", (&device, &first))?;
         self.locked(svc, || {
             svc.setattr("_device", &device)?;
@@ -470,14 +563,20 @@ impl RtkEngine {
                 continue;
             }
             for message in ubx.call_method1("feed", (&chunk,))?.try_iter()? {
-                let (class, id, payload): (Bound<'py, PyAny>, Bound<'py, PyAny>, Bound<'py, PyAny>) = message?.extract()?;
+                let (class, id, payload): (Bound<'py, PyAny>, Bound<'py, PyAny>, Bound<'py, PyAny>) =
+                    message?.extract()?;
                 if class.eq(UBX_CLASS_MON)? && id.eq(UBX_ID_MON_VER)? {
                     let version = rtk.call_method1("parse_mon_ver", (payload,))?;
                     let label = rtk.call_method1("receiver_label", (&version,))?;
                     let label = if label.is_truthy()? { label } else { s(py, "unknown") };
                     self.logger(py)?.call_method1(
                         "info",
-                        ("RTK receiver on %s at %d: %s", transport.getattr("device")?, transport.getattr("baud")?, label),
+                        (
+                            "RTK receiver on %s at %d: %s",
+                            transport.getattr("device")?,
+                            transport.getattr("baud")?,
+                            label,
+                        ),
                     )?;
                     return PyTuple::new(py, [s(py, "ubx"), version]);
                 }
@@ -485,7 +584,11 @@ impl RtkEngine {
             if framer.call_method1("feed", (&chunk,))?.is_truthy()? {
                 self.logger(py)?.call_method1(
                     "info",
-                    ("RTK corrections already streaming from %s at %d", transport.getattr("device")?, transport.getattr("baud")?),
+                    (
+                        "RTK corrections already streaming from %s at %d",
+                        transport.getattr("device")?,
+                        transport.getattr("baud")?,
+                    ),
                 )?;
                 return PyTuple::new(py, [s(py, "rtcm"), none(py)]);
             }
@@ -500,26 +603,53 @@ impl RtkEngine {
         let py = svc.py();
         let rtk = self.rtk(py)?;
         let ntrip = settings.call_method1("get", ("ntrip",))?;
-        let ntrip = if ntrip.is_truthy()? { ntrip } else { PyDict::new(py).into_any() };
+        let ntrip = if ntrip.is_truthy()? {
+            ntrip
+        } else {
+            PyDict::new(py).into_any()
+        };
         let problem = rtk.call_method1("ntrip_problem", (&ntrip,))?;
         if problem.is_truthy()? {
             return Err(self.rtk_error(py, problem.str()?.to_string())?);
         }
         let host = ntrip.get_item("host")?.str()?.call_method0("strip")?;
         let port = py.get_type::<pyo3::types::PyInt>().call1((ntrip.get_item("port")?,))?;
-        let mountpoint = ntrip.get_item("mountpoint")?.str()?.call_method0("strip")?.call_method1("lstrip", ("/",))?;
+        let mountpoint = ntrip
+            .get_item("mountpoint")?
+            .str()?
+            .call_method0("strip")?
+            .call_method1("lstrip", ("/",))?;
         let label = PyString::new(py, "{}:{}/{}").call_method1("format", (&host, &port, &mountpoint))?;
-        svc.call_method1("_publish", (STATE_CONNECTING, PyString::new(py, "Connecting to {}").call_method1("format", (&label,))?))?;
-        let sock = svc.call_method1("_open_socket", (&host, &port, self.constant(py, "NTRIP_CONNECT_TIMEOUT_S")?))?;
+        svc.call_method1(
+            "_publish",
+            (
+                STATE_CONNECTING,
+                PyString::new(py, "Connecting to {}").call_method1("format", (&label,))?,
+            ),
+        )?;
+        let sock = svc.call_method1(
+            "_open_socket",
+            (&host, &port, self.constant(py, "NTRIP_CONNECT_TIMEOUT_S")?),
+        )?;
         let transport = self.env(py).getattr("NtripTransport")?.call1((&sock, &label))?;
         let text_or_blank = |key: &str| -> PyResult<Bound<'py, PyAny>> {
             let v = ntrip.call_method1("get", (key,))?;
-            if v.is_truthy()? { Ok(v.str()?.into_any()) } else { Ok(s(py, "")) }
+            if v.is_truthy()? {
+                Ok(v.str()?.into_any())
+            } else {
+                Ok(s(py, ""))
+            }
         };
         let exchange = (|| -> PyResult<Bound<'py, PyAny>> {
             let request = self.env(py).call_method1(
                 "_ntrip_request",
-                (&host, &port, &mountpoint, text_or_blank("username")?, text_or_blank("password")?),
+                (
+                    &host,
+                    &port,
+                    &mountpoint,
+                    text_or_blank("username")?,
+                    text_or_blank("password")?,
+                ),
             )?;
             sock.call_method1("sendall", (request,))?;
             self.env(py).call_method1("_read_ntrip_header", (&sock,))
@@ -532,7 +662,8 @@ impl RtkEngine {
             }
             Err(err) if err.is_instance_of::<pyo3::exceptions::PyOSError>(py) => {
                 transport.call_method0("close")?;
-                let text = PyString::new(py, "could not reach {}: {}").call_method1("format", (&label, err.value(py)))?;
+                let text =
+                    PyString::new(py, "could not reach {}: {}").call_method1("format", (&label, err.value(py)))?;
                 let wrapped = PyErr::from_value(self.env(py).getattr("RtkError")?.call1((text,))?);
                 wrapped.set_cause(py, Some(err));
                 return Err(wrapped);
@@ -569,7 +700,13 @@ impl RtkEngine {
     // ------------------------------------------------------- one session
 
     /// Configure the source if it can be, then forward until it ends.
-    fn run_session(&self, svc: &Bound<'_, PyAny>, transport: &Bound<'_, PyAny>, settings: &Bound<'_, PyAny>, version: &Bound<'_, PyAny>) -> PyResult<()> {
+    fn run_session(
+        &self,
+        svc: &Bound<'_, PyAny>,
+        transport: &Bound<'_, PyAny>,
+        settings: &Bound<'_, PyAny>,
+        version: &Bound<'_, PyAny>,
+    ) -> PyResult<()> {
         let py = svc.py();
         let rtk = self.rtk(py)?;
         let framer = rtk.getattr("RtcmFramer")?.call0()?;
@@ -588,7 +725,13 @@ impl RtkEngine {
         if configurable {
             svc.call_method1("_configure", (transport, settings, &framer, &ubx, version))?;
         } else {
-            svc.call_method1("_publish", (STATE_ACTIVE, format!("Forwarding corrections from {}", transport.getattr("label")?.str()?)))?;
+            svc.call_method1(
+                "_publish",
+                (
+                    STATE_ACTIVE,
+                    format!("Forwarding corrections from {}", transport.getattr("label")?.str()?),
+                ),
+            )?;
         }
         let deadline_quiet = self.now(py)? + self.constant(py, "LISTEN_TIMEOUT_S")?;
         while !self.stopped(svc)? && !self.restarting(svc)? {
@@ -604,10 +747,16 @@ impl RtkEngine {
             if !frames.is_truthy()? && now > deadline_quiet {
                 return Err(self.rtk_error(
                     py,
-                    format!("{} produced no corrections. Check that the base station has power and a clear view of the sky", label()?),
+                    format!(
+                        "{} produced no corrections. Check that the base station has power and a clear view of the sky",
+                        label()?
+                    ),
                 )?);
             }
-            if frames.is_truthy()? && last.is_truthy()? && now - last.extract::<f64>()? > self.constant(py, "SOURCE_SILENCE_S")? {
+            if frames.is_truthy()?
+                && last.is_truthy()?
+                && now - last.extract::<f64>()? > self.constant(py, "SOURCE_SILENCE_S")?
+            {
                 return Err(self.rtk_error(py, format!("{} stopped sending corrections", label()?))?);
             }
         }
@@ -630,14 +779,33 @@ impl RtkEngine {
         let msm7 = settings.call_method1("get", ("msm7",))?.is_truthy()?;
         if settings.call_method1("get", ("mode",))?.eq("fixed")? {
             let fixed = settings.call_method1("get", ("fixed",))?;
-            let fixed = if fixed.is_truthy()? { fixed } else { PyDict::new(py).into_any() };
+            let fixed = if fixed.is_truthy()? {
+                fixed
+            } else {
+                PyDict::new(py).into_any()
+            };
             let problem = rtk.call_method1("fixed_position_problem", (&fixed,))?;
             if problem.is_truthy()? {
                 return Err(self.rtk_error(py, problem.str()?.to_string())?);
             }
-            let float = |key: &str| -> PyResult<Bound<'_, PyAny>> { py.get_type::<pyo3::types::PyFloat>().call1((fixed.get_item(key)?,)) };
-            let builder = if modern { "fixed_position_frames" } else { "legacy_fixed_position_frames" };
-            let frames = rtk.call_method1(builder, (float("latitude")?, float("longitude")?, float("altitude")?, float("accuracy")?, msm7))?;
+            let float = |key: &str| -> PyResult<Bound<'_, PyAny>> {
+                py.get_type::<pyo3::types::PyFloat>().call1((fixed.get_item(key)?,))
+            };
+            let builder = if modern {
+                "fixed_position_frames"
+            } else {
+                "legacy_fixed_position_frames"
+            };
+            let frames = rtk.call_method1(
+                builder,
+                (
+                    float("latitude")?,
+                    float("longitude")?,
+                    float("altitude")?,
+                    float("accuracy")?,
+                    msm7,
+                ),
+            )?;
             svc.call_method1("_publish", (STATE_CONNECTING, "Setting the fixed base position"))?;
             svc.call_method1("_write_all", (transport, frames))?;
             svc.call_method1("_activate", (transport, modern, msm7))?;
@@ -645,18 +813,36 @@ impl RtkEngine {
             return Ok(());
         }
         svc.call_method1("_publish", (STATE_CONNECTING, "Starting the survey"))?;
-        let stopper = if modern { "stop_output_frames" } else { "legacy_stop_output_frames" };
+        let stopper = if modern {
+            "stop_output_frames"
+        } else {
+            "legacy_stop_output_frames"
+        };
         svc.call_method1("_write_all", (transport, rtk.call_method1(stopper, (msm7,))?))?;
         svc.call_method1("_await_survey_stopped", (transport, ubx, framer, modern))?;
-        let builder = if modern { "survey_in_frames" } else { "legacy_survey_in_frames" };
-        let duration = py.get_type::<pyo3::types::PyInt>().call1((settings.get_item("survey_duration")?,))?;
-        let accuracy = py.get_type::<pyo3::types::PyFloat>().call1((settings.get_item("survey_accuracy")?,))?;
+        let builder = if modern {
+            "survey_in_frames"
+        } else {
+            "legacy_survey_in_frames"
+        };
+        let duration = py
+            .get_type::<pyo3::types::PyInt>()
+            .call1((settings.get_item("survey_duration")?,))?;
+        let accuracy = py
+            .get_type::<pyo3::types::PyFloat>()
+            .call1((settings.get_item("survey_accuracy")?,))?;
         let frames = rtk.call_method1(builder, (duration, accuracy, msm7))?;
         svc.call_method1("_write_all", (transport, frames))?;
-        svc.call_method1("_publish", (STATE_SURVEYING, "Surveying: the base is learning where it is"))?;
+        svc.call_method1(
+            "_publish",
+            (STATE_SURVEYING, "Surveying: the base is learning where it is"),
+        )?;
         svc.call_method1("_await_survey_complete", (transport, ubx, framer, settings))?;
         svc.call_method1("_activate", (transport, modern, msm7))?;
-        svc.call_method1("_publish", (STATE_ACTIVE, "The survey is complete and corrections are flowing"))?;
+        svc.call_method1(
+            "_publish",
+            (STATE_ACTIVE, "The survey is complete and corrections are flowing"),
+        )?;
         Ok(())
     }
 
@@ -675,7 +861,13 @@ impl RtkEngine {
     /// Write *frames* in order with a pause between them; *force* writes
     /// even once stopping, for the teardown that has to happen because of it.
     #[pyo3(signature = (svc, transport, frames, force = false))]
-    fn write_all(&self, svc: &Bound<'_, PyAny>, transport: &Bound<'_, PyAny>, frames: &Bound<'_, PyAny>, force: bool) -> PyResult<()> {
+    fn write_all(
+        &self,
+        svc: &Bound<'_, PyAny>,
+        transport: &Bound<'_, PyAny>,
+        frames: &Bound<'_, PyAny>,
+        force: bool,
+    ) -> PyResult<()> {
         let py = svc.py();
         for frame in frames.try_iter()? {
             let frame = frame?;
@@ -690,11 +882,20 @@ impl RtkEngine {
 
     /// Wait until NAV-SVIN reports no survey running; a receiver that never
     /// says is a warning, not an error.
-    fn await_survey_stopped(&self, svc: &Bound<'_, PyAny>, transport: &Bound<'_, PyAny>, ubx: &Bound<'_, PyAny>, framer: &Bound<'_, PyAny>, modern: bool) -> PyResult<()> {
+    fn await_survey_stopped(
+        &self,
+        svc: &Bound<'_, PyAny>,
+        transport: &Bound<'_, PyAny>,
+        ubx: &Bound<'_, PyAny>,
+        framer: &Bound<'_, PyAny>,
+        modern: bool,
+    ) -> PyResult<()> {
         let py = svc.py();
         let _ = modern;
         let deadline = self.now(py)? + self.constant(py, "SURVEY_STOP_TIMEOUT_S")?;
-        let poll = self.rtk(py)?.call_method1("poll_frame", (UBX_CLASS_NAV, UBX_ID_NAV_SVIN))?;
+        let poll = self
+            .rtk(py)?
+            .call_method1("poll_frame", (UBX_CLASS_NAV, UBX_ID_NAV_SVIN))?;
         let mut seen = false;
         while self.now(py)? < deadline && !self.stopped(svc)? {
             transport.call_method1("write", (&poll,))?;
@@ -726,10 +927,19 @@ impl RtkEngine {
 
     /// Read NAV-SVIN until the survey is valid and no longer running; no
     /// timeout, on purpose.
-    fn await_survey_complete(&self, svc: &Bound<'_, PyAny>, transport: &Bound<'_, PyAny>, ubx: &Bound<'_, PyAny>, framer: &Bound<'_, PyAny>, settings: &Bound<'_, PyAny>) -> PyResult<()> {
+    fn await_survey_complete(
+        &self,
+        svc: &Bound<'_, PyAny>,
+        transport: &Bound<'_, PyAny>,
+        ubx: &Bound<'_, PyAny>,
+        framer: &Bound<'_, PyAny>,
+        settings: &Bound<'_, PyAny>,
+    ) -> PyResult<()> {
         let py = svc.py();
         let _ = settings;
-        let poll = self.rtk(py)?.call_method1("poll_frame", (UBX_CLASS_NAV, UBX_ID_NAV_SVIN))?;
+        let poll = self
+            .rtk(py)?
+            .call_method1("poll_frame", (UBX_CLASS_NAV, UBX_ID_NAV_SVIN))?;
         let mut next_poll = 0.0;
         while !self.stopped(svc)? && !self.restarting(svc)? {
             let now = self.now(py)?;
@@ -743,7 +953,10 @@ impl RtkEngine {
                 continue;
             }
             let survey = svc.call_method1("_consume", (chunk, framer, ubx))?;
-            if survey.is_truthy()? && survey.get_item("valid")?.is_truthy()? && !survey.get_item("active")?.is_truthy()? {
+            if survey.is_truthy()?
+                && survey.get_item("valid")?.is_truthy()?
+                && !survey.get_item("active")?.is_truthy()?
+            {
                 return Ok(());
             }
         }
@@ -754,7 +967,13 @@ impl RtkEngine {
 
     /// Feed one read to both parsers, inject the corrections it finished,
     /// and return the survey report it carried.
-    fn consume<'py>(&self, svc: &Bound<'py, PyAny>, chunk: &Bound<'py, PyAny>, framer: &Bound<'py, PyAny>, ubx: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+    fn consume<'py>(
+        &self,
+        svc: &Bound<'py, PyAny>,
+        chunk: &Bound<'py, PyAny>,
+        framer: &Bound<'py, PyAny>,
+        ubx: &Bound<'py, PyAny>,
+    ) -> PyResult<Bound<'py, PyAny>> {
         let py = svc.py();
         let rtk = self.rtk(py)?;
         let mut survey = none(py);
@@ -799,7 +1018,13 @@ impl RtkEngine {
     // ---------------------------------------------------------- teardown
 
     /// Close the source, taking a configured receiver out of base mode.
-    fn release(&self, svc: &Bound<'_, PyAny>, transport: &Bound<'_, PyAny>, settings: &Bound<'_, PyAny>, version: &Bound<'_, PyAny>) -> PyResult<()> {
+    fn release(
+        &self,
+        svc: &Bound<'_, PyAny>,
+        transport: &Bound<'_, PyAny>,
+        settings: &Bound<'_, PyAny>,
+        version: &Bound<'_, PyAny>,
+    ) -> PyResult<()> {
         let py = svc.py();
         if transport.getattr("configurable")?.is_truthy()? && !version.is_none() {
             let rtk = self.rtk(py)?;
@@ -812,7 +1037,8 @@ impl RtkEngine {
             let kwargs = kw(py, &[("force", true.into_pyobject(py)?.to_owned().into_any().unbind())])?;
             match svc.call_method("_write_all", (transport, frames), Some(&kwargs)) {
                 Err(err) if err.is_instance_of::<PyException>(py) => {
-                    self.logger(py)?.call_method1("debug", ("could not take the receiver out of base mode",))?;
+                    self.logger(py)?
+                        .call_method1("debug", ("could not take the receiver out of base mode",))?;
                 }
                 Err(err) => return Err(err),
                 Ok(_) => {}
@@ -827,7 +1053,10 @@ impl RtkEngine {
     /// The serial device the MAVLink bridge is using, or "".
     fn link_device<'py>(&self, svc: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
         let py = svc.py();
-        let conn = match svc.getattr("_mavlink").and_then(|m| m.call_method0("connection_string")) {
+        let conn = match svc
+            .getattr("_mavlink")
+            .and_then(|m| m.call_method0("connection_string"))
+        {
             Ok(c) => {
                 let c = if c.is_truthy()? { c } else { s(py, "") };
                 c.str()?.into_any()
@@ -863,7 +1092,11 @@ impl RtkEngine {
         let env = self.env(py);
         let phantom = env.getattr("is_phantom_device")?;
         let rtk_device = env.getattr("is_rtk_device")?;
-        let rows = if rows.is_truthy()? { rows } else { PyList::empty(py).into_any() };
+        let rows = if rows.is_truthy()? {
+            rows
+        } else {
+            PyList::empty(py).into_any()
+        };
         for row in rows.try_iter()? {
             let row = row?;
             let field = |name: &str| -> PyResult<Bound<'py, PyAny>> {
@@ -898,7 +1131,10 @@ impl RtkEngine {
             if !state.eq(STATE_ERROR)? {
                 svc.setattr("_error", "")?;
             }
-            Ok((self.copy_or_none(py, svc.getattr("_survey")?)?, rtk.call_method1("settings", (svc.getattr("_settings")?,))?))
+            Ok((
+                self.copy_or_none(py, svc.getattr("_survey")?)?,
+                rtk.call_method1("settings", (svc.getattr("_settings")?,))?,
+            ))
         })?;
         svc.call_method1("_store_update", (state, survey, settings))?;
         self.logger(py)?.call_method1("debug", ("RTK %s: %s", state, message))?;
@@ -908,24 +1144,47 @@ impl RtkEngine {
     fn publish_progress(&self, svc: &Bound<'_, PyAny>, survey: &Bound<'_, PyAny>) -> PyResult<()> {
         let py = svc.py();
         let rtk = self.rtk(py)?;
-        let (state, settings) = self.locked(svc, || Ok((svc.getattr("_state")?, rtk.call_method1("settings", (svc.getattr("_settings")?,))?)))?;
+        let (state, settings) = self.locked(svc, || {
+            Ok((
+                svc.getattr("_state")?,
+                rtk.call_method1("settings", (svc.getattr("_settings")?,))?,
+            ))
+        })?;
         svc.call_method1("_store_update", (state, survey, settings))?;
         Ok(())
     }
 
     /// The four scalar fields the rest of the app reads, into the store.
-    fn store_update(&self, svc: &Bound<'_, PyAny>, state: &Bound<'_, PyAny>, survey: &Bound<'_, PyAny>, settings: &Bound<'_, PyAny>) -> PyResult<()> {
+    fn store_update(
+        &self,
+        svc: &Bound<'_, PyAny>,
+        state: &Bound<'_, PyAny>,
+        survey: &Bound<'_, PyAny>,
+        settings: &Bound<'_, PyAny>,
+    ) -> PyResult<()> {
         let py = svc.py();
         let result = (|| -> PyResult<()> {
             let source = settings.call_method1("get", ("source",))?;
             let source = if source.is_truthy()? { source } else { s(py, "") };
-            let held = if survey.is_truthy()? { survey.clone() } else { PyDict::new(py).into_any() };
+            let held = if survey.is_truthy()? {
+                survey.clone()
+            } else {
+                PyDict::new(py).into_any()
+            };
             let accuracy = held.call_method1("get", ("accuracy",))?;
-            let accuracy = if accuracy.is_truthy()? { accuracy } else { 0.0f64.into_pyobject(py)?.into_any() };
+            let accuracy = if accuracy.is_truthy()? {
+                accuracy
+            } else {
+                0.0f64.into_pyobject(py)?.into_any()
+            };
             let accuracy = py.get_type::<pyo3::types::PyFloat>().call1((accuracy,))?;
             let progress = self.rtk(py)?.call_method1(
                 "survey_progress",
-                (survey, settings.get_item("survey_duration")?, settings.get_item("survey_accuracy")?),
+                (
+                    survey,
+                    settings.get_item("survey_duration")?,
+                    settings.get_item("survey_accuracy")?,
+                ),
             )?;
             let kwargs = kw(
                 py,
@@ -955,7 +1214,10 @@ impl RtkEngine {
             svc.setattr("_state", STATE_ERROR)?;
             svc.setattr("_error", reason)?;
             svc.setattr("_message", reason)?;
-            Ok((self.copy_or_none(py, svc.getattr("_survey")?)?, rtk.call_method1("settings", (svc.getattr("_settings")?,))?))
+            Ok((
+                self.copy_or_none(py, svc.getattr("_survey")?)?,
+                rtk.call_method1("settings", (svc.getattr("_settings")?,))?,
+            ))
         })?;
         svc.call_method1("_store_update", (STATE_ERROR, survey, settings))?;
         self.logger(py)?.call_method1("info", ("RTK: %s", reason))?;
@@ -978,7 +1240,10 @@ impl RtkEngine {
             svc.setattr("_last_frame_at", 0.0)?;
             svc.setattr("_messages_seen", PyDict::new(py))
         })?;
-        match svc.getattr("_mavlink").and_then(|m| m.call_method0("forget_rtcm_session")) {
+        match svc
+            .getattr("_mavlink")
+            .and_then(|m| m.call_method0("forget_rtcm_session"))
+        {
             Err(err) if !err.is_instance_of::<PyException>(py) => Err(err),
             _ => Ok(()),
         }
@@ -992,24 +1257,48 @@ impl RtkEngine {
         if settings.call_method1("get", ("source",))?.eq("ntrip")? {
             return Ok("NTRIP".into());
         }
-        Ok(format!("USB base station, {}", settings.call_method1("get", ("mode",))?.str()?))
+        Ok(format!(
+            "USB base station, {}",
+            settings.call_method1("get", ("mode",))?.str()?
+        ))
     }
 
     /// The default serial port: corvus_link's own, at *baud*.
-    fn open_port<'py>(&self, py: Python<'py>, device: &Bound<'py, PyAny>, baud: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+    fn open_port<'py>(
+        &self,
+        py: Python<'py>,
+        device: &Bound<'py, PyAny>,
+        baud: &Bound<'py, PyAny>,
+    ) -> PyResult<Bound<'py, PyAny>> {
         let kwargs = kw(
             py,
             &[
-                ("timeout", self.constant(py, "READ_TIMEOUT_S")?.into_pyobject(py)?.into_any().unbind()),
+                (
+                    "timeout",
+                    self.constant(py, "READ_TIMEOUT_S")?
+                        .into_pyobject(py)?
+                        .into_any()
+                        .unbind(),
+                ),
                 ("write_timeout", 2.0f64.into_pyobject(py)?.into_any().unbind()),
             ],
         )?;
-        py.import("corvus_link.rtk")?.getattr("SerialPort")?.call((device, baud), Some(&kwargs))
+        py.import("corvus_link.rtk")?
+            .getattr("SerialPort")?
+            .call((device, baud), Some(&kwargs))
     }
 
     /// The default caster socket: a TCP connection with a read timeout.
-    fn open_socket<'py>(&self, py: Python<'py>, host: &Bound<'py, PyAny>, port: &Bound<'py, PyAny>, timeout: f64) -> PyResult<Bound<'py, PyAny>> {
-        let sock = py.import("corvus_link.rtk")?.call_method1("connect_tcp", (host, port, timeout))?;
+    fn open_socket<'py>(
+        &self,
+        py: Python<'py>,
+        host: &Bound<'py, PyAny>,
+        port: &Bound<'py, PyAny>,
+        timeout: f64,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let sock = py
+            .import("corvus_link.rtk")?
+            .call_method1("connect_tcp", (host, port, timeout))?;
         sock.call_method1("settimeout", (self.constant(py, "READ_TIMEOUT_S")?,))?;
         Ok(sock)
     }

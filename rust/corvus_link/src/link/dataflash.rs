@@ -48,7 +48,9 @@ fn print_to(py: Python<'_>, text: String, stderr: bool) -> PyResult<()> {
 
 /// `values[i]`, with Python's error for a position past the end.
 fn at<T>(values: &[T], i: usize) -> PyResult<&T> {
-    values.get(i).ok_or_else(|| PyIndexError::new_err("list index out of range"))
+    values
+        .get(i)
+        .ok_or_else(|| PyIndexError::new_err("list index out of range"))
 }
 
 fn int_obj(py: Python<'_>, v: i64) -> PyObject {
@@ -110,7 +112,10 @@ fn py_find(data: &[u8], needle: &[u8], start: i64) -> i64 {
     if needle.is_empty() {
         return s;
     }
-    hay.windows(needle.len()).position(|w| w == needle).map(|i| i as i64 + s).unwrap_or(-1)
+    hay.windows(needle.len())
+        .position(|w| w == needle)
+        .map(|i| i as i64 + s)
+        .unwrap_or(-1)
 }
 
 /// A number that is the int 0 until something sets it to a float, as the
@@ -213,7 +218,9 @@ fn prefix_for(mult: f64) -> Option<&'static str> {
 
 /// `"%.{digits}g" % value`, through Python so every spelling is Python's.
 fn format_g(py: Python<'_>, digits: usize, value: &Bound<'_, PyAny>) -> PyResult<String> {
-    PyString::new(py, &format!("%.{digits}g")).call_method1("__mod__", (value,))?.extract()
+    PyString::new(py, &format!("%.{digits}g"))
+        .call_method1("__mod__", (value,))?
+        .extract()
 }
 
 /// A message format: its type number, name, struct, columns and units.
@@ -272,8 +279,14 @@ impl DfFormat {
                     types.push(info.ty);
                 }
                 None => {
-                    print_to(py, format!("DFFormat: Unsupported format char: '{c}' in message {name}"), false)?;
-                    return Err(PyException::new_err(format!("Unsupported format char: '{c}' in message {name}")));
+                    print_to(
+                        py,
+                        format!("DFFormat: Unsupported format char: '{c}' in message {name}"),
+                        false,
+                    )?;
+                    return Err(PyException::new_err(format!(
+                        "Unsupported format char: '{c}' in message {name}"
+                    )));
                 }
             }
         }
@@ -281,7 +294,12 @@ impl DfFormat {
         for (i, c) in cols.iter().enumerate() {
             colhash.insert(c.clone(), i);
         }
-        let a_indexes = fmts.iter().enumerate().filter(|(_, c)| **c == 'a').map(|(i, _)| i).collect();
+        let a_indexes = fmts
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| **c == 'a')
+            .map(|(i, _)| i)
+            .collect();
         let mut out = DfFormat {
             ftype,
             name: null_term(name),
@@ -304,7 +322,10 @@ impl DfFormat {
             let old = old.borrow();
             out.units = old.units.clone();
             if let Some(field) = &old.instance_field {
-                let idx = *out.colhash.get(field).ok_or_else(|| pyo3::exceptions::PyKeyError::new_err(field.clone()))?;
+                let idx = *out
+                    .colhash
+                    .get(field)
+                    .ok_or_else(|| pyo3::exceptions::PyKeyError::new_err(field.clone()))?;
                 out.set_instance_field_inner(py, idx)?;
             }
         }
@@ -312,7 +333,11 @@ impl DfFormat {
     }
 
     fn set_instance_field_inner(&mut self, py: Python<'_>, idx: usize) -> PyResult<()> {
-        let field = self.cols.get(idx).ok_or_else(|| PyIndexError::new_err("list index out of range"))?.clone();
+        let field = self
+            .cols
+            .get(idx)
+            .ok_or_else(|| PyIndexError::new_err("list index out of range"))?
+            .clone();
         self.instance_field = Some(field);
         let chars: Vec<char> = self.format.chars().collect();
         let mut pre = String::new();
@@ -322,7 +347,9 @@ impl DfFormat {
         }
         let calcsize = py.import("struct")?.getattr("calcsize")?;
         self.instance_ofs = Some(calcsize.call1((pre,))?.extract()?);
-        let ifmt = chars.get(idx).ok_or_else(|| PyIndexError::new_err("string index out of range"))?;
+        let ifmt = chars
+            .get(idx)
+            .ok_or_else(|| PyIndexError::new_err("string index out of range"))?;
         self.instance_len = Some(calcsize.call1((ifmt.to_string(),))?.extract()?);
         Ok(())
     }
@@ -331,8 +358,14 @@ impl DfFormat {
         match &self.units {
             None => Ok(String::new()),
             Some(units) => {
-                let idx = *self.colhash.get(col).ok_or_else(|| pyo3::exceptions::PyKeyError::new_err(col.to_string()))?;
-                units.get(idx).cloned().ok_or_else(|| PyIndexError::new_err("list index out of range"))
+                let idx = *self
+                    .colhash
+                    .get(col)
+                    .ok_or_else(|| pyo3::exceptions::PyKeyError::new_err(col.to_string()))?;
+                units
+                    .get(idx)
+                    .cloned()
+                    .ok_or_else(|| PyIndexError::new_err("list index out of range"))
             }
         }
     }
@@ -402,7 +435,12 @@ impl DfFormat {
     }
 
     /// The units from an FMTU's unit ids; a `#` marks the instance field.
-    fn set_unit_ids(&mut self, py: Python<'_>, unit_ids: &Bound<'_, PyAny>, unit_lookup: &Bound<'_, PyAny>) -> PyResult<()> {
+    fn set_unit_ids(
+        &mut self,
+        py: Python<'_>,
+        unit_ids: &Bound<'_, PyAny>,
+        unit_lookup: &Bound<'_, PyAny>,
+    ) -> PyResult<()> {
         if unit_ids.is_none() {
             return Ok(());
         }
@@ -426,13 +464,26 @@ impl DfFormat {
 
     /// Fold the multipliers of an FMTU into the units.
     #[allow(clippy::needless_range_loop)]
-    fn set_mult_ids(&mut self, py: Python<'_>, mult_ids: &Bound<'_, PyAny>, mult_lookup: &Bound<'_, PyAny>) -> PyResult<()> {
+    fn set_mult_ids(
+        &mut self,
+        py: Python<'_>,
+        mult_ids: &Bound<'_, PyAny>,
+        mult_lookup: &Bound<'_, PyAny>,
+    ) -> PyResult<()> {
         let Some(units) = self.units.clone() else {
-            return Err(pyo3::exceptions::PyTypeError::new_err("object of type 'NoneType' has no len()"));
+            return Err(pyo3::exceptions::PyTypeError::new_err(
+                "object of type 'NoneType' has no len()",
+            ));
         };
         let mut units = units;
         for i in 0..units.len() {
-            if self.mults.get(i).ok_or_else(|| PyIndexError::new_err("list index out of range"))?.is_some() || units[i].is_empty() {
+            if self
+                .mults
+                .get(i)
+                .ok_or_else(|| PyIndexError::new_err("list index out of range"))?
+                .is_some()
+                || units[i].is_empty()
+            {
                 continue;
             }
             let id = mult_ids.get_item(i)?;
@@ -454,7 +505,13 @@ impl DfFormat {
 
     fn __str__(&self, py: Python<'_>) -> PyResult<String> {
         let columns = self.columns.bind(py).repr()?;
-        Ok(format!("DFFormat({},{},{},{})", self.ftype.bind(py).str()?, self.name, self.format, columns))
+        Ok(format!(
+            "DFFormat({},{},{},{})",
+            self.ftype.bind(py).str()?,
+            self.name,
+            self.format,
+            columns
+        ))
     }
 }
 
@@ -480,7 +537,13 @@ pub struct DfMessage {
 }
 
 impl DfMessage {
-    fn new(py: Python<'_>, fmt: &Py<DfFormat>, elements: Vec<PyObject>, apply_multiplier: bool, parent: &PyObject) -> PyResult<Py<DfMessage>> {
+    fn new(
+        py: Python<'_>,
+        fmt: &Py<DfFormat>,
+        elements: Vec<PyObject>,
+        apply_multiplier: bool,
+        parent: &PyObject,
+    ) -> PyResult<Py<DfMessage>> {
         Py::new(
             py,
             DfMessage {
@@ -494,7 +557,10 @@ impl DfMessage {
 
     fn field(&self, py: Python<'_>, field: &str) -> PyResult<PyObject> {
         let fmt = self.fmt.bind(py).borrow();
-        let i = *fmt.colhash.get(field).ok_or_else(|| PyAttributeError::new_err(field.to_string()))?;
+        let i = *fmt
+            .colhash
+            .get(field)
+            .ok_or_else(|| PyAttributeError::new_err(field.to_string()))?;
         let list_err = || PyIndexError::new_err("list index out of range");
         let fmt_char = *fmt.fmts.get(i).ok_or_else(list_err)?;
         let elements = self.elements.bind(py);
@@ -505,13 +571,19 @@ impl DfMessage {
         let mut v: Bound<'_, PyAny> = if let Ok(b) = element.downcast::<PyBytes>() {
             match b.call_method1("decode", ("utf-8",)) {
                 Ok(s) => s,
-                Err(err) if err.is_instance_of::<pyo3::exceptions::PyUnicodeDecodeError>(py) => b.call_method1("decode", ("ISO-8859-1",))?,
+                Err(err) if err.is_instance_of::<pyo3::exceptions::PyUnicodeDecodeError>(py) => {
+                    b.call_method1("decode", ("ISO-8859-1",))?
+                }
                 Err(err) => return Err(err),
             }
         } else {
             element
         };
-        let format_i = fmt.format.chars().nth(i).ok_or_else(|| PyIndexError::new_err("string index out of range"))?;
+        let format_i = fmt
+            .format
+            .chars()
+            .nth(i)
+            .ok_or_else(|| PyIndexError::new_err("string index out of range"))?;
         let ty = *fmt.types.get(i).ok_or_else(list_err)?;
         if format_i == 'a' {
         } else if format_i != 'M' || self.apply_multiplier {
@@ -537,7 +609,6 @@ impl DfMessage {
         }
         Ok(v.unbind())
     }
-
 }
 
 #[pymethods]
@@ -574,11 +645,22 @@ impl DfMessage {
     fn __setattr__(slf: &Bound<'_, Self>, name: &str, value: &Bound<'_, PyAny>) -> PyResult<()> {
         let py = slf.py();
         let this = slf.get();
-        let first_upper = name.chars().next().ok_or_else(|| PyIndexError::new_err("string index out of range"))?.is_uppercase();
+        let first_upper = name
+            .chars()
+            .next()
+            .ok_or_else(|| PyIndexError::new_err("string index out of range"))?
+            .is_uppercase();
         let index = this.fmt.bind(py).borrow().colhash.get(name).copied();
         match index {
             Some(i) if first_upper => {
-                let mult = this.fmt.bind(py).borrow().mults.get(i).copied().ok_or_else(|| PyIndexError::new_err("list index out of range"))?;
+                let mult = this
+                    .fmt
+                    .bind(py)
+                    .borrow()
+                    .mults
+                    .get(i)
+                    .copied()
+                    .ok_or_else(|| PyIndexError::new_err("list index out of range"))?;
                 let value = match mult {
                     Some(m) if this.apply_multiplier => value.div(m)?,
                     _ => value.clone(),
@@ -590,7 +672,9 @@ impl DfMessage {
     }
 
     fn __delattr__(slf: &Bound<'_, Self>, name: &str) -> PyResult<()> {
-        slf.getattr("__dict__")?.del_item(name).map_err(|_| PyAttributeError::new_err(name.to_string()))
+        slf.getattr("__dict__")?
+            .del_item(name)
+            .map_err(|_| PyAttributeError::new_err(name.to_string()))
     }
 
     fn to_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
@@ -621,7 +705,11 @@ impl DfMessage {
         for c in &cols {
             let val = self.field(py, c)?;
             let val = val.bind(py);
-            let text = if is_quiet_nan(val)? { "qnan".to_string() } else { val.str()?.to_string_lossy().into_owned() };
+            let text = if is_quiet_nan(val)? {
+                "qnan".to_string()
+            } else {
+                val.str()?.to_string_lossy().into_owned()
+            };
             ret.push_str(&format!("{c} : {text}, "));
         }
         if !cols.is_empty() {
@@ -661,7 +749,9 @@ impl DfMessage {
             if v.is_instance_of::<PyString>() {
                 v = match v.call_method1("encode", ("ascii",)) {
                     Ok(b) => b,
-                    Err(err) if err.is_instance_of::<pyo3::exceptions::PyUnicodeEncodeError>(py) => v.call_method0("encode")?,
+                    Err(err) if err.is_instance_of::<pyo3::exceptions::PyUnicodeEncodeError>(py) => {
+                        v.call_method0("encode")?
+                    }
                     Err(err) => return Err(err),
                 };
             } else if v.get_type().name()?.to_string_lossy() == "array" {
@@ -691,19 +781,35 @@ impl DfMessage {
         let this = slf.get();
         let ts: Bound<'_, PyAny> = slf.getattr("_timestamp")?;
         let time = py.import("time")?;
-        let stamp = time.call_method1("strftime", ("%Y-%m-%d %H:%M:%S", time.call_method1("localtime", (&ts,))?))?;
-        let millis = py.get_type::<PyInt>().call1((ts.mul(1000.0)?,))?.call_method1("__mod__", (1000,))?;
+        let stamp = time.call_method1(
+            "strftime",
+            ("%Y-%m-%d %H:%M:%S", time.call_method1("localtime", (&ts,))?),
+        )?;
+        let millis = py
+            .get_type::<PyInt>()
+            .call1((ts.mul(1000.0)?,))?
+            .call_method1("__mod__", (1000,))?;
         let name = this.fmt.bind(py).borrow().name.clone();
-        f.call_method1("write", (format!("{}.{:03}: {}\n", stamp, millis.extract::<i64>()?, name),))?;
+        f.call_method1(
+            "write",
+            (format!("{}.{:03}: {}\n", stamp, millis.extract::<i64>()?, name),),
+        )?;
         let cols = this.fmt.bind(py).borrow().cols.clone();
         for c in cols {
             let val = this.field(py, &c)?.into_bound(py);
-            let shown = if is_quiet_nan(&val)? { PyString::new(py, "qnan").into_any() } else { val.clone() };
+            let shown = if is_quiet_nan(&val)? {
+                PyString::new(py, "qnan").into_any()
+            } else {
+                val.clone()
+            };
             f.call_method1("write", (format!("    {c}: {}", shown.str()?),))?;
             let unit = this.fmt.bind(py).borrow().unit_of(&c)?;
             if unit.starts_with("rad") {
                 let deg = py.import("math")?.call_method1("degrees", (&val,))?;
-                f.call_method1("write", (format!(" {unit} ({} {})", deg.str()?, unit.replace("rad", "deg")),))?;
+                f.call_method1(
+                    "write",
+                    (format!(" {unit} ({} {})", deg.str()?, unit.replace("rad", "deg")),),
+                )?;
             } else {
                 f.call_method1("write", (format!(" {unit}"),))?;
             }
@@ -719,7 +825,6 @@ impl DfMessage {
     }
 }
 
-
 // ------------------------------------------------------------------- clocks ----
 
 /// `m.<name> * factor`, with Python's own arithmetic.
@@ -730,7 +835,12 @@ fn msg_mul(py: Python<'_>, m: &Bound<'_, DfMessage>, name: &str, factor: f64) ->
 /// pymavlink's `_gpsTimeToTime(week, msec)` on the raw field values.
 fn gps_time(py: Python<'_>, week: &Bound<'_, PyAny>, msec: &Bound<'_, PyAny>) -> PyResult<f64> {
     let weeks = 604_800i64.into_pyobject(py)?.into_any().mul(week)?;
-    let total = 315_964_800i64.into_pyobject(py)?.into_any().add(weeks)?.add(msec.mul(0.001)?)?.sub(18)?;
+    let total = 315_964_800i64
+        .into_pyobject(py)?
+        .into_any()
+        .add(weeks)?
+        .add(msec.mul(0.001)?)?
+        .sub(18)?;
     total.extract::<f64>()
 }
 
@@ -748,7 +858,14 @@ fn try_field(py: Python<'_>, m: &Bound<'_, DfMessage>, name: &str) -> PyResult<O
 }
 
 fn first_fieldname(py: Python<'_>, m: &Bound<'_, DfMessage>) -> PyResult<String> {
-    m.get().fmt.bind(py).borrow().cols.first().cloned().ok_or_else(|| PyIndexError::new_err("list index out of range"))
+    m.get()
+        .fmt
+        .bind(py)
+        .borrow()
+        .cols
+        .first()
+        .cloned()
+        .ok_or_else(|| PyIndexError::new_err("list index out of range"))
 }
 
 fn set_timestamp(m: &Bound<'_, DfMessage>, value: Num) -> PyResult<()> {
@@ -764,14 +881,30 @@ struct GpsClock {
 
 enum Clock {
     Gps(GpsClock),
-    Usec { timebase: Num, timestamp: Num, first_us_stamp: Option<f64> },
-    Msec { timebase: Num, timestamp: Num, first_ms_stamp: Option<f64> },
-    Px4 { timebase: Num, px4_timebase: Num },
+    Usec {
+        timebase: Num,
+        timestamp: Num,
+        first_us_stamp: Option<f64>,
+    },
+    Msec {
+        timebase: Num,
+        timestamp: Num,
+        first_ms_stamp: Option<f64>,
+    },
+    Px4 {
+        timebase: Num,
+        px4_timebase: Num,
+    },
 }
 
 impl Clock {
     fn gps() -> Clock {
-        Clock::Gps(GpsClock { timebase: Num::Zero, msg_rate: HashMap::new(), counts: HashMap::new(), counts_since_gps: HashMap::new() })
+        Clock::Gps(GpsClock {
+            timebase: Num::Zero,
+            msg_rate: HashMap::new(),
+            counts: HashMap::new(),
+            counts_since_gps: HashMap::new(),
+        })
     }
 
     fn rewind_event(&mut self) {
@@ -780,13 +913,21 @@ impl Clock {
                 g.counts.clear();
                 g.counts_since_gps.clear();
             }
-            Clock::Usec { timebase, timestamp, first_us_stamp } => {
+            Clock::Usec {
+                timebase,
+                timestamp,
+                first_us_stamp,
+            } => {
                 *timestamp = *timebase;
                 if let Some(first) = first_us_stamp {
                     *timestamp = timestamp.add_f(*first * 0.000001);
                 }
             }
-            Clock::Msec { timebase, timestamp, first_ms_stamp } => {
+            Clock::Msec {
+                timebase,
+                timestamp,
+                first_ms_stamp,
+            } => {
                 *timestamp = *timebase;
                 if let Some(first) = first_ms_stamp {
                     *timestamp = timestamp.add_f(*first * 0.001);
@@ -822,7 +963,9 @@ impl Clock {
     #[allow(clippy::neg_cmp_op_on_partial_ord)]
     fn set_message_timestamp(&mut self, py: Python<'_>, m: &Bound<'_, DfMessage>) -> PyResult<()> {
         match self {
-            Clock::Usec { timebase, timestamp, .. } => {
+            Clock::Usec {
+                timebase, timestamp, ..
+            } => {
                 let first = first_fieldname(py, m)?;
                 let name = m.get().fmt.bind(py).borrow().name.clone();
                 let ts = if first == "TimeUS" {
@@ -839,7 +982,9 @@ impl Clock {
                 set_timestamp(m, ts)?;
                 *timestamp = ts;
             }
-            Clock::Msec { timebase, timestamp, .. } => {
+            Clock::Msec {
+                timebase, timestamp, ..
+            } => {
                 let first = first_fieldname(py, m)?;
                 let name = m.get().fmt.bind(py).borrow().name.clone();
                 let ts = if first == "TimeMS" {
@@ -885,10 +1030,14 @@ impl GpsClock {
             timems = Some(m.get().field(py, "TWk")?);
         }
         let Some(week) = week else {
-            return Err(pyo3::exceptions::PyTypeError::new_err("unsupported operand type(s) for *: 'int' and 'NoneType'"));
+            return Err(pyo3::exceptions::PyTypeError::new_err(
+                "unsupported operand type(s) for *: 'int' and 'NoneType'",
+            ));
         };
         let Some(timems) = timems else {
-            return Err(pyo3::exceptions::PyTypeError::new_err("unsupported operand type(s) for *: 'NoneType' and 'float'"));
+            return Err(pyo3::exceptions::PyTypeError::new_err(
+                "unsupported operand type(s) for *: 'NoneType' and 'float'",
+            ));
         };
         let t = gps_time(py, week.bind(py), timems.bind(py))?;
         let deltat = t - self.timebase.f();
@@ -914,7 +1063,10 @@ impl GpsClock {
 fn unpack_elements(py: Python<'_>, msg_struct: &str, body: &[u8]) -> PyResult<Vec<PyObject>> {
     let struct_mod = py.import("struct")?;
     let unpacked = struct_mod.call_method1("unpack", (msg_struct, PyBytes::new(py, body)))?;
-    unpacked.try_iter()?.map(|v| v.map(|v| v.unbind())).collect::<PyResult<Vec<_>>>()
+    unpacked
+        .try_iter()?
+        .map(|v| v.map(|v| v.unbind()))
+        .collect::<PyResult<Vec<_>>>()
 }
 
 fn array_h<'py>(py: Python<'py>, value: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
@@ -974,7 +1126,15 @@ impl DfReader {
     fn new(py: Python<'_>, binary: bool, data: Vec<u8>, zero_time_base: bool) -> PyResult<DfReader> {
         let fmt_fmt = Py::new(
             py,
-            DfFormat::build(py, int_obj(py, 0x80), "FMT", int_obj(py, 89), "BBnNZ", "Type,Length,Name,Format,Columns", None)?,
+            DfFormat::build(
+                py,
+                int_obj(py, 0x80),
+                "FMT",
+                int_obj(py, 89),
+                "BBnNZ",
+                "Type,Length,Name,Format,Columns",
+                None,
+            )?,
         )?;
         let formats = PyDict::new(py);
         if binary {
@@ -1109,7 +1269,9 @@ impl DfReader {
         self.messages.bind(py).set_item(&kind, m)?;
         if let Some(field) = &instance_field {
             let i = m.get().field(py, field)?;
-            self.messages.bind(py).set_item(format!("{kind}[{}]", i.bind(py).str()?), m)?;
+            self.messages
+                .bind(py)
+                .set_item(format!("{kind}[{}]", i.bind(py).str()?), m)?;
         }
         if let Some(clock) = &mut self.clock {
             clock.message_arrived(py, m)?;
@@ -1149,7 +1311,11 @@ impl DfReader {
         }
         if kind == "MODE" {
             let mavutil = py.import("corvus_link.mavutil")?;
-            let mode_is_str = if has("Mode") { m.get().field(py, "Mode")?.bind(py).is_instance_of::<PyString>() } else { false };
+            let mode_is_str = if has("Mode") {
+                m.get().field(py, "Mode")?.bind(py).is_instance_of::<PyString>()
+            } else {
+                false
+            };
             if mode_is_str {
                 let text = m.get().field(py, "Mode")?;
                 self.flightmode = text.bind(py).call_method0("upper")?.unbind();
@@ -1168,7 +1334,10 @@ impl DfReader {
         }
         if kind == "STAT" && has("MainState") {
             let state = m.get().field(py, "MainState")?;
-            self.flightmode = py.import("corvus_link.mavutil")?.call_method1("mode_string_px4", (state,))?.unbind();
+            self.flightmode = py
+                .import("corvus_link.mavutil")?
+                .call_method1("mode_string_px4", (state,))?
+                .unbind();
         }
         if kind == "PARM" {
             if let Some(name) = try_field(py, m, "Name")? {
@@ -1177,7 +1346,10 @@ impl DfReader {
                     self.params.bind(py).set_item(name.bind(py), value)?;
                     if has("Default") {
                         let default = m.get().field(py, "Default")?;
-                        let is_nan = py.import("math")?.call_method1("isnan", (default.bind(py),))?.is_truthy()?;
+                        let is_nan = py
+                            .import("math")?
+                            .call_method1("isnan", (default.bind(py),))?
+                            .is_truthy()?;
                         if !is_nan {
                             let defaults = match &self.param_defaults {
                                 Some(d) => d.clone_ref(py),
@@ -1274,7 +1446,9 @@ impl DfReader {
             let mut smallest_index: Option<usize> = None;
             let mut smallest_offset = self.dlen();
             for (i, mtype) in list.iter().enumerate() {
-                let Some(count) = self.t_counts.get(mtype) else { continue };
+                let Some(count) = self.t_counts.get(mtype) else {
+                    continue;
+                };
                 if self.indexes[i] as i64 >= *count {
                     continue;
                 }
@@ -1292,7 +1466,12 @@ impl DfReader {
         Ok(())
     }
 
-    fn recv_match_inner(&mut self, py: Python<'_>, types: Option<&[String]>, strict: bool) -> PyResult<Option<Py<DfMessage>>> {
+    fn recv_match_inner(
+        &mut self,
+        py: Python<'_>,
+        types: Option<&[String]>,
+        strict: bool,
+    ) -> PyResult<Option<Py<DfMessage>>> {
         loop {
             if let Some(t) = types {
                 self.skip_types(py, t, strict)?;
@@ -1358,12 +1537,17 @@ impl DfReader {
         let gps_parm = ["GPS".to_string(), "PARM".to_string()];
 
         loop {
-            let Some(m) = self.recv_match_inner(py, Some(&gps_parm), true)? else { break };
+            let Some(m) = self.recv_match_inner(py, Some(&gps_parm), true)? else {
+                break;
+            };
             let mb = m.bind(py);
             if mb.get().fmt.bind(py).borrow().name == "PARM" {
                 continue;
             }
-            if try_field(py, mb, "TimeUS")?.is_none() || try_field(py, mb, "GWk")?.is_none() || try_field(py, mb, "GMS")?.is_none() {
+            if try_field(py, mb, "TimeUS")?.is_none()
+                || try_field(py, mb, "GWk")?.is_none()
+                || try_field(py, mb, "GMS")?.is_none()
+            {
                 break;
             }
             first_modern_gps_message = Some(m.clone_ref(py));
@@ -1384,7 +1568,11 @@ impl DfReader {
                     if gps.bind(py).get().field(py, "GWk")?.bind(py).le(0)? {
                         break;
                     }
-                    let mut clock = Clock::Usec { timebase: Num::Zero, timestamp: Num::Zero, first_us_stamp: None };
+                    let mut clock = Clock::Usec {
+                        timebase: Num::Zero,
+                        timestamp: Num::Zero,
+                        first_us_stamp: None,
+                    };
                     if !self.zero_time_base {
                         let g = gps.bind(py);
                         let t = field_gps_time(py, g, "GWk", "GMS")?;
@@ -1412,14 +1600,22 @@ impl DfReader {
                     }
                 };
                 if nonzero("TimeUS")? && nonzero("GWk")? {
-                    let mut clock = Clock::Usec { timebase: Num::Zero, timestamp: Num::Zero, first_us_stamp: None };
+                    let mut clock = Clock::Usec {
+                        timebase: Num::Zero,
+                        timestamp: Num::Zero,
+                        first_us_stamp: None,
+                    };
                     if !self.zero_time_base {
                         let t = field_gps_time(py, mb, "GWk", "GMS")?;
                         let first = match &first_us_stamp {
                             Some(v) => Some(v.bind(py).extract::<f64>()?),
                             None => None,
                         };
-                        clock = Clock::Usec { timebase: Num::F(t - msg_mul(py, mb, "TimeUS", 0.000001)?), timestamp: Num::Zero, first_us_stamp: first };
+                        clock = Clock::Usec {
+                            timebase: Num::F(t - msg_mul(py, mb, "TimeUS", 0.000001)?),
+                            timestamp: Num::Zero,
+                            first_us_stamp: first,
+                        };
                     }
                     self.clock = Some(clock);
                     have_good_clock = true;
@@ -1429,14 +1625,22 @@ impl DfReader {
                     if first_ms_stamp.is_none() {
                         first_ms_stamp = Some(mb.get().field(py, "T")?);
                     }
-                    let mut clock = Clock::Msec { timebase: Num::Zero, timestamp: Num::Zero, first_ms_stamp: None };
+                    let mut clock = Clock::Msec {
+                        timebase: Num::Zero,
+                        timestamp: Num::Zero,
+                        first_ms_stamp: None,
+                    };
                     if !self.zero_time_base {
                         let t = field_gps_time(py, mb, "Week", "TimeMS")?;
                         let first = match &first_ms_stamp {
                             Some(v) => Some(v.bind(py).extract::<f64>()?),
                             None => None,
                         };
-                        clock = Clock::Msec { timebase: Num::F(t - msg_mul(py, mb, "T", 0.001)?), timestamp: Num::Zero, first_ms_stamp: first };
+                        clock = Clock::Msec {
+                            timebase: Num::F(t - msg_mul(py, mb, "T", 0.001)?),
+                            timestamp: Num::Zero,
+                            first_ms_stamp: first,
+                        };
                     }
                     self.clock = Some(clock);
                     have_good_clock = true;
@@ -1448,8 +1652,14 @@ impl DfReader {
                 if nonzero("Week")? {
                     if let Some(prev) = &gps_interp_msg_gps1 {
                         let p = prev.bind(py);
-                        if p.get().field(py, "TimeMS")?.bind(py).ne(mb.get().field(py, "TimeMS")?.bind(py))?
-                            || p.get().field(py, "Week")?.bind(py).ne(mb.get().field(py, "Week")?.bind(py))?
+                        if p.get()
+                            .field(py, "TimeMS")?
+                            .bind(py)
+                            .ne(mb.get().field(py, "TimeMS")?.bind(py))?
+                            || p.get()
+                                .field(py, "Week")?
+                                .bind(py)
+                                .ne(mb.get().field(py, "Week")?.bind(py))?
                         {
                             have_good_clock = true;
                             break;
@@ -1479,9 +1689,17 @@ impl DfReader {
 
         if !have_good_clock {
             if first_us_stamp.is_some() {
-                self.clock = Some(Clock::Usec { timebase: Num::Zero, timestamp: Num::Zero, first_us_stamp: None });
+                self.clock = Some(Clock::Usec {
+                    timebase: Num::Zero,
+                    timestamp: Num::Zero,
+                    first_us_stamp: None,
+                });
             } else if first_ms_stamp.is_some() {
-                self.clock = Some(Clock::Msec { timebase: Num::Zero, timestamp: Num::Zero, first_ms_stamp: None });
+                self.clock = Some(Clock::Msec {
+                    timebase: Num::Zero,
+                    timestamp: Num::Zero,
+                    first_ms_stamp: None,
+                });
             }
         }
         self.rewind_inner(py, true)
@@ -1491,22 +1709,35 @@ impl DfReader {
 fn timestamp_of(py: Python<'_>, m: Option<Py<DfMessage>>) -> PyResult<PyObject> {
     match m {
         Some(m) => Ok(m.bind(py).getattr("_timestamp")?.unbind()),
-        None => Err(PyAttributeError::new_err("'NoneType' object has no attribute '_timestamp'")),
+        None => Err(PyAttributeError::new_err(
+            "'NoneType' object has no attribute '_timestamp'",
+        )),
     }
 }
-
 
 // ---------------------------------------------------- binary and text logs ----
 
 impl DfReader {
-    fn new_message(&self, py: Python<'_>, fmt: &Py<DfFormat>, elements: Vec<PyObject>, apply_multiplier: bool) -> PyResult<Py<DfMessage>> {
+    fn new_message(
+        &self,
+        py: Python<'_>,
+        fmt: &Py<DfFormat>,
+        elements: Vec<PyObject>,
+        apply_multiplier: bool,
+    ) -> PyResult<Py<DfMessage>> {
         DfMessage::new(py, fmt, elements, apply_multiplier, &self.me(py))
     }
 
     /// pymavlink builds a format from the six strings of an `FMT` message.
     fn format_from_elements(&self, py: Python<'_>, elements: &[PyObject]) -> PyResult<Py<DfFormat>> {
-        let ftype = elements.first().ok_or_else(|| PyIndexError::new_err("list index out of range"))?;
-        let get = |i: usize| elements.get(i).ok_or_else(|| PyIndexError::new_err("list index out of range"));
+        let ftype = elements
+            .first()
+            .ok_or_else(|| PyIndexError::new_err("list index out of range"))?;
+        let get = |i: usize| {
+            elements
+                .get(i)
+                .ok_or_else(|| PyIndexError::new_err("list index out of range"))
+        };
         let name = null_term_obj(get(2)?.bind(py))?;
         let format = null_term_obj(get(3)?.bind(py))?;
         let columns = null_term_obj(get(4)?.bind(py))?;
@@ -1515,7 +1746,18 @@ impl DfReader {
             Some(o) => Some(o.downcast::<DfFormat>()?),
             None => None,
         };
-        Py::new(py, DfFormat::build(py, ftype.clone_ref(py), &name, get(1)?.clone_ref(py), &format, &columns, old)?)
+        Py::new(
+            py,
+            DfFormat::build(
+                py,
+                ftype.clone_ref(py),
+                &name,
+                get(1)?.clone_ref(py),
+                &format,
+                &columns,
+                old,
+            )?,
+        )
     }
 
     fn parse_next_binary(&mut self, py: Python<'_>) -> PyResult<Option<Py<DfMessage>>> {
@@ -1587,7 +1829,11 @@ impl DfReader {
                     }
                     print_to(
                         py,
-                        format!("Failed to parse {name}/{msg_struct} with len {} (remaining {})", body.len(), self.remaining),
+                        format!(
+                            "Failed to parse {name}/{msg_struct} with len {} (remaining {})",
+                            body.len(),
+                            self.remaining
+                        ),
                         true,
                     )?;
                     continue;
@@ -1619,9 +1865,15 @@ impl DfReader {
             self.remaining = self.dlen() - self.offset;
             let m = self.new_message(py, &fmt, elements.iter().map(|e| e.clone_ref(py)).collect(), true)?;
             if name == "FMTU" {
-                let fmt_type = py.get_type::<PyInt>().call1((elements.first().ok_or_else(|| PyIndexError::new_err("list index out of range"))?,))?;
-                let unit_ids = elements.get(1).ok_or_else(|| PyIndexError::new_err("list index out of range"))?;
-                let mult_ids = elements.get(2).ok_or_else(|| PyIndexError::new_err("list index out of range"))?;
+                let fmt_type = py.get_type::<PyInt>().call1((elements
+                    .first()
+                    .ok_or_else(|| PyIndexError::new_err("list index out of range"))?,))?;
+                let unit_ids = elements
+                    .get(1)
+                    .ok_or_else(|| PyIndexError::new_err("list index out of range"))?;
+                let mult_ids = elements
+                    .get(2)
+                    .ok_or_else(|| PyIndexError::new_err("list index out of range"))?;
                 if let Some(f2) = self.formats.bind(py).get_item(&fmt_type)? {
                     f2.call_method1("set_unit_ids", (unit_ids, self.unit_lookup.bind(py)))?;
                     f2.call_method1("set_mult_ids", (mult_ids, self.mult_lookup.bind(py)))?;
@@ -1630,11 +1882,17 @@ impl DfReader {
             match self.add_msg(py, m.bind(py)) {
                 Ok(()) => {}
                 Err(err) if err.is_instance_of::<PyException>(py) => {
-                    print_to(py, format!("bad msg at offset {} {}", self.offset, err.value(py).str()?), false)?;
+                    print_to(
+                        py,
+                        format!("bad msg at offset {} {}", self.offset, err.value(py).str()?),
+                        false,
+                    )?;
                 }
                 Err(err) => return Err(err),
             }
-            self.percent = PyFloat::new(py, 100.0 * (self.offset as f64 / self.dlen() as f64)).into_any().unbind();
+            self.percent = PyFloat::new(py, 100.0 * (self.offset as f64 / self.dlen() as f64))
+                .into_any()
+                .unbind();
             return Ok(Some(m));
         }
     }
@@ -1652,7 +1910,9 @@ impl DfReader {
                 }
                 let raw = py_slice(&self.data, self.offset, endline);
                 let end = raw.iter().rposition(|b| !is_py_space(*b)).map(|i| i + 1).unwrap_or(0);
-                let line = PyBytes::new(py, &raw[..end]).call_method0("decode")?.extract::<String>()?;
+                let line = PyBytes::new(py, &raw[..end])
+                    .call_method0("decode")?
+                    .extract::<String>()?;
                 elements = line.split(self.delimiter.as_str()).map(String::from).collect();
                 self.offset = endline + 1;
                 if elements.len() >= 2 {
@@ -1666,9 +1926,13 @@ impl DfReader {
                 elements[4] = String::new();
                 elements.push(String::new());
             }
-            self.percent = PyFloat::new(py, 100.0 * (self.offset as f64 / self.dlen() as f64)).into_any().unbind();
+            self.percent = PyFloat::new(py, 100.0 * (self.offset as f64 / self.dlen() as f64))
+                .into_any()
+                .unbind();
             let msg_type = elements[0].clone();
-            let Some(fmt) = self.format_by_name(py, &msg_type)? else { continue };
+            let Some(fmt) = self.format_by_name(py, &msg_type)? else {
+                continue;
+            };
             let (format_len, name) = {
                 let f = fmt.bind(py).borrow();
                 (f.format.chars().count(), f.name.trim_end_matches('\0').to_string())
@@ -1681,27 +1945,44 @@ impl DfReader {
             if name == "FMT" {
                 let int = py.get_type::<PyInt>();
                 let ftype = int.call1((at(&elements, 0)?,))?;
-                let fname = elements.get(2).cloned().ok_or_else(|| PyIndexError::new_err("list index out of range"))?;
+                let fname = elements
+                    .get(2)
+                    .cloned()
+                    .ok_or_else(|| PyIndexError::new_err("list index out of range"))?;
                 if self.delimiter == "," {
                     let joined = elements.get(4..).unwrap_or(&[]).join(",");
                     elements.truncate(4);
                     elements.push(joined);
                 }
-                let mut columns = elements.get(4).cloned().ok_or_else(|| PyIndexError::new_err("list index out of range"))?;
+                let mut columns = elements
+                    .get(4)
+                    .cloned()
+                    .ok_or_else(|| PyIndexError::new_err("list index out of range"))?;
                 if fname == "FMT" && columns == "Type,Length,Name,Format" {
                     columns = "Type,Length,Name,Format,Columns".to_string();
                 }
                 let flen = int.call1((at(&elements, 1)?,))?;
                 let new_fmt = Py::new(
                     py,
-                    DfFormat::build(py, ftype.clone().unbind(), &fname, flen.unbind(), at(&elements, 3)?, &columns, None)?,
+                    DfFormat::build(
+                        py,
+                        ftype.clone().unbind(),
+                        &fname,
+                        flen.unbind(),
+                        at(&elements, 3)?,
+                        &columns,
+                        None,
+                    )?,
                 )?;
                 self.formats.bind(py).set_item(&fname, new_fmt)?;
                 self.id_to_name.bind(py).set_item(&ftype, &fname)?;
                 self.name_to_id.bind(py).set_item(&fname, &ftype)?;
             }
 
-            let objects: Vec<PyObject> = elements.iter().map(|e| PyString::new(py, e).into_any().unbind()).collect();
+            let objects: Vec<PyObject> = elements
+                .iter()
+                .map(|e| PyString::new(py, e).into_any().unbind())
+                .collect();
             let m = self.new_message(py, &fmt, objects, false)?;
             let mb = m.bind(py);
             let kind = fmt.bind(py).borrow().name.clone();
@@ -1710,7 +1991,11 @@ impl DfReader {
                 if let Some(fmtid) = fmtid {
                     if self.id_to_name.bind(py).contains(fmtid.bind(py))? {
                         let target = self.id_to_name.bind(py).get_item(fmtid.bind(py))?.expect("checked");
-                        let fmtu = self.formats.bind(py).get_item(&target)?.ok_or_else(|| pyo3::exceptions::PyKeyError::new_err(target.unbind()))?;
+                        let fmtu = self
+                            .formats
+                            .bind(py)
+                            .get_item(&target)?
+                            .ok_or_else(|| pyo3::exceptions::PyKeyError::new_err(target.unbind()))?;
                         let none = py.None();
                         let unit_ids = try_field(py, mb, "UnitIds")?.unwrap_or_else(|| none.clone_ref(py));
                         let mult_ids = try_field(py, mb, "MultIds")?.unwrap_or_else(|| none.clone_ref(py));
@@ -1779,7 +2064,11 @@ impl DfReader {
             } else if let Some(fmt) = self.format_by_id(py, mtype as i64)? {
                 let (has_instance, iofs, ilen) = {
                     let f = fmt.bind(py).borrow();
-                    (f.instance_field.is_some(), f.instance_ofs.unwrap_or(0), f.instance_len.unwrap_or(0))
+                    (
+                        f.instance_field.is_some(),
+                        f.instance_ofs.unwrap_or(0),
+                        f.instance_len.unwrap_or(0),
+                    )
                 };
                 if has_instance {
                     let idata = py_slice(&self.data, ofs + 3 + iofs, ofs + 3 + iofs + ilen).to_vec();
@@ -1832,14 +2121,22 @@ impl DfReader {
             if Some(mtype as i64) == fmtu_type {
                 let fmt = self.format_by_id(py, mtype as i64)?.expect("known");
                 let Some(elements) = read_body(self, &fmt)? else { break };
-                let ftype = int_type.call1((elements.get(1).ok_or_else(|| PyIndexError::new_err("list index out of range"))?,))?;
+                let ftype = int_type.call1((elements
+                    .get(1)
+                    .ok_or_else(|| PyIndexError::new_err("list index out of range"))?,))?;
                 if let Some(fmt2) = self.formats.bind(py).get_item(&ftype)? {
                     let colhash = fmt.bind(py).borrow().colhash.clone();
                     if let Some(i) = colhash.get("UnitIds") {
-                        fmt2.call_method1("set_unit_ids", (null_term_obj(at(&elements, *i)?.bind(py))?, self.unit_lookup.bind(py)))?;
+                        fmt2.call_method1(
+                            "set_unit_ids",
+                            (null_term_obj(at(&elements, *i)?.bind(py))?, self.unit_lookup.bind(py)),
+                        )?;
                     }
                     if let Some(i) = colhash.get("MultIds") {
-                        fmt2.call_method1("set_mult_ids", (null_term_obj(at(&elements, *i)?.bind(py))?, self.mult_lookup.bind(py)))?;
+                        fmt2.call_method1(
+                            "set_mult_ids",
+                            (null_term_obj(at(&elements, *i)?.bind(py))?, self.mult_lookup.bind(py)),
+                        )?;
                     }
                 }
             }
@@ -1853,8 +2150,12 @@ impl DfReader {
             if Some(mtype as i64) == mult_type {
                 let fmt = self.format_by_id(py, mtype as i64)?.expect("known");
                 let Some(elements) = read_body(self, &fmt)? else { break };
-                let mult = py.get_type::<PyFloat>().call1((format_g(py, 7, at(&elements, 2)?.bind(py))?,))?;
-                let ch = py.import("builtins")?.getattr("chr")?.call1((elements.get(1).ok_or_else(|| PyIndexError::new_err("list index out of range"))?,))?;
+                let mult = py
+                    .get_type::<PyFloat>()
+                    .call1((format_g(py, 7, at(&elements, 2)?.bind(py))?,))?;
+                let ch = py.import("builtins")?.getattr("chr")?.call1((elements
+                    .get(1)
+                    .ok_or_else(|| PyIndexError::new_err("list index out of range"))?,))?;
                 self.mult_lookup.bind(py).set_item(ch, mult)?;
             }
 
@@ -1971,7 +2272,14 @@ impl DfReader {
     #[getter]
     fn param_defaults(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
         self.param_defaults.as_ref().map(|d| d.clone_ref(py)).ok_or_else(|| {
-            PyAttributeError::new_err(format!("'{}' object has no attribute 'param_defaults'", if self.binary { "DFReader_binary" } else { "DFReader_text" }))
+            PyAttributeError::new_err(format!(
+                "'{}' object has no attribute 'param_defaults'",
+                if self.binary {
+                    "DFReader_binary"
+                } else {
+                    "DFReader_text"
+                }
+            ))
         })
     }
 
@@ -2154,7 +2462,9 @@ impl DfReader {
             self.flightmodes = Some(list.clone().unbind());
             let wanted = ["MODE".to_string(), "PARM".to_string()];
             loop {
-                let Some(m) = self.recv_match_inner(py, Some(&wanted), true)? else { break };
+                let Some(m) = self.recv_match_inner(py, Some(&wanted), true)? else {
+                    break;
+                };
                 let ts = m.bind(py).getattr("_timestamp")?;
                 tstamp = Some(ts.clone().unbind());
                 let same = match &fmode {
@@ -2256,7 +2566,12 @@ impl DfReaderBinary {
         Ok(None)
     }
 
-    fn make_msgbuf<'py>(slf: PyRef<'_, Self>, py: Python<'py>, fmt: &Bound<'py, DfFormat>, values: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+    fn make_msgbuf<'py>(
+        slf: PyRef<'_, Self>,
+        py: Python<'py>,
+        fmt: &Bound<'py, DfFormat>,
+        values: &Bound<'py, PyAny>,
+    ) -> PyResult<Bound<'py, PyAny>> {
         let _ = slf;
         let struct_mod = py.import("struct")?;
         let head = struct_mod.call_method1("pack", ("BBB", 0xA3, 0x95, fmt.borrow().ftype.bind(py)))?;
@@ -2267,14 +2582,25 @@ impl DfReaderBinary {
         head.add(struct_mod.call_method1("pack", PyTuple::new(py, args)?)?)
     }
 
-    fn make_format_msgbuf<'py>(slf: PyRef<'_, Self>, py: Python<'py>, fmt: &Bound<'py, DfFormat>) -> PyResult<Bound<'py, PyAny>> {
+    fn make_format_msgbuf<'py>(
+        slf: PyRef<'_, Self>,
+        py: Python<'py>,
+        fmt: &Bound<'py, DfFormat>,
+    ) -> PyResult<Bound<'py, PyAny>> {
         let base = slf.as_super();
-        let fmt_fmt = base.formats.bind(py).get_item(0x80)?.ok_or_else(|| pyo3::exceptions::PyKeyError::new_err(0x80))?;
+        let fmt_fmt = base
+            .formats
+            .bind(py)
+            .get_item(0x80)?
+            .ok_or_else(|| pyo3::exceptions::PyKeyError::new_err(0x80))?;
         let fmt_fmt = fmt_fmt.downcast::<DfFormat>()?.borrow();
         let struct_mod = py.import("struct")?;
         let head = struct_mod.call_method1("pack", ("BBB", 0xA3, 0x95, 0x80))?;
         let f = fmt.borrow();
-        let size = struct_mod.call_method1("calcsize", (&f.msg_struct,))?.extract::<i64>()? + 3;
+        let size = struct_mod
+            .call_method1("calcsize", (&f.msg_struct,))?
+            .extract::<i64>()?
+            + 3;
         let columns = f.cols.join(",");
         let args = PyTuple::new(
             py,
@@ -2319,7 +2645,12 @@ fn read_log(py: Python<'_>, filename: &str, text: bool) -> PyResult<Vec<u8>> {
 }
 
 /// `DFReader_binary(filename, zero_time_base, progress_callback)`.
-pub fn open_binary(py: Python<'_>, filename: &str, zero_time_base: bool, progress_callback: Option<PyObject>) -> PyResult<Py<DfReaderBinary>> {
+pub fn open_binary(
+    py: Python<'_>,
+    filename: &str,
+    zero_time_base: bool,
+    progress_callback: Option<PyObject>,
+) -> PyResult<Py<DfReaderBinary>> {
     let data = read_log(py, filename, false)?;
     let reader = DfReader::new(py, true, data, zero_time_base)?;
     let object = Py::new(py, PyClassInitializer::from(reader).add_subclass(DfReaderBinary))?;
@@ -2337,7 +2668,12 @@ pub fn open_binary(py: Python<'_>, filename: &str, zero_time_base: bool, progres
 }
 
 /// `DFReader_text(filename, zero_time_base, progress_callback)`.
-pub fn open_text(py: Python<'_>, filename: &str, zero_time_base: bool, progress_callback: Option<PyObject>) -> PyResult<Py<DfReaderText>> {
+pub fn open_text(
+    py: Python<'_>,
+    filename: &str,
+    zero_time_base: bool,
+    progress_callback: Option<PyObject>,
+) -> PyResult<Py<DfReaderText>> {
     let data = read_log(py, filename, true)?;
     let reader = DfReader::new(py, false, data, zero_time_base)?;
     let object = Py::new(py, PyClassInitializer::from(reader).add_subclass(DfReaderText))?;
@@ -2359,7 +2695,10 @@ pub fn open_text(py: Python<'_>, filename: &str, zero_time_base: bool, progress_
 #[pyo3(name = "DFReader_is_text_log")]
 pub fn is_text_log(py: Python<'_>, filename: &str) -> PyResult<bool> {
     let file = py.import("builtins")?.call_method1("open", (filename, "r"))?;
-    let found = file.call_method1("read", (8000,)).and_then(|t| t.call_method1("find", ("FMT,",))).and_then(|i| i.extract::<i64>());
+    let found = file
+        .call_method1("read", (8000,))
+        .and_then(|t| t.call_method1("find", ("FMT,",)))
+        .and_then(|i| i.extract::<i64>());
     let _ = file.call_method0("close");
     Ok(found? != -1)
 }
@@ -2372,4 +2711,66 @@ pub fn register(m: &Bound<'_, pyo3::types::PyModule>) -> PyResult<()> {
     m.add_class::<DfReaderText>()?;
     m.add_function(pyo3::wrap_pyfunction!(is_text_log, m)?)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn slices_clamp_and_count_from_the_end_like_python() {
+        let data = b"abcdefgh";
+        assert_eq!(py_slice(data, 2, 5), b"cde");
+        assert_eq!(py_slice(data, -3, 100), b"fgh");
+        assert_eq!(py_slice(data, 5, 2), b"");
+        assert_eq!(py_slice(data, -100, 2), b"ab");
+        assert_eq!(py_slice(data, -1, 3), b"");
+        assert_eq!(py_slice(b"", 0, 4), b"");
+    }
+
+    #[test]
+    fn find_starts_where_asked_and_counts_a_negative_start_from_the_end() {
+        let data = b"FMT, a\nFMT,b\n";
+        assert_eq!(py_find(data, b"FMT, ", 0), 0);
+        assert_eq!(py_find(data, b"FMT,", 1), 7);
+        assert_eq!(py_find(data, b"\n", -4), 12);
+        assert_eq!(py_find(data, b"zz", 0), -1);
+        assert_eq!(py_find(data, b"a", 100), -1);
+        assert_eq!(py_find(data, b"", 3), 3);
+    }
+
+    #[test]
+    fn an_unset_timestamp_stays_the_int_zero_until_a_float_touches_it() {
+        assert!(Num::Zero.add(Num::Zero) == Num::Zero);
+        assert!(Num::Zero.add_f(1.5) == Num::F(1.5));
+        assert!(Num::F(2.0).add(Num::Zero) == Num::F(2.0));
+        assert_eq!(Num::Zero.f(), 0.0);
+    }
+
+    #[test]
+    fn names_end_at_the_first_nul() {
+        assert_eq!(null_term("GPS\0\0\0"), "GPS");
+        assert_eq!(null_term("no nul"), "no nul");
+        assert_eq!(null_term("\0x"), "");
+    }
+
+    #[test]
+    fn unit_multipliers_have_their_metric_prefix() {
+        assert_eq!(prefix_for(1.0), Some(""));
+        assert_eq!(prefix_for(0.0), Some(""));
+        assert_eq!(prefix_for(1.0e-3), Some("m"));
+        assert_eq!(prefix_for(1.0e-6), Some("\u{b5}"));
+        assert_eq!(prefix_for(3.5), None);
+    }
+
+    #[test]
+    fn every_format_character_has_a_struct_code_and_the_scaled_ones_a_multiplier() {
+        for c in "abBhHiIfdnNZcCeELMqQg".chars() {
+            assert!(char_info(c).is_some(), "{c}");
+        }
+        assert!(char_info('?').is_none());
+        assert_eq!(char_info('L').and_then(|i| i.mult), Some(1.0e-7));
+        assert_eq!(char_info('c').and_then(|i| i.mult), Some(0.01));
+        assert_eq!(char_info('f').and_then(|i| i.mult), None);
+    }
 }

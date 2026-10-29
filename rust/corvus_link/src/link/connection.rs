@@ -2077,7 +2077,18 @@ fn split_host_port(device: &str, what: &str) -> PyResult<(String, u16)> {
 /// The device prefixes that open a link, which pymavlink checks before it
 /// looks at a file name.
 const LINK_PREFIXES: [&str; 12] = [
-    "tcp:", "tcpin:", "uds:", "unix:", "udpin:", "udpout:", "udpbcast:", "wsserver:", "ws:", "wss:", "udp:", "mcast:",
+    "tcp:",
+    "tcpin:",
+    "uds:",
+    "unix:",
+    "udpin:",
+    "udpout:",
+    "udpbcast:",
+    "wsserver:",
+    "ws:",
+    "wss:",
+    "udp:",
+    "mcast:",
 ];
 
 /// `mavutil.mavlink_connection`: a link, or a log read as a stream of
@@ -2297,7 +2308,14 @@ fn open_connection(
     }
     if device.starts_with("ws:") || device.starts_with("wss:") {
         let link = py.allow_threads(|| WsClient::open(device)).map_err(ws_error)?;
-        return Connection::new_object(py, Link::WsClient(link), "mavwebsocket_client", device.to_string(), source_system, source_component);
+        return Connection::new_object(
+            py,
+            Link::WsClient(link),
+            "mavwebsocket_client",
+            device.to_string(),
+            source_system,
+            source_component,
+        );
     }
     let lower = device.to_lowercase();
     let suffix = lower.rsplit('.').next().unwrap_or("");
@@ -2398,4 +2416,3 @@ fn ws_error(e: WsError) -> PyErr {
         WsError::Unsupported(m) => PyNotImplementedError::new_err(m),
     }
 }
-
