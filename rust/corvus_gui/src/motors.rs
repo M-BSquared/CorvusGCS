@@ -20,6 +20,7 @@ use eframe::egui::{self, Color32, Pos2, Rect, Shape, Stroke, Vec2};
 use serde_json::{json, Value};
 
 use crate::bg::Pending;
+use crate::check::{self, Check};
 use crate::http::{self, Server};
 use crate::kit::{self, Button, Choice, Variant};
 use crate::pagekit;
@@ -365,6 +366,13 @@ pub struct MotorsPage {
     frame_text: HashMap<String, String>,
     frame_status: (&'static str, String),
     errors: Vec<String>,
+    check: Check,
+    /// The last check, as the card at the top shows it.
+    check_card: Option<check::Summary>,
+    /// Its verdict, said once the re-read has landed.
+    check_say: Option<check::Summary>,
+    /// The next read goes to the vehicle, not the cache.
+    fresh: bool,
 }
 
 impl MotorsPage {
@@ -390,6 +398,10 @@ impl MotorsPage {
             frame_text: HashMap::new(),
             frame_status: ("", String::new()),
             errors: Vec::new(),
+            check: Check::default(),
+            check_card: None,
+            check_say: None,
+            fresh: false,
         };
         p.load(ctx);
         p
@@ -407,7 +419,36 @@ impl MotorsPage {
         }
         self.status = ("pending", "Reading motor configuration\u{2026}".into());
         let s = self.server.clone();
-        self.loading = Some(Pending::spawn(ctx, move || http::get_json(&s, "/api/motors")));
+        let path = if std::mem::take(&mut self.fresh) {
+            "/api/motors?fresh=1"
+        } else {
+            "/api/motors"
+        };
+        self.loading = Some(Pending::spawn(ctx, move || http::get_json(&s, path)));
+    }
+
+    /// `fieldParams`: every editable parameter of the description.
+    fn check_names(doc: &Doc) -> Vec<String> {
+        let mut names: Vec<String> = Vec::new();
+        let mut add = |fields: &[Field]| {
+            for f in fields {
+                if !names.contains(&f.param) {
+                    names.push(f.param.clone());
+                }
+            }
+        };
+        for m in &doc.motors {
+            add(&m.fields);
+            add(&m.output_fields);
+        }
+        for s in &doc.sensors {
+            add(&s.fields);
+        }
+        for s in &doc.sections {
+            add(&s.fields);
+        }
+        add(&doc.geometry);
+        names
     }
 
     fn post(ctx: &egui::Context, server: &Server, path: &'static str, body: Value) -> Pending<Result<(), String>> {
@@ -427,6 +468,13 @@ impl MotorsPage {
     }
 
     fn take_answers(&mut self, ctx: &egui::Context, now: f64) {
+        if let Some(summary) = self.check.take(&mut self.form.wanted) {
+            self.form.mark_checked(&summary.rows);
+            self.check_card = Some(summary.clone());
+            self.check_say = Some(summary);
+            self.fresh = true;
+            self.load(ctx);
+        }
         if let Some(p) = &self.loading {
             if let Some(r) = p.take() {
                 self.loading = None;
@@ -457,6 +505,9 @@ impl MotorsPage {
                             self.selected = doc.motors.first().map_or(0, |m| m.number);
                         }
                         self.doc = Some(doc);
+                        if let Some(c) = self.check_say.take() {
+                            self.status = (c.cls, c.text);
+                        }
                     }
                     Err(e) => {
                         self.doc = Some(Doc::default());
@@ -603,8 +654,21 @@ impl MotorsPage {
         let reload = Button::new("Reload", Variant::Primary)
             .icon("refresh-cw")
             .small()
-            .enabled(self.loading.is_none());
+            .enabled(self.loading.is_none() && !self.check.busy());
         let (rw, rh) = (reload.width(ui), reload.height());
+        let check_btn = Button::new("Check values", Variant::Secondary)
+            .icon("list-checks")
+            .small()
+            .title("Read every value back from the vehicle, write again what did not stick, and show what the vehicle holds now")
+            .enabled(
+                self.loading.is_none()
+                    && !self.check.busy()
+                    && self
+                        .doc
+                        .as_ref()
+                        .is_some_and(|d| d.connected && !Self::check_names(d).is_empty()),
+            );
+        let cw = check_btn.width(ui);
         let color = match self.status.0 {
             "ok" => style::healthy(),
             "err" => style::critical(),
@@ -613,7 +677,7 @@ impl MotorsPage {
         let sg = style::galley(ui, &self.status.1, 11.5, Weight::W400, color, 0.0);
         let status_w = sg.size().x.min(420.0);
         let gap = if status_w > 0.0 { 10.0 } else { 0.0 };
-        let actions_w = status_w + gap + rw;
+        let actions_w = status_w + gap + rw + 10.0 + cw;
         // the actions wrap under the title when it would have under 280 px
         let wrap = w - actions_w - 24.0 < 280.0;
         let head_w = if wrap { w } else { (w - actions_w - 24.0).min(w) };
@@ -625,21 +689,51 @@ impl MotorsPage {
             "Motors",
             "Airframe layout, motor assignment, and output protocol",
         );
-        let (ay, bottom, reload_x) = if wrap {
-            (head_bottom + 10.0, head_bottom + 12.0 + rh, x + status_w + gap)
+        let (ay, bottom) = if wrap {
+            (head_bottom + 10.0, head_bottom + 12.0 + rh)
         } else {
-            (head_bottom - rh, head_bottom, x + w - rw)
+            (head_bottom - rh, head_bottom)
         };
+        let (status_x, reload_x, check_x) = if wrap {
+            (x, x + status_w + gap, x + status_w + gap + rw + 10.0)
+        } else {
+            let check_x = x + w - cw;
+            let reload_x = check_x - 10.0 - rw;
+            (reload_x - gap - sg.size().x, reload_x, check_x)
+        };
+        if check_btn.show(
+            ui,
+            Rect::from_min_size(Pos2::new(check_x, ay), Vec2::new(cw, rh)),
+            "motorscheck",
+        ) {
+            if let Some(doc) = &self.doc {
+                let names = Self::check_names(doc);
+                let wanted = self.form.wanted.clone();
+                self.status = (
+                    "pending",
+                    if wanted.is_empty() {
+                        "Reading every value back from the vehicle\u{2026}".to_string()
+                    } else {
+                        format!(
+                            "Checking {} {} on the vehicle\u{2026}",
+                            wanted.len(),
+                            if wanted.len() == 1 { "change" } else { "changes" }
+                        )
+                    },
+                );
+                self.check.start(&ctx, &self.server, &wanted, names);
+            }
+        }
         if reload.show(
             ui,
             Rect::from_min_size(Pos2::new(reload_x, ay), Vec2::new(rw, rh)),
             "motorsreload",
         ) {
+            self.check_card = None;
             self.load(&ctx);
         }
-        let sx = if wrap { x } else { reload_x - gap - sg.size().x };
         ui.painter()
-            .galley(Pos2::new(sx, ay + rh / 2.0 - sg.size().y / 2.0), sg, color);
+            .galley(Pos2::new(status_x, ay + rh / 2.0 - sg.size().y / 2.0), sg, color);
         let mut y = bottom + 26.0;
         if armed {
             let g = kit::wrapped_weight(
@@ -667,6 +761,9 @@ impl MotorsPage {
         let Some(doc) = self.doc.clone() else { return y };
         if doc.motors.is_empty() && doc.sections.is_empty() && doc.sensors.is_empty() {
             return self.empty_card(ui, x, y, w);
+        }
+        if let Some(c) = self.check_card.clone() {
+            y = check::card(ui, x, y, w, &c) + 14.0;
         }
         let split = !doc.motors.is_empty() && w >= 1240.0;
         let (side_x, side_w, main_x, main_w) = if split {
@@ -1355,6 +1452,11 @@ impl MotorsPage {
             self.frame_status = ("ok", "unchanged".into());
             return;
         }
+        // all of them are wanted before the first is sent: a write lost
+        // halfway leaves a distorted frame, and Check values writes the rest
+        for (name, value) in &writes {
+            self.form.wanted.insert(name.clone(), *value);
+        }
         self.frame_status = ("pending", format!("moving {} motors", frame.motors.len()));
         let s = self.server.clone();
         self.frame_req = Some(Pending::spawn(ctx, move || {
@@ -1547,6 +1649,7 @@ impl MotorsPage {
                 style::text_3(),
             );
             if add.show(ui, ar, "motoradd") {
+                self.form.wanted.insert("CA_ROTOR_COUNT".into(), (count + 1) as f64);
                 self.count_req = Some(Self::post(
                     ctx,
                     &self.server,
@@ -1555,6 +1658,7 @@ impl MotorsPage {
                 ));
             }
             if rem.show(ui, rr, "motorrem") {
+                self.form.wanted.insert("CA_ROTOR_COUNT".into(), (count - 1) as f64);
                 self.count_req = Some(Self::post(
                     ctx,
                     &self.server,
@@ -2107,6 +2211,23 @@ fn triangle(tip: Pos2, deg: f32, size: f32) -> Vec<Pos2> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_check_reads_back_every_field_of_the_page_once() {
+        let doc = parse_doc(&json!({
+            "connected": true,
+            "motors": [
+                {"number": 1, "fields": [{"param": "CA_ROTOR0_PX", "kind": "number"}],
+                 "output_fields": [{"param": "PWM_MAIN_DIS1", "kind": "number"}]},
+                {"number": 2, "fields": [{"param": "CA_ROTOR0_PX", "kind": "number"}]}
+            ],
+            "geometry": [{"param": "CA_AIRFRAME", "kind": "enum", "options": []}]
+        }));
+        assert_eq!(
+            MotorsPage::check_names(&doc),
+            ["CA_ROTOR0_PX", "PWM_MAIN_DIS1", "CA_AIRFRAME"]
+        );
+    }
 
     fn motor(number: i64, x: f32, y: f32) -> Motor {
         Motor {
