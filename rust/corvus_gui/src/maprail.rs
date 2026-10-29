@@ -49,7 +49,7 @@ impl Item {
     fn works(self) -> bool {
         matches!(
             self,
-            Item::ZoomIn | Item::ZoomOut | Item::Center | Item::Layers | Item::Regions | Item::Measure
+            Item::ZoomIn | Item::ZoomOut | Item::Center | Item::Layers | Item::Regions | Item::Measure | Item::ThreeD
         )
     }
 }
@@ -78,6 +78,8 @@ pub struct MapRail {
     search: crate::search_card::SearchCard,
     tiles: crate::tiles_card::TilesCard,
     layers_open: bool,
+    three_panel: bool,
+    three_hover: Option<f64>,
     pub measure: bool,
 }
 
@@ -105,6 +107,7 @@ impl MapRail {
         let mut y = rail.top() + 7.0;
         let x = rail.left() + 7.0;
         let mut layers_anchor = None;
+        let mut three_anchor = None;
         for item in list {
             if item == Item::Divider {
                 painter.hline(
@@ -134,7 +137,8 @@ impl MapRail {
             let active = (item == Item::Center && map.follow)
                 || (item == Item::Layers && self.layers_open)
                 || (item == Item::Regions && map.regions_visible)
-                || (item == Item::Measure && map.measure.active);
+                || (item == Item::Measure && map.measure.active)
+                || (item == Item::ThreeD && map.three_d());
             let (fill, color) = if active {
                 (style::accent_dark(), style::text_1())
             } else if resp.hovered() && works {
@@ -156,6 +160,10 @@ impl MapRail {
                     Item::ZoomOut => map.zoom(-1),
                     Item::Center => map.recenter(state),
                     Item::Layers => self.layers_open = !self.layers_open,
+                    Item::ThreeD => {
+                        let on = !map.three_d();
+                        map.set_three_d(on);
+                    }
                     Item::Measure => {
                         let on = !map.measure.active;
                         map.measure.set_active(on);
@@ -169,6 +177,23 @@ impl MapRail {
             }
             if item == Item::Layers {
                 layers_anchor = Some(r);
+            }
+            if item == Item::ThreeD {
+                three_anchor = Some(r);
+                let now = ui.input(|i| i.time);
+                if resp.hovered() {
+                    let since = *self.three_hover.get_or_insert(now);
+                    if now - since > 0.6 {
+                        self.three_panel = true;
+                    } else {
+                        ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
+                    }
+                } else {
+                    self.three_hover = None;
+                }
+                if resp.secondary_clicked() {
+                    self.three_panel = true;
+                }
             }
             y += BTN + 6.0;
         }
@@ -208,6 +233,16 @@ impl MapRail {
         let units = map.measure.units;
         self.search.show(ui, search, area, map, &units);
 
+        if self.three_panel {
+            if let Some(anchor) = three_anchor {
+                let ctx = ui.ctx().clone();
+                let (t, sources) = map.three_settings(&ctx);
+                let out = crate::threed_panel::show(ui, anchor, t, sources);
+                if out.close {
+                    self.three_panel = false;
+                }
+            }
+        }
         self.track_clear(ui, area, map);
         self.tiles.show(ui.ctx(), area, map);
 
@@ -339,6 +374,6 @@ mod tests {
         assert_eq!(items(true).len(), 8);
         assert_eq!(*items(false).last().unwrap(), Item::ThreeD);
         assert_eq!(items(true)[3], Item::Divider);
-        assert!(Item::Layers.works() && Item::Regions.works() && Item::Measure.works());
+        assert!(Item::Layers.works() && Item::Regions.works() && Item::Measure.works() && Item::ThreeD.works());
     }
 }
