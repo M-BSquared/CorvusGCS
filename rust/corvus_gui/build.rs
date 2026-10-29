@@ -93,6 +93,17 @@ const ICONS: &[(&str, &str)] = &[
     ("square-terminal", "SquareTerminal"),
     ("minimize-2", "Minimize2"),
     ("square-arrow-out-up-right", "SquareArrowOutUpRight"),
+    ("plane-takeoff", "PlaneTakeoff"),
+    ("plane-landing", "PlaneLanding"),
+    ("timer", "Timer"),
+    ("rotate-cw", "RotateCw"),
+    ("waypoints", "Waypoints"),
+    ("vector-square", "VectorSquare"),
+    ("mouse-pointer-2", "MousePointer2"),
+    ("move", "Move"),
+    ("save", "Save"),
+    ("folder-open", "FolderOpen"),
+    ("file-plus", "FilePlus"),
 ];
 
 fn main() {

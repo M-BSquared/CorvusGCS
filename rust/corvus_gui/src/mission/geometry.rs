@@ -810,7 +810,7 @@ mod tests {
 
     #[test]
     fn a_fixed_wing_climbs_out_along_the_first_leg() {
-        let points = vec![
+        let points = [
             station(0, StationKind::Home, 0.0, 0.0),
             station(1, StationKind::Item(Kind::Takeoff), 30.0, 0.0),
             station(2, StationKind::Item(Kind::Waypoint), 30.0, 100.0),

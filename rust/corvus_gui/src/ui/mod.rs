@@ -1,4 +1,5 @@
 pub mod card;
+pub mod fabar;
 pub mod field;
 pub mod fonts;
 pub mod frost;

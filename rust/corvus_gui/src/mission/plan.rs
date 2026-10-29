@@ -68,19 +68,17 @@ pub struct Rule {
     pub unit: &'static str,
     pub min: f64,
     pub max: f64,
-    pub step: f64,
     pub def: f64,
 }
 
 impl Param {
     pub fn rule(self) -> Rule {
-        let r = |key, label, unit, min, max, step, def| Rule {
+        let r = |key, label, unit, min, max, _step, def| Rule {
             key,
             label,
             unit,
             min,
             max,
-            step,
             def,
         };
         match self {
@@ -384,10 +382,6 @@ impl Item {
         } else {
             &self.name
         }
-    }
-
-    pub fn point(&self) -> (f64, f64) {
-        (self.lon, self.lat)
     }
 }
 
@@ -985,7 +979,7 @@ impl Plan {
     }
 
     /// Replaces the whole plan from a validated backend payload.
-    pub fn from_json(&mut self, plan: &Value, vehicle_type: Option<&str>, vehicle: Option<(f64, f64)>) {
+    pub fn load_json(&mut self, plan: &Value, vehicle_type: Option<&str>, vehicle: Option<(f64, f64)>) {
         self.items.clear();
         self.next_id = 1;
         self.selected = None;
@@ -1368,7 +1362,7 @@ mod tests {
                 {"type": "nonsense"}
             ]
         });
-        p.from_json(&raw, None, None);
+        p.load_json(&raw, None, None);
         assert_eq!(p.name, "Survey");
         assert_eq!(p.items.len(), 3);
         assert_eq!(

@@ -8,6 +8,53 @@ use eframe::egui::{self, Align2, Color32, Id, Pos2, Rect, Stroke, Vec2};
 use crate::ui::icons;
 use crate::ui::style::{self, Weight};
 
+/// A well that holds what is typed until it is committed. `shown` is what
+/// the value reads as; it replaces the text whenever the box is not being
+/// edited. Returns the text when the box lost focus (Enter, Tab or a press
+/// elsewhere) after an edit.
+pub fn committed(
+    ui: &mut egui::Ui,
+    rect: Rect,
+    id: impl std::hash::Hash + std::fmt::Debug,
+    shown: &str,
+    hint: &str,
+    mono: bool,
+) -> Option<String> {
+    let key = ui.scope_id().with(id);
+    let buf_id = key.with("buffer");
+    let focused = ui.memory(|m| m.has_focus(key));
+    let mut text: String = if focused {
+        ui.ctx()
+            .data(|d| d.get_temp(buf_id))
+            .unwrap_or_else(|| shown.to_string())
+    } else {
+        shown.to_string()
+    };
+    let before = text.clone();
+    let resp = TextField::new(&mut text)
+        .hint(hint)
+        .mono(mono)
+        .pad(8.0, 8.0)
+        .show_with_id(ui, rect, key);
+    let edited = ui
+        .ctx()
+        .data(|d| d.get_temp::<bool>(buf_id.with("edited")))
+        .unwrap_or(false)
+        || text != before;
+    ui.ctx().data_mut(|d| {
+        d.insert_temp(buf_id, text.clone());
+        d.insert_temp(buf_id.with("edited"), edited);
+    });
+    if resp.lost_focus() {
+        ui.ctx().data_mut(|d| {
+            d.remove::<String>(buf_id);
+            d.insert_temp(buf_id.with("edited"), false);
+        });
+        return edited.then_some(text);
+    }
+    None
+}
+
 /// What the field is drawn on.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Surface {
