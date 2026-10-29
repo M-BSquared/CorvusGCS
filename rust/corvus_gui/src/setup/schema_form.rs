@@ -31,6 +31,11 @@ pub struct Look {
     pub hint_as_info: bool,
     /// `.safety-extra-field`: the label is a parameter name, in mono.
     pub mono_label: bool,
+    /// The control column's floor (`minmax(220px, 1fr)` on Battery).
+    pub control_min: f32,
+    /// A number input's own width and height where the page departs from
+    /// `.pform-input` (`.battery-input`: 150 px, a mono line).
+    pub number: Option<(f32, f32)>,
 }
 
 impl Look {
@@ -41,6 +46,8 @@ impl Look {
         pad: 7.0,
         hint_as_info: false,
         mono_label: false,
+        control_min: 0.0,
+        number: None,
     };
     /// A parameter the operator named on a sensor page.
     pub const EXTRA: Look = Look {
@@ -49,6 +56,8 @@ impl Look {
         pad: 3.0,
         hint_as_info: false,
         mono_label: true,
+        control_min: 0.0,
+        number: None,
     };
     /// `.motors-field`: short labels, hints behind an icon.
     pub const MOTORS: Look = Look {
@@ -57,6 +66,18 @@ impl Look {
         pad: 5.0,
         hint_as_info: true,
         mono_label: false,
+        control_min: 0.0,
+        number: None,
+    };
+    /// `.battery-field`: a 220 px control column, 150 px inputs.
+    pub const BATTERY: Look = Look {
+        label_min: 140.0,
+        label_max: 230.0,
+        pad: 7.0,
+        hint_as_info: false,
+        mono_label: false,
+        control_min: 220.0,
+        number: Some((150.0, 29.5)),
     };
 }
 
@@ -637,6 +658,7 @@ impl FormState {
                     (widest + 11.0 + 26.0 + 2.0).clamp(150.0, 300.0)
                 }
             };
+            let natural = natural.max(look.control_min);
             // under 721 a row is one column: the label over its control
             let narrow = crate::app::responsive::Vw::of(ctx).max720;
             let label_w = if narrow {
@@ -649,7 +671,11 @@ impl FormState {
             let cx = if narrow { x } else { x + label_w + 12.0 };
             let cw = if narrow { w } else { w - label_w - 12.0 };
             let pad = look.pad;
-            let control_h: f32 = 2.0 + 12.0 + 12.0 * 1.21;
+            let control_h: f32 = match (&f.kind, look.number) {
+                (Kind::Number, Some((_, h))) => h,
+                _ => 2.0 + 12.0 + 12.0 * 1.21,
+            };
+            let number_w = look.number.map(|n| n.0);
             let hint = (!f.hint.is_empty() && !look.hint_as_info)
                 .then(|| kit::wrapped_weight(ui, &f.hint, 10.5, Weight::W400, style::text_3(), cw, 1.4));
             let bits_h = match &f.kind {
@@ -685,7 +711,19 @@ impl FormState {
                 );
             }
             let status = self.status.get(&f.param).cloned();
-            let ux = self.control(ui, ctx, server, f, Pos2::new(cx, top), cw, control_h, armed, false);
+            let ux = self.control_with(
+                ui,
+                ctx,
+                server,
+                f,
+                Pos2::new(cx, top),
+                cw,
+                control_h,
+                armed,
+                false,
+                None,
+                number_w,
+            );
             let mut ux = ux;
             if !f.unit.is_empty() && !matches!(f.kind, Kind::Bitmask(_)) {
                 let g = style::galley(ui, &f.unit, 11.0, Weight::W400, style::text_3(), 0.0);

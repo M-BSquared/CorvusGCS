@@ -1,9 +1,11 @@
 //! The Setup page (src/js/setup.js, setup.css): the head with the vehicle
 //! card, the grid of twelve tiles, and the sub-pages behind them.
 //!
-//! Parameters, Safety & Sensors and Motors are whole. The other tiles open a
-//! notice that the page is still in the web interface.
+//! Parameters, Safety & Sensors, Motors and Battery & Power are whole. The
+//! other tiles open a notice that the page is still in the web interface.
 
+pub mod battery;
+pub mod battery_model;
 pub mod check;
 pub mod checklist;
 pub mod geofence;
@@ -22,6 +24,7 @@ use eframe::egui::{self, Pos2, Rect, Stroke, Vec2};
 use serde_json::Value;
 
 use crate::net::http::Server;
+use crate::setup::battery::BatteryPage;
 use crate::setup::motors::MotorsPage;
 use crate::setup::params::ParamsPage;
 use crate::setup::safety::SafetyPage;
@@ -95,6 +98,11 @@ const TILES: &[(&str, &str, &str, &str)] = &[
     ("video", "video", "Video", "RTSP or WebRTC cameras in floating windows."),
 ];
 
+/// Whether `id` names a sub page (`--page`): a tile, or `safety:SENSOR`.
+pub fn is_page(id: &str) -> bool {
+    TILES.iter().any(|t| t.0 == id) || id.starts_with("safety:")
+}
+
 /// Flight stack and version in one value, e.g. `PX4 v1.18.0`.
 pub fn firmware_text(s: &Value) -> String {
     let part = |k: &str| s.get(k).and_then(Value::as_str).filter(|t| !t.is_empty());
@@ -116,6 +124,7 @@ enum View {
     Parameters(Box<ParamsPage>),
     Safety(Box<SafetyPage>),
     Motors(Box<MotorsPage>),
+    Battery(Box<BatteryPage>),
     Elsewhere(&'static str),
 }
 
@@ -123,6 +132,8 @@ enum View {
 pub struct SetupPage {
     server: Server,
     env: crate::setup::geofence::Env,
+    /// The display units, set by the app each frame.
+    pub units: crate::data::units::Units,
     view: View,
     /// A scroll offset to open at (the --scroll flag, for looking at a page).
     initial_scroll: Option<f32>,
@@ -133,6 +144,7 @@ impl SetupPage {
         SetupPage {
             server,
             env,
+            units: crate::data::units::Units::default(),
             view: View::Tiles,
             initial_scroll: None,
         }
@@ -144,6 +156,7 @@ impl SetupPage {
             View::Parameters(p) => p.take_errors(),
             View::Safety(p) => p.take_errors(),
             View::Motors(p) => p.take_errors(),
+            View::Battery(p) => p.take_errors(),
             _ => Vec::new(),
         }
     }
@@ -177,6 +190,7 @@ impl SetupPage {
                 View::Safety(Box::new(page))
             }
             "motors" => View::Motors(Box::new(MotorsPage::new(self.server.clone(), ctx))),
+            "battery" => View::Battery(Box::new(BatteryPage::new(self.server.clone(), ctx))),
             other => match TILES.iter().find(|t| t.0 == other) {
                 Some(t) => View::Elsewhere(t.2),
                 None => View::Tiles,
@@ -226,7 +240,7 @@ impl SetupPage {
                     );
                     y = grid(ui, x, y, w, &mut self.view, &self.server, &self.env);
                 }
-                View::Parameters(_) | View::Safety(_) | View::Motors(_) | View::Elsewhere(_) => {
+                View::Parameters(_) | View::Safety(_) | View::Motors(_) | View::Battery(_) | View::Elsewhere(_) => {
                     let in_sensor = matches!(&self.view, View::Safety(p) if p.in_sensor());
                     let (bh, back) = pagekit::back_button(
                         ui,
@@ -242,6 +256,8 @@ impl SetupPage {
                         self.view = View::Tiles;
                     } else if let View::Motors(p) = &mut self.view {
                         y = p.show(ui, x, y, w, state, now);
+                    } else if let View::Battery(p) = &mut self.view {
+                        y = p.show(ui, x, y, w, state, &self.units);
                     } else if let View::Safety(p) = &mut self.view {
                         y = p.show(ui, x, y, w, state, checklist);
                     } else if let View::Parameters(p) = &mut self.view {
@@ -380,6 +396,7 @@ fn grid(
                 "parameters" => View::Parameters(Box::new(ParamsPage::new(server.clone(), ui.ctx()))),
                 "safety" => View::Safety(Box::new(SafetyPage::new(server.clone(), ui.ctx(), env.clone()))),
                 "motors" => View::Motors(Box::new(MotorsPage::new(server.clone(), ui.ctx()))),
+                "battery" => View::Battery(Box::new(BatteryPage::new(server.clone(), ui.ctx()))),
                 _ => View::Elsewhere(title),
             };
         }

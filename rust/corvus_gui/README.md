@@ -11,7 +11,7 @@ uses, so the backend does not change for it:
 cargo run --release                                   # start serve.py here and show it
 cargo run --release -- --server http://10.0.0.5:8080  # a backend elsewhere
 cargo run --release -- --root DIR --python PATH       # where serve.py is, what runs it
-cargo run --release -- --page motors --scroll 560     # open on a page (setup, parameters, safety, safety:SENSOR, motors), scrolled
+cargo run --release -- --page motors --scroll 560     # open on a page (setup, any tile such as battery or motors, safety:SENSOR), scrolled
 # looking at it without a hand on the mouse
 CORVUS_GUI_SHOT=out.png cargo run -- --page motors     # save the window's own pixels after 9 s and quit
 CORVUS_GUI_SIZE=700,812 cargo run                      # open at that size, below the usual floor too
@@ -56,6 +56,8 @@ SIGKILL if it is still there after 8 s. If the window does not close within
 | `src/term/session.rs`, `src/term/window.rs` | one SSH session over `/api/ssh/stream` with ordered keystrokes, and the floating terminal window (`src/js/term-window.js`); the SSH tab holds the same terminal |
 | `src/setup/motors.rs` | the Motors page: the airframe drawing, the motor table with output assignment, the motor test, frame size, protocol forms (`src/js/setup-motors.js`) |
 | `src/setup/safety.rs` | the Safety & Sensors page: the backend's description in two stacks, the landing preset, the sensor tiles, Check values and the checklist card (`src/js/setup-safety.js`) |
+| `src/setup/battery.rs` | the Battery & Power page: the pack drawn with its cells, fill and failsafe levels, the live readout, how Corvus reads the pack (its own settings, saved to the config), the vehicle's parameters (`src/js/setup-battery.js`) |
+| `src/setup/battery_model.rs` | its rules: where a level sits on the pack, the flag stacking, the readout lines, the values copied from the vehicle |
 | `src/setup/sensors.rs` | the sensor model and its rules: the write chain of a switch, the presets, the extra parameters kept in `~/.corvus/safety-extra.json` |
 | `src/setup/sensor_view.rs` | a sensor page drawn: Status card, Hardware card with the write table, the parameters you add by name |
 | `src/setup/check.rs` | Check values: read back, write again what did not stick, the result card (`src/js/setup-shared.js`) |
@@ -68,7 +70,7 @@ SIGKILL if it is still there after 8 s. If the window does not close within
 | `src/home/checklist_window.rs` | the checklist's window on the Home map: ticks kept by item text, drag and fold, the warning on arming with items open (`src/js/checklist.js`) |
 | `src/setup/checklist.rs` | the preflight checklists: config block, Setup card and the dialog the lists are written in (`src/js/checklist-editor.js`) |
 | `src/setup/schema_form.rs` | the schema-driven form the backend describes (enum, number, sign, bitmask), shared by the Safety and Motors pages (`src/js/setup-shared.js`) |
-| `src/ui/pagekit.rs` | page furniture: header, section title, tile, back button |
+| `src/ui/pagekit.rs` | page furniture: header, header with its Reload and Check buttons and status, section title, tile, back button, the armed notice |
 | `src/ui/kit.rs` | buttons (`Button`, `Variant`), icon buttons, select, checkbox, switch; the widgets of `components.css` |
 | `src/ui/field.rs` | `TextField`: the one text box, on a well, glass or floating surface, with an optional icon |
 | `src/ui/menu.rs` | `dropdown` and `row`: every list (select choices, flight modes, elevation models) |

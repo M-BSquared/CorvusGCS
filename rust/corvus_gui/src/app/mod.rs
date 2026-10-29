@@ -155,6 +155,7 @@ impl App {
                     let below = self.flight.bar_bottom + 10.0;
                     self.checklist.window(&mut map_ui, ui.ctx(), main, below);
                 } else if self.page == Page::Setup {
+                    self.setup.units = self.units;
                     self.setup.show(ui, main, &state, now, &mut self.checklist);
                 } else {
                     nav::placeholder(ui, main, self.page);
@@ -360,13 +361,10 @@ pub fn run(
         .unwrap_or(1.0) as f32;
     let sources = http::get_json(&server, "/api/tiles/sources").unwrap_or(Value::Null);
     let start_page = match page {
-        Some("setup") | Some("parameters") | Some("safety") | Some("motors") => Page::Setup,
-        Some(p) if p.starts_with("safety:") => Page::Setup,
+        Some(p) if p == "setup" || crate::setup::is_page(p) => Page::Setup,
         _ => Page::Home,
     };
-    let open_page = page
-        .filter(|p| matches!(*p, "parameters" | "safety" | "motors") || p.starts_with("safety:"))
-        .map(String::from);
+    let open_page = page.filter(|p| crate::setup::is_page(p)).map(String::from);
     let options = eframe::NativeOptions {
         renderer: eframe::Renderer::Glow,
         // The 3D map's depth test.

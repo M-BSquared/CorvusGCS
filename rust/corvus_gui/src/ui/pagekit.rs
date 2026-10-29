@@ -142,3 +142,80 @@ pub fn text(ui: &egui::Ui, at: Pos2, s: &str, size: f32, w: Weight, color: Color
     ui.painter().galley(at, g, color);
     h
 }
+
+/// The colour of a status line (`.params-actions-status`, `.ok`, `.err`,
+/// `.pending`).
+pub fn status_color(cls: &str) -> Color32 {
+    match cls {
+        "ok" => style::healthy(),
+        "err" => style::critical(),
+        _ => style::nav(),
+    }
+}
+
+/// `.setup-head` with its `.params-actions`: the title and subtitle, and at
+/// the right the status line then the buttons. The buttons wrap under the
+/// title when it would be left under 280 px. Returns the y under the head
+/// (with its 26 px) and the index of the button pressed.
+#[allow(clippy::too_many_arguments)]
+pub fn head_actions(
+    ui: &mut egui::Ui,
+    x: f32,
+    y: f32,
+    w: f32,
+    title: &str,
+    subtitle: &str,
+    status: &(&'static str, String),
+    buttons: Vec<Button<'_>>,
+    id: &str,
+) -> (f32, Option<usize>) {
+    let sizes: Vec<(f32, f32)> = buttons.iter().map(|b| (b.width(ui), b.height())).collect();
+    let rh = sizes.iter().map(|s| s.1).fold(0.0, f32::max);
+    let color = status_color(status.0);
+    let sg = style::galley(ui, &status.1, 11.5, Weight::W400, color, 0.0);
+    let status_w = sg.size().x.min(420.0);
+    let gap = if status_w > 0.0 { 10.0 } else { 0.0 };
+    let buttons_w: f32 = sizes.iter().map(|s| s.0).sum::<f32>() + 10.0 * sizes.len().saturating_sub(1) as f32;
+    let actions_w = status_w + gap + buttons_w;
+    let wrap = w - actions_w - 24.0 < 280.0;
+    let head_w = if wrap { w } else { (w - actions_w - 24.0).min(w) };
+    let head_bottom = header_wrapped(ui, x, y, head_w, title, subtitle);
+    let (ay, bottom) = if wrap {
+        (head_bottom + 10.0, head_bottom + 12.0 + rh)
+    } else {
+        (head_bottom - rh, head_bottom)
+    };
+    let (status_x, mut bx) = if wrap {
+        (x, x + status_w + gap)
+    } else {
+        let first = x + w - buttons_w;
+        (first - gap - sg.size().x, first)
+    };
+    let mut pressed = None;
+    for (i, b) in buttons.into_iter().enumerate() {
+        let (bw, bh) = sizes[i];
+        let rect = Rect::from_min_size(Pos2::new(bx, ay + (rh - bh) / 2.0), Vec2::new(bw, bh));
+        if b.show(ui, rect, (id, i)) {
+            pressed = Some(i);
+        }
+        bx += bw + 10.0;
+    }
+    ui.painter()
+        .galley(Pos2::new(status_x, ay + rh / 2.0 - sg.size().y / 2.0), sg, color);
+    (bottom + 26.0, pressed)
+}
+
+/// `.params-banner`: the amber notice that gates a card; returns its bottom.
+pub fn warning_banner(ui: &egui::Ui, x: f32, y: f32, w: f32, text: &str) -> f32 {
+    let g = crate::ui::kit::wrapped_weight(ui, text, 11.5, Weight::W400, style::warning(), w - 28.0, 1.4);
+    let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, g.size().y + 24.0));
+    ui.painter().rect_filled(r, style::RADIUS_BTN, style::warning_dark());
+    ui.painter().rect_stroke(
+        r,
+        style::RADIUS_BTN,
+        Stroke::new(1.0, style::warning()),
+        egui::StrokeKind::Inside,
+    );
+    ui.painter().galley(r.min + Vec2::new(14.0, 12.0), g, style::warning());
+    r.bottom()
+}

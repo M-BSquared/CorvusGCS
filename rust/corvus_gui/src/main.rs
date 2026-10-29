@@ -54,7 +54,7 @@ fn parse_args() -> Result<Args, String> {
             "--page" => args.page = Some(value("--page")?),
             "--scroll" => args.scroll = value("--scroll")?.parse().ok(),
             "-h" | "--help" => {
-                println!("usage: corvus-gcs [--server http://host:port] [--root DIR] [--python PATH] [--page setup|parameters|safety|safety:SENSOR|motors] [--scroll PX]");
+                println!("usage: corvus-gcs [--server http://host:port] [--root DIR] [--python PATH] [--page setup|TILE|safety:SENSOR] [--scroll PX]");
                 std::process::exit(0);
             }
             other => return Err(format!("unknown argument {other}")),
