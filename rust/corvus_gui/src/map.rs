@@ -217,6 +217,19 @@ impl Map {
     /// Draws the tilted view into the whole of `ui`.
     fn show_3d(
         &mut self,
+    /// Makes the 3D view when it is first needed, looking where the flat map does.
+    fn ensure_three(&mut self, ctx: &egui::Context) {
+        if self.three.is_some() {
+            return;
+        }
+        let (_, max_zoom) = describe(&self.sources, &self.source);
+        let mut t = Map3d::new(ctx, &self.server, &self.source, max_zoom);
+        if let Some((lng, lat, zoom)) = self.view {
+            t.start_at(lng, lat, zoom, 0.0);
+        }
+        self.three = Some(t);
+    }
+
         ui: &mut egui::Ui,
         state: &Value,
         vehicle: Option<(f64, f64)>,
@@ -225,13 +238,7 @@ impl Map {
     ) {
         let rect = ui.max_rect();
         let (_, max_zoom) = describe(&self.sources, &self.source);
-        if self.three.is_none() {
-            let mut t = Map3d::new(ui.ctx(), &self.server, &self.source, max_zoom);
-            if let Some((lng, lat, zoom)) = self.view {
-                t.start_at(lng, lat, zoom, 0.0);
-            }
-            self.three = Some(t);
-        }
+        self.ensure_three(ui.ctx());
         let follow = self.follow;
         let Some(t) = self.three.as_mut() else {
             return;
@@ -240,6 +247,7 @@ impl Map {
         if let (true, Some((lng, lat))) = (follow, vehicle) {
             t.cam.lng = lng;
             t.cam.lat = lat;
+        t.follow_sources(&self.sources);
         }
         let height = state.get("altitude_agl").and_then(Value::as_f64).unwrap_or(0.0);
         let input = t.show(
@@ -385,7 +393,15 @@ impl Map {
             self.set_three_d(true);
         }
         if self.three_d {
+            self.ensure_three(ui.ctx());
             self.show_3d(ui, state, vehicle, home, heading);
+            if let Some(v) = std::env::var("CORVUS_GUI_3D").ok().filter(|v| v.contains(',')) {
+                let n: Vec<f64> = v.split(',').filter_map(|x| x.trim().parse().ok()).collect();
+                if let (3..=4, Some(t)) = (n.len(), self.three.as_mut()) {
+                    t.start_at(n[0], n[1], n[2], n.get(3).copied().unwrap_or(0.0));
+                    self.follow = false;
+                }
+            }
             return;
         }
         let fence = self.env.get();

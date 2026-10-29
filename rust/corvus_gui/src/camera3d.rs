@@ -104,7 +104,7 @@ impl Camera {
     }
 
     /// Metres east, north and up of a position, up from `ground`.
-    pub fn to_local(&self, lng: f64, lat: f64, height: f64) -> V3 {
+    pub fn local_of(&self, lng: f64, lat: f64, height: f64) -> V3 {
         let (cx, cy) = mercator(self.lng, self.lat);
         let (x, y) = mercator(lng, lat);
         let k = self.scale();
@@ -112,7 +112,7 @@ impl Camera {
     }
 
     /// Longitude and latitude of metres east and north of the centre.
-    pub fn from_local(&self, east: f64, north: f64) -> (f64, f64) {
+    pub fn geo_of(&self, east: f64, north: f64) -> (f64, f64) {
         let (cx, cy) = mercator(self.lng, self.lat);
         let k = self.scale();
         unmercator(cx + east / k, cy + north / k)
@@ -158,7 +158,7 @@ impl Camera {
     /// pixel `to`: a drag on the map.
     pub fn pan(&mut self, from: (f64, f64), to: (f64, f64)) {
         if let (Some(a), Some(b)) = (self.ground_at(from.0, from.1, 0.0), self.ground_at(to.0, to.1, 0.0)) {
-            let (lng, lat) = self.from_local(a.0 - b.0, a.1 - b.1);
+            let (lng, lat) = self.geo_of(a.0 - b.0, a.1 - b.1);
             self.lng = lng;
             self.lat = lat;
         }
@@ -256,10 +256,10 @@ mod tests {
     #[test]
     fn a_drag_keeps_the_ground_under_the_pointer() {
         let mut c = cam(60.0, 20.0);
-        let before = c.ground_at(500.0, 400.0, 0.0).map(|(e, n)| c.from_local(e, n)).unwrap();
+        let before = c.ground_at(500.0, 400.0, 0.0).map(|(e, n)| c.geo_of(e, n)).unwrap();
         c.pan((500.0, 400.0), (450.0, 380.0));
         let (e, n) = c.ground_at(450.0, 380.0, 0.0).unwrap();
-        let after = c.from_local(e, n);
+        let after = c.geo_of(e, n);
         assert!((before.0 - after.0).abs() < 1e-7 && (before.1 - after.1).abs() < 1e-7);
     }
 

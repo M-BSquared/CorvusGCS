@@ -21,6 +21,8 @@ const WORKERS: usize = 6;
 const QUEUE_MAX: usize = 96;
 const RETRY_AFTER: Duration = Duration::from_secs(20);
 
+type Decoder<T> = Arc<dyn Fn(&[u8]) -> Option<T> + Send + Sync>;
+
 enum Slot<T> {
     Loading,
     Ready(Arc<T>),
@@ -147,12 +149,7 @@ impl<T: Send + Sync + 'static> Drop for TileCache<T> {
     }
 }
 
-fn worker<T: Send + Sync + 'static>(
-    shared: Arc<Shared<T>>,
-    server: Server,
-    ctx: egui::Context,
-    decode: Arc<dyn Fn(&[u8]) -> Option<T> + Send + Sync>,
-) {
+fn worker<T: Send + Sync + 'static>(shared: Arc<Shared<T>>, server: Server, ctx: egui::Context, decode: Decoder<T>) {
     loop {
         let key = {
             let Ok(mut g) = shared.inner.lock() else {

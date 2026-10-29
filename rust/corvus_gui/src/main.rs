@@ -53,6 +53,7 @@ mod ssh_window;
 mod stream;
 mod style;
 mod telemetry;
+mod terrain;
 mod term_emu;
 mod term_view;
 mod tile_cache;

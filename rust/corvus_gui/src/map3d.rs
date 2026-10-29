@@ -10,6 +10,7 @@ use eframe::egui::{self, Color32, Pos2, Rect, Stroke, TextureHandle, TextureOpti
 
 use crate::camera3d::{self, Camera, V3};
 use crate::http::Server;
+use crate::terrain::{self, Terrain};
 use crate::tile_cache::{Key, TileCache};
 use crate::track::{self, Point, Track};
 
@@ -20,6 +21,11 @@ const GRID: usize = 16;
 const MAX_LEAVES: usize = 420;
 const TEXTURES: usize = 400;
 const IMAGE_CACHE: usize = 600;
+/// `HILLSHADE_EXAGGERATION` of the web map, a little stronger as the shade is
+/// painted into vertex colours here and not drawn as a layer.
+const SHADE: f32 = 0.5;
+/// The light of MapLibre's hillshade: from 335 degrees, 45 above the ground.
+const LIGHT: [f64; 3] = [-0.2989, 0.6409, std::f64::consts::FRAC_1_SQRT_2];
 
 /// What the 3D view draws above the ground.
 pub struct Layers3d<'a> {
@@ -57,6 +63,11 @@ pub struct Map3d {
     source: String,
     max_zoom: u8,
     imagery: TileCache<egui::ColorImage>,
+    server: Server,
+    ctx: egui::Context,
+    /// The elevation in use and the base layer it was chosen for.
+    terrain: Option<Terrain>,
+    terrain_for: String,
     textures: HashMap<Key, TextureHandle>,
     used: Vec<Key>,
 }
@@ -83,6 +94,10 @@ impl Map3d {
             source: source.to_string(),
             max_zoom,
             imagery: TileCache::new(ctx, server, IMAGE_CACHE, decode_image),
+            server: server.clone(),
+            ctx: ctx.clone(),
+            terrain: None,
+            terrain_for: String::new(),
             textures: HashMap::new(),
             used: Vec::new(),
         }
@@ -105,6 +120,36 @@ impl Map3d {
             self.textures.clear();
         }
         self.max_zoom = max_zoom;
+    }
+
+    /// Picks the elevation model the base layer calls for, when that changed.
+    pub fn follow_sources(&mut self, sources: &serde_json::Value) {
+        if self.terrain_for == self.source && self.terrain.is_some() {
+            return;
+        }
+        self.terrain_for = self.source.clone();
+        let provider = sources
+            .get("sources")
+            .and_then(serde_json::Value::as_array)
+            .and_then(|l| {
+                l.iter()
+                    .find(|s| s.get("id").and_then(serde_json::Value::as_str) == Some(&self.source))
+            })
+            .and_then(|s| s.get("provider").and_then(serde_json::Value::as_str))
+            .unwrap_or("");
+        if let Some(spec) = terrain::choose(sources, provider, None) {
+            if self.terrain.as_ref().map(|t| &t.spec.id) != Some(&spec.id) {
+                self.terrain = Some(Terrain::new(&self.ctx, &self.server, spec));
+            }
+        }
+    }
+
+    /// The ground height at a position, the centre's when none is loaded.
+    fn ground_at(&self, lng: f64, lat: f64) -> f64 {
+        self.terrain
+            .as_ref()
+            .and_then(|t| t.height_at(lng, lat, 13.0))
+            .unwrap_or(self.cam.ground)
     }
 
     /// The tiles that make the ground: split by how big they look.
@@ -265,6 +310,13 @@ impl Map3d {
             }
         }
 
+        if let Some(h) = self
+            .terrain
+            .as_ref()
+            .and_then(|t| t.height_at(self.cam.lng, self.cam.lat, self.cam.zoom))
+        {
+            self.cam.ground = h;
+        }
         let painter = ui.painter_at(rect);
         painter.rect_filled(rect, 0, crate::style::adi_sky().gamma_multiply(0.55));
         let mut leaves = self.leaves();
@@ -284,6 +336,9 @@ impl Map3d {
             self.textures.retain(|k, _| keep.contains(k));
         }
         self.imagery.trim();
+        if let Some(t) = &self.terrain {
+            t.trim();
+        }
         self.paint_layers(&painter, origin, layers);
         Input { dragged }
     }
@@ -295,12 +350,37 @@ impl Map3d {
         let c = self.cam;
         let k = c.lat.to_radians().cos();
         let (cx, cy) = camera3d::mercator(c.lng, c.lat);
-        let mut pts: Vec<Option<(Pos2, f64)>> = Vec::with_capacity((GRID + 1) * (GRID + 1));
+        let dem = self.terrain.as_ref().and_then(|t| t.tile_for(l.z, l.x, l.y));
+        let n = GRID + 1;
+        let mut heights = vec![c.ground as f32; n * n];
+        if let Some((tile, (u0, v0, size))) = &dem {
+            for j in 0..n {
+                for i in 0..n {
+                    let (u, v) = (i as f64 / GRID as f64, j as f64 / GRID as f64);
+                    heights[j * n + i] = tile.sample(u0 + u * size, v0 + v * size);
+                }
+            }
+        }
+        let step = 2.0 * std::f64::consts::PI * camera3d::R / 2f64.powi(l.z as i32) * k / GRID as f64;
+        let shade_at = |i: usize, j: usize| -> f32 {
+            if dem.is_none() {
+                return 1.0;
+            }
+            let h = |i: usize, j: usize| heights[j * n + i] as f64;
+            let (i0, i1) = (i.saturating_sub(1), (i + 1).min(GRID));
+            let (j0, j1) = (j.saturating_sub(1), (j + 1).min(GRID));
+            let dzde = (h(i1, j) - h(i0, j)) / ((i1 - i0) as f64 * step);
+            let dzdn = -(h(i, j1) - h(i, j0)) / ((j1 - j0) as f64 * step);
+            let len = (dzde * dzde + dzdn * dzdn + 1.0).sqrt();
+            let lit = (-dzde * LIGHT[0] - dzdn * LIGHT[1] + LIGHT[2]) / len;
+            1.0 - SHADE * ((LIGHT[2] - lit) / LIGHT[2]).clamp(0.0, 1.0) as f32
+        };
+        let mut pts: Vec<Option<(Pos2, f64)>> = Vec::with_capacity(n * n);
         for j in 0..=GRID {
             for i in 0..=GRID {
                 let (u, v) = (i as f64 / GRID as f64, j as f64 / GRID as f64);
                 let (mx, my) = tile_mercator(l.z, l.x as f64 + u, l.y as f64 + v);
-                let p = [(mx - cx) * k, (my - cy) * k, -c.ground];
+                let p = [(mx - cx) * k, (my - cy) * k, heights[j * n + i] as f64 - c.ground];
                 pts.push(
                     c.project(p)
                         .map(|s| (Pos2::new(origin.x + s.x as f32, origin.y + s.y as f32), s.depth)),
@@ -330,10 +410,11 @@ impl Map3d {
                 let (ii, jj) = (i + di, j + dj);
                 let (pos, _) = pts[jj * (GRID + 1) + ii].expect("a drawn quad has its corners");
                 let (u, v) = (ii as f32 / GRID as f32, jj as f32 / GRID as f32);
+                let g = (shade_at(ii, jj) * 255.0) as u8;
                 mesh.vertices.push(egui::epaint::Vertex {
                     pos,
                     uv: Pos2::new(uv.min.x + u * uv.width(), uv.min.y + v * uv.height()),
-                    color: Color32::WHITE,
+                    color: Color32::from_rgb(g, g, g),
                 });
             }
             mesh.indices
@@ -352,7 +433,10 @@ impl Map3d {
         let cam = &self.cam;
         let line = |pts: &[Point]| -> Vec<Pos2> {
             pts.iter()
-                .filter_map(|p| self.screen_of(origin, cam.to_local(p.lng, p.lat, cam.ground + p.alt.unwrap_or(0.0))))
+                .filter_map(|p| {
+                    let h = self.ground_at(p.lng, p.lat) + p.alt.unwrap_or(0.0);
+                    self.screen_of(origin, cam.local_of(p.lng, p.lat, h))
+                })
                 .collect()
         };
         for flight in &layers.track.past {
@@ -365,13 +449,14 @@ impl Map3d {
             false,
         );
         if let Some((lng, lat)) = layers.home {
-            if let Some(p) = self.screen_of(origin, cam.to_local(lng, lat, cam.ground)) {
+            if let Some(p) = self.screen_of(origin, cam.local_of(lng, lat, self.ground_at(lng, lat))) {
                 crate::map::paint_home(painter, p);
             }
         }
         if let Some((lng, lat)) = layers.vehicle {
-            let ground = cam.to_local(lng, lat, cam.ground);
-            let air = cam.to_local(lng, lat, cam.ground + layers.height);
+            let base = self.ground_at(lng, lat);
+            let ground = cam.local_of(lng, lat, base);
+            let air = cam.local_of(lng, lat, base + layers.height);
             if let (Some(g), Some(a)) = (self.screen_of(origin, ground), self.screen_of(origin, air)) {
                 painter.line_segment([g, a], Stroke::new(1.0, Color32::from_black_alpha(110)));
                 painter.circle_filled(g, 3.0, Color32::from_black_alpha(90));
