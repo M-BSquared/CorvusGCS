@@ -189,3 +189,61 @@ fn worker<T: Send + Sync + 'static>(
         ctx.request_repaint();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{Read, Write};
+
+    #[test]
+    fn a_tile_is_fetched_once_decoded_and_then_served_from_the_cache() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let server = Server::local(listener.local_addr().unwrap().port());
+        let hits = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let h2 = hits.clone();
+        std::thread::spawn(move || {
+            while let Ok((mut s, _)) = listener.accept() {
+                let mut buf = [0u8; 1024];
+                let n = s.read(&mut buf).unwrap_or(0);
+                let head = String::from_utf8_lossy(&buf[..n]).to_string();
+                h2.fetch_add(1, Ordering::SeqCst);
+                let body = if head.contains("/api/tiles/sat/3/1/2.png") {
+                    "abc"
+                } else {
+                    ""
+                };
+                let status = if body.is_empty() { "404 Not Found" } else { "200 OK" };
+                let _ = s.write_all(
+                    format!(
+                        "HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                        body.len()
+                    )
+                    .as_bytes(),
+                );
+            }
+        });
+        let ctx = egui::Context::default();
+        let cache: TileCache<usize> = TileCache::new(&ctx, &server, 10, |b| Some(b.len()));
+        let key: Key = ("sat".into(), 3, 1, 2);
+        assert!(cache.get(&key).is_none(), "the first ask only queues it");
+        let deadline = Instant::now() + Duration::from_secs(3);
+        let tile = loop {
+            if let Some(t) = cache.peek(&key) {
+                break t;
+            }
+            assert!(Instant::now() < deadline, "the tile did not arrive");
+            std::thread::sleep(Duration::from_millis(10));
+        };
+        assert_eq!(*tile, 3);
+        assert!(cache.get(&key).is_some());
+        assert_eq!(hits.load(Ordering::SeqCst), 1);
+        let missing: Key = ("sat".into(), 9, 9, 9);
+        cache.get(&missing);
+        std::thread::sleep(Duration::from_millis(400));
+        assert!(
+            cache.get(&missing).is_none(),
+            "a tile the backend does not have stays failed"
+        );
+        assert_eq!(hits.load(Ordering::SeqCst), 2, "and is not asked for again at once");
+    }
+}

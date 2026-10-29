@@ -128,7 +128,12 @@ impl Map3d {
         let z0 = (c.zoom.floor() as i32 - 4).clamp(0, self.max_zoom as i32) as u8;
         let n_tiles = 2f64.powi(z0 as i32);
         let world = 2.0 * std::f64::consts::PI * camera3d::R;
-        let to_tile = |mx: f64, my: f64| ((mx + world / 2.0) / world * n_tiles, (world / 2.0 - my) / world * n_tiles);
+        let to_tile = |mx: f64, my: f64| {
+            (
+                (mx + world / 2.0) / world * n_tiles,
+                (world / 2.0 - my) / world * n_tiles,
+            )
+        };
         let (x0, y1) = to_tile(cx + min.0 / k, cy + min.1 / k);
         let (x1, y0) = to_tile(cx + max.0 / k, cy + max.1 / k);
         let clampi = |v: f64| (v.floor().max(0.0) as u32).min(n_tiles as u32 - 1);
@@ -174,14 +179,8 @@ impl Map3d {
         let k = c.lat.to_radians().cos();
         let metres = 2.0 * std::f64::consts::PI * camera3d::R * k / 2f64.powi(l.z as i32);
         let pts = self.corners(l);
-        let mid = [
-            (pts[0][0] + pts[2][0]) / 2.0,
-            (pts[0][1] + pts[2][1]) / 2.0,
-            pts[0][2],
-        ];
-        let px = c
-            .project(mid)
-            .map_or(f64::MAX, |s| metres / s.depth * c.focal());
+        let mid = [(pts[0][0] + pts[2][0]) / 2.0, (pts[0][1] + pts[2][1]) / 2.0, pts[0][2]];
+        let px = c.project(mid).map_or(f64::MAX, |s| metres / s.depth * c.focal());
         if px > SPLIT_PX && l.z < self.max_zoom && out.len() < MAX_LEAVES {
             for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
                 self.split(
@@ -302,7 +301,10 @@ impl Map3d {
                 let (u, v) = (i as f64 / GRID as f64, j as f64 / GRID as f64);
                 let (mx, my) = tile_mercator(l.z, l.x as f64 + u, l.y as f64 + v);
                 let p = [(mx - cx) * k, (my - cy) * k, -c.ground];
-                pts.push(c.project(p).map(|s| (Pos2::new(origin.x + s.x as f32, origin.y + s.y as f32), s.depth)));
+                pts.push(
+                    c.project(p)
+                        .map(|s| (Pos2::new(origin.x + s.x as f32, origin.y + s.y as f32), s.depth)),
+                );
             }
         }
         let mut quads: Vec<(f64, usize, usize)> = Vec::new();
@@ -334,7 +336,8 @@ impl Map3d {
                     color: Color32::WHITE,
                 });
             }
-            mesh.indices.extend([base, base + 1, base + 2, base, base + 2, base + 3]);
+            mesh.indices
+                .extend([base, base + 1, base + 2, base, base + 2, base + 3]);
         }
         painter.add(egui::Shape::mesh(mesh));
     }
@@ -355,7 +358,12 @@ impl Map3d {
         for flight in &layers.track.past {
             crate::map::paint_flight(painter, &line(&track::smooth(flight)), crate::style::track_past(), true);
         }
-        crate::map::paint_flight(painter, &line(&track::smooth(&layers.track.current)), crate::style::track(), false);
+        crate::map::paint_flight(
+            painter,
+            &line(&track::smooth(&layers.track.current)),
+            crate::style::track(),
+            false,
+        );
         if let Some((lng, lat)) = layers.home {
             if let Some(p) = self.screen_of(origin, cam.to_local(lng, lat, cam.ground)) {
                 crate::map::paint_home(painter, p);
@@ -393,7 +401,10 @@ mod tests {
         let quarter = uv_of(Leaf { z: 6, x: 7, y: 8 }, 5);
         assert_eq!((quarter.min, quarter.size()), (Pos2::new(0.5, 0.0), Vec2::splat(0.5)));
         let sixteenth = uv_of(Leaf { z: 7, x: 13, y: 14 }, 5);
-        assert_eq!((sixteenth.min, sixteenth.size()), (Pos2::new(0.25, 0.5), Vec2::splat(0.25)));
+        assert_eq!(
+            (sixteenth.min, sixteenth.size()),
+            (Pos2::new(0.25, 0.5), Vec2::splat(0.25))
+        );
     }
 
     #[test]

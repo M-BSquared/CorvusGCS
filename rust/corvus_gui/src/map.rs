@@ -12,6 +12,7 @@ use walkers::sources::{Attribution, TileSource};
 use walkers::{HttpOptions, HttpTiles, MapMemory, Plugin, Projector, TileId};
 
 use crate::http::Server;
+use crate::map3d::{Layers3d, Map3d};
 use crate::style;
 use crate::track::{self, Point, Track};
 
@@ -89,6 +90,11 @@ pub struct Map {
     pub follow: bool,
     /// The marker's heading, eased like the web marker.
     heading: Option<f32>,
+    /// 3D mode: the tilted view, made when it is first switched on.
+    three: Option<Map3d>,
+    three_d: bool,
+    /// Longitude, latitude and zoom of the flat view's centre, as last drawn.
+    view: Option<(f64, f64, f64)>,
 }
 
 fn real_fix(v: Option<&Value>) -> Option<(f64, f64)> {
@@ -115,6 +121,9 @@ impl Map {
             first_fix: true,
             follow: true,
             heading: None,
+            three: None,
+            three_d: false,
+            view: None,
         };
         map.set_source(ctx, DEFAULT_SOURCE);
         map
@@ -171,6 +180,74 @@ impl Map {
         self.tiles = Some(HttpTiles::with_options(source, options, ctx.clone()));
         self.attribution = attribution;
         self.source = id.to_string();
+    }
+
+    /// Whether the map is in 3D mode.
+    #[allow(dead_code)]
+    pub fn three_d(&self) -> bool {
+        self.three_d
+    }
+
+    /// Switches 3D mode on or off; the view stays where it is looking.
+    pub fn set_three_d(&mut self, on: bool) {
+        if on == self.three_d {
+            return;
+        }
+        self.three_d = on;
+        if on {
+            if let (Some(t), Some((lng, lat, zoom))) = (self.three.as_mut(), self.view) {
+                t.start_at(lng, lat, zoom, 0.0);
+            }
+        } else if let Some(t) = &self.three {
+            self.memory.center_at(walkers::lon_lat(t.cam.lng, t.cam.lat));
+            let _ = self.memory.set_zoom(t.cam.zoom);
+            self.follow = false;
+        }
+    }
+
+    /// Draws the tilted view into the whole of `ui`.
+    fn show_3d(
+        &mut self,
+        ui: &mut egui::Ui,
+        state: &Value,
+        vehicle: Option<(f64, f64)>,
+        home: Option<(f64, f64)>,
+        heading: f32,
+    ) {
+        let rect = ui.max_rect();
+        let (_, max_zoom) = describe(&self.sources, &self.source);
+        if self.three.is_none() {
+            let mut t = Map3d::new(ui.ctx(), &self.server, &self.source, max_zoom);
+            if let Some((lng, lat, zoom)) = self.view {
+                t.start_at(lng, lat, zoom, 0.0);
+            }
+            self.three = Some(t);
+        }
+        let follow = self.follow;
+        let Some(t) = self.three.as_mut() else {
+            return;
+        };
+        t.set_source(&self.source, max_zoom);
+        if let (true, Some((lng, lat))) = (follow, vehicle) {
+            t.cam.lng = lng;
+            t.cam.lat = lat;
+        }
+        let height = state.get("altitude_agl").and_then(Value::as_f64).unwrap_or(0.0);
+        let input = t.show(
+            ui,
+            rect,
+            &Layers3d {
+                track: &self.track,
+                home,
+                vehicle,
+                heading,
+                height,
+            },
+        );
+        if input.dragged {
+            self.follow = false;
+        }
+        self.paint_attribution(ui, rect);
     }
 
     /// Zooms one step in or out.
@@ -238,6 +315,14 @@ impl Map {
         let my_position = vehicle.map_or(walkers::lon_lat(DEFAULT_CENTER.0, DEFAULT_CENTER.1), |(lng, lat)| {
             walkers::lon_lat(lng, lat)
         });
+        if !self.three_d && self.view.is_some() && std::env::var_os("CORVUS_GUI_3D").is_some() && !self.three.is_some()
+        {
+            self.set_three_d(true);
+        }
+        if self.three_d {
+            self.show_3d(ui, state, vehicle, home, heading);
+            return;
+        }
         let fence = self.env.get();
         let outline = (fence.show_on_map && fence.polygon.len() >= 3).then_some(fence.polygon);
         let layers = Layers {
@@ -257,6 +342,11 @@ impl Map {
         .double_click_to_zoom(true);
         map = map.zoom_speed(2.0);
         let response = ui.add(map);
+        {
+            let p = Projector::new(response.rect, &self.memory, my_position);
+            let c = p.unproject(response.rect.center().to_vec2());
+            self.view = Some((c.x(), c.y(), self.memory.zoom()));
+        }
         if response.dragged() {
             self.follow = false;
         }
@@ -528,6 +618,9 @@ mod tests {
             first_fix: true,
             follow: true,
             heading: None,
+            three: None,
+            three_d: false,
+            view: None,
         };
         let _ = ctx;
         m.update(&json!({"connected": true, "armed": false, "position": [11.6, 48.1]}));
