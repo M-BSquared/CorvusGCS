@@ -106,6 +106,9 @@ impl App {
         for n in self.setup.take_notes() {
             self.board.add_local("info", &n, now);
         }
+        for n in self.setup.take_warnings() {
+            self.board.add_local("warning", &n, now);
+        }
         if std::mem::take(&mut self.board.clear_remote) {
             // The backend's store owns the vehicle's lines; its next push is
             // what really removes them.

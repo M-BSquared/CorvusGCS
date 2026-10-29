@@ -1,11 +1,14 @@
 //! The Setup page (src/js/setup.js, setup.css): the head with the vehicle
 //! card, the grid of twelve tiles, and the sub-pages behind them.
 //!
-//! Parameters, Safety & Sensors, Motors and Battery & Power are whole. The
+//! Parameters, Safety & Sensors, Motors, Battery & Power and Calibration are whole. The
 //! other tiles open a notice that the page is still in the web interface.
 
 pub mod battery;
 pub mod battery_model;
+pub mod calib_figure;
+pub mod calib_protocol;
+pub mod calibration;
 pub mod check;
 pub mod checklist;
 pub mod geofence;
@@ -25,6 +28,7 @@ use serde_json::Value;
 
 use crate::net::http::Server;
 use crate::setup::battery::BatteryPage;
+use crate::setup::calibration::CalibrationPage;
 use crate::setup::motors::MotorsPage;
 use crate::setup::params::ParamsPage;
 use crate::setup::safety::SafetyPage;
@@ -125,6 +129,7 @@ enum View {
     Safety(Box<SafetyPage>),
     Motors(Box<MotorsPage>),
     Battery(Box<BatteryPage>),
+    Calibration(Box<CalibrationPage>),
     Elsewhere(&'static str),
 }
 
@@ -157,6 +162,7 @@ impl SetupPage {
             View::Safety(p) => p.take_errors(),
             View::Motors(p) => p.take_errors(),
             View::Battery(p) => p.take_errors(),
+            View::Calibration(p) => p.take_errors(),
             _ => Vec::new(),
         }
     }
@@ -165,6 +171,15 @@ impl SetupPage {
     pub fn take_notes(&mut self) -> Vec<String> {
         match &mut self.view {
             View::Parameters(p) => p.take_notes(),
+            View::Calibration(p) => p.take_notes(),
+            _ => Vec::new(),
+        }
+    }
+
+    /// Warnings for the notification board.
+    pub fn take_warnings(&mut self) -> Vec<String> {
+        match &mut self.view {
+            View::Calibration(p) => p.take_warnings(),
             _ => Vec::new(),
         }
     }
@@ -191,6 +206,7 @@ impl SetupPage {
             }
             "motors" => View::Motors(Box::new(MotorsPage::new(self.server.clone(), ctx))),
             "battery" => View::Battery(Box::new(BatteryPage::new(self.server.clone(), ctx))),
+            "calibration" => View::Calibration(Box::new(CalibrationPage::new(self.server.clone(), ctx))),
             other => match TILES.iter().find(|t| t.0 == other) {
                 Some(t) => View::Elsewhere(t.2),
                 None => View::Tiles,
@@ -240,17 +256,33 @@ impl SetupPage {
                     );
                     y = grid(ui, x, y, w, &mut self.view, &self.server, &self.env);
                 }
-                View::Parameters(_) | View::Safety(_) | View::Motors(_) | View::Battery(_) | View::Elsewhere(_) => {
+                View::Parameters(_)
+                | View::Safety(_)
+                | View::Motors(_)
+                | View::Battery(_)
+                | View::Calibration(_)
+                | View::Elsewhere(_) => {
                     let in_sensor = matches!(&self.view, View::Safety(p) if p.in_sensor());
+                    let in_wizard = matches!(&self.view, View::Calibration(p) if p.in_wizard());
                     let (bh, back) = pagekit::back_button(
                         ui,
                         Pos2::new(x, y),
-                        if in_sensor { "Safety & Sensors" } else { "Setup" },
+                        if in_sensor {
+                            "Safety & Sensors"
+                        } else if in_wizard {
+                            "Calibration"
+                        } else {
+                            "Setup"
+                        },
                     );
                     y += bh + 22.0;
                     if back && in_sensor {
                         if let View::Safety(p) = &mut self.view {
                             p.close_sensor();
+                        }
+                    } else if back && in_wizard {
+                        if let View::Calibration(p) = &mut self.view {
+                            p.close_wizard();
                         }
                     } else if back {
                         self.view = View::Tiles;
@@ -258,6 +290,8 @@ impl SetupPage {
                         y = p.show(ui, x, y, w, state, now);
                     } else if let View::Battery(p) = &mut self.view {
                         y = p.show(ui, x, y, w, state, &self.units);
+                    } else if let View::Calibration(p) = &mut self.view {
+                        y = p.show(ui, x, y, w, state, now);
                     } else if let View::Safety(p) = &mut self.view {
                         y = p.show(ui, x, y, w, state, checklist);
                     } else if let View::Parameters(p) = &mut self.view {
@@ -397,6 +431,7 @@ fn grid(
                 "safety" => View::Safety(Box::new(SafetyPage::new(server.clone(), ui.ctx(), env.clone()))),
                 "motors" => View::Motors(Box::new(MotorsPage::new(server.clone(), ui.ctx()))),
                 "battery" => View::Battery(Box::new(BatteryPage::new(server.clone(), ui.ctx()))),
+                "calibration" => View::Calibration(Box::new(CalibrationPage::new(server.clone(), ui.ctx()))),
                 _ => View::Elsewhere(title),
             };
         }

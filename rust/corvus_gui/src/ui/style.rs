@@ -38,8 +38,10 @@ pub struct Palette {
     pub warning_dark: u32,
     pub critical: u32,
     pub critical_dark: u32,
+    pub critical_bright: u32,
     pub nav: u32,
     pub nav_bright: u32,
+    pub nav_dark: u32,
     pub vehicle: u32,
     pub track: u32,
     pub track_past: u32,
@@ -87,8 +89,10 @@ const LIGHT: Palette = Palette {
     warning_dark: 0xFAEDCC,
     critical: 0xD62B26,
     critical_dark: 0xFBDCDB,
+    critical_bright: 0xB32020,
     nav: 0x0B6FC0,
     nav_bright: 0x085A9C,
+    nav_dark: 0xD8E9F8,
     vehicle: 0xD62B26,
     track: 0xB81E1B,
     track_past: 0xD4675F,
@@ -146,8 +150,10 @@ const GREEN: Palette = Palette {
     warning_dark: 0x403716,
     critical: 0xFF514D,
     critical_dark: 0x421D1C,
+    critical_bright: 0xFF726E,
     nav: 0x4CC9FF,
     nav_bright: 0x7DDEFF,
+    nav_dark: 0x17394A,
     vehicle: 0xFF514D,
     track: 0xE4322F,
     track_past: 0xF0958A,
@@ -181,6 +187,7 @@ const BLUE: Palette = Palette {
     accent_hover: 0x55ADFF,
     nav: 0x35D6C4,
     nav_bright: 0x6BE8DA,
+    nav_dark: 0x10403C,
     terminal_cmd: 0x6FBCFF,
     ..GREEN
 };
@@ -288,8 +295,10 @@ color_fns!(
     warning_dark,
     critical,
     critical_dark,
+    critical_bright,
     nav,
     nav_bright,
+    nav_dark,
     vehicle,
     track,
     track_past,
@@ -440,6 +449,22 @@ pub fn mono(size: f32) -> FontId {
 /// One run of text in JetBrains Mono.
 pub fn galley_mono(ui: &egui::Ui, text: &str, size: f32, color: Color32) -> Arc<Galley> {
     ui.painter().layout_no_wrap(text.to_string(), mono(size), color)
+}
+
+/// One run of text in JetBrains Mono with letter spacing.
+pub fn galley_mono_letter(ui: &egui::Ui, text: &str, size: f32, color: Color32, letter: f32) -> Arc<Galley> {
+    let mut job = LayoutJob::default();
+    job.append(
+        text,
+        0.0,
+        TextFormat {
+            font_id: mono(size),
+            color,
+            extra_letter_spacing: letter,
+            ..Default::default()
+        },
+    );
+    ui.painter().layout_job(job)
 }
 
 /// One run of text as CSS sets it: size, weight, colour, letter spacing.

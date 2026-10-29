@@ -93,6 +93,22 @@ const ICONS: &[(&str, &str)] = &[
     ("square-terminal", "SquareTerminal"),
     ("minimize-2", "Minimize2"),
     ("square-arrow-out-up-right", "SquareArrowOutUpRight"),
+    ("hourglass", "Hourglass"),
+    ("rotate-3d", "Rotate3d"),
+    ("hand", "Hand"),
+    ("plug-zap", "PlugZap"),
+    ("unplug", "Unplug"),
+    ("wind", "Wind"),
+    ("ban", "Ban"),
+    ("move-3d", "Move3d"),
+    ("compass", "Compass"),
+    ("separator-horizontal", "SeparatorHorizontal"),
+    ("gauge", "Gauge"),
+    ("vibrate", "Vibrate"),
+    ("zap", "Zap"),
+    ("trees", "Trees"),
+    ("magnet", "Magnet"),
+    ("rotate-cw", "RotateCw"),
 ];
 
 fn main() {

@@ -69,6 +69,16 @@ impl Look {
         control_min: 0.0,
         number: None,
     };
+    /// `.pform-field` as it is: a 130 to 220 px label column.
+    pub const CALIB: Look = Look {
+        label_min: 130.0,
+        label_max: 220.0,
+        pad: 7.0,
+        hint_as_info: false,
+        mono_label: false,
+        control_min: 0.0,
+        number: None,
+    };
     /// `.battery-field`: a 220 px control column, 150 px inputs.
     pub const BATTERY: Look = Look {
         label_min: 140.0,
