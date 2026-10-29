@@ -7,8 +7,7 @@
 //! written in. Nothing here is written to the vehicle, so none of it is held
 //! back while armed.
 //!
-//! Not yet: the window on the Home map, with the ticks and the arming
-//! warning.
+//! The window on the Home map is `checklist_window.rs`.
 
 use eframe::egui::{self, Color32, Pos2, Rect, Stroke, Vec2};
 use serde_json::{json, Value};
@@ -202,6 +201,8 @@ pub struct Checklist {
     saving: Vec<(Pending<Result<Value, String>>, Undo)>,
     dialog: Option<Dialog>,
     errors: Vec<String>,
+    /// The window on the Home map and what the station remembers of it.
+    win: crate::checklist_window::WindowState,
 }
 
 impl Checklist {
@@ -214,6 +215,7 @@ impl Checklist {
             saving: Vec::new(),
             dialog: None,
             errors: Vec::new(),
+            win: crate::checklist_window::WindowState::load_default(),
         }
     }
 
@@ -235,6 +237,8 @@ impl Checklist {
     fn take_block(&mut self, v: &Value) {
         let cfg = v.get("config").unwrap_or(v);
         self.block = normalize(cfg.get("checklists").unwrap_or(&Value::Null));
+        let lists = self.lists();
+        self.win.prune(&lists);
     }
 
     fn persist(&mut self, ctx: &egui::Context, patch: Value, undo: Undo) {
@@ -330,6 +334,48 @@ impl Checklist {
         let prev = self.block.active.clone();
         self.block.active = id.to_string();
         self.persist(ctx, json!({ "active": id }), Undo::Active(prev));
+    }
+
+    /// Takes in the answers of the requests on their way.
+    pub fn poll(&mut self) {
+        self.take_answers();
+    }
+
+    /// The window on the Home map, when the feature and the window are on.
+    /// `host` is the map's rectangle, `below` where the flight bar ends.
+    pub fn window(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, host: Rect, below: f32) {
+        self.take_answers();
+        if !(self.block.enabled && self.block.home_window) {
+            return;
+        }
+        let all = self.lists();
+        let list = self.active_list();
+        let view = crate::checklist_window::View {
+            list: list.as_ref(),
+            all: &all,
+        };
+        let act = crate::checklist_window::show(ui, &mut self.win, host, below, &view);
+        if let (Some(key), Some(l)) = (act.toggle, &list) {
+            self.win.toggle(&l.id, &key);
+        }
+        if act.reset {
+            if let Some(l) = &list {
+                self.win.reset(&l.id);
+            }
+        }
+        if act.close {
+            self.set_home(ctx, false);
+        }
+        if let Some(id) = act.pick {
+            self.set_active(ctx, &id);
+        }
+    }
+
+    /// `onTelemetry`: the warning to raise, when the vehicle has just been
+    /// armed with the list unfinished.
+    pub fn on_telemetry(&mut self, state: &Value) -> Option<String> {
+        let list = self.active_list();
+        self.win.arming_warning(state, self.block.enabled, list.as_ref())
     }
 
     /// The Setup card under its title, `x .. x + w` from `y`. Returns the
@@ -1040,6 +1086,7 @@ mod tests {
             saving: vec![],
             dialog: None,
             errors: vec![],
+            win: crate::checklist_window::WindowState::default(),
         };
         let _ = ctx;
         assert_eq!(c.lists(), vec![standard()]);

@@ -217,6 +217,9 @@ struct Outcome {
 /// The bar's state.
 pub struct FlightBar {
     server: Server,
+    /// Where the bar ended last frame, in the map's own coordinates: an
+    /// unmoved checklist window starts 10 px under it.
+    pub bar_bottom: f32,
     modes: Arc<Mutex<Vec<Mode>>>,
     outcome: Arc<Mutex<Outcome>>,
     takeoff_open: bool,
@@ -232,6 +235,7 @@ impl FlightBar {
     pub fn new(server: Server, ctx: &egui::Context) -> FlightBar {
         let bar = FlightBar {
             server,
+            bar_bottom: 0.0,
             modes: Arc::default(),
             outcome: Arc::default(),
             takeoff_open: false,
@@ -420,6 +424,7 @@ impl FlightBar {
         let bar_w = BAR_PAD * 2.0 + n * btn_w + n * BAR_GAP + 5.0 + BAR_GAP + select_w + 2.0;
         let bar_h = BAR_PAD * 2.0 + btn_h + 2.0;
         let bar = Rect::from_min_size(area.min + Vec2::splat(INSET), Vec2::new(bar_w, bar_h));
+        self.bar_bottom = bar.bottom() - area.top();
         let painter = ui.painter().clone();
         style::glass_panel(&painter, "flightbar", bar, style::RADIUS, 0.6);
         ui.interact(bar, ui.scope_id().with("flightbar"), egui::Sense::click_and_drag());

@@ -33,6 +33,7 @@ struct App {
     telemetry: Telemetry,
     units: Units,
     top_speeds: topbar_cards::TopSpeeds,
+    checklist: crate::checklist::Checklist,
     shot_sent: bool,
     click_stage: u32,
     map: Map,
@@ -59,7 +60,17 @@ impl App {
         self.map.update(&state);
         self.board.update(&state, now);
         self.flight.settle(&mut self.board, now);
-        for e in self.setup.take_errors().into_iter().chain(self.telemetry.take_errors()) {
+        self.checklist.poll();
+        if let Some(msg) = self.checklist.on_telemetry(&state) {
+            self.board.add_local("warning", &msg, now);
+        }
+        for e in self
+            .setup
+            .take_errors()
+            .into_iter()
+            .chain(self.telemetry.take_errors())
+            .chain(self.checklist.take_errors())
+        {
             self.board.add_local("critical", &e, now);
         }
         if std::mem::take(&mut self.board.clear_remote) {
@@ -107,8 +118,10 @@ impl App {
                         .show(&mut map_ui, corner, &state, &self.units, now, vw.hud_width(), vw.max600);
                     self.rail.show(&mut map_ui, main, &mut self.map, &state);
                     self.flight.show(&mut map_ui, main, &state, &self.units);
+                    let below = self.flight.bar_bottom + 10.0;
+                    self.checklist.window(&mut map_ui, ui.ctx(), main, below);
                 } else if self.page == Page::Setup {
-                    self.setup.show(ui, main, &state, now);
+                    self.setup.show(ui, main, &state, now, &mut self.checklist);
                 } else {
                     nav::placeholder(ui, main, self.page);
                 }
@@ -122,6 +135,7 @@ impl App {
                 panel_ui.set_clip_rect(panel);
                 self.panel.show(&mut panel_ui, panel, &state);
             });
+        self.checklist.dialog(ui.ctx());
         let screen = ui.ctx().content_rect();
         let below = notify_ui::board(ui.ctx(), screen, screen.top() + vw.top_height(), &mut self.board, now);
         let toasts_top = below.map_or(screen.top() + vw.top_height() + 10.0, |b| b + 10.0);
@@ -351,6 +365,7 @@ pub fn run(
                 telemetry,
                 units,
                 top_speeds: Default::default(),
+                checklist: crate::checklist::Checklist::new(server.clone(), &ctx),
                 shot_sent: false,
                 click_stage: 0,
                 map,

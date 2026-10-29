@@ -168,7 +168,14 @@ impl SetupPage {
     }
 
     /// Draws the page into `rect` (the page view).
-    pub fn show(&mut self, ui: &mut egui::Ui, rect: Rect, state: &Value, now: f64) {
+    pub fn show(
+        &mut self,
+        ui: &mut egui::Ui,
+        rect: Rect,
+        state: &Value,
+        now: f64,
+        checklist: &mut crate::checklist::Checklist,
+    ) {
         ui.painter().rect_filled(rect, 0, style::bg());
         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
         child.set_clip_rect(rect);
@@ -214,7 +221,7 @@ impl SetupPage {
                     } else if let View::Motors(p) = &mut self.view {
                         y = p.show(ui, x, y, w, state, now);
                     } else if let View::Safety(p) = &mut self.view {
-                        y = p.show(ui, x, y, w, state);
+                        y = p.show(ui, x, y, w, state, checklist);
                     } else if let View::Parameters(p) = &mut self.view {
                         y = head(
                             ui,

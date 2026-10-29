@@ -275,7 +275,6 @@ pub struct SafetyPage {
     extras: Extras,
     chain: Option<Chain>,
     check: Check,
-    checklist: Checklist,
     geofence: GeofenceCard,
     /// The last check, as the card at the top shows it.
     check_card: Option<check::Summary>,
@@ -287,7 +286,6 @@ pub struct SafetyPage {
 
 impl SafetyPage {
     pub fn new(server: Server, ctx: &egui::Context, env: Env) -> SafetyPage {
-        let server_for_list = server.clone();
         let server_for_fence = server.clone();
         let mut p = SafetyPage {
             server,
@@ -303,7 +301,6 @@ impl SafetyPage {
             extras: Extras::load_default(),
             chain: None,
             check: Check::default(),
-            checklist: Checklist::new(server_for_list, ctx),
             geofence: GeofenceCard::new(server_for_fence, env, ctx),
             check_card: None,
             check_say: None,
@@ -316,7 +313,6 @@ impl SafetyPage {
     pub fn take_errors(&mut self) -> Vec<String> {
         let mut e = std::mem::take(&mut self.errors);
         e.extend(self.form.take_errors());
-        e.extend(self.checklist.take_errors());
         e.extend(self.geofence.take_errors());
         e
     }
@@ -638,7 +634,8 @@ impl SafetyPage {
     }
 
     /// Draws the page's head and cards from `y`; returns the bottom.
-    pub fn show(&mut self, ui: &mut egui::Ui, x: f32, y: f32, w: f32, state: &Value) -> f32 {
+    #[allow(clippy::too_many_arguments)]
+    pub fn show(&mut self, ui: &mut egui::Ui, x: f32, y: f32, w: f32, state: &Value, checklist: &mut Checklist) -> f32 {
         let ctx = ui.ctx().clone();
         self.take_answers(&ctx);
         let armed = state.get("armed") == Some(&Value::Bool(true));
@@ -828,14 +825,25 @@ impl SafetyPage {
             let mut cy = y;
             for _ in 0..count {
                 let Some(card) = cards.next() else { break };
-                cy = self.card(ui, &ctx, &doc, card, cx, cy, col_w, armed, state, &mut events) + 14.0;
+                cy = self.card(
+                    ui,
+                    &ctx,
+                    &doc,
+                    card,
+                    cx,
+                    cy,
+                    col_w,
+                    armed,
+                    state,
+                    checklist,
+                    &mut events,
+                ) + 14.0;
             }
             bottoms[col] = cy - 14.0;
         }
         for (i, e) in events {
             self.handle(&ctx, i, e, armed);
         }
-        self.checklist.dialog(&ctx);
         self.geofence.overlay(&ctx, state, doc.connected, armed);
         bottoms[0].max(bottoms[1]).max(y)
     }
@@ -852,6 +860,7 @@ impl SafetyPage {
         w: f32,
         armed: bool,
         state: &Value,
+        checklist: &mut Checklist,
         events: &mut Vec<(usize, Event)>,
     ) -> f32 {
         let painter = ui.painter().clone();
@@ -983,7 +992,7 @@ impl SafetyPage {
             }
             Card::Checklist => {
                 cy = pagekit::section_title(ui, ix, cy, iw, "Preflight checklist") - 2.0;
-                cy = self.checklist.card_body(ui, ctx, ix, cy, iw);
+                cy = checklist.card_body(ui, ctx, ix, cy, iw);
             }
             Card::SensorStatus(i) => {
                 let section = &doc.sections[i];

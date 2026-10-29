@@ -12,6 +12,7 @@ mod backend;
 mod bg;
 mod check;
 mod checklist;
+mod checklist_window;
 mod console;
 mod flight;
 mod fonts;
