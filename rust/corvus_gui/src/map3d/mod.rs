@@ -876,6 +876,33 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_leaf_mesh_is_a_height_field_with_skirts_and_sound_indices() {
+        let size = 8;
+        // A ramp rising to the east: 0 m at the west edge, 700 m at the east.
+        let heights: Vec<f32> = (0..size * size).map(|i| (i % size) as f32 * 100.0).collect();
+        let dem: Dem = (Arc::new(DemTile::from_heights(size, heights)), (0.0, 0.0, 1.0));
+        let leaf = Leaf { z: 10, x: 540, y: 355 };
+        let m = build_leaf(leaf, Some(&dem), 0.67);
+        let n = GRID + 1;
+        let verts = m.verts.len() / FLOATS;
+        assert_eq!(verts, n * n + GRID * 4 * 4, "the grid and four vertices a skirt quad");
+        assert_eq!(m.indices.len(), GRID * GRID * 6 + GRID * 4 * 6);
+        assert!(m.indices.iter().all(|i| (*i as usize) < verts));
+        let z = |i: usize| m.verts[i * FLOATS + 2];
+        assert_eq!(z(0), 0.0, "the west edge is at 0 m");
+        assert_eq!(z(GRID), 700.0, "the east edge is at 700 m");
+        let first_skirt = n * n;
+        assert!(z(first_skirt + 2) < z(first_skirt), "a skirt hangs below its edge");
+        let shade = |i: usize| m.verts[i * FLOATS + 5];
+        assert!(shade(n + 3) <= 1.0 && shade(n + 3) > 0.0);
+        let flat = build_leaf(leaf, None, 0.67);
+        assert!(
+            (0..n * n).all(|i| flat.verts[i * FLOATS + 5] == 1.0),
+            "no elevation, no shading"
+        );
+    }
+
+    #[test]
     fn a_leaf_covers_its_part_of_an_ancestor() {
         let whole = uv_of(Leaf { z: 5, x: 3, y: 4 }, 5);
         assert_eq!((whole.min, whole.size()), (Pos2::ZERO, Vec2::splat(1.0)));

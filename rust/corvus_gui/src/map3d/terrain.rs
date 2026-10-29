@@ -135,6 +135,13 @@ pub struct DemTile {
 }
 
 impl DemTile {
+    /// A tile of known heights, row by row, for tests.
+    #[cfg(test)]
+    pub fn from_heights(size: usize, heights: Vec<f32>) -> DemTile {
+        assert_eq!(heights.len(), size * size);
+        DemTile { size, heights }
+    }
+
     pub fn decode(bytes: &[u8], enc: Encoding) -> Option<DemTile> {
         let img = image::load_from_memory(bytes).ok()?.to_rgb8();
         let (w, h) = (img.width() as usize, img.height() as usize);
