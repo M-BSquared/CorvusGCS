@@ -15,6 +15,7 @@ mod map3d;
 mod net;
 mod notify;
 mod panel;
+mod settings;
 mod setup;
 mod term;
 mod ui;

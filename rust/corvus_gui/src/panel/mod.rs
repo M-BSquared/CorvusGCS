@@ -326,6 +326,17 @@ impl Panel {
         }
     }
 
+    /// Opens a saved connection from Settings: the SSH tab when it is on, a
+    /// window of its own when it is off.
+    pub fn open_ssh(&mut self, ctx: &egui::Context, conn: Value) {
+        if self.ssh_tab {
+            self.active = Tab::Ssh;
+        }
+        let to_window = !self.ssh_tab;
+        let connected = conn.get("connected").and_then(Value::as_bool).unwrap_or(false);
+        self.start_connect(ctx, conn, connected, to_window);
+    }
+
     fn start_connect(&mut self, ctx: &egui::Context, conn: Value, connected: bool, to_window: bool) {
         let name = conn.get("name").and_then(Value::as_str).unwrap_or("").to_string();
         self.ssh_error = None;

@@ -1,6 +1,7 @@
 pub mod card;
 pub mod field;
 pub mod fonts;
+pub mod form;
 pub mod frost;
 pub mod icons;
 pub mod kit;

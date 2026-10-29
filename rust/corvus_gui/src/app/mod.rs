@@ -22,6 +22,7 @@ use crate::map::Map;
 use crate::net::http::{self, Server};
 use crate::notify::Board;
 use crate::panel::Panel;
+use crate::settings::{self, SettingsPage};
 use crate::setup::geofence;
 use crate::setup::SetupPage;
 use crate::ui::{fonts, style};
@@ -46,6 +47,7 @@ struct App {
     logo: egui::ImageSource<'static>,
     page: Page,
     setup: SetupPage,
+    settings: SettingsPage,
     mission_page: bool,
     panel: Panel,
     rail: MapRail,
@@ -59,6 +61,16 @@ fn app_id() -> String {
         .ok()
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "corvus-gcs".to_string())
+}
+
+/// The mark for the theme in force; the uri carries the cut so a theme
+/// switch loads the other one.
+fn logo_source() -> egui::ImageSource<'static> {
+    let dark = style::is_dark();
+    egui::ImageSource::Bytes {
+        uri: format!("bytes://corvus-logo-{}.png", if dark { "dark" } else { "light" }).into(),
+        bytes: if dark { LOGO_FOR_DARK } else { LOGO_FOR_LIGHT }.into(),
+    }
 }
 
 /// The window icon where the platform takes one from the window (Linux, and
@@ -84,6 +96,38 @@ fn now_ms() -> f64 {
 }
 
 impl App {
+    /// What the Settings page changed that the rest of the window reads from
+    /// the config: theme, size, units, the Mission entry, the distance tool,
+    /// the side panel's tabs, the base layer.
+    fn apply_settings(&mut self, ctx: &egui::Context) {
+        if let Some(e) = self.settings.take_effects() {
+            style::set_theme(e.theme);
+            style::apply(ctx);
+            self.logo = logo_source();
+            if !e.base_layer.is_empty() && self.map.has_layer(&e.base_layer) {
+                self.map.set_source(ctx, &e.base_layer);
+            }
+            ctx.set_zoom_factor(e.scale);
+            self.units = e.units;
+            self.mission_page = e.mission_page;
+            self.rail.measure = e.measure_tool;
+            self.panel.console_tab = e.console_tab;
+            self.panel.ssh_tab = e.ssh_tab;
+        }
+        if self.settings.take_sources_dirty() {
+            if let Ok(sources) = http::get_json(&self.server, "/api/tiles/sources") {
+                self.map.set_sources(sources);
+            }
+        }
+        if let Some((lng, lat, zoom)) = self.settings.take_show_on_map() {
+            self.page = Page::Home;
+            self.map.go_to(lng, lat, zoom);
+        }
+        if let Some(conn) = self.settings.take_ssh_request() {
+            self.panel.open_ssh(ctx, conn);
+        }
+    }
+
     fn draw(&mut self, ui: &mut egui::Ui) {
         let state: Value = self.telemetry.state();
         let now = now_ms();
@@ -103,9 +147,13 @@ impl App {
         {
             self.board.add_local("critical", &e, now);
         }
-        for n in self.setup.take_notes() {
+        for e in self.settings.take_errors() {
+            self.board.add_local("critical", &e, now);
+        }
+        for n in self.setup.take_notes().into_iter().chain(self.settings.take_notes()) {
             self.board.add_local("info", &n, now);
         }
+        self.apply_settings(ui.ctx());
         if std::mem::take(&mut self.board.clear_remote) {
             // The backend's store owns the vehicle's lines; its next push is
             // what really removes them.
@@ -156,12 +204,17 @@ impl App {
                     self.checklist.window(&mut map_ui, ui.ctx(), main, below);
                 } else if self.page == Page::Setup {
                     self.setup.show(ui, main, &state, now, &mut self.checklist);
+                } else if self.page == Page::Settings {
+                    self.settings.show(ui, main);
                 } else {
                     nav::placeholder(ui, main, self.page);
                 }
                 if let Some(page) = nav::show(ui, rail, self.mission_page, self.page, !vw.max1279) {
                     if page == Page::Setup && self.page == Page::Setup {
                         self.setup.reset();
+                    }
+                    if page == Page::Settings && self.page != Page::Settings {
+                        self.settings.enter(ui.ctx());
                     }
                     self.page = page;
                 }
@@ -362,6 +415,9 @@ pub fn run(
     let start_page = match page {
         Some("setup") | Some("parameters") | Some("safety") | Some("motors") => Page::Setup,
         Some(p) if p.starts_with("safety:") => Page::Setup,
+        Some(p) if p == "settings" || p.starts_with("settings:") => Page::Settings,
+        Some("logs") => Page::Logs,
+        Some("analysis") => Page::Analysis,
         _ => Page::Home,
     };
     let open_page = page
@@ -396,21 +452,18 @@ pub fn run(
             let telemetry = Telemetry::start(server.clone(), move || repaint.request_repaint());
             let env = geofence::Env::new(sources.clone());
             env.load(&ctx, &server);
-            let map = Map::new(&ctx, &server, &sources, env.clone());
+            let mut map = Map::new(&ctx, &server, &sources, env.clone());
+            if let Some(layer) = Some(settings::model::text(&config, "map", "base_layer")).filter(|l| !l.is_empty()) {
+                if map.has_layer(layer) {
+                    map.set_source(&ctx, layer);
+                }
+            }
             let flight = FlightBar::new(server.clone(), &ctx);
             ctx.set_zoom_factor(scale);
             let panel = Panel::new(server.clone(), &ctx, &config);
             let mut rail = MapRail::default();
             rail.measure = measure;
-            let logo = egui::ImageSource::Bytes {
-                uri: "bytes://corvus-logo.png".into(),
-                bytes: if style::is_dark() {
-                    LOGO_FOR_DARK
-                } else {
-                    LOGO_FOR_LIGHT
-                }
-                .into(),
-            };
+            let logo = logo_source();
             Ok(Box::new(App {
                 server: server.clone(),
                 board: Board::default(),
@@ -432,6 +485,13 @@ pub fn run(
                     }
                     if let Some(px) = scroll {
                         s.scroll_to(px);
+                    }
+                    s
+                },
+                settings: {
+                    let mut s = SettingsPage::new(server.clone(), &config);
+                    if let Some(tab) = page.and_then(|p| p.strip_prefix("settings:")) {
+                        s.open_tab(tab);
                     }
                     s
                 },

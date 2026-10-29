@@ -34,6 +34,7 @@ pub struct TextField<'a> {
     align_right: bool,
     name: &'static str,
     focus: Option<Color32>,
+    secret: bool,
 }
 
 impl<'a> TextField<'a> {
@@ -51,7 +52,14 @@ impl<'a> TextField<'a> {
             align_right: false,
             name: "field",
             focus: None,
+            secret: false,
         }
+    }
+
+    /// Dots instead of the text (a key or a password).
+    pub fn password(mut self) -> Self {
+        self.secret = true;
+        self
     }
 
     pub fn hint(mut self, hint: &'a str) -> Self {
@@ -212,6 +220,7 @@ impl<'a> TextField<'a> {
         };
         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(text_rect));
         let edit = egui::TextEdit::singleline(self.text)
+            .password(self.secret)
             .id(id)
             .frame(egui::Frame::NONE)
             .font(font)

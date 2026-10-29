@@ -93,6 +93,20 @@ const ICONS: &[(&str, &str)] = &[
     ("square-terminal", "SquareTerminal"),
     ("minimize-2", "Minimize2"),
     ("square-arrow-out-up-right", "SquareArrowOutUpRight"),
+    ("database", "Database"),
+    ("eye", "Eye"),
+    ("eye-off", "EyeOff"),
+    ("file-plus", "FilePlus"),
+    ("folder-open", "FolderOpen"),
+    ("gamepad-2", "Gamepad2"),
+    ("gauge", "Gauge"),
+    ("image-plus", "ImagePlus"),
+    ("key-round", "KeyRound"),
+    ("map", "Map"),
+    ("mountain", "Mountain"),
+    ("palette", "Palette"),
+    ("panels-top-left", "PanelsTopLeft"),
+    ("save", "Save"),
 ];
 
 fn main() {
