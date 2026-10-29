@@ -109,6 +109,7 @@ const ICONS: &[(&str, &str)] = &[
     ("trees", "Trees"),
     ("magnet", "Magnet"),
     ("rotate-cw", "RotateCw"),
+    ("eraser", "Eraser"),
 ];
 
 fn main() {

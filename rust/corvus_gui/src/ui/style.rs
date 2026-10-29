@@ -31,6 +31,7 @@ pub struct Palette {
     pub accent_bright: u32,
     pub accent_dark: u32,
     pub accent_hover: u32,
+    pub accent_pressed: u32,
     pub healthy: u32,
     pub healthy_dark: u32,
     pub healthy_bright: u32,
@@ -82,6 +83,7 @@ const LIGHT: Palette = Palette {
     accent_bright: 0x343B45,
     accent_dark: 0xE2E6EC,
     accent_hover: 0x2C323B,
+    accent_pressed: 0x0E1116,
     healthy: 0x0F8B50,
     healthy_dark: 0xD8F1E3,
     healthy_bright: 0x0B7343,
@@ -126,6 +128,7 @@ const LIGHT_ORANGE: Palette = Palette {
     accent_bright: 0xB04E00,
     accent_dark: 0xFCE7D3,
     accent_hover: 0xB85300,
+    accent_pressed: 0x9E4700,
     terminal_cmd: 0xBD5500,
     ..LIGHT
 };
@@ -143,6 +146,7 @@ const GREEN: Palette = Palette {
     accent_bright: 0x5BC896,
     accent_dark: 0x1A3D2E,
     accent_hover: 0x4FBF8A,
+    accent_pressed: 0x2D8862,
     healthy: 0x45D483,
     healthy_dark: 0x183A2A,
     healthy_bright: 0x63E89A,
@@ -185,6 +189,7 @@ const BLUE: Palette = Palette {
     accent_bright: 0x6FBCFF,
     accent_dark: 0x14304F,
     accent_hover: 0x55ADFF,
+    accent_pressed: 0x2B7FD4,
     nav: 0x35D6C4,
     nav_bright: 0x6BE8DA,
     nav_dark: 0x10403C,
@@ -197,6 +202,7 @@ const PINK: Palette = Palette {
     accent_bright: 0xFF7DB8,
     accent_dark: 0x4A1733,
     accent_hover: 0xFF66A9,
+    accent_pressed: 0xC93F7F,
     terminal_cmd: 0xFF7DB8,
     ..GREEN
 };
@@ -206,6 +212,7 @@ const ORANGE: Palette = Palette {
     accent_bright: 0xFFAA5C,
     accent_dark: 0x4A2A10,
     accent_hover: 0xFF9C42,
+    accent_pressed: 0xCC7020,
     warning: 0xFFD966,
     warning_dark: 0x46400F,
     terminal_cmd: 0xFFAA5C,
@@ -288,6 +295,7 @@ color_fns!(
     accent_bright,
     accent_dark,
     accent_hover,
+    accent_pressed,
     healthy,
     healthy_dark,
     healthy_bright,

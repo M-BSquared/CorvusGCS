@@ -219,3 +219,62 @@ pub fn warning_banner(ui: &egui::Ui, x: f32, y: f32, w: f32, text: &str) -> f32 
     ui.painter().galley(r.min + Vec2::new(14.0, 12.0), g, style::warning());
     r.bottom()
 }
+
+/// `.tune-tabs`: a row of text tabs on a rule, the active one in the accent
+/// with an underline. Returns the y under it (with its 14 px margin) and the
+/// tab pressed.
+pub fn tabs(
+    ui: &mut egui::Ui,
+    x: f32,
+    y: f32,
+    w: f32,
+    labels: &[&str],
+    active: usize,
+    id: &str,
+) -> (f32, Option<usize>) {
+    let mut pressed = None;
+    let mut tx = x;
+    let h = style::galley(ui, "Ag", 12.0, Weight::W600, style::text_3(), 0.2)
+        .size()
+        .y
+        + 20.0;
+    // the rule runs under the tabs; the active tab's underline covers it
+    ui.painter().hline(
+        egui::Rangef::new(x, x + w),
+        y + h - 0.5,
+        Stroke::new(1.0, style::border()),
+    );
+    for (i, label) in labels.iter().enumerate() {
+        let on = i == active;
+        let g = style::galley(ui, label, 12.0, Weight::W600, style::text_3(), 0.2);
+        let (tw, th) = (g.size().x + 24.0, g.size().y + 18.0 + 2.0);
+        let rect = Rect::from_min_size(Pos2::new(tx, y), Vec2::new(tw, th));
+        let resp = ui.interact(rect, ui.scope_id().with((id, i)), egui::Sense::click());
+        let color = if on {
+            style::accent()
+        } else if resp.hovered() {
+            style::text_1()
+        } else {
+            style::text_3()
+        };
+        if resp.hovered() && !on {
+            ui.painter()
+                .rect_filled(rect.with_max_y(rect.bottom() - 2.0), 0, style::surface_hover());
+        }
+        let g = style::galley(ui, label, 12.0, Weight::W600, color, 0.2);
+        ui.painter()
+            .galley(Pos2::new(rect.left() + 12.0, rect.top() + 9.0), g, color);
+        if on {
+            ui.painter().rect_filled(
+                Rect::from_min_size(Pos2::new(rect.left(), rect.bottom() - 2.0), Vec2::new(tw, 2.0)),
+                0,
+                style::accent(),
+            );
+        }
+        if resp.clicked() {
+            pressed = Some(i);
+        }
+        tx += tw + 2.0;
+    }
+    (y + h + 14.0, pressed)
+}

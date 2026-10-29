@@ -221,6 +221,16 @@ pub fn signed_value(current: f64, sign: i64, fallback: f64) -> f64 {
 
 type Write = (String, f64, Vec<String>, Pending<Result<(), String>>);
 
+/// What a page adds to a row: something after the control and its unit (the
+/// Detect button of Radio Control), and a warning on the label.
+#[derive(Default)]
+pub struct RowHook<'a> {
+    /// Draws at `x`, `top` with the control's height and returns the x it ends at.
+    #[allow(clippy::type_complexity)]
+    pub after: Option<&'a mut dyn FnMut(&mut egui::Ui, &Field, f32, f32, f32) -> f32>,
+    pub warn: Option<&'a dyn Fn(&Field) -> bool>,
+}
+
 /// What a form remembers between frames.
 #[derive(Default)]
 pub struct FormState {
@@ -243,6 +253,20 @@ pub struct FormState {
 impl FormState {
     pub fn take_errors(&mut self) -> Vec<String> {
         std::mem::take(&mut self.errors)
+    }
+
+    /// Sets the status line next to a field (`setFieldStatus`).
+    pub fn set_status(&mut self, param: &str, cls: &'static str, text: String) {
+        self.status.insert(param.into(), (cls, text));
+    }
+
+    /// Writes one value as the control would; false while a write is on its way.
+    pub fn write_value(&mut self, ctx: &egui::Context, server: &Server, f: &Field, value: f64) -> bool {
+        if self.busy() {
+            return false;
+        }
+        self.write(ctx, server, f, value);
+        true
     }
 
     /// The status line of a parameter's last write.
@@ -637,10 +661,27 @@ impl FormState {
         server: &Server,
         fields: &[Field],
         x: f32,
+        y: f32,
+        w: f32,
+        armed: bool,
+        look: Look,
+    ) -> f32 {
+        self.show_hooked(ui, ctx, server, fields, x, y, w, armed, look, &mut RowHook::default())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn show_hooked(
+        &mut self,
+        ui: &mut egui::Ui,
+        ctx: &egui::Context,
+        server: &Server,
+        fields: &[Field],
+        x: f32,
         mut y: f32,
         w: f32,
         armed: bool,
         look: Look,
+        hook: &mut RowHook<'_>,
     ) -> f32 {
         let painter = ui.painter().clone();
         for (i, f) in fields.iter().enumerate() {
@@ -707,7 +748,12 @@ impl FormState {
             let h = pad + above + row_h + hint.as_ref().map_or(0.0, |g| 6.0 + g.size().y) + pad;
             let top = y + pad + above;
             let label_y = if narrow { y + pad } else { top + (row_h - lh) / 2.0 };
-            painter.galley(Pos2::new(x, label_y), lg, style::text_1());
+            let label_color = if hook.warn.is_some_and(|w| w(f)) {
+                style::warning()
+            } else {
+                style::text_1()
+            };
+            painter.galley(Pos2::new(x, label_y), lg, label_color);
             if look.hint_as_info && !f.hint.is_empty() {
                 crate::ui::popover::info(
                     ui,
@@ -740,6 +786,9 @@ impl FormState {
                 let uw = g.size().x;
                 painter.galley(Pos2::new(ux, top + (control_h - g.size().y) / 2.0), g, style::text_3());
                 ux += uw + 8.0;
+            }
+            if let Some(after) = hook.after.as_mut() {
+                ux = after(ui, f, ux, top, control_h);
             }
             if let Some((cls, text)) = status {
                 let color = match cls {

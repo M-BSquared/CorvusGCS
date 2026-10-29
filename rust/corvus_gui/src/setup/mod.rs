@@ -1,7 +1,7 @@
 //! The Setup page (src/js/setup.js, setup.css): the head with the vehicle
 //! card, the grid of twelve tiles, and the sub-pages behind them.
 //!
-//! Parameters, Safety & Sensors, Motors, Battery & Power and Calibration are whole. The
+//! Parameters, Safety & Sensors, Motors, Battery & Power, Calibration and Radio Control are whole. The
 //! other tiles open a notice that the page is still in the web interface.
 
 pub mod battery;
@@ -18,6 +18,10 @@ pub mod motors;
 pub mod params;
 pub mod params_dialogs;
 pub mod params_files;
+pub mod radio;
+pub mod radio_model;
+pub mod rc_drawing;
+pub mod rc_transmitter;
 pub mod safety;
 pub mod schema_form;
 pub mod sensor_view;
@@ -31,6 +35,7 @@ use crate::setup::battery::BatteryPage;
 use crate::setup::calibration::CalibrationPage;
 use crate::setup::motors::MotorsPage;
 use crate::setup::params::ParamsPage;
+use crate::setup::radio::RadioPage;
 use crate::setup::safety::SafetyPage;
 use crate::ui::card;
 use crate::ui::pagekit;
@@ -130,6 +135,7 @@ enum View {
     Motors(Box<MotorsPage>),
     Battery(Box<BatteryPage>),
     Calibration(Box<CalibrationPage>),
+    Radio(Box<RadioPage>),
     Elsewhere(&'static str),
 }
 
@@ -163,6 +169,7 @@ impl SetupPage {
             View::Motors(p) => p.take_errors(),
             View::Battery(p) => p.take_errors(),
             View::Calibration(p) => p.take_errors(),
+            View::Radio(p) => p.take_errors(),
             _ => Vec::new(),
         }
     }
@@ -172,6 +179,7 @@ impl SetupPage {
         match &mut self.view {
             View::Parameters(p) => p.take_notes(),
             View::Calibration(p) => p.take_notes(),
+            View::Radio(p) => p.take_notes(),
             _ => Vec::new(),
         }
     }
@@ -207,6 +215,7 @@ impl SetupPage {
             "motors" => View::Motors(Box::new(MotorsPage::new(self.server.clone(), ctx))),
             "battery" => View::Battery(Box::new(BatteryPage::new(self.server.clone(), ctx))),
             "calibration" => View::Calibration(Box::new(CalibrationPage::new(self.server.clone(), ctx))),
+            "control" => View::Radio(Box::new(RadioPage::new(self.server.clone(), ctx))),
             other => match TILES.iter().find(|t| t.0 == other) {
                 Some(t) => View::Elsewhere(t.2),
                 None => View::Tiles,
@@ -261,16 +270,23 @@ impl SetupPage {
                 | View::Motors(_)
                 | View::Battery(_)
                 | View::Calibration(_)
+                | View::Radio(_)
                 | View::Elsewhere(_) => {
                     let in_sensor = matches!(&self.view, View::Safety(p) if p.in_sensor());
-                    let in_wizard = matches!(&self.view, View::Calibration(p) if p.in_wizard());
+                    let in_wizard = matches!(&self.view, View::Calibration(p) if p.in_wizard())
+                        || matches!(&self.view, View::Radio(p) if p.in_wizard());
+                    let back_to = if matches!(&self.view, View::Radio(_)) {
+                        "Radio Control"
+                    } else {
+                        "Calibration"
+                    };
                     let (bh, back) = pagekit::back_button(
                         ui,
                         Pos2::new(x, y),
                         if in_sensor {
                             "Safety & Sensors"
                         } else if in_wizard {
-                            "Calibration"
+                            back_to
                         } else {
                             "Setup"
                         },
@@ -283,6 +299,8 @@ impl SetupPage {
                     } else if back && in_wizard {
                         if let View::Calibration(p) = &mut self.view {
                             p.close_wizard();
+                        } else if let View::Radio(p) = &mut self.view {
+                            p.close_wizard();
                         }
                     } else if back {
                         self.view = View::Tiles;
@@ -291,6 +309,8 @@ impl SetupPage {
                     } else if let View::Battery(p) = &mut self.view {
                         y = p.show(ui, x, y, w, state, &self.units);
                     } else if let View::Calibration(p) = &mut self.view {
+                        y = p.show(ui, x, y, w, state, now);
+                    } else if let View::Radio(p) = &mut self.view {
                         y = p.show(ui, x, y, w, state, now);
                     } else if let View::Safety(p) = &mut self.view {
                         y = p.show(ui, x, y, w, state, checklist);
@@ -432,6 +452,7 @@ fn grid(
                 "motors" => View::Motors(Box::new(MotorsPage::new(server.clone(), ui.ctx()))),
                 "battery" => View::Battery(Box::new(BatteryPage::new(server.clone(), ui.ctx()))),
                 "calibration" => View::Calibration(Box::new(CalibrationPage::new(server.clone(), ui.ctx()))),
+                "control" => View::Radio(Box::new(RadioPage::new(server.clone(), ui.ctx()))),
                 _ => View::Elsewhere(title),
             };
         }
