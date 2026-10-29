@@ -5,69 +5,19 @@
 //!     corvus-gcs --root DIR --python PY  where serve.py is, what runs it
 //!
 //! Locally the backend (`serve.py`) is a child of this process and is taken
-//! down on every way out; see `backend`.
+//! down on every way out; see `net::backend`.
 
 mod app;
-mod backend;
-mod bg;
-mod buildings;
-mod camera3d;
-mod check;
-mod checklist;
-mod checklist_window;
-mod console;
-mod flight;
-mod fonts;
-mod frost;
-mod geofence;
-mod geofence_card;
-mod http;
-mod hud;
-mod icons;
-mod kit;
-mod landing;
-mod link;
+mod data;
+mod home;
 mod map;
 mod map3d;
-mod map_search;
-mod maprail;
-mod measure;
-mod modal;
-mod motors;
-mod nav;
+mod net;
 mod notify;
-mod notify_ui;
-mod pagekit;
 mod panel;
-mod params;
-mod params_dialogs;
-mod params_files;
-mod popover;
-mod regions;
-mod responsive;
-mod safety;
-mod schema_form;
-mod search_card;
-mod sensor_view;
-mod sensors;
 mod setup;
-mod sse;
-mod ssh_session;
-mod ssh_window;
-mod stream;
-mod style;
-mod telemetry;
-mod term_emu;
-mod term_view;
-mod terrain;
-mod threed_panel;
-mod tile_cache;
-mod tiles_card;
-mod tiles_model;
-mod topbar;
-mod topbar_cards;
-mod track;
-mod units;
+mod term;
+mod ui;
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -123,7 +73,7 @@ fn install_signal_handler() {
         // does not in time, the backend still must not outlive us.
         std::thread::spawn(|| {
             std::thread::sleep(SIGNAL_DEADLINE);
-            backend::kill_from_signal();
+            net::backend::kill_from_signal();
             std::process::exit(130);
         });
     });
@@ -144,7 +94,7 @@ fn main() -> ExitCode {
 
     let mut local = None;
     let server = match &args.server {
-        Some(url) => match http::Server::parse(url) {
+        Some(url) => match net::http::Server::parse(url) {
             Ok(s) => s,
             Err(e) => {
                 eprintln!("corvus-gcs: {e}");
@@ -158,9 +108,9 @@ fn main() -> ExitCode {
                     .and_then(|p| p.parent().map(PathBuf::from))
                     .unwrap_or_else(|| PathBuf::from("."))
             });
-            let started = backend::Launch::find(&start, args.python.clone()).and_then(|launch| {
-                let port = backend::free_port().map_err(|e| format!("no free port: {e}"))?;
-                backend::Backend::start(&launch, port)
+            let started = net::backend::Launch::find(&start, args.python.clone()).and_then(|launch| {
+                let port = net::backend::free_port().map_err(|e| format!("no free port: {e}"))?;
+                net::backend::Backend::start(&launch, port)
             });
             match started {
                 Ok(b) => {

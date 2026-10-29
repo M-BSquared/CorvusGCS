@@ -31,48 +31,48 @@ SIGKILL if it is still there after 8 s. If the window does not close within
 
 | | |
 | --- | --- |
-| `src/backend.rs` | starts and stops `serve.py` |
-| `src/http.rs` | a small HTTP/1.1 client, with a read timeout per read so a stream reader can stop |
-| `src/sse.rs` | server-sent events |
-| `src/telemetry.rs` | the `/api/telemetry` reader thread and the latest state |
-| `src/units.rs` | display units from the config's `ui.units`, rounded the way the web interface rounds |
-| `src/topbar.rs` | the status bar, word for word the web interface's (`src/js/topbar.js`) |
-| `src/map.rs` | the map (walkers) on the backend's tile proxy, vehicle and home markers |
-| `src/maprail.rs` | the rail and the two buttons beside it: zoom, centre, layers, downloaded areas, measure, the clear track disc |
-| `src/regions.rs` | the downloaded areas of `/api/tiles/regions`, merged as the web map merges them (`map.js`) |
-| `src/measure.rs` | the distance tool: great circle distance, bearing and the two click rule (`map-measure.js`) |
-| `src/map_search.rs`, `src/search_card.rs` | the place search: coordinate notations read offline, area names, `/api/geocode`, the box and its list (`map-search.js`) |
-| `src/tiles_model.rs`, `src/tiles_card.rs` | the offline map dialog: tile counts and sizes, the download and its jobs, the areas on this laptop (`tiles.js`) |
-| `src/camera3d.rs`, `src/map3d.rs`, `src/terrain.rs`, `src/buildings.rs`, `src/tile_cache.rs`, `src/threed_panel.rs` | the 3D map: camera maths, the tilted ground of imagery and elevation tiles with hillshade and skirts, the sky and horizon haze, OSM buildings extruded from the backend's cells, the elevation model choice, the tile cache behind them, and the 3D panel (`src/js/map.js` 3D mode) |
-| `src/track.rs` | the flown track, recorded and smoothed as `src/js/map.js` does |
-| `src/hud.rs` | compass, attitude indicator and readouts (`src/js/instruments.js`) |
-| `src/flight.rs` | the flight bar, takeoff card and mode picker (`src/js/app.js`) |
-| `src/style.rs` | the design tokens of the six themes (light, light-orange, green, blue, pink, orange) and the type |
-| `src/setup.rs` | the Setup page: head, vehicle card, the tile grid and the sub-pages (`src/js/setup.js`) |
-| `src/params.rs` | the Parameters page: header actions, download, search, filter, defaults, edit and apply, rows that stack under 721 px (`src/js/setup-parameters.js`) |
-| `src/params_dialogs.rs`, `src/params_files.rs` | Export, Import and the reboot confirmation, and the three file formats with the import preview; Import asks for a file path because a native window has no picker without a dependency |
-| `src/modal.rs` | the `.modal` card shared by those dialogs |
-| `src/term_emu.rs`, `src/term_view.rs` | the terminal: a VT parser (the `vte` crate) feeding a cell grid with colours, scroll regions, the alternate screen and 5000 lines of scrollback, drawn with keyboard, wheel, selection and paste (`src/js/ssh-term.js`) |
-| `src/ssh_session.rs`, `src/ssh_window.rs` | one SSH session over `/api/ssh/stream` with ordered keystrokes, and the floating terminal window (`src/js/term-window.js`); the SSH tab holds the same terminal |
-| `src/motors.rs` | the Motors page: the airframe drawing, the motor table with output assignment, the motor test, frame size, protocol forms (`src/js/setup-motors.js`) |
-| `src/safety.rs` | the Safety & Sensors page: the backend's description in two stacks, the landing preset, the sensor tiles, Check values and the checklist card (`src/js/setup-safety.js`) |
-| `src/sensors.rs` | the sensor model and its rules: the write chain of a switch, the presets, the extra parameters kept in `~/.corvus/safety-extra.json` |
-| `src/sensor_view.rs` | a sensor page drawn: Status card, Hardware card with the write table, the parameters you add by name |
-| `src/check.rs` | Check values: read back, write again what did not stick, the result card (`src/js/setup-shared.js`) |
-| `src/geofence.rs` | the geofence area the station keeps, its geometry (corners, crossing, area, framing) and the one shared copy (`src/js/geofence.js`) |
-| `src/geofence_card.rs` | the Geofence card: the small map, drawing, dragging and adding corners, upload and removal, the large editor (`src/js/setup-geofence.js`) |
-| `src/landing.rs` | the Landing card: the descent as one bar, the fields beside each stretch, the brackets with their lengths (`landingCard` of `src/js/setup-safety.js`) |
-| `src/responsive.rs` | the width classes of the web (`data-vw`): what folds, shrinks or stacks at 1279, 959, 900, 720 and 600 px (`src/css/responsive.css`) |
-| `src/popover.rs` | the hint icon and the sheet it opens, the cards of the top bar: hover intent, pinning, one at a time, placement (`Corvus.ui.popover`, `infoHint`) |
-| `src/topbar_cards.rs` | the cards behind GPS, Battery, Altitude, Groundspeed and Vertical speed (`src/js/topbar.js`) |
-| `src/checklist_window.rs` | the checklist's window on the Home map: ticks kept by item text, drag and fold, the warning on arming with items open (`src/js/checklist.js`) |
-| `src/checklist.rs` | the preflight checklists: config block, Setup card and the dialog the lists are written in (`src/js/checklist-editor.js`) |
-| `src/schema_form.rs` | the schema-driven form the backend describes (enum, number, sign, bitmask), shared by the Safety and Motors pages (`src/js/setup-shared.js`) |
-| `src/pagekit.rs` | page furniture: header, section title, tile, back button, segmented control |
-| `src/notify.rs` | the notification board, its read and dismiss rules, the command dedupe and the toasts (`src/js/topbar.js`) |
-| `src/notify_ui.rs` | the NOTIFICATIONS pill, the board and the toast stack |
-| `src/frost.rs` | the frosted glass under every `.glass` surface |
-| `src/fonts.rs`, `src/icons.rs`, `build.rs` | Inter, JetBrains Mono and the Lucide icons, from the web's own files |
+| `src/net/backend.rs` | starts and stops `serve.py` |
+| `src/net/http.rs` | a small HTTP/1.1 client, with a read timeout per read so a stream reader can stop |
+| `src/net/sse.rs` | server-sent events |
+| `src/data/telemetry.rs` | the `/api/telemetry` reader thread and the latest state |
+| `src/data/units.rs` | display units from the config's `ui.units`, rounded the way the web interface rounds |
+| `src/home/topbar.rs` | the status bar, word for word the web interface's (`src/js/topbar.js`) |
+| `src/map/mod.rs` | the map (walkers) on the backend's tile proxy, vehicle and home markers |
+| `src/map/rail.rs` | the rail and the two buttons beside it: zoom, centre, layers, downloaded areas, measure, the clear track disc |
+| `src/map/regions.rs` | the downloaded areas of `/api/tiles/regions`, merged as the web map merges them (`map.js`) |
+| `src/map/measure.rs` | the distance tool: great circle distance, bearing and the two click rule (`map-measure.js`) |
+| `src/map/search.rs`, `src/map/search_card.rs` | the place search: coordinate notations read offline, area names, `/api/geocode`, the box and its list (`map-search.js`) |
+| `src/map/tiles_model.rs`, `src/map/tiles_card.rs` | the offline map dialog: tile counts and sizes, the download and its jobs, the areas on this laptop (`tiles.js`) |
+| `src/map3d/camera.rs`, `src/map3d/mod.rs`, `src/map3d/terrain.rs`, `src/map3d/buildings.rs`, `src/map3d/tile_cache.rs`, `src/map3d/panel.rs` | the 3D map: camera maths, the tilted ground of imagery and elevation tiles with hillshade and skirts, the sky and horizon haze, OSM buildings extruded from the backend's cells, the elevation model choice, the tile cache behind them, and the 3D panel (`src/js/map.js` 3D mode) |
+| `src/data/track.rs` | the flown track, recorded and smoothed as `src/js/map.js` does |
+| `src/home/hud.rs` | compass, attitude indicator and readouts (`src/js/instruments.js`) |
+| `src/home/flight.rs` | the flight bar, takeoff card and mode picker (`src/js/app.js`) |
+| `src/ui/style.rs` | the design tokens of the six themes (light, light-orange, green, blue, pink, orange) and the type |
+| `src/setup/mod.rs` | the Setup page: head, vehicle card, the tile grid and the sub-pages (`src/js/setup.js`) |
+| `src/setup/params.rs` | the Parameters page: header actions, download, search, filter, defaults, edit and apply, rows that stack under 721 px (`src/js/setup-parameters.js`) |
+| `src/setup/params_dialogs.rs`, `src/setup/params_files.rs` | Export, Import and the reboot confirmation, and the three file formats with the import preview; Import asks for a file path because a native window has no picker without a dependency |
+| `src/ui/modal.rs` | the `.modal` card shared by those dialogs |
+| `src/term/emu.rs`, `src/term/view.rs` | the terminal: a VT parser (the `vte` crate) feeding a cell grid with colours, scroll regions, the alternate screen and 5000 lines of scrollback, drawn with keyboard, wheel, selection and paste (`src/js/ssh-term.js`) |
+| `src/term/session.rs`, `src/term/window.rs` | one SSH session over `/api/ssh/stream` with ordered keystrokes, and the floating terminal window (`src/js/term-window.js`); the SSH tab holds the same terminal |
+| `src/setup/motors.rs` | the Motors page: the airframe drawing, the motor table with output assignment, the motor test, frame size, protocol forms (`src/js/setup-motors.js`) |
+| `src/setup/safety.rs` | the Safety & Sensors page: the backend's description in two stacks, the landing preset, the sensor tiles, Check values and the checklist card (`src/js/setup-safety.js`) |
+| `src/setup/sensors.rs` | the sensor model and its rules: the write chain of a switch, the presets, the extra parameters kept in `~/.corvus/safety-extra.json` |
+| `src/setup/sensor_view.rs` | a sensor page drawn: Status card, Hardware card with the write table, the parameters you add by name |
+| `src/setup/check.rs` | Check values: read back, write again what did not stick, the result card (`src/js/setup-shared.js`) |
+| `src/setup/geofence.rs` | the geofence area the station keeps, its geometry (corners, crossing, area, framing) and the one shared copy (`src/js/geofence.js`) |
+| `src/setup/geofence_card.rs` | the Geofence card: the small map, drawing, dragging and adding corners, upload and removal, the large editor (`src/js/setup-geofence.js`) |
+| `src/setup/landing.rs` | the Landing card: the descent as one bar, the fields beside each stretch, the brackets with their lengths (`landingCard` of `src/js/setup-safety.js`) |
+| `src/app/responsive.rs` | the width classes of the web (`data-vw`): what folds, shrinks or stacks at 1279, 959, 900, 720 and 600 px (`src/css/responsive.css`) |
+| `src/ui/popover.rs` | the hint icon and the sheet it opens, the cards of the top bar: hover intent, pinning, one at a time, placement (`Corvus.ui.popover`, `infoHint`) |
+| `src/home/topbar_cards.rs` | the cards behind GPS, Battery, Altitude, Groundspeed and Vertical speed (`src/js/topbar.js`) |
+| `src/home/checklist_window.rs` | the checklist's window on the Home map: ticks kept by item text, drag and fold, the warning on arming with items open (`src/js/checklist.js`) |
+| `src/setup/checklist.rs` | the preflight checklists: config block, Setup card and the dialog the lists are written in (`src/js/checklist-editor.js`) |
+| `src/setup/schema_form.rs` | the schema-driven form the backend describes (enum, number, sign, bitmask), shared by the Safety and Motors pages (`src/js/setup-shared.js`) |
+| `src/ui/pagekit.rs` | page furniture: header, section title, tile, back button, segmented control |
+| `src/notify/mod.rs` | the notification board, its read and dismiss rules, the command dedupe and the toasts (`src/js/topbar.js`) |
+| `src/notify/overlay.rs` | the NOTIFICATIONS pill, the board and the toast stack |
+| `src/ui/frost.rs` | the frosted glass under every `.glass` surface |
+| `src/ui/fonts.rs`, `src/ui/icons.rs`, `build.rs` | Inter, JetBrains Mono and the Lucide icons, from the web's own files |
 
 ## The 3D map
 
@@ -131,7 +131,7 @@ The glass panels are frosted as the CSS frosts them (`backdrop-filter:
 blur(24px) saturate(180%)`, then 60 % white, 55 % on the map rail): a paint
 callback on the OpenGL renderer copies what is already drawn under the
 panel, blurs and saturates it inside the panel's rounded corners
-(`src/frost.rs`), and the fill paints over it. The copy is taken before the
+(`src/ui/frost.rs`), and the fill paints over it. The copy is taken before the
 panel's shadow, because a browser draws a box shadow outside the box only.
 
 The theme is the config's `theme.name`, as in the web interface, and is read
