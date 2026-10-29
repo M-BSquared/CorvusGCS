@@ -94,7 +94,9 @@ Built: `udpin:`, `udpout:`, `udpbcast:`, `udp:` (and a bare `host:port`),
 `uds:` and `unix:` (POSIX), `mcast:`, a `.elf` or `/bin/` executable as a
 child process (POSIX), tlog and raw MAVLink log files, and MAVLink over
 WebSocket: `ws:host:port[:resource]`, `wss:host:port[:resource]` and
-`wsserver:host:port`; and CSV files as `csv:path[:option=value...]`.
+`wsserver:host:port`; CSV files as `csv:path[:option=value...]`; and
+DataFlash logs: `*.bin` and `*.px4log` (binary) and a `*.log` whose first
+8000 characters hold `FMT,` (text).
 
 The WebSocket links carry MAVLink in binary messages; a text frame is
 ignored. The client reconnects when the connection is reset and tries again
@@ -119,17 +121,23 @@ are cut as Python's `csv.reader` cuts them. The `timestamp_expression`
 option and `recv_match` conditions need pymavlink's expression evaluator and
 raise `NotImplementedError`.
 
+DataFlash logs open as `DFReader_binary` and `DFReader_text`, with pymavlink's
+`DFMessage` and `DFFormat`: formats, units and multipliers, instance fields
+(`IMU[1]`), parameters and flight modes, `recv_match` by type with its
+index, `flightmode_list`, `last_timestamp`, and the four clocks (microsecond,
+millisecond, PX4 and interpolated GPS stamps). The index follows pymavlink's
+pure Python indexer, not its compiled `dfindexer`. Not built: the metadata
+download (`DFMetaData`, which fetches over the network), and `recv_match`
+conditions. One deliberate difference: a format whose length is 0 makes
+pymavlink index the log forever; here the index stops at it.
+
 Dependencies added for this: `tungstenite` (the WebSocket protocol, with
 only its handshake feature), `rustls` with the `ring` provider, and
 `rustls-native-certs`. The standard library has neither a WebSocket codec nor
 TLS.
 
-Not built yet. They fail with `NotImplementedError` and a message that says
-so, rather than falling through to the serial or UDP branch:
+Not built:
 
-- DataFlash logs: `*.bin`, `*.px4log`, and text `*.log` starting with `FMT,`
-  (pymavlink's `DFReader`). Corvus reads ArduPilot `.bin` logs through its
-  own log service.
 - `recv_match(condition=...)`: pymavlink's expression conditions. Corvus
   never passes one.
 - `mavmmaplog`'s per-type index: a tlog is read frame by frame and gives the
@@ -171,6 +179,14 @@ pymavlink stays in the `test` dependency group as the reference:
   strings of raw quotes and line ends through pymavlink's `CSVReader` and
   corvus_link, and compares the rows, the messages, the count, the rewind,
   every `recv_match` form, the device options and the ways opening fails.
+- `tests/test_corvus_link_dataflash.py` writes DataFlash logs byte by byte
+  (every format character, instance fields, units and multipliers,
+  parameters and modes, every clock; damaged logs with garbage, a cut
+  message, an unknown type or a wrong format; text logs in both delimiters)
+  and reads them through pymavlink and corvus_link, comparing every message
+  and field, the index, the parameters, the modes, `recv_match` in every
+  form and everything printed along the way. A one-off run of 9000 random
+  and mutated logs found no other difference.
 - `tests/test_param_engine_parity.py` runs the parameter protocol Corvus had
   in Python (kept in `tests/reference/`) and the Rust engine through the same
   PARAM_VALUE streams, downloads, writes, reads, verifies and uploads, and

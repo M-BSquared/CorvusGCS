@@ -2115,8 +2115,16 @@ pub fn mavlink_connection(
 ) -> PyResult<PyObject> {
     let lower = device.to_lowercase();
     let is_link = LINK_PREFIXES.iter().any(|p| device.starts_with(p));
-    if !(is_link || lower.ends_with(".bin") || lower.ends_with(".px4log")) && lower.starts_with("csv:") {
-        return Ok(crate::link::csv_log::open(py, device, progress_callback, opts)?.into_any());
+    if !is_link {
+        if lower.ends_with(".bin") || lower.ends_with(".px4log") {
+            return Ok(crate::link::dataflash::open_binary(py, device, zero_time_base, progress_callback)?.into_any());
+        }
+        if lower.starts_with("csv:") {
+            return Ok(crate::link::csv_log::open(py, device, progress_callback, opts)?.into_any());
+        }
+        if device.ends_with(".log") && crate::link::dataflash::is_text_log(py, device)? {
+            return Ok(crate::link::dataflash::open_text(py, device, zero_time_base, progress_callback)?.into_any());
+        }
     }
     Ok(open_connection(
         py,
@@ -2291,24 +2299,7 @@ fn open_connection(
         let link = py.allow_threads(|| WsClient::open(device)).map_err(ws_error)?;
         return Connection::new_object(py, Link::WsClient(link), "mavwebsocket_client", device.to_string(), source_system, source_component);
     }
-    // Not built yet. pymavlink also opens these; each needs its own piece:
-    //  * *.bin, *.px4log, and text *.log: DataFlash logs (DFReader). Corvus
-    //    reads ArduPilot .bin logs through its own log service instead.
-    //  * mavmmaplog's per-type index: a plain tlog read gives the same
-    //    messages, only without the seek-ahead recv_match acceleration.
-    // Until then they fail here with a message that says so, rather than
-    // falling through to the serial or UDP branch below.
     let lower = device.to_lowercase();
-    if lower.ends_with(".bin") || lower.ends_with(".px4log") {
-        return Err(PyNotImplementedError::new_err(
-            "corvus_link does not read DataFlash logs yet",
-        ));
-    }
-    if device.ends_with(".log") && is_dataflash_text(device) {
-        return Err(PyNotImplementedError::new_err(
-            "corvus_link does not read DataFlash logs yet",
-        ));
-    }
     let suffix = lower.rsplit('.').next().unwrap_or("");
     if device.contains(':') && !["mavlink", "log", "raw", "tlog"].contains(&suffix) {
         return udp(device, input, false, 0.0);
@@ -2408,12 +2399,3 @@ fn ws_error(e: WsError) -> PyErr {
     }
 }
 
-/// DFReader_is_text_log: a text DataFlash log starts with "FMT,".
-fn is_dataflash_text(path: &str) -> bool {
-    use std::io::Read;
-    let mut head = [0u8; 4];
-    std::fs::File::open(path)
-        .and_then(|mut f| f.read_exact(&mut head))
-        .is_ok()
-        && &head == b"FMT,"
-}

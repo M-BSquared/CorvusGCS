@@ -405,7 +405,3 @@ def test_threads_can_send_while_one_waits() -> None:
         conn.close()
 
 
-@pytest.mark.parametrize("device", ["log.bin"])
-def test_links_not_built_yet_say_so(device: str) -> None:
-    with pytest.raises(NotImplementedError):
-        mavutil.mavlink_connection(device)

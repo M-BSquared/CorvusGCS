@@ -122,6 +122,7 @@ fn build_mavutil(py: Python<'_>, parent: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<link::csv_log::CsvReader>()?;
     m.add_class::<link::csv_log::CsvMessage>()?;
     m.add_class::<link::csv_log::CsvFormat>()?;
+    link::dataflash::register(&m)?;
     m.add_function(wrap_pyfunction!(mode_mapping_bynumber, &m)?)?;
     m.add_function(wrap_pyfunction!(mode_mapping_byname, &m)?)?;
     m.add_function(wrap_pyfunction!(mode_string_v10, &m)?)?;

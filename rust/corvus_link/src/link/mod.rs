@@ -3,6 +3,7 @@
 
 pub mod connection;
 pub mod csv_log;
+pub mod dataflash;
 #[cfg(unix)]
 pub mod serial_posix;
 pub mod transport;
