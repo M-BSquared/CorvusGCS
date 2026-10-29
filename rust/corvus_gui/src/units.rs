@@ -131,6 +131,25 @@ impl Units {
         format!("{} {}", js_to_fixed(m * self.distance.per_si, 2), self.distance.symbol)
     }
 
+    /// `formatDistance(m, { coarse: true })`: two significant figures, for a
+    /// distance only read as "about how far".
+    pub fn format_distance_coarse(&self, m: f64) -> String {
+        if !m.is_finite() {
+            return String::new();
+        }
+        if m < self.distance.short_below * 0.95 {
+            let v = m * self.length.per_si;
+            return format!("{} {}", js_round(v / 10.0) * 10.0, self.length.symbol);
+        }
+        let big = m * self.distance.per_si;
+        let n = if big < 9.95 {
+            js_to_fixed(big, 1)
+        } else {
+            js_round(big).to_string()
+        };
+        format!("{n} {}", self.distance.symbol)
+    }
+
     /// A speed, one decimal unless told otherwise.
     pub fn format_speed(&self, ms: f64, digits: usize, signed: bool, bare: bool) -> String {
         if !ms.is_finite() {

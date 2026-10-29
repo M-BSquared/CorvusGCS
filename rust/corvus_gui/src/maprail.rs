@@ -75,6 +75,7 @@ pub fn items(measure: bool) -> Vec<Item> {
 /// The rail's state.
 #[derive(Default)]
 pub struct MapRail {
+    search: crate::search_card::SearchCard,
     layers_open: bool,
     pub measure: bool,
 }
@@ -173,22 +174,22 @@ impl MapRail {
 
         // .tiles-trigger right of the search, both left of the rail
         let clear = INSET + 48.0 + GAP;
-        for (i, (icon, title)) in [("download", "Download offline map"), ("search", "Search for a place")]
-            .into_iter()
-            .enumerate()
-        {
-            let right = area.right() - clear - i as f32 * (BTN + GAP);
-            let r = Rect::from_min_size(Pos2::new(right - BTN, area.top() + INSET), Vec2::splat(BTN));
-            glass_box(&painter, ("trigger", i), r);
-            ui.interact(r, ui.scope_id().with(("trigger", i)), egui::Sense::hover())
-                .on_hover_text(format!("{title} (not in this build yet)"));
-            icons::paint(
-                ui,
-                icon,
-                Rect::from_center_size(r.center(), Vec2::splat(17.0)),
-                style::text_2().gamma_multiply(0.4),
-            );
-        }
+        let download = Rect::from_min_size(
+            Pos2::new(area.right() - clear - BTN, area.top() + INSET),
+            Vec2::splat(BTN),
+        );
+        glass_box(&painter, ("trigger", 0), download);
+        ui.interact(download, ui.scope_id().with(("trigger", 0)), egui::Sense::hover())
+            .on_hover_text("Download offline map (not in this build yet)");
+        icons::paint(
+            ui,
+            "download",
+            Rect::from_center_size(download.center(), Vec2::splat(17.0)),
+            style::text_2().gamma_multiply(0.4),
+        );
+        let search = download.translate(Vec2::new(-(BTN + GAP), 0.0));
+        let units = map.measure.units;
+        self.search.show(ui, search, area, map, &units);
 
         self.track_clear(ui, area, map);
 

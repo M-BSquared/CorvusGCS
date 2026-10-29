@@ -47,6 +47,7 @@ const ICONS: &[(&str, &str)] = &[
     ("refresh-cw", "RefreshCw"),
     ("share-2", "Share2"),
     ("search", "Search"),
+    ("map-pin", "MapPin"),
     ("pause", "Pause"),
     ("play", "Play"),
     ("copy", "Copy"),

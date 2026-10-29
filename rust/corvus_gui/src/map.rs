@@ -97,6 +97,8 @@ pub struct Map {
     regions_asked: f64,
     /// The distance tool.
     pub measure: crate::measure::Measure,
+    /// Where the place search landed.
+    pub pin: Option<[f64; 2]>,
     /// 3D mode: the tilted view, made when it is first switched on.
     three: Option<Map3d>,
     three_d: bool,
@@ -133,6 +135,7 @@ impl Map {
             regions_load: None,
             regions_asked: f64::NEG_INFINITY,
             measure: crate::measure::Measure::default(),
+            pin: None,
             three: None,
             three_d: false,
             view: None,
@@ -310,6 +313,27 @@ impl Map {
         }
     }
 
+    /// The downloaded areas last read.
+    pub fn regions(&self) -> &[crate::regions::Region] {
+        &self.regions
+    }
+
+    /// Longitude, latitude and zoom of the flat view's centre, as last drawn.
+    pub fn camera(&self) -> Option<(f64, f64, f64)> {
+        self.view
+    }
+
+    pub fn server(&self) -> &Server {
+        &self.server
+    }
+
+    /// Looks at a place, no longer following the aircraft.
+    pub fn go_to(&mut self, lng: f64, lat: f64, zoom: f64) {
+        self.follow = false;
+        let _ = self.memory.set_zoom(zoom);
+        self.memory.center_at(walkers::lon_lat(lng, lat));
+    }
+
     /// Shows or hides the outlines of the downloaded areas; showing asks the
     /// backend for them again.
     pub fn set_regions_visible(&mut self, on: bool) {
@@ -340,7 +364,7 @@ impl Map {
                 self.regions = crate::regions::read(&d);
             }
         }
-        if !self.regions_visible {
+        if !self.regions_visible && self.regions_asked.is_finite() {
             return;
         }
         let every = if self.regions.iter().any(|r| r.running) {
@@ -355,7 +379,9 @@ impl Map {
                 crate::http::get_json(&s, "/api/tiles/regions")
             }));
         }
-        ctx.request_repaint_after(std::time::Duration::from_secs(1));
+        if self.regions_visible {
+            ctx.request_repaint_after(std::time::Duration::from_secs(1));
+        }
     }
 
     /// Draws the map into the whole of `ui`.
@@ -410,6 +436,7 @@ impl Map {
         let fence = self.env.get();
         let outline = (fence.show_on_map && fence.polygon.len() >= 3).then_some(fence.polygon);
         let layers = Layers {
+            pin: &mut self.pin,
             measure: &mut self.measure,
             regions,
             outline,
@@ -479,6 +506,7 @@ impl Map {
 }
 
 struct Layers<'a> {
+    pin: &'a mut Option<[f64; 2]>,
     measure: &'a mut crate::measure::Measure,
     regions: Vec<crate::regions::Merged>,
     /// The geofence area, when the Home map is asked to show it.
@@ -707,11 +735,34 @@ impl Plugin for Layers<'_> {
                 self.heading,
             );
         }
+        if let Some(p) = *self.pin {
+            let c = screen(projector, rect, &Point { lng: p[0], lat: p[1], alt: None });
+            paint_pin(&painter, c);
+            if response.clicked()
+                && response
+                    .interact_pointer_pos()
+                    .is_some_and(|q| q.distance(c) <= 11.0)
+                && !self.measure.active
+            {
+                *self.pin = None;
+            }
+        }
         if self.measure.active {
             drive_measure(ui, response, projector, self.measure);
             paint_measure(&painter, ui, projector, rect, self.measure);
         }
     }
+}
+
+/// `.map-search-pin`: a ring and a dot in #33D6FF with a dark casing.
+fn paint_pin(painter: &egui::Painter, c: Pos2) {
+    let cyan = Color32::from_rgb(0x33, 0xD6, 0xFF);
+    let ink = Color32::from_black_alpha(160);
+    painter.circle_filled(c + Vec2::new(0.0, 1.0), 10.5, ink.gamma_multiply(0.35));
+    painter.circle_stroke(c, 9.5, Stroke::new(1.0, ink));
+    painter.circle_filled(c, 8.0, cyan.gamma_multiply(0.2));
+    painter.circle_stroke(c, 8.0, Stroke::new(2.0, cyan));
+    painter.circle_filled(c, 2.5, cyan);
 }
 
 /// Clicks, the pointer and the keys of the distance tool.
@@ -856,6 +907,7 @@ mod tests {
             regions_load: None,
             regions_asked: f64::NEG_INFINITY,
             measure: crate::measure::Measure::default(),
+            pin: None,
             three: None,
             three_d: false,
             view: None,

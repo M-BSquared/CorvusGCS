@@ -186,6 +186,15 @@ impl eframe::App for App {
         // CORVUS_GUI_CLICK="x,y;x,y;enter" presses at each point in turn, the
         // first at 6 s and one more every half second, for a menu or a drawn
         // shape to look at; `enter` presses the Enter key.
+        // CORVUS_GUI_TEXT="..." types that text once the clicks are done.
+        if let Ok(text) = std::env::var("CORVUS_GUI_TEXT") {
+            let steps = std::env::var("CORVUS_GUI_CLICK").map_or(0, |l| l.split(';').count()) as u32;
+            let due = raw_input.time.unwrap_or(0.0) > 7.0 + 0.5 * f64::from(steps);
+            if self.click_stage == steps * 2 && due {
+                self.click_stage += 1;
+                raw_input.events.push(egui::Event::Text(text));
+            }
+        }
         if let Ok(list) = std::env::var("CORVUS_GUI_CLICK") {
             let steps: Vec<&str> = list.split(';').map(str::trim).collect();
             let t = raw_input.time.unwrap_or(0.0);
