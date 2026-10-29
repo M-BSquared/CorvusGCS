@@ -40,6 +40,7 @@ mod params;
 mod params_dialogs;
 mod params_files;
 mod popover;
+mod regions;
 mod responsive;
 mod safety;
 mod schema_form;

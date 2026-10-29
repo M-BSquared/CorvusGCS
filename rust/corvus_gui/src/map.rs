@@ -90,6 +90,11 @@ pub struct Map {
     pub follow: bool,
     /// The marker's heading, eased like the web marker.
     heading: Option<f32>,
+    /// The downloaded areas, outlined while `regions_visible`.
+    regions: Vec<crate::regions::Region>,
+    pub regions_visible: bool,
+    regions_load: Option<crate::bg::Pending<Result<Value, String>>>,
+    regions_asked: f64,
     /// 3D mode: the tilted view, made when it is first switched on.
     three: Option<Map3d>,
     three_d: bool,
@@ -121,6 +126,10 @@ impl Map {
             first_fix: true,
             follow: true,
             heading: None,
+            regions: Vec::new(),
+            regions_visible: false,
+            regions_load: None,
+            regions_asked: f64::NEG_INFINITY,
             three: None,
             three_d: false,
             view: None,
@@ -298,8 +307,64 @@ impl Map {
         let home = real_fix(state.get("home"));
         let target = state.get("heading").and_then(Value::as_f64).unwrap_or(0.0) as f32;
         let dt = ui.input(|i| i.stable_dt).min(0.1);
+    /// Shows or hides the outlines of the downloaded areas; showing asks the
+    /// backend for them again.
+    pub fn set_regions_visible(&mut self, on: bool) {
+        self.regions_visible = on;
+        self.regions_asked = f64::NEG_INFINITY;
+    }
+
+    /// The ids of the elevation sources, whose areas are not outlined: an
+    /// elevation download rides along with an imagery one over the same ground.
+    fn terrain_ids(&self) -> Vec<String> {
+        self.sources
+            .get("terrain")
+            .and_then(Value::as_array)
+            .map(|a| {
+                a.iter()
+                    .filter_map(|t| t.get("id").and_then(Value::as_str).map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Reads the areas while they are shown: every 5 s, every 2 s while one
+    /// is downloading.
+    fn poll_regions(&mut self, ctx: &egui::Context, now: f64) {
+        if let Some(r) = self.regions_load.as_ref().and_then(crate::bg::Pending::take) {
+            self.regions_load = None;
+            if let Ok(d) = r {
+                self.regions = crate::regions::read(&d);
+            }
+        }
+        if !self.regions_visible {
+            return;
+        }
+        let every = if self.regions.iter().any(|r| r.running) {
+            2.0
+        } else {
+            5.0
+        };
+        if self.regions_load.is_none() && now - self.regions_asked >= every {
+            self.regions_asked = now;
+            let s = self.server.clone();
+            self.regions_load = Some(crate::bg::Pending::spawn(ctx, move || {
+                crate::http::get_json(&s, "/api/tiles/regions")
+            }));
+        }
+        ctx.request_repaint_after(std::time::Duration::from_secs(1));
+    }
+
         let heading = match self.heading {
             Some(h) => {
+        let now = ui.input(|i| i.time);
+        self.poll_regions(&ui.ctx().clone(), now);
+        let terrain = self.terrain_ids();
+        let regions = if self.regions_visible {
+            crate::regions::merge(&self.regions, &|s| terrain.iter().any(|t| t == s))
+        } else {
+            Vec::new()
+        };
                 let delta = (target - h).rem_euclid(360.0);
                 let delta = if delta > 180.0 { delta - 360.0 } else { delta };
                 let next = h + delta * (1.0 - (-dt / 0.18f32).exp());
@@ -342,6 +407,7 @@ impl Map {
         .double_click_to_zoom(true);
         map = map.zoom_speed(2.0);
         let response = ui.add(map);
+            regions,
         {
             let p = Projector::new(response.rect, &self.memory, my_position);
             let c = p.unproject(response.rect.center().to_vec2());
@@ -409,6 +475,7 @@ fn screen(projector: &Projector, _rect: egui::Rect, p: &Point) -> Pos2 {
 /// One flight as the web map draws it: a soft glow, a dark casing and the
 /// coloured core, so the line reads on grass and on a red roof alike.
 pub(crate) fn paint_flight(painter: &egui::Painter, pts: &[Pos2], color: Color32, past: bool) {
+    regions: Vec<crate::regions::Merged>,
     if pts.len() < 2 {
         return;
     }
@@ -417,6 +484,56 @@ pub(crate) fn paint_flight(painter: &egui::Painter, pts: &[Pos2], color: Color32
     } else {
         (11.0, 0.3, 5.5, 0.55, 2.6, 0.95)
     };
+/// An outlined downloaded area (`offline-regions-fill` and `-line`, #4CC9FF)
+/// with its name chip at the centre (`.region-label`).
+fn paint_region(painter: &egui::Painter, projector: &Projector, rect: egui::Rect, r: &crate::regions::Merged) {
+    let b = r.bounds;
+    let at = |lng: f64, lat: f64| screen(projector, rect, &Point { lng, lat, alt: None });
+    let ring = [at(b.w, b.s), at(b.e, b.s), at(b.e, b.n), at(b.w, b.n)];
+    let blue = Color32::from_rgb(0x4C, 0xC9, 0xFF);
+    painter.rect_filled(egui::Rect::from_two_pos(ring[0], ring[2]), 0, blue.gamma_multiply(0.06));
+    let mut closed = ring.to_vec();
+    closed.push(ring[0]);
+    painter.extend(Shape::dashed_line(
+        &closed,
+        Stroke::new(1.4, blue.gamma_multiply(0.85)),
+        5.6,
+        4.2,
+    ));
+    let (cx, cy) = b.centre();
+    let c = at(cx, cy);
+    let name = painter.layout_no_wrap(r.name(), style::font(11.0, style::Weight::W600), style::text_1());
+    let mc = if r.running { style::warning() } else { style::text_3() };
+    let meta = painter.layout_no_wrap(r.meta(), style::font(9.0, style::Weight::W400), mc);
+    let w = name.size().x.max(meta.size().x) + 16.0 + 2.0;
+    let h = name.size().y + 1.0 + meta.size().y + 8.0 + 2.0;
+    let chip = egui::Rect::from_center_size(c, Vec2::new(w, h));
+    painter.rect_filled(chip, style::RADIUS_BTN, style::glass(0.72));
+    painter.rect_stroke(
+        chip,
+        style::RADIUS_BTN,
+        Stroke::new(
+            1.0,
+            if r.running {
+                style::warning()
+            } else {
+                blue.gamma_multiply(0.45)
+            },
+        ),
+        egui::StrokeKind::Inside,
+    );
+    painter.galley(
+        Pos2::new(c.x - name.size().x / 2.0, chip.top() + 5.0),
+        name.clone(),
+        style::text_1(),
+    );
+    painter.galley(
+        Pos2::new(c.x - meta.size().x / 2.0, chip.top() + 5.0 + name.size().y + 1.0),
+        meta,
+        mc,
+    );
+}
+
     let with = |c: Color32, a: f32| Color32::from_rgba_unmultiplied(c.r(), c.g(), c.b(), (a * 255.0) as u8);
     // line-blur spreads the glow out; three widening strokes stand in for it.
     for (w, share) in [(glow, 0.5), (glow * 0.75, 0.3), (glow * 0.5, 0.2)] {
@@ -554,6 +671,9 @@ impl Plugin for Layers<'_> {
             paint_home(&painter, screen(projector, rect, &Point { lng, lat, alt: None }));
         }
         if let Some((lng, lat)) = self.vehicle {
+        for r in &self.regions {
+            paint_region(&painter, projector, rect, r);
+        }
             paint_vehicle(
                 &painter,
                 screen(projector, rect, &Point { lng, lat, alt: None }),
@@ -630,3 +750,7 @@ mod tests {
         assert_eq!(m.track.current.len(), 1, "a disconnected state draws nothing");
     }
 }
+            regions: Vec::new(),
+            regions_visible: false,
+            regions_load: None,
+            regions_asked: f64::NEG_INFINITY,
