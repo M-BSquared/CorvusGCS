@@ -8,7 +8,9 @@ use std::sync::Arc;
 
 use eframe::egui::{self, Color32, Pos2, Rect, Stroke, TextureHandle, TextureOptions, Vec2};
 
+use crate::bg::Pending;
 use crate::camera3d::{self, Camera, V3};
+use crate::http;
 use crate::http::Server;
 use crate::terrain::{self, Terrain};
 use crate::tile_cache::{Key, TileCache};
@@ -67,7 +69,13 @@ pub struct Map3d {
     ctx: egui::Context,
     /// The elevation in use and the base layer it was chosen for.
     terrain: Option<Terrain>,
+    /// The default model, drawn where the chosen one has no tile (an own
+    /// model covers only its survey).
+    fallback: Option<Terrain>,
     terrain_for: String,
+    /// The operator's pick, `auto` or an elevation model id.
+    pub choice: String,
+    saved: Option<Pending<Result<serde_json::Value, String>>>,
     textures: HashMap<Key, TextureHandle>,
     used: Vec<Key>,
 }
@@ -97,7 +105,13 @@ impl Map3d {
             server: server.clone(),
             ctx: ctx.clone(),
             terrain: None,
+            fallback: None,
             terrain_for: String::new(),
+            choice: "auto".to_string(),
+            saved: Some({
+                let s = server.clone();
+                Pending::spawn(ctx, move || http::get_json(&s, "/api/config"))
+            }),
             textures: HashMap::new(),
             used: Vec::new(),
         }
@@ -122,13 +136,9 @@ impl Map3d {
         self.max_zoom = max_zoom;
     }
 
-    /// Picks the elevation model the base layer calls for, when that changed.
-    pub fn follow_sources(&mut self, sources: &serde_json::Value) {
-        if self.terrain_for == self.source && self.terrain.is_some() {
-            return;
-        }
-        self.terrain_for = self.source.clone();
-        let provider = sources
+    /// The map service of the base layer, which pairs it with a model.
+    fn provider(&self, sources: &serde_json::Value) -> String {
+        sources
             .get("sources")
             .and_then(serde_json::Value::as_array)
             .and_then(|l| {
@@ -136,12 +146,70 @@ impl Map3d {
                     .find(|s| s.get("id").and_then(serde_json::Value::as_str) == Some(&self.source))
             })
             .and_then(|s| s.get("provider").and_then(serde_json::Value::as_str))
-            .unwrap_or("");
-        if let Some(spec) = terrain::choose(sources, provider, None) {
+            .unwrap_or("")
+            .to_string()
+    }
+
+    /// Picks the elevation model the choice and the base layer call for, when
+    /// that changed, and reads the saved choice once it has come.
+    pub fn follow_sources(&mut self, sources: &serde_json::Value) {
+        let mut changed = false;
+        if let Some(r) = self.saved.as_ref().and_then(Pending::take) {
+            self.saved = None;
+            if let Some(c) = r.ok().and_then(|c| {
+                c.pointer("/config/map/terrain_source")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::to_string)
+            }) {
+                self.choice = c;
+                changed = true;
+            }
+        }
+        if !changed && self.terrain_for == format!("{}|{}", self.source, self.choice) && self.terrain.is_some() {
+            return;
+        }
+        self.terrain_for = format!("{}|{}", self.source, self.choice);
+        let provider = self.provider(sources);
+        let pick = (self.choice != "auto").then_some(self.choice.as_str());
+        if let Some(spec) = terrain::choose(sources, &provider, pick) {
             if self.terrain.as_ref().map(|t| &t.spec.id) != Some(&spec.id) {
+                let default = sources
+                    .get("default_terrain")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("");
+                self.fallback = (spec.id != default)
+                    .then(|| terrain::catalogue(sources).into_iter().find(|d| d.id == default))
+                    .flatten()
+                    .map(|d| Terrain::new(&self.ctx, &self.server, d));
                 self.terrain = Some(Terrain::new(&self.ctx, &self.server, spec));
             }
         }
+    }
+
+    /// The rows of the elevation list and the one in use.
+    pub fn elevation_rows(&self, sources: &serde_json::Value) -> Vec<(String, String)> {
+        terrain::options(sources, &self.provider(sources))
+    }
+
+    /// Chooses the elevation model and keeps the choice in the config.
+    pub fn set_choice(&mut self, id: &str) {
+        if self.choice == id {
+            return;
+        }
+        self.choice = id.to_string();
+        let s = self.server.clone();
+        let body = serde_json::json!({"map": {"terrain_source": id}});
+        std::thread::spawn(move || {
+            let _ = http::post_json(&s, "/api/config", &body);
+        });
+    }
+
+    /// The model in use, for the credit.
+    pub fn terrain_credit(&self) -> Option<&str> {
+        self.terrain
+            .as_ref()
+            .map(|t| t.spec.attribution.as_str())
+            .filter(|a| !a.is_empty())
     }
 
     /// The ground height at a position, the centre's when none is loaded.
@@ -149,6 +217,7 @@ impl Map3d {
         self.terrain
             .as_ref()
             .and_then(|t| t.height_at(lng, lat, 13.0))
+            .or_else(|| self.fallback.as_ref().and_then(|t| t.height_at(lng, lat, 13.0)))
             .unwrap_or(self.cam.ground)
     }
 
@@ -247,9 +316,12 @@ impl Map3d {
     fn imagery_for(&mut self, ctx: &egui::Context, l: Leaf) -> Option<(egui::TextureId, Rect)> {
         let top = l.z.min(self.max_zoom);
         let mut want = true;
-        for d in 0..=8u8 {
-            if d > top {
-                break;
+        // A coarse ancestor is asked for too, so there is always something to
+        // draw while the fine tile is on its way.
+        let coarse = top.min(3);
+        for d in 0..=top.min(12) {
+            if d == coarse && d > 0 {
+                want = true;
             }
             let (z, x, y) = (top - d, l.x >> d, l.y >> d);
             let key: Key = (self.source.clone(), z, x, y);
@@ -314,6 +386,11 @@ impl Map3d {
             .terrain
             .as_ref()
             .and_then(|t| t.height_at(self.cam.lng, self.cam.lat, self.cam.zoom))
+            .or_else(|| {
+                self.fallback
+                    .as_ref()
+                    .and_then(|t| t.height_at(self.cam.lng, self.cam.lat, self.cam.zoom))
+            })
         {
             self.cam.ground = h;
         }
@@ -336,10 +413,11 @@ impl Map3d {
             self.textures.retain(|k, _| keep.contains(k));
         }
         self.imagery.trim();
-        if let Some(t) = &self.terrain {
+        for t in self.terrain.iter().chain(self.fallback.iter()) {
             t.trim();
         }
         self.paint_layers(&painter, origin, layers);
+        self.paint_credit(ui, rect);
         Input { dragged }
     }
 
@@ -350,7 +428,11 @@ impl Map3d {
         let c = self.cam;
         let k = c.lat.to_radians().cos();
         let (cx, cy) = camera3d::mercator(c.lng, c.lat);
-        let dem = self.terrain.as_ref().and_then(|t| t.tile_for(l.z, l.x, l.y));
+        let dem = self
+            .terrain
+            .as_ref()
+            .and_then(|t| t.tile_for(l.z, l.x, l.y))
+            .or_else(|| self.fallback.as_ref().and_then(|t| t.tile_for(l.z, l.x, l.y)));
         let n = GRID + 1;
         let mut heights = vec![c.ground as f32; n * n];
         if let Some((tile, (u0, v0, size))) = &dem {
@@ -404,6 +486,46 @@ impl Map3d {
         }
         quads.sort_by(|a, b| b.0.total_cmp(&a.0));
         let mut mesh = egui::Mesh::with_texture(tex);
+        // Skirts: the edges of a leaf hang down, so a neighbour from another
+        // elevation model or another level of detail leaves no crack between.
+        let drop = (step * GRID as f64 * 0.05).max(25.0);
+        let low = |i: usize, j: usize| -> Option<Pos2> {
+            let (u, v) = (i as f64 / GRID as f64, j as f64 / GRID as f64);
+            let (mx, my) = tile_mercator(l.z, l.x as f64 + u, l.y as f64 + v);
+            let p = [
+                (mx - cx) * k,
+                (my - cy) * k,
+                heights[j * n + i] as f64 - c.ground - drop,
+            ];
+            c.project(p)
+                .map(|s| Pos2::new(origin.x + s.x as f32, origin.y + s.y as f32))
+        };
+        let mut edges: Vec<((usize, usize), (usize, usize))> = Vec::new();
+        for t in 0..GRID {
+            edges.push(((t, 0), (t + 1, 0)));
+            edges.push(((t, GRID), (t + 1, GRID)));
+            edges.push(((0, t), (0, t + 1)));
+            edges.push(((GRID, t), (GRID, t + 1)));
+        }
+        for ((ai, aj), (bi, bj)) in edges {
+            let (Some((pa, _)), Some((pb, _)), Some(la), Some(lb)) =
+                (pts[aj * n + ai], pts[bj * n + bi], low(ai, aj), low(bi, bj))
+            else {
+                continue;
+            };
+            let base = mesh.vertices.len() as u32;
+            for (pos, (i, j)) in [(pa, (ai, aj)), (pb, (bi, bj)), (lb, (bi, bj)), (la, (ai, aj))] {
+                let (u, v) = (i as f32 / GRID as f32, j as f32 / GRID as f32);
+                let g = (shade_at(i, j) * 190.0) as u8;
+                mesh.vertices.push(egui::epaint::Vertex {
+                    pos,
+                    uv: Pos2::new(uv.min.x + u * uv.width(), uv.min.y + v * uv.height()),
+                    color: Color32::from_rgb(g, g, g),
+                });
+            }
+            mesh.indices
+                .extend([base, base + 1, base + 2, base, base + 2, base + 3]);
+        }
         for (_, i, j) in quads {
             let base = mesh.vertices.len() as u32;
             for (di, dj) in [(0, 0), (1, 0), (1, 1), (0, 1)] {
@@ -423,6 +545,28 @@ impl Map3d {
         painter.add(egui::Shape::mesh(mesh));
     }
 
+    /// The elevation credit and the ground height at the centre, a pill above
+    /// the map credit at the bottom left.
+    fn paint_credit(&self, ui: &egui::Ui, rect: Rect) {
+        let Some(credit) = self.terrain_credit() else {
+            return;
+        };
+        let text = format!("{:.0} m  \u{b7}  {credit}", self.cam.ground);
+        let g = crate::style::galley(ui, &text, 10.0, crate::style::Weight::W400, crate::style::text_2(), 0.0);
+        let w = g.size().x.min(rect.width() - 28.0 - 13.0);
+        let pill = Rect::from_min_size(
+            Pos2::new(rect.left() + 14.0, rect.bottom() - 14.0 - 25.0 - 6.0 - 25.0),
+            Vec2::new(w + 13.0, 25.0),
+        );
+        let painter = ui.painter_at(rect);
+        crate::style::glass_panel(&painter, "elevation-credit", pill, egui::CornerRadius::same(255), 0.38);
+        ui.painter_at(pill.shrink2(Vec2::new(5.0, 0.0))).galley(
+            Pos2::new(pill.left() + 9.0, pill.center().y - g.size().y / 2.0),
+            g,
+            crate::style::text_2(),
+        );
+    }
+
     fn screen_of(&self, origin: Pos2, p: V3) -> Option<Pos2> {
         self.cam
             .project(p)
@@ -431,23 +575,25 @@ impl Map3d {
 
     fn paint_layers(&self, painter: &egui::Painter, origin: Pos2, layers: &Layers3d<'_>) {
         let cam = &self.cam;
-        let line = |pts: &[Point]| -> Vec<Pos2> {
-            pts.iter()
-                .filter_map(|p| {
-                    let h = self.ground_at(p.lng, p.lat) + p.alt.unwrap_or(0.0);
-                    self.screen_of(origin, cam.local_of(p.lng, p.lat, h))
-                })
-                .collect()
+        // A run of the track ends where it goes behind the camera, so the
+        // gap is not drawn as a line across the screen.
+        let paint_track = |pts: &[Point], color: Color32, past: bool| {
+            let mut run: Vec<Pos2> = Vec::new();
+            for p in pts {
+                let h = self.ground_at(p.lng, p.lat) + p.alt.unwrap_or(0.0);
+                match self.screen_of(origin, cam.local_of(p.lng, p.lat, h)) {
+                    Some(q) => run.push(q),
+                    None => {
+                        crate::map::paint_flight(painter, &std::mem::take(&mut run), color, past);
+                    }
+                }
+            }
+            crate::map::paint_flight(painter, &run, color, past);
         };
         for flight in &layers.track.past {
-            crate::map::paint_flight(painter, &line(&track::smooth(flight)), crate::style::track_past(), true);
+            paint_track(&track::smooth(flight), crate::style::track_past(), true);
         }
-        crate::map::paint_flight(
-            painter,
-            &line(&track::smooth(&layers.track.current)),
-            crate::style::track(),
-            false,
-        );
+        paint_track(&track::smooth(&layers.track.current), crate::style::track(), false);
         if let Some((lng, lat)) = layers.home {
             if let Some(p) = self.screen_of(origin, cam.local_of(lng, lat, self.ground_at(lng, lat))) {
                 crate::map::paint_home(painter, p);

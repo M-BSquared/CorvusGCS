@@ -18,7 +18,7 @@ use crate::http::{self, Server};
 pub type Key = (String, u8, u32, u32);
 
 const WORKERS: usize = 6;
-const QUEUE_MAX: usize = 96;
+const QUEUE_MAX: usize = 200;
 const RETRY_AFTER: Duration = Duration::from_secs(20);
 
 type Decoder<T> = Arc<dyn Fn(&[u8]) -> Option<T> + Send + Sync>;

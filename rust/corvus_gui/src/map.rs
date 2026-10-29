@@ -220,6 +220,14 @@ impl Map {
         }
     }
 
+    /// The 3D view and the source catalogue, for the panel that sets it up.
+    pub fn three_settings(&mut self, ctx: &egui::Context) -> (&mut Map3d, &Value) {
+        self.ensure_three(ctx);
+        let t = self.three.as_mut().expect("the 3D view was just made");
+        t.follow_sources(&self.sources);
+        (t, &self.sources)
+    }
+
     /// Makes the 3D view when it is first needed, looking where the flat map does.
     fn ensure_three(&mut self, ctx: &egui::Context) {
         if self.three.is_some() {
@@ -269,6 +277,12 @@ impl Map {
         );
         if input.dragged {
             self.follow = false;
+        }
+        if std::env::var_os("CORVUS_GUI_3D_PANEL").is_some() {
+            let anchor = egui::Rect::from_center_size(Pos2::new(rect.right() - 36.0, rect.top() + 249.0), Vec2::splat(34.0));
+            let ctx = ui.ctx().clone();
+            let (t, sources) = self.three_settings(&ctx);
+            crate::threed_panel::show(ui, anchor, t, sources);
         }
         self.paint_attribution(ui, rect);
     }

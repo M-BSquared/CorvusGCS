@@ -18,6 +18,8 @@ CORVUS_GUI_SIZE=700,812 cargo run                      # open at that size, belo
 CORVUS_GUI_HOVER=600,50 cargo run                      # hold the pointer there (a hover card, a hint)
 CORVUS_GUI_CLICK=560,310 cargo run -- --page motors    # press there once, at 6 s (an open menu)
 CORVUS_GUI_CLICK="178,472;400,200;enter" cargo run    # several presses, half a second apart; enter is the key
+CORVUS_GUI_3D=11.5,47.4,13,200 cargo run                 # open the 3D map, here: lng,lat,zoom[,bearing]; 1 alone keeps the view
+CORVUS_GUI_3D_PANEL=1 CORVUS_GUI_3D=1 cargo run         # with the 3D panel (buildings, elevation models) open
 ```
 
 Locally, `serve.py` runs as a child on a free port. Every way out (window
@@ -36,6 +38,7 @@ SIGKILL if it is still there after 8 s. If the window does not close within
 | `src/units.rs` | display units from the config's `ui.units`, rounded the way the web interface rounds |
 | `src/topbar.rs` | the status bar, word for word the web interface's (`src/js/topbar.js`) |
 | `src/map.rs` | the map (walkers) on the backend's tile proxy, vehicle and home markers |
+| `src/camera3d.rs`, `src/map3d.rs`, `src/terrain.rs`, `src/tile_cache.rs`, `src/threed_panel.rs` | the 3D map: camera maths, the tilted ground of imagery and elevation tiles with hillshade and skirts, the elevation model choice, the tile cache behind both, and the 3D panel (`src/js/map.js` 3D mode) |
 | `src/track.rs` | the flown track, recorded and smoothed as `src/js/map.js` does |
 | `src/hud.rs` | compass, attitude indicator and readouts (`src/js/instruments.js`) |
 | `src/flight.rs` | the flight bar, takeoff card and mode picker (`src/js/app.js`) |
@@ -93,11 +96,14 @@ renderer of its own, drawn with egui meshes and no GPU code of its own.
   of the map service, else the preferred Copernicus, else SRTM). The
   operator's own models (GeoTIFF, XYZ) are served by the backend as the same
   tiles, so they need no reader here.
-- **Slices.** 1: the camera, flat ground with imagery, the vehicle, home and
-  track in 3D, drag to pan, right drag to turn and tilt. 2: terrain heights.
-  3: the elevation model list, the height readout and the user's own models.
-  Buildings, the sky details and the surface models of the full 3D mode come
-  after.
+- **Cracks.** Neighbouring leaves can come from different levels or models,
+  so their edges do not meet. Each leaf hangs a skirt below its edges.
+- **Slices.** Done: the camera, the ground with imagery and heights, hillshade,
+  the vehicle, home and track in 3D, drag to pan, ctrl or right drag to turn
+  and tilt, wheel to zoom, the elevation model list with the operator's own
+  models (they are listed in `terrain` and served as the same tiles), the
+  elevation credit with the height at the centre. Still to do: buildings, the
+  sky and haze, and the rail button that opens the panel (`maprail.rs`).
 - **Switching it on.** `Map::set_three_d`; the rail button calls it.
 
 ## Looking like the web interface

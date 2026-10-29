@@ -57,6 +57,7 @@ mod stream;
 mod style;
 mod telemetry;
 mod terrain;
+mod threed_panel;
 mod term_emu;
 mod term_view;
 mod tile_cache;

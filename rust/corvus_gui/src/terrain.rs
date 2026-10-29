@@ -31,6 +31,7 @@ pub struct Spec {
     pub encoding: Encoding,
     pub maxzoom: u8,
     pub usable: bool,
+    pub attribution: String,
 }
 
 /// The models the backend lists.
@@ -57,6 +58,7 @@ pub fn catalogue(sources: &Value) -> Vec<Spec> {
                         },
                         maxzoom: d.get("maxzoom").and_then(Value::as_u64).unwrap_or(15) as u8,
                         usable: !flag("token_required") || flag("token_set"),
+                        attribution: s("attribution"),
                         id,
                     })
                 })
@@ -88,6 +90,33 @@ pub fn choose(sources: &Value, provider: &str, choice: Option<&str>) -> Option<S
         Some(p) => Some(p.clone()),
         None => fallback,
     }
+}
+
+/// The rows of the 3D panel's elevation list: `auto` with what it lands on,
+/// then the usable models with the preferred one first.
+pub fn options(sources: &Value, provider: &str) -> Vec<(String, String)> {
+    let list = catalogue(sources);
+    if list.is_empty() {
+        return Vec::new();
+    }
+    let preferred = sources.get("preferred_terrain").and_then(Value::as_str).unwrap_or("");
+    let auto = choose(sources, provider, None)
+        .map(|d| format!("Automatic ({})", if d.label.is_empty() { &d.id } else { &d.label }))
+        .unwrap_or_else(|| "Automatic".to_string());
+    let mut usable: Vec<&Spec> = list.iter().filter(|d| d.usable).collect();
+    usable.sort_by_key(|d| d.id != preferred);
+    std::iter::once(("auto".to_string(), auto))
+        .chain(usable.into_iter().map(|d| {
+            (
+                d.id.clone(),
+                if d.label.is_empty() {
+                    d.id.clone()
+                } else {
+                    d.label.clone()
+                },
+            )
+        }))
+        .collect()
 }
 
 /// Metres above sea level of one pixel.
@@ -151,12 +180,10 @@ impl Terrain {
     pub fn tile_for(&self, z: u8, x: u32, y: u32) -> Option<(Arc<DemTile>, (f64, f64, f64))> {
         let top = z.min(self.spec.maxzoom);
         let (x, y) = (x >> (z - top), y >> (z - top));
-        for d in 0..=8u8 {
-            if d > top {
-                break;
-            }
+        let coarse = top.min(3);
+        for d in 0..=top.min(12) {
             let key: Key = (self.spec.id.clone(), top - d, x >> d, y >> d);
-            let found = if d == 0 {
+            let found = if d == 0 || d == coarse {
                 self.cache.get(&key)
             } else {
                 self.cache.peek(&key)
@@ -205,6 +232,15 @@ mod tests {
                  "token_required": true, "token_set": true}
             ]
         })
+    }
+
+    #[test]
+    fn the_panel_lists_automatic_first_then_the_usable_models() {
+        let o = options(&sources(), "esri");
+        let ids: Vec<&str> = o.iter().map(|(i, _)| i.as_str()).collect();
+        assert_eq!(ids, ["auto", "copernicus", "terrain", "mapbox_ok"]);
+        assert!(o[0].1.starts_with("Automatic (") && o[0].1.ends_with(')'));
+        assert!(options(&json!({}), "esri").is_empty());
     }
 
     #[test]
