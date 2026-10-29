@@ -600,36 +600,46 @@ impl MotorsPage {
         let ctx = ui.ctx().clone();
         self.take_answers(&ctx, now);
         let armed = state.get("armed") == Some(&Value::Bool(true));
-        let bottom = pagekit::header(
-            ui,
-            x,
-            y,
-            "Motors",
-            "Airframe layout, motor assignment, and output protocol",
-        );
         let reload = Button::new("Reload", Variant::Primary)
             .icon("refresh-cw")
             .small()
             .enabled(self.loading.is_none());
         let (rw, rh) = (reload.width(ui), reload.height());
-        if reload.show(
-            ui,
-            Rect::from_min_size(Pos2::new(x + w - rw, bottom - rh), Vec2::new(rw, rh)),
-            "motorsreload",
-        ) {
-            self.load(&ctx);
-        }
         let color = match self.status.0 {
             "ok" => style::healthy(),
             "err" => style::critical(),
             _ => style::nav(),
         };
         let sg = style::galley(ui, &self.status.1, 11.5, Weight::W400, color, 0.0);
-        ui.painter().galley(
-            Pos2::new(x + w - rw - 10.0 - sg.size().x, bottom - rh / 2.0 - sg.size().y / 2.0),
-            sg,
-            color,
+        let status_w = sg.size().x.min(420.0);
+        let gap = if status_w > 0.0 { 10.0 } else { 0.0 };
+        let actions_w = status_w + gap + rw;
+        // the actions wrap under the title when it would have under 280 px
+        let wrap = w - actions_w - 24.0 < 280.0;
+        let head_w = if wrap { w } else { (w - actions_w - 24.0).min(w) };
+        let head_bottom = pagekit::header_wrapped(
+            ui,
+            x,
+            y,
+            head_w,
+            "Motors",
+            "Airframe layout, motor assignment, and output protocol",
         );
+        let (ay, bottom, reload_x) = if wrap {
+            (head_bottom + 10.0, head_bottom + 12.0 + rh, x + status_w + gap)
+        } else {
+            (head_bottom - rh, head_bottom, x + w - rw)
+        };
+        if reload.show(
+            ui,
+            Rect::from_min_size(Pos2::new(reload_x, ay), Vec2::new(rw, rh)),
+            "motorsreload",
+        ) {
+            self.load(&ctx);
+        }
+        let sx = if wrap { x } else { reload_x - gap - sg.size().x };
+        ui.painter()
+            .galley(Pos2::new(sx, ay + rh / 2.0 - sg.size().y / 2.0), sg, color);
         let mut y = bottom + 26.0;
         if armed {
             let g = kit::wrapped_weight(
@@ -789,7 +799,7 @@ impl MotorsPage {
         let (mut lx, mut ly) = (ix, fy);
         for item in &legend {
             let g = style::galley(ui, item, 10.5, Weight::W400, style::text_3(), 0.0);
-            if lx > ix && lx + g.size().x > ix + fig_w {
+            if lx > ix && lx + g.size().x > ix + if two { fig_w } else { iw } {
                 lx = ix;
                 ly += g.size().y + 3.0;
             }

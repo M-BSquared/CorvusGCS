@@ -14,8 +14,6 @@ use crate::style::{self, Weight};
 use crate::topbar::is_airborne;
 use crate::units::{js_round, js_to_fixed, Units};
 
-/// `--hud-w`.
-pub const WIDTH: f32 = 320.0;
 const PAD: f32 = 8.0;
 const DIAL_GAP: f32 = 10.0;
 /// Pixels per degree of pitch, in viewBox units.
@@ -159,20 +157,43 @@ impl Hud {
         (next, !done)
     }
 
-    /// The panel's height for the dial width the CSS gives it.
-    pub fn height(ui: &egui::Ui) -> f32 {
-        let dial = (WIDTH - 2.0 * PAD - DIAL_GAP) / 2.0;
+    /// The panel's height for the dial width the CSS gives it. Under 601 the
+    /// two instruments stack, each as wide as the panel.
+    pub fn height(ui: &egui::Ui, width: f32, single: bool) -> f32 {
         let readout = readout_height(ui);
         let cell = cell_height(ui);
-        PAD + dial + 5.0 + readout + 10.0 + 1.0 + 3.0 * cell + 2.0 + 1.0 + 3.0 + PAD
+        let block = |dial: f32| dial + 5.0 + readout;
+        let instruments = if single {
+            2.0 * block(width - 2.0 * PAD - 2.0) + DIAL_GAP
+        } else {
+            block((width - 2.0 * PAD - DIAL_GAP) / 2.0)
+        };
+        PAD + instruments + 10.0 + 1.0 + 3.0 * cell + 2.0 + 1.0 + 3.0 + PAD
     }
 
-    /// Draws the panel with its bottom right corner at `corner`.
-    pub fn show(&mut self, ui: &mut egui::Ui, corner: Pos2, state: &Value, units: &Units, now: f64) {
-        let size = Vec2::new(WIDTH, Hud::height(ui));
+    /// Draws the panel with its bottom right corner at `corner`, `width`
+    /// wide (`--hud-w`).
+    #[allow(clippy::too_many_arguments)]
+    pub fn show(
+        &mut self,
+        ui: &mut egui::Ui,
+        corner: Pos2,
+        state: &Value,
+        units: &Units,
+        now: f64,
+        width: f32,
+        single: bool,
+    ) {
+        let size = Vec2::new(width, Hud::height(ui, width, single));
         let rect = Rect::from_min_size(corner - size, size);
         let painter = ui.painter().clone();
-        let top = ((WIDTH - 26.0) / 4.0 + 8.0).round() as u8;
+        // --hud-corner: a quarter of the dial row, or the radius and 14 px
+        // when the instruments stack
+        let top = if single {
+            (f32::from(style::RADIUS) + 14.0).round() as u8
+        } else {
+            ((width - 26.0) / 4.0 + 8.0).round() as u8
+        };
         let radius = CornerRadius {
             nw: top,
             ne: top,
@@ -189,9 +210,17 @@ impl Hud {
             ui.ctx().request_repaint();
         }
 
-        let dial = (WIDTH - 2.0 * PAD - DIAL_GAP) / 2.0;
+        let dial = if single {
+            width - 2.0 * PAD - 2.0
+        } else {
+            (width - 2.0 * PAD - DIAL_GAP) / 2.0
+        };
         let left = Rect::from_min_size(rect.min + Vec2::splat(PAD), Vec2::splat(dial));
-        let right = left.translate(Vec2::new(dial + DIAL_GAP, 0.0));
+        let right = if single {
+            left.translate(Vec2::new(0.0, dial + 5.0 + readout_height(ui) + DIAL_GAP))
+        } else {
+            left.translate(Vec2::new(dial + DIAL_GAP, 0.0))
+        };
         let shown_h = (js_round(f64::from(norm_angle(h))) as i64) % 360;
         compass(ui, &painter, left, shown_h as f32);
         attitude(ui, &painter, right, p, r);
@@ -206,7 +235,7 @@ impl Hud {
         readout(ui, &painter, left, "HEADING", &format!("{shown_h:03}\u{00B0}"));
         readout(ui, &painter, right, "ATTITUDE", &att);
 
-        let grid_top = left.bottom() + 5.0 + readout_height(ui) + 10.0;
+        let grid_top = right.bottom() + 5.0 + readout_height(ui) + 10.0;
         let grid = Rect::from_min_max(
             Pos2::new(rect.left() + PAD + 3.0, grid_top),
             Pos2::new(rect.right() - PAD - 3.0, rect.bottom() - PAD - 3.0),

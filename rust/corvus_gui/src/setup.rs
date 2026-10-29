@@ -271,8 +271,7 @@ fn head(
     vehicle: Option<&Value>,
     side: impl FnOnce(&mut egui::Ui, f32, f32) -> f32,
 ) -> f32 {
-    let bottom = pagekit::header(ui, x, y, title, subtitle);
-    if let Some(s) = vehicle {
+    let result = if let Some(s) = vehicle {
         let facts = [
             (
                 "Vehicle Type",
@@ -296,7 +295,22 @@ fn head(
         let widths: Vec<f32> = gal.iter().map(|(l, v)| 32.0 + l.size().x.max(v.size().x)).collect();
         let card_w: f32 = widths.iter().sum::<f32>() + 2.0;
         let card_h = 14.0 + 2.0 + gal[0].0.size().y + 2.0 + gal[0].1.size().y;
-        let card = Rect::from_min_size(Pos2::new(x + w - card_w, bottom - card_h), Vec2::new(card_w, card_h));
+        // the card wraps under the title when it would leave it under 280 px
+        let wrap = w - card_w - 24.0 < 280.0;
+        let head_bottom = pagekit::header_wrapped(
+            ui,
+            x,
+            y,
+            if wrap { w } else { (w - card_w - 24.0).min(w) },
+            title,
+            subtitle,
+        );
+        let (card_x, bottom) = if wrap {
+            (x, head_bottom + 10.0 + card_h)
+        } else {
+            (x + w - card_w, head_bottom)
+        };
+        let card = Rect::from_min_size(Pos2::new(card_x, bottom - card_h), Vec2::new(card_w, card_h));
         let p = ui.painter();
         {
             let r = card;
@@ -321,10 +335,13 @@ fn head(
             );
             fx += widths[i];
         }
+        bottom
     } else {
+        let bottom = pagekit::header(ui, x, y, title, subtitle);
         let _ = side(ui, x + w, bottom);
-    }
-    bottom + 26.0
+        bottom
+    };
+    result + 26.0
 }
 
 /// The Parameters actions: Export and Import, which need the file dialogs

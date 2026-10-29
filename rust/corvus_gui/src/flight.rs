@@ -26,6 +26,61 @@ const BAR_PAD: f32 = 7.0;
 const BAR_GAP: f32 = 7.0;
 /// `--fa-w`, every button one width at full size.
 const BTN_W: f32 = 72.0;
+/// `BAR_EDGE`, `BAR_MIN_SCALE`, `BAR_TIGHT_SCALE` of fitBar (ui.js).
+const BAR_EDGE: f32 = 7.0;
+const BAR_MIN_SCALE: f32 = 0.85;
+const BAR_TIGHT_SCALE: f32 = 0.8;
+/// `--map-rail-inset` and `--map-trigger-clear`: where the bar's room ends.
+const TRIGGER_CLEAR: f32 = 154.0;
+
+/// How `fitBar` sets the bar's buttons in the room it has.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Fit {
+    pub width: f32,
+    pub scale: f32,
+    pub compact: bool,
+}
+
+/// `fitBar`: every button one width and one caption size, 72 px at full size
+/// with a long caption set a little smaller; narrower rooms take them all
+/// down together (`is-tight`); icons only when even that will not fit.
+/// `longest` is the widest caption at full size, `others` what the bar holds
+/// besides its buttons, `n` the buttons.
+pub fn fit_bar(longest: f32, others: f32, n: f32, room: f32) -> Fit {
+    let scale_at = |w: f32| ((w - 2.0 * BAR_EDGE) / longest.max(1.0) * 100.0).floor().min(100.0) / 100.0;
+    let (mut width, mut scale) = (BTN_W, scale_at(BTN_W));
+    if scale < BAR_MIN_SCALE {
+        scale = BAR_MIN_SCALE;
+        width = (longest * BAR_MIN_SCALE + 2.0 * BAR_EDGE).ceil();
+    }
+    if others + n * width <= room {
+        return Fit {
+            width,
+            scale,
+            compact: false,
+        };
+    }
+    let mut narrow = ((room - others) / n).floor();
+    for _ in 0..4 {
+        let fits = scale_at(narrow);
+        if fits < BAR_TIGHT_SCALE {
+            break;
+        }
+        if others + n * narrow <= room {
+            return Fit {
+                width: narrow,
+                scale: fits,
+                compact: false,
+            };
+        }
+        narrow -= 1.0;
+    }
+    Fit {
+        width: 35.0,
+        scale: 1.0,
+        compact: true,
+    }
+}
 const TAKEOFF_MIN_M: f64 = 1.0;
 const TAKEOFF_MAX_M: f64 = 120.0;
 const TAKEOFF_SPAN: f64 = 1000.0;
@@ -347,7 +402,22 @@ impl FlightBar {
             true,
         ));
         let n = buttons.len() as f32 + 1.0;
-        let bar_w = BAR_PAD * 2.0 + n * BTN_W + n * BAR_GAP + 5.0 + BAR_GAP + select_w + 2.0;
+        // the room the bar sits in ends where the map's own controls begin
+        let room = area.width() - INSET - TRIGGER_CLEAR;
+        let mut longest = 0.0f32;
+        for c in ["DISARM", "TAKEOFF", "LAND", "RETURN", "PLAN"] {
+            let g = style::galley(ui, c, 10.0, Weight::W600, style::text_2(), 0.6);
+            longest = longest.max(g.size().x);
+        }
+        let fixed = BAR_PAD * 2.0 + n * BAR_GAP + 5.0 + BAR_GAP + select_w + 2.0;
+        let fit = fit_bar(longest, fixed, n, room);
+        let (btn_w, btn_h) = if fit.compact {
+            (fit.width, 1.0 + 9.0 + 17.0 + 9.0 + 1.0)
+        } else {
+            (fit.width, btn_h)
+        };
+        let select_w = if fit.compact { (select_w).max(96.0) } else { select_w };
+        let bar_w = BAR_PAD * 2.0 + n * btn_w + n * BAR_GAP + 5.0 + BAR_GAP + select_w + 2.0;
         let bar_h = BAR_PAD * 2.0 + btn_h + 2.0;
         let bar = Rect::from_min_size(area.min + Vec2::splat(INSET), Vec2::new(bar_w, bar_h));
         let painter = ui.painter().clone();
@@ -358,7 +428,7 @@ impl FlightBar {
         let y = bar.top() + BAR_PAD + 1.0;
         let mut takeoff_anchor = None;
         for (cmd, icon, caption, title, enabled) in &buttons {
-            let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(BTN_W, btn_h));
+            let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(btn_w, btn_h));
             let busy = self.busy(*cmd);
             let clicked = fa_button(
                 ui,
@@ -369,6 +439,7 @@ impl FlightBar {
                 *enabled,
                 busy,
                 *cmd == Command::Arm && armed,
+                (fit.scale, fit.compact),
             );
             if clicked && !busy {
                 match cmd {
@@ -411,10 +482,10 @@ impl FlightBar {
             if matches!(cmd, Command::Takeoff | Command::Land) {
                 takeoff_anchor = Some(r);
             }
-            x += BTN_W + BAR_GAP;
+            x += btn_w + BAR_GAP;
         }
         // PLAN: the fly-to-points planner comes with the planning step.
-        let plan = Rect::from_min_size(Pos2::new(x, y), Vec2::new(BTN_W, btn_h));
+        let plan = Rect::from_min_size(Pos2::new(x, y), Vec2::new(btn_w, btn_h));
         fa_button(
             ui,
             plan,
@@ -424,8 +495,9 @@ impl FlightBar {
             false,
             false,
             false,
+            (fit.scale, fit.compact),
         );
-        x += BTN_W + BAR_GAP;
+        x += btn_w + BAR_GAP;
         // .fa-divider: 1 x 34, margin 0 2
         painter.vline(
             x + 2.0,
@@ -762,6 +834,7 @@ fn fa_button(
     enabled: bool,
     busy: bool,
     armed: bool,
+    (scale, compact): (f32, bool),
 ) -> bool {
     let id = ui.scope_id().with(("fa", caption));
     let sense = if enabled {
@@ -794,20 +867,36 @@ fn fa_button(
     };
     let painter = ui.painter();
     painter.rect_filled(r, style::RADIUS_BTN, fill.gamma_multiply(alpha));
-    let caption_g = style::galley(ui, caption, 10.0, Weight::W600, color.gamma_multiply(alpha), 0.6);
-    let total = 17.0 + 3.0 + caption_g.size().y;
-    let top = r.center().y - total / 2.0;
-    icons::paint(
-        ui,
-        icon,
-        Rect::from_center_size(Pos2::new(r.center().x, top + 8.5), Vec2::splat(17.0)),
-        color.gamma_multiply(alpha),
-    );
-    painter.galley(
-        Pos2::new(r.center().x - caption_g.size().x / 2.0, top + 20.0),
-        caption_g,
-        color.gamma_multiply(alpha),
-    );
+    if compact {
+        icons::paint(
+            ui,
+            icon,
+            Rect::from_center_size(r.center(), Vec2::splat(17.0)),
+            color.gamma_multiply(alpha),
+        );
+    } else {
+        let caption_g = style::galley(
+            ui,
+            caption,
+            10.0 * scale,
+            Weight::W600,
+            color.gamma_multiply(alpha),
+            0.6 * scale,
+        );
+        let total = 17.0 + 3.0 + caption_g.size().y;
+        let top = r.center().y - total / 2.0;
+        icons::paint(
+            ui,
+            icon,
+            Rect::from_center_size(Pos2::new(r.center().x, top + 8.5), Vec2::splat(17.0)),
+            color.gamma_multiply(alpha),
+        );
+        painter.galley(
+            Pos2::new(r.center().x - caption_g.size().x / 2.0, top + 20.0),
+            caption_g,
+            color.gamma_multiply(alpha),
+        );
+    }
     if busy {
         let t = ui.input(|i| i.time) as f32;
         let pulse = 0.675 + 0.325 * (t / 1.6 * std::f32::consts::TAU).cos();
@@ -825,6 +914,40 @@ fn fa_button(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_bar_with_room_keeps_its_72_px_buttons() {
+        let fit = fit_bar(49.0, 190.0, 5.0, 700.0);
+        assert_eq!(
+            fit,
+            Fit {
+                width: 72.0,
+                scale: 1.0,
+                compact: false
+            }
+        );
+    }
+
+    #[test]
+    fn a_long_caption_is_set_smaller_before_the_buttons_widen() {
+        let fit = fit_bar(60.0, 190.0, 5.0, 900.0);
+        assert_eq!((fit.width, fit.scale), (72.0, 0.96));
+        // below the least scale the buttons widen instead
+        let wide = fit_bar(70.0, 190.0, 5.0, 900.0);
+        assert_eq!((wide.width, wide.scale), (74.0, 0.85));
+    }
+
+    #[test]
+    fn a_narrower_room_takes_every_button_down_together() {
+        let fit = fit_bar(49.0, 190.0, 5.0, 520.0);
+        assert_eq!((fit.width, fit.compact), (66.0, false));
+    }
+
+    #[test]
+    fn a_room_that_cannot_hold_the_captions_leaves_icons_only() {
+        let fit = fit_bar(49.0, 190.0, 5.0, 300.0);
+        assert!(fit.compact);
+    }
 
     #[test]
     fn phases_and_the_single_button() {

@@ -47,6 +47,10 @@ pub struct Block {
     pub sub: String,
     pub tone: Tone,
     pub title: String,
+    /// What a bar narrower than 1280 shows instead of `value` (`v-short`).
+    pub short: String,
+    /// The readouts a bar of 600 or less drops (`data-priority="mid"`).
+    pub mid: bool,
 }
 
 pub(crate) fn s<'a>(state: &'a Value, key: &str) -> &'a str {
@@ -203,6 +207,15 @@ pub fn readiness(state: &Value) -> Block {
         sub,
         tone,
         title,
+        short: match value {
+            "KILL SWITCH" => "KILL",
+            "TERMINATED" => "TERM",
+            "NOT READY" => "NO GO",
+            "STANDBY" => "STBY",
+            other => other,
+        }
+        .into(),
+        mid: false,
     };
     if !truthy(state, "connected") {
         return block("—", String::new(), Tone::Off, "No link to a vehicle".into());
@@ -365,6 +378,17 @@ pub fn blocks(state: &Value, units: &Units) -> Vec<Block> {
             sub: fw.0,
             tone: if connected { Tone::Plain } else { Tone::Critical },
             title: fw.1,
+            short: if connected {
+                let ap = s(state, "autopilot");
+                if ap.is_empty() {
+                    vehicle_type_label(s(state, "vehicle_type"))
+                } else {
+                    ap.to_string()
+                }
+            } else {
+                "NO LINK".into()
+            },
+            mid: false,
         },
         Block {
             label: "Mode",
@@ -372,6 +396,8 @@ pub fn blocks(state: &Value, units: &Units) -> Vec<Block> {
             sub: String::new(),
             tone: Tone::Accent,
             title: String::new(),
+            short: String::new(),
+            mid: false,
         },
         readiness(state),
         Block {
@@ -380,6 +406,8 @@ pub fn blocks(state: &Value, units: &Units) -> Vec<Block> {
             sub: if connected { fix_short(gps_fix) } else { String::new() },
             tone: gps_tone,
             title: String::new(),
+            short: String::new(),
+            mid: false,
         },
         Block {
             label: "Battery",
@@ -395,6 +423,8 @@ pub fn blocks(state: &Value, units: &Units) -> Vec<Block> {
             },
             tone: batt_tone,
             title: String::new(),
+            short: String::new(),
+            mid: false,
         },
         Block {
             label: "Altitude",
@@ -406,6 +436,8 @@ pub fn blocks(state: &Value, units: &Units) -> Vec<Block> {
             sub: format!("{} AMSL", units.length.symbol),
             tone: Tone::Plain,
             title: String::new(),
+            short: String::new(),
+            mid: true,
         },
         Block {
             label: "Groundspeed",
@@ -417,6 +449,8 @@ pub fn blocks(state: &Value, units: &Units) -> Vec<Block> {
             sub: units.speed.symbol.into(),
             tone: Tone::Plain,
             title: String::new(),
+            short: String::new(),
+            mid: true,
         },
         Block {
             label: "Vertical speed",
@@ -428,12 +462,11 @@ pub fn blocks(state: &Value, units: &Units) -> Vec<Block> {
             sub: units.speed.symbol.into(),
             tone: Tone::Plain,
             title: String::new(),
+            short: String::new(),
+            mid: true,
         },
     ]
 }
-
-/// The bar's height (`--top-h`).
-pub const HEIGHT: f32 = 60.0;
 
 /// The STATUS tile's tint (`.tb-block[data-tone]`): a pill for the two
 /// states worth recognising by shape on the ground, and for a cut motor.
@@ -451,6 +484,49 @@ fn tile(b: &Block) -> Option<Color32> {
 
 /// Draws the bar into `rect` (the full width, `HEIGHT` tall).
 /// Returns true when the NOTIFICATIONS block was clicked.
+/// `flex-shrink: 1` on every item: each gives up its share of the excess in
+/// proportion to its size, and one that reaches its floor stays there while
+/// the others take its share.
+pub fn shrink(items: &[(f32, f32)], available: f32) -> Vec<f32> {
+    let mut w: Vec<f32> = items.iter().map(|i| i.0).collect();
+    let mut frozen = vec![false; items.len()];
+    for _ in 0..items.len() + 1 {
+        let used: f32 = w.iter().sum();
+        let excess = used - available;
+        if excess <= 0.01 {
+            break;
+        }
+        let basis: f32 = items
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| !frozen[*i])
+            .map(|(_, it)| it.0)
+            .sum();
+        if basis <= 0.0 {
+            break;
+        }
+        let mut again = false;
+        for (i, it) in items.iter().enumerate() {
+            if frozen[i] {
+                continue;
+            }
+            let next = w[i] - excess * it.0 / basis;
+            if next < it.1 {
+                w[i] = it.1;
+                frozen[i] = true;
+                again = true;
+            } else {
+                w[i] = next;
+            }
+        }
+        if !again {
+            break;
+        }
+    }
+    w
+}
+
+#[allow(clippy::too_many_arguments)]
 pub fn show(
     ui: &mut egui::Ui,
     rect: Rect,
@@ -459,6 +535,7 @@ pub fn show(
     cards: &[Option<crate::popover::Content>],
     notifications: &crate::notify::Summary,
     board_open: bool,
+    vw: &crate::responsive::Vw,
 ) -> bool {
     let painter = ui.painter_at(rect);
     // background: linear-gradient(180deg, var(--surface-1), var(--bg))
@@ -476,43 +553,114 @@ pub fn show(
         egui::Stroke::new(1.0, style::border()),
     );
 
-    // .top-bar { padding: 0 12px 0 8px; gap: 2px }; .tb-logo { padding: 0 14px 0 4px; gap: 10px }
-    let mut x = rect.left() + 8.0 + 4.0;
-    let mark = Rect::from_min_size(Pos2::new(x, rect.center().y - 17.0), Vec2::splat(34.0));
-    egui::Image::new(logo.clone()).paint_at(ui, mark);
-    x = mark.right() + 10.0;
+    // .top-bar { padding: 0 12px 0 8px } and 0 6px under 601; gap: 2px
+    let (pad_l, pad_r) = if vw.max600 { (6.0, 6.0) } else { (8.0, 12.0) };
+    let pad_x = if vw.max1279 { 9.0 } else { 12.0 };
+    let value_size = if vw.max1279 { 14.0 } else { 15.0 };
+
+    // what each block says at this width, and what it wants
+    struct Laid<'a> {
+        index: usize,
+        block: &'a Block,
+        label: std::sync::Arc<egui::Galley>,
+        value: std::sync::Arc<egui::Galley>,
+        sub: Option<std::sync::Arc<egui::Galley>>,
+    }
+    let laid: Vec<Laid> = blocks
+        .iter()
+        .enumerate()
+        .filter(|(_, b)| !(vw.max600 && b.mid))
+        .map(|(index, b)| {
+            let text = if vw.max1279 && !b.short.is_empty() {
+                &b.short
+            } else {
+                &b.value
+            };
+            Laid {
+                index,
+                block: b,
+                label: style::galley(ui, &b.label.to_uppercase(), 9.5, Weight::W600, style::text_3(), 0.9),
+                value: style::galley(ui, text, value_size, Weight::W600, b.tone.color(), 0.0),
+                sub: (!b.sub.is_empty()).then(|| style::galley(ui, &b.sub, 11.0, Weight::W500, style::text_2(), 0.0)),
+            }
+        })
+        .collect();
+    let natural = |l: &Laid| {
+        let value_w = l.value.size().x + l.sub.as_ref().map_or(0.0, |s| 5.0 + s.size().x);
+        l.label.size().x.max(value_w) + 2.0 * pad_x
+    };
+
+    // the brand: mark, name and, above 600, the line under it
     let name = style::galley(ui, "CORVUS", 15.0, Weight::W700, style::text_1(), 1.4);
     let sub = style::galley(ui, "GROUND CONTROL", 9.0, Weight::W600, style::text_3(), 1.6);
-    // line-height: 1, so each line is its font size tall; 3px between.
-    let text_h = 15.0 + 3.0 + 9.0;
-    let top = rect.center().y - text_h / 2.0;
-    painter.galley(
-        Pos2::new(x, top + (15.0 - name.size().y) / 2.0),
-        name.clone(),
-        style::text_1(),
-    );
-    painter.galley(
-        Pos2::new(x, top + 18.0 + (9.0 - sub.size().y) / 2.0),
-        sub.clone(),
-        style::text_3(),
-    );
-    x += name.size().x.max(sub.size().x) + 14.0;
-    painter.vline(x - 0.5, rect.y_range(), egui::Stroke::new(1.0, style::border_soft()));
-    // .tb-logo { margin-right: 6px } and the bar's 2px gap
-    x += 6.0 + 2.0;
+    let sub_part = |ui: &egui::Ui, word: &str| style::galley(ui, word, 9.0, Weight::W600, style::text_3(), 1.6);
+    let chrome = 4.0 + 34.0 + 10.0 + 14.0 + 1.0;
+    let logo_natural = chrome + name.size().x.max(if vw.max600 { 0.0 } else { sub.size().x });
+    let logo_min = chrome + name.size().x;
 
-    for (i, b) in blocks.iter().enumerate() {
-        if i > 0 {
+    let notif_w = crate::notify_ui::block_width(ui, notifications);
+    let mut items: Vec<(f32, f32)> = vec![(logo_natural, logo_min)];
+    items.extend(laid.iter().map(|l| (natural(l), 0.0)));
+    items.push((notif_w, 0.0));
+    // between the items: the 2 px gap, the brand's 6 px margin, the 1 px
+    // margin between two blocks, and the 3 px the notifications block sits off
+    let gaps = 2.0 * (items.len() as f32 - 1.0) + 6.0 + laid.len().saturating_sub(1) as f32;
+    let available = (rect.width() - pad_l - pad_r - gaps).max(0.0);
+    let widths = shrink(&items, available);
+
+    let mut x = rect.left() + pad_l;
+    let brand = Rect::from_min_size(Pos2::new(x, rect.top()), Vec2::new(widths[0], rect.height() - 1.0));
+    {
+        let bp = ui.painter_at(brand);
+        let mark = Rect::from_min_size(Pos2::new(x + 4.0, rect.center().y - 17.0), Vec2::splat(34.0));
+        egui::Image::new(logo.clone()).paint_at(ui, mark);
+        let tx = mark.right() + 10.0;
+        let text_w = (widths[0] - chrome).max(0.0);
+        // line-height: 1, so each line is its font size tall; 3 px between.
+        let lines: Vec<std::sync::Arc<egui::Galley>> = if vw.max600 {
+            Vec::new()
+        } else if sub.size().x <= text_w + 0.5 {
+            vec![sub.clone()]
+        } else {
+            vec![sub_part(ui, "GROUND"), sub_part(ui, "CONTROL")]
+        };
+        let sub_h = if lines.is_empty() {
+            0.0
+        } else {
+            3.0 + 9.0 * lines.len() as f32
+        };
+        let text_h = 15.0 + sub_h;
+        let top = rect.center().y - text_h / 2.0;
+        bp.galley(
+            Pos2::new(tx, top + (15.0 - name.size().y) / 2.0),
+            name.clone(),
+            style::text_1(),
+        );
+        for (k, g) in lines.iter().enumerate() {
+            bp.galley(
+                Pos2::new(tx, top + 18.0 + 9.0 * k as f32 + (9.0 - g.size().y) / 2.0),
+                g.clone(),
+                style::text_3(),
+            );
+        }
+        painter.vline(
+            brand.right() - 0.5,
+            rect.y_range(),
+            egui::Stroke::new(1.0, style::border_soft()),
+        );
+    }
+    x = brand.right() + 6.0 + 2.0;
+
+    for (n, l) in laid.iter().enumerate() {
+        if n > 0 {
             x += 2.0 + 1.0;
         }
-        let label = style::galley(ui, &b.label.to_uppercase(), 9.5, Weight::W600, style::text_3(), 0.9);
-        let value = style::galley(ui, &b.value, 15.0, Weight::W600, b.tone.color(), 0.0);
-        let sub = (!b.sub.is_empty()).then(|| style::galley(ui, &b.sub, 11.0, Weight::W500, style::text_2(), 0.0));
-        let value_w = value.size().x + sub.as_ref().map_or(0.0, |s| 5.0 + s.size().x);
-        let w = label.size().x.max(value_w) + 24.0;
+        let b = l.block;
+        let w = widths[1 + n];
         let block = Rect::from_min_max(Pos2::new(x, rect.top()), Pos2::new(x + w, rect.bottom() - 1.0));
-        let id = ui.scope_id().with(("tb", i));
-        let card = cards.get(i).and_then(|c| c.as_ref());
+        let clip = ui.painter_at(block);
+        let card = cards.get(l.index).and_then(|c| c.as_ref());
+        let id = ui.scope_id().with(("tb", l.index));
         let response = ui.interact(
             block,
             id,
@@ -529,20 +677,20 @@ pub fn show(
             painter.rect_filled(block, 0, fill);
         }
         // label 9.5px + 2px margin, value line-height 1.1
-        let label_h = label.size().y;
-        let value_h = 15.0 * 1.1;
+        let label_h = l.label.size().y;
+        let value_h = value_size * 1.1;
         let top = block.center().y - (label_h + 2.0 + value_h) / 2.0;
-        painter.galley(Pos2::new(x + 12.0, top), label, style::text_3());
+        clip.galley(Pos2::new(x + pad_x, top), l.label.clone(), style::text_3());
         let base = top + label_h + 2.0;
-        let vy = base + (value_h - value.size().y) / 2.0;
-        painter.galley(Pos2::new(x + 12.0, vy), value.clone(), b.tone.color());
-        if let Some(sub) = sub {
+        let vy = base + (value_h - l.value.size().y) / 2.0;
+        clip.galley(Pos2::new(x + pad_x, vy), l.value.clone(), b.tone.color());
+        if let Some(sub) = &l.sub {
             // align-items: baseline
-            let ascent_gap = value.rows.first().map_or(0.0, |r| r.row.height()) * 0.8
+            let ascent_gap = l.value.rows.first().map_or(0.0, |r| r.row.height()) * 0.8
                 - sub.rows.first().map_or(0.0, |r| r.row.height()) * 0.8;
-            painter.galley(
-                Pos2::new(x + 12.0 + value.size().x + 5.0, vy + ascent_gap),
-                sub,
+            clip.galley(
+                Pos2::new(x + pad_x + l.value.size().x + 5.0, vy + ascent_gap),
+                sub.clone(),
                 style::text_2(),
             );
         }
@@ -559,7 +707,14 @@ pub fn show(
         x += w;
     }
     // The NOTIFICATIONS block closes the row, as the last of blocks().
-    let (_, clicked) = crate::notify_ui::block(ui, rect, x + 3.0, notifications, board_open);
+    let (_, clicked) = crate::notify_ui::block(
+        ui,
+        rect,
+        x + 3.0 - 1.0 + 1.0,
+        notifications,
+        board_open,
+        Some(widths[widths.len() - 1]),
+    );
     clicked
 }
 

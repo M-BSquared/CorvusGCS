@@ -34,6 +34,7 @@ mod pagekit;
 mod panel;
 mod params;
 mod popover;
+mod responsive;
 mod safety;
 mod schema_form;
 mod sensor_view;

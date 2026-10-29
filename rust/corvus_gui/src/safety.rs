@@ -682,12 +682,34 @@ impl SafetyPage {
             .size()
             .x
             .min(420.0);
-        let head_w = (w - (status_w + 10.0 + rw + 10.0 + cw) - 24.0).max(280.0).min(w);
-        let bottom = pagekit::header_wrapped(ui, x, y, head_w, &title, &subtitle);
-        let mut left = x + w - cw;
+        let status_gap = if status_w > 0.0 { 10.0 } else { 0.0 };
+        let actions_w = status_w + status_gap + rw + 10.0 + cw;
+        // the title row, its actions wrapping under it when the title would
+        // be left less than 280 px (.setup-head: flex-wrap, header 1 1 280px)
+        let wrap = w - actions_w - 24.0 < 280.0;
+        let head_w = if wrap { w } else { (w - actions_w - 24.0).min(w) };
+        let head_bottom = pagekit::header_wrapped(ui, x, y, head_w, &title, &subtitle);
+        let (ay, bottom) = if wrap {
+            (head_bottom + 10.0, head_bottom + 12.0 + rh)
+        } else {
+            (head_bottom - rh, head_bottom)
+        };
+        let sg_color = match self.status.0 {
+            "ok" => style::healthy(),
+            "err" => style::critical(),
+            _ => style::nav(),
+        };
+        let sg = style::galley(ui, &self.status.1, 11.5, Weight::W400, sg_color, 0.0);
+        let (status_x, reload_x, check_x) = if wrap {
+            (x, x + status_w + status_gap, x + status_w + status_gap + rw + 10.0)
+        } else {
+            let check_x = x + w - cw;
+            let reload_x = check_x - 10.0 - rw;
+            (reload_x - 10.0 - sg.size().x, reload_x, check_x)
+        };
         if check_btn.show(
             ui,
-            Rect::from_min_size(Pos2::new(left, bottom - rh), Vec2::new(cw, rh)),
+            Rect::from_min_size(Pos2::new(check_x, ay), Vec2::new(cw, rh)),
             "safetycheck",
         ) {
             if let Some(doc) = &self.doc {
@@ -708,26 +730,16 @@ impl SafetyPage {
                 self.check.start(&ctx, &self.server, &wanted, names);
             }
         }
-        left -= 10.0 + rw;
         if reload.show(
             ui,
-            Rect::from_min_size(Pos2::new(left, bottom - rh), Vec2::new(rw, rh)),
+            Rect::from_min_size(Pos2::new(reload_x, ay), Vec2::new(rw, rh)),
             "safetyreload",
         ) {
             self.check_card = None;
             self.load(&ctx);
         }
-        let color = match self.status.0 {
-            "ok" => style::healthy(),
-            "err" => style::critical(),
-            _ => style::nav(),
-        };
-        let sg = style::galley(ui, &self.status.1, 11.5, Weight::W400, color, 0.0);
-        ui.painter().galley(
-            Pos2::new(left - 10.0 - sg.size().x, bottom - rh / 2.0 - sg.size().y / 2.0),
-            sg,
-            color,
-        );
+        ui.painter()
+            .galley(Pos2::new(status_x, ay + rh / 2.0 - sg.size().y / 2.0), sg, sg_color);
         let mut y = bottom + 26.0;
         if armed {
             let g = kit::wrapped_weight(

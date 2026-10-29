@@ -77,7 +77,7 @@ pub fn slots(mission: bool) -> Vec<Slot> {
 }
 
 /// Draws the rail into `rect`; returns the page clicked, if any.
-pub fn show(ui: &mut egui::Ui, rect: Rect, mission: bool, active: Page) -> Option<Page> {
+pub fn show(ui: &mut egui::Ui, rect: Rect, mission: bool, active: Page, labels: bool) -> Option<Page> {
     let painter = ui.painter_at(rect);
     painter.rect_filled(rect, 0, style::surface_1());
     painter.vline(
@@ -134,18 +134,23 @@ pub fn show(ui: &mut egui::Ui, rect: Rect, mission: bool, active: Page) -> Optio
                     painter.rect_filled(bar, 2, style::accent());
                 }
                 let (label, icon) = page.item();
-                let g = style::galley(ui, label, 9.0, Weight::W600, label_c, 0.7);
-                // the icon is 16 px: ui.icon writes it inline, over the 21 px
-                // of the stylesheet
-                let total = 16.0 + 4.0 + g.size().y;
-                let top = r.center().y - total / 2.0;
-                icons::paint(
-                    ui,
-                    icon,
-                    Rect::from_min_size(Pos2::new(r.center().x - 8.0, top), Vec2::splat(16.0)),
-                    icon_c,
-                );
-                painter.galley(Pos2::new(r.center().x - g.size().x / 2.0, top + 20.0), g, label_c);
+                // under 1280 the labels fold away and the icon is centred
+                if labels {
+                    let g = style::galley(ui, label, 9.0, Weight::W600, label_c, 0.7);
+                    // the icon is 16 px: ui.icon writes it inline, over the 21 px
+                    // of the stylesheet
+                    let total = 16.0 + 4.0 + g.size().y;
+                    let top = r.center().y - total / 2.0;
+                    icons::paint(
+                        ui,
+                        icon,
+                        Rect::from_min_size(Pos2::new(r.center().x - 8.0, top), Vec2::splat(16.0)),
+                        icon_c,
+                    );
+                    painter.galley(Pos2::new(r.center().x - g.size().x / 2.0, top + 20.0), g, label_c);
+                } else {
+                    icons::paint(ui, icon, Rect::from_center_size(r.center(), Vec2::splat(16.0)), icon_c);
+                }
                 if resp.clicked() {
                     clicked = Some(page);
                 }

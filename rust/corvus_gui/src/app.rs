@@ -72,14 +72,15 @@ impl App {
         }
         let summary = self.board.summary(now);
 
+        let vw = crate::responsive::Vw::of(ui.ctx());
         let blocks = topbar::blocks(&state, &self.units);
         let cards = topbar_cards::all(&state, &self.units, &mut self.top_speeds);
         egui::Panel::top("topbar")
-            .exact_size(topbar::HEIGHT)
+            .exact_size(vw.top_height())
             .frame(egui::Frame::NONE)
             .show(ui, |ui| {
                 let rect = ui.max_rect();
-                if topbar::show(ui, rect, &self.logo, &blocks, &cards, &summary, self.board.open) {
+                if topbar::show(ui, rect, &self.logo, &blocks, &cards, &summary, self.board.open, &vw) {
                     let open = !self.board.open;
                     self.board.set_open(open, now);
                 }
@@ -89,7 +90,8 @@ impl App {
             .show(ui, |ui| {
                 let body = ui.max_rect();
                 let rail = egui::Rect::from_min_size(body.min, egui::vec2(nav::WIDTH, body.height()));
-                let panel_w = self.panel.current_width();
+                self.panel.follow_window(&vw);
+                let panel_w = self.panel.current_width(&vw);
                 let panel = egui::Rect::from_min_max(egui::pos2(body.right() - panel_w, body.top()), body.max);
                 let main = egui::Rect::from_min_max(
                     egui::pos2(rail.right(), body.top()),
@@ -99,8 +101,10 @@ impl App {
                     let mut map_ui = ui.new_child(egui::UiBuilder::new().max_rect(main));
                     map_ui.set_clip_rect(main);
                     self.map.show(&mut map_ui, &state);
-                    let corner = main.max - egui::vec2(16.0, 16.0);
-                    self.hud.show(&mut map_ui, corner, &state, &self.units, now);
+                    let inset = if vw.max959 { 12.0 } else { 16.0 };
+                    let corner = main.max - egui::vec2(inset, inset);
+                    self.hud
+                        .show(&mut map_ui, corner, &state, &self.units, now, vw.hud_width(), vw.max600);
                     self.rail.show(&mut map_ui, main, &mut self.map, &state);
                     self.flight.show(&mut map_ui, main, &state, &self.units);
                 } else if self.page == Page::Setup {
@@ -108,7 +112,7 @@ impl App {
                 } else {
                     nav::placeholder(ui, main, self.page);
                 }
-                if let Some(page) = nav::show(ui, rail, self.mission_page, self.page) {
+                if let Some(page) = nav::show(ui, rail, self.mission_page, self.page, !vw.max1279) {
                     if page == Page::Setup && self.page == Page::Setup {
                         self.setup.reset();
                     }
@@ -119,8 +123,8 @@ impl App {
                 self.panel.show(&mut panel_ui, panel, &state);
             });
         let screen = ui.ctx().content_rect();
-        let below = notify_ui::board(ui.ctx(), screen, screen.top() + topbar::HEIGHT, &mut self.board, now);
-        let toasts_top = below.map_or(screen.top() + topbar::HEIGHT + 10.0, |b| b + 10.0);
+        let below = notify_ui::board(ui.ctx(), screen, screen.top() + vw.top_height(), &mut self.board, now);
+        let toasts_top = below.map_or(screen.top() + vw.top_height() + 10.0, |b| b + 10.0);
         notify_ui::toasts(ui.ctx(), screen, toasts_top, &mut self.board);
         // The flight clock ticks while airborne, and toasts expire.
         ui.ctx().request_repaint_after(std::time::Duration::from_millis(250));
@@ -255,6 +259,14 @@ pub fn unwrap_config(answer: &Value) -> Value {
 }
 
 /// Opens the window on `server` and runs until it is closed.
+/// `CORVUS_GUI_SIZE=w,h` opens the window at that size, below the usual
+/// floor too, to look at the narrow layouts.
+fn window_size() -> Option<[f32; 2]> {
+    let v = std::env::var("CORVUS_GUI_SIZE").ok()?;
+    let (w, h) = v.split_once(',')?;
+    Some([w.trim().parse().ok()?, h.trim().parse().ok()?])
+}
+
 pub fn run(
     server: Server,
     context: &'static OnceLock<egui::Context>,
@@ -297,8 +309,12 @@ pub fn run(
         renderer: eframe::Renderer::Glow,
         viewport: egui::ViewportBuilder::default()
             .with_title(title(&server))
-            .with_inner_size([1440.0, 900.0])
-            .with_min_inner_size([800.0, 500.0]),
+            .with_inner_size(window_size().unwrap_or([1440.0, 900.0]))
+            .with_min_inner_size(if window_size().is_some() {
+                [320.0, 300.0]
+            } else {
+                [800.0, 500.0]
+            }),
         ..Default::default()
     };
     let result = eframe::run_native(

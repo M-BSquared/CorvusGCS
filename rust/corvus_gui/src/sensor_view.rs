@@ -279,6 +279,9 @@ pub fn status_box(
     let cap = caption_h(ui);
     let row_top = cy;
     let mut px = ix;
+    // under 721 the pickers stack, each as wide as the box
+    let narrow = crate::responsive::Vw::of(ui.ctx()).max720;
+    let mut fy = row_top;
     let mut repick = false;
     if !t.drivers.is_empty() {
         let choices: Vec<Choice> = t
@@ -295,9 +298,14 @@ pub fn status_box(
                 )
             })
             .collect();
-        let sw = select_width(ui, &choices, 220.0, 340.0, iw);
-        caption(ui, px, row_top, "Sensor");
-        let r = Rect::from_min_size(Pos2::new(px, row_top + cap), Vec2::new(sw, SELECT_H));
+        let sw = if narrow {
+            iw
+        } else {
+            select_width(ui, &choices, 220.0, 340.0, iw)
+        };
+        let (fx, top) = if narrow { (ix, fy) } else { (px, row_top) };
+        caption(ui, fx, top, "Sensor");
+        let r = Rect::from_min_size(Pos2::new(fx, top + cap), Vec2::new(sw, SELECT_H));
         if let Some(v) = pick(
             ui,
             r,
@@ -313,6 +321,7 @@ pub fn status_box(
             }
         }
         px += sw + 12.0;
+        fy += cap + SELECT_H + 12.0;
     }
     if !t.ports.is_empty() && picked.as_ref().is_some_and(|d| d.serial) {
         let choices: Vec<Choice> = t
@@ -320,10 +329,15 @@ pub fn status_box(
             .iter()
             .map(|p| Choice::new(p.value.clone(), p.label.clone()))
             .collect();
-        let sw = select_width(ui, &choices, 150.0, 300.0, iw);
+        let sw = if narrow {
+            iw
+        } else {
+            select_width(ui, &choices, 150.0, 300.0, iw)
+        };
         let port = st.port_text(sid, t);
-        caption(ui, px, row_top, "Serial port");
-        let r = Rect::from_min_size(Pos2::new(px, row_top + cap), Vec2::new(sw, SELECT_H));
+        let (fx, top) = if narrow { (ix, fy) } else { (px, row_top) };
+        caption(ui, fx, top, "Serial port");
+        let r = Rect::from_min_size(Pos2::new(fx, top + cap), Vec2::new(sw, SELECT_H));
         if let Some(v) = pick(
             ui,
             r,
@@ -339,6 +353,7 @@ pub fn status_box(
             }
         }
         px += sw + 12.0;
+        fy += cap + SELECT_H + 12.0;
     }
     if repick {
         // A driver that cannot be set up from here, or a port something else
@@ -364,13 +379,18 @@ pub fn status_box(
     }
     if !st.status.1.is_empty() {
         let g = style::galley(ui, &st.status.1, 10.5, Weight::W400, status_color(st.status.0), 0.0);
-        painter.galley(
-            Pos2::new(px, row_top + cap + (SELECT_H - g.size().y) / 2.0),
-            g,
-            status_color(st.status.0),
-        );
+        let at = if narrow {
+            Pos2::new(ix, fy)
+        } else {
+            Pos2::new(px, row_top + cap + (SELECT_H - g.size().y) / 2.0)
+        };
+        painter.galley(at, g, status_color(st.status.0));
     }
-    cy = row_top + cap + SELECT_H;
+    cy = if narrow {
+        fy - 12.0 + if st.status.1.is_empty() { 0.0 } else { 12.0 + 13.0 }
+    } else {
+        row_top + cap + SELECT_H
+    };
 
     if let Some(d) = &picked {
         if !d.wiring.is_empty() {
@@ -499,7 +519,11 @@ pub fn hardware_body(
     let chosen = st.preset_choice(sid, presets);
     let cap = caption_h(ui);
     caption(ui, x, cy, "Module");
-    let sw = select_width(ui, &choices, 280.0, 460.0, w);
+    let sw = if crate::responsive::Vw::of(ui.ctx()).max720 {
+        w
+    } else {
+        select_width(ui, &choices, 280.0, 460.0, w)
+    };
     let r = Rect::from_min_size(Pos2::new(x, cy + cap), Vec2::new(sw, SELECT_H));
     if let Some(v) = pick(
         ui,

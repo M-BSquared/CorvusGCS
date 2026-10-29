@@ -17,8 +17,7 @@ use crate::kit::{self, Button, Variant};
 use crate::link::{self, LinkTab};
 use crate::style::{self, Weight};
 
-/// `--panel-w`, and the grip's range.
-pub const DEFAULT_WIDTH: f32 = 380.0;
+/// The grip's range.
 const MIN_WIDTH: f32 = 320.0;
 const MAX_WIDTH: f32 = 560.0;
 /// `--panel-w-collapsed`: the handle alone.
@@ -61,8 +60,11 @@ pub fn tabs(console: bool, ssh: bool) -> Vec<Tab> {
 /// The panel's state.
 pub struct Panel {
     server: Server,
-    pub width: f32,
+    /// The width the operator dragged it to, when they did; else `--panel-w`.
+    pub width: Option<f32>,
     pub collapsed: bool,
+    /// The handle was pressed: the window width no longer folds it.
+    pub user_toggled: bool,
     active: Tab,
     pub console_tab: bool,
     pub ssh_tab: bool,
@@ -85,8 +87,9 @@ impl Panel {
             link: LinkTab::new(server.clone(), ctx),
             console: ConsoleTab::new(server.clone(), ctx),
             server,
-            width: DEFAULT_WIDTH,
+            width: None,
             collapsed: false,
+            user_toggled: false,
             active: Tab::Link,
             console_tab: flag("console_tab"),
             ssh_tab: flag("ssh_tab"),
@@ -96,11 +99,24 @@ impl Panel {
     }
 
     /// The width the panel takes from the window now.
-    pub fn current_width(&self) -> f32 {
+    pub fn current_width(&self, vw: &crate::responsive::Vw) -> f32 {
         if self.collapsed {
             HANDLE
         } else {
-            self.width
+            self.width.unwrap_or_else(|| vw.panel_width())
+        }
+    }
+
+    /// `app.js`: under 960 the panel folds, from 1280 it opens again, unless
+    /// the operator has pressed its handle.
+    pub fn follow_window(&mut self, vw: &crate::responsive::Vw) {
+        if self.user_toggled {
+            return;
+        }
+        if vw.width < 960.0 && !self.collapsed {
+            self.collapsed = true;
+        } else if vw.width >= 1280.0 && self.collapsed {
+            self.collapsed = false;
         }
     }
 
@@ -153,6 +169,7 @@ impl Panel {
         );
         if hresp.clicked() {
             self.collapsed = !self.collapsed;
+            self.user_toggled = true;
         }
         if self.collapsed {
             return;
@@ -170,10 +187,11 @@ impl Panel {
             .on_hover_text("Drag to resize, double click to reset")
             .on_hover_cursor(egui::CursorIcon::ResizeColumn);
         if gresp.dragged() {
-            self.width = (self.width - gresp.drag_delta().x).clamp(MIN_WIDTH, MAX_WIDTH);
+            let now = self.width.unwrap_or(rect.width());
+            self.width = Some((now - gresp.drag_delta().x).clamp(MIN_WIDTH, MAX_WIDTH));
         }
         if gresp.double_clicked() {
-            self.width = DEFAULT_WIDTH;
+            self.width = None;
         }
         if gresp.hovered() || gresp.dragged() {
             ui.painter().vline(

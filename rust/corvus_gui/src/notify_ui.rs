@@ -52,8 +52,25 @@ pub fn pill_color(level: &str) -> Color32 {
 
 /// The NOTIFICATIONS block's content: the pill, centred under the label.
 /// Returns the block's width; `x` is its left edge.
-pub fn block(ui: &mut egui::Ui, bar: Rect, x: f32, summary: &Summary, open: bool) -> (f32, bool) {
-    let painter = ui.painter().clone();
+/// The block's width when nothing squeezes it.
+pub fn block_width(ui: &egui::Ui, summary: &Summary) -> f32 {
+    let label = style::galley(ui, "NOTIFICATIONS", 9.5, Weight::W600, style::text_3(), 0.9);
+    let count = style::galley(
+        ui,
+        &summary.count.to_string(),
+        12.0,
+        Weight::W700,
+        style::text_inverted(),
+        0.0,
+    );
+    let two = style::galley(ui, "00", 12.0, Weight::W700, style::text_inverted(), 0.0)
+        .size()
+        .x;
+    let pill_w = 7.0 + count.size().x.max(two) + 5.0 + 12.0 + 7.0;
+    label.size().x.max(pill_w) + 24.0
+}
+
+pub fn block(ui: &mut egui::Ui, bar: Rect, x: f32, summary: &Summary, open: bool, force_w: Option<f32>) -> (f32, bool) {
     let label = style::galley(ui, "NOTIFICATIONS", 9.5, Weight::W600, style::text_3(), 0.9);
     let count = style::galley(
         ui,
@@ -68,8 +85,9 @@ pub fn block(ui: &mut egui::Ui, bar: Rect, x: f32, summary: &Summary, open: bool
         .size()
         .x;
     let pill_w = 7.0 + count.size().x.max(two) + 5.0 + 12.0 + 7.0;
-    let w = label.size().x.max(pill_w) + 24.0;
+    let w = force_w.unwrap_or(label.size().x.max(pill_w) + 24.0);
     let r = Rect::from_min_max(Pos2::new(x, bar.top()), Pos2::new(x + w, bar.bottom() - 1.0));
+    let painter = ui.painter_at(r);
     let resp = ui.interact(r, ui.scope_id().with("tbwarnings"), egui::Sense::click());
     if resp.hovered() || open {
         painter.rect_filled(r, 0, style::surface_hover());

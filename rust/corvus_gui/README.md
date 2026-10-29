@@ -14,6 +14,7 @@ cargo run --release -- --root DIR --python PATH       # where serve.py is, what 
 cargo run --release -- --page motors --scroll 560     # open on a page (setup, parameters, safety, safety:SENSOR, motors), scrolled
 # looking at it without a hand on the mouse
 CORVUS_GUI_SHOT=out.png cargo run -- --page motors     # save the window's own pixels after 9 s and quit
+CORVUS_GUI_SIZE=700,812 cargo run                      # open at that size, below the usual floor too
 CORVUS_GUI_HOVER=600,50 cargo run                      # hold the pointer there (a hover card, a hint)
 CORVUS_GUI_CLICK=560,310 cargo run -- --page motors    # press there once, at 6 s (an open menu)
 CORVUS_GUI_CLICK="178,472;400,200;enter" cargo run    # several presses, half a second apart; enter is the key
@@ -49,6 +50,7 @@ SIGKILL if it is still there after 8 s. If the window does not close within
 | `src/geofence.rs` | the geofence area the station keeps, its geometry (corners, crossing, area, framing) and the one shared copy (`src/js/geofence.js`) |
 | `src/geofence_card.rs` | the Geofence card: the small map, drawing, dragging and adding corners, upload and removal, the large editor (`src/js/setup-geofence.js`) |
 | `src/landing.rs` | the Landing card: the descent as one bar, the fields beside each stretch, the brackets with their lengths (`landingCard` of `src/js/setup-safety.js`) |
+| `src/responsive.rs` | the width classes of the web (`data-vw`): what folds, shrinks or stacks at 1279, 959, 900, 720 and 600 px (`src/css/responsive.css`) |
 | `src/popover.rs` | the hint icon and the sheet it opens, the cards of the top bar: hover intent, pinning, one at a time, placement (`Corvus.ui.popover`, `infoHint`) |
 | `src/topbar_cards.rs` | the cards behind GPS, Battery, Altitude, Groundspeed and Vertical speed (`src/js/topbar.js`) |
 | `src/checklist.rs` | the preflight checklists: config block, Setup card and the dialog the lists are written in (`src/js/checklist-editor.js`) |

@@ -395,7 +395,10 @@ impl FormState {
                     .iter()
                     .map(|(_, l)| style::galley(ui, l, 12.0, Weight::W400, style::text_1(), 0.0).size().x)
                     .fold(0.0, f32::max);
-                let sw = select_w.unwrap_or(if compact {
+                let narrow_full = !compact && select_w.is_none() && crate::responsive::Vw::of(ctx).max720;
+                let sw = select_w.unwrap_or(if narrow_full {
+                    cw
+                } else if compact {
                     (widest + 7.0 + 24.0 + 2.0).min(cw)
                 } else {
                     (widest + 11.0 + 26.0 + 2.0).clamp(150.0, 300.0).min(cw)
@@ -634,11 +637,17 @@ impl FormState {
                     (widest + 11.0 + 26.0 + 2.0).clamp(150.0, 300.0)
                 }
             };
-            let label_w = (w - 12.0 - natural)
-                .clamp(look.label_min, look.label_max)
-                .min(w * 0.5 + 40.0);
-            let cx = x + label_w + 12.0;
-            let cw = w - label_w - 12.0;
+            // under 721 a row is one column: the label over its control
+            let narrow = crate::responsive::Vw::of(ctx).max720;
+            let label_w = if narrow {
+                w
+            } else {
+                (w - 12.0 - natural)
+                    .clamp(look.label_min, look.label_max)
+                    .min(w * 0.5 + 40.0)
+            };
+            let cx = if narrow { x } else { x + label_w + 12.0 };
+            let cw = if narrow { w } else { w - label_w - 12.0 };
             let pad = look.pad;
             let control_h: f32 = 2.0 + 12.0 + 12.0 * 1.21;
             let hint = (!f.hint.is_empty() && !look.hint_as_info)
@@ -647,10 +656,7 @@ impl FormState {
                 Kind::Bitmask(bits) => Some(bits_height(bits.len(), cw)),
                 _ => None,
             };
-            let row_h = bits_h.unwrap_or(control_h).max(16.0);
-            let h = pad + row_h + hint.as_ref().map_or(0.0, |g| 6.0 + g.size().y) + pad;
-            let top = y + pad;
-            // the label, centred on the control
+            let control_row = bits_h.unwrap_or(control_h).max(16.0);
             let lg = if look.mono_label {
                 ui.painter()
                     .layout(f.label.clone(), style::mono(11.5), style::text_1(), label_w)
@@ -659,11 +665,20 @@ impl FormState {
             };
             let lh = lg.size().y;
             let lw = lg.size().x;
-            painter.galley(Pos2::new(x, top + (row_h - lh) / 2.0), lg, style::text_1());
+            // the label's own line when it sits above the control
+            let above = if narrow { lh + 6.0 } else { 0.0 };
+            let row_h = control_row;
+            let h = pad + above + row_h + hint.as_ref().map_or(0.0, |g| 6.0 + g.size().y) + pad;
+            let top = y + pad + above;
+            let label_y = if narrow { y + pad } else { top + (row_h - lh) / 2.0 };
+            painter.galley(Pos2::new(x, label_y), lg, style::text_1());
             if look.hint_as_info && !f.hint.is_empty() {
                 crate::popover::info(
                     ui,
-                    Pos2::new((x + lw + 5.0 + 8.0).min(x + label_w - 8.0), top + row_h / 2.0),
+                    Pos2::new(
+                        (x + lw + 5.0 + 8.0).min(x + label_w - 8.0),
+                        if narrow { label_y + lh / 2.0 } else { top + row_h / 2.0 },
+                    ),
                     &f.label,
                     &f.hint,
                     ("fi", &f.param),
