@@ -1,0 +1,5 @@
+# eframe 0.37 needs Rust 1.95 or newer. Pinned here, for this crate only, so
+# the default toolchain (and rust/corvus_link) is left as it is.
+[toolchain]
+channel = "1.99"
+components = ["clippy", "rustfmt"]

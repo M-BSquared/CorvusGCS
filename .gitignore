@@ -30,3 +30,6 @@ __pycache__/
 !/plugins/schwalby/
 !/plugins/ssh-launcher/
 !/plugins/vibration/
+
+# cargo's build output for the native interface
+/rust/corvus_gui/target/
