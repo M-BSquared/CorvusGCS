@@ -12,6 +12,7 @@ mod data;
 mod home;
 mod map;
 mod map3d;
+mod mission;
 mod net;
 mod notify;
 mod panel;
