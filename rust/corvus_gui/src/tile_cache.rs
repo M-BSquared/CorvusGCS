@@ -35,7 +35,11 @@ struct Inner<T> {
     queue: VecDeque<Key>,
 }
 
+type PathOf = Arc<dyn Fn(&Key) -> String + Send + Sync>;
+
 struct Shared<T> {
+    path: PathOf,
+    retry: Duration,
     inner: Mutex<Inner<T>>,
     wake: Condvar,
     stop: AtomicBool,
@@ -57,7 +61,30 @@ impl<T: Send + Sync + 'static> TileCache<T> {
         capacity: usize,
         decode: impl Fn(&[u8]) -> Option<T> + Send + Sync + 'static,
     ) -> TileCache<T> {
+        TileCache::with_path(
+            ctx,
+            server,
+            capacity,
+            |k| format!("/api/tiles/{}/{}/{}/{}.png", k.0, k.1, k.2, k.3),
+            RETRY_AFTER,
+            decode,
+        )
+    }
+
+    /// A cache of anything addressed by `(name, z, x, y)`: `path` says where
+    /// the backend serves it and `retry` how long a miss waits before it is
+    /// asked for again.
+    pub fn with_path(
+        ctx: &egui::Context,
+        server: &Server,
+        capacity: usize,
+        path: impl Fn(&Key) -> String + Send + Sync + 'static,
+        retry: Duration,
+        decode: impl Fn(&[u8]) -> Option<T> + Send + Sync + 'static,
+    ) -> TileCache<T> {
         let shared = Arc::new(Shared {
+            path: Arc::new(path),
+            retry,
             inner: Mutex::new(Inner {
                 slots: HashMap::new(),
                 order: VecDeque::new(),
@@ -95,7 +122,7 @@ impl<T: Send + Sync + 'static> TileCache<T> {
                 }
                 return None;
             }
-            Some(Slot::Failed(at)) if at.elapsed() < RETRY_AFTER => return None,
+            Some(Slot::Failed(at)) if at.elapsed() < self.shared.retry => return None,
             _ => {}
         }
         g.slots.insert(key.clone(), Slot::Loading);
@@ -168,7 +195,7 @@ fn worker<T: Send + Sync + 'static>(shared: Arc<Shared<T>>, server: Server, ctx:
                 };
             }
         };
-        let path = format!("/api/tiles/{}/{}/{}/{}.png", key.0, key.1, key.2, key.3);
+        let path = (shared.path)(&key);
         let tile = http::get_bytes(&server, &path).and_then(|b| decode(&b));
         if let Ok(mut g) = shared.inner.lock() {
             if g.slots.contains_key(&key) {

@@ -10,6 +10,7 @@
 mod app;
 mod backend;
 mod bg;
+mod buildings;
 mod camera3d;
 mod check;
 mod checklist;

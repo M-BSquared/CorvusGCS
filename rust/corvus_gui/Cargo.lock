@@ -833,6 +833,7 @@ dependencies = [
  "ctrlc",
  "eframe",
  "egui_extras",
+ "flate2",
  "image",
  "libc",
  "serde_json",

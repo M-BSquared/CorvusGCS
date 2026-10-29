@@ -6,9 +6,10 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use eframe::egui::{self, Color32, Pos2, Rect, Stroke, TextureHandle, TextureOptions, Vec2};
+use eframe::egui::{self, Color32, Mesh, Pos2, Rect, Stroke, TextureHandle, TextureOptions, Vec2};
 
 use crate::bg::Pending;
+use crate::buildings::{self, Building};
 use crate::camera3d::{self, Camera, V3};
 use crate::http;
 use crate::http::Server;
@@ -26,6 +27,8 @@ const IMAGE_CACHE: usize = 600;
 /// `HILLSHADE_EXAGGERATION` of the web map, a little stronger as the shade is
 /// painted into vertex colours here and not drawn as a layer.
 const SHADE: f32 = 0.5;
+/// `GROUND_COLOR`: what the ground is where its imagery has not come.
+const GROUND_COLOR: [u8; 3] = [0x8B, 0x90, 0x81];
 /// The light of MapLibre's hillshade: from 335 degrees, 45 above the ground.
 const LIGHT: [f64; 3] = [-0.2989, 0.6409, std::f64::consts::FRAC_1_SQRT_2];
 
@@ -76,6 +79,9 @@ pub struct Map3d {
     /// The operator's pick, `auto` or an elevation model id.
     pub choice: String,
     saved: Option<Pending<Result<serde_json::Value, String>>>,
+    /// The full 3D: buildings as well as relief (`three_d_detail`).
+    pub full: bool,
+    buildings: Option<TileCache<Vec<Building>>>,
     textures: HashMap<Key, TextureHandle>,
     used: Vec<Key>,
 }
@@ -108,6 +114,8 @@ impl Map3d {
             fallback: None,
             terrain_for: String::new(),
             choice: "auto".to_string(),
+            full: false,
+            buildings: None,
             saved: Some({
                 let s = server.clone();
                 Pending::spawn(ctx, move || http::get_json(&s, "/api/config"))
@@ -156,6 +164,12 @@ impl Map3d {
         let mut changed = false;
         if let Some(r) = self.saved.as_ref().and_then(Pending::take) {
             self.saved = None;
+            if let Some(d) = r.as_ref().ok().and_then(|c| {
+                c.pointer("/config/map/three_d_detail")
+                    .and_then(serde_json::Value::as_str)
+            }) {
+                self.full = d == "full";
+            }
             if let Some(c) = r.ok().and_then(|c| {
                 c.pointer("/config/map/terrain_source")
                     .and_then(serde_json::Value::as_str)
@@ -204,6 +218,19 @@ impl Map3d {
         });
     }
 
+    /// Chooses relief only or relief with buildings, and keeps it.
+    pub fn set_full(&mut self, on: bool) {
+        if self.full == on {
+            return;
+        }
+        self.full = on;
+        let s = self.server.clone();
+        let body = serde_json::json!({"map": {"three_d_detail": if on { "full" } else { "simple" }}});
+        std::thread::spawn(move || {
+            let _ = http::post_json(&s, "/api/config", &body);
+        });
+    }
+
     /// The model in use, for the credit.
     pub fn terrain_credit(&self) -> Option<&str> {
         self.terrain
@@ -221,11 +248,11 @@ impl Map3d {
             .unwrap_or(self.cam.ground)
     }
 
-    /// The tiles that make the ground: split by how big they look.
-    fn leaves(&self) -> Vec<Leaf> {
+    /// The ground the view sees, as east and north metres around the centre:
+    /// the screen corners met with the ground, and past the horizon the
+    /// farthest that is worth drawing.
+    fn ground_box(&self) -> ((f64, f64), (f64, f64)) {
         let c = &self.cam;
-        let k = c.lat.to_radians().cos();
-        let (cx, cy) = camera3d::mercator(c.lng, c.lat);
         let reach = c.distance() * 30.0;
         let mut min = (f64::MAX, f64::MAX);
         let mut max = (f64::MIN, f64::MIN);
@@ -239,6 +266,15 @@ impl Map3d {
             min = (min.0.min(e), min.1.min(n));
             max = (max.0.max(e), max.1.max(n));
         }
+        (min, max)
+    }
+
+    /// The tiles that make the ground: split by how big they look.
+    fn leaves(&self) -> Vec<Leaf> {
+        let c = &self.cam;
+        let k = c.lat.to_radians().cos();
+        let (cx, cy) = camera3d::mercator(c.lng, c.lat);
+        let (min, max) = self.ground_box();
         let z0 = (c.zoom.floor() as i32 - 4).clamp(0, self.max_zoom as i32) as u8;
         let n_tiles = 2f64.powi(z0 as i32);
         let world = 2.0 * std::f64::consts::PI * camera3d::R;
@@ -395,7 +431,12 @@ impl Map3d {
             self.cam.ground = h;
         }
         let painter = ui.painter_at(rect);
-        painter.rect_filled(rect, 0, crate::style::adi_sky().gamma_multiply(0.55));
+        painter.rect_filled(
+            rect,
+            0,
+            Color32::from_rgb(GROUND_COLOR[0], GROUND_COLOR[1], GROUND_COLOR[2]),
+        );
+        let horizon = self.paint_sky(&painter, rect);
         let mut leaves = self.leaves();
         let cam = self.cam;
         let depth = |l: &Leaf| {
@@ -416,15 +457,22 @@ impl Map3d {
         for t in self.terrain.iter().chain(self.fallback.iter()) {
             t.trim();
         }
+        if let Some(y) = horizon {
+            haze(&painter, rect, y);
+        }
+        self.paint_buildings(&painter, origin);
         self.paint_layers(&painter, origin, layers);
         self.paint_credit(ui, rect);
         Input { dragged }
     }
 
     fn draw_leaf(&mut self, ctx: &egui::Context, painter: &egui::Painter, origin: Pos2, l: Leaf) {
-        let Some((tex, uv)) = self.imagery_for(ctx, l) else {
-            return;
-        };
+        let imagery = self.imagery_for(ctx, l);
+        let (tex, uv) = imagery.unwrap_or((
+            egui::TextureId::default(),
+            Rect::from_min_max(egui::epaint::WHITE_UV, egui::epaint::WHITE_UV),
+        ));
+        let plain = imagery.is_none();
         let c = self.cam;
         let k = c.lat.to_radians().cos();
         let (cx, cy) = camera3d::mercator(c.lng, c.lat);
@@ -486,6 +534,16 @@ impl Map3d {
         }
         quads.sort_by(|a, b| b.0.total_cmp(&a.0));
         let mut mesh = egui::Mesh::with_texture(tex);
+        let tint = |shade: f32, plain: bool| {
+            if plain {
+                let [r, g, b] = GROUND_COLOR;
+                let f = |v: u8| (f32::from(v) * shade) as u8;
+                Color32::from_rgb(f(r), f(g), f(b))
+            } else {
+                let g = (shade * 255.0) as u8;
+                Color32::from_rgb(g, g, g)
+            }
+        };
         // Skirts: the edges of a leaf hang down, so a neighbour from another
         // elevation model or another level of detail leaves no crack between.
         let drop = (step * GRID as f64 * 0.05).max(25.0);
@@ -516,11 +574,10 @@ impl Map3d {
             let base = mesh.vertices.len() as u32;
             for (pos, (i, j)) in [(pa, (ai, aj)), (pb, (bi, bj)), (lb, (bi, bj)), (la, (ai, aj))] {
                 let (u, v) = (i as f32 / GRID as f32, j as f32 / GRID as f32);
-                let g = (shade_at(i, j) * 190.0) as u8;
                 mesh.vertices.push(egui::epaint::Vertex {
                     pos,
                     uv: Pos2::new(uv.min.x + u * uv.width(), uv.min.y + v * uv.height()),
-                    color: Color32::from_rgb(g, g, g),
+                    color: tint(shade_at(i, j) * 0.75, plain),
                 });
             }
             mesh.indices
@@ -532,17 +589,89 @@ impl Map3d {
                 let (ii, jj) = (i + di, j + dj);
                 let (pos, _) = pts[jj * (GRID + 1) + ii].expect("a drawn quad has its corners");
                 let (u, v) = (ii as f32 / GRID as f32, jj as f32 / GRID as f32);
-                let g = (shade_at(ii, jj) * 255.0) as u8;
+                let sh = shade_at(ii, jj);
                 mesh.vertices.push(egui::epaint::Vertex {
                     pos,
                     uv: Pos2::new(uv.min.x + u * uv.width(), uv.min.y + v * uv.height()),
-                    color: Color32::from_rgb(g, g, g),
+                    color: tint(sh, plain),
                 });
             }
             mesh.indices
                 .extend([base, base + 1, base + 2, base, base + 2, base + 3]);
         }
         painter.add(egui::Shape::mesh(mesh));
+    }
+
+    /// `setSky`: the sky over the horizon in the theme's own greys. At 60
+    /// degrees the horizon is off the screen and this draws nothing. Returns
+    /// the screen height of the horizon when it is in view.
+    fn paint_sky(&self, painter: &egui::Painter, rect: Rect) -> Option<f32> {
+        let c = &self.cam;
+        let theta = (90.0 - c.pitch).to_radians();
+        let y = (c.size.1 / 2.0 - c.focal() * theta.tan()) as f32;
+        if y <= 0.0 {
+            return None;
+        }
+        let y = y.min(rect.height());
+        let (top, mid, low) = (
+            crate::style::surface_3(),
+            crate::style::surface_3(),
+            crate::style::surface_1(),
+        );
+        let mut m = Mesh::default();
+        let x = [rect.left(), rect.right()];
+        for (t, col) in [(0.0, top), (0.4, mid), (1.0, low)] {
+            let py = rect.top() + y * t;
+            m.colored_vertex(Pos2::new(x[0], py), col);
+            m.colored_vertex(Pos2::new(x[1], py), col);
+        }
+        for i in 0..2u32 {
+            let b = i * 2;
+            m.add_triangle(b, b + 1, b + 2);
+            m.add_triangle(b + 1, b + 3, b + 2);
+        }
+        painter.add(egui::Shape::mesh(m));
+        Some(rect.top() + y)
+    }
+
+    /// The OSM buildings of the cells in view, extruded, when the full 3D is
+    /// on and the zoom is close enough for them to be more than slivers.
+    fn paint_buildings(&mut self, painter: &egui::Painter, origin: Pos2) {
+        if !self.full || self.cam.zoom < buildings::MIN_ZOOM {
+            return;
+        }
+        let (min, max) = self.ground_box();
+        let (w, s) = self.cam.geo_of(min.0, min.1);
+        let (e, n) = self.cam.geo_of(max.0, max.1);
+        let cache = self.buildings.get_or_insert_with(|| {
+            TileCache::with_path(
+                &self.ctx,
+                &self.server,
+                240,
+                |k| format!("/api/buildings/{}/{}/{}.json", k.1, k.2, k.3),
+                std::time::Duration::from_secs(buildings::RETRY_SECS),
+                buildings::decode,
+            )
+        });
+        let mut list: Vec<Arc<Vec<Building>>> = Vec::new();
+        for (x, y) in buildings::cells_in((w, s, e, n), (self.cam.lng, self.cam.lat)) {
+            if let Some(cell) = cache.get(&("b".to_string(), buildings::CELL_Z, x, y)) {
+                list.push(cell);
+            }
+        }
+        cache.trim();
+        let mut drawn: Vec<&Building> = Vec::new();
+        'cells: for cell in &list {
+            for b in cell.iter() {
+                if drawn.len() >= buildings::MAX_DRAWN {
+                    break 'cells;
+                }
+                drawn.push(b);
+            }
+        }
+        let this = &*self;
+        let mesh = buildings::extrude(&this.cam, origin, &drawn, &|lng, lat| this.ground_at(lng, lat));
+        buildings::paint(painter, mesh);
     }
 
     /// The elevation credit and the ground height at the centre, a pill above
@@ -610,6 +739,26 @@ impl Map3d {
             }
         }
     }
+}
+
+/// The fog over the far ground at the horizon (`fog-ground-blend`): a band
+/// that fades from the sky's colour into the ground below it.
+fn haze(painter: &egui::Painter, rect: Rect, horizon: f32) {
+    let band = (rect.height() * 0.12).min(rect.bottom() - horizon);
+    if band <= 1.0 {
+        return;
+    }
+    let fog = crate::style::bg();
+    let mut m = Mesh::default();
+    let top = Color32::from_rgba_unmultiplied(fog.r(), fog.g(), fog.b(), 150);
+    let none = Color32::from_rgba_unmultiplied(fog.r(), fog.g(), fog.b(), 0);
+    for (y, c) in [(horizon, top), (horizon + band, none)] {
+        m.colored_vertex(Pos2::new(rect.left(), y), c);
+        m.colored_vertex(Pos2::new(rect.right(), y), c);
+    }
+    m.add_triangle(0, 1, 2);
+    m.add_triangle(1, 3, 2);
+    painter.add(egui::Shape::mesh(m));
 }
 
 /// The part of ancestor tile at zoom `z` that leaf `l` covers, in texture

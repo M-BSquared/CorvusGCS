@@ -103,6 +103,11 @@ impl Camera {
         (pos, r, u, f)
     }
 
+    /// Where the camera is, in the same metres.
+    pub fn eye(&self) -> V3 {
+        self.basis().0
+    }
+
     /// Metres east, north and up of a position, up from `ground`.
     pub fn local_of(&self, lng: f64, lat: f64, height: f64) -> V3 {
         let (cx, cy) = mercator(self.lng, self.lat);

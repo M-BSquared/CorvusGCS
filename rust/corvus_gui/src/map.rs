@@ -437,9 +437,12 @@ impl Map {
             self.set_three_d(true);
             if let Some(v) = std::env::var("CORVUS_GUI_3D").ok().filter(|v| v.contains(',')) {
                 let n: Vec<f64> = v.split(',').filter_map(|x| x.trim().parse().ok()).collect();
-                if let (3..=4, Some(t)) = (n.len(), self.three.as_mut()) {
+                if let (3..=5, Some(t)) = (n.len(), self.three.as_mut()) {
                     t.start_at(n[0], n[1], n[2], n.get(3).copied().unwrap_or(0.0));
                     self.follow = false;
+                    if let Some(p) = n.get(4) {
+                        t.cam.pitch = *p;
+                    }
                 }
             }
         }

@@ -51,6 +51,7 @@ pub fn show(ui: &mut egui::Ui, anchor: Rect, t: &mut Map3d, sources: &Value) -> 
     );
     let ctx = ui.ctx().clone();
     let mut picked = None;
+    let mut flip = false;
     let mut out = Out::default();
     egui::Area::new(ui.scope_id().with("threed"))
         .order(egui::Order::Foreground)
@@ -61,25 +62,21 @@ pub fn show(ui: &mut egui::Ui, anchor: Rect, t: &mut Map3d, sources: &Value) -> 
             ui.allocate_rect(menu, egui::Sense::hover());
             let x = menu.left() + 5.0;
             let mut y = head(ui, x, menu.top() + 5.0, "3D mode");
-            let lg = style::galley(ui, "Buildings", 12.0, Weight::W600, style::text_3(), 0.0);
+            let lg = style::galley(ui, "Buildings", 12.0, Weight::W600, style::text_1(), 0.0);
             painter.galley(
                 Pos2::new(x + 6.0, y + 2.0 + (22.0 - lg.size().y) / 2.0),
                 lg,
-                style::text_3(),
+                style::text_1(),
             );
-            kit::switch(
+            if kit::switch(
                 ui,
                 Pos2::new(menu.right() - 5.0 - 6.0 - 38.0, y + 2.0),
-                false,
-                false,
+                t.full,
+                true,
                 "threedbuildings",
-            );
-            let sw = Rect::from_min_size(
-                Pos2::new(menu.right() - 5.0 - 6.0 - 38.0, y + 2.0),
-                Vec2::new(38.0, 22.0),
-            );
-            ui.interact(sw, ui.scope_id().with("threedbuildingstip"), egui::Sense::hover())
-                .on_hover_text("Buildings are not in the native 3D view yet");
+            ) {
+                flip = true;
+            }
             y += 2.0 + 22.0 + 6.0;
             let hg = kit::wrapped_weight(ui, HINT, 10.5, Weight::W500, style::text_3(), WIDTH - 22.0, 1.4);
             painter.galley(Pos2::new(x + 6.0, y), hg.clone(), style::text_3());
@@ -117,6 +114,9 @@ pub fn show(ui: &mut egui::Ui, anchor: Rect, t: &mut Map3d, sources: &Value) -> 
         });
     if let Some(id) = picked {
         t.set_choice(&id);
+    }
+    if flip {
+        t.set_full(!t.full);
     }
     out
 }

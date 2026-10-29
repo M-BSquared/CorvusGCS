@@ -18,7 +18,7 @@ CORVUS_GUI_SIZE=700,812 cargo run                      # open at that size, belo
 CORVUS_GUI_HOVER=600,50 cargo run                      # hold the pointer there (a hover card, a hint)
 CORVUS_GUI_CLICK=560,310 cargo run -- --page motors    # press there once, at 6 s (an open menu)
 CORVUS_GUI_CLICK="178,472;400,200;enter" cargo run    # several presses, half a second apart; enter is the key
-CORVUS_GUI_3D=11.5,47.4,13,200 cargo run                 # open the 3D map, here: lng,lat,zoom[,bearing]; 1 alone keeps the view
+CORVUS_GUI_3D=11.5,47.4,13,200,82 cargo run             # open the 3D map, here: lng,lat,zoom[,bearing[,pitch]]; 1 alone keeps the view
 CORVUS_GUI_3D_PANEL=1 CORVUS_GUI_3D=1 cargo run         # with the 3D panel (buildings, elevation models) open
 ```
 
@@ -43,7 +43,7 @@ SIGKILL if it is still there after 8 s. If the window does not close within
 | `src/measure.rs` | the distance tool: great circle distance, bearing and the two click rule (`map-measure.js`) |
 | `src/map_search.rs`, `src/search_card.rs` | the place search: coordinate notations read offline, area names, `/api/geocode`, the box and its list (`map-search.js`) |
 | `src/tiles_model.rs`, `src/tiles_card.rs` | the offline map dialog: tile counts and sizes, the download and its jobs, the areas on this laptop (`tiles.js`) |
-| `src/camera3d.rs`, `src/map3d.rs`, `src/terrain.rs`, `src/tile_cache.rs`, `src/threed_panel.rs` | the 3D map: camera maths, the tilted ground of imagery and elevation tiles with hillshade and skirts, the elevation model choice, the tile cache behind both, and the 3D panel (`src/js/map.js` 3D mode) |
+| `src/camera3d.rs`, `src/map3d.rs`, `src/terrain.rs`, `src/buildings.rs`, `src/tile_cache.rs`, `src/threed_panel.rs` | the 3D map: camera maths, the tilted ground of imagery and elevation tiles with hillshade and skirts, the sky and horizon haze, OSM buildings extruded from the backend's cells, the elevation model choice, the tile cache behind them, and the 3D panel (`src/js/map.js` 3D mode) |
 | `src/track.rs` | the flown track, recorded and smoothed as `src/js/map.js` does |
 | `src/hud.rs` | compass, attitude indicator and readouts (`src/js/instruments.js`) |
 | `src/flight.rs` | the flight bar, takeoff card and mode picker (`src/js/app.js`) |
@@ -107,8 +107,18 @@ renderer of its own, drawn with egui meshes and no GPU code of its own.
   the vehicle, home and track in 3D, drag to pan, ctrl or right drag to turn
   and tilt, wheel to zoom, the elevation model list with the operator's own
   models (they are listed in `terrain` and served as the same tiles), the
-  elevation credit with the height at the centre. Still to do: buildings, the
-  sky and haze, and the rail button that opens the panel (`maprail.rs`).
+  elevation credit with the height at the centre, the sky and a haze band at
+  the horizon (seen from about 70 degrees of tilt), the ground colour where
+  imagery has not come, and the buildings.
+- **Buildings.** The full 3D (the panel's switch, kept as `three_d_detail`)
+  reads the cells of `/api/buildings/15/x/y.json` for the ground in view,
+  nearest first, 36 at most, from zoom 14. A cell the backend has not got yet
+  (`pending`, or `unavailable` offline) is asked for again every 3 s. Walls
+  facing the camera and the roofs go into one mesh, far to near, 6000
+  buildings at most, in the web's slate at 85 percent opacity with each wall
+  darker toward its foot. The cells are gzipped as the backend stores them,
+  which is why `flate2` is a dependency (already in the build through `png`).
+  A building sits on the terrain height at its middle.
 - **Switching it on.** `Map::set_three_d`; the rail button calls it.
 
 ## Looking like the web interface
