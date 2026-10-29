@@ -16,6 +16,7 @@ use serde_json::{json, Value};
 use crate::net::bg::Pending;
 use crate::net::http::{self, Server};
 use crate::net::stream::Stream;
+use crate::ui::field::{Surface, TextField};
 use crate::ui::icons;
 use crate::ui::kit;
 use crate::ui::style::{self, Weight};
@@ -451,46 +452,13 @@ impl ConsoleTab {
     }
 
     fn filter_field(&mut self, ui: &mut egui::Ui, r: Rect) {
-        let id = ui.scope_id().with("cfilter");
-        let focused = ui.memory(|m| m.has_focus(id));
-        let painter = ui.painter().clone();
-        if focused {
-            painter.rect_stroke(
-                r.expand(2.0),
-                style::RADIUS_BTN + 2,
-                Stroke::new(2.0, style::accent_dim()),
-                egui::StrokeKind::Inside,
-            );
-        }
-        {
-            painter.rect_filled(r, style::RADIUS_BTN, style::glass(0.82));
-            painter.rect_stroke(
-                r,
-                style::RADIUS_BTN,
-                Stroke::new(1.0, if focused { style::accent() } else { style::tint(0.09) }),
-                egui::StrokeKind::Inside,
-            );
-        }
-        icons::paint(
-            ui,
-            "search",
-            Rect::from_min_size(Pos2::new(r.left() + 7.0, r.center().y - 6.0), Vec2::splat(12.0)),
-            style::text_3(),
-        );
-        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(Rect::from_min_max(
-            Pos2::new(r.left() + 25.0, r.top()),
-            Pos2::new(r.right() - 8.0, r.bottom()),
-        )));
-        child.add(
-            egui::TextEdit::singleline(&mut self.filter)
-                .id(id)
-                .frame(egui::Frame::NONE)
-                .font(style::font(11.5, Weight::W400))
-                .hint_text(egui::RichText::new("Filter").color(style::text_3()))
-                .align(egui::Align2::LEFT_CENTER)
-                .desired_width(r.width() - 33.0)
-                .min_size(Vec2::new(0.0, r.height())),
-        );
+        TextField::new(&mut self.filter)
+            .surface(Surface::Glass)
+            .hint("Filter")
+            .font(11.5, Weight::W400)
+            .icon("search", 12.0, 7.0, 6.0)
+            .pad(25.0, 8.0)
+            .show(ui, r, "cfilter");
     }
 
     fn visible(&self) -> Vec<Line> {

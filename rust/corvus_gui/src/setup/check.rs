@@ -14,6 +14,7 @@ use serde_json::{json, Value};
 use crate::net::bg::Pending;
 use crate::net::http::{self, Server};
 use crate::setup::schema_form::format_number;
+use crate::ui::card;
 use crate::ui::pagekit;
 use crate::ui::style::{self, Weight};
 
@@ -184,7 +185,7 @@ impl Check {
 /// column `x .. x + w` from `y`. Returns the bottom of the card.
 pub fn card(ui: &egui::Ui, x: f32, y: f32, w: f32, check: &Summary) -> f32 {
     let painter = ui.painter().clone();
-    let bg = painter.add(egui::Shape::Noop);
+    let bg = card::reserve(&painter);
     let (ix, iw) = (x + 19.0, w - 38.0);
     let mut cy = pagekit::section_title(ui, ix, y + 19.0, iw, "Check result");
     let color = if check.cls == "ok" {
@@ -255,13 +256,7 @@ pub fn card(ui: &egui::Ui, x: f32, y: f32, w: f32, check: &Summary) -> f32 {
         }
     }
     let rect = Rect::from_min_max(Pos2::new(x, y), Pos2::new(x + w, cy + 19.0));
-    painter.set(bg, egui::Shape::rect_filled(rect, style::RADIUS, style::glass(0.82)));
-    painter.rect_stroke(
-        rect,
-        style::RADIUS,
-        Stroke::new(1.0, style::tint(0.09)),
-        egui::StrokeKind::Inside,
-    );
+    card::fill(&painter, bg, rect, card::Look::Page);
     let _ = Vec2::ZERO;
     rect.bottom()
 }

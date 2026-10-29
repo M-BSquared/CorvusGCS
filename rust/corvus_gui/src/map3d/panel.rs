@@ -8,6 +8,7 @@ use serde_json::Value;
 
 use crate::map3d::Map3d;
 use crate::ui::kit;
+use crate::ui::menu;
 use crate::ui::style::{self, Weight};
 
 const WIDTH: f32 = 260.0;
@@ -85,22 +86,8 @@ pub fn show(ui: &mut egui::Ui, anchor: Rect, t: &mut Map3d, sources: &Value) -> 
                 y = head(ui, x, y, "Elevation");
                 for (id, label) in &rows {
                     let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(WIDTH - 10.0, row_h));
-                    let resp = ui.interact(r, ui.scope_id().with(("elev", id.as_str())), egui::Sense::click());
                     let active = *id == t.choice || (t.choice.is_empty() && id == "auto");
-                    if active {
-                        painter.rect_filled(r, style::RADIUS_BTN, style::accent_dark());
-                    } else if resp.hovered() {
-                        painter.rect_filled(r, style::RADIUS_BTN, style::tint(0.06));
-                    }
-                    let color = if active || resp.hovered() {
-                        style::text_1()
-                    } else {
-                        style::text_2()
-                    };
-                    let g = style::galley(ui, label, 12.0, Weight::W400, color, 0.0);
-                    ui.painter_at(r)
-                        .galley(Pos2::new(r.left() + 8.0, r.center().y - g.size().y / 2.0), g, color);
-                    if resp.clicked() {
+                    if menu::row(ui, r, ("elev", id.as_str()), label, active, true, &menu::Look::PANEL) {
                         picked = Some(id.clone());
                     }
                     y += row_h;

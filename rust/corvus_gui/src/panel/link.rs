@@ -13,8 +13,10 @@ use serde_json::{json, Value};
 
 use crate::net::bg::Pending;
 use crate::net::http::{self, Server};
+use crate::ui::card;
 use crate::ui::icons;
 use crate::ui::kit::{self, Button, Choice, Variant};
+use crate::ui::segmented::{self, Segment};
 use crate::ui::style::{self, Weight};
 
 /// The common endpoints offered under the connection string.
@@ -419,16 +421,7 @@ impl LinkTab {
             + 2.0;
         let card = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, h));
         let painter = ui.painter().clone();
-        {
-            let r = card;
-            painter.rect_filled(r, style::RADIUS, style::surface_2());
-            painter.rect_stroke(
-                r,
-                style::RADIUS,
-                Stroke::new(1.0, style::border()),
-                egui::StrokeKind::Inside,
-            );
-        }
+        card::paint(&painter, card, card::Look::Panel);
         let inner = card.shrink(13.0);
         let cy = inner.top() + row_h / 2.0;
         let dot_c = match dot {
@@ -597,7 +590,7 @@ impl LinkTab {
             .unwrap_or("disconnected")
             .to_lowercase();
         let painter = ui.painter().clone();
-        let start_shape = painter.add(Shape::Noop);
+        let start_shape = card::reserve(&painter);
         let inner_x = x + 14.0;
         let iw = w - 28.0;
         let mut cy = y + 14.0;
@@ -617,52 +610,20 @@ impl LinkTab {
         if self.new_open {
             cy += 10.0;
             // .link-kinds: a segmented switch
-            let seg = Rect::from_min_size(
+            let kinds = [
+                Segment::new("Serial").icon("cable"),
+                Segment::new("UDP / TCP").icon("network"),
+            ];
+            let (seg, picked) = segmented::show(
+                ui,
                 Pos2::new(inner_x, cy),
-                Vec2::new(iw, 3.0 * 2.0 + 2.0 + 6.0 * 2.0 + 11.0 * 1.21),
+                &kinds,
+                usize::from(self.net),
+                "kind",
+                segmented::Opts::stretched(iw),
             );
-            {
-                let r = seg;
-                painter.rect_filled(r, style::RADIUS_BTN, style::glass(0.82));
-                painter.rect_stroke(
-                    r,
-                    style::RADIUS_BTN,
-                    Stroke::new(1.0, style::tint(0.09)),
-                    egui::StrokeKind::Inside,
-                );
-            }
-            let half = (seg.width() - 2.0 - 6.0 - 3.0) / 2.0;
-            for (i, (icon, label, is_net)) in [("cable", "Serial", false), ("network", "UDP / TCP", true)]
-                .into_iter()
-                .enumerate()
-            {
-                let r = Rect::from_min_size(
-                    Pos2::new(seg.left() + 4.0 + i as f32 * (half + 3.0), seg.top() + 4.0),
-                    Vec2::new(half, seg.height() - 8.0),
-                );
-                let resp = ui.interact(r, ui.scope_id().with(("kind", i)), egui::Sense::click());
-                let selected = self.net == is_net;
-                if selected {
-                    painter.rect_filled(r, style::RADIUS_BTN - 2, style::surface_1());
-                }
-                let color = if selected || resp.hovered() {
-                    style::text_1()
-                } else {
-                    style::text_3()
-                };
-                let g = style::galley(ui, label, 11.0, Weight::W600, color, 0.3);
-                let total = 13.0 + 6.0 + g.size().x;
-                let sx = r.center().x - total / 2.0;
-                icons::paint(
-                    ui,
-                    icon,
-                    Rect::from_min_size(Pos2::new(sx, r.center().y - 6.5), Vec2::splat(13.0)),
-                    if selected { style::accent() } else { color },
-                );
-                painter.galley(Pos2::new(sx + 19.0, r.center().y - g.size().y / 2.0), g, color);
-                if resp.clicked() {
-                    self.net = is_net;
-                }
+            if let Some(i) = picked {
+                self.net = i == 1;
             }
             cy = seg.bottom() + 10.0;
             let field_h = 2.0 + 18.0 + 12.0 * 1.32;
@@ -785,19 +746,13 @@ impl LinkTab {
             }
         }
         let card = Rect::from_min_max(Pos2::new(x, y), Pos2::new(x + w, cy + 14.0));
-        painter.set(start_shape, Shape::rect_filled(card, style::RADIUS, style::surface_2()));
-        painter.rect_stroke(
-            card,
-            style::RADIUS,
-            Stroke::new(1.0, style::border()),
-            egui::StrokeKind::Inside,
-        );
+        card::fill(&painter, start_shape, card, card::Look::Panel);
         card.bottom()
     }
 
     fn share_card(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, x: f32, y: f32, w: f32) -> f32 {
         let painter = ui.painter().clone();
-        let start_shape = painter.add(Shape::Noop);
+        let start_shape = card::reserve(&painter);
         let inner_x = x + 14.0;
         let iw = w - 28.0;
         let mut cy = y + 14.0;
@@ -885,13 +840,7 @@ impl LinkTab {
             }
         }
         let card = Rect::from_min_max(Pos2::new(x, y), Pos2::new(x + w, cy + 14.0));
-        painter.set(start_shape, Shape::rect_filled(card, style::RADIUS, style::surface_2()));
-        painter.rect_stroke(
-            card,
-            style::RADIUS,
-            Stroke::new(1.0, style::border()),
-            egui::StrokeKind::Inside,
-        );
+        card::fill(&painter, start_shape, card, card::Look::Panel);
         card.bottom()
     }
 }

@@ -26,6 +26,7 @@ use crate::setup::geofence_card::{GeofenceCard, Props};
 use crate::setup::schema_form::{self, Field, FormState};
 use crate::setup::sensor_view::{self, Event, SensorUi};
 use crate::setup::sensors::{self, Extras, Preset, Toggle};
+use crate::ui::card;
 use crate::ui::icons;
 use crate::ui::kit::{self, Button, Variant};
 use crate::ui::pagekit;
@@ -864,7 +865,7 @@ impl SafetyPage {
         events: &mut Vec<(usize, Event)>,
     ) -> f32 {
         let painter = ui.painter().clone();
-        let bg = painter.add(egui::Shape::Noop);
+        let bg = card::reserve(&painter);
         let (ix, iw) = (x + 19.0, w - 38.0);
         let mut cy = y + 19.0;
         match card {
@@ -1085,13 +1086,7 @@ impl SafetyPage {
             }
         }
         let rect = Rect::from_min_max(Pos2::new(x, y), Pos2::new(x + w, cy + 19.0));
-        painter.set(bg, egui::Shape::rect_filled(rect, style::RADIUS, style::glass(0.82)));
-        painter.rect_stroke(
-            rect,
-            style::RADIUS,
-            Stroke::new(1.0, style::tint(0.09)),
-            egui::StrokeKind::Inside,
-        );
+        card::fill(&painter, bg, rect, card::Look::Page);
         rect.bottom()
     }
 

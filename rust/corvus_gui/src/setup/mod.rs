@@ -25,6 +25,7 @@ use crate::net::http::Server;
 use crate::setup::motors::MotorsPage;
 use crate::setup::params::ParamsPage;
 use crate::setup::safety::SafetyPage;
+use crate::ui::card;
 use crate::ui::pagekit;
 use crate::ui::style::{self, Weight};
 
@@ -330,16 +331,7 @@ fn head(
         };
         let card = Rect::from_min_size(Pos2::new(card_x, bottom - card_h), Vec2::new(card_w, card_h));
         let p = ui.painter();
-        {
-            let r = card;
-            p.rect_filled(r, style::RADIUS, style::glass(0.82));
-            p.rect_stroke(
-                r,
-                style::RADIUS,
-                Stroke::new(1.0, style::tint(0.09)),
-                egui::StrokeKind::Inside,
-            );
-        }
+        card::paint(p, card, card::Look::Page);
         let mut fx = card.left() + 1.0;
         for (i, (l, v)) in gal.into_iter().enumerate() {
             if i > 0 {

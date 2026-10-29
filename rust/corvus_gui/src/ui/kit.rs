@@ -6,7 +6,9 @@ use std::sync::Arc;
 
 use eframe::egui::{self, Color32, Galley, Pos2, Rect, Stroke, Vec2};
 
+use crate::ui::field::TextField;
 use crate::ui::icons;
+use crate::ui::menu;
 use crate::ui::style::{self, Weight};
 
 /// `.btn[data-variant]`.
@@ -236,43 +238,11 @@ pub fn text_field_padded(
     id: impl std::hash::Hash + std::fmt::Debug,
     pad: f32,
 ) -> egui::Response {
-    let id = ui.scope_id().with(id);
-    let focused = ui.memory(|m| m.has_focus(id));
-    let painter = ui.painter().clone();
-    if focused {
-        painter.rect_stroke(
-            rect.expand(2.0),
-            style::RADIUS_BTN + 2,
-            Stroke::new(2.0, style::accent_dim()),
-            egui::StrokeKind::Inside,
-        );
-    }
-    {
-        let r = rect;
-        painter.rect_filled(r, style::RADIUS_BTN, style::input(0.6));
-        painter.rect_stroke(
-            r,
-            style::RADIUS_BTN,
-            Stroke::new(1.0, if focused { style::accent() } else { style::border() }),
-            egui::StrokeKind::Inside,
-        );
-    }
-    let font = if mono {
-        style::mono(12.0)
-    } else {
-        style::font(12.0, Weight::W400)
-    };
-    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect.shrink2(Vec2::new(pad, 0.0))));
-    let edit = egui::TextEdit::singleline(text)
-        .id(id)
-        .frame(egui::Frame::NONE)
-        .font(font)
-        .text_color(style::text_1())
-        .hint_text(egui::RichText::new(placeholder).color(style::text_3()))
-        .align(egui::Align2::LEFT_CENTER)
-        .desired_width(rect.width() - 2.0 * pad)
-        .min_size(Vec2::new(0.0, rect.height()));
-    child.add(edit)
+    TextField::new(text)
+        .hint(placeholder)
+        .mono(mono)
+        .pad(pad, pad)
+        .show(ui, rect, id)
 }
 
 /// One row of a select.
@@ -379,101 +349,24 @@ pub fn select_padded(
     }
     let mut picked = None;
     if open {
-        // `.ui-menu` of `.option-item` rows: 5 px padding, rows of 7 px 8 px
-        // with a 7 px state dot and an 8 px gap, as wide as its widest row
-        let row_h = 7.0 * 2.0 + 12.0 * 1.21;
-        let label_font = |ui: &egui::Ui, label: &str, color: Color32| {
-            if mono {
-                style::galley_mono(ui, label, 12.0, color)
-            } else {
-                style::galley(ui, label, 12.0, Weight::W500, color, 0.0)
-            }
-        };
-        let widest = choices
+        let rows: Vec<menu::Row> = choices
             .iter()
-            .map(|c| label_font(ui, &c.label, style::text_2()).size().x)
-            .fold(0.0, f32::max);
-        let width = rect.width().max(10.0 + 16.0 + 7.0 + 8.0 + widest);
-        let screen = ui.ctx().content_rect();
-        let full = 10.0 + row_h * choices.len() as f32;
-        let room = (screen.bottom() - rect.bottom() - 4.0 - 8.0).max(row_h * 3.0);
-        let height = full.min(room);
-        let menu = Rect::from_min_size(rect.left_bottom() + Vec2::new(0.0, 4.0), Vec2::new(width, height));
-        egui::Area::new(id.with("menu"))
-            .order(egui::Order::Foreground)
-            .fixed_pos(menu.min)
-            .show(ui.ctx(), |ui| {
-                let painter = ui.painter().clone();
-                style::glass_panel(&painter, "selectmenu", menu, style::RADIUS, 0.6);
-                ui.allocate_rect(menu, egui::Sense::hover());
-                let inner = menu.shrink(5.0);
-                let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner));
-                child.set_clip_rect(inner);
-                egui::ScrollArea::vertical()
-                    .id_salt(id.with("scroll"))
-                    .auto_shrink([false, false])
-                    .show(&mut child, |ui| {
-                        let origin = ui.max_rect().min;
-                        for (i, c) in choices.iter().enumerate() {
-                            let r = Rect::from_min_size(
-                                origin + Vec2::new(0.0, i as f32 * row_h),
-                                Vec2::new(inner.width(), row_h),
-                            );
-                            let sense = if c.enabled {
-                                egui::Sense::click()
-                            } else {
-                                egui::Sense::hover()
-                            };
-                            let row = ui.interact(r, id.with(("row", i)), sense);
-                            let active = c.value == selected;
-                            if active {
-                                ui.painter().rect_filled(r, style::RADIUS_BTN, style::accent_dark());
-                                ui.painter().rect_stroke(
-                                    r,
-                                    style::RADIUS_BTN,
-                                    Stroke::new(2.0, style::accent_bright()),
-                                    egui::StrokeKind::Inside,
-                                );
-                            } else if row.hovered() && c.enabled {
-                                ui.painter().rect_filled(r, style::RADIUS_BTN, style::tint(0.06));
-                            }
-                            let color = if !c.enabled {
-                                style::text_3()
-                            } else if active || row.hovered() {
-                                style::text_1()
-                            } else {
-                                style::text_2()
-                            };
-                            let dot_color = if active { style::accent() } else { style::text_3() };
-                            dot(
-                                ui.painter(),
-                                Pos2::new(r.left() + 8.0 + 3.5, r.center().y),
-                                dot_color,
-                                active,
-                            );
-                            let g = label_font(ui, &c.label, color);
-                            ui.painter().galley(
-                                Pos2::new(r.left() + 8.0 + 7.0 + 8.0, r.center().y - g.size().y / 2.0),
-                                g,
-                                color,
-                            );
-                            if row.clicked() && c.enabled {
-                                picked = Some(c.value.clone());
-                            }
-                        }
-                        ui.allocate_space(Vec2::new(inner.width(), full - 10.0));
-                    });
-                let outside = ui.input(|i| i.pointer.any_pressed())
-                    && !ui
-                        .input(|i| i.pointer.interact_pos())
-                        .is_some_and(|p| menu.contains(p) || rect.contains(p));
-                if outside || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-                    open = false;
-                }
-            });
-        if picked.is_some() {
+            .map(|c| menu::Row {
+                value: c.value.clone(),
+                label: c.label.clone(),
+                enabled: c.enabled,
+            })
+            .collect();
+        let look = if mono {
+            menu::Look::SELECT_MONO
+        } else {
+            menu::Look::SELECT
+        };
+        let out = menu::dropdown(ui, id.with("menu"), rect, &rows, selected, &look);
+        if out.picked.is_some() || out.dismissed {
             open = false;
         }
+        picked = out.picked;
     }
     ui.ctx().data_mut(|d| d.insert_temp(open_id, open));
     picked

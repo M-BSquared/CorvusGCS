@@ -21,6 +21,7 @@ use crate::net::bg::Pending;
 use crate::net::http::{self, Server};
 use crate::setup::params_dialogs::{self as dialogs, ExportDlg, ImportDlg};
 use crate::setup::params_files as files;
+use crate::ui::card;
 use crate::ui::kit::{self, Button, Choice, Variant};
 use crate::ui::pagekit;
 use crate::ui::style::{self, Weight};
@@ -1241,7 +1242,7 @@ impl ParamsPage {
         self.dialogs(&ctx, armed);
         let pad = 19.0;
         let painter = ui.painter().clone();
-        let bg = painter.add(egui::Shape::Noop);
+        let bg = card::reserve(&painter);
         let ix = x + pad;
         let iw = w - 2.0 * pad;
         let mut cy = y + pad;
@@ -1251,13 +1252,7 @@ impl ParamsPage {
             Phase::Editor => cy = self.editor(ui, &ctx, ix, cy, iw, armed, narrow),
         }
         let card = Rect::from_min_max(Pos2::new(x, y), Pos2::new(x + w, cy + pad));
-        painter.set(bg, egui::Shape::rect_filled(card, style::RADIUS, style::glass(0.82)));
-        painter.rect_stroke(
-            card,
-            style::RADIUS,
-            Stroke::new(1.0, style::tint(0.09)),
-            egui::StrokeKind::Inside,
-        );
+        card::fill(&painter, bg, card, card::Look::Page);
         card.bottom()
     }
 

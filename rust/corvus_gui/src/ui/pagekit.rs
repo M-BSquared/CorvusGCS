@@ -6,6 +6,7 @@ use eframe::egui::{self, Color32, Pos2, Rect, Stroke, Vec2};
 
 use crate::ui::icons;
 use crate::ui::kit::{Button, Variant};
+use crate::ui::segmented::{self, Opts, Segment};
 use crate::ui::style::{self, Weight};
 
 /// `.page-view { padding: 32px 40px }`.
@@ -111,19 +112,16 @@ pub fn tile(ui: &mut egui::Ui, rect: Rect, icon: &'static str, title: &str, desc
     resp.clicked()
 }
 
+fn segments(items: &[(String, String, bool)]) -> Vec<Segment> {
+    items
+        .iter()
+        .map(|(label, count, enabled)| Segment::new(label.as_str()).count(count.as_str()).enabled(*enabled))
+        .collect()
+}
+
 /// How wide `segmented` draws these items.
 pub fn segmented_width(ui: &egui::Ui, items: &[(String, String, bool)]) -> f32 {
-    let widths: f32 = items
-        .iter()
-        .map(|(label, count, _)| {
-            let l = style::galley(ui, label, 11.0, Weight::W600, style::text_3(), 0.3)
-                .size()
-                .x;
-            let c = style::galley(ui, count, 11.0, Weight::W500, style::text_3(), 0.0);
-            20.0 + l + if c.text().is_empty() { 0.0 } else { 6.0 + c.size().x }
-        })
-        .sum();
-    2.0 + 6.0 + widths + 3.0 * (items.len() as f32 - 1.0)
+    segmented::width(ui, &segments(items), &Opts::FILTER)
 }
 
 /// A `.params-filter` segmented control: returns the index clicked.
@@ -134,67 +132,7 @@ pub fn segmented(
     selected: usize,
     id: &str,
 ) -> (Rect, Option<usize>) {
-    let painter = ui.painter().clone();
-    let gals: Vec<_> = items
-        .iter()
-        .map(|(label, count, _)| {
-            let l = style::galley(ui, label, 11.0, Weight::W600, style::text_3(), 0.3);
-            let c = style::galley(ui, count, 11.0, Weight::W500, style::text_3(), 0.0);
-            (l, c)
-        })
-        .collect();
-    let widths: Vec<f32> = gals
-        .iter()
-        .map(|(l, c)| 20.0 + l.size().x + if c.text().is_empty() { 0.0 } else { 6.0 + c.size().x })
-        .collect();
-    let h = 3.0 * 2.0 + 2.0 + 5.0 * 2.0 + 11.0 * 1.21;
-    let w = 2.0 + 6.0 + widths.iter().sum::<f32>() + 3.0 * (items.len() as f32 - 1.0);
-    let rect = Rect::from_min_size(at, Vec2::new(w, h));
-    {
-        let r = rect;
-        painter.rect_filled(r, style::RADIUS_BTN, style::glass(0.82));
-        painter.rect_stroke(
-            r,
-            style::RADIUS_BTN,
-            Stroke::new(1.0, style::tint(0.09)),
-            egui::StrokeKind::Inside,
-        );
-    }
-    let mut x = rect.left() + 4.0;
-    let mut clicked = None;
-    for (i, ((label, _count, enabled), (lg, cg))) in items.iter().zip(gals).enumerate() {
-        let r = Rect::from_min_size(Pos2::new(x, rect.top() + 4.0), Vec2::new(widths[i], h - 8.0));
-        let sense = if *enabled {
-            egui::Sense::click()
-        } else {
-            egui::Sense::hover()
-        };
-        let resp = ui.interact(r, ui.scope_id().with((id, i)), sense);
-        let sel = i == selected;
-        if sel {
-            painter.rect_filled(r, style::RADIUS_BTN - 2, style::surface_1());
-        }
-        let color = if sel || (resp.hovered() && *enabled) {
-            style::text_1()
-        } else {
-            style::text_3()
-        };
-        let alpha = if *enabled { 1.0 } else { 0.45 };
-        let mut lx = r.left() + 10.0;
-        let l2 = style::galley(ui, label, 11.0, Weight::W600, color.gamma_multiply(alpha), 0.3);
-        painter.galley(Pos2::new(lx, r.center().y - l2.size().y / 2.0), l2, color);
-        lx += lg.size().x + 6.0;
-        if !cg.text().is_empty() {
-            let cc = if sel { style::text_2() } else { style::text_3() };
-            let c2 = style::galley(ui, cg.text(), 11.0, Weight::W500, cc.gamma_multiply(alpha), 0.0);
-            painter.galley(Pos2::new(lx, r.center().y - c2.size().y / 2.0), c2, cc);
-        }
-        if resp.clicked() {
-            clicked = Some(i);
-        }
-        x += widths[i] + 3.0;
-    }
-    (rect, clicked)
+    segmented::show(ui, at, &segments(items), selected, id, Opts::FILTER)
 }
 
 /// A line of text in a colour, at a size and weight; returns its height.

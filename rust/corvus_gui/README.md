@@ -68,7 +68,12 @@ SIGKILL if it is still there after 8 s. If the window does not close within
 | `src/home/checklist_window.rs` | the checklist's window on the Home map: ticks kept by item text, drag and fold, the warning on arming with items open (`src/js/checklist.js`) |
 | `src/setup/checklist.rs` | the preflight checklists: config block, Setup card and the dialog the lists are written in (`src/js/checklist-editor.js`) |
 | `src/setup/schema_form.rs` | the schema-driven form the backend describes (enum, number, sign, bitmask), shared by the Safety and Motors pages (`src/js/setup-shared.js`) |
-| `src/ui/pagekit.rs` | page furniture: header, section title, tile, back button, segmented control |
+| `src/ui/pagekit.rs` | page furniture: header, section title, tile, back button |
+| `src/ui/kit.rs` | buttons (`Button`, `Variant`), icon buttons, select, checkbox, switch; the widgets of `components.css` |
+| `src/ui/field.rs` | `TextField`: the one text box, on a well, glass or floating surface, with an optional icon |
+| `src/ui/menu.rs` | `dropdown` and `row`: every list (select choices, flight modes, elevation models) |
+| `src/ui/card.rs` | `card::paint` / `reserve` / `fill`: the panel, page and inset cards |
+| `src/ui/segmented.rs` | the segmented switch (`.params-filter`, `.link-kinds`) |
 | `src/notify/mod.rs` | the notification board, its read and dismiss rules, the command dedupe and the toasts (`src/js/topbar.js`) |
 | `src/notify/overlay.rs` | the NOTIFICATIONS pill, the board and the toast stack |
 | `src/ui/frost.rs` | the frosted glass under every `.glass` surface |
@@ -128,6 +133,18 @@ on the CPU and stay on the GPU; a frame is uniforms and draw calls.
   which is why `flate2` is a dependency (already in the build through `png`).
   A building sits on the terrain height at its middle.
 - **Switching it on.** `Map::set_three_d`; the rail button calls it.
+
+## The UI base
+
+Everything a page draws that is not its own picture comes from `src/ui/`, so
+one change reaches every page: the corner radius and border of a card
+(`card.rs`), the focus ring and padding of a text box (`field.rs`), the
+rows and the glass of a dropdown (`menu.rs`), the buttons and the select
+(`kit.rs`), dialogs (`modal.rs`), hints and hover cards (`popover.rs`), and
+the tokens under all of it (`style.rs`: colours of the six themes, radii,
+fonts). A new page builds from these and does not paint a box, a list or a
+field with `rect_filled` of its own; if it needs one that is missing, it is
+added there first.
 
 ## Looking like the web interface
 

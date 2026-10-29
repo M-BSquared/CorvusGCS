@@ -17,7 +17,9 @@ use serde_json::{json, Value};
 
 use crate::data::units::{js_round, Units};
 use crate::net::http::{self, Server};
+use crate::ui::field::TextField;
 use crate::ui::icons;
+use crate::ui::menu;
 use crate::ui::style::{self, Weight};
 
 /// `--map-rail-inset`.
@@ -600,61 +602,22 @@ impl FlightBar {
                 false,
             ));
         }
-        let row_h = 7.0 * 2.0 + 12.0 * 1.21;
-        let width = rect.width().max(160.0);
-        let menu = Rect::from_min_size(
-            rect.left_bottom() + Vec2::new(0.0, 4.0),
-            Vec2::new(width, 10.0 + row_h * rows.len() as f32),
-        );
-        let mut chosen = None;
-        egui::Area::new(ui.scope_id().with("modemenu"))
-            .order(egui::Order::Foreground)
-            .fixed_pos(menu.min)
-            .show(ctx, |ui| {
-                let painter = ui.painter().clone();
-                style::glass_panel(&painter, "modemenu", menu, style::RADIUS, 0.6);
-                ui.allocate_rect(menu, egui::Sense::hover());
-                for (i, (m, enabled)) in rows.iter().enumerate() {
-                    let r = Rect::from_min_size(
-                        menu.min + Vec2::new(5.0, 5.0 + i as f32 * row_h),
-                        Vec2::new(width - 10.0, row_h),
-                    );
-                    let resp = ui.interact(
-                        r,
-                        ui.scope_id().with(("mode", i)),
-                        if *enabled {
-                            egui::Sense::click()
-                        } else {
-                            egui::Sense::hover()
-                        },
-                    );
-                    let active = m.value == current;
-                    if active {
-                        painter.rect_filled(r, style::RADIUS_BTN, style::surface_hover());
-                    } else if resp.hovered() && *enabled {
-                        painter.rect_filled(r, style::RADIUS_BTN, style::tint(0.06));
-                    }
-                    let color = if !enabled {
-                        style::text_3()
-                    } else if active || resp.hovered() {
-                        style::text_1()
-                    } else {
-                        style::text_2()
-                    };
-                    let g = style::galley(ui, &m.label, 12.0, Weight::W400, color, 0.0);
-                    painter.galley(Pos2::new(r.left() + 8.0, r.center().y - g.size().y / 2.0), g, color);
-                    if resp.clicked() && *enabled {
-                        chosen = Some(m.value.clone());
-                    }
+        let items: Vec<menu::Row> = rows
+            .iter()
+            .map(|(m, enabled)| {
+                let r = menu::Row::new(m.value.clone(), m.label.clone());
+                if *enabled {
+                    r
+                } else {
+                    r.disabled()
                 }
-            });
-        let pressed_elsewhere = ui.input(|i| i.pointer.any_pressed())
-            && !ui
-                .input(|i| i.pointer.interact_pos())
-                .is_some_and(|p| menu.contains(p) || rect.contains(p));
-        if pressed_elsewhere || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            })
+            .collect();
+        let out = menu::dropdown(ui, "modemenu", rect, &items, current, &menu::Look::PLAIN);
+        if out.dismissed {
             self.mode_open = false;
         }
+        let chosen = out.picked;
         if let Some(mode) = chosen {
             self.mode_open = false;
             if mode != current {
@@ -747,14 +710,13 @@ impl FlightBar {
 
                 // The entry: 64 px, 15 px semibold green, right aligned.
                 let entry = Rect::from_min_size(Pos2::new(track.max + 10.0, row_y - 15.0), Vec2::new(entry_w, 30.0));
-                let mut child = ui.new_child(egui::UiBuilder::new().max_rect(entry));
-                let edit = egui::TextEdit::singleline(&mut self.takeoff_text)
-                    .font(style::font(15.0, Weight::W600))
-                    .text_color(style::healthy())
-                    .align(egui::Align2::RIGHT_CENTER)
-                    .margin(egui::Margin::symmetric(6, 5))
-                    .desired_width(entry_w - 12.0);
-                let typed = child.add(edit);
+                let typed = TextField::new(&mut self.takeoff_text)
+                    .font(15.0, Weight::W600)
+                    .color(style::healthy())
+                    .focus_color(style::healthy())
+                    .pad(6.0, 6.0)
+                    .align_right()
+                    .show(ui, entry, "takeoffentry");
                 if typed.changed() {
                     if let Some(m) = altitude_from_entry(
                         &self.takeoff_text,

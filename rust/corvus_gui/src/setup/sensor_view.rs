@@ -13,6 +13,7 @@ use eframe::egui::{self, Color32, Pos2, Rect, Stroke, Vec2};
 use crate::net::http::Server;
 use crate::setup::schema_form::{Field, FormState, Look};
 use crate::setup::sensors::{self, Extras, Preset, Toggle, CUSTOM};
+use crate::ui::card;
 use crate::ui::icons;
 use crate::ui::kit::{self, Button, Choice, Variant};
 use crate::ui::style::{self, Weight};
@@ -194,14 +195,7 @@ fn warning_line(ui: &egui::Ui, x: f32, y: f32, w: f32, text: &str, icon_gap: f32
 
 /// The raised box the status and the preset detail sit in.
 fn box_bg(ui: &egui::Ui, bg: egui::layers::ShapeIdx, rect: Rect) {
-    let p = ui.painter();
-    p.set(bg, egui::Shape::rect_filled(rect, 10, style::surface_2()));
-    p.rect_stroke(
-        rect,
-        10,
-        Stroke::new(1.0, style::border_soft()),
-        egui::StrokeKind::Inside,
-    );
+    card::fill(ui.painter(), bg, rect, card::Look::Inset);
 }
 
 fn note(ui: &egui::Ui, x: f32, y: f32, w: f32, text: &str) -> f32 {
@@ -225,7 +219,7 @@ pub fn status_box(
     events: &mut Vec<Event>,
 ) -> f32 {
     let painter = ui.painter().clone();
-    let bg = painter.add(egui::Shape::Noop);
+    let bg = card::reserve(&painter);
     let (ix, iw) = (x + 13.0, w - 26.0);
     let mut cy = y + 12.0;
     let on = st.shown_on.unwrap_or(t.enabled);
@@ -542,7 +536,7 @@ pub fn hardware_body(
     cy += cap + SELECT_H + 10.0;
 
     // the detail box
-    let bg = painter.add(egui::Shape::Noop);
+    let bg = card::reserve(&painter);
     let (ix, iw) = (x + 13.0, w - 26.0);
     let mut dy = cy + 12.0;
     let chosen = st.preset_choice(sid, presets);

@@ -19,6 +19,7 @@ use crate::panel::link::LinkTab;
 use crate::term::session::SshSession;
 use crate::term::view::TermState;
 use crate::term::window::TermWindow;
+use crate::ui::card;
 use crate::ui::icons;
 use crate::ui::kit::{self, Button, Variant};
 use crate::ui::style::{self, Weight};
@@ -369,13 +370,7 @@ impl Panel {
         };
         let painter = ui.painter().clone();
         let card = rect.shrink(10.0);
-        painter.rect_filled(card, style::RADIUS, style::surface_2());
-        painter.rect_stroke(
-            card,
-            style::RADIUS,
-            Stroke::new(1.0, style::border()),
-            egui::StrokeKind::Inside,
-        );
+        card::paint(&painter, card, card::Look::Panel);
         let inner = card.shrink(13.0);
         let tile = Rect::from_min_size(inner.min, Vec2::splat(34.0));
         painter.rect_filled(tile, style::RADIUS_BTN, style::surface_3());

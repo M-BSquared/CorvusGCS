@@ -3,7 +3,7 @@
 //! pin where the chosen one is. Every keystroke shows what this laptop can
 //! answer, the lookup of a name follows 350 ms after the last one.
 
-use eframe::egui::{self, Pos2, Rect, Stroke, Vec2};
+use eframe::egui::{self, Pos2, Rect, Vec2};
 use serde_json::Value;
 
 use crate::data::units::Units;
@@ -12,6 +12,7 @@ use crate::map::search::{self as search, Row, MAX_ROWS};
 use crate::map::Map;
 use crate::net::bg::Pending;
 use crate::net::http;
+use crate::ui::field::{Surface, TextField};
 use crate::ui::icons;
 use crate::ui::style::{self, Weight};
 
@@ -194,57 +195,25 @@ impl SearchCard {
         let fw = 272.0f32.min(0.44 * vw);
         let field = Rect::from_min_size(Pos2::new(trigger.left() - GAP - fw, trigger.top()), Vec2::new(fw, BTN));
         let focused_id = ui.scope_id().with("searchinput");
-        let focused = ui.memory(|m| m.has_focus(focused_id));
         egui::Area::new(ui.scope_id().with("searchbox"))
             .order(egui::Order::Foreground)
             .fixed_pos(field.min)
             .show(&ctx, |ui| {
                 let painter = ui.painter().clone();
-                style::glass_panel(
-                    &painter,
-                    "searchfield",
-                    field,
-                    style::RADIUS,
-                    if focused { 0.88 } else { 0.72 },
-                );
-                painter.rect_stroke(
-                    field,
-                    style::RADIUS,
-                    Stroke::new(
-                        1.0,
-                        if focused {
-                            style::accent_bright()
-                        } else {
-                            style::border()
-                        },
-                    ),
-                    egui::StrokeKind::Inside,
-                );
-                icons::paint(
-                    ui,
-                    "search",
-                    Rect::from_center_size(Pos2::new(field.left() + 9.0 + 7.0, field.center().y), Vec2::splat(14.0)),
-                    style::text_3(),
-                );
                 let clear = Rect::from_center_size(
                     Pos2::new(field.right() - 6.0 - 11.0, field.center().y),
                     Vec2::splat(22.0),
                 );
-                let input_rect = Rect::from_min_max(
-                    Pos2::new(field.left() + 9.0 + 14.0 + 7.0, field.top()),
-                    Pos2::new(clear.left() - 2.0, field.bottom()),
-                );
-                let mut child = ui.new_child(egui::UiBuilder::new().max_rect(input_rect));
-                let edit = egui::TextEdit::singleline(&mut self.text)
-                    .id(focused_id)
-                    .frame(egui::Frame::NONE)
-                    .font(style::font(12.0, Weight::W400))
-                    .text_color(style::text_1())
-                    .hint_text(egui::RichText::new("Place or coordinates").color(style::text_3()))
-                    .align(egui::Align2::LEFT_CENTER)
-                    .desired_width(input_rect.width())
-                    .min_size(Vec2::new(0.0, BTN));
-                let r = child.add(edit);
+                let r = TextField::new(&mut self.text)
+                    .surface(Surface::Floating {
+                        rest: 0.72,
+                        focus: 0.88,
+                    })
+                    .named("searchfield")
+                    .hint("Place or coordinates")
+                    .icon("search", 14.0, 9.0, 7.0)
+                    .pad(30.0, 6.0 + 22.0 + 2.0)
+                    .show_with_id(ui, field, focused_id);
                 if self.fresh {
                     self.fresh = false;
                     r.request_focus();

@@ -23,6 +23,7 @@ use crate::net::bg::Pending;
 use crate::net::http::{self, Server};
 use crate::setup::check::{self, Check};
 use crate::setup::schema_form::{self, Field, FormState, Look};
+use crate::ui::card;
 use crate::ui::kit::{self, Button, Choice, Variant};
 use crate::ui::pagekit;
 use crate::ui::style::{self, Weight};
@@ -811,16 +812,7 @@ impl MotorsPage {
         let g = kit::wrapped_weight(ui, "Connect to a vehicle to read its motor configuration. The page shows only what the connected firmware actually reports.", 12.0, Weight::W400, style::text_2(), iw - 28.0, 1.55);
         let r = Rect::from_min_size(Pos2::new(ix, cy), Vec2::new(iw, g.size().y + 24.0));
         let card = Rect::from_min_max(Pos2::new(x, y), Pos2::new(x + w, r.bottom() + 19.0));
-        {
-            let r = card;
-            painter.rect_filled(r, style::RADIUS, style::glass(0.82));
-            painter.rect_stroke(
-                r,
-                style::RADIUS,
-                Stroke::new(1.0, style::tint(0.09)),
-                egui::StrokeKind::Inside,
-            );
-        }
+        card::paint(&painter, card, card::Look::Page);
         {
             painter.rect_filled(r, style::RADIUS_BTN, style::surface_2());
             painter.rect_stroke(
@@ -936,19 +928,11 @@ impl MotorsPage {
             iy = self.sensor_block(ui, ctx, doc, info_x, iy, info_w, armed) + 10.0;
         }
         cy = (if two { iy.max(fy) } else { iy }) - 10.0;
-        painter.set(
+        card::fill(
+            &painter,
             bg,
-            Shape::rect_filled(
-                Rect::from_min_max(Pos2::new(x, y), Pos2::new(x + w, cy + 19.0)),
-                style::RADIUS,
-                style::glass(0.82),
-            ),
-        );
-        painter.rect_stroke(
             Rect::from_min_max(Pos2::new(x, y), Pos2::new(x + w, cy + 19.0)),
-            style::RADIUS,
-            Stroke::new(1.0, style::tint(0.09)),
-            egui::StrokeKind::Inside,
+            card::Look::Page,
         );
         cy + 19.0
     }
@@ -1906,19 +1890,11 @@ impl MotorsPage {
                 ui.allocate_space(Vec2::new(total_w, body_h));
             });
         cy += body_h;
-        painter.set(
+        card::fill(
+            &painter,
             bg,
-            Shape::rect_filled(
-                Rect::from_min_max(Pos2::new(x, y), Pos2::new(x + w, cy + 19.0)),
-                style::RADIUS,
-                style::glass(0.82),
-            ),
-        );
-        painter.rect_stroke(
             Rect::from_min_max(Pos2::new(x, y), Pos2::new(x + w, cy + 19.0)),
-            style::RADIUS,
-            Stroke::new(1.0, style::tint(0.09)),
-            egui::StrokeKind::Inside,
+            card::Look::Page,
         );
         cy + 19.0
     }
@@ -2105,19 +2081,11 @@ impl MotorsPage {
         }
         let _ = now;
         cy += bh;
-        painter.set(
+        card::fill(
+            &painter,
             bg,
-            Shape::rect_filled(
-                Rect::from_min_max(Pos2::new(x, y), Pos2::new(x + w, cy + 19.0)),
-                style::RADIUS,
-                style::glass(0.82),
-            ),
-        );
-        painter.rect_stroke(
             Rect::from_min_max(Pos2::new(x, y), Pos2::new(x + w, cy + 19.0)),
-            style::RADIUS,
-            Stroke::new(1.0, style::tint(0.09)),
-            egui::StrokeKind::Inside,
+            card::Look::Page,
         );
         cy + 19.0
     }
@@ -2146,19 +2114,11 @@ impl MotorsPage {
         cy = self
             .form
             .show_with(ui, ctx, &server, &s.fields, ix, cy, iw, armed, Look::MOTORS);
-        painter.set(
+        card::fill(
+            &painter,
             bg,
-            Shape::rect_filled(
-                Rect::from_min_max(Pos2::new(x, y), Pos2::new(x + w, cy + 19.0)),
-                style::RADIUS,
-                style::glass(0.82),
-            ),
-        );
-        painter.rect_stroke(
             Rect::from_min_max(Pos2::new(x, y), Pos2::new(x + w, cy + 19.0)),
-            style::RADIUS,
-            Stroke::new(1.0, style::tint(0.09)),
-            egui::StrokeKind::Inside,
+            card::Look::Page,
         );
         cy + 19.0
     }
