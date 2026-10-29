@@ -247,10 +247,10 @@ impl Map {
             return;
         };
         t.set_source(&self.source, max_zoom);
+        t.follow_sources(&self.sources);
         if let (true, Some((lng, lat))) = (follow, vehicle) {
             t.cam.lng = lng;
             t.cam.lat = lat;
-        t.follow_sources(&self.sources);
         }
         let height = state.get("altitude_agl").and_then(Value::as_f64).unwrap_or(0.0);
         let input = t.show(
@@ -368,6 +368,14 @@ impl Map {
         } else {
             Vec::new()
         };
+        let vehicle = (state.get("connected") == Some(&Value::Bool(true)))
+            .then(|| real_fix(state.get("position")))
+            .flatten();
+        let home = real_fix(state.get("home"));
+        let target = state.get("heading").and_then(Value::as_f64).unwrap_or(0.0) as f32;
+        let dt = ui.input(|i| i.stable_dt).min(0.1);
+        let heading = match self.heading {
+            Some(h) => {
                 let delta = (target - h).rem_euclid(360.0);
                 let delta = if delta > 180.0 { delta - 360.0 } else { delta };
                 let next = h + delta * (1.0 - (-dt / 0.18f32).exp());
@@ -385,11 +393,8 @@ impl Map {
         });
         if !self.three_d && self.view.is_some() && std::env::var_os("CORVUS_GUI_3D").is_some() && !self.three.is_some()
         {
-            self.set_three_d(true);
-        }
-        if self.three_d {
             self.ensure_three(ui.ctx());
-            self.show_3d(ui, state, vehicle, home, heading);
+            self.set_three_d(true);
             if let Some(v) = std::env::var("CORVUS_GUI_3D").ok().filter(|v| v.contains(',')) {
                 let n: Vec<f64> = v.split(',').filter_map(|x| x.trim().parse().ok()).collect();
                 if let (3..=4, Some(t)) = (n.len(), self.three.as_mut()) {
@@ -397,6 +402,9 @@ impl Map {
                     self.follow = false;
                 }
             }
+        }
+        if self.three_d {
+            self.show_3d(ui, state, vehicle, home, heading);
             return;
         }
         let fence = self.env.get();
@@ -420,7 +428,6 @@ impl Map {
         .double_click_to_zoom(true);
         map = map.zoom_speed(2.0);
         let response = ui.add(map);
-            regions,
         {
             let p = Projector::new(response.rect, &self.memory, my_position);
             let c = p.unproject(response.rect.center().to_vec2());
@@ -471,9 +478,9 @@ impl Map {
     }
 }
 
+struct Layers<'a> {
     measure: &'a mut crate::measure::Measure,
     regions: Vec<crate::regions::Merged>,
-struct Layers<'a> {
     /// The geofence area, when the Home map is asked to show it.
     outline: Option<Vec<[f64; 2]>>,
     track: &'a Track,
@@ -482,23 +489,6 @@ struct Layers<'a> {
     heading: f32,
 }
 
-fn screen(projector: &Projector, _rect: egui::Rect, p: &Point) -> Pos2 {
-    let v = projector.project(walkers::lon_lat(p.lng, p.lat));
-    v.to_pos2().clamp(Pos2::new(-1e6, -1e6), Pos2::new(1e6, 1e6))
-}
-
-/// One flight as the web map draws it: a soft glow, a dark casing and the
-/// coloured core, so the line reads on grass and on a red roof alike.
-pub(crate) fn paint_flight(painter: &egui::Painter, pts: &[Pos2], color: Color32, past: bool) {
-    regions: Vec<crate::regions::Merged>,
-    if pts.len() < 2 {
-        return;
-    }
-    let (glow, glow_a, casing, casing_a, core, core_a) = if past {
-        (9.0, 0.18, 4.6, 0.45, 2.2, 0.85)
-    } else {
-        (11.0, 0.3, 5.5, 0.55, 2.6, 0.95)
-    };
 /// An outlined downloaded area (`offline-regions-fill` and `-line`, #4CC9FF)
 /// with its name chip at the centre (`.region-label`).
 fn paint_region(painter: &egui::Painter, projector: &Projector, rect: egui::Rect, r: &crate::regions::Merged) {
@@ -549,6 +539,22 @@ fn paint_region(painter: &egui::Painter, projector: &Projector, rect: egui::Rect
     );
 }
 
+fn screen(projector: &Projector, _rect: egui::Rect, p: &Point) -> Pos2 {
+    let v = projector.project(walkers::lon_lat(p.lng, p.lat));
+    v.to_pos2().clamp(Pos2::new(-1e6, -1e6), Pos2::new(1e6, 1e6))
+}
+
+/// One flight as the web map draws it: a soft glow, a dark casing and the
+/// coloured core, so the line reads on grass and on a red roof alike.
+pub(crate) fn paint_flight(painter: &egui::Painter, pts: &[Pos2], color: Color32, past: bool) {
+    if pts.len() < 2 {
+        return;
+    }
+    let (glow, glow_a, casing, casing_a, core, core_a) = if past {
+        (9.0, 0.18, 4.6, 0.45, 2.2, 0.85)
+    } else {
+        (11.0, 0.3, 5.5, 0.55, 2.6, 0.95)
+    };
     let with = |c: Color32, a: f32| Color32::from_rgba_unmultiplied(c.r(), c.g(), c.b(), (a * 255.0) as u8);
     // line-blur spreads the glow out; three widening strokes stand in for it.
     for (w, share) in [(glow, 0.5), (glow * 0.75, 0.3), (glow * 0.5, 0.2)] {
@@ -638,7 +644,13 @@ pub(crate) fn paint_home(painter: &egui::Painter, c: Pos2) {
 }
 
 impl Plugin for Layers<'_> {
-    fn run(self: Box<Self>, ui: &mut egui::Ui, response: &egui::Response, projector: &Projector, _memory: &MapMemory) {
+    fn run(
+        self: Box<Self>,
+        ui: &mut egui::Ui,
+        response: &egui::Response,
+        projector: &Projector,
+        _memory: &MapMemory,
+    ) {
         let rect = response.rect;
         let painter = ui.painter_at(rect);
         if let Some(poly) = &self.outline {
@@ -670,6 +682,9 @@ impl Plugin for Layers<'_> {
             closed.push(pts[0]);
             painter.extend(Shape::dashed_line(&closed, Stroke::new(3.0, warning), 6.0, 4.5));
         }
+        for r in &self.regions {
+            paint_region(&painter, projector, rect, r);
+        }
         for flight in &self.track.past {
             let pts: Vec<Pos2> = track::smooth(flight)
                 .iter()
@@ -686,26 +701,19 @@ impl Plugin for Layers<'_> {
             paint_home(&painter, screen(projector, rect, &Point { lng, lat, alt: None }));
         }
         if let Some((lng, lat)) = self.vehicle {
-        for r in &self.regions {
-            paint_region(&painter, projector, rect, r);
-        }
             paint_vehicle(
                 &painter,
                 screen(projector, rect, &Point { lng, lat, alt: None }),
                 self.heading,
             );
         }
-    }
-}
-
-#[cfg(test)]
         if self.measure.active {
             drive_measure(ui, response, projector, self.measure);
             paint_measure(&painter, ui, projector, rect, self.measure);
         }
-mod tests {
-    use super::*;
-    use serde_json::json;
+    }
+}
+
 /// Clicks, the pointer and the keys of the distance tool.
 fn drive_measure(ui: &egui::Ui, response: &egui::Response, projector: &Projector, m: &mut crate::measure::Measure) {
     let at = |p: Pos2| {
@@ -788,6 +796,10 @@ fn paint_measure(
     let _ = ui;
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
 
     #[test]
     fn the_source_is_described_from_the_backend() {
@@ -839,15 +851,15 @@ fn paint_measure(
             first_fix: true,
             follow: true,
             heading: None,
-            three: None,
-            three_d: false,
-            view: None,
-        };
             regions: Vec::new(),
             regions_visible: false,
             regions_load: None,
             regions_asked: f64::NEG_INFINITY,
             measure: crate::measure::Measure::default(),
+            three: None,
+            three_d: false,
+            view: None,
+        };
         let _ = ctx;
         m.update(&json!({"connected": true, "armed": false, "position": [11.6, 48.1]}));
         assert!(!m.first_fix);
@@ -856,7 +868,3 @@ fn paint_measure(
         assert_eq!(m.track.current.len(), 1, "a disconnected state draws nothing");
     }
 }
-            regions: Vec::new(),
-            regions_visible: false,
-            regions_load: None,
-            regions_asked: f64::NEG_INFINITY,
