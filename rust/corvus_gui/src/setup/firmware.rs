@@ -36,6 +36,8 @@ const GRID_MAX_W: f32 = 900.0;
 /// `.firmware-link-grid`: the columns are at least 300 px, 16 px apart.
 const GRID_GAP: f32 = 16.0;
 const GRID_MIN: f32 = 300.0;
+/// A small button as the web fonts measure it.
+const SMALL_H: f32 = 29.0;
 /// `.firmware-card { gap: 12px }`.
 const GAP: f32 = 12.0;
 /// A row of the card that holds a small button beside a select.
@@ -516,7 +518,7 @@ impl FirmwarePage {
 
         // the source switch
         let half = (iw - 6.0) / 2.0;
-        let bh = Button::new("x", Variant::Secondary).small().height();
+        let bh = SMALL_H;
         let mut next_source = None;
         for (i, (src, label, icon)) in [
             (Source::Catalog, "Download", "cloud-download"),
@@ -726,7 +728,7 @@ impl FirmwarePage {
         let mut next_stack = None;
         cy = ff::field(ui, x, cy, w, "Flight stack", "", |ui, top| {
             let half = (w - 6.0) / 2.0;
-            let bh = Button::new("x", Variant::Secondary).small().height();
+            let bh = SMALL_H;
             for (i, (id, label)) in [("px4", "PX4"), ("ardupilot", "ArduPilot")].into_iter().enumerate() {
                 let r = Rect::from_min_size(Pos2::new(x + i as f32 * (half + 6.0), top), Vec2::new(half, bh));
                 if toggle_button(ui, r, label, None, stack == id, ("fwstack", i)) {

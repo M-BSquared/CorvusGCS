@@ -9,6 +9,7 @@ pub mod icons;
 pub mod kit;
 pub mod menu;
 pub mod modal;
+pub mod optioncards;
 pub mod pagekit;
 pub mod popover;
 pub mod segmented;

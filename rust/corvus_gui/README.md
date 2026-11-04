@@ -75,6 +75,11 @@ SIGKILL if it is still there after 8 s. If the window does not close within
 | `src/setup/firmware_model.rs` | its rules: the catalogue and the picker that lands only on a board somebody chose, the flash gate, the words for the transport and the progress, the request bodies |
 | `src/setup/firmware_io.rs` | the catalogue read with a minute to answer, and the image upload as a raw body that stops when the page closes |
 | `src/setup/firmware_flow.rs` | tests: the page against a stand-in backend that answers the status and catalogue, accepts a flash and streams progress (no board, no bootloader) |
+| `src/setup/firstsetup.rs` | the First Setup page: the eight numbered steps, the bar with Previous, Skip and Next, the hosted pages (Firmware, Motors, Calibration, Radio Control, Safety, Battery), the aircraft type step on `POST /api/first-setup/airframe` with its reboot, and the finish summary (`src/js/setup-firstsetup.js`) |
+| `src/setup/firstsetup_model.rs` | its rules: which step shows as done, where the wizard opens, the aircraft and finish wording, the session's memory, the reboot follower, and the detector's timers and the list of controllers not to ask about again (`src/js/first-setup.js`); held to `firstsetup_cases.json`, what the web helpers answered |
+| `src/setup/firstsetup_watch.rs` | the detector's glue: reads `/api/first-setup` and `/api/firmware/status` when a link or a bootloader port appears and draws the "New controller detected" dialog |
+| `src/setup/firstsetup_flow.rs` | tests: the page against a stand-in backend (the step it opens on, the preset it writes, a refusal, Finish, the reboot) |
+| `src/ui/optioncards.rs` | `Corvus.ui.optionCards`: a grid of selectable cards with a label and a quiet description |
 | `src/ui/formfield.rs` | `Corvus.ui.field`: the small caption, a 32.5 px box or select, and the hint under it, shared by the plain form pages |
 | `src/setup/sensors.rs` | the sensor model and its rules: the write chain of a switch, the presets, the extra parameters kept in `~/.corvus/safety-extra.json` |
 | `src/setup/sensor_view.rs` | a sensor page drawn: Status card, Hardware card with the write table, the parameters you add by name |

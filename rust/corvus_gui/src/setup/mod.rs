@@ -1,7 +1,7 @@
 //! The Setup page (src/js/setup.js, setup.css): the head with the vehicle
 //! card, the grid of twelve tiles, and the sub-pages behind them.
 //!
-//! Parameters, Safety & Sensors, Motors, Battery & Power, Calibration, Radio Control, PID Tuning, RTK GPS and Firmware are whole. The
+//! Parameters, Safety & Sensors, Motors, Battery & Power, Calibration, Radio Control, PID Tuning, RTK GPS, Firmware and First Setup are whole. The
 //! other tiles open a notice that the page is still in the web interface.
 
 pub mod battery;
@@ -14,6 +14,9 @@ pub mod checklist;
 pub mod firmware;
 pub mod firmware_io;
 pub mod firmware_model;
+pub mod firstsetup;
+pub mod firstsetup_model;
+pub mod firstsetup_watch;
 pub mod geofence;
 pub mod geofence_card;
 pub mod landing;
@@ -41,6 +44,7 @@ use crate::net::http::Server;
 use crate::setup::battery::BatteryPage;
 use crate::setup::calibration::CalibrationPage;
 use crate::setup::firmware::FirmwarePage;
+use crate::setup::firstsetup::FirstSetupPage;
 use crate::setup::motors::MotorsPage;
 use crate::setup::params::ParamsPage;
 use crate::setup::radio::RadioPage;
@@ -117,6 +121,11 @@ const TILES: &[(&str, &str, &str, &str)] = &[
     ("video", "video", "Video", "RTSP or WebRTC cameras in floating windows."),
 ];
 
+/// Whether the First Setup wizard is up, so the detector leaves it alone.
+pub fn first_setup_open() -> bool {
+    firstsetup::is_open()
+}
+
 /// Whether `id` names a sub page (`--page`): a tile, or `safety:SENSOR`.
 pub fn is_page(id: &str) -> bool {
     TILES.iter().any(|t| t.0 == id) || id.starts_with("safety:")
@@ -149,6 +158,7 @@ enum View {
     Tuning(Box<TuningPage>),
     Rtk(Box<RtkPage>),
     Firmware(Box<FirmwarePage>),
+    FirstSetup(Box<FirstSetupPage>),
     Elsewhere(&'static str),
 }
 
@@ -186,6 +196,7 @@ impl SetupPage {
             View::Tuning(p) => p.take_errors(),
             View::Rtk(p) => p.take_errors(),
             View::Firmware(p) => p.take_errors(),
+            View::FirstSetup(p) => p.take_errors(),
             _ => Vec::new(),
         }
     }
@@ -198,6 +209,7 @@ impl SetupPage {
             View::Radio(p) => p.take_notes(),
             View::Tuning(p) => p.take_notes(),
             View::Firmware(p) => p.take_notes(),
+            View::FirstSetup(p) => p.take_notes(),
             _ => Vec::new(),
         }
     }
@@ -208,6 +220,7 @@ impl SetupPage {
             View::Calibration(p) => p.take_warnings(),
             View::Tuning(p) => p.take_warnings(),
             View::Firmware(p) => p.take_warnings(),
+            View::FirstSetup(p) => p.take_warnings(),
             _ => Vec::new(),
         }
     }
@@ -239,11 +252,28 @@ impl SetupPage {
             "tuning" => View::Tuning(Box::new(TuningPage::new(self.server.clone(), ctx))),
             "rtk" => View::Rtk(Box::new(RtkPage::new(self.server.clone(), ctx))),
             "firmware" => View::Firmware(Box::new(FirmwarePage::new(self.server.clone(), ctx))),
+            "firstsetup" => View::FirstSetup(Box::new(FirstSetupPage::new(
+                self.server.clone(),
+                self.env.clone(),
+                ctx,
+                None,
+            ))),
             other => match TILES.iter().find(|t| t.0 == other) {
                 Some(t) => View::Elsewhere(t.2),
                 None => View::Tiles,
             },
         };
+    }
+
+    /// Opens First Setup on `step` (empty for where the work is), as the
+    /// detector's dialog does.
+    pub fn open_first_setup(&mut self, step: &str, ctx: &egui::Context) {
+        self.view = View::FirstSetup(Box::new(FirstSetupPage::new(
+            self.server.clone(),
+            self.env.clone(),
+            ctx,
+            Some(step),
+        )));
     }
 
     /// Back to the tiles (leaving the left rail's SETUP does the same).
@@ -297,6 +327,7 @@ impl SetupPage {
                 | View::Tuning(_)
                 | View::Rtk(_)
                 | View::Firmware(_)
+                | View::FirstSetup(_)
                 | View::Elsewhere(_) => {
                     let in_sensor = matches!(&self.view, View::Safety(p) if p.in_sensor());
                     let in_wizard = matches!(&self.view, View::Calibration(p) if p.in_wizard())
@@ -344,6 +375,11 @@ impl SetupPage {
                         y = p.show(ui, x, y, w, state, now);
                     } else if let View::Firmware(p) = &mut self.view {
                         y = p.show(ui, x, y, w, state, now);
+                    } else if let View::FirstSetup(p) = &mut self.view {
+                        y = p.show(ui, x, y, w, state, now, &self.units, checklist);
+                        if p.finished() {
+                            self.view = View::Tiles;
+                        }
                     } else if let View::Safety(p) = &mut self.view {
                         y = p.show(ui, x, y, w, state, checklist);
                     } else if let View::Parameters(p) = &mut self.view {
@@ -488,6 +524,12 @@ fn grid(
                 "tuning" => View::Tuning(Box::new(TuningPage::new(server.clone(), ui.ctx()))),
                 "rtk" => View::Rtk(Box::new(RtkPage::new(server.clone(), ui.ctx()))),
                 "firmware" => View::Firmware(Box::new(FirmwarePage::new(server.clone(), ui.ctx()))),
+                "firstsetup" => View::FirstSetup(Box::new(FirstSetupPage::new(
+                    server.clone(),
+                    env.clone(),
+                    ui.ctx(),
+                    None,
+                ))),
                 _ => View::Elsewhere(title),
             };
         }

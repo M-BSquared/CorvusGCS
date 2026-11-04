@@ -46,6 +46,7 @@ struct App {
     logo: egui::ImageSource<'static>,
     page: Page,
     setup: SetupPage,
+    first_setup: crate::setup::firstsetup_watch::Prompt,
     mission_page: bool,
     panel: Panel,
     rail: MapRail,
@@ -175,6 +176,13 @@ impl App {
                 self.panel.windows(ui.ctx());
             });
         self.checklist.dialog(ui.ctx());
+        if let Some(step) =
+            self.first_setup
+                .update(ui.ctx(), &self.server, &state, now, crate::setup::first_setup_open())
+        {
+            self.page = Page::Setup;
+            self.setup.open_first_setup(&step, ui.ctx());
+        }
         let screen = ui.ctx().content_rect();
         let below =
             crate::notify::overlay::board(ui.ctx(), screen, screen.top() + vw.top_height(), &mut self.board, now);
@@ -436,6 +444,7 @@ pub fn run(
                     }
                     s
                 },
+                first_setup: Default::default(),
                 mission_page,
                 panel,
                 rail,
