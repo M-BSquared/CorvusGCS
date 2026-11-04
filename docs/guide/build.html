@@ -156,7 +156,7 @@
   produces a self-contained bundle with the native interface, a Python
   interpreter and every runtime dependency inside, named from the
   <code>VERSION</code> file. The interface is the Rust program in
-  <code>rust/corvus_gui</code>, built with cargo; the build machine therefore
+  <code>Cargo.toml</code> and <code>src/</code>, built with cargo; the build machine therefore
   needs a Rust toolchain from <a href="https://rustup.rs">rustup.rs</a>.
 </p>
 
@@ -184,7 +184,7 @@
 <h2 id="rust">The MAVLink module needs Rust</h2>
 <p>
   Corvus speaks MAVLink through <code>corvus_link</code>, a module written in
-  Rust that lives in <code>rust/corvus_link</code>. Every build, and
+  Rust that lives in <code>src/link</code>. Every build, and
   <code>./run.sh</code>, compiles it, so the build machine needs a Rust
   toolchain: install it from <a href="https://rustup.rs/">rustup.rs</a> and
   check that <code>cargo --version</code> answers. The finished app does not

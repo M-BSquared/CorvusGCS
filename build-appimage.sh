@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build Corvus GCS as a Linux AppImage (Ubuntu/Debian x86_64).
 #
-# Bundles the native Rust interface (rust/corvus_gui, built with cargo) and the
+# Bundles the native Rust interface (Cargo.toml and src/, built with cargo) and the
 # backend it starts as its child: a relocatable CPython (venv --copies + host
 # stdlib + libpython) with the `headless` dependencies and corvus_link, then
 # packs them with appimagetool. No Qt, no web engine. No conda on the build
@@ -56,9 +56,9 @@ fi
 # which step wanted it. Name the file, in the first second.
 MISSING=""
 for required in \
-    VERSION pyproject.toml LICENSE.md \
-    corvus src assets plugins assets/CorvusGCS_logo.png serve.py \
-    rust/corvus_gui/Cargo.toml rust/corvus_link/Cargo.toml
+    VERSION LICENSE.md assets assets/CorvusGCS_logo.png \
+    python/pyproject.toml python/corvus python/src python/plugins python/serve.py \
+    Cargo.toml src/main.rs src/link/Cargo.toml
 do
     [ -e "$REPO_DIR/$required" ] || MISSING="$MISSING  $required"
 done
@@ -166,7 +166,7 @@ if [ -n "$REQUIREMENTS" ]; then
     DEPS_ARGS=(-r "$REQUIREMENTS")
     DEPS_LABEL="$(basename "$REQUIREMENTS")"
 else
-    DEPS_ARGS=(--group "$REPO_DIR/pyproject.toml:headless")
+    DEPS_ARGS=(--group "$REPO_DIR/python/pyproject.toml:headless")
     DEPS_LABEL="pyproject.toml [app]"
 fi
 LOCK_OUT="$REPO_DIR/dist/Corvus_GCS-${VERSION}-x86_64.lock"
@@ -177,7 +177,7 @@ if ! "$APPDIR/usr/bin/python3" -m pip install \
     exit 1
 fi
 echo ">>> Building corvus_link (MAVLink, Rust) ..."
-if ! "$APPDIR/usr/bin/python3" -m pip install "$REPO_DIR/rust/corvus_link" >>"$PIP_LOG" 2>&1; then
+if ! "$APPDIR/usr/bin/python3" -m pip install "$REPO_DIR/src/link" >>"$PIP_LOG" 2>&1; then
     echo "ERROR: corvus_link build failed (is cargo installed?); log: $PIP_LOG" >&2
     exit 1
 fi
@@ -201,21 +201,21 @@ if [ -f "$LOCK_OUT" ]; then echo "    (resolved set: $LOCK_OUT)"; fi
 # But `all`, lxml and pip: tools/bundle_trim.py (see its docstring), which
 # also fails the build if the `all` dialect or corvus_link is gone.
 echo ">>> Trimming what the app never loads ..."
-python3 "$REPO_DIR/tools/bundle_trim.py" "$APPDIR/usr/lib/python$PY_MM/site-packages"
+python3 "$REPO_DIR/python/tools/bundle_trim.py" "$APPDIR/usr/lib/python$PY_MM/site-packages"
 rm -f "$APPDIR"/usr/bin/pip "$APPDIR"/usr/bin/pip3 "$APPDIR"/usr/bin/pip3.*
 
 # ---- 3c. the interface --------------------------------------------------------
-# rust/corvus_gui, built for this host. rust-toolchain.toml in that folder pins
+# The interface (Cargo.toml and src/), built for this host. rust-toolchain.toml at the repository root pins
 # the Rust it needs, so cargo runs from there and rustup fetches it on first
-# use. The fonts and icons are cut out of src/vendor by its build.rs and the
+# use. The fonts and icons are cut out of assets/ by its build.rs and the
 # logos are read from assets/, so the binary carries them. It links the C
 # library and the OpenGL, X11 and Wayland libraries are opened at run time from
 # the host, which every desktop that can show a window has.
-echo ">>> Building the interface (rust/corvus_gui, release) ..."
+echo ">>> Building the interface (Cargo.toml and src/, release) ..."
 GUI_LOG="$BUILD_DIR/cargo-gui-linux.log"
 mkdir -p "$BUILD_DIR"
 : > "$GUI_LOG"
-if ! ( cd "$REPO_DIR/rust/corvus_gui" \
+if ! ( cd "$REPO_DIR" \
         && CARGO_TARGET_DIR="$BUILD_DIR/cargo-gui" cargo build --release --locked ) >>"$GUI_LOG" 2>&1; then
     echo "ERROR: the interface did not build; log: $GUI_LOG" >&2
     tail -n 30 "$GUI_LOG" >&2 || true
@@ -229,29 +229,29 @@ install -m 0755 "$BUILD_DIR/cargo-gui/release/corvus-gcs" "$APPDIR/usr/bin/corvu
 # copied in from this host, and the build fails if anything the app cannot
 # start without is still unresolved.
 echo ">>> Bundling the system libraries the AppDir links ..."
-python3 "$REPO_DIR/tools/appimage_libs.py" bundle "$APPDIR"
+python3 "$REPO_DIR/python/tools/appimage_libs.py" bundle "$APPDIR"
 
 # ---- 4. copy app code into AppDir root -------------------------------------
 # corvus/version.py does parent.parent/VERSION; corvus/server.py + app.py do
 # parent.parent/src — so VERSION, corvus/, src/ must be siblings at AppDir root.
 echo ">>> Copying application code ..."
-rsync -a --exclude '__pycache__' "$REPO_DIR/corvus/" "$APPDIR/corvus/"
-rsync -a --exclude '__pycache__' "$REPO_DIR/src/" "$APPDIR/src/"
+rsync -a --exclude '__pycache__' "$REPO_DIR/python/corvus/" "$APPDIR/corvus/"
+rsync -a --exclude '__pycache__' "$REPO_DIR/python/src/" "$APPDIR/src/"
 # Only what the app reads: the logos and licences. The README and website
 # screenshots stay in the repository (tools/bundle_assets.py).
-python3 "$REPO_DIR/tools/bundle_assets.py" "$APPDIR/assets"
+python3 "$REPO_DIR/python/tools/bundle_assets.py" "$APPDIR/assets"
 # The bundled plugins, beside corvus/ and src/ for the same reason those are
 # (corvus/plugin_registry.py resolves this root as a sibling of the package).
 # Only the ones .gitignore lets back in, and without their tests/: a plugin
 # installed into plugins/ for development is not part of the release.
-python3 "$REPO_DIR/tools/bundle_plugins.py" "$APPDIR/plugins"
+python3 "$REPO_DIR/python/tools/bundle_plugins.py" "$APPDIR/plugins"
 cp -a "$REPO_DIR/VERSION" "$APPDIR/VERSION"
 # The Sustainable Use License requires that anyone who receives a copy of
 # the software also receives a copy of its terms, so the licence ships in
 # the bundle rather than only in the repository.
 cp -a "$REPO_DIR/LICENSE.md" "$APPDIR/LICENSE.md"
-if [ -f "$REPO_DIR/serve.py" ]; then
-    cp -a "$REPO_DIR/serve.py" "$APPDIR/serve.py"
+if [ -f "$REPO_DIR/python/serve.py" ]; then
+    cp -a "$REPO_DIR/python/serve.py" "$APPDIR/serve.py"
 fi
 
 # ---- 5. generate AppRun (no version literal; pythonX.Y resolved at runtime) --
@@ -337,7 +337,7 @@ if command -v convert >/dev/null 2>&1; then
         -extent 256x256 "PNG32:$ICON"
 else
     echo ">>> ImageMagick 'convert' not found; fitting the icon with tools/png_icon.py"
-    python3 "$REPO_DIR/tools/png_icon.py" "$LOGO" "$ICON" 256
+    python3 "$REPO_DIR/python/tools/png_icon.py" "$LOGO" "$ICON" 256
 fi
 ICON_SIZE="$(python3 -c 'import struct, sys; d = open(sys.argv[1], "rb").read(24); print("%dx%d" % struct.unpack(">II", d[16:24]))' "$ICON")"
 if [ "$ICON_SIZE" != "256x256" ]; then

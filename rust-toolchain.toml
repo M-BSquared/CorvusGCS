@@ -1,0 +1,5 @@
+# eframe 0.37 needs Rust 1.95 or newer. Pinned here for the interface only:
+# src/link has its own toolchain file and keeps the default.
+[toolchain]
+channel = "1.99"
+components = ["clippy", "rustfmt"]

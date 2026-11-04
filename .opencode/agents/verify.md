@@ -4,10 +4,10 @@ mode: subagent
 permission:
   edit:
     "*": "deny"
-    "tools/scene.py": "allow"
-    "tools/scene_kit/**": "allow"
-    "tools/SCENES.md": "allow"
-    "tests/test_scene_kit.py": "allow"
+    "python/tools/scene.py": "allow"
+    "python/tools/scene_kit/**": "allow"
+    "python/tools/SCENES.md": "allow"
+    "python/tests/test_scene_kit.py": "allow"
     "assets/screenshot_*": "allow"
     "docs/assets/images/**": "allow"
     "VERSION": "deny"

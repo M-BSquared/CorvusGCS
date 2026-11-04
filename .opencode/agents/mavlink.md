@@ -4,38 +4,38 @@ mode: subagent
 permission:
   edit:
     "*": "deny"
-    "corvus/mavlink_*.py": "allow"
-    "rust/corvus_link/**": "allow"
-    "tests/test_corvus_link_*.py": "allow"
-    "corvus/autopilot.py": "allow"
-    "corvus/serial_ports.py": "allow"
-    "corvus/priority_lock.py": "allow"
-    "corvus/autoconnect.py": "allow"
-    "corvus/ssh_bridge.py": "allow"
-    "corvus/tlog.py": "allow"
-    "corvus/ulog.py": "allow"
-    "corvus/firmware_uploader.py": "allow"
-    "corvus/firmware_catalog.py": "allow"
-    "corvus/flash_service.py": "allow"
-    "corvus/ardupilot_firmware.py": "allow"
-    "corvus/routes/firmware.py": "allow"
-    "corvus/routes/rtk.py": "allow"
-    "corvus/rtk.py": "allow"
-    "corvus/rtk_service.py": "allow"
-    "corvus/sik_config.py": "allow"
-    "corvus/sik_service.py": "allow"
-    "corvus/elrs.py": "allow"
-    "corvus/remote_id.py": "allow"
-    "corvus/remote_id_config.py": "allow"
-    "tests/test_mavlink_*.py": "allow"
-    "tests/test_autopilot_dialect.py": "allow"
-    "tests/test_ardupilot_*.py": "allow"
-    "tests/test_rover_support.py": "allow"
-    "tests/test_tlog*.py": "allow"
-    "tests/test_ulog.py": "allow"
-    "tests/test_serial_*.py": "allow"
-    "tests/test_windows_serial.py": "allow"
-    "tests/test_regression_link.py": "allow"
+    "python/corvus/mavlink_*.py": "allow"
+    "src/link/**": "allow"
+    "python/tests/test_corvus_link_*.py": "allow"
+    "python/corvus/autopilot.py": "allow"
+    "python/corvus/serial_ports.py": "allow"
+    "python/corvus/priority_lock.py": "allow"
+    "python/corvus/autoconnect.py": "allow"
+    "python/corvus/ssh_bridge.py": "allow"
+    "python/corvus/tlog.py": "allow"
+    "python/corvus/ulog.py": "allow"
+    "python/corvus/firmware_uploader.py": "allow"
+    "python/corvus/firmware_catalog.py": "allow"
+    "python/corvus/flash_service.py": "allow"
+    "python/corvus/ardupilot_firmware.py": "allow"
+    "python/corvus/routes/firmware.py": "allow"
+    "python/corvus/routes/rtk.py": "allow"
+    "python/corvus/rtk.py": "allow"
+    "python/corvus/rtk_service.py": "allow"
+    "python/corvus/sik_config.py": "allow"
+    "python/corvus/sik_service.py": "allow"
+    "python/corvus/elrs.py": "allow"
+    "python/corvus/remote_id.py": "allow"
+    "python/corvus/remote_id_config.py": "allow"
+    "python/tests/test_mavlink_*.py": "allow"
+    "python/tests/test_autopilot_dialect.py": "allow"
+    "python/tests/test_ardupilot_*.py": "allow"
+    "python/tests/test_rover_support.py": "allow"
+    "python/tests/test_tlog*.py": "allow"
+    "python/tests/test_ulog.py": "allow"
+    "python/tests/test_serial_*.py": "allow"
+    "python/tests/test_windows_serial.py": "allow"
+    "python/tests/test_regression_link.py": "allow"
     "VERSION": "deny"
   bash:
     "*": "ask"
@@ -84,20 +84,20 @@ shell, on board log format.
 
 ## Rules for the link
 
-- `corvus_link` (Rust, `rust/corvus_link`) with pymavlink's interface; the
+- `corvus_link` (Rust, `src/link`) with pymavlink's interface; the
   code imports `from corvus_link import mavutil`, never pymavlink. A change to
   the wire format, a dialect or a link keeps `tests/test_corvus_link_parity.py`
   and `tests/test_corvus_link_links.py` green against pymavlink, and is rebuilt
-  with `(cd rust/corvus_link && maturin develop --release)` before the suite
+  with `(cd src/link && maturin develop --release)` before the suite
   runs. The link types not built yet are listed in
-  `rust/corvus_link/README.md`.
+  `src/link/README.md`.
 - The parameter, mission, FTP, log and shell protocols and the Setup
   commands (calibration, motor test, autotune, reboot), Remote ID, the
   telemetry handlers, the flight commands, the bridge's receive path, its status
   reporting, its connection cycle, the fleet tracker, the forwarder,
   auto-connect, RTK with its NTRIP client, SiK radio configuration, the
   dormant ExpressLRS telemetry and firmware flashing (on Rust threads) are engines in
-  `corvus_link` (`rust/corvus_link/src/protocol/`); the `corvus/mavlink_*.py`
+  `corvus_link` (`src/link/src/protocol/`); the `corvus/mavlink_*.py`
   module of the same name is each one's seat on the bridge. A protocol change goes into the engine and keeps the
   `tests/test_*_parity.py` files green against the Python references in
   `tests/reference/`, or changes the reference with it on purpose.
@@ -135,7 +135,7 @@ text follows the no dash rule. A fix carries a regression test.
 ## Checks
 
 ```
-(cd rust/corvus_link && cargo clippy && maturin develop --release)
+(cd src/link && cargo clippy && maturin develop --release)
 .venv/bin/python -m pytest -q tests/test_corvus_link_*.py
 .venv/bin/python -m pytest -q tests/test_mavlink_*.py tests/test_autopilot_dialect.py
 .venv/bin/python -m pytest -q

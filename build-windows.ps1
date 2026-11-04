@@ -7,7 +7,7 @@
 # dylibs may point. Windows has neither constraint and one well-trodden tool,
 # so the backend (serve.py) is frozen with PyInstaller rather than reinventing
 # the same 300 lines in PowerShell. The interface is the Rust app
-# (rust/corvus_gui, built with cargo), which starts that backend as its child.
+# (Cargo.toml and src/, built with cargo), which starts that backend as its child.
 # The result is the same shape as the other two: one directory that runs on a
 # machine with no Python and no internet.
 #
@@ -59,9 +59,9 @@ Write-Host ""
 # in the first second is cheaper for everyone.
 $Missing = @()
 foreach ($required in @(
-    "VERSION", "pyproject.toml", "LICENSE.md",
-    "corvus", "src", "assets", "plugins", "assets\CorvusGCS_logo.png", "serve.py",
-    "rust\corvus_gui\Cargo.toml", "rust\corvus_link\Cargo.toml")) {
+    "VERSION", "LICENSE.md", "assets", "assets\CorvusGCS_logo.png",
+    "python\pyproject.toml", "python\corvus", "python\src", "python\plugins", "python\serve.py",
+    "Cargo.toml", "src\main.rs", "src\link\Cargo.toml")) {
     if (-not (Test-Path (Join-Path $RepoDir $required))) { $Missing += $required }
 }
 if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
@@ -135,7 +135,7 @@ if (-not (Test-Path $VenvPy)) {
 #
 # "${Pyproject}:headless", braced: unbraced, PowerShell would read "$Pyproject:app"
 # as a scope-qualified variable named app and pass pip an empty string.
-$Pyproject = Join-Path $RepoDir "pyproject.toml"
+$Pyproject = Join-Path $RepoDir "python\pyproject.toml"
 $Requirements = $env:CORVUS_REQUIREMENTS
 if (-not $Requirements) {
     $RepoLock = Join-Path $RepoDir "requirements.lock"
@@ -157,7 +157,7 @@ $PipLog = Join-Path $BuildDir "pip.log"
 if ($LASTEXITCODE -eq 0) { & $VenvPy -m pip install @DepsArgs *>> $PipLog }
 if ($LASTEXITCODE -eq 0) { & $VenvPy -m pip install --group "${Pyproject}:package-windows" *>> $PipLog }
 # MAVLink is corvus_link, the Rust extension; building it needs cargo here.
-if ($LASTEXITCODE -eq 0) { & $VenvPy -m pip install (Join-Path $RepoDir "rust\corvus_link") *>> $PipLog }
+if ($LASTEXITCODE -eq 0) { & $VenvPy -m pip install (Join-Path $RepoDir "src\link") *>> $PipLog }
 if ($LASTEXITCODE -ne 0) {
     Write-Host "--- last 40 lines of $PipLog ---"
     Get-Content $PipLog -Tail 40
@@ -229,13 +229,13 @@ if (Test-Path $BackendDist) { Remove-Item -Recurse -Force $BackendDist }
 # Only the plugins .gitignore lets back in, without their tests\: a plugin
 # installed into plugins\ for development is not part of the release.
 $PluginStage = Join-Path $BuildDir "plugins"
-& $VenvPy (Join-Path $RepoDir "tools\bundle_plugins.py") $PluginStage
+& $VenvPy (Join-Path $RepoDir "python\tools\bundle_plugins.py") $PluginStage
 if ($LASTEXITCODE -ne 0) { throw "bundling the plugins failed" }
 
 # Only what the app reads from assets: the logos and licences. The README and
 # website screenshots stay in the repository.
 $AssetStage = Join-Path $BuildDir "assets"
-& $VenvPy (Join-Path $RepoDir "tools\bundle_assets.py") $AssetStage
+& $VenvPy (Join-Path $RepoDir "python\tools\bundle_assets.py") $AssetStage
 if ($LASTEXITCODE -ne 0) { throw "bundling the assets failed" }
 
 $PyiArgs = @(
@@ -244,14 +244,14 @@ $PyiArgs = @(
     "--distpath", $BackendDist,
     "--workpath", (Join-Path $BuildDir "work"),
     "--specpath", $BuildDir,
-    "--paths", $RepoDir,
+    "--paths", (Join-Path $RepoDir "python"),
     "--add-data", "$(Join-Path $RepoDir 'VERSION');.",
     # The Sustainable Use License requires that anyone who receives a copy of
     # the software also receives a copy of its terms. The .app and the AppImage
     # have always shipped it; this bundle did not, which made the Windows
     # artifact the one that did not satisfy its own licence.
     "--add-data", "$(Join-Path $RepoDir 'LICENSE.md');.",
-    "--add-data", "$(Join-Path $RepoDir 'src');src",
+    "--add-data", "$(Join-Path $RepoDir 'python\src');src",
     "--add-data", "$AssetStage;assets",
     # The plugins that ship with Corvus. plugin_registry.py resolves this root
     # as a sibling of the package, the same way server.py resolves src\, so it
@@ -278,14 +278,14 @@ if (-not (Test-Path $BackendExe)) { throw "expected $BackendExe, which PyInstall
 New-Item -ItemType Directory -Force -Path $AppDir | Out-Null
 Move-Item (Join-Path $BackendDist "corvus-backend") (Join-Path $AppDir "backend")
 
-# The interface. rust-toolchain.toml in rust\corvus_gui pins the Rust it needs,
+# The interface. rust-toolchain.toml at the repository root pins the Rust it needs,
 # so cargo runs from there and rustup fetches it on first use. The fonts and
-# icons are cut out of src\vendor by its build.rs and the logos are read from
+# icons are cut out of assets\ by its build.rs and the logos are read from
 # assets\, so the executable carries them. No version literal: the window
 # title asks the backend.
-Write-Host ">>> Building the interface (rust\corvus_gui, release) ..."
+Write-Host ">>> Building the interface (Cargo.toml and src\, release) ..."
 $GuiLog = Join-Path $BuildDir "cargo-gui.log"
-Push-Location (Join-Path $RepoDir "rust\corvus_gui")
+Push-Location $RepoDir
 try {
     $env:CARGO_TARGET_DIR = Join-Path $BuildDir "cargo-gui"
     & cargo build --release --locked *> $GuiLog
@@ -302,7 +302,7 @@ Copy-Item (Join-Path $BuildDir "cargo-gui\release\corvus-gcs.exe") $Exe
 # the bundled Python's data files PyInstaller collects and the app never reads:
 # lxml, pip and the pymavlink dialects but `all`.
 Write-Host ">>> Trimming what the app never loads ..."
-& $VenvPy (Join-Path $RepoDir "tools\bundle_trim.py") (Join-Path $AppDir "backend\_internal")
+& $VenvPy (Join-Path $RepoDir "python\tools\bundle_trim.py") (Join-Path $AppDir "backend\_internal")
 if ($LASTEXITCODE -ne 0) { throw "trimming the bundle failed" }
 
 # ---- 5. verify --------------------------------------------------------------

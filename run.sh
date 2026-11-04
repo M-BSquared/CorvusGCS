@@ -5,9 +5,9 @@
 #   ./run.sh --web [PORT] [MAVLINK_CONNECTION]   # the Qt window around the web UI
 #   ./run.sh --desktop-entry      # Linux: add this checkout to the app launcher
 #
-# The desktop app is the native Rust interface (rust/corvus_gui). It starts the
+# The desktop app is the native Rust interface (Cargo.toml and src/). It starts the
 # backend (serve.py, from .venv) as its child and takes it down on every way
-# out. It is built with cargo from rust/corvus_gui, whose rust-toolchain.toml
+# out. It is built with cargo from the repository root, whose rust-toolchain.toml
 # pins the Rust it needs; rustup installs that on the first run.
 #
 # The first run creates .venv from a Python >= 3.12 and installs the `dev`
@@ -99,8 +99,8 @@ fi
 WANT="$("$PY" - "$REPO_DIR" <<'PY'
 import hashlib, pathlib, sys
 root = pathlib.Path(sys.argv[1])
-h = hashlib.sha256((root / "pyproject.toml").read_bytes())
-crate = root / "rust" / "corvus_link"
+h = hashlib.sha256((root / "python" / "pyproject.toml").read_bytes())
+crate = root / "src" / "link"
 for path in sorted(crate.rglob("*")):
     if path.is_file() and "target" not in path.relative_to(crate).parts:
         h.update(str(path.relative_to(crate)).encode())
@@ -113,8 +113,8 @@ if [ "$WANT" != "$HAVE" ]; then
     echo ">>> Installing dependencies (pyproject.toml, group dev) and building corvus_link ..."
     # pip >= 25.1 is what reads [dependency-groups]; a fresh venv ships older.
     if "$PY" -m pip install --quiet --upgrade pip \
-        && "$PY" -m pip install --quiet --group "$REPO_DIR/pyproject.toml:dev" \
-        && "$PY" -m pip install --quiet "$REPO_DIR/rust/corvus_link"; then
+        && "$PY" -m pip install --quiet --group "$REPO_DIR/python/pyproject.toml:dev" \
+        && "$PY" -m pip install --quiet "$REPO_DIR/src/link"; then
         echo "$WANT" > "$STAMP"
     elif [ -n "$HAVE" ]; then
         echo "WARNING: dependency update failed (offline?); starting with the set already installed" >&2
@@ -128,7 +128,7 @@ fi
 if [ "${1:-}" = "--web" ]; then
     shift
     # exec, so SIGINT/SIGTERM reach corvus/app.py's own handlers directly.
-    exec "$PY" "$REPO_DIR/corvus/app.py" "$@"
+    exec "$PY" "$REPO_DIR/python/corvus/app.py" "$@"
 fi
 
 command -v cargo >/dev/null 2>&1 || {
@@ -137,8 +137,8 @@ command -v cargo >/dev/null 2>&1 || {
 }
 # cargo is a no-op when nothing changed. Its own output goes to the terminal:
 # the first build compiles for a couple of minutes.
-( cd "$REPO_DIR/rust/corvus_gui" && cargo build --release --quiet )
-BIN="$REPO_DIR/rust/corvus_gui/target/release/corvus-gcs"
+( cd "$REPO_DIR" && cargo build --release --quiet )
+BIN="$REPO_DIR/target/release/corvus-gcs"
 [ -x "$BIN" ] || BIN="$BIN.exe"
 # exec, so SIGINT/SIGTERM reach the interface's own handlers directly, which
 # take the backend down.

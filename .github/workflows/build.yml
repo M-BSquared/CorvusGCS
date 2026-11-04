@@ -6,10 +6,10 @@
 #                 tests/ and each plugin's own plugins/<id>/tests/.
 #   test-windows— the same suite on Windows; gates windows-app only.
 #   lint        — ruff over corvus/, serve.py, tests/ and plugins/.
-#   rust-gui    — rustfmt, clippy and the tests of rust/corvus_gui, the
+#   rust-gui    — rustfmt, clippy and the tests of the interface (Cargo.toml, src/), the
 #                 native egui interface every artifact ships.
 #   frontend    — the plain-node frontend assertions, tests/*.js and
-#                 plugins/<id>/tests/*.js, via tools/frontend_tests.js.
+#                 plugins/<id>/tests/*.js, via python/tools/frontend_tests.js.
 #   appimage    — Linux x86_64 AppImage via ./build.sh   (-> build-appimage.sh).
 #   macos-app   — macOS arm64 .app + .dmg via ./build.sh --dmg.
 #   windows-app — Windows x64 folder + zip via .\build-windows.ps1 (PyInstaller
@@ -50,13 +50,16 @@ jobs:
   # hence the upgrade before it.
   test:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: python
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
           cache: pip
-          cache-dependency-path: pyproject.toml
+          cache-dependency-path: python/pyproject.toml
       - name: Install test dependencies
         run: |
           python -m pip install --upgrade pip
@@ -64,7 +67,7 @@ jobs:
       # MAVLink is corvus_link, a Rust extension built from this checkout. The
       # hosted runners carry cargo; the build fetches maturin and the crates.
       - name: Build corvus_link
-        run: pip install ./rust/corvus_link
+        run: pip install ../src/link
       - name: pytest
         run: pytest -q
 
@@ -76,13 +79,16 @@ jobs:
   # support, but a Windows regression is not a reason to stop shipping Linux.
   test-windows:
     runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: python
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
           cache: pip
-          cache-dependency-path: pyproject.toml
+          cache-dependency-path: python/pyproject.toml
       - name: Install test dependencies
         run: |
           python -m pip install --upgrade pip
@@ -90,7 +96,7 @@ jobs:
       # MAVLink is corvus_link, a Rust extension built from this checkout. The
       # hosted runners carry cargo; the build fetches maturin and the crates.
       - name: Build corvus_link
-        run: pip install ./rust/corvus_link
+        run: pip install ../src/link
       - name: pytest
         run: pytest -q
 
@@ -104,13 +110,16 @@ jobs:
   # reason to stop shipping.
   lint:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: python
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
           cache: pip
-          cache-dependency-path: pyproject.toml
+          cache-dependency-path: python/pyproject.toml
       - name: Install lint dependencies
         run: |
           python -m pip install --upgrade pip
@@ -129,7 +138,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: rust/corvus_link
+        working-directory: src/link
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
@@ -149,15 +158,12 @@ jobs:
           export LD_LIBRARY_PATH="$(python -c 'import sysconfig; print(sysconfig.get_config_var("LIBDIR"))')"
           cargo test
 
-  # --- the native interface (rust/corvus_gui, egui) --------------------------
-  # Its own toolchain comes from rust/corvus_gui/rust-toolchain.toml, which
-  # rustup reads in that folder. The X11/Wayland headers are what eframe's
+  # --- the native interface (Cargo.toml and src/, egui) --------------------------
+  # Its own toolchain comes from rust-toolchain.toml at the repository root,
+  # which rustup reads. The X11/Wayland headers are what eframe's
   # window and clipboard crates build against on Linux.
   rust-gui:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: rust/corvus_gui
     steps:
       - uses: actions/checkout@v5
       - name: Install the windowing headers
@@ -185,7 +191,7 @@ jobs:
         # tests/*.js and every plugin's tests/*.js. The runner fails when it
         # finds nothing at all, so a broken pattern cannot pass by running
         # nothing; a plugin folder that is not there simply has no tests.
-        run: node tools/frontend_tests.js
+        run: node python/tools/frontend_tests.js
 
   # --- Linux artifact --------------------------------------------------------
   # ubuntu-22.04 on purpose: the AppImage bundles the host's CPython and links
@@ -209,7 +215,7 @@ jobs:
             wget rsync squashfs-tools imagemagick \
             libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
             libxkbcommon-dev libwayland-dev
-      # The interface is built here with cargo (rust/corvus_gui, whose
+      # The interface is built here with cargo (the repository root, whose
       # rust-toolchain.toml rustup reads). Its X11, Wayland and OpenGL
       # libraries are opened at run time from the machine it runs on.
       # appimagetool and its type-2 runtime are deliberately not cached: a
@@ -280,9 +286,10 @@ jobs:
           python3 -m venv "$RUNNER_TEMP/smoke"
           . "$RUNNER_TEMP/smoke/bin/activate"
           python -m pip install --upgrade pip
+          cd python
           pip install --group test
-          pip install ./rust/corvus_link
-          CORVUS_APP_BUNDLE="$PWD/dist/Corvus GCS.app" pytest tests/test_bundle_smoke.py -q
+          pip install ../src/link
+          CORVUS_APP_BUNDLE="$PWD/../dist/Corvus GCS.app" pytest tests/test_bundle_smoke.py -q
       - name: Keep the build logs of a failed build
         # pip, codesign and hdiutil write their reasons to build/*.log, not to
         # the job log, so without these a failed build names no cause.

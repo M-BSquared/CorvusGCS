@@ -10,7 +10,7 @@ permission:
     "docs/script.js": "allow"
     "docs/style.css": "allow"
     "docs/assets/**": "allow"
-    "tests/test_website_images.py": "allow"
+    "python/tests/test_website_images.py": "allow"
     "VERSION": "deny"
   bash:
     "*": "ask"

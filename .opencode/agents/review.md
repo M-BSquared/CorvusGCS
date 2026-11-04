@@ -4,9 +4,9 @@ mode: subagent
 permission:
   edit:
     "*": "deny"
-    "tests/**": "allow"
-    "plugins/*/tests/**": "allow"
-    "tools/frontend_tests.js": "allow"
+    "python/tests/**": "allow"
+    "python/plugins/*/tests/**": "allow"
+    "python/tools/frontend_tests.js": "allow"
     "VERSION": "deny"
   bash:
     "*": "ask"

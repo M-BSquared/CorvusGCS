@@ -22,14 +22,14 @@ __pycache__/
 /.venv/
 
 # cargo's build output for the MAVLink extension
-/rust/corvus_link/target/
+/src/link/target/
 
 # plugins besides the ones that ship with Corvus
-/plugins/*/
-!/plugins/map-entities/
-!/plugins/schwalby/
-!/plugins/ssh-launcher/
-!/plugins/vibration/
+/python/plugins/*/
+!/python/plugins/map-entities/
+!/python/plugins/schwalby/
+!/python/plugins/ssh-launcher/
+!/python/plugins/vibration/
 
 # cargo's build output for the native interface
-/rust/corvus_gui/target/
+/target/

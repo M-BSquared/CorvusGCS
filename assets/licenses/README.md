@@ -26,7 +26,7 @@ source code is published by their authors:
 - PySide6 and Shiboken6: <https://code.qt.io/cgit/pyside/pyside-setup.git/>
 - paramiko: <https://github.com/paramiko/paramiko>
 
-MAVLink is corvus_link, Corvus' own module written in Rust (rust/corvus_link
+MAVLink is corvus_link, Corvus' own module written in Rust (src/link
 in the source). On Windows it links serialport-rs, which is under the Mozilla
 Public License 2.0, unmodified. Its source and licence are at
 <https://github.com/serialport/serialport-rs> and <https://mozilla.org/MPL/2.0/>.

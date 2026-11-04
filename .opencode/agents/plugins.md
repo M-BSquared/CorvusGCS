@@ -4,15 +4,15 @@ mode: subagent
 permission:
   edit:
     "*": "deny"
-    "plugins/**": "allow"
-    "plugins/nuttx-console/**": "ask"
-    "plugins/trajectory-viewer/**": "ask"
+    "python/plugins/**": "allow"
+    "python/plugins/nuttx-console/**": "ask"
+    "python/plugins/trajectory-viewer/**": "ask"
     "src/js/plugins.js": "allow"
-    "corvus/plugin_*.py": "allow"
-    "corvus/routes/settings.py": "ask"
-    "tests/test_plugin_*.py": "allow"
-    "tests/test_server_plugins.py": "allow"
-    "tests/test_frontend_plugin*.js": "allow"
+    "python/corvus/plugin_*.py": "allow"
+    "python/corvus/routes/settings.py": "ask"
+    "python/tests/test_plugin_*.py": "allow"
+    "python/tests/test_server_plugins.py": "allow"
+    "python/tests/test_frontend_plugin*.js": "allow"
     "VERSION": "deny"
   bash:
     "*": "ask"

@@ -1,0 +1,42 @@
+[package]
+name = "corvus_link"
+version = "0.0.0"
+edition = "2021"
+rust-version = "1.85"
+publish = false
+description = "MAVLink for Corvus GCS: wire format, dialect tables, signing and the serial, UDP and TCP links"
+build = "build.rs"
+
+[lib]
+name = "corvus_link"
+path = "lib.rs"
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = ["tls"]
+# wss: needs a C compiler for ring, so a cross check without one runs with
+# --no-default-features.
+tls = ["dep:rustls", "dep:rustls-native-certs"]
+
+[dependencies]
+pyo3 = { version = "0.25", features = ["abi3-py312"] }
+sha2 = "0.10"
+indexmap = "2"
+socket2 = { version = "0.5", features = ["all"] }
+tungstenite = { version = "0.30.0", default-features = false, features = ["handshake"] }
+rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12"], optional = true }
+rustls-native-certs = { version = "0.8.5", optional = true }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_Networking_WinSock"] }
+serialport = { version = "4", default-features = false }
+
+[build-dependencies]
+roxmltree = "0.20"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

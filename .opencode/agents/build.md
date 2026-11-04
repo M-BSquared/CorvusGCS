@@ -11,19 +11,19 @@ permission:
     "run.sh": "allow"
     "pyproject.toml": "allow"
     "packaging/**": "allow"
-    "tools/qt_bundle.py": "allow"
-    "tools/bundle_trim.py": "allow"
-    "tools/bundle_assets.py": "allow"
-    "tools/bundle_plugins.py": "allow"
-    "tools/appimage_libs.py": "allow"
-    "tools/macos_launcher.c": "allow"
+    "python/tools/qt_bundle.py": "allow"
+    "python/tools/bundle_trim.py": "allow"
+    "python/tools/bundle_assets.py": "allow"
+    "python/tools/bundle_plugins.py": "allow"
+    "python/tools/appimage_libs.py": "allow"
+    "python/tools/macos_launcher.c": "allow"
     ".gitignore": "allow"
-    "tests/test_bundle_*.py": "allow"
-    "tests/test_qt_*.py": "allow"
-    "tests/test_appimage_*.py": "allow"
-    "tests/test_macos_*.py": "allow"
-    "tests/test_plugin_bundle.py": "allow"
-    "tests/test_packaging_single_source.py": "allow"
+    "python/tests/test_bundle_*.py": "allow"
+    "python/tests/test_qt_*.py": "allow"
+    "python/tests/test_appimage_*.py": "allow"
+    "python/tests/test_macos_*.py": "allow"
+    "python/tests/test_plugin_bundle.py": "allow"
+    "python/tests/test_packaging_single_source.py": "allow"
     "VERSION": "deny"
   bash:
     "*": "ask"
@@ -81,9 +81,9 @@ relocated interpreter, and excludes the never imported `QtQml`, `QtQuick` and
 ## The invariants (a violation is a build bug)
 
 - **Self contained.** Bundled CPython and stdlib, PySide6 with QtWebEngine,
-  corvus_link (MAVLink, built from `rust/corvus_link`), paramiko, pyserial.
+  corvus_link (MAVLink, built from `src/link`), paramiko, pyserial.
   No system Python, conda, Qt or Rust on the target; the build machine needs
-  cargo, and every installer runs `pip install <repo>/rust/corvus_link`.
+  cargo, and every installer runs `pip install <repo>/src/link`.
 - **PySide6, never PyQt6.** PyQt6 is GPL and does not combine with the
   Sustainable Use License. The LGPL texts in `assets/licenses/` travel in every
   bundle. Since 6.12 QtWebEngine is its own wheel, `PySide6-WebEngine`; the

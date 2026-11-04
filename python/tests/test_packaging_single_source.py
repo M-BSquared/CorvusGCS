@@ -1,0 +1,291 @@
+"""The dependency list, the Python version, and where builds land.
+
+These are not unit tests of any module. They are regression tests for a class
+of failure that only shows up in a shipped artifact, weeks later, on someone
+else's machine — the kind the suite cannot otherwise see.
+
+The dependency list used to exist in five places in three formats: a conda
+environment.yml's pip: block (with floors), two CI pipelines (``pip install
+pymavlink pyserial paramiko``, no floors), build-appimage.sh (no floors),
+build-macos-app.sh (a regex that screen-scraped environment.yml) and
+build-windows.ps1 (a hardcoded array). The Linux artifact was the one that
+mattered: built with no version floors at all, it could be produced against a
+pymavlink older than the ``>=2.4`` the code requires, and nothing would catch
+it until the field. A first consolidation still left four files — three
+requirements*.txt and environment.yml — beside pyproject.toml; now
+pyproject.toml's ``[dependency-groups]`` is the only one, and every installer
+reads it with ``pip install --group``.
+
+The Python version was inconsistent the same way: ``>=3.10`` in
+pyproject.toml, 3.11 in environment.yml, 3.12 in both pipelines. So the
+tested, the developed and the shipped interpreter could all be different ones,
+and "it passes CI" did not mean "it runs on what we ship".
+
+stdlib only, and everything is read off disk as text — these files are
+consumed by pip, bash, PowerShell and two CI runners, none of which this
+suite can execute.
+"""
+from __future__ import annotations
+
+import pathlib
+import re
+import tomllib
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+PYPROJECT = ROOT / "pyproject.toml"
+GITHUB_CI = ROOT.parent / ".github" / "workflows" / "build.yml"
+
+# Everything that installs Python packages, and the group each one installs.
+INSTALLERS = {
+    ROOT.parent / "run.sh": ['--group "$REPO_DIR/python/pyproject.toml:dev"'],
+    ROOT.parent / "build-appimage.sh": ['--group "$REPO_DIR/python/pyproject.toml:headless"'],
+    ROOT.parent / "build-macos-app.sh": ['--group "$REPO_DIR/python/pyproject.toml:headless"'],
+    ROOT.parent / "build-windows.ps1": [
+        '"--group", "${Pyproject}:headless"',
+        '--group "${Pyproject}:package-windows"',
+    ],
+    GITHUB_CI: ["pip install --group test", "pip install --group lint"],
+}
+
+# The packages the application needs at runtime. Adding one here without
+# adding it to pyproject.toml fails, which is the point.
+EXPECTED_RUNTIME = {
+    "paramiko", "pyserial", "PySide6-Essentials", "PySide6-Addons",
+    "PySide6-WebEngine",
+}
+QT = {"PySide6-Essentials", "PySide6-Addons", "PySide6-WebEngine"}
+
+
+def _groups() -> dict:
+    return tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))["dependency-groups"]
+
+
+def _group(name: str) -> dict[str, str]:
+    """{package: specifier} of one dependency group, following include-group."""
+    out: dict[str, str] = {}
+    for item in _groups()[name]:
+        if isinstance(item, dict):
+            out.update(_group(item["include-group"]))
+            continue
+        package = re.split(r"[<>=!~\[;\s]", item, maxsplit=1)[0].strip()
+        out[package] = item
+    return out
+
+
+def test_pyproject_is_the_only_dependency_file() -> None:
+    """One list. A second file is how the floors went missing last time."""
+    strays = [
+        path.name
+        for pattern in ("requirements*.txt", "requirements*.in", "environment*.yml",
+                        "environment*.yaml", "setup.py", "setup.cfg", "Pipfile",
+                        "Pipfile.lock", "poetry.lock", "uv.lock")
+        for path in ROOT.glob(pattern)
+    ]
+    assert not strays, (
+        f"{strays} restate the dependency list; it lives in pyproject.toml's "
+        "[dependency-groups] and nowhere else"
+    )
+
+
+def test_every_runtime_dependency_states_a_floor() -> None:
+    """A package with no floor is a package the build may get wrong."""
+    app = _group("app")
+    assert set(app) == EXPECTED_RUNTIME, (
+        f"the app group lists {sorted(app)}, expected {sorted(EXPECTED_RUNTIME)}"
+    )
+    for name, spec in app.items():
+        assert re.search(r"[><=~]=", spec), (
+            f"{name} has no version floor in pyproject.toml; the AppImage "
+            "used to be built this way and could ship against a pymavlink "
+            "older than the code needs"
+        )
+
+
+def test_every_installer_builds_corvus_link() -> None:
+    """MAVLink is the Rust extension in src/link, not a wheel from an
+    index. An installer that forgets it builds a Corvus that cannot fly."""
+    needles = {
+        ROOT.parent / "run.sh": '"$REPO_DIR/src/link"',
+        ROOT.parent / "build-appimage.sh": '"$REPO_DIR/src/link"',
+        ROOT.parent / "build-macos-app.sh": '"$REPO_DIR/src/link"',
+        ROOT.parent / "build-windows.ps1": '(Join-Path $RepoDir "src\\link")',
+    }
+    for path, needle in needles.items():
+        assert needle in path.read_text(encoding="utf-8"), f"{path.name} does not build corvus_link"
+    assert GITHUB_CI.read_text(encoding="utf-8").count("pip install ../src/link") == 3
+
+
+def test_the_pipeline_checks_the_rust_side() -> None:
+    """Formatting, clippy and the Rust unit tests run on every push."""
+    text = GITHUB_CI.read_text(encoding="utf-8")
+    for needle in ("cargo fmt --check", "cargo clippy --all-targets -- -D warnings", "cargo test"):
+        assert needle in text, needle
+
+
+def test_a_lock_never_pins_the_local_extension() -> None:
+    """corvus_link is built from the checkout; a lock line for it would name
+    this machine's path and fail every rebuild elsewhere."""
+    for name in ("build-appimage.sh", "build-macos-app.sh", "build-windows.ps1"):
+        text = (ROOT.parent / name).read_text(encoding="utf-8")
+        assert "--exclude corvus-link" in text, name
+
+
+def test_pymavlink_is_a_test_reference_only() -> None:
+    assert "pymavlink" not in _group("app")
+    assert "pymavlink" in _group("test")
+    for path in (ROOT / "corvus").rglob("*.py"):
+        for line in path.read_text(encoding="utf-8").splitlines():
+            stripped = line.strip()
+            assert not stripped.startswith(("from pymavlink", "import pymavlink")), (
+                f"{path.relative_to(ROOT)} imports pymavlink; the app uses corvus_link"
+            )
+
+
+def test_the_headless_group_is_the_app_group_without_qt() -> None:
+    """CI runs the suite without Qt on purpose; the floors still apply."""
+    app = _group("app")
+    headless = _group("headless")
+    assert set(app) - set(headless) == QT
+    for name, spec in headless.items():
+        assert app[name] == spec, f"{name}: headless and app disagree on the floor"
+
+
+def test_the_ci_groups_do_not_drag_qt_into_a_test_job() -> None:
+    """~100 MB of Chromium in every test job, to import none of it."""
+    test = _group("test")
+    lint = _group("lint")
+    assert not QT & set(test), "the test group must stay headless"
+    assert set(_group("headless")) <= set(test)
+    assert "pytest" in test
+    assert set(lint) == {"ruff"}, "the lint job needs ruff and nothing else"
+
+
+def test_the_dev_venv_has_everything_the_other_groups_have() -> None:
+    """run.sh's venv runs the app, the suite and the linter."""
+    dev = set(_group("dev"))
+    for name in ("app", "test", "lint"):
+        assert set(_group(name)) <= dev, f"dev is missing part of {name}"
+    assert not {"pyinstaller", "Pillow"} & dev, "build tools stay out of the dev venv"
+
+
+def test_every_installer_reads_its_group_from_pyproject() -> None:
+    for path, needles in INSTALLERS.items():
+        text = path.read_text(encoding="utf-8")
+        for needle in needles:
+            assert needle in text, f"{path.name} does not install {needle!r}"
+
+
+def test_no_installer_hardcodes_the_dependency_list() -> None:
+    """Every one of them reads the file instead of restating it."""
+    packages = ("pymavlink", "paramiko", "pyserial", "PySide6", "PyQt6", "pytest", "ruff",
+                "pyinstaller", "Pillow")
+    for path in INSTALLERS:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            stripped = line.strip()
+            # A mention in a comment is fine; an install line is the problem.
+            if stripped.startswith("#") or stripped.startswith("//"):
+                continue
+            if "pip install" not in stripped and "Deps" not in stripped:
+                continue
+            for package in packages:
+                if re.search(rf"\b{re.escape(package)}\b", stripped, re.IGNORECASE):
+                    raise AssertionError(
+                        f"{path.name} names {package} in an install line: "
+                        f"{stripped!r}. The list lives in pyproject.toml."
+                    )
+
+
+def test_the_windows_build_tool_is_installed_where_it_is_used() -> None:
+    """PyInstaller freezes the backend; it is a pyproject group installed into
+    the same build venv that runs it, not a package CI puts on the host."""
+    assert set(_group("package-windows")) == {"pyinstaller"}
+    ps1 = (ROOT.parent / "build-windows.ps1").read_text(encoding="utf-8")
+    assert "-m PyInstaller" in ps1 and "cargo build --release --locked" in ps1
+    assert "pyinstaller" not in GITHUB_CI.read_text(encoding="utf-8").split("windows-app:")[1].lower()
+
+
+def test_the_macos_build_no_longer_parses_yaml_with_a_regex() -> None:
+    """It screen-scraped environment.yml's pip: block to stay in sync."""
+    text = (ROOT.parent / "build-macos-app.sh").read_text(encoding="utf-8")
+    assert "RUNTIME_DEPS" not in text
+    assert 'pip install "${DEPS_ARGS[@]}"' in text
+
+
+def test_a_release_lock_still_wins_over_the_floors() -> None:
+    """requirements.lock is generated, not a second list — and it is what
+    makes a rebuild of a tag resolve to the versions that tag shipped with."""
+    for name in ("build-appimage.sh", "build-macos-app.sh", "build-windows.ps1"):
+        text = (ROOT.parent / name).read_text(encoding="utf-8")
+        assert "CORVUS_REQUIREMENTS" in text, name
+        assert "requirements.lock" in text, name
+
+
+def test_one_python_version_across_the_toolchain() -> None:
+    """Tested, developed and shipped must be the same interpreter."""
+    project = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))["project"]
+    assert project["requires-python"] == ">=3.12"
+
+    run_sh = (ROOT.parent / "run.sh").read_text(encoding="utf-8")
+    assert "sys.version_info < (3, 12)" in run_sh
+
+    text = GITHUB_CI.read_text(encoding="utf-8")
+    versions = set(re.findall(r"python[-:]?(?:version:)?\s*['\"]?3\.(\d+)", text))
+    assert versions <= {"12"}, f"{GITHUB_CI.name} names Python 3.{sorted(versions)}"
+
+
+def test_setup_python_caches_on_pyproject() -> None:
+    """setup-python's pip cache keys on **/requirements.txt unless told
+    otherwise, and fails the step outright when it finds none."""
+    text = GITHUB_CI.read_text(encoding="utf-8")
+    caches = text.count("cache: pip")
+    assert caches, "no pip cache configured"
+    assert text.count("cache-dependency-path: python/pyproject.toml") == caches
+
+
+def test_the_dev_venv_stays_out_of_git() -> None:
+    gitignore = (ROOT.parent / ".gitignore").read_text(encoding="utf-8").splitlines()
+    assert "/.venv/" in gitignore
+
+
+def test_the_pipeline_runs_a_linter() -> None:
+    """It did not, which is how six dead locals sat in the tree — including
+    an AppUserModelID computed and thrown away, leaving the Windows taskbar
+    showing the launcher's icon instead of Corvus's."""
+    text = GITHUB_CI.read_text(encoding="utf-8")
+    assert "ruff check" in text, f"{GITHUB_CI.name} runs no linter"
+
+
+def test_github_is_the_only_ci() -> None:
+    """The GitLab pipeline was retired. A second pipeline is a second place
+    for the job list, the apt set and the build distro to drift."""
+    assert not (ROOT.parent / ".gitlab-ci.yml").exists()
+
+
+def test_builds_write_into_dist_not_the_repo_root() -> None:
+    """Two finished .dmg files, 600 MB between them, sat in the checkout."""
+    checks = {
+        "build-appimage.sh": 'OUTPUT="$REPO_DIR/dist/',
+        "build-macos-app.sh": 'DMG="$DIST_DIR/',
+        "build-windows.ps1": '"dist\\Corvus_GCS-',
+    }
+    for name, expected in checks.items():
+        text = (ROOT.parent / name).read_text(encoding="utf-8")
+        assert expected in text, f"{name} does not write its artifact into dist/"
+
+    gitignore = (ROOT.parent / ".gitignore").read_text(encoding="utf-8")
+    assert "/dist/" in gitignore
+
+
+def test_the_qt_wheels_move_together_and_include_webengine() -> None:
+    """PySide6 6.12 ships QtWebEngine as its own wheel, PySide6-WebEngine.
+
+    With only Essentials and Addons named, 6.12 installs without a web view:
+    the macOS and Linux builds stop at the Qt trim, and the Windows build and a
+    fresh run.sh venv produce an app that dies on its first import. The three
+    wheels also share one range, so pip cannot pair a WebEngine built for one
+    Qt with the Essentials of another.
+    """
+    app = _group("app")
+    assert "PySide6-WebEngine" in app, "6.12 and later have no web view without PySide6-WebEngine"
+    ranges = {re.sub(r"^[\w-]+", "", app[package]) for package in QT}
+    assert len(ranges) == 1, f"the Qt wheels name different ranges: {ranges}"

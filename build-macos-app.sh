@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build Corvus GCS as a macOS application bundle (.app, optionally a .dmg).
 #
-# Mirrors build-appimage.sh: the native Rust interface (rust/corvus_gui, built
+# Mirrors build-appimage.sh: the native Rust interface (the interface (Cargo.toml and src/), built
 # with cargo) and the backend it starts as its child: a relocatable CPython
 # (venv --copies + host stdlib + the framework's Python dylib) with the
 # `headless` dependencies and corvus_link, packed into a standard .app layout.
@@ -81,9 +81,9 @@ done
 # first second, and name the file.
 MISSING=""
 for required in \
-    VERSION pyproject.toml LICENSE.md \
-    corvus src assets plugins assets/CorvusGCS_logo.png serve.py \
-    rust/corvus_gui/Cargo.toml rust/corvus_link/Cargo.toml
+    VERSION LICENSE.md assets assets/CorvusGCS_logo.png \
+    python/pyproject.toml python/corvus python/src python/plugins python/serve.py \
+    Cargo.toml src/main.rs src/link/Cargo.toml
 do
     [ -e "$REPO_DIR/$required" ] || MISSING="$MISSING  $required"
 done
@@ -178,7 +178,7 @@ if [ -n "$REQUIREMENTS" ]; then
     DEPS_ARGS=(-r "$REQUIREMENTS")
     DEPS_LABEL="$(basename "$REQUIREMENTS")"
 else
-    DEPS_ARGS=(--group "$REPO_DIR/pyproject.toml:headless")
+    DEPS_ARGS=(--group "$REPO_DIR/python/pyproject.toml:headless")
     DEPS_LABEL="pyproject.toml [headless]"
 fi
 LOCK_OUT="$DIST_DIR/Corvus_GCS-${VERSION}-macOS-${ARCH}.lock"
@@ -236,7 +236,7 @@ if ! "$PYROOT/bin/python3" -m pip install "${DEPS_ARGS[@]}" >>"$PIP_LOG" 2>&1; t
     exit 1
 fi
 echo ">>> Building corvus_link (MAVLink, Rust) ..."
-if ! "$PYROOT/bin/python3" -m pip install "$REPO_DIR/rust/corvus_link" >>"$PIP_LOG" 2>&1; then
+if ! "$PYROOT/bin/python3" -m pip install "$REPO_DIR/src/link" >>"$PIP_LOG" 2>&1; then
     echo "ERROR: corvus_link build failed (is cargo installed?); log: $PIP_LOG" >&2
     tail -n 20 "$PIP_LOG" >&2 || true
     exit 1
@@ -262,7 +262,7 @@ if [ -f "$LOCK_OUT" ]; then echo "    (resolved set: $LOCK_OUT)"; fi
 # also fails the build if the `all` dialect or corvus_link is gone.
 SITE_PKGS="$PYROOT/lib/python$PY_MM/site-packages"
 echo ">>> Trimming what the app never loads ..."
-"$PYBIN" "$REPO_DIR/tools/bundle_trim.py" "$SITE_PKGS"
+"$PYBIN" "$REPO_DIR/python/tools/bundle_trim.py" "$SITE_PKGS"
 rm -f "$PYROOT"/bin/pip "$PYROOT"/bin/pip3 "$PYROOT"/bin/pip3.*
 
 # ---- 4. stdlib --------------------------------------------------------------
@@ -517,17 +517,17 @@ fi
 # parent.parent/src — so VERSION, corvus/, src/, assets/ must be siblings.
 echo ">>> Copying application code ..."
 mkdir -p "$APPROOT"
-rsync -a --exclude '__pycache__' "$REPO_DIR/corvus/" "$APPROOT/corvus/"
-rsync -a --exclude '__pycache__' "$REPO_DIR/src/" "$APPROOT/src/"
+rsync -a --exclude '__pycache__' "$REPO_DIR/python/corvus/" "$APPROOT/corvus/"
+rsync -a --exclude '__pycache__' "$REPO_DIR/python/src/" "$APPROOT/src/"
 # Only what the app reads: the logos and licences. The README and website
 # screenshots stay in the repository (tools/bundle_assets.py).
-"$PYBIN" "$REPO_DIR/tools/bundle_assets.py" "$APPROOT/assets"
+"$PYBIN" "$REPO_DIR/python/tools/bundle_assets.py" "$APPROOT/assets"
 # The plugins that ship with Corvus. corvus/plugin_registry.py resolves this
 # root as a sibling of the corvus package, exactly like src/, so it has to land
 # beside it. Operator plugins live in ~/.corvus/plugins and are never bundled,
 # and neither is a plugin installed into plugins/ for development: only the
 # ones .gitignore lets back in, without their tests/.
-"$PYBIN" "$REPO_DIR/tools/bundle_plugins.py" "$APPROOT/plugins"
+"$PYBIN" "$REPO_DIR/python/tools/bundle_plugins.py" "$APPROOT/plugins"
 # -X: rsync -a above leaves extended attributes behind, cp -a does not, and a
 # working copy's (a sync agent's, Finder's) are nothing the bundle should carry.
 cp -aX "$REPO_DIR/VERSION" "$APPROOT/VERSION"
@@ -535,20 +535,20 @@ cp -aX "$REPO_DIR/VERSION" "$APPROOT/VERSION"
 # the software also receives a copy of its terms, so the licence ships in
 # the bundle rather than only in the repository.
 cp -aX "$REPO_DIR/LICENSE.md" "$APPROOT/LICENSE.md"
-if [ -f "$REPO_DIR/serve.py" ]; then
-    cp -aX "$REPO_DIR/serve.py" "$APPROOT/serve.py"
+if [ -f "$REPO_DIR/python/serve.py" ]; then
+    cp -aX "$REPO_DIR/python/serve.py" "$APPROOT/serve.py"
 fi
 
 # ---- 6b. the interface ------------------------------------------------------
-# rust/corvus_gui, native for $ARCH. rust-toolchain.toml in that folder pins the
+# The interface (Cargo.toml and src/), native for $ARCH. rust-toolchain.toml at the repository root pins the
 # Rust it needs, so cargo runs from there and rustup fetches it on first use.
-# The fonts and icons are cut out of src/vendor by its build.rs and the logos
+# The fonts and icons are cut out of assets/ by its build.rs and the logos
 # are read from assets/, so the binary carries them. No version literal: the
 # window title asks the backend.
-echo ">>> Building the interface (rust/corvus_gui, release) ..."
+echo ">>> Building the interface (Cargo.toml and src/, release) ..."
 GUI_LOG="$BUILD_DIR/cargo-gui-macos.log"
 : > "$GUI_LOG"
-if ! ( cd "$REPO_DIR/rust/corvus_gui" \
+if ! ( cd "$REPO_DIR" \
         && MACOSX_DEPLOYMENT_TARGET="$MIN_MACOS" CARGO_TARGET_DIR="$BUILD_DIR/cargo-gui" \
            cargo build --release --locked ) >>"$GUI_LOG" 2>&1; then
     echo "ERROR: the interface did not build; log: $GUI_LOG" >&2
@@ -612,7 +612,7 @@ printf 'APPL????' > "$APP/Contents/PkgInfo"
 # interface. No version literal; pythonX.Y is read at runtime.
 echo ">>> Compiling launcher for $ARCH ..."
 cc -arch "$ARCH" -mmacosx-version-min="$MIN_MACOS" -Os -Wall -Wextra -Werror \
-    -o "$APP/Contents/MacOS/corvus-gcs" "$REPO_DIR/tools/macos_launcher.c" \
+    -o "$APP/Contents/MacOS/corvus-gcs" "$REPO_DIR/python/tools/macos_launcher.c" \
     || { echo "ERROR: the launcher did not compile" >&2; exit 1; }
 chmod 0755 "$APP/Contents/MacOS/corvus-gcs"
 

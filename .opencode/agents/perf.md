@@ -4,8 +4,8 @@ mode: subagent
 permission:
   edit:
     "*": "ask"
-    "tests/test_perf_*.py": "allow"
-    "tests/test_frontend_sse_budget.js": "allow"
+    "python/tests/test_perf_*.py": "allow"
+    "python/tests/test_frontend_sse_budget.js": "allow"
     "VERSION": "deny"
   bash:
     "*": "ask"

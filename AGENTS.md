@@ -6,6 +6,23 @@ Read it first. It defines the product, the non-negotiable invariants every
 agent must honor, and the conventions that keep a multi-agent change
 consistent.
 
+## Repository layout
+
+```
+Cargo.toml  build.rs  rust-toolchain.toml  src/    the Rust program: the egui interface (src/main.rs, one
+                                                   folder per area) and, in src/link/, the MAVLink crate
+                                                   (its own Cargo.toml, PyO3, built by maturin)
+python/                                            the Python program that is being ported to Rust:
+                                                   corvus/ (backend), serve.py, src/ (web interface),
+                                                   plugins/, tests/, tools/, pyproject.toml
+assets/  docs/  VERSION  LICENSE.md                shared by both
+build*.sh  build-windows.ps1  run.sh  release.sh   packaging for the Rust interface plus its backend
+```
+
+The interface still starts `python/serve.py` as its child until the backend is
+ported. Paths in this file that name `corvus/`, `src/js`, `tests/`, `tools/`,
+`plugins/` or `pyproject.toml` are relative to `python/`.
+
 ## Agent roster
 
 OpenCode is configured here as a primary **orchestrator** that decomposes
@@ -21,7 +38,7 @@ agents. An agent's name is its file name: `backend` is `.opencode/agents/backend
   supervisor, per-stack schema registry.
 - `mavlink` — MAVLink v1/v2, autopilot comms, version-aware parameter schema,
   the flight-stack dialect layer (`corvus/autopilot.py`) that keeps PX4 and
-  ArduPilot differences in one place, and `rust/corvus_link`, the Rust module
+  ArduPilot differences in one place, and `src/link`, the Rust module
   that carries the wire format and the links.
 - `gui` — web UI, desktop app wrapper, lifecycle/shutdown path.
 - `map` — map engine, GIS transforms, offline tile cache, DEM, buildings.
@@ -88,11 +105,11 @@ until a tool and its permission are added there on purpose.
   (`http.server`, `threading`, `subprocess`, `signal`, `atexit`,
   `collections.deque`, `pathlib`, `json`, `struct`). Add a third-party dependency
   only when the stdlib genuinely cannot do the job, and justify it.
-- **MAVLink:** `corvus_link`, written in Rust (`rust/corvus_link`, PyO3,
+- **MAVLink:** `corvus_link`, written in Rust (`src/link`, PyO3,
   built with maturin). It is a drop-in for pymavlink's interface: the code
   imports `from corvus_link import mavutil` and gets the same `mavutil`,
   message classes, `MAVLink` object and connections, with the `all` dialect
-  generated from the XML in `rust/corvus_link/message_definitions/` at build
+  generated from the XML in `src/link/message_definitions/` at build
   time. pymavlink stays in the `test` group only, as the reference the parity
   tests (`tests/test_corvus_link_*.py`) hold every message, constant, frame and
   link to, and as the simulated vehicle in `tools/scene_kit`. No module under
@@ -114,7 +131,7 @@ until a tool and its permission are added there on purpose.
   version- *and* stack-aware (see the compatibility target below).
 - **Frontend:** vanilla JS / small framework, MapLibre GL JS or Leaflet for the
   map. Telemetry is pushed from the backend; the frontend never polls for live
-  data. It is being replaced by a native egui app, `rust/corvus_gui`, a
+  data. It is being replaced by a native egui app (`Cargo.toml` and `src/` at the repository root), a
   client of the same HTTP/SSE API that starts and supervises `serve.py`
   itself (or connects to `--server`), page by page with the same words and
   rules as the web page it replaces. The web interface stays until the
@@ -139,7 +156,7 @@ until a tool and its permission are added there on purpose.
 ## Platforms & packaging
 
 Corvus GCS ships as a self-contained desktop artifact per platform. Every
-artifact is the native Rust interface (`rust/corvus_gui`, egui, built with
+artifact is the native Rust interface (`Cargo.toml` and `src/`, egui, built with
 cargo) plus the backend it starts as its child (`serve.py` with a bundled
 CPython, or frozen by PyInstaller on Windows); all of them derive their version
 from the one `VERSION` read at build time. The Qt window around the web
@@ -187,7 +204,7 @@ Shared packaging invariants — a violation of any of these is a build bug:
   wheel carries two. It fails the build if the `all` dialect or the compiled
   `corvus_link` module is gone.
 - **The interface is built by cargo, locked.** `cargo build --release
-  --locked` from `rust/corvus_gui` (its `rust-toolchain.toml` pins the Rust),
+  --locked` from the repository root (its `rust-toolchain.toml` pins the Rust),
   into a target folder under `build/`. Fonts and icons are cut out of
   `src/vendor` by its `build.rs` and the logos are read from `assets/`, so the
   binary carries them. A macOS bundle holds a launcher
@@ -196,7 +213,7 @@ Shared packaging invariants — a violation of any of these is a build bug:
   `AppRun` does the same; the Windows folder holds `Corvus GCS.exe` beside
   `backend\corvus-backend.exe`, which the interface finds without flags.
 - **corvus_link is built, not downloaded.** Every installer (`run.sh`, the
-  three build scripts, CI) runs `pip install <repo>/rust/corvus_link` after
+  three build scripts, CI) runs `pip install <repo>/src/link` after
   its dependency group, so a build machine needs a Rust toolchain (cargo);
   the target machine never does. A release lock excludes it
   (`pip freeze --exclude corvus-link`), because the line would name the
@@ -453,13 +470,13 @@ Rules that keep the chain honest:
 .venv/bin/python -m pytest -q   # test suite (the gate for every change)
 .venv/bin/python -m ruff check corvus serve.py tests plugins   # lint, as CI runs it
 .venv/bin/python serve.py       # backend only, UI in a normal browser
-(cd rust/corvus_link && maturin develop --release)   # rebuild corvus_link into the venv after a Rust change
-(cd rust/corvus_link && cargo clippy --all-targets && PYO3_PYTHON=../../.venv/bin/python cargo test)   # Rust checks (libpython on the loader path, as CI sets it)
+(cd src/link && maturin develop --release)   # rebuild corvus_link into the venv after a Rust change
+(cd src/link && cargo clippy --all-targets && PYO3_PYTHON=../../.venv/bin/python cargo test)   # Rust checks (libpython on the loader path, as CI sets it)
 ./build.sh [--dmg]              # artifact for the current host (dispatches below)
 ./build-appimage.sh             # Linux artifact  (x86_64)
 ./build-macos-app.sh [--dmg]    # macOS artifact  (arm64 / x86_64)
 node tools/frontend_tests.js    # frontend assertions: tests/ + plugins/*/tests/
-(cd rust/corvus_gui && cargo run --release)   # the native interface, starts serve.py itself
+cargo run --release   # the native interface, starts serve.py itself
 python3 tools/guide.py          # after editing docs/guide/*.html: rewrite each page's frame
 git config core.hooksPath .githooks   # one-time, enables the VERSION auto-bump
 ```

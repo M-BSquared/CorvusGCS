@@ -15,7 +15,7 @@
 
 <div align="center">
   <!-- corvus:version-badge -->
-  <img src="https://img.shields.io/badge/Version-2026.11.05-f7ebe1?style=for-the-badge" height="28" alt="Version 2026.11.05" />
+  <img src="https://img.shields.io/badge/Version-2026.11.06-f7ebe1?style=for-the-badge" height="28" alt="Version 2026.11.06" />
   <img width="8" />
   <!-- <a href="https://www.python.org/" target="_blank"><img src="https://img.shields.io/badge/Python_3.12%2B-3776AB?logo=python&logoColor=white&style=for-the-badge" height="28" alt="Python 3.12+" /></a>
   <img width="8" />
@@ -194,9 +194,9 @@ run it. Python and every dependency are already inside.
 | **Windows** (x64) | `Corvus_GCS-<version>-windows-x64.zip` | Unzip anywhere and run `Corvus GCS.exe`. SmartScreen asks once: *More info → Run anyway*. |
 
 **From source** (Python 3.12+ and a Rust toolchain, for the MAVLink module in
-[`rust/corvus_link`](rust/corvus_link) and the interface in
-[`rust/corvus_gui`](rust/corvus_gui)), one command creates `.venv/`, installs
-every dependency from [`pyproject.toml`](pyproject.toml), builds the MAVLink
+[`src/link`](src/link) and the interface in
+[`Cargo.toml` and `src/`](src)), one command creates `.venv/`, installs
+every dependency from [`python/pyproject.toml`](python/pyproject.toml), builds the MAVLink
 module and the interface and opens the app:
 
 ```bash
