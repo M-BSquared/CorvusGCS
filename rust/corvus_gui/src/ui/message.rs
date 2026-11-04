@@ -1,14 +1,15 @@
 //! `Corvus.ui.message` (`.ui-msg`): a line of feedback under a form, in a
-//! tinted box with a dot before the first line.
+//! tinted box with a dot before the first line, or plain text.
 
 use eframe::egui::{self, Pos2, Rect, Stroke, Vec2};
 
 use crate::ui::kit;
 use crate::ui::style::{self, Weight};
 
-/// How a message is dressed: `ok`, `err` or `warn`.
+/// How a message is dressed: plain text, or `ok`, `err` or `warn` in a box.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
+    Plain,
     Ok,
     Err,
     Warn,
@@ -16,7 +17,14 @@ pub enum Kind {
 
 /// The message at `x, y`, `w` wide; returns its bottom.
 pub fn show(ui: &egui::Ui, x: f32, y: f32, w: f32, text: &str, kind: Kind) -> f32 {
+    if kind == Kind::Plain {
+        let g = kit::wrapped_weight(ui, text, 11.5, Weight::W400, style::text_1(), w - 20.0, 1.4);
+        let h = g.size().y;
+        ui.painter().galley(Pos2::new(x + 10.0, y + 8.0), g, style::text_1());
+        return y + h + 16.0;
+    }
     let (fg, bg) = match kind {
+        Kind::Plain => return y,
         Kind::Ok => (style::healthy(), style::healthy_dark()),
         Kind::Err => (style::critical(), style::critical_dark()),
         Kind::Warn => (style::warning(), style::warning_dark()),
