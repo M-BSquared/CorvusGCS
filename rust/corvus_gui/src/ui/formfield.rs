@@ -90,3 +90,35 @@ pub fn field(
     }
     cy
 }
+
+/// A field whose caption carries a hint icon (`info` of `Corvus.ui.field`):
+/// the caption row is the icon's 16 px tall, the icon 6 px after the words.
+/// `control` draws at the y it is given and returns its height; returns the
+/// bottom.
+#[allow(clippy::too_many_arguments)]
+pub fn field_info(
+    ui: &mut egui::Ui,
+    x: f32,
+    y: f32,
+    caption: &str,
+    info_text: &str,
+    id: impl std::hash::Hash + std::fmt::Debug,
+    control: impl FnOnce(&mut egui::Ui, f32) -> f32,
+) -> f32 {
+    let g = style::galley(ui, &caption.to_uppercase(), 10.0, Weight::W600, style::text_3(), 0.7);
+    let (gw, gh) = (g.size().x, g.size().y);
+    ui.painter()
+        .galley(Pos2::new(x, y + (INFO_ROW - gh) / 2.0), g, style::text_3());
+    crate::ui::popover::info(
+        ui,
+        Pos2::new(x + gw + 6.0 + 8.0, y + INFO_ROW / 2.0),
+        caption,
+        info_text,
+        id,
+    );
+    let top = y + INFO_ROW + GAP;
+    top + control(ui, top)
+}
+
+/// The caption row of a field that has an info icon.
+pub const INFO_ROW: f32 = 16.0;

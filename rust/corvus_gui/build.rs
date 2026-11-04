@@ -52,6 +52,7 @@ const ICONS: &[(&str, &str)] = &[
     ("pause", "Pause"),
     ("play", "Play"),
     ("copy", "Copy"),
+    ("save", "Save"),
     ("download", "Download"),
     ("rotate-ccw", "RotateCcw"),
     ("send", "Send"),

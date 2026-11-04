@@ -80,6 +80,14 @@ SIGKILL if it is still there after 8 s. If the window does not close within
 | `src/setup/firstsetup_watch.rs` | the detector's glue: reads `/api/first-setup` and `/api/firmware/status` when a link or a bootloader port appears and draws the "New controller detected" dialog |
 | `src/setup/firstsetup_flow.rs` | tests: the page against a stand-in backend (the step it opens on, the preset it writes, a refusal, Finish, the reboot) |
 | `src/ui/optioncards.rs` | `Corvus.ui.optionCards`: a grid of selectable cards with a label and a quiet description |
+| `src/setup/remoteid.rs` | the Remote ID page: the broadcast switch (off by default), what is going out right now, the advisory list of what the rules still ask for, the identity cards (aircraft, operator, flight, position, EU class) saved to the config as they are left, and the vehicle's own parameters through the shared schema form (`src/js/setup-remoteid.js`) |
+| `src/setup/remoteid_model.rs` | its rules: the nested patch a row saves, the serial number check as the operator types, the "not known" altitude, the suggested aircraft type, the three status rows |
+| `src/setup/sik.rs` | the Telemetry Radio page: the port card, then after Load the link report, the settings the two radios disagree on, both radios side by side with their staged edits, and Save, Reset and the advanced toggle; every session is a long POST (`src/js/setup-sik.js`) |
+| `src/setup/sik_model.rs` | its rules: the port and baud pickers, the gate, the edits staged per side (an edit typed back to the original is dropped), copying to the remote radio, the request bodies |
+| `src/setup/video.rs` | the Video page: the camera list with each camera's state, the editor of one camera (draft, Save, Delete with a confirmation) and the decoder card with the ffmpeg path (`src/js/setup-video.js`) |
+| `src/setup/video_model.rs` | its words and rules: state text, the detail line, the draft and what blocks a save, the request bodies |
+| `src/setup/video_window.rs` | the floating camera windows (`src/js/video-window.js`): a frame loop on `GET /api/video/frame`, a window with the terminal windows' frame; a WebRTC camera says that the native interface cannot play it |
+| `src/ui/message.rs` | `Corvus.ui.message`: the tinted line of feedback under a form (`ok`, `err`, `warn`) |
 | `src/ui/formfield.rs` | `Corvus.ui.field`: the small caption, a 32.5 px box or select, and the hint under it, shared by the plain form pages |
 | `src/setup/sensors.rs` | the sensor model and its rules: the write chain of a switch, the presets, the extra parameters kept in `~/.corvus/safety-extra.json` |
 | `src/setup/sensor_view.rs` | a sensor page drawn: Status card, Hardware card with the write table, the parameters you add by name |

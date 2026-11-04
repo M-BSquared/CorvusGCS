@@ -1,7 +1,7 @@
 //! The Setup page (src/js/setup.js, setup.css): the head with the vehicle
 //! card, the grid of twelve tiles, and the sub-pages behind them.
 //!
-//! Parameters, Safety & Sensors, Motors, Battery & Power, Calibration, Radio Control, PID Tuning, RTK GPS, Firmware and First Setup are whole. The
+//! Parameters, Safety & Sensors, Motors, Battery & Power, Calibration, Radio Control, PID Tuning, RTK GPS, Firmware, First Setup, Video, Telemetry Radio and Remote ID are whole. The
 //! other tiles open a notice that the page is still in the web interface.
 
 pub mod battery;
@@ -28,14 +28,21 @@ pub mod radio;
 pub mod radio_model;
 pub mod rc_drawing;
 pub mod rc_transmitter;
+pub mod remoteid;
+pub mod remoteid_model;
 pub mod rtk;
 pub mod rtk_model;
 pub mod safety;
 pub mod schema_form;
 pub mod sensor_view;
 pub mod sensors;
+pub mod sik;
+pub mod sik_model;
 pub mod tuning;
 pub mod tuning_model;
+pub mod video;
+pub mod video_model;
+pub mod video_window;
 
 use eframe::egui::{self, Pos2, Rect, Stroke, Vec2};
 use serde_json::Value;
@@ -48,9 +55,13 @@ use crate::setup::firstsetup::FirstSetupPage;
 use crate::setup::motors::MotorsPage;
 use crate::setup::params::ParamsPage;
 use crate::setup::radio::RadioPage;
+use crate::setup::remoteid::RemoteIdPage;
 use crate::setup::rtk::RtkPage;
 use crate::setup::safety::SafetyPage;
+use crate::setup::sik::SikPage;
 use crate::setup::tuning::TuningPage;
+use crate::setup::video::VideoPage;
+use crate::setup::video_window::VideoWindows;
 use crate::ui::card;
 use crate::ui::pagekit;
 use crate::ui::style::{self, Weight};
@@ -159,6 +170,9 @@ enum View {
     Rtk(Box<RtkPage>),
     Firmware(Box<FirmwarePage>),
     FirstSetup(Box<FirstSetupPage>),
+    Video(Box<VideoPage>),
+    Sik(Box<SikPage>),
+    RemoteId(Box<RemoteIdPage>),
     Elsewhere(&'static str),
 }
 
@@ -171,6 +185,8 @@ pub struct SetupPage {
     view: View,
     /// A scroll offset to open at (the --scroll flag, for looking at a page).
     initial_scroll: Option<f32>,
+    /// The camera windows: they stay up over the other pages.
+    video_windows: VideoWindows,
 }
 
 impl SetupPage {
@@ -181,6 +197,7 @@ impl SetupPage {
             units: crate::data::units::Units::default(),
             view: View::Tiles,
             initial_scroll: None,
+            video_windows: VideoWindows::default(),
         }
     }
 
@@ -197,6 +214,9 @@ impl SetupPage {
             View::Rtk(p) => p.take_errors(),
             View::Firmware(p) => p.take_errors(),
             View::FirstSetup(p) => p.take_errors(),
+            View::Video(p) => p.take_errors(),
+            View::Sik(p) => p.take_errors(),
+            View::RemoteId(p) => p.take_errors(),
             _ => Vec::new(),
         }
     }
@@ -223,6 +243,11 @@ impl SetupPage {
             View::FirstSetup(p) => p.take_warnings(),
             _ => Vec::new(),
         }
+    }
+
+    /// The camera windows, drawn over the whole app.
+    pub fn windows(&mut self, ctx: &egui::Context) {
+        self.video_windows.show(ctx);
     }
 
     /// Opens the page scrolled by `px`.
@@ -258,6 +283,9 @@ impl SetupPage {
                 ctx,
                 None,
             ))),
+            "video" => View::Video(Box::new(VideoPage::new(self.server.clone(), ctx))),
+            "sik" => View::Sik(Box::new(SikPage::new(self.server.clone(), ctx))),
+            "remoteid" => View::RemoteId(Box::new(RemoteIdPage::new(self.server.clone(), ctx))),
             other => match TILES.iter().find(|t| t.0 == other) {
                 Some(t) => View::Elsewhere(t.2),
                 None => View::Tiles,
@@ -328,6 +356,9 @@ impl SetupPage {
                 | View::Rtk(_)
                 | View::Firmware(_)
                 | View::FirstSetup(_)
+                | View::Video(_)
+                | View::Sik(_)
+                | View::RemoteId(_)
                 | View::Elsewhere(_) => {
                     let in_sensor = matches!(&self.view, View::Safety(p) if p.in_sensor());
                     let in_wizard = matches!(&self.view, View::Calibration(p) if p.in_wizard())
@@ -380,6 +411,12 @@ impl SetupPage {
                         if p.finished() {
                             self.view = View::Tiles;
                         }
+                    } else if let View::RemoteId(p) = &mut self.view {
+                        y = p.show(ui, x, y, w, state, now);
+                    } else if let View::Sik(p) = &mut self.view {
+                        y = p.show(ui, x, y, w, state);
+                    } else if let View::Video(p) = &mut self.view {
+                        y = p.show(ui, x, y, w, now, &mut self.video_windows);
                     } else if let View::Safety(p) = &mut self.view {
                         y = p.show(ui, x, y, w, state, checklist);
                     } else if let View::Parameters(p) = &mut self.view {
@@ -530,6 +567,9 @@ fn grid(
                     ui.ctx(),
                     None,
                 ))),
+                "video" => View::Video(Box::new(VideoPage::new(server.clone(), ui.ctx()))),
+                "sik" => View::Sik(Box::new(SikPage::new(server.clone(), ui.ctx()))),
+                "remoteid" => View::RemoteId(Box::new(RemoteIdPage::new(server.clone(), ui.ctx()))),
                 _ => View::Elsewhere(title),
             };
         }

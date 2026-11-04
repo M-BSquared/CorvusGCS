@@ -174,6 +174,7 @@ impl App {
                 panel_ui.set_clip_rect(panel);
                 self.panel.show(&mut panel_ui, panel, &state);
                 self.panel.windows(ui.ctx());
+                self.setup.windows(ui.ctx());
             });
         self.checklist.dialog(ui.ctx());
         if let Some(step) =
