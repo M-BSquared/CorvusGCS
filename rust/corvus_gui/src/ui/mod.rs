@@ -8,6 +8,7 @@ pub mod frost;
 pub mod icons;
 pub mod kit;
 pub mod menu;
+pub mod message;
 pub mod modal;
 pub mod pagekit;
 pub mod popover;

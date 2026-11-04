@@ -1,7 +1,7 @@
 //! The Setup page (src/js/setup.js, setup.css): the head with the vehicle
 //! card, the grid of twelve tiles, and the sub-pages behind them.
 //!
-//! Parameters, Safety & Sensors, Motors, Battery & Power, Calibration, Radio Control, PID Tuning and RTK GPS are whole. The
+//! Parameters, Safety & Sensors, Motors, Battery & Power, Calibration, Radio Control, PID Tuning, RTK GPS and Video are whole. The
 //! other tiles open a notice that the page is still in the web interface.
 
 pub mod battery;
@@ -30,6 +30,9 @@ pub mod sensor_view;
 pub mod sensors;
 pub mod tuning;
 pub mod tuning_model;
+pub mod video;
+pub mod video_model;
+pub mod video_window;
 
 use eframe::egui::{self, Pos2, Rect, Stroke, Vec2};
 use serde_json::Value;
@@ -43,6 +46,8 @@ use crate::setup::radio::RadioPage;
 use crate::setup::rtk::RtkPage;
 use crate::setup::safety::SafetyPage;
 use crate::setup::tuning::TuningPage;
+use crate::setup::video::VideoPage;
+use crate::setup::video_window::VideoWindows;
 use crate::ui::card;
 use crate::ui::pagekit;
 use crate::ui::style::{self, Weight};
@@ -144,6 +149,7 @@ enum View {
     Radio(Box<RadioPage>),
     Tuning(Box<TuningPage>),
     Rtk(Box<RtkPage>),
+    Video(Box<VideoPage>),
     Elsewhere(&'static str),
 }
 
@@ -156,6 +162,8 @@ pub struct SetupPage {
     view: View,
     /// A scroll offset to open at (the --scroll flag, for looking at a page).
     initial_scroll: Option<f32>,
+    /// The camera windows: they stay up over the other pages.
+    video_windows: VideoWindows,
 }
 
 impl SetupPage {
@@ -166,6 +174,7 @@ impl SetupPage {
             units: crate::data::units::Units::default(),
             view: View::Tiles,
             initial_scroll: None,
+            video_windows: VideoWindows::default(),
         }
     }
 
@@ -180,6 +189,7 @@ impl SetupPage {
             View::Radio(p) => p.take_errors(),
             View::Tuning(p) => p.take_errors(),
             View::Rtk(p) => p.take_errors(),
+            View::Video(p) => p.take_errors(),
             _ => Vec::new(),
         }
     }
@@ -202,6 +212,11 @@ impl SetupPage {
             View::Tuning(p) => p.take_warnings(),
             _ => Vec::new(),
         }
+    }
+
+    /// The camera windows, drawn over the whole app.
+    pub fn windows(&mut self, ctx: &egui::Context) {
+        self.video_windows.show(ctx);
     }
 
     /// Opens the page scrolled by `px`.
@@ -230,6 +245,7 @@ impl SetupPage {
             "control" => View::Radio(Box::new(RadioPage::new(self.server.clone(), ctx))),
             "tuning" => View::Tuning(Box::new(TuningPage::new(self.server.clone(), ctx))),
             "rtk" => View::Rtk(Box::new(RtkPage::new(self.server.clone(), ctx))),
+            "video" => View::Video(Box::new(VideoPage::new(self.server.clone(), ctx))),
             other => match TILES.iter().find(|t| t.0 == other) {
                 Some(t) => View::Elsewhere(t.2),
                 None => View::Tiles,
@@ -287,6 +303,7 @@ impl SetupPage {
                 | View::Radio(_)
                 | View::Tuning(_)
                 | View::Rtk(_)
+                | View::Video(_)
                 | View::Elsewhere(_) => {
                     let in_sensor = matches!(&self.view, View::Safety(p) if p.in_sensor());
                     let in_wizard = matches!(&self.view, View::Calibration(p) if p.in_wizard())
@@ -332,6 +349,8 @@ impl SetupPage {
                         y = p.show(ui, x, y, w, state, now);
                     } else if let View::Rtk(p) = &mut self.view {
                         y = p.show(ui, x, y, w, state, now);
+                    } else if let View::Video(p) = &mut self.view {
+                        y = p.show(ui, x, y, w, now, &mut self.video_windows);
                     } else if let View::Safety(p) = &mut self.view {
                         y = p.show(ui, x, y, w, state, checklist);
                     } else if let View::Parameters(p) = &mut self.view {
@@ -475,6 +494,7 @@ fn grid(
                 "control" => View::Radio(Box::new(RadioPage::new(server.clone(), ui.ctx()))),
                 "tuning" => View::Tuning(Box::new(TuningPage::new(server.clone(), ui.ctx()))),
                 "rtk" => View::Rtk(Box::new(RtkPage::new(server.clone(), ui.ctx()))),
+                "video" => View::Video(Box::new(VideoPage::new(server.clone(), ui.ctx()))),
                 _ => View::Elsewhere(title),
             };
         }
