@@ -1,11 +1,22 @@
 //! The Setup page (src/js/setup.js, setup.css): the head with the vehicle
 //! card, the grid of twelve tiles, and the sub-pages behind them.
 //!
-//! Parameters, Safety & Sensors and Motors are whole. The other tiles open a
-//! notice that the page is still in the web interface.
+//! Parameters, Safety & Sensors, Motors, Battery & Power, Calibration, Radio Control, PID Tuning, RTK GPS, Firmware and First Setup are whole. The
+//! other tiles open a notice that the page is still in the web interface.
 
+pub mod battery;
+pub mod battery_model;
+pub mod calib_figure;
+pub mod calib_protocol;
+pub mod calibration;
 pub mod check;
 pub mod checklist;
+pub mod firmware;
+pub mod firmware_io;
+pub mod firmware_model;
+pub mod firstsetup;
+pub mod firstsetup_model;
+pub mod firstsetup_watch;
 pub mod geofence;
 pub mod geofence_card;
 pub mod landing;
@@ -13,18 +24,33 @@ pub mod motors;
 pub mod params;
 pub mod params_dialogs;
 pub mod params_files;
+pub mod radio;
+pub mod radio_model;
+pub mod rc_drawing;
+pub mod rc_transmitter;
+pub mod rtk;
+pub mod rtk_model;
 pub mod safety;
 pub mod schema_form;
 pub mod sensor_view;
 pub mod sensors;
+pub mod tuning;
+pub mod tuning_model;
 
 use eframe::egui::{self, Pos2, Rect, Stroke, Vec2};
 use serde_json::Value;
 
 use crate::net::http::Server;
+use crate::setup::battery::BatteryPage;
+use crate::setup::calibration::CalibrationPage;
+use crate::setup::firmware::FirmwarePage;
+use crate::setup::firstsetup::FirstSetupPage;
 use crate::setup::motors::MotorsPage;
 use crate::setup::params::ParamsPage;
+use crate::setup::radio::RadioPage;
+use crate::setup::rtk::RtkPage;
 use crate::setup::safety::SafetyPage;
+use crate::setup::tuning::TuningPage;
 use crate::ui::card;
 use crate::ui::pagekit;
 use crate::ui::style::{self, Weight};
@@ -95,6 +121,16 @@ const TILES: &[(&str, &str, &str, &str)] = &[
     ("video", "video", "Video", "RTSP or WebRTC cameras in floating windows."),
 ];
 
+/// Whether the First Setup wizard is up, so the detector leaves it alone.
+pub fn first_setup_open() -> bool {
+    firstsetup::is_open()
+}
+
+/// Whether `id` names a sub page (`--page`): a tile, or `safety:SENSOR`.
+pub fn is_page(id: &str) -> bool {
+    TILES.iter().any(|t| t.0 == id) || id.starts_with("safety:")
+}
+
 /// Flight stack and version in one value, e.g. `PX4 v1.18.0`.
 pub fn firmware_text(s: &Value) -> String {
     let part = |k: &str| s.get(k).and_then(Value::as_str).filter(|t| !t.is_empty());
@@ -116,6 +152,13 @@ enum View {
     Parameters(Box<ParamsPage>),
     Safety(Box<SafetyPage>),
     Motors(Box<MotorsPage>),
+    Battery(Box<BatteryPage>),
+    Calibration(Box<CalibrationPage>),
+    Radio(Box<RadioPage>),
+    Tuning(Box<TuningPage>),
+    Rtk(Box<RtkPage>),
+    Firmware(Box<FirmwarePage>),
+    FirstSetup(Box<FirstSetupPage>),
     Elsewhere(&'static str),
 }
 
@@ -123,6 +166,8 @@ enum View {
 pub struct SetupPage {
     server: Server,
     env: crate::setup::geofence::Env,
+    /// The display units, set by the app each frame.
+    pub units: crate::data::units::Units,
     view: View,
     /// A scroll offset to open at (the --scroll flag, for looking at a page).
     initial_scroll: Option<f32>,
@@ -133,6 +178,7 @@ impl SetupPage {
         SetupPage {
             server,
             env,
+            units: crate::data::units::Units::default(),
             view: View::Tiles,
             initial_scroll: None,
         }
@@ -144,6 +190,13 @@ impl SetupPage {
             View::Parameters(p) => p.take_errors(),
             View::Safety(p) => p.take_errors(),
             View::Motors(p) => p.take_errors(),
+            View::Battery(p) => p.take_errors(),
+            View::Calibration(p) => p.take_errors(),
+            View::Radio(p) => p.take_errors(),
+            View::Tuning(p) => p.take_errors(),
+            View::Rtk(p) => p.take_errors(),
+            View::Firmware(p) => p.take_errors(),
+            View::FirstSetup(p) => p.take_errors(),
             _ => Vec::new(),
         }
     }
@@ -152,6 +205,22 @@ impl SetupPage {
     pub fn take_notes(&mut self) -> Vec<String> {
         match &mut self.view {
             View::Parameters(p) => p.take_notes(),
+            View::Calibration(p) => p.take_notes(),
+            View::Radio(p) => p.take_notes(),
+            View::Tuning(p) => p.take_notes(),
+            View::Firmware(p) => p.take_notes(),
+            View::FirstSetup(p) => p.take_notes(),
+            _ => Vec::new(),
+        }
+    }
+
+    /// Warnings for the notification board.
+    pub fn take_warnings(&mut self) -> Vec<String> {
+        match &mut self.view {
+            View::Calibration(p) => p.take_warnings(),
+            View::Tuning(p) => p.take_warnings(),
+            View::Firmware(p) => p.take_warnings(),
+            View::FirstSetup(p) => p.take_warnings(),
             _ => Vec::new(),
         }
     }
@@ -177,11 +246,34 @@ impl SetupPage {
                 View::Safety(Box::new(page))
             }
             "motors" => View::Motors(Box::new(MotorsPage::new(self.server.clone(), ctx))),
+            "battery" => View::Battery(Box::new(BatteryPage::new(self.server.clone(), ctx))),
+            "calibration" => View::Calibration(Box::new(CalibrationPage::new(self.server.clone(), ctx))),
+            "control" => View::Radio(Box::new(RadioPage::new(self.server.clone(), ctx))),
+            "tuning" => View::Tuning(Box::new(TuningPage::new(self.server.clone(), ctx))),
+            "rtk" => View::Rtk(Box::new(RtkPage::new(self.server.clone(), ctx))),
+            "firmware" => View::Firmware(Box::new(FirmwarePage::new(self.server.clone(), ctx))),
+            "firstsetup" => View::FirstSetup(Box::new(FirstSetupPage::new(
+                self.server.clone(),
+                self.env.clone(),
+                ctx,
+                None,
+            ))),
             other => match TILES.iter().find(|t| t.0 == other) {
                 Some(t) => View::Elsewhere(t.2),
                 None => View::Tiles,
             },
         };
+    }
+
+    /// Opens First Setup on `step` (empty for where the work is), as the
+    /// detector's dialog does.
+    pub fn open_first_setup(&mut self, step: &str, ctx: &egui::Context) {
+        self.view = View::FirstSetup(Box::new(FirstSetupPage::new(
+            self.server.clone(),
+            self.env.clone(),
+            ctx,
+            Some(step),
+        )));
     }
 
     /// Back to the tiles (leaving the left rail's SETUP does the same).
@@ -226,22 +318,68 @@ impl SetupPage {
                     );
                     y = grid(ui, x, y, w, &mut self.view, &self.server, &self.env);
                 }
-                View::Parameters(_) | View::Safety(_) | View::Motors(_) | View::Elsewhere(_) => {
+                View::Parameters(_)
+                | View::Safety(_)
+                | View::Motors(_)
+                | View::Battery(_)
+                | View::Calibration(_)
+                | View::Radio(_)
+                | View::Tuning(_)
+                | View::Rtk(_)
+                | View::Firmware(_)
+                | View::FirstSetup(_)
+                | View::Elsewhere(_) => {
                     let in_sensor = matches!(&self.view, View::Safety(p) if p.in_sensor());
+                    let in_wizard = matches!(&self.view, View::Calibration(p) if p.in_wizard())
+                        || matches!(&self.view, View::Radio(p) if p.in_wizard());
+                    let back_to = if matches!(&self.view, View::Radio(_)) {
+                        "Radio Control"
+                    } else {
+                        "Calibration"
+                    };
                     let (bh, back) = pagekit::back_button(
                         ui,
                         Pos2::new(x, y),
-                        if in_sensor { "Safety & Sensors" } else { "Setup" },
+                        if in_sensor {
+                            "Safety & Sensors"
+                        } else if in_wizard {
+                            back_to
+                        } else {
+                            "Setup"
+                        },
                     );
                     y += bh + 22.0;
                     if back && in_sensor {
                         if let View::Safety(p) = &mut self.view {
                             p.close_sensor();
                         }
+                    } else if back && in_wizard {
+                        if let View::Calibration(p) = &mut self.view {
+                            p.close_wizard();
+                        } else if let View::Radio(p) = &mut self.view {
+                            p.close_wizard();
+                        }
                     } else if back {
                         self.view = View::Tiles;
                     } else if let View::Motors(p) = &mut self.view {
                         y = p.show(ui, x, y, w, state, now);
+                    } else if let View::Battery(p) = &mut self.view {
+                        y = p.show(ui, x, y, w, state, &self.units);
+                    } else if let View::Calibration(p) = &mut self.view {
+                        y = p.show(ui, x, y, w, state, now);
+                    } else if let View::Radio(p) = &mut self.view {
+                        y = p.show(ui, x, y, w, state, now);
+                    } else if let View::Tuning(p) = &mut self.view {
+                        y = p.show(ui, x, y, w, state, now);
+                    } else if let View::Rtk(p) = &mut self.view {
+                        y = p.show(ui, x, y, w, state, now);
+                    } else if let View::Firmware(p) = &mut self.view {
+                        y = p.show(ui, x, y, w, state, now);
+                    } else if let View::FirstSetup(p) = &mut self.view {
+                        y = p.show(ui, x, y, w, state, now, &self.units, checklist);
+                        if p.finished() {
+                            self.view = View::Tiles;
+                        }
                     } else if let View::Safety(p) = &mut self.view {
                         y = p.show(ui, x, y, w, state, checklist);
                     } else if let View::Parameters(p) = &mut self.view {
@@ -380,6 +518,18 @@ fn grid(
                 "parameters" => View::Parameters(Box::new(ParamsPage::new(server.clone(), ui.ctx()))),
                 "safety" => View::Safety(Box::new(SafetyPage::new(server.clone(), ui.ctx(), env.clone()))),
                 "motors" => View::Motors(Box::new(MotorsPage::new(server.clone(), ui.ctx()))),
+                "battery" => View::Battery(Box::new(BatteryPage::new(server.clone(), ui.ctx()))),
+                "calibration" => View::Calibration(Box::new(CalibrationPage::new(server.clone(), ui.ctx()))),
+                "control" => View::Radio(Box::new(RadioPage::new(server.clone(), ui.ctx()))),
+                "tuning" => View::Tuning(Box::new(TuningPage::new(server.clone(), ui.ctx()))),
+                "rtk" => View::Rtk(Box::new(RtkPage::new(server.clone(), ui.ctx()))),
+                "firmware" => View::Firmware(Box::new(FirmwarePage::new(server.clone(), ui.ctx()))),
+                "firstsetup" => View::FirstSetup(Box::new(FirstSetupPage::new(
+                    server.clone(),
+                    env.clone(),
+                    ui.ctx(),
+                    None,
+                ))),
                 _ => View::Elsewhere(title),
             };
         }

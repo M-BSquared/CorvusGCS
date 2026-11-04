@@ -1,0 +1,3051 @@
+{
+ "calibration": [
+  {
+   "facts": null,
+   "state": "unknown"
+  },
+  {
+   "facts": {},
+   "state": "unknown"
+  },
+  {
+   "facts": {
+    "airframe": "done",
+    "accel": "done",
+    "gyro": "done",
+    "mag": "done"
+   },
+   "state": "done"
+  },
+  {
+   "facts": {
+    "airframe": "todo",
+    "accel": "todo",
+    "gyro": "done",
+    "mag": "done"
+   },
+   "state": "todo"
+  },
+  {
+   "facts": {
+    "airframe": "done",
+    "accel": "not_required",
+    "gyro": "done",
+    "mag": "not_required"
+   },
+   "state": "done"
+  },
+  {
+   "facts": {
+    "airframe": "done",
+    "accel": "done",
+    "gyro": "unknown",
+    "mag": "done"
+   },
+   "state": "unknown"
+  },
+  {
+   "facts": {
+    "airframe": "done",
+    "accel": "done"
+   },
+   "state": "done"
+  },
+  {
+   "facts": {
+    "airframe": "todo"
+   },
+   "state": "unknown"
+  },
+  {
+   "facts": {
+    "accel": "todo"
+   },
+   "state": "todo"
+  },
+  {
+   "facts": {
+    "airframe": "done",
+    "accel": "todo",
+    "gyro": "todo",
+    "mag": "todo"
+   },
+   "state": "todo"
+  }
+ ],
+ "states": [
+  {
+   "payload": null,
+   "visited": [],
+   "bootloader": false,
+   "states": {
+    "firmware": "todo",
+    "aircraft": "pending",
+    "frame": "pending",
+    "calibration": "pending",
+    "radio": "pending",
+    "safety": "pending",
+    "battery": "pending",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": null,
+   "visited": [],
+   "bootloader": true,
+   "states": {
+    "firmware": "todo",
+    "aircraft": "pending",
+    "frame": "pending",
+    "calibration": "pending",
+    "radio": "pending",
+    "safety": "pending",
+    "battery": "pending",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": null,
+   "visited": [
+    "firmware"
+   ],
+   "bootloader": false,
+   "states": {
+    "firmware": "todo",
+    "aircraft": "pending",
+    "frame": "pending",
+    "calibration": "pending",
+    "radio": "pending",
+    "safety": "pending",
+    "battery": "pending",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": null,
+   "visited": [
+    "firmware"
+   ],
+   "bootloader": true,
+   "states": {
+    "firmware": "todo",
+    "aircraft": "pending",
+    "frame": "pending",
+    "calibration": "pending",
+    "radio": "pending",
+    "safety": "pending",
+    "battery": "pending",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": null,
+   "visited": [
+    "aircraft",
+    "frame",
+    "radio",
+    "safety",
+    "battery",
+    "calibration"
+   ],
+   "bootloader": false,
+   "states": {
+    "firmware": "todo",
+    "aircraft": "done",
+    "frame": "done",
+    "calibration": "done",
+    "radio": "done",
+    "safety": "done",
+    "battery": "done",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": null,
+   "visited": [
+    "aircraft",
+    "frame",
+    "radio",
+    "safety",
+    "battery",
+    "calibration"
+   ],
+   "bootloader": true,
+   "states": {
+    "firmware": "todo",
+    "aircraft": "done",
+    "frame": "done",
+    "calibration": "done",
+    "radio": "done",
+    "safety": "done",
+    "battery": "done",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {},
+   "visited": [],
+   "bootloader": false,
+   "states": {
+    "firmware": "todo",
+    "aircraft": "pending",
+    "frame": "pending",
+    "calibration": "pending",
+    "radio": "pending",
+    "safety": "pending",
+    "battery": "pending",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {},
+   "visited": [],
+   "bootloader": true,
+   "states": {
+    "firmware": "todo",
+    "aircraft": "pending",
+    "frame": "pending",
+    "calibration": "pending",
+    "radio": "pending",
+    "safety": "pending",
+    "battery": "pending",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {},
+   "visited": [
+    "firmware"
+   ],
+   "bootloader": false,
+   "states": {
+    "firmware": "todo",
+    "aircraft": "pending",
+    "frame": "pending",
+    "calibration": "pending",
+    "radio": "pending",
+    "safety": "pending",
+    "battery": "pending",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {},
+   "visited": [
+    "firmware"
+   ],
+   "bootloader": true,
+   "states": {
+    "firmware": "todo",
+    "aircraft": "pending",
+    "frame": "pending",
+    "calibration": "pending",
+    "radio": "pending",
+    "safety": "pending",
+    "battery": "pending",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {},
+   "visited": [
+    "aircraft",
+    "frame",
+    "radio",
+    "safety",
+    "battery",
+    "calibration"
+   ],
+   "bootloader": false,
+   "states": {
+    "firmware": "todo",
+    "aircraft": "done",
+    "frame": "done",
+    "calibration": "done",
+    "radio": "done",
+    "safety": "done",
+    "battery": "done",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {},
+   "visited": [
+    "aircraft",
+    "frame",
+    "radio",
+    "safety",
+    "battery",
+    "calibration"
+   ],
+   "bootloader": true,
+   "states": {
+    "firmware": "todo",
+    "aircraft": "done",
+    "frame": "done",
+    "calibration": "done",
+    "radio": "done",
+    "safety": "done",
+    "battery": "done",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": false
+   },
+   "visited": [],
+   "bootloader": false,
+   "states": {
+    "firmware": "todo",
+    "aircraft": "pending",
+    "frame": "pending",
+    "calibration": "pending",
+    "radio": "pending",
+    "safety": "pending",
+    "battery": "pending",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": false
+   },
+   "visited": [],
+   "bootloader": true,
+   "states": {
+    "firmware": "todo",
+    "aircraft": "pending",
+    "frame": "pending",
+    "calibration": "pending",
+    "radio": "pending",
+    "safety": "pending",
+    "battery": "pending",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": false
+   },
+   "visited": [
+    "firmware"
+   ],
+   "bootloader": false,
+   "states": {
+    "firmware": "todo",
+    "aircraft": "pending",
+    "frame": "pending",
+    "calibration": "pending",
+    "radio": "pending",
+    "safety": "pending",
+    "battery": "pending",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": false
+   },
+   "visited": [
+    "firmware"
+   ],
+   "bootloader": true,
+   "states": {
+    "firmware": "todo",
+    "aircraft": "pending",
+    "frame": "pending",
+    "calibration": "pending",
+    "radio": "pending",
+    "safety": "pending",
+    "battery": "pending",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": false
+   },
+   "visited": [
+    "aircraft",
+    "frame",
+    "radio",
+    "safety",
+    "battery",
+    "calibration"
+   ],
+   "bootloader": false,
+   "states": {
+    "firmware": "todo",
+    "aircraft": "done",
+    "frame": "done",
+    "calibration": "done",
+    "radio": "done",
+    "safety": "done",
+    "battery": "done",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": false
+   },
+   "visited": [
+    "aircraft",
+    "frame",
+    "radio",
+    "safety",
+    "battery",
+    "calibration"
+   ],
+   "bootloader": true,
+   "states": {
+    "firmware": "todo",
+    "aircraft": "done",
+    "frame": "done",
+    "calibration": "done",
+    "radio": "done",
+    "safety": "done",
+    "battery": "done",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true
+   },
+   "visited": [],
+   "bootloader": false,
+   "states": {
+    "firmware": "done",
+    "aircraft": "pending",
+    "frame": "pending",
+    "calibration": "pending",
+    "radio": "pending",
+    "safety": "pending",
+    "battery": "pending",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true
+   },
+   "visited": [],
+   "bootloader": true,
+   "states": {
+    "firmware": "todo",
+    "aircraft": "pending",
+    "frame": "pending",
+    "calibration": "pending",
+    "radio": "pending",
+    "safety": "pending",
+    "battery": "pending",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true
+   },
+   "visited": [
+    "firmware"
+   ],
+   "bootloader": false,
+   "states": {
+    "firmware": "done",
+    "aircraft": "pending",
+    "frame": "pending",
+    "calibration": "pending",
+    "radio": "pending",
+    "safety": "pending",
+    "battery": "pending",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true
+   },
+   "visited": [
+    "firmware"
+   ],
+   "bootloader": true,
+   "states": {
+    "firmware": "todo",
+    "aircraft": "pending",
+    "frame": "pending",
+    "calibration": "pending",
+    "radio": "pending",
+    "safety": "pending",
+    "battery": "pending",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true
+   },
+   "visited": [
+    "aircraft",
+    "frame",
+    "radio",
+    "safety",
+    "battery",
+    "calibration"
+   ],
+   "bootloader": false,
+   "states": {
+    "firmware": "done",
+    "aircraft": "done",
+    "frame": "done",
+    "calibration": "done",
+    "radio": "done",
+    "safety": "done",
+    "battery": "done",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true
+   },
+   "visited": [
+    "aircraft",
+    "frame",
+    "radio",
+    "safety",
+    "battery",
+    "calibration"
+   ],
+   "bootloader": true,
+   "states": {
+    "firmware": "todo",
+    "aircraft": "done",
+    "frame": "done",
+    "calibration": "done",
+    "radio": "done",
+    "safety": "done",
+    "battery": "done",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {}
+   },
+   "visited": [],
+   "bootloader": false,
+   "states": {
+    "firmware": "done",
+    "aircraft": "pending",
+    "frame": "pending",
+    "calibration": "pending",
+    "radio": "pending",
+    "safety": "pending",
+    "battery": "pending",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {}
+   },
+   "visited": [],
+   "bootloader": true,
+   "states": {
+    "firmware": "todo",
+    "aircraft": "pending",
+    "frame": "pending",
+    "calibration": "pending",
+    "radio": "pending",
+    "safety": "pending",
+    "battery": "pending",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {}
+   },
+   "visited": [
+    "firmware"
+   ],
+   "bootloader": false,
+   "states": {
+    "firmware": "done",
+    "aircraft": "pending",
+    "frame": "pending",
+    "calibration": "pending",
+    "radio": "pending",
+    "safety": "pending",
+    "battery": "pending",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {}
+   },
+   "visited": [
+    "firmware"
+   ],
+   "bootloader": true,
+   "states": {
+    "firmware": "todo",
+    "aircraft": "pending",
+    "frame": "pending",
+    "calibration": "pending",
+    "radio": "pending",
+    "safety": "pending",
+    "battery": "pending",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {}
+   },
+   "visited": [
+    "aircraft",
+    "frame",
+    "radio",
+    "safety",
+    "battery",
+    "calibration"
+   ],
+   "bootloader": false,
+   "states": {
+    "firmware": "done",
+    "aircraft": "done",
+    "frame": "done",
+    "calibration": "done",
+    "radio": "done",
+    "safety": "done",
+    "battery": "done",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {}
+   },
+   "visited": [
+    "aircraft",
+    "frame",
+    "radio",
+    "safety",
+    "battery",
+    "calibration"
+   ],
+   "bootloader": true,
+   "states": {
+    "firmware": "todo",
+    "aircraft": "done",
+    "frame": "done",
+    "calibration": "done",
+    "radio": "done",
+    "safety": "done",
+    "battery": "done",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "done",
+     "accel": "done",
+     "gyro": "done",
+     "mag": "done"
+    }
+   },
+   "visited": [],
+   "bootloader": false,
+   "states": {
+    "firmware": "done",
+    "aircraft": "done",
+    "frame": "pending",
+    "calibration": "done",
+    "radio": "pending",
+    "safety": "pending",
+    "battery": "pending",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "done",
+     "accel": "done",
+     "gyro": "done",
+     "mag": "done"
+    }
+   },
+   "visited": [],
+   "bootloader": true,
+   "states": {
+    "firmware": "todo",
+    "aircraft": "done",
+    "frame": "pending",
+    "calibration": "done",
+    "radio": "pending",
+    "safety": "pending",
+    "battery": "pending",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "done",
+     "accel": "done",
+     "gyro": "done",
+     "mag": "done"
+    }
+   },
+   "visited": [
+    "firmware"
+   ],
+   "bootloader": false,
+   "states": {
+    "firmware": "done",
+    "aircraft": "done",
+    "frame": "pending",
+    "calibration": "done",
+    "radio": "pending",
+    "safety": "pending",
+    "battery": "pending",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "done",
+     "accel": "done",
+     "gyro": "done",
+     "mag": "done"
+    }
+   },
+   "visited": [
+    "firmware"
+   ],
+   "bootloader": true,
+   "states": {
+    "firmware": "todo",
+    "aircraft": "done",
+    "frame": "pending",
+    "calibration": "done",
+    "radio": "pending",
+    "safety": "pending",
+    "battery": "pending",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "done",
+     "accel": "done",
+     "gyro": "done",
+     "mag": "done"
+    }
+   },
+   "visited": [
+    "aircraft",
+    "frame",
+    "radio",
+    "safety",
+    "battery",
+    "calibration"
+   ],
+   "bootloader": false,
+   "states": {
+    "firmware": "done",
+    "aircraft": "done",
+    "frame": "done",
+    "calibration": "done",
+    "radio": "done",
+    "safety": "done",
+    "battery": "done",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "done",
+     "accel": "done",
+     "gyro": "done",
+     "mag": "done"
+    }
+   },
+   "visited": [
+    "aircraft",
+    "frame",
+    "radio",
+    "safety",
+    "battery",
+    "calibration"
+   ],
+   "bootloader": true,
+   "states": {
+    "firmware": "todo",
+    "aircraft": "done",
+    "frame": "done",
+    "calibration": "done",
+    "radio": "done",
+    "safety": "done",
+    "battery": "done",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "todo",
+     "accel": "todo",
+     "gyro": "done",
+     "mag": "done"
+    }
+   },
+   "visited": [],
+   "bootloader": false,
+   "states": {
+    "firmware": "done",
+    "aircraft": "todo",
+    "frame": "pending",
+    "calibration": "todo",
+    "radio": "pending",
+    "safety": "pending",
+    "battery": "pending",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "todo",
+     "accel": "todo",
+     "gyro": "done",
+     "mag": "done"
+    }
+   },
+   "visited": [],
+   "bootloader": true,
+   "states": {
+    "firmware": "todo",
+    "aircraft": "todo",
+    "frame": "pending",
+    "calibration": "todo",
+    "radio": "pending",
+    "safety": "pending",
+    "battery": "pending",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "todo",
+     "accel": "todo",
+     "gyro": "done",
+     "mag": "done"
+    }
+   },
+   "visited": [
+    "firmware"
+   ],
+   "bootloader": false,
+   "states": {
+    "firmware": "done",
+    "aircraft": "todo",
+    "frame": "pending",
+    "calibration": "todo",
+    "radio": "pending",
+    "safety": "pending",
+    "battery": "pending",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "todo",
+     "accel": "todo",
+     "gyro": "done",
+     "mag": "done"
+    }
+   },
+   "visited": [
+    "firmware"
+   ],
+   "bootloader": true,
+   "states": {
+    "firmware": "todo",
+    "aircraft": "todo",
+    "frame": "pending",
+    "calibration": "todo",
+    "radio": "pending",
+    "safety": "pending",
+    "battery": "pending",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "todo",
+     "accel": "todo",
+     "gyro": "done",
+     "mag": "done"
+    }
+   },
+   "visited": [
+    "aircraft",
+    "frame",
+    "radio",
+    "safety",
+    "battery",
+    "calibration"
+   ],
+   "bootloader": false,
+   "states": {
+    "firmware": "done",
+    "aircraft": "todo",
+    "frame": "done",
+    "calibration": "todo",
+    "radio": "done",
+    "safety": "done",
+    "battery": "done",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "todo",
+     "accel": "todo",
+     "gyro": "done",
+     "mag": "done"
+    }
+   },
+   "visited": [
+    "aircraft",
+    "frame",
+    "radio",
+    "safety",
+    "battery",
+    "calibration"
+   ],
+   "bootloader": true,
+   "states": {
+    "firmware": "todo",
+    "aircraft": "todo",
+    "frame": "done",
+    "calibration": "todo",
+    "radio": "done",
+    "safety": "done",
+    "battery": "done",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "done",
+     "accel": "not_required",
+     "gyro": "done",
+     "mag": "not_required"
+    }
+   },
+   "visited": [],
+   "bootloader": false,
+   "states": {
+    "firmware": "done",
+    "aircraft": "done",
+    "frame": "pending",
+    "calibration": "done",
+    "radio": "pending",
+    "safety": "pending",
+    "battery": "pending",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "done",
+     "accel": "not_required",
+     "gyro": "done",
+     "mag": "not_required"
+    }
+   },
+   "visited": [],
+   "bootloader": true,
+   "states": {
+    "firmware": "todo",
+    "aircraft": "done",
+    "frame": "pending",
+    "calibration": "done",
+    "radio": "pending",
+    "safety": "pending",
+    "battery": "pending",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "done",
+     "accel": "not_required",
+     "gyro": "done",
+     "mag": "not_required"
+    }
+   },
+   "visited": [
+    "firmware"
+   ],
+   "bootloader": false,
+   "states": {
+    "firmware": "done",
+    "aircraft": "done",
+    "frame": "pending",
+    "calibration": "done",
+    "radio": "pending",
+    "safety": "pending",
+    "battery": "pending",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "done",
+     "accel": "not_required",
+     "gyro": "done",
+     "mag": "not_required"
+    }
+   },
+   "visited": [
+    "firmware"
+   ],
+   "bootloader": true,
+   "states": {
+    "firmware": "todo",
+    "aircraft": "done",
+    "frame": "pending",
+    "calibration": "done",
+    "radio": "pending",
+    "safety": "pending",
+    "battery": "pending",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "done",
+     "accel": "not_required",
+     "gyro": "done",
+     "mag": "not_required"
+    }
+   },
+   "visited": [
+    "aircraft",
+    "frame",
+    "radio",
+    "safety",
+    "battery",
+    "calibration"
+   ],
+   "bootloader": false,
+   "states": {
+    "firmware": "done",
+    "aircraft": "done",
+    "frame": "done",
+    "calibration": "done",
+    "radio": "done",
+    "safety": "done",
+    "battery": "done",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "done",
+     "accel": "not_required",
+     "gyro": "done",
+     "mag": "not_required"
+    }
+   },
+   "visited": [
+    "aircraft",
+    "frame",
+    "radio",
+    "safety",
+    "battery",
+    "calibration"
+   ],
+   "bootloader": true,
+   "states": {
+    "firmware": "todo",
+    "aircraft": "done",
+    "frame": "done",
+    "calibration": "done",
+    "radio": "done",
+    "safety": "done",
+    "battery": "done",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "done",
+     "accel": "done",
+     "gyro": "unknown",
+     "mag": "done"
+    }
+   },
+   "visited": [],
+   "bootloader": false,
+   "states": {
+    "firmware": "done",
+    "aircraft": "done",
+    "frame": "pending",
+    "calibration": "pending",
+    "radio": "pending",
+    "safety": "pending",
+    "battery": "pending",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "done",
+     "accel": "done",
+     "gyro": "unknown",
+     "mag": "done"
+    }
+   },
+   "visited": [],
+   "bootloader": true,
+   "states": {
+    "firmware": "todo",
+    "aircraft": "done",
+    "frame": "pending",
+    "calibration": "pending",
+    "radio": "pending",
+    "safety": "pending",
+    "battery": "pending",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "done",
+     "accel": "done",
+     "gyro": "unknown",
+     "mag": "done"
+    }
+   },
+   "visited": [
+    "firmware"
+   ],
+   "bootloader": false,
+   "states": {
+    "firmware": "done",
+    "aircraft": "done",
+    "frame": "pending",
+    "calibration": "pending",
+    "radio": "pending",
+    "safety": "pending",
+    "battery": "pending",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "done",
+     "accel": "done",
+     "gyro": "unknown",
+     "mag": "done"
+    }
+   },
+   "visited": [
+    "firmware"
+   ],
+   "bootloader": true,
+   "states": {
+    "firmware": "todo",
+    "aircraft": "done",
+    "frame": "pending",
+    "calibration": "pending",
+    "radio": "pending",
+    "safety": "pending",
+    "battery": "pending",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "done",
+     "accel": "done",
+     "gyro": "unknown",
+     "mag": "done"
+    }
+   },
+   "visited": [
+    "aircraft",
+    "frame",
+    "radio",
+    "safety",
+    "battery",
+    "calibration"
+   ],
+   "bootloader": false,
+   "states": {
+    "firmware": "done",
+    "aircraft": "done",
+    "frame": "done",
+    "calibration": "done",
+    "radio": "done",
+    "safety": "done",
+    "battery": "done",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "done",
+     "accel": "done",
+     "gyro": "unknown",
+     "mag": "done"
+    }
+   },
+   "visited": [
+    "aircraft",
+    "frame",
+    "radio",
+    "safety",
+    "battery",
+    "calibration"
+   ],
+   "bootloader": true,
+   "states": {
+    "firmware": "todo",
+    "aircraft": "done",
+    "frame": "done",
+    "calibration": "done",
+    "radio": "done",
+    "safety": "done",
+    "battery": "done",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "done",
+     "accel": "done"
+    }
+   },
+   "visited": [],
+   "bootloader": false,
+   "states": {
+    "firmware": "done",
+    "aircraft": "done",
+    "frame": "pending",
+    "calibration": "done",
+    "radio": "pending",
+    "safety": "pending",
+    "battery": "pending",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "done",
+     "accel": "done"
+    }
+   },
+   "visited": [],
+   "bootloader": true,
+   "states": {
+    "firmware": "todo",
+    "aircraft": "done",
+    "frame": "pending",
+    "calibration": "done",
+    "radio": "pending",
+    "safety": "pending",
+    "battery": "pending",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "done",
+     "accel": "done"
+    }
+   },
+   "visited": [
+    "firmware"
+   ],
+   "bootloader": false,
+   "states": {
+    "firmware": "done",
+    "aircraft": "done",
+    "frame": "pending",
+    "calibration": "done",
+    "radio": "pending",
+    "safety": "pending",
+    "battery": "pending",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "done",
+     "accel": "done"
+    }
+   },
+   "visited": [
+    "firmware"
+   ],
+   "bootloader": true,
+   "states": {
+    "firmware": "todo",
+    "aircraft": "done",
+    "frame": "pending",
+    "calibration": "done",
+    "radio": "pending",
+    "safety": "pending",
+    "battery": "pending",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "done",
+     "accel": "done"
+    }
+   },
+   "visited": [
+    "aircraft",
+    "frame",
+    "radio",
+    "safety",
+    "battery",
+    "calibration"
+   ],
+   "bootloader": false,
+   "states": {
+    "firmware": "done",
+    "aircraft": "done",
+    "frame": "done",
+    "calibration": "done",
+    "radio": "done",
+    "safety": "done",
+    "battery": "done",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "done",
+     "accel": "done"
+    }
+   },
+   "visited": [
+    "aircraft",
+    "frame",
+    "radio",
+    "safety",
+    "battery",
+    "calibration"
+   ],
+   "bootloader": true,
+   "states": {
+    "firmware": "todo",
+    "aircraft": "done",
+    "frame": "done",
+    "calibration": "done",
+    "radio": "done",
+    "safety": "done",
+    "battery": "done",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "todo"
+    }
+   },
+   "visited": [],
+   "bootloader": false,
+   "states": {
+    "firmware": "done",
+    "aircraft": "todo",
+    "frame": "pending",
+    "calibration": "pending",
+    "radio": "pending",
+    "safety": "pending",
+    "battery": "pending",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "todo"
+    }
+   },
+   "visited": [],
+   "bootloader": true,
+   "states": {
+    "firmware": "todo",
+    "aircraft": "todo",
+    "frame": "pending",
+    "calibration": "pending",
+    "radio": "pending",
+    "safety": "pending",
+    "battery": "pending",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "todo"
+    }
+   },
+   "visited": [
+    "firmware"
+   ],
+   "bootloader": false,
+   "states": {
+    "firmware": "done",
+    "aircraft": "todo",
+    "frame": "pending",
+    "calibration": "pending",
+    "radio": "pending",
+    "safety": "pending",
+    "battery": "pending",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "todo"
+    }
+   },
+   "visited": [
+    "firmware"
+   ],
+   "bootloader": true,
+   "states": {
+    "firmware": "todo",
+    "aircraft": "todo",
+    "frame": "pending",
+    "calibration": "pending",
+    "radio": "pending",
+    "safety": "pending",
+    "battery": "pending",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "todo"
+    }
+   },
+   "visited": [
+    "aircraft",
+    "frame",
+    "radio",
+    "safety",
+    "battery",
+    "calibration"
+   ],
+   "bootloader": false,
+   "states": {
+    "firmware": "done",
+    "aircraft": "todo",
+    "frame": "done",
+    "calibration": "done",
+    "radio": "done",
+    "safety": "done",
+    "battery": "done",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "todo"
+    }
+   },
+   "visited": [
+    "aircraft",
+    "frame",
+    "radio",
+    "safety",
+    "battery",
+    "calibration"
+   ],
+   "bootloader": true,
+   "states": {
+    "firmware": "todo",
+    "aircraft": "todo",
+    "frame": "done",
+    "calibration": "done",
+    "radio": "done",
+    "safety": "done",
+    "battery": "done",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "accel": "todo"
+    }
+   },
+   "visited": [],
+   "bootloader": false,
+   "states": {
+    "firmware": "done",
+    "aircraft": "pending",
+    "frame": "pending",
+    "calibration": "todo",
+    "radio": "pending",
+    "safety": "pending",
+    "battery": "pending",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "accel": "todo"
+    }
+   },
+   "visited": [],
+   "bootloader": true,
+   "states": {
+    "firmware": "todo",
+    "aircraft": "pending",
+    "frame": "pending",
+    "calibration": "todo",
+    "radio": "pending",
+    "safety": "pending",
+    "battery": "pending",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "accel": "todo"
+    }
+   },
+   "visited": [
+    "firmware"
+   ],
+   "bootloader": false,
+   "states": {
+    "firmware": "done",
+    "aircraft": "pending",
+    "frame": "pending",
+    "calibration": "todo",
+    "radio": "pending",
+    "safety": "pending",
+    "battery": "pending",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "accel": "todo"
+    }
+   },
+   "visited": [
+    "firmware"
+   ],
+   "bootloader": true,
+   "states": {
+    "firmware": "todo",
+    "aircraft": "pending",
+    "frame": "pending",
+    "calibration": "todo",
+    "radio": "pending",
+    "safety": "pending",
+    "battery": "pending",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "accel": "todo"
+    }
+   },
+   "visited": [
+    "aircraft",
+    "frame",
+    "radio",
+    "safety",
+    "battery",
+    "calibration"
+   ],
+   "bootloader": false,
+   "states": {
+    "firmware": "done",
+    "aircraft": "done",
+    "frame": "done",
+    "calibration": "todo",
+    "radio": "done",
+    "safety": "done",
+    "battery": "done",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "accel": "todo"
+    }
+   },
+   "visited": [
+    "aircraft",
+    "frame",
+    "radio",
+    "safety",
+    "battery",
+    "calibration"
+   ],
+   "bootloader": true,
+   "states": {
+    "firmware": "todo",
+    "aircraft": "done",
+    "frame": "done",
+    "calibration": "todo",
+    "radio": "done",
+    "safety": "done",
+    "battery": "done",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "done",
+     "accel": "todo",
+     "gyro": "todo",
+     "mag": "todo"
+    }
+   },
+   "visited": [],
+   "bootloader": false,
+   "states": {
+    "firmware": "done",
+    "aircraft": "done",
+    "frame": "pending",
+    "calibration": "todo",
+    "radio": "pending",
+    "safety": "pending",
+    "battery": "pending",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "done",
+     "accel": "todo",
+     "gyro": "todo",
+     "mag": "todo"
+    }
+   },
+   "visited": [],
+   "bootloader": true,
+   "states": {
+    "firmware": "todo",
+    "aircraft": "done",
+    "frame": "pending",
+    "calibration": "todo",
+    "radio": "pending",
+    "safety": "pending",
+    "battery": "pending",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "done",
+     "accel": "todo",
+     "gyro": "todo",
+     "mag": "todo"
+    }
+   },
+   "visited": [
+    "firmware"
+   ],
+   "bootloader": false,
+   "states": {
+    "firmware": "done",
+    "aircraft": "done",
+    "frame": "pending",
+    "calibration": "todo",
+    "radio": "pending",
+    "safety": "pending",
+    "battery": "pending",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "done",
+     "accel": "todo",
+     "gyro": "todo",
+     "mag": "todo"
+    }
+   },
+   "visited": [
+    "firmware"
+   ],
+   "bootloader": true,
+   "states": {
+    "firmware": "todo",
+    "aircraft": "done",
+    "frame": "pending",
+    "calibration": "todo",
+    "radio": "pending",
+    "safety": "pending",
+    "battery": "pending",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "done",
+     "accel": "todo",
+     "gyro": "todo",
+     "mag": "todo"
+    }
+   },
+   "visited": [
+    "aircraft",
+    "frame",
+    "radio",
+    "safety",
+    "battery",
+    "calibration"
+   ],
+   "bootloader": false,
+   "states": {
+    "firmware": "done",
+    "aircraft": "done",
+    "frame": "done",
+    "calibration": "todo",
+    "radio": "done",
+    "safety": "done",
+    "battery": "done",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "done",
+     "accel": "todo",
+     "gyro": "todo",
+     "mag": "todo"
+    }
+   },
+   "visited": [
+    "aircraft",
+    "frame",
+    "radio",
+    "safety",
+    "battery",
+    "calibration"
+   ],
+   "bootloader": true,
+   "states": {
+    "firmware": "todo",
+    "aircraft": "done",
+    "frame": "done",
+    "calibration": "todo",
+    "radio": "done",
+    "safety": "done",
+    "battery": "done",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "done",
+     "accel": "done",
+     "gyro": "done",
+     "mag": "done"
+    },
+    "prompt": true,
+    "reasons": [
+     "a",
+     "b"
+    ]
+   },
+   "visited": [],
+   "bootloader": false,
+   "states": {
+    "firmware": "done",
+    "aircraft": "done",
+    "frame": "pending",
+    "calibration": "done",
+    "radio": "pending",
+    "safety": "pending",
+    "battery": "pending",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "done",
+     "accel": "done",
+     "gyro": "done",
+     "mag": "done"
+    },
+    "prompt": true,
+    "reasons": [
+     "a",
+     "b"
+    ]
+   },
+   "visited": [],
+   "bootloader": true,
+   "states": {
+    "firmware": "todo",
+    "aircraft": "done",
+    "frame": "pending",
+    "calibration": "done",
+    "radio": "pending",
+    "safety": "pending",
+    "battery": "pending",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "done",
+     "accel": "done",
+     "gyro": "done",
+     "mag": "done"
+    },
+    "prompt": true,
+    "reasons": [
+     "a",
+     "b"
+    ]
+   },
+   "visited": [
+    "firmware"
+   ],
+   "bootloader": false,
+   "states": {
+    "firmware": "done",
+    "aircraft": "done",
+    "frame": "pending",
+    "calibration": "done",
+    "radio": "pending",
+    "safety": "pending",
+    "battery": "pending",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "done",
+     "accel": "done",
+     "gyro": "done",
+     "mag": "done"
+    },
+    "prompt": true,
+    "reasons": [
+     "a",
+     "b"
+    ]
+   },
+   "visited": [
+    "firmware"
+   ],
+   "bootloader": true,
+   "states": {
+    "firmware": "todo",
+    "aircraft": "done",
+    "frame": "pending",
+    "calibration": "done",
+    "radio": "pending",
+    "safety": "pending",
+    "battery": "pending",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "done",
+     "accel": "done",
+     "gyro": "done",
+     "mag": "done"
+    },
+    "prompt": true,
+    "reasons": [
+     "a",
+     "b"
+    ]
+   },
+   "visited": [
+    "aircraft",
+    "frame",
+    "radio",
+    "safety",
+    "battery",
+    "calibration"
+   ],
+   "bootloader": false,
+   "states": {
+    "firmware": "done",
+    "aircraft": "done",
+    "frame": "done",
+    "calibration": "done",
+    "radio": "done",
+    "safety": "done",
+    "battery": "done",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "done",
+     "accel": "done",
+     "gyro": "done",
+     "mag": "done"
+    },
+    "prompt": true,
+    "reasons": [
+     "a",
+     "b"
+    ]
+   },
+   "visited": [
+    "aircraft",
+    "frame",
+    "radio",
+    "safety",
+    "battery",
+    "calibration"
+   ],
+   "bootloader": true,
+   "states": {
+    "firmware": "todo",
+    "aircraft": "done",
+    "frame": "done",
+    "calibration": "done",
+    "radio": "done",
+    "safety": "done",
+    "battery": "done",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true,
+    "prompt": false,
+    "reasons": []
+   },
+   "visited": [],
+   "bootloader": false,
+   "states": {
+    "firmware": "done",
+    "aircraft": "pending",
+    "frame": "pending",
+    "calibration": "pending",
+    "radio": "pending",
+    "safety": "pending",
+    "battery": "pending",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true,
+    "prompt": false,
+    "reasons": []
+   },
+   "visited": [],
+   "bootloader": true,
+   "states": {
+    "firmware": "todo",
+    "aircraft": "pending",
+    "frame": "pending",
+    "calibration": "pending",
+    "radio": "pending",
+    "safety": "pending",
+    "battery": "pending",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true,
+    "prompt": false,
+    "reasons": []
+   },
+   "visited": [
+    "firmware"
+   ],
+   "bootloader": false,
+   "states": {
+    "firmware": "done",
+    "aircraft": "pending",
+    "frame": "pending",
+    "calibration": "pending",
+    "radio": "pending",
+    "safety": "pending",
+    "battery": "pending",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true,
+    "prompt": false,
+    "reasons": []
+   },
+   "visited": [
+    "firmware"
+   ],
+   "bootloader": true,
+   "states": {
+    "firmware": "todo",
+    "aircraft": "pending",
+    "frame": "pending",
+    "calibration": "pending",
+    "radio": "pending",
+    "safety": "pending",
+    "battery": "pending",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true,
+    "prompt": false,
+    "reasons": []
+   },
+   "visited": [
+    "aircraft",
+    "frame",
+    "radio",
+    "safety",
+    "battery",
+    "calibration"
+   ],
+   "bootloader": false,
+   "states": {
+    "firmware": "done",
+    "aircraft": "done",
+    "frame": "done",
+    "calibration": "done",
+    "radio": "done",
+    "safety": "done",
+    "battery": "done",
+    "finish": "pending"
+   }
+  },
+  {
+   "payload": {
+    "connected": true,
+    "prompt": false,
+    "reasons": []
+   },
+   "visited": [
+    "aircraft",
+    "frame",
+    "radio",
+    "safety",
+    "battery",
+    "calibration"
+   ],
+   "bootloader": true,
+   "states": {
+    "firmware": "todo",
+    "aircraft": "done",
+    "frame": "done",
+    "calibration": "done",
+    "radio": "done",
+    "safety": "done",
+    "battery": "done",
+    "finish": "pending"
+   }
+  }
+ ],
+ "initial": [
+  {
+   "payload": null,
+   "bootloader": false,
+   "step": "firmware"
+  },
+  {
+   "payload": null,
+   "bootloader": true,
+   "step": "firmware"
+  },
+  {
+   "payload": {},
+   "bootloader": false,
+   "step": "firmware"
+  },
+  {
+   "payload": {},
+   "bootloader": true,
+   "step": "firmware"
+  },
+  {
+   "payload": {
+    "connected": false
+   },
+   "bootloader": false,
+   "step": "firmware"
+  },
+  {
+   "payload": {
+    "connected": false
+   },
+   "bootloader": true,
+   "step": "firmware"
+  },
+  {
+   "payload": {
+    "connected": true
+   },
+   "bootloader": false,
+   "step": "aircraft"
+  },
+  {
+   "payload": {
+    "connected": true
+   },
+   "bootloader": true,
+   "step": "firmware"
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {}
+   },
+   "bootloader": false,
+   "step": "aircraft"
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {}
+   },
+   "bootloader": true,
+   "step": "firmware"
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "done",
+     "accel": "done",
+     "gyro": "done",
+     "mag": "done"
+    }
+   },
+   "bootloader": false,
+   "step": "aircraft"
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "done",
+     "accel": "done",
+     "gyro": "done",
+     "mag": "done"
+    }
+   },
+   "bootloader": true,
+   "step": "firmware"
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "todo",
+     "accel": "todo",
+     "gyro": "done",
+     "mag": "done"
+    }
+   },
+   "bootloader": false,
+   "step": "aircraft"
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "todo",
+     "accel": "todo",
+     "gyro": "done",
+     "mag": "done"
+    }
+   },
+   "bootloader": true,
+   "step": "firmware"
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "done",
+     "accel": "not_required",
+     "gyro": "done",
+     "mag": "not_required"
+    }
+   },
+   "bootloader": false,
+   "step": "aircraft"
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "done",
+     "accel": "not_required",
+     "gyro": "done",
+     "mag": "not_required"
+    }
+   },
+   "bootloader": true,
+   "step": "firmware"
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "done",
+     "accel": "done",
+     "gyro": "unknown",
+     "mag": "done"
+    }
+   },
+   "bootloader": false,
+   "step": "aircraft"
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "done",
+     "accel": "done",
+     "gyro": "unknown",
+     "mag": "done"
+    }
+   },
+   "bootloader": true,
+   "step": "firmware"
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "done",
+     "accel": "done"
+    }
+   },
+   "bootloader": false,
+   "step": "aircraft"
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "done",
+     "accel": "done"
+    }
+   },
+   "bootloader": true,
+   "step": "firmware"
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "todo"
+    }
+   },
+   "bootloader": false,
+   "step": "aircraft"
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "todo"
+    }
+   },
+   "bootloader": true,
+   "step": "firmware"
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "accel": "todo"
+    }
+   },
+   "bootloader": false,
+   "step": "calibration"
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "accel": "todo"
+    }
+   },
+   "bootloader": true,
+   "step": "firmware"
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "done",
+     "accel": "todo",
+     "gyro": "todo",
+     "mag": "todo"
+    }
+   },
+   "bootloader": false,
+   "step": "calibration"
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "done",
+     "accel": "todo",
+     "gyro": "todo",
+     "mag": "todo"
+    }
+   },
+   "bootloader": true,
+   "step": "firmware"
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "done",
+     "accel": "done",
+     "gyro": "done",
+     "mag": "done"
+    },
+    "prompt": true,
+    "reasons": [
+     "a",
+     "b"
+    ]
+   },
+   "bootloader": false,
+   "step": "aircraft"
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "done",
+     "accel": "done",
+     "gyro": "done",
+     "mag": "done"
+    },
+    "prompt": true,
+    "reasons": [
+     "a",
+     "b"
+    ]
+   },
+   "bootloader": true,
+   "step": "firmware"
+  },
+  {
+   "payload": {
+    "connected": true,
+    "prompt": false,
+    "reasons": []
+   },
+   "bootloader": false,
+   "step": "aircraft"
+  },
+  {
+   "payload": {
+    "connected": true,
+    "prompt": false,
+    "reasons": []
+   },
+   "bootloader": true,
+   "step": "firmware"
+  }
+ ],
+ "prompt": [
+  {
+   "payload": null,
+   "silenced": false,
+   "prompt": false
+  },
+  {
+   "payload": null,
+   "silenced": true,
+   "prompt": false
+  },
+  {
+   "payload": {},
+   "silenced": false,
+   "prompt": false
+  },
+  {
+   "payload": {},
+   "silenced": true,
+   "prompt": false
+  },
+  {
+   "payload": {
+    "connected": false
+   },
+   "silenced": false,
+   "prompt": false
+  },
+  {
+   "payload": {
+    "connected": false
+   },
+   "silenced": true,
+   "prompt": false
+  },
+  {
+   "payload": {
+    "connected": true
+   },
+   "silenced": false,
+   "prompt": false
+  },
+  {
+   "payload": {
+    "connected": true
+   },
+   "silenced": true,
+   "prompt": false
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {}
+   },
+   "silenced": false,
+   "prompt": false
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {}
+   },
+   "silenced": true,
+   "prompt": false
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "done",
+     "accel": "done",
+     "gyro": "done",
+     "mag": "done"
+    }
+   },
+   "silenced": false,
+   "prompt": false
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "done",
+     "accel": "done",
+     "gyro": "done",
+     "mag": "done"
+    }
+   },
+   "silenced": true,
+   "prompt": false
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "todo",
+     "accel": "todo",
+     "gyro": "done",
+     "mag": "done"
+    }
+   },
+   "silenced": false,
+   "prompt": false
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "todo",
+     "accel": "todo",
+     "gyro": "done",
+     "mag": "done"
+    }
+   },
+   "silenced": true,
+   "prompt": false
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "done",
+     "accel": "not_required",
+     "gyro": "done",
+     "mag": "not_required"
+    }
+   },
+   "silenced": false,
+   "prompt": false
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "done",
+     "accel": "not_required",
+     "gyro": "done",
+     "mag": "not_required"
+    }
+   },
+   "silenced": true,
+   "prompt": false
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "done",
+     "accel": "done",
+     "gyro": "unknown",
+     "mag": "done"
+    }
+   },
+   "silenced": false,
+   "prompt": false
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "done",
+     "accel": "done",
+     "gyro": "unknown",
+     "mag": "done"
+    }
+   },
+   "silenced": true,
+   "prompt": false
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "done",
+     "accel": "done"
+    }
+   },
+   "silenced": false,
+   "prompt": false
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "done",
+     "accel": "done"
+    }
+   },
+   "silenced": true,
+   "prompt": false
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "todo"
+    }
+   },
+   "silenced": false,
+   "prompt": false
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "todo"
+    }
+   },
+   "silenced": true,
+   "prompt": false
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "accel": "todo"
+    }
+   },
+   "silenced": false,
+   "prompt": false
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "accel": "todo"
+    }
+   },
+   "silenced": true,
+   "prompt": false
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "done",
+     "accel": "todo",
+     "gyro": "todo",
+     "mag": "todo"
+    }
+   },
+   "silenced": false,
+   "prompt": false
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "done",
+     "accel": "todo",
+     "gyro": "todo",
+     "mag": "todo"
+    }
+   },
+   "silenced": true,
+   "prompt": false
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "done",
+     "accel": "done",
+     "gyro": "done",
+     "mag": "done"
+    },
+    "prompt": true,
+    "reasons": [
+     "a",
+     "b"
+    ]
+   },
+   "silenced": false,
+   "prompt": true
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "done",
+     "accel": "done",
+     "gyro": "done",
+     "mag": "done"
+    },
+    "prompt": true,
+    "reasons": [
+     "a",
+     "b"
+    ]
+   },
+   "silenced": true,
+   "prompt": false
+  },
+  {
+   "payload": {
+    "connected": true,
+    "prompt": false,
+    "reasons": []
+   },
+   "silenced": false,
+   "prompt": false
+  },
+  {
+   "payload": {
+    "connected": true,
+    "prompt": false,
+    "reasons": []
+   },
+   "silenced": true,
+   "prompt": false
+  }
+ ],
+ "reasons": [
+  {
+   "payload": null,
+   "reasons": [
+    "This controller looks like it has not been set up."
+   ]
+  },
+  {
+   "payload": {},
+   "reasons": [
+    "This controller looks like it has not been set up."
+   ]
+  },
+  {
+   "payload": {
+    "connected": false
+   },
+   "reasons": [
+    "This controller looks like it has not been set up."
+   ]
+  },
+  {
+   "payload": {
+    "connected": true
+   },
+   "reasons": [
+    "This controller looks like it has not been set up."
+   ]
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {}
+   },
+   "reasons": [
+    "This controller looks like it has not been set up."
+   ]
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "done",
+     "accel": "done",
+     "gyro": "done",
+     "mag": "done"
+    }
+   },
+   "reasons": [
+    "This controller looks like it has not been set up."
+   ]
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "todo",
+     "accel": "todo",
+     "gyro": "done",
+     "mag": "done"
+    }
+   },
+   "reasons": [
+    "This controller looks like it has not been set up."
+   ]
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "done",
+     "accel": "not_required",
+     "gyro": "done",
+     "mag": "not_required"
+    }
+   },
+   "reasons": [
+    "This controller looks like it has not been set up."
+   ]
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "done",
+     "accel": "done",
+     "gyro": "unknown",
+     "mag": "done"
+    }
+   },
+   "reasons": [
+    "This controller looks like it has not been set up."
+   ]
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "done",
+     "accel": "done"
+    }
+   },
+   "reasons": [
+    "This controller looks like it has not been set up."
+   ]
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "todo"
+    }
+   },
+   "reasons": [
+    "This controller looks like it has not been set up."
+   ]
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "accel": "todo"
+    }
+   },
+   "reasons": [
+    "This controller looks like it has not been set up."
+   ]
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "done",
+     "accel": "todo",
+     "gyro": "todo",
+     "mag": "todo"
+    }
+   },
+   "reasons": [
+    "This controller looks like it has not been set up."
+   ]
+  },
+  {
+   "payload": {
+    "connected": true,
+    "facts": {
+     "airframe": "done",
+     "accel": "done",
+     "gyro": "done",
+     "mag": "done"
+    },
+    "prompt": true,
+    "reasons": [
+     "a",
+     "b"
+    ]
+   },
+   "reasons": [
+    "a",
+    "b"
+   ]
+  },
+  {
+   "payload": {
+    "connected": true,
+    "prompt": false,
+    "reasons": []
+   },
+   "reasons": [
+    "This controller looks like it has not been set up."
+   ]
+  }
+ ],
+ "steps": [
+  {
+   "id": "firmware",
+   "label": "Firmware",
+   "title": "Install the firmware",
+   "text": "A new controller usually has no firmware, or not the one you want. Pick PX4 or ArduPilot below and flash it over the USB cable. If it already runs the firmware you want, continue."
+  },
+  {
+   "id": "aircraft",
+   "label": "Aircraft",
+   "title": "Choose the aircraft type",
+   "text": "Tell the controller what it is flying. This decides which controllers run and how many motors it expects."
+  },
+  {
+   "id": "frame",
+   "label": "Frame and motors",
+   "title": "Frame, motors and positions",
+   "text": "Check the motor order and spin direction, and set where the flight controller and the GPS sit on the drawing of the aircraft. Test the motors with the propellers removed."
+  },
+  {
+   "id": "calibration",
+   "label": "Calibration",
+   "title": "Orientation and calibration",
+   "text": "First set how the controller is turned on the aircraft. Then calibrate the gyro, the accelerometer and the compass, and level the horizon. A changed rotation needs a reboot and a new calibration."
+  },
+  {
+   "id": "radio",
+   "label": "Radio",
+   "title": "Radio control",
+   "text": "Bind the transmitter, calibrate the sticks and assign the flight mode switch. Skip this if you fly without a transmitter."
+  },
+  {
+   "id": "safety",
+   "label": "Safety",
+   "title": "Safety and failsafes",
+   "text": "Set what the aircraft does when the radio or the battery fails, and which checks must pass before it arms."
+  },
+  {
+   "id": "battery",
+   "label": "Battery",
+   "title": "Battery and power",
+   "text": "Enter the cell count and the capacity so the remaining charge is honest."
+  },
+  {
+   "id": "finish",
+   "label": "Finish",
+   "title": "Ready to fly?",
+   "text": "Here is what is done and what is still open."
+  }
+ ],
+ "labels": [
+  {
+   "payload": {
+    "presets": [
+     {
+      "id": 4001,
+      "label": "Generic quad"
+     }
+    ]
+   },
+   "id": 4001,
+   "label": "Generic quad"
+  },
+  {
+   "payload": {
+    "presets": []
+   },
+   "id": 1,
+   "label": ""
+  },
+  {
+   "payload": null,
+   "id": 1,
+   "label": ""
+  }
+ ]
+}

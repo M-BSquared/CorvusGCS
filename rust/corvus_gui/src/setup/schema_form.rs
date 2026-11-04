@@ -31,6 +31,11 @@ pub struct Look {
     pub hint_as_info: bool,
     /// `.safety-extra-field`: the label is a parameter name, in mono.
     pub mono_label: bool,
+    /// The control column's floor (`minmax(220px, 1fr)` on Battery).
+    pub control_min: f32,
+    /// A number input's own width and height where the page departs from
+    /// `.pform-input` (`.battery-input`: 150 px, a mono line).
+    pub number: Option<(f32, f32)>,
 }
 
 impl Look {
@@ -41,6 +46,8 @@ impl Look {
         pad: 7.0,
         hint_as_info: false,
         mono_label: false,
+        control_min: 0.0,
+        number: None,
     };
     /// A parameter the operator named on a sensor page.
     pub const EXTRA: Look = Look {
@@ -49,6 +56,8 @@ impl Look {
         pad: 3.0,
         hint_as_info: false,
         mono_label: true,
+        control_min: 0.0,
+        number: None,
     };
     /// `.motors-field`: short labels, hints behind an icon.
     pub const MOTORS: Look = Look {
@@ -57,6 +66,38 @@ impl Look {
         pad: 5.0,
         hint_as_info: true,
         mono_label: false,
+        control_min: 0.0,
+        number: None,
+    };
+    /// `.pform-field` as it is: a 130 to 220 px label column.
+    pub const CALIB: Look = Look {
+        label_min: 130.0,
+        label_max: 220.0,
+        pad: 7.0,
+        hint_as_info: false,
+        mono_label: false,
+        control_min: 0.0,
+        number: None,
+    };
+    /// `.tune-field`: a wider label column for names of an axis and a term.
+    pub const TUNING: Look = Look {
+        label_min: 150.0,
+        label_max: 240.0,
+        pad: 7.0,
+        hint_as_info: false,
+        mono_label: false,
+        control_min: 0.0,
+        number: None,
+    };
+    /// `.battery-field`: a 220 px control column, 150 px inputs.
+    pub const BATTERY: Look = Look {
+        label_min: 140.0,
+        label_max: 230.0,
+        pad: 7.0,
+        hint_as_info: false,
+        mono_label: false,
+        control_min: 220.0,
+        number: Some((150.0, 29.5)),
     };
 }
 
@@ -190,6 +231,16 @@ pub fn signed_value(current: f64, sign: i64, fallback: f64) -> f64 {
 
 type Write = (String, f64, Vec<String>, Pending<Result<(), String>>);
 
+/// What a page adds to a row: something after the control and its unit (the
+/// Detect button of Radio Control), and a warning on the label.
+#[derive(Default)]
+pub struct RowHook<'a> {
+    /// Draws at `x`, `top` with the control's height and returns the x it ends at.
+    #[allow(clippy::type_complexity)]
+    pub after: Option<&'a mut dyn FnMut(&mut egui::Ui, &Field, f32, f32, f32) -> f32>,
+    pub warn: Option<&'a dyn Fn(&Field) -> bool>,
+}
+
 /// What a form remembers between frames.
 #[derive(Default)]
 pub struct FormState {
@@ -212,6 +263,20 @@ pub struct FormState {
 impl FormState {
     pub fn take_errors(&mut self) -> Vec<String> {
         std::mem::take(&mut self.errors)
+    }
+
+    /// Sets the status line next to a field (`setFieldStatus`).
+    pub fn set_status(&mut self, param: &str, cls: &'static str, text: String) {
+        self.status.insert(param.into(), (cls, text));
+    }
+
+    /// Writes one value as the control would; false while a write is on its way.
+    pub fn write_value(&mut self, ctx: &egui::Context, server: &Server, f: &Field, value: f64) -> bool {
+        if self.busy() {
+            return false;
+        }
+        self.write(ctx, server, f, value);
+        true
     }
 
     /// The status line of a parameter's last write.
@@ -606,10 +671,27 @@ impl FormState {
         server: &Server,
         fields: &[Field],
         x: f32,
+        y: f32,
+        w: f32,
+        armed: bool,
+        look: Look,
+    ) -> f32 {
+        self.show_hooked(ui, ctx, server, fields, x, y, w, armed, look, &mut RowHook::default())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn show_hooked(
+        &mut self,
+        ui: &mut egui::Ui,
+        ctx: &egui::Context,
+        server: &Server,
+        fields: &[Field],
+        x: f32,
         mut y: f32,
         w: f32,
         armed: bool,
         look: Look,
+        hook: &mut RowHook<'_>,
     ) -> f32 {
         let painter = ui.painter().clone();
         for (i, f) in fields.iter().enumerate() {
@@ -637,6 +719,7 @@ impl FormState {
                     (widest + 11.0 + 26.0 + 2.0).clamp(150.0, 300.0)
                 }
             };
+            let natural = natural.max(look.control_min);
             // under 721 a row is one column: the label over its control
             let narrow = crate::app::responsive::Vw::of(ctx).max720;
             let label_w = if narrow {
@@ -649,7 +732,11 @@ impl FormState {
             let cx = if narrow { x } else { x + label_w + 12.0 };
             let cw = if narrow { w } else { w - label_w - 12.0 };
             let pad = look.pad;
-            let control_h: f32 = 2.0 + 12.0 + 12.0 * 1.21;
+            let control_h: f32 = match (&f.kind, look.number) {
+                (Kind::Number, Some((_, h))) => h,
+                _ => 2.0 + 12.0 + 12.0 * 1.21,
+            };
+            let number_w = look.number.map(|n| n.0);
             let hint = (!f.hint.is_empty() && !look.hint_as_info)
                 .then(|| kit::wrapped_weight(ui, &f.hint, 10.5, Weight::W400, style::text_3(), cw, 1.4));
             let bits_h = match &f.kind {
@@ -671,7 +758,12 @@ impl FormState {
             let h = pad + above + row_h + hint.as_ref().map_or(0.0, |g| 6.0 + g.size().y) + pad;
             let top = y + pad + above;
             let label_y = if narrow { y + pad } else { top + (row_h - lh) / 2.0 };
-            painter.galley(Pos2::new(x, label_y), lg, style::text_1());
+            let label_color = if hook.warn.is_some_and(|w| w(f)) {
+                style::warning()
+            } else {
+                style::text_1()
+            };
+            painter.galley(Pos2::new(x, label_y), lg, label_color);
             if look.hint_as_info && !f.hint.is_empty() {
                 crate::ui::popover::info(
                     ui,
@@ -685,13 +777,28 @@ impl FormState {
                 );
             }
             let status = self.status.get(&f.param).cloned();
-            let ux = self.control(ui, ctx, server, f, Pos2::new(cx, top), cw, control_h, armed, false);
+            let ux = self.control_with(
+                ui,
+                ctx,
+                server,
+                f,
+                Pos2::new(cx, top),
+                cw,
+                control_h,
+                armed,
+                false,
+                None,
+                number_w,
+            );
             let mut ux = ux;
             if !f.unit.is_empty() && !matches!(f.kind, Kind::Bitmask(_)) {
                 let g = style::galley(ui, &f.unit, 11.0, Weight::W400, style::text_3(), 0.0);
                 let uw = g.size().x;
                 painter.galley(Pos2::new(ux, top + (control_h - g.size().y) / 2.0), g, style::text_3());
                 ux += uw + 8.0;
+            }
+            if let Some(after) = hook.after.as_mut() {
+                ux = after(ui, f, ux, top, control_h);
             }
             if let Some((cls, text)) = status {
                 let color = match cls {

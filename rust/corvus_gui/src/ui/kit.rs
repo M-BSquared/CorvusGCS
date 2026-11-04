@@ -36,6 +36,11 @@ pub struct Button<'a> {
     pub weight: Weight,
     pub enabled: bool,
     pub title: &'a str,
+    /// A page's own padding, `(vertical, horizontal)`, where its CSS departs
+    /// from `data-size` (`.params-actions .btn`).
+    pub pad: Option<(f32, f32)>,
+    /// A page's own icon size and the gap after it.
+    pub icon_gap: Option<(f32, f32)>,
 }
 
 impl<'a> Button<'a> {
@@ -48,7 +53,16 @@ impl<'a> Button<'a> {
             weight: Weight::W600,
             enabled: true,
             title: "",
+            pad: None,
+            icon_gap: None,
         }
+    }
+    /// `.params-actions .btn`: 8 px 13 px, a 13 px icon and a 6 px gap.
+    pub fn actions(mut self) -> Self {
+        self.pad = Some((8.0, 13.0));
+        self.icon_gap = Some((13.0, 6.0));
+        self.weight = Weight::W700;
+        self
     }
     pub fn icon(mut self, icon: &'static str) -> Self {
         self.icon = Some(icon);
@@ -78,9 +92,9 @@ impl<'a> Button<'a> {
 
     /// The width it wants at its natural size.
     pub fn width(&self, ui: &egui::Ui) -> f32 {
-        let pad = if self.small { 11.0 } else { 14.0 };
+        let pad = self.pad.map_or(if self.small { 11.0 } else { 14.0 }, |p| p.1);
         let icon = if self.icon.is_some() {
-            self.icon_size() + if self.label.is_empty() { 0.0 } else { 7.0 }
+            self.icon_size() + if self.label.is_empty() { 0.0 } else { self.gap() }
         } else {
             0.0
         };
@@ -89,13 +103,19 @@ impl<'a> Button<'a> {
 
     /// Its height at its natural size.
     pub fn height(&self) -> f32 {
-        let pad = if self.small { 7.0 } else { 10.0 };
+        let pad = self.pad.map_or(if self.small { 7.0 } else { 10.0 }, |p| p.0);
         let line: f32 = if self.small { 11.0 } else { 12.0 } * 1.21;
         2.0 + 2.0 * pad + line.max(if self.icon.is_some() { self.icon_size() } else { 0.0 })
     }
 
+    fn gap(&self) -> f32 {
+        self.icon_gap.map_or(7.0, |g| g.1)
+    }
+
     fn icon_size(&self) -> f32 {
-        if self.small {
+        if let Some((size, _)) = self.icon_gap {
+            size
+        } else if self.small {
             13.0
         } else {
             15.0
@@ -170,7 +190,7 @@ impl<'a> Button<'a> {
         let g = self.text(ui, fade(text));
         let icon_w = if self.icon.is_some() { self.icon_size() } else { 0.0 };
         let gap = if self.icon.is_some() && !self.label.is_empty() {
-            7.0
+            self.gap()
         } else {
             0.0
         };

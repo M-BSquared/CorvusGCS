@@ -142,3 +142,170 @@ pub fn text(ui: &egui::Ui, at: Pos2, s: &str, size: f32, w: Weight, color: Color
     ui.painter().galley(at, g, color);
     h
 }
+
+/// The colour of a status line (`.params-actions-status`, `.ok`, `.err`,
+/// `.pending`).
+pub fn status_color(cls: &str) -> Color32 {
+    match cls {
+        "ok" => style::healthy(),
+        "err" => style::critical(),
+        _ => style::nav(),
+    }
+}
+
+/// `.setup-head` with its `.params-actions`: the title and subtitle, and at
+/// the right the status line then the buttons. The buttons wrap under the
+/// title when it would be left under 280 px. Returns the y under the head
+/// (with its 26 px) and the index of the button pressed.
+#[allow(clippy::too_many_arguments)]
+pub fn head_actions(
+    ui: &mut egui::Ui,
+    x: f32,
+    y: f32,
+    w: f32,
+    title: &str,
+    subtitle: &str,
+    status: &(&'static str, String),
+    buttons: Vec<Button<'_>>,
+    id: &str,
+) -> (f32, Option<usize>) {
+    head_actions_with(ui, x, y, w, title, subtitle, status, buttons, Vec::new(), 0.0, id)
+}
+
+/// `head_actions` with chips at the left of the actions (the readiness strip
+/// of Calibration and PID Tuning, `.setup-head .params-actions > .calib-ready`)
+/// and the actions standing `drop` lower than the title's bottom.
+#[allow(clippy::too_many_arguments)]
+pub fn head_actions_with(
+    ui: &mut egui::Ui,
+    x: f32,
+    y: f32,
+    w: f32,
+    title: &str,
+    subtitle: &str,
+    status: &(&'static str, String),
+    buttons: Vec<Button<'_>>,
+    lead: Vec<crate::ui::chip::Chip>,
+    drop: f32,
+    id: &str,
+) -> (f32, Option<usize>) {
+    let sizes: Vec<(f32, f32)> = buttons.iter().map(|b| (b.width(ui), b.height())).collect();
+    let chip_sizes: Vec<Vec2> = lead.iter().map(|c| c.measure(ui)).collect();
+    let rh = sizes.iter().map(|s| s.1).fold(0.0, f32::max);
+    let color = status_color(status.0);
+    let sg = style::galley(ui, &status.1, 11.5, Weight::W400, color, 0.0);
+    let status_w = sg.size().x.min(420.0);
+    let gap = if status_w > 0.0 { 10.0 } else { 0.0 };
+    let buttons_w: f32 = sizes.iter().map(|s| s.0).sum::<f32>() + 10.0 * sizes.len().saturating_sub(1) as f32;
+    let chips_w: f32 = if chip_sizes.is_empty() {
+        0.0
+    } else {
+        chip_sizes.iter().map(|s| s.x).sum::<f32>() + 8.0 * (chip_sizes.len() - 1) as f32 + 10.0
+    };
+    let actions_w = chips_w + status_w + gap + buttons_w;
+    let wrap = w - actions_w - 24.0 < 280.0;
+    let head_w = if wrap { w } else { (w - actions_w - 24.0).min(w) };
+    let head_bottom = header_wrapped(ui, x, y, head_w, title, subtitle);
+    let (ay, bottom) = if wrap {
+        (head_bottom + 10.0, head_bottom + 12.0 + rh)
+    } else {
+        (head_bottom - rh + drop, head_bottom + drop)
+    };
+    let (mut cx, status_x, mut bx) = if wrap {
+        (x, x + chips_w + 0.0, x + chips_w + status_w + gap)
+    } else {
+        let first = x + w - buttons_w;
+        let status_x = first - gap - sg.size().x;
+        (status_x - chips_w, status_x, first)
+    };
+    for (c, s) in lead.iter().zip(&chip_sizes) {
+        c.paint(ui, Pos2::new(cx, ay + (rh - s.y) / 2.0));
+        cx += s.x + 8.0;
+    }
+    let mut pressed = None;
+    for (i, b) in buttons.into_iter().enumerate() {
+        let (bw, bh) = sizes[i];
+        let rect = Rect::from_min_size(Pos2::new(bx, ay + (rh - bh) / 2.0), Vec2::new(bw, bh));
+        if b.show(ui, rect, (id, i)) {
+            pressed = Some(i);
+        }
+        bx += bw + 10.0;
+    }
+    ui.painter()
+        .galley(Pos2::new(status_x, ay + rh / 2.0 - sg.size().y / 2.0), sg, color);
+    (bottom + 26.0, pressed)
+}
+
+/// `.params-banner`: the amber notice that gates a card; returns its bottom.
+pub fn warning_banner(ui: &egui::Ui, x: f32, y: f32, w: f32, text: &str) -> f32 {
+    let g = crate::ui::kit::wrapped_weight(ui, text, 11.5, Weight::W400, style::warning(), w - 28.0, 1.4);
+    let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, g.size().y + 24.0));
+    ui.painter().rect_filled(r, style::RADIUS_BTN, style::warning_dark());
+    ui.painter().rect_stroke(
+        r,
+        style::RADIUS_BTN,
+        Stroke::new(1.0, style::warning()),
+        egui::StrokeKind::Inside,
+    );
+    ui.painter().galley(r.min + Vec2::new(14.0, 12.0), g, style::warning());
+    r.bottom()
+}
+
+/// `.tune-tabs`: a row of text tabs on a rule, the active one in the accent
+/// with an underline. Returns the y under it (with its 14 px margin) and the
+/// tab pressed.
+pub fn tabs(
+    ui: &mut egui::Ui,
+    x: f32,
+    y: f32,
+    w: f32,
+    labels: &[&str],
+    active: usize,
+    id: &str,
+) -> (f32, Option<usize>) {
+    let mut pressed = None;
+    let mut tx = x;
+    let h = style::galley(ui, "Ag", 12.0, Weight::W600, style::text_3(), 0.2)
+        .size()
+        .y
+        + 20.0;
+    // the rule runs under the tabs; the active tab's underline covers it
+    ui.painter().hline(
+        egui::Rangef::new(x, x + w),
+        y + h - 0.5,
+        Stroke::new(1.0, style::border()),
+    );
+    for (i, label) in labels.iter().enumerate() {
+        let on = i == active;
+        let g = style::galley(ui, label, 12.0, Weight::W600, style::text_3(), 0.2);
+        let (tw, th) = (g.size().x + 24.0, g.size().y + 18.0 + 2.0);
+        let rect = Rect::from_min_size(Pos2::new(tx, y), Vec2::new(tw, th));
+        let resp = ui.interact(rect, ui.scope_id().with((id, i)), egui::Sense::click());
+        let color = if on {
+            style::accent()
+        } else if resp.hovered() {
+            style::text_1()
+        } else {
+            style::text_3()
+        };
+        if resp.hovered() && !on {
+            ui.painter()
+                .rect_filled(rect.with_max_y(rect.bottom() - 2.0), 0, style::surface_hover());
+        }
+        let g = style::galley(ui, label, 12.0, Weight::W600, color, 0.2);
+        ui.painter()
+            .galley(Pos2::new(rect.left() + 12.0, rect.top() + 9.0), g, color);
+        if on {
+            ui.painter().rect_filled(
+                Rect::from_min_size(Pos2::new(rect.left(), rect.bottom() - 2.0), Vec2::new(tw, 2.0)),
+                0,
+                style::accent(),
+            );
+        }
+        if resp.clicked() {
+            pressed = Some(i);
+        }
+        tx += tw + 2.0;
+    }
+    (y + h + 14.0, pressed)
+}

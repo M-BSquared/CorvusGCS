@@ -1,11 +1,15 @@
 pub mod card;
+pub mod chart;
+pub mod chip;
 pub mod field;
 pub mod fonts;
+pub mod formfield;
 pub mod frost;
 pub mod icons;
 pub mod kit;
 pub mod menu;
 pub mod modal;
+pub mod optioncards;
 pub mod pagekit;
 pub mod popover;
 pub mod segmented;

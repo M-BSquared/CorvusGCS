@@ -31,6 +31,7 @@ pub struct Palette {
     pub accent_bright: u32,
     pub accent_dark: u32,
     pub accent_hover: u32,
+    pub accent_pressed: u32,
     pub healthy: u32,
     pub healthy_dark: u32,
     pub healthy_bright: u32,
@@ -38,8 +39,10 @@ pub struct Palette {
     pub warning_dark: u32,
     pub critical: u32,
     pub critical_dark: u32,
+    pub critical_bright: u32,
     pub nav: u32,
     pub nav_bright: u32,
+    pub nav_dark: u32,
     pub vehicle: u32,
     pub track: u32,
     pub track_past: u32,
@@ -80,6 +83,7 @@ const LIGHT: Palette = Palette {
     accent_bright: 0x343B45,
     accent_dark: 0xE2E6EC,
     accent_hover: 0x2C323B,
+    accent_pressed: 0x0E1116,
     healthy: 0x0F8B50,
     healthy_dark: 0xD8F1E3,
     healthy_bright: 0x0B7343,
@@ -87,8 +91,10 @@ const LIGHT: Palette = Palette {
     warning_dark: 0xFAEDCC,
     critical: 0xD62B26,
     critical_dark: 0xFBDCDB,
+    critical_bright: 0xB32020,
     nav: 0x0B6FC0,
     nav_bright: 0x085A9C,
+    nav_dark: 0xD8E9F8,
     vehicle: 0xD62B26,
     track: 0xB81E1B,
     track_past: 0xD4675F,
@@ -122,6 +128,7 @@ const LIGHT_ORANGE: Palette = Palette {
     accent_bright: 0xB04E00,
     accent_dark: 0xFCE7D3,
     accent_hover: 0xB85300,
+    accent_pressed: 0x9E4700,
     terminal_cmd: 0xBD5500,
     ..LIGHT
 };
@@ -139,6 +146,7 @@ const GREEN: Palette = Palette {
     accent_bright: 0x5BC896,
     accent_dark: 0x1A3D2E,
     accent_hover: 0x4FBF8A,
+    accent_pressed: 0x2D8862,
     healthy: 0x45D483,
     healthy_dark: 0x183A2A,
     healthy_bright: 0x63E89A,
@@ -146,8 +154,10 @@ const GREEN: Palette = Palette {
     warning_dark: 0x403716,
     critical: 0xFF514D,
     critical_dark: 0x421D1C,
+    critical_bright: 0xFF726E,
     nav: 0x4CC9FF,
     nav_bright: 0x7DDEFF,
+    nav_dark: 0x17394A,
     vehicle: 0xFF514D,
     track: 0xE4322F,
     track_past: 0xF0958A,
@@ -179,8 +189,10 @@ const BLUE: Palette = Palette {
     accent_bright: 0x6FBCFF,
     accent_dark: 0x14304F,
     accent_hover: 0x55ADFF,
+    accent_pressed: 0x2B7FD4,
     nav: 0x35D6C4,
     nav_bright: 0x6BE8DA,
+    nav_dark: 0x10403C,
     terminal_cmd: 0x6FBCFF,
     ..GREEN
 };
@@ -190,6 +202,7 @@ const PINK: Palette = Palette {
     accent_bright: 0xFF7DB8,
     accent_dark: 0x4A1733,
     accent_hover: 0xFF66A9,
+    accent_pressed: 0xC93F7F,
     terminal_cmd: 0xFF7DB8,
     ..GREEN
 };
@@ -199,6 +212,7 @@ const ORANGE: Palette = Palette {
     accent_bright: 0xFFAA5C,
     accent_dark: 0x4A2A10,
     accent_hover: 0xFF9C42,
+    accent_pressed: 0xCC7020,
     warning: 0xFFD966,
     warning_dark: 0x46400F,
     terminal_cmd: 0xFFAA5C,
@@ -281,6 +295,7 @@ color_fns!(
     accent_bright,
     accent_dark,
     accent_hover,
+    accent_pressed,
     healthy,
     healthy_dark,
     healthy_bright,
@@ -288,8 +303,10 @@ color_fns!(
     warning_dark,
     critical,
     critical_dark,
+    critical_bright,
     nav,
     nav_bright,
+    nav_dark,
     vehicle,
     track,
     track_past,
@@ -440,6 +457,22 @@ pub fn mono(size: f32) -> FontId {
 /// One run of text in JetBrains Mono.
 pub fn galley_mono(ui: &egui::Ui, text: &str, size: f32, color: Color32) -> Arc<Galley> {
     ui.painter().layout_no_wrap(text.to_string(), mono(size), color)
+}
+
+/// One run of text in JetBrains Mono with letter spacing.
+pub fn galley_mono_letter(ui: &egui::Ui, text: &str, size: f32, color: Color32, letter: f32) -> Arc<Galley> {
+    let mut job = LayoutJob::default();
+    job.append(
+        text,
+        0.0,
+        TextFormat {
+            font_id: mono(size),
+            color,
+            extra_letter_spacing: letter,
+            ..Default::default()
+        },
+    );
+    ui.painter().layout_job(job)
 }
 
 /// One run of text as CSS sets it: size, weight, colour, letter spacing.

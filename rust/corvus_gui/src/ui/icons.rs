@@ -19,6 +19,16 @@ pub fn paint(ui: &egui::Ui, name: &str, rect: Rect, color: Color32) {
     }
 }
 
+/// `paint` turned by `angle` radians about the icon's centre.
+pub fn paint_rotated(ui: &egui::Ui, name: &str, rect: Rect, color: Color32, angle: f32) {
+    if let Some(bytes) = generated::svg(name) {
+        egui::Image::from_bytes(format!("bytes://lucide/{name}.svg"), bytes)
+            .tint(color)
+            .rotate(angle, egui::Vec2::splat(0.5))
+            .paint_at(ui, rect);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
