@@ -112,6 +112,22 @@ pub struct Map {
     three_d: bool,
     /// Longitude, latitude and zoom of the flat view's centre, as last drawn.
     view: Option<(f64, f64, f64)>,
+    /// The mission planner is on this map: no flown track and no home mark
+    /// (the plan draws its own start), and the map does not follow the aircraft.
+    pub planner: bool,
+    /// Room the page keeps along the bottom, which the credit moves above.
+    pub bottom_lift: f32,
+}
+
+/// Something a page draws on the flat map in its own pixels, over the
+/// vehicle, and answers the pointer for: the planner's route and points.
+pub trait Overlay {
+    /// Called with the map's response, its projector and its zoom.
+    fn run(&mut self, ui: &mut egui::Ui, response: &egui::Response, projector: &Projector, zoom: f64);
+    /// Whether a double click belongs to the overlay rather than zooming.
+    fn takes_double_click(&self) -> bool {
+        false
+    }
 }
 
 fn real_fix(v: Option<&Value>) -> Option<(f64, f64)> {
@@ -147,6 +163,8 @@ impl Map {
             three: None,
             three_d: false,
             view: None,
+            planner: false,
+            bottom_lift: 0.0,
         };
         map.set_source(ctx, DEFAULT_SOURCE);
         map
@@ -422,6 +440,11 @@ impl Map {
 
     /// Draws the map into the whole of `ui`.
     pub fn show(&mut self, ui: &mut egui::Ui, state: &Value) {
+        self.show_with(ui, state, None);
+    }
+
+    /// `show` with a page's own layer drawn over the aircraft.
+    pub fn show_with(&mut self, ui: &mut egui::Ui, state: &Value, overlay: Option<&mut (dyn Overlay + '_)>) {
         let now = ui.input(|i| i.time);
         self.poll_regions(&ui.ctx().clone(), now);
         let terrain = self.terrain_ids();
@@ -474,7 +497,10 @@ impl Map {
         }
         let fence = self.env.get();
         let outline = (fence.show_on_map && fence.polygon.len() >= 3).then_some(fence.polygon);
+        let double_click_zoom = !overlay.as_ref().is_some_and(|o| o.takes_double_click());
         let layers = Layers {
+            planner: self.planner,
+            overlay,
             pin: &mut self.pin,
             measure: &mut self.measure,
             regions,
@@ -491,7 +517,7 @@ impl Map {
         )
         .with_plugin(layers)
         .zoom_with_ctrl(false)
-        .double_click_to_zoom(true);
+        .double_click_to_zoom(double_click_zoom);
         map = map.zoom_speed(2.0);
         let response = ui.add(map);
         {
@@ -503,7 +529,7 @@ impl Map {
             self.follow = false;
         }
         if let Some((lng, lat)) = vehicle {
-            if self.follow {
+            if self.follow && !self.planner {
                 self.keep_in_view(response.rect, lng, lat);
             }
         }
@@ -528,7 +554,10 @@ impl Map {
         }
         let g = style::galley(ui, self.attribution, 10.0, style::Weight::W400, style::text_2(), 0.0);
         let size = Vec2::new(g.size().x + 4.0 + 9.0, 25.0);
-        let pill = egui::Rect::from_min_size(Pos2::new(rect.left() + 14.0, rect.bottom() - 14.0 - size.y), size);
+        let pill = egui::Rect::from_min_size(
+            Pos2::new(rect.left() + 14.0, rect.bottom() - self.bottom_lift - 14.0 - size.y),
+            size,
+        );
         let painter = ui.painter_at(rect);
         style::glass_panel(&painter, "attribution", pill, egui::CornerRadius::same(255), 0.38);
         painter.galley(
@@ -544,7 +573,9 @@ impl Map {
     }
 }
 
-struct Layers<'a> {
+struct Layers<'a, 'o> {
+    planner: bool,
+    overlay: Option<&'a mut (dyn Overlay + 'o)>,
     pin: &'a mut Option<[f64; 2]>,
     measure: &'a mut crate::map::measure::Measure,
     regions: Vec<crate::map::regions::Merged>,
@@ -710,8 +741,14 @@ pub(crate) fn paint_home(painter: &egui::Painter, c: Pos2) {
     }
 }
 
-impl Plugin for Layers<'_> {
-    fn run(self: Box<Self>, ui: &mut egui::Ui, response: &egui::Response, projector: &Projector, _memory: &MapMemory) {
+impl Plugin for Layers<'_, '_> {
+    fn run(
+        mut self: Box<Self>,
+        ui: &mut egui::Ui,
+        response: &egui::Response,
+        projector: &Projector,
+        memory: &MapMemory,
+    ) {
         let rect = response.rect;
         let painter = ui.painter_at(rect);
         if let Some(poly) = &self.outline {
@@ -746,19 +783,22 @@ impl Plugin for Layers<'_> {
         for r in &self.regions {
             paint_region(&painter, projector, rect, r);
         }
-        for flight in &self.track.past {
+        let flown = !self.planner;
+        for flight in self.track.past.iter().filter(|_| flown) {
             let pts: Vec<Pos2> = track::smooth(flight)
                 .iter()
                 .map(|p| screen(projector, rect, p))
                 .collect();
             paint_flight(&painter, &pts, style::track_past(), true);
         }
-        let pts: Vec<Pos2> = track::smooth(&self.track.current)
-            .iter()
-            .map(|p| screen(projector, rect, p))
-            .collect();
-        paint_flight(&painter, &pts, style::track(), false);
-        if let Some((lng, lat)) = self.home {
+        if flown {
+            let pts: Vec<Pos2> = track::smooth(&self.track.current)
+                .iter()
+                .map(|p| screen(projector, rect, p))
+                .collect();
+            paint_flight(&painter, &pts, style::track(), false);
+        }
+        if let Some((lng, lat)) = self.home.filter(|_| flown) {
             paint_home(&painter, screen(projector, rect, &Point { lng, lat, alt: None }));
         }
         if let Some((lng, lat)) = self.vehicle {
@@ -789,6 +829,9 @@ impl Plugin for Layers<'_> {
         if self.measure.active {
             drive_measure(ui, response, projector, self.measure);
             paint_measure(&painter, ui, projector, rect, self.measure);
+        }
+        if let Some(overlay) = self.overlay.as_mut() {
+            overlay.run(ui, response, projector, memory.zoom());
         }
     }
 }
@@ -955,6 +998,8 @@ mod tests {
             three: None,
             three_d: false,
             view: None,
+            planner: false,
+            bottom_lift: 0.0,
         };
         let _ = ctx;
         m.update(&json!({"connected": true, "armed": false, "position": [11.6, 48.1]}));

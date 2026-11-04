@@ -137,6 +137,13 @@ const ICONS: &[(&str, &str)] = &[
     ("file-clock", "FileClock"),
     ("arrow-right", "ArrowRight"),
     ("chart-spline", "ChartSpline"),
+    ("plane-takeoff", "PlaneTakeoff"),
+    ("plane-landing", "PlaneLanding"),
+    ("timer", "Timer"),
+    ("waypoints", "Waypoints"),
+    ("vector-square", "VectorSquare"),
+    ("mouse-pointer-2", "MousePointer2"),
+    ("move", "Move"),
 ];
 
 fn main() {

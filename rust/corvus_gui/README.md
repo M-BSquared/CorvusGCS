@@ -11,7 +11,7 @@ uses, so the backend does not change for it:
 cargo run --release                                   # start serve.py here and show it
 cargo run --release -- --server http://10.0.0.5:8080  # a backend elsewhere
 cargo run --release -- --root DIR --python PATH       # where serve.py is, what runs it
-cargo run --release -- --page motors --scroll 560     # open on a page (setup, any tile such as battery or motors, safety:SENSOR), scrolled
+cargo run --release -- --page motors --scroll 560     # open on a page (setup, any tile such as battery or motors, safety:SENSOR, mission, mission:NAME, settings, logs, analysis), scrolled
 # looking at it without a hand on the mouse
 CORVUS_GUI_SHOT=out.png cargo run -- --page motors     # save the window's own pixels after 9 s and quit
 CORVUS_GUI_SIZE=700,812 cargo run                      # open at that size, below the usual floor too
@@ -95,6 +95,17 @@ SIGKILL if it is still there after 8 s. If the window does not close within
 | `src/setup/geofence.rs` | the geofence area the station keeps, its geometry (corners, crossing, area, framing) and the one shared copy (`src/js/geofence.js`) |
 | `src/setup/geofence_card.rs` | the Geofence card: the small map, drawing, dragging and adding corners, upload and removal, the large editor (`src/js/setup-geofence.js`) |
 | `src/setup/landing.rs` | the Landing card: the descent as one bar, the fields beside each stretch, the brackets with their lengths (`landingCard` of `src/js/setup-safety.js`) |
+| `src/mission/mod.rs` | the Mission page, the planner: the plan on the Home map as an overlay, the tool bar, the sidebar and the profile, with the map gestures applied to the plan (`src/js/mission.js`) |
+| `src/mission/plan.rs` | the item table and the bounds the backend validates against, the plan's JSON both ways, and the editing rules: start and takeoff, one ending, reorder slots, altitude, the aircraft kind, a start that follows the aircraft |
+| `src/mission/geometry.rs` | distances, stations, the altitude profile per aircraft, climb and glide, route length and time, circle rings, area and corridor sweeps, clearances (`src/js/mission-geometry.js`) |
+| `src/mission/issues.rs` | the warnings under the summary, a row's one line, the summary cells and the display units |
+| `src/mission/backend.rs`, `src/mission/progress.rs` | the `/api/mission` calls on background threads, and which revision and leg the vehicle is flying |
+| `src/mission/mapview.rs` | the route, rings, points, the start, the radius and pattern grips, and the pointer on the map |
+| `src/mission/toolbar.rs` | the tool bar (`ui::fabar`, fitted like the flight bar), its hint line and the pattern card |
+| `src/mission/side.rs` | the sidebar: name, summary, vehicle line, warnings, the item list with row dragging, the editor, the status line and the upload, save, open, read and new buttons |
+| `src/mission/profile.rs`, `src/mission/terrain.rs` | the altitude profile with draggable heights, and the elevation model sampled along the route |
+| `src/mission/dialogs.rs` | the upload, read and clear confirmations and the list of saved plans |
+| `src/ui/fabar.rs` | `.fa-btn`: an icon over a caption on a glass bar, with the armed, blocked and next looks |
 | `src/app/responsive.rs` | the width classes of the web (`data-vw`): what folds, shrinks or stacks at 1279, 959, 900, 720 and 600 px (`src/css/responsive.css`) |
 | `src/ui/popover.rs` | the hint icon and the sheet it opens, the cards of the top bar: hover intent, pinning, one at a time, placement (`Corvus.ui.popover`, `infoHint`) |
 | `src/home/topbar_cards.rs` | the cards behind GPS, Battery, Altitude, Groundspeed and Vertical speed (`src/js/topbar.js`) |
@@ -103,7 +114,7 @@ SIGKILL if it is still there after 8 s. If the window does not close within
 | `src/setup/schema_form.rs` | the schema-driven form the backend describes (enum, number, sign, bitmask), shared by the Safety and Motors pages (`src/js/setup-shared.js`) |
 | `src/ui/pagekit.rs` | page furniture: header, header with its Reload and Check buttons and status, section title, tabs, tile, back button, the armed notice |
 | `src/ui/kit.rs` | buttons (`Button`, `Variant`), icon buttons, select, checkbox, switch; the widgets of `components.css` |
-| `src/ui/field.rs` | `TextField`: the one text box, on a well, glass or floating surface, with an optional icon |
+| `src/ui/field.rs` | `TextField`: the one text box, on a well, glass or floating surface, with an optional icon; `committed`, a well that keeps what is typed until Enter or blur |
 | `src/ui/menu.rs` | `dropdown` and `row`: every list (select choices, flight modes, elevation models) |
 | `src/ui/card.rs` | `card::paint` / `reserve` / `fill`: the panel, page and inset cards |
 | `src/ui/segmented.rs` | the segmented switch (`.params-filter`, `.link-kinds`) |

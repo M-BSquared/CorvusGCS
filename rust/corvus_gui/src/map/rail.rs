@@ -24,6 +24,8 @@ const BTN: f32 = 34.0;
 pub enum Item {
     ZoomIn,
     ZoomOut,
+    /// The planner's: frame the whole mission.
+    Fit,
     Center,
     Divider,
     Layers,
@@ -37,6 +39,7 @@ impl Item {
         match self {
             Item::ZoomIn => ("plus", "Zoom in"),
             Item::ZoomOut => ("minus", "Zoom out"),
+            Item::Fit => ("scan", "Fit the whole mission"),
             Item::Center => ("crosshair", "Center on vehicle (resume following)"),
             Item::Layers => ("layers", "Map layers"),
             Item::Regions => ("frame", "Show downloaded areas"),
@@ -49,14 +52,32 @@ impl Item {
     fn works(self) -> bool {
         matches!(
             self,
-            Item::ZoomIn | Item::ZoomOut | Item::Center | Item::Layers | Item::Regions | Item::Measure | Item::ThreeD
+            Item::ZoomIn
+                | Item::ZoomOut
+                | Item::Fit
+                | Item::Center
+                | Item::Layers
+                | Item::Regions
+                | Item::Measure
+                | Item::ThreeD
         )
     }
 }
 
 /// The rail, top to bottom; the ruler only while `ui.measure_tool` is on.
 /// The camera group stays hidden until cameras are set up.
-pub fn items(measure: bool) -> Vec<Item> {
+pub fn items(measure: bool, planner: bool) -> Vec<Item> {
+    if planner {
+        return vec![
+            Item::ZoomIn,
+            Item::ZoomOut,
+            Item::Fit,
+            Item::Divider,
+            Item::Center,
+            Item::Layers,
+            Item::Regions,
+        ];
+    }
     let mut v = vec![
         Item::ZoomIn,
         Item::ZoomOut,
@@ -81,6 +102,20 @@ pub struct MapRail {
     three_panel: bool,
     three_hover: Option<f64>,
     pub measure: bool,
+    /// The mission planner's rail: Fit instead of 3D and the ruler, and the
+    /// centre button goes to the aircraft without following it.
+    pub planner: bool,
+    /// Set by the Fit button; the page that owns the plan takes it.
+    pub fit_requested: bool,
+    /// A word for the operator, set when the centre button had no fix to go to.
+    pub notice: Option<&'static str>,
+}
+
+/// The aircraft's position, when it has a real fix.
+fn aircraft_fix(state: &Value) -> Option<(f64, f64)> {
+    let a = state.get("position")?.as_array()?;
+    let (lng, lat) = (a.first()?.as_f64()?, a.get(1)?.as_f64()?);
+    (lng.is_finite() && lat.is_finite() && (lng != 0.0 || lat != 0.0)).then_some((lng, lat))
 }
 
 fn glass_box(painter: &egui::Painter, key: (&str, usize), r: Rect) {
@@ -91,7 +126,7 @@ impl MapRail {
     /// Draws the rail and the two buttons inside `area` (the map view).
     pub fn show(&mut self, ui: &mut egui::Ui, area: Rect, map: &mut Map, state: &Value) {
         let painter = ui.painter().clone();
-        let list = items(self.measure);
+        let list = items(self.measure, self.planner);
         let h = 12.0
             + list
                 .iter()
@@ -121,7 +156,9 @@ impl MapRail {
             let r = Rect::from_min_size(Pos2::new(x, y), Vec2::splat(BTN));
             let (icon, title) = item.icon();
             let works = item.works();
-            let title = if works {
+            let title = if item == Item::Center && self.planner {
+                "Go to the aircraft".to_string()
+            } else if works {
                 title.to_string()
             } else {
                 format!("{title} (not in this build yet)")
@@ -134,7 +171,7 @@ impl MapRail {
             let resp = ui
                 .interact(r, ui.scope_id().with(("mc", icon)), sense)
                 .on_hover_text(title);
-            let active = (item == Item::Center && map.follow)
+            let active = (item == Item::Center && map.follow && !self.planner)
                 || (item == Item::Layers && self.layers_open)
                 || (item == Item::Regions && map.regions_visible)
                 || (item == Item::Measure && map.measure.active)
@@ -158,6 +195,11 @@ impl MapRail {
                 match item {
                     Item::ZoomIn => map.zoom(1),
                     Item::ZoomOut => map.zoom(-1),
+                    Item::Fit => self.fit_requested = true,
+                    Item::Center if self.planner => match aircraft_fix(state) {
+                        Some((lng, lat)) => map.go_to(lng, lat, 16.0),
+                        None => self.notice = Some("The aircraft has not reported a position."),
+                    },
                     Item::Center => map.recenter(state),
                     Item::Layers => self.layers_open = !self.layers_open,
                     Item::ThreeD => {
@@ -243,7 +285,9 @@ impl MapRail {
                 }
             }
         }
-        self.track_clear(ui, area, map);
+        if !self.planner {
+            self.track_clear(ui, area, map);
+        }
         self.tiles.show(ui.ctx(), area, map);
 
         if self.layers_open {
@@ -256,16 +300,23 @@ impl MapRail {
     /// `.track-clear`: a quiet 25 px disc above the attribution, only while
     /// there is a track to clear.
     fn track_clear(&mut self, ui: &mut egui::Ui, area: Rect, map: &mut Map) {
-        if !map.track.has_line() {
-            return;
+        if map.track.has_line() && clear_disc(ui, area, 0.0, "Clear the flown track") {
+            map.track.clear();
         }
+    }
+}
+
+/// `.track-clear`: a quiet 25 px disc above the attribution, `lift` above
+/// where it usually sits. True when pressed.
+pub fn clear_disc(ui: &mut egui::Ui, area: Rect, lift: f32, title: &str) -> bool {
+    {
         let r = Rect::from_min_size(
-            Pos2::new(area.left() + INSET, area.bottom() - INSET - 30.0 - 25.0),
+            Pos2::new(area.left() + INSET, area.bottom() - lift - INSET - 30.0 - 25.0),
             Vec2::splat(25.0),
         );
         let resp = ui
             .interact(r, ui.scope_id().with("trackclear"), egui::Sense::click())
-            .on_hover_text("Clear the flown track");
+            .on_hover_text(title);
         let hot = resp.hovered();
         let painter = ui.painter().clone();
         style::glass_panel(&painter, "trackclear", r, 255u8, 0.75);
@@ -289,11 +340,11 @@ impl MapRail {
             Rect::from_center_size(r.center(), Vec2::splat(14.0)),
             color.gamma_multiply(alpha),
         );
-        if resp.clicked() {
-            map.track.clear();
-        }
+        resp.clicked()
     }
+}
 
+impl MapRail {
     /// The layer list, opened to the left of its button: a head per map
     /// service and a row per layer (`.ui-menu`, `.option-item`).
     fn layers_menu(&mut self, ui: &mut egui::Ui, anchor: Rect, map: &mut Map) {
@@ -371,9 +422,22 @@ mod tests {
 
     #[test]
     fn the_rail_as_map_js_builds_it() {
-        assert_eq!(items(true).len(), 8);
-        assert_eq!(*items(false).last().unwrap(), Item::ThreeD);
-        assert_eq!(items(true)[3], Item::Divider);
+        assert_eq!(items(true, false).len(), 8);
+        assert_eq!(*items(false, false).last().unwrap(), Item::ThreeD);
+        assert_eq!(items(true, false)[3], Item::Divider);
+        assert_eq!(
+            items(true, true),
+            [
+                Item::ZoomIn,
+                Item::ZoomOut,
+                Item::Fit,
+                Item::Divider,
+                Item::Center,
+                Item::Layers,
+                Item::Regions
+            ],
+            "the planner's rail (mission.js MAP_CONTROLS)"
+        );
         assert!(Item::Layers.works() && Item::Regions.works() && Item::Measure.works() && Item::ThreeD.works());
     }
 }

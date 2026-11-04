@@ -21,6 +21,7 @@ use crate::home::{topbar, topbar_cards};
 use crate::logs::LogsPage;
 use crate::map::rail::MapRail;
 use crate::map::Map;
+use crate::mission::MissionPage;
 use crate::net::http::{self, Server};
 use crate::notify::Board;
 use crate::panel::Panel;
@@ -53,6 +54,7 @@ struct App {
     settings: SettingsPage,
     logs: LogsPage,
     analysis: AnalysisPage,
+    mission: MissionPage,
     mission_page: bool,
     panel: Panel,
     rail: MapRail,
@@ -200,6 +202,11 @@ impl App {
                     egui::pos2(rail.right(), body.top()),
                     egui::pos2(panel.left(), body.bottom()),
                 );
+                if self.page != Page::Mission {
+                    self.map.planner = false;
+                    self.map.bottom_lift = 0.0;
+                    self.rail.planner = false;
+                }
                 if self.page == Page::Home {
                     let mut map_ui = ui.new_child(egui::UiBuilder::new().max_rect(main));
                     map_ui.set_clip_rect(main);
@@ -213,6 +220,12 @@ impl App {
                     self.flight.show(&mut map_ui, main, &state, &self.units);
                     let below = self.flight.bar_bottom + 10.0;
                     self.checklist.window(&mut map_ui, ui.ctx(), main, below);
+                } else if self.page == Page::Mission {
+                    self.mission
+                        .show(ui, main, &state, &self.units, &mut self.map, &mut self.rail, vw.max1279);
+                    for (level, text) in self.mission.take_notices() {
+                        self.board.add_local(level, &text, now);
+                    }
                 } else if self.page == Page::Setup {
                     self.setup.units = self.units;
                     self.setup.show(ui, main, &state, now, &mut self.checklist);
@@ -238,6 +251,9 @@ impl App {
                     }
                     if page == Page::Settings && self.page != Page::Settings {
                         self.settings.enter(ui.ctx());
+                    }
+                    if self.page == Page::Mission && page != Page::Mission {
+                        self.mission.suspend();
                     }
                     self.page = page;
                 }
@@ -433,7 +449,8 @@ pub fn run(
             .and_then(Value::as_bool)
             .unwrap_or(default)
     };
-    let mission_page = ui_flag("mission_page", false);
+    let mission_page =
+        ui_flag("mission_page", false) || page.is_some_and(|p| p == "mission" || p.starts_with("mission:"));
     let measure = ui_flag("measure_tool", true);
     // The interface size (Settings > Interface), as --ui-scale zooms the page.
     let scale = config
@@ -444,6 +461,7 @@ pub fn run(
         .unwrap_or(1.0) as f32;
     let sources = http::get_json(&server, "/api/tiles/sources").unwrap_or(Value::Null);
     let start_page = match page {
+        Some(p) if p == "mission" || p.starts_with("mission:") => Page::Mission,
         Some(p) if p == "setup" || crate::setup::is_page(p) => Page::Setup,
         Some(p) if p == "settings" || p.starts_with("settings:") => Page::Settings,
         Some("logs") => Page::Logs,
@@ -534,6 +552,13 @@ pub fn run(
                         s.open_tab(tab);
                     }
                     s
+                },
+                mission: {
+                    let mut m = MissionPage::new(server.clone(), sources.clone());
+                    if let Some(name) = page.and_then(|p| p.strip_prefix("mission:")) {
+                        m.open_saved(name);
+                    }
+                    m
                 },
                 mission_page,
                 panel,

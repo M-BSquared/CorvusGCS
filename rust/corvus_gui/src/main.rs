@@ -14,6 +14,7 @@ mod home;
 mod logs;
 mod map;
 mod map3d;
+mod mission;
 mod net;
 mod notify;
 mod panel;
@@ -57,7 +58,7 @@ fn parse_args() -> Result<Args, String> {
             "--page" => args.page = Some(value("--page")?),
             "--scroll" => args.scroll = value("--scroll")?.parse().ok(),
             "-h" | "--help" => {
-                println!("usage: corvus-gcs [--server http://host:port] [--root DIR] [--python PATH] [--page setup|TILE|safety:SENSOR] [--scroll PX]");
+                println!("usage: corvus-gcs [--server http://host:port] [--root DIR] [--python PATH] [--page setup|TILE|safety:SENSOR|mission|mission:NAME|settings|logs|analysis] [--scroll PX]");
                 std::process::exit(0);
             }
             other => return Err(format!("unknown argument {other}")),
