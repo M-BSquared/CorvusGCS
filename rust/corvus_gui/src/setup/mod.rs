@@ -1,7 +1,7 @@
 //! The Setup page (src/js/setup.js, setup.css): the head with the vehicle
 //! card, the grid of twelve tiles, and the sub-pages behind them.
 //!
-//! Parameters, Safety & Sensors, Motors, Battery & Power, Calibration, Radio Control, PID Tuning, RTK GPS, Video and Telemetry Radio are whole. The
+//! Parameters, Safety & Sensors, Motors, Battery & Power, Calibration, Radio Control, PID Tuning, RTK GPS, Video, Telemetry Radio and Remote ID are whole. The
 //! other tiles open a notice that the page is still in the web interface.
 
 pub mod battery;
@@ -22,6 +22,8 @@ pub mod radio;
 pub mod radio_model;
 pub mod rc_drawing;
 pub mod rc_transmitter;
+pub mod remoteid;
+pub mod remoteid_model;
 pub mod rtk;
 pub mod rtk_model;
 pub mod safety;
@@ -45,6 +47,7 @@ use crate::setup::calibration::CalibrationPage;
 use crate::setup::motors::MotorsPage;
 use crate::setup::params::ParamsPage;
 use crate::setup::radio::RadioPage;
+use crate::setup::remoteid::RemoteIdPage;
 use crate::setup::rtk::RtkPage;
 use crate::setup::safety::SafetyPage;
 use crate::setup::sik::SikPage;
@@ -154,6 +157,7 @@ enum View {
     Rtk(Box<RtkPage>),
     Video(Box<VideoPage>),
     Sik(Box<SikPage>),
+    RemoteId(Box<RemoteIdPage>),
     Elsewhere(&'static str),
 }
 
@@ -195,6 +199,7 @@ impl SetupPage {
             View::Rtk(p) => p.take_errors(),
             View::Video(p) => p.take_errors(),
             View::Sik(p) => p.take_errors(),
+            View::RemoteId(p) => p.take_errors(),
             _ => Vec::new(),
         }
     }
@@ -252,6 +257,7 @@ impl SetupPage {
             "rtk" => View::Rtk(Box::new(RtkPage::new(self.server.clone(), ctx))),
             "video" => View::Video(Box::new(VideoPage::new(self.server.clone(), ctx))),
             "sik" => View::Sik(Box::new(SikPage::new(self.server.clone(), ctx))),
+            "remoteid" => View::RemoteId(Box::new(RemoteIdPage::new(self.server.clone(), ctx))),
             other => match TILES.iter().find(|t| t.0 == other) {
                 Some(t) => View::Elsewhere(t.2),
                 None => View::Tiles,
@@ -311,6 +317,7 @@ impl SetupPage {
                 | View::Rtk(_)
                 | View::Video(_)
                 | View::Sik(_)
+                | View::RemoteId(_)
                 | View::Elsewhere(_) => {
                     let in_sensor = matches!(&self.view, View::Safety(p) if p.in_sensor());
                     let in_wizard = matches!(&self.view, View::Calibration(p) if p.in_wizard())
@@ -355,6 +362,8 @@ impl SetupPage {
                     } else if let View::Tuning(p) = &mut self.view {
                         y = p.show(ui, x, y, w, state, now);
                     } else if let View::Rtk(p) = &mut self.view {
+                        y = p.show(ui, x, y, w, state, now);
+                    } else if let View::RemoteId(p) = &mut self.view {
                         y = p.show(ui, x, y, w, state, now);
                     } else if let View::Sik(p) = &mut self.view {
                         y = p.show(ui, x, y, w, state);
@@ -505,6 +514,7 @@ fn grid(
                 "rtk" => View::Rtk(Box::new(RtkPage::new(server.clone(), ui.ctx()))),
                 "video" => View::Video(Box::new(VideoPage::new(server.clone(), ui.ctx()))),
                 "sik" => View::Sik(Box::new(SikPage::new(server.clone(), ui.ctx()))),
+                "remoteid" => View::RemoteId(Box::new(RemoteIdPage::new(server.clone(), ui.ctx()))),
                 _ => View::Elsewhere(title),
             };
         }
