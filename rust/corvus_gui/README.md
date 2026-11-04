@@ -107,10 +107,55 @@ SIGKILL if it is still there after 8 s. If the window does not close within
 | `src/ui/menu.rs` | `dropdown` and `row`: every list (select choices, flight modes, elevation models) |
 | `src/ui/card.rs` | `card::paint` / `reserve` / `fill`: the panel, page and inset cards |
 | `src/ui/segmented.rs` | the segmented switch (`.params-filter`, `.link-kinds`) |
+| `src/settings/mod.rs`, `src/settings/model.rs` | the Settings page: the pills, writes through `POST /api/config` that are in force at once and taken back when the backend refuses (`strict`), the `Effects` the window reads back (theme, size, units, Mission entry, distance tool, side panel tabs, base layer), and the rules of every picker with the web's expected text in tests (`renderSettingsPage` of `src/js/sidenav.js`) |
+| `src/settings/tabs.rs` | the Interface, Layout, Flight view and Controls pills: language, theme, size, units and the switch cards, with the web's hint texts |
+| `src/settings/map_cards.rs` | the Map pill: map service and layer, the API keys dialog, the operator's elevation models (import by file or folder path, rename, remove), track, tools and animation |
+| `src/settings/conn_cards.rs` | the Connections pill: links, saved SSH connections (add, edit, remove, connect in the side panel), the connection facts, the MCP server with its permissions and connect dialogs (`src/js/settings-mcp.js`) |
+| `src/settings/data_cards.rs` | the Data pill: parameter folder and defaults copy, flight review sensitivity, export, import and reset of the settings file (`src/js/settings-transfer.js`) |
+| `src/settings/about.rs`, `src/settings/credits.rs` | the Plugins and About pills, the update check, and the credits dialog with the native interface's own crate list (`src/js/credits.js`) |
+| `src/settings/dialogs.rs` | the dialogs open over the page and the company logo card |
+| `src/logs/mod.rs` | the Logs page: the last 30 console lines, Export log through `POST /api/console/save` and Copy (`renderLogsPage` of `src/js/sidenav.js`) |
+| `src/analysis/mod.rs`, `src/analysis/model.rs` | the Analysis page: live telemetry tiles, the download folder, the four tiles, the status poll and its jobs, and the rules (sizes, local times, rates, sorting, findings, summary facts) with the web's expected text in tests (`src/js/analysis.js`) |
+| `src/analysis/lists.rs`, `src/analysis/scope.rs`, `src/analysis/review.rs` | the vehicle log list with sequential download and erase, the recorded tlogs, Live Messages, and Flight Review and Telemetry Review: summary, mode strip, findings, plots by group, the aircraft's messages |
+| `src/analysis/plot.rs` | the plotting module that stands in for Plotly: linear axes with nice ticks, lines, markers and steps, flight mode bands, threshold line, legend, hover read out, drag to zoom and double click to reset, long traces reduced per pixel column |
+| `src/data/clock.rs` | calendar dates from Unix times, UTC and local |
+| `src/ui/form.rs` | the form vocabulary of a page that is a column of cards: `Form` cursor, section, card, field with caption and hint, switch field, option cards, stepped slider, pills, rows, messages, actions |
 | `src/notify/mod.rs` | the notification board, its read and dismiss rules, the command dedupe and the toasts (`src/js/topbar.js`) |
 | `src/notify/overlay.rs` | the NOTIFICATIONS pill, the board and the toast stack |
 | `src/ui/frost.rs` | the frosted glass under every `.glass` surface |
 | `src/ui/fonts.rs`, `src/ui/icons.rs`, `build.rs` | Inter, JetBrains Mono and the Lucide icons, from the web's own files |
+
+## Settings
+
+The page writes what the web page writes, key for key, so the two interfaces
+share one config. Differences that follow from a native window:
+
+- **Files.** There is no file picker without a dependency, so the company logo,
+  elevation files (a file or a folder of them), a settings file to import and
+  a private key ask for a path.
+- **Language.** The language picker lists `GET /api/languages` and writes
+  `language`, as the web page does. The native interface's own words are
+  English only for now: its strings are not yet looked up in `src/lang`, so a
+  language file changes the web interface and is stored for the native one.
+  Making native strings translatable is a later step, taken once every page is
+  native.
+- **Tablet mode** is the web page's own, kept in the browser, and has no
+  native counterpart.
+- **Switches** that the native pages do not read yet (HUD, track, top bar
+  blocks, compass, flight bar) are stored in the config and take effect in the
+  web interface; the native pages follow as their consumers learn the keys.
+  Theme, size, units, the Mission entry, the distance tool, the console and
+  SSH tabs and the base layer are live.
+
+## Analysis
+
+The review's ground track is drawn as a chart with equal axes. The web page's
+Satellite switch, which lays the same path over imagery, is not in the native
+page yet. A ULog from outside the download folder is opened by its path, and
+posted to the backend as bytes the way the web page posts a picked file.
+`--page analysis:ulog`, `analysis:tlog`, `analysis:review` and
+`analysis:scope` open a view, `--page logs` and `--page settings:map` the
+other pages, with `--scroll` for how far down.
 
 ## The 3D map
 

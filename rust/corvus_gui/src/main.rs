@@ -7,14 +7,17 @@
 //! Locally the backend (`serve.py`) is a child of this process and is taken
 //! down on every way out; see `net::backend`.
 
+mod analysis;
 mod app;
 mod data;
 mod home;
+mod logs;
 mod map;
 mod map3d;
 mod net;
 mod notify;
 mod panel;
+mod settings;
 mod setup;
 mod term;
 mod ui;

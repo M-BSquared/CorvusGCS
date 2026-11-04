@@ -164,6 +164,11 @@ impl Panel {
 
     /// `app.js`: under 960 the panel folds, from 1280 it opens again, unless
     /// the operator has pressed its handle.
+    /// The whole console as text, for the Logs page.
+    pub fn console_transcript(&self) -> String {
+        self.console.transcript()
+    }
+
     pub fn follow_window(&mut self, vw: &crate::app::responsive::Vw) {
         if self.user_toggled {
             return;
@@ -324,6 +329,17 @@ impl Panel {
             Tab::Ssh => self.ssh(&mut child, content),
             Tab::Plugins => plugins_empty(&child, content),
         }
+    }
+
+    /// Opens a saved connection from Settings: the SSH tab when it is on, a
+    /// window of its own when it is off.
+    pub fn open_ssh(&mut self, ctx: &egui::Context, conn: Value) {
+        if self.ssh_tab {
+            self.active = Tab::Ssh;
+        }
+        let to_window = !self.ssh_tab;
+        let connected = conn.get("connected").and_then(Value::as_bool).unwrap_or(false);
+        self.start_connect(ctx, conn, connected, to_window);
     }
 
     fn start_connect(&mut self, ctx: &egui::Context, conn: Value, connected: bool, to_window: bool) {

@@ -18,6 +18,8 @@ pub enum Surface {
     /// A search box floating over the map: frosted glass whose alpha is for
     /// the unfocused and the focused state, a ring-less accent border.
     Floating { rest: f32, focus: f32 },
+    /// Nothing painted: the caller draws the box (a row whose input is bare).
+    Bare,
 }
 
 /// A single-line text field.
@@ -54,6 +56,12 @@ impl<'a> TextField<'a> {
             focus: None,
             secret: false,
         }
+    }
+
+    /// Dots instead of the text (a key or a password).
+    pub fn password(mut self) -> Self {
+        self.secret = true;
+        self
     }
 
     pub fn hint(mut self, hint: &'a str) -> Self {
@@ -156,6 +164,7 @@ impl<'a> TextField<'a> {
                     egui::StrokeKind::Inside,
                 );
             }
+            Surface::Bare => {}
             Surface::Glass => {
                 if focused {
                     painter.rect_stroke(
@@ -220,6 +229,7 @@ impl<'a> TextField<'a> {
         };
         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(text_rect));
         let edit = egui::TextEdit::singleline(self.text)
+            .password(self.secret)
             .id(id)
             .frame(egui::Frame::NONE)
             .font(font)

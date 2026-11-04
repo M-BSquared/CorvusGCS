@@ -235,6 +235,46 @@ pub fn post_json(server: &Server, path: &str, body: &serde_json::Value) -> Resul
     json_body(server, path, r)
 }
 
+/// GET a JSON document that may take a while to be made (a log read into
+/// plots); `wait` bounds each read.
+pub fn get_json_wait(server: &Server, path: &str, wait: Duration) -> Result<serde_json::Value, String> {
+    let r = request(server, "GET", path, None, "application/json", wait)
+        .map_err(|e| format!("{}{path}: {e}", server.url()))?;
+    json_body(server, path, r)
+}
+
+/// `encodeURIComponent`: everything but letters, digits and `-_.!~*'()` as
+/// percent escapes of its UTF-8 bytes.
+pub fn encode_component(s: &str) -> String {
+    let mut out = String::new();
+    for b in s.bytes() {
+        if b.is_ascii_alphanumeric() || b"-_.!~*'()".contains(&b) {
+            out.push(b as char);
+        } else {
+            out.push_str(&format!("%{b:02X}"));
+        }
+    }
+    out
+}
+
+/// POST raw bytes (a file) and read the JSON answer; `wait` bounds each read,
+/// for a conversion the backend does before it answers.
+pub fn post_bytes(server: &Server, path: &str, body: &[u8], wait: Duration) -> Result<serde_json::Value, String> {
+    let fail = |e: io::Error| format!("{}{path}: {e}", server.url());
+    let mut stream = server.connect(Duration::from_secs(3)).map_err(fail)?;
+    stream.set_read_timeout(Some(wait)).map_err(fail)?;
+    let head = format!(
+        "POST {path} HTTP/1.1\r\nHost: {}:{}\r\nAccept: application/json\r\nConnection: close\r\nContent-Type: application/octet-stream\r\nContent-Length: {}\r\n\r\n",
+        server.host,
+        server.port,
+        body.len()
+    );
+    stream.write_all(head.as_bytes()).map_err(fail)?;
+    stream.write_all(body).map_err(fail)?;
+    let r = read_response(BufReader::new(stream)).map_err(fail)?;
+    json_body(server, path, r)
+}
+
 fn json_body(server: &Server, path: &str, r: Response) -> Result<serde_json::Value, String> {
     let status = r.status;
     let text = r.text().map_err(|e| format!("{}{path}: {e}", server.url()))?;

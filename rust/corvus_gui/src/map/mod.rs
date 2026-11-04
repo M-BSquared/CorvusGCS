@@ -184,6 +184,19 @@ impl Map {
             .unwrap_or_default()
     }
 
+    /// Whether the catalogue lists a base layer `id`.
+    pub fn has_layer(&self, id: &str) -> bool {
+        self.sources
+            .get("sources")
+            .and_then(Value::as_array)
+            .is_some_and(|l| l.iter().any(|s| s.get("id").and_then(Value::as_str) == Some(id)))
+    }
+
+    /// A fresh catalogue (a key was set, an elevation model came or went).
+    pub fn set_sources(&mut self, sources: Value) {
+        self.sources = sources;
+    }
+
     /// Shows the source `id`, through the backend's proxy like every other.
     pub fn set_source(&mut self, ctx: &egui::Context, id: &str) {
         let (attribution, max_zoom) = describe(&self.sources, id);
