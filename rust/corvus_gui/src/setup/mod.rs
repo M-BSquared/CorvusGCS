@@ -1,7 +1,7 @@
 //! The Setup page (src/js/setup.js, setup.css): the head with the vehicle
 //! card, the grid of twelve tiles, and the sub-pages behind them.
 //!
-//! Parameters, Safety & Sensors, Motors, Battery & Power, Calibration, Radio Control, PID Tuning and RTK GPS are whole. The
+//! Parameters, Safety & Sensors, Motors, Battery & Power, Calibration, Radio Control, PID Tuning, RTK GPS and Firmware are whole. The
 //! other tiles open a notice that the page is still in the web interface.
 
 pub mod battery;
@@ -11,6 +11,9 @@ pub mod calib_protocol;
 pub mod calibration;
 pub mod check;
 pub mod checklist;
+pub mod firmware;
+pub mod firmware_io;
+pub mod firmware_model;
 pub mod geofence;
 pub mod geofence_card;
 pub mod landing;
@@ -37,6 +40,7 @@ use serde_json::Value;
 use crate::net::http::Server;
 use crate::setup::battery::BatteryPage;
 use crate::setup::calibration::CalibrationPage;
+use crate::setup::firmware::FirmwarePage;
 use crate::setup::motors::MotorsPage;
 use crate::setup::params::ParamsPage;
 use crate::setup::radio::RadioPage;
@@ -144,6 +148,7 @@ enum View {
     Radio(Box<RadioPage>),
     Tuning(Box<TuningPage>),
     Rtk(Box<RtkPage>),
+    Firmware(Box<FirmwarePage>),
     Elsewhere(&'static str),
 }
 
@@ -180,6 +185,7 @@ impl SetupPage {
             View::Radio(p) => p.take_errors(),
             View::Tuning(p) => p.take_errors(),
             View::Rtk(p) => p.take_errors(),
+            View::Firmware(p) => p.take_errors(),
             _ => Vec::new(),
         }
     }
@@ -191,6 +197,7 @@ impl SetupPage {
             View::Calibration(p) => p.take_notes(),
             View::Radio(p) => p.take_notes(),
             View::Tuning(p) => p.take_notes(),
+            View::Firmware(p) => p.take_notes(),
             _ => Vec::new(),
         }
     }
@@ -200,6 +207,7 @@ impl SetupPage {
         match &mut self.view {
             View::Calibration(p) => p.take_warnings(),
             View::Tuning(p) => p.take_warnings(),
+            View::Firmware(p) => p.take_warnings(),
             _ => Vec::new(),
         }
     }
@@ -230,6 +238,7 @@ impl SetupPage {
             "control" => View::Radio(Box::new(RadioPage::new(self.server.clone(), ctx))),
             "tuning" => View::Tuning(Box::new(TuningPage::new(self.server.clone(), ctx))),
             "rtk" => View::Rtk(Box::new(RtkPage::new(self.server.clone(), ctx))),
+            "firmware" => View::Firmware(Box::new(FirmwarePage::new(self.server.clone(), ctx))),
             other => match TILES.iter().find(|t| t.0 == other) {
                 Some(t) => View::Elsewhere(t.2),
                 None => View::Tiles,
@@ -287,6 +296,7 @@ impl SetupPage {
                 | View::Radio(_)
                 | View::Tuning(_)
                 | View::Rtk(_)
+                | View::Firmware(_)
                 | View::Elsewhere(_) => {
                     let in_sensor = matches!(&self.view, View::Safety(p) if p.in_sensor());
                     let in_wizard = matches!(&self.view, View::Calibration(p) if p.in_wizard())
@@ -331,6 +341,8 @@ impl SetupPage {
                     } else if let View::Tuning(p) = &mut self.view {
                         y = p.show(ui, x, y, w, state, now);
                     } else if let View::Rtk(p) = &mut self.view {
+                        y = p.show(ui, x, y, w, state, now);
+                    } else if let View::Firmware(p) = &mut self.view {
                         y = p.show(ui, x, y, w, state, now);
                     } else if let View::Safety(p) = &mut self.view {
                         y = p.show(ui, x, y, w, state, checklist);
@@ -475,6 +487,7 @@ fn grid(
                 "control" => View::Radio(Box::new(RadioPage::new(server.clone(), ui.ctx()))),
                 "tuning" => View::Tuning(Box::new(TuningPage::new(server.clone(), ui.ctx()))),
                 "rtk" => View::Rtk(Box::new(RtkPage::new(server.clone(), ui.ctx()))),
+                "firmware" => View::Firmware(Box::new(FirmwarePage::new(server.clone(), ui.ctx()))),
                 _ => View::Elsewhere(title),
             };
         }

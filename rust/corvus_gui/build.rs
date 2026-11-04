@@ -110,6 +110,11 @@ const ICONS: &[(&str, &str)] = &[
     ("magnet", "Magnet"),
     ("rotate-cw", "RotateCw"),
     ("eraser", "Eraser"),
+    ("cloud-upload", "CloudUpload"),
+    ("cloud-download", "CloudDownload"),
+    ("folder-open", "FolderOpen"),
+    ("circle-alert", "CircleAlert"),
+    ("circle", "Circle"),
 ];
 
 fn main() {
