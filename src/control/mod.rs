@@ -109,6 +109,7 @@ pub struct Control {
     connected: bool,
     armed: bool,
     mode: String,
+    caps: crate::data::capabilities::Capabilities,
     frame: Frame,
     notes: Arc<Mutex<Vec<String>>>,
 }
@@ -146,6 +147,7 @@ impl Control {
             connected: false,
             armed: false,
             mode: String::new(),
+            caps: Default::default(),
             frame: Frame::NEUTRAL,
             notes: Arc::default(),
         }
@@ -224,17 +226,10 @@ impl Control {
         }
         self.mode_requested_at = now;
         let (server, notes, mode) = (self.server.clone(), self.notes.clone(), self.mode.clone());
+        let caps = self.caps.clone();
         std::thread::spawn(move || {
-            let caps = match http::get_json(&server, "/api/mavlink/capabilities") {
-                Ok(c) => c,
-                Err(_) => return,
-            };
-            let target = caps.get("stick_mode").and_then(Value::as_str).unwrap_or("");
-            let in_stick_mode = caps
-                .get("stick_modes")
-                .and_then(Value::as_array)
-                .is_some_and(|l| l.iter().any(|m| m.as_str() == Some(mode.as_str())));
-            if target.is_empty() || in_stick_mode {
+            let target = caps.stick_mode.clone();
+            if target.is_empty() || caps.is_stick_mode(&mode) {
                 return;
             }
             let answer = http::post_json(&server, "/api/mavlink/mode", &json!({"mode": target}));
@@ -279,7 +274,15 @@ impl Control {
 
     /// One step, on every page: the keyboard, the gamepad, the frame and the
     /// stream. `home` is whether the map is the page on screen.
-    pub fn update(&mut self, ctx: &egui::Context, state: &Value, home: bool, now_ms: f64) {
+    pub fn update(
+        &mut self,
+        ctx: &egui::Context,
+        state: &Value,
+        caps: &crate::data::capabilities::Capabilities,
+        home: bool,
+        now_ms: f64,
+    ) {
+        self.caps = caps.clone();
         self.connected = state.get("connected") == Some(&Value::Bool(true));
         self.armed = state.get("armed") == Some(&Value::Bool(true));
         self.mode = state.get("mode").and_then(Value::as_str).unwrap_or("").to_string();
@@ -894,7 +897,7 @@ mod tests {
         let (server, got) = backend();
         let mut c = Control::new(server, Config::default());
         let ctx = egui::Context::default();
-        c.update(&ctx, &json!({"connected": true}), true, 0.0);
+        c.update(&ctx, &json!({"connected": true}), &Default::default(), true, 0.0);
         std::thread::sleep(Duration::from_millis(500));
         c.shut_down();
         assert!(got.lock().expect("got").is_empty());
@@ -909,7 +912,7 @@ mod tests {
         };
         let mut c = Control::new(server, cfg);
         let ctx = egui::Context::default();
-        c.update(&ctx, &json!({"connected": true}), true, 0.0);
+        c.update(&ctx, &json!({"connected": true}), &Default::default(), true, 0.0);
         std::thread::sleep(Duration::from_millis(700));
         c.shut_down();
         let frames = got.lock().expect("got").clone();
@@ -935,7 +938,7 @@ mod tests {
             },
         );
         let ctx = egui::Context::default();
-        c.update(&ctx, &json!({"connected": false}), true, 0.0);
+        c.update(&ctx, &json!({"connected": false}), &Default::default(), true, 0.0);
         std::thread::sleep(Duration::from_millis(500));
         c.shut_down();
         assert!(got.lock().expect("got").is_empty());
@@ -955,7 +958,7 @@ mod tests {
         let state = json!({"connected": true, "armed": true});
         // Left stick down on the raw axes is thrust up.
         c.feed_gamepad(Some([0.0, -1.0, 0.0, 0.0]));
-        c.update(&ctx, &state, true, 0.0);
+        c.update(&ctx, &state, &Default::default(), true, 0.0);
         assert_eq!(c.frame.z, 1.0);
         c.shut_down();
         let _ = got;
@@ -970,9 +973,9 @@ mod tests {
         );
         let parked = json!({"connected": true, "armed": false});
         c.feed_gamepad(Some([1.0, 0.0, -1.0, 0.0]));
-        c.update(&ctx, &parked, true, 0.0);
+        c.update(&ctx, &parked, &Default::default(), true, 0.0);
         assert!(c.frame.is_neutral(), "silent while the gesture is held");
-        c.update(&ctx, &parked, true, 1000.0);
+        c.update(&ctx, &parked, &Default::default(), true, 1000.0);
         assert!(c.gesture.sent && c.stick_mode_after_arm);
         std::thread::sleep(Duration::from_millis(400));
         c.shut_down();
@@ -1008,7 +1011,13 @@ mod tests {
             ..Default::default()
         };
         let mut out = ctx.run_ui(input, |ui| {
-            c.update(ui.ctx(), &json!({"connected": true, "armed": false}), true, now);
+            c.update(
+                ui.ctx(),
+                &json!({"connected": true, "armed": false}),
+                &Default::default(),
+                true,
+                now,
+            );
         });
         out.textures_delta.clear();
     }

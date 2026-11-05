@@ -35,6 +35,8 @@ const BAR_MIN_SCALE: f32 = 0.85;
 const BAR_TIGHT_SCALE: f32 = 0.8;
 /// `--map-rail-inset` and `--map-trigger-clear`: where the bar's room ends.
 const TRIGGER_CLEAR: f32 = 154.0;
+/// `FLIGHT_BAR_SHARE`: how much of the map the shrinking bar may cover.
+pub const SHRINK_SHARE: f32 = 0.5;
 
 /// How `fitBar` sets the bar's buttons in the room it has.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -92,7 +94,6 @@ const ALTITUDE_COARSE_STEP_M: f64 = 5.0;
 const AIRBORNE_LANDED: [i64; 3] = [2, 3, 4];
 const LANDED_ON_GROUND: i64 = 1;
 const AIRBORNE_FALLBACK_M: f64 = 1.5;
-const GROUND_TYPES: [&str; 3] = ["GROUNDED_ROVER", "GROUND_ROVER", "SURFACE_BOAT"];
 
 /// "air", "ground" or "" (unknown, or no link), as app.js flightPhase.
 pub fn flight_phase(s: &Value) -> &'static str {
@@ -115,6 +116,23 @@ pub fn flight_phase(s: &Value) -> &'static str {
     }
 }
 
+/// The two buttons when TAKEOFF and LAND stand apart: in the air TAKEOFF is
+/// greyed, on the ground LAND is. Each is its tooltip and whether it works.
+pub fn split_buttons(phase: &str) -> ((&'static str, bool), (&'static str, bool)) {
+    (
+        if phase == "air" {
+            ("Takeoff: already in the air", false)
+        } else {
+            ("Takeoff", true)
+        },
+        if phase == "ground" {
+            ("Land: on the ground", false)
+        } else {
+            ("Land", true)
+        },
+    )
+}
+
 /// What the single TAKEOFF / LAND button does: LAND in the air, and for an
 /// armed vehicle whose phase cannot be told; a takeoff card over something
 /// that may be hovering is not harmless, a land on the ground is.
@@ -130,8 +148,7 @@ pub fn single_button_role(s: &Value) -> &'static str {
 }
 
 pub fn is_ground(s: &Value) -> bool {
-    s.get("connected") == Some(&Value::Bool(true))
-        && GROUND_TYPES.contains(&s.get("vehicle_type").and_then(Value::as_str).unwrap_or(""))
+    crate::data::capabilities::is_ground(s)
 }
 
 /// The slider is logarithmic: a fixed distance along it is the same share of
@@ -229,6 +246,11 @@ pub struct FlightBar {
     /// Where the bar ended last frame, in the map's own coordinates: an
     /// unmoved checklist window starts 10 px under it.
     pub bar_bottom: f32,
+    /// `ui.takeoff_land_split`: TAKEOFF and LAND as two buttons.
+    pub split: bool,
+    /// `ui.flight_bar_shrink`: narrow the bar as soon as it would cover more
+    /// than half the map.
+    pub shrink: bool,
     modes: Arc<Mutex<Vec<Mode>>>,
     outcome: Arc<Mutex<Outcome>>,
     takeoff_open: bool,
@@ -248,6 +270,8 @@ impl FlightBar {
         let bar = FlightBar {
             server,
             bar_bottom: 0.0,
+            split: false,
+            shrink: false,
             modes: Arc::default(),
             outcome: Arc::default(),
             takeoff_open: false,
@@ -374,7 +398,9 @@ impl FlightBar {
         let armed = s.get("armed") == Some(&Value::Bool(true));
         let ground = is_ground(s);
         let role = single_button_role(s);
-        if role == "land" || ground {
+        // Single: the one button turns into LAND in the air and the card is
+        // closed with it. Split: TAKEOFF is greyed in the air.
+        if (!self.split && role == "land") || ground || (self.split && flight_phase(s) == "air") {
             self.takeoff_open = false;
         }
 
@@ -406,7 +432,11 @@ impl FlightBar {
             "Arm / Disarm",
             true,
         )];
-        if !ground {
+        if !ground && self.split {
+            let ((tt, te), (lt, le)) = split_buttons(flight_phase(s));
+            buttons.push((Command::Takeoff, "arrow-up", "TAKEOFF", tt, te));
+            buttons.push((Command::Land, "arrow-down", "LAND", lt, le));
+        } else if !ground {
             let land = role == "land";
             buttons.push((
                 if land { Command::Land } else { Command::Takeoff },
@@ -425,7 +455,11 @@ impl FlightBar {
         ));
         let n = buttons.len() as f32 + 1.0;
         // the room the bar sits in ends where the map's own controls begin
-        let room = area.width() - INSET - TRIGGER_CLEAR;
+        let room = if self.shrink {
+            area.width() * SHRINK_SHARE
+        } else {
+            area.width() - INSET - TRIGGER_CLEAR
+        };
         let mut longest = 0.0f32;
         for c in ["DISARM", "TAKEOFF", "LAND", "RETURN", "PLAN"] {
             let g = style::galley(ui, c, 10.0, Weight::W600, style::text_2(), 0.6);
@@ -506,7 +540,7 @@ impl FlightBar {
                     Command::Mode | Command::Plan | Command::Goto | Command::SetHome => {}
                 }
             }
-            if matches!(cmd, Command::Takeoff | Command::Land) {
+            if *cmd == Command::Takeoff || (*cmd == Command::Land && !self.split) {
                 takeoff_anchor = Some(r);
             }
             x += btn_w + BAR_GAP;
@@ -1233,6 +1267,20 @@ fn fa_button(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn apart_takeoff_is_greyed_in_the_air_and_land_on_the_ground() {
+        assert_eq!(
+            split_buttons("air"),
+            (("Takeoff: already in the air", false), ("Land", true))
+        );
+        assert_eq!(
+            split_buttons("ground"),
+            (("Takeoff", true), ("Land: on the ground", false))
+        );
+        // Unknown: both offered, as the web bar does.
+        assert_eq!(split_buttons(""), (("Takeoff", true), ("Land", true)));
+    }
+
     use super::*;
 
     #[test]

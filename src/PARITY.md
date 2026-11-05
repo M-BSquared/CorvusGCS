@@ -34,7 +34,7 @@ otherwise; "native file" is in `src/`.
 | Update marker (a dot on SET, the version in its tooltip) | update.js | app/nav.rs, update/mod.rs | done (the dot on the About pill is not drawn) |
 | MCP: question dialog (Allow, Refuse), indicator pill with Stop, refusals on the board, window heartbeat | mcp.js | mcp/mod.rs | done: unit tested, not seen with a live client; plugin tools are the plugins session's (the heartbeat sends none) |
 | One shared `/api/events` stream for console, params, firmware, tiles, shell, mcp, fleet | events.js | net/stream.rs (one stream per topic) | done |
-| Vehicle capabilities, greyed controls with the reason | capabilities.js | setup/calibration.rs, mission/backend.rs | partial: no shared module, Home flight bar not gated |
+| Vehicle capabilities, greyed controls with the reason | capabilities.js | data/capabilities.rs (calibration cards, the control pad's stick mode, ground vehicle words) | done; the Mission page still reads its own `mission_unsupported` copy of the document |
 | Lazy vendor bundles | lazy.js | n/a | n/a: nothing to load lazily in a compiled program |
 | Credits dialog | credits.js | settings/credits.rs | done |
 | Language files, translation function | i18n.js | n/a | later: the language session |
@@ -141,7 +141,7 @@ otherwise; "native file" is in `src/`.
 | Settings: Interface, Layout, Flight view, Map, Controls, Connections, Data, Plugins, About | sidenav.js | settings/ | done |
 | Switches: HUD and square HUD take effect | sidenav.js | settings/mod.rs `Effects` | done |
 | Switches: track options (earlier flights, rainbow, clear on restart, in the air in 3D), altitude, groundspeed and vertical speed blocks, compass nose up | sidenav.js | settings/mod.rs `Effects`, map/mod.rs `TrackLook`, home/hud.rs | done |
-| Switches: flight bar shrink and separate Takeoff and Land; the distance sensor reading | sidenav.js | settings/mod.rs | partial: stored, the flight bar and the altitude card do not read them yet |
+| Switches: flight bar shrink and separate Takeoff and Land, the distance sensor row of the altitude card and its stream | sidenav.js | home/flight.rs, home/topbar_cards.rs, app/mod.rs | done: unit tested, not looked at on screen |
 | MCP settings, permissions, connect dialog, token | settings-mcp.js | settings/conn_cards.rs | done |
 | Settings export and import | settings-transfer.js | settings/data_cards.rs | done |
 | Logs page | sidenav.js | logs/ | done |

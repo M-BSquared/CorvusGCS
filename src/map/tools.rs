@@ -175,12 +175,7 @@ pub fn rows(state: &Value, ground: bool, plan_alt: f64, units: &Units) -> Vec<Ro
         RowSpec {
             id: "goto",
             icon: "navigation",
-            label: if ground {
-                "Drive to this point"
-            } else {
-                "Fly to this point"
-            }
-            .into(),
+            label: format!("{} to this point", crate::data::capabilities::move_verb(state)),
             note: goto_note,
             enabled: fly,
         },
@@ -539,7 +534,8 @@ mod tests {
         assert!(up[0].enabled);
         assert_eq!(up[0].label, "Fly to this point");
         assert_eq!(up[0].note, "10 m AGL");
-        let car = rows(&fly_state(), true, 10.0, &u);
+        let rover = json!({"connected": true, "armed": true, "vehicle_type": "GROUND_ROVER"});
+        let car = rows(&rover, true, 10.0, &u);
         assert_eq!(car[0].label, "Drive to this point");
         assert_eq!(car[0].note, "");
     }

@@ -39,10 +39,15 @@ struct App {
     server: Server,
     control: crate::control::Control,
     welcome: crate::welcome::Welcome,
+    caps: crate::data::capabilities::Cache,
     mcp: crate::mcp::Mcp,
     update: crate::update::Update,
     updates_on: bool,
     topbar_hidden: Vec<&'static str>,
+    rangefinder: bool,
+    rangefinder_asked: bool,
+    rangefinder_retry: f64,
+    rangefinder_failed: std::sync::Arc<std::sync::Mutex<bool>>,
     fleet: crate::fleet::Fleet,
     fleet_dialog: crate::fleet::dialog::Dialog,
     board: Board,
@@ -164,6 +169,39 @@ impl App {
         }
     }
 
+    /// Asks for the distance sensor's stream, or hands it back, once per
+    /// connection and change of mind. Nothing is sent while the altitude
+    /// block is off the bar: its card could not be opened to read it.
+    fn sync_rangefinder(&mut self, state: &Value, now: f64) {
+        if state.get("connected") != Some(&Value::Bool(true)) {
+            self.rangefinder_asked = false;
+            return;
+        }
+        let want = self.rangefinder && !self.topbar_hidden.contains(&"Altitude");
+        if want == self.rangefinder_asked || (want && now < self.rangefinder_retry) {
+            return;
+        }
+        self.rangefinder_asked = want;
+        let server = self.server.clone();
+        let shared = self.rangefinder_failed.clone();
+        std::thread::spawn(move || {
+            let answer = http::post_json(
+                &server,
+                "/api/rangefinder/stream",
+                &serde_json::json!({"enabled": want}),
+            );
+            let refused = match answer {
+                Ok(d) => d.get("ok") == Some(&Value::Bool(false)),
+                Err(_) => true,
+            };
+            if refused && want {
+                if let Ok(mut f) = shared.lock() {
+                    *f = true;
+                }
+            }
+        });
+    }
+
     fn apply_settings(&mut self, ctx: &egui::Context) {
         if let Some(e) = self.settings.take_effects() {
             self.apply_effects(ctx, e);
@@ -186,7 +224,9 @@ impl App {
         let state: Value = self.telemetry.state();
         let now = now_ms();
         self.map.update(&state);
-        self.control.update(ui.ctx(), &state, self.page == Page::Home, now);
+        let caps = self.caps.get(ui.ctx(), &self.server, &state).clone();
+        self.control
+            .update(ui.ctx(), &state, &caps, self.page == Page::Home, now);
         for e in self.control.take_notes() {
             self.board.add_local("critical", &e, now);
         }
@@ -247,7 +287,7 @@ impl App {
                 .is_multi()
                 .then(|| crate::fleet::parse_hex(snap.color_of(own)).unwrap_or_else(style::vehicle)),
         };
-        let mut cards = topbar_cards::all(&state, &self.units, &mut self.top_speeds);
+        let mut cards = topbar_cards::all(&state, &self.units, &mut self.top_speeds, self.rangefinder);
         // Blocks the operator switched off (Settings, Interface, Top bar).
         let keep: Vec<bool> = blocks.iter().map(|b| !self.topbar_hidden.contains(&b.label)).collect();
         let mut at = 0;
@@ -429,6 +469,16 @@ impl App {
         for (level, text) in self.mcp.take_notes() {
             self.board.add_local(&level, &text, now);
         }
+        if self
+            .rangefinder_failed
+            .lock()
+            .map(|mut f| std::mem::take(&mut *f))
+            .unwrap_or(false)
+        {
+            self.rangefinder_asked = false;
+            self.rangefinder_retry = now + 15_000.0;
+        }
+        self.sync_rangefinder(&state, now);
         let first_run = self.welcome.is_open();
         self.update.show(
             ui.ctx(),
@@ -681,7 +731,12 @@ pub fn run(
                     map.set_source(&ctx, layer);
                 }
             }
-            let flight = FlightBar::new(server.clone(), &ctx);
+            let mut flight = FlightBar::new(server.clone(), &ctx);
+            {
+                let e = settings::Effects::of(&config);
+                flight.split = e.takeoff_land_split;
+                flight.shrink = e.flight_bar_shrink;
+            }
             ctx.set_zoom_factor(scale);
             let panel = Panel::new(server.clone(), &ctx, &config);
             let mut rail = MapRail::default();
@@ -693,9 +748,14 @@ pub fn run(
                     server.clone(),
                     crate::control::model::Config::from_config(&config),
                 ),
+                caps: Default::default(),
                 mcp: crate::mcp::Mcp::start(server.clone(), &ctx),
                 update: crate::update::Update::new(),
                 topbar_hidden: settings::Effects::of(&config).topbar_hidden,
+                rangefinder: settings::Effects::of(&config).rangefinder,
+                rangefinder_asked: false,
+                rangefinder_retry: 0.0,
+                rangefinder_failed: Default::default(),
                 updates_on: config.get("updates").and_then(|u| u.get("check")) != Some(&Value::Bool(false)),
                 welcome: {
                     let mut w = crate::welcome::Welcome::start(&server, &ctx);

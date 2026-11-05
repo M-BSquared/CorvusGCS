@@ -45,6 +45,9 @@ pub struct Effects {
     pub flight_hud: bool,
     pub hud_square: bool,
     pub compass_nose_up: bool,
+    pub rangefinder: bool,
+    pub flight_bar_shrink: bool,
+    pub takeoff_land_split: bool,
     pub track: crate::map::TrackLook,
     /// The top bar blocks switched off, by caption.
     pub topbar_hidden: Vec<&'static str>,
@@ -66,6 +69,9 @@ impl Effects {
             flight_hud: model::flag(cfg, "ui", "flight_hud", true),
             hud_square: model::flag(cfg, "ui", "hud_square", false),
             compass_nose_up: model::flag(cfg, "ui", "compass_nose_up", false),
+            rangefinder: model::flag(cfg, "ui", "topbar_show_rangefinder", false),
+            flight_bar_shrink: model::flag(cfg, "ui", "flight_bar_shrink", false),
+            takeoff_land_split: model::flag(cfg, "ui", "takeoff_land_split", false),
             track: crate::map::TrackLook {
                 earlier: model::flag(cfg, "ui", "track_earlier_flights", true),
                 rainbow: model::flag(cfg, "ui", "track_rainbow", false),

@@ -1,3 +1,4 @@
+pub mod capabilities;
 pub mod clock;
 pub mod telemetry;
 pub mod track;

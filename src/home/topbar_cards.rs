@@ -290,7 +290,7 @@ pub fn battery(state: &Value, units: &Units) -> Option<Content> {
 }
 
 /// `altitudeDetail`, without the ground height row.
-pub fn altitude(state: &Value, units: &Units) -> Option<Content> {
+pub fn altitude(state: &Value, units: &Units, rangefinder: bool) -> Option<Content> {
     if !truthy(state, "connected") {
         return None;
     }
@@ -306,6 +306,20 @@ pub fn altitude(state: &Value, units: &Units) -> Option<Content> {
     ));
     if let Some(g) = state.get("gps_altitude").and_then(Value::as_f64) {
         rows.push(row("GPS", units.format_length(g, 0, false, false), ""));
+    }
+    if rangefinder {
+        match state
+            .get("rangefinder_distance")
+            .and_then(Value::as_f64)
+            .filter(|d| d.is_finite())
+        {
+            Some(d) => rows.push(row(
+                "Distance sensor",
+                units.format_length(d, if d < 10.0 { 2 } else { 1 }, false, false),
+                "",
+            )),
+            None => rows.push(row("Distance sensor", "no reading", "muted")),
+        }
     }
     Some(card("Altitude", rows))
 }
@@ -397,7 +411,7 @@ impl TopSpeeds {
 
 /// The cards of the bar's blocks, in block order: `None` for a block with no
 /// card.
-pub fn all(state: &Value, units: &Units, tops: &mut TopSpeeds) -> Vec<Option<Content>> {
+pub fn all(state: &Value, units: &Units, tops: &mut TopSpeeds, rangefinder: bool) -> Vec<Option<Content>> {
     tops.track(state);
     vec![
         None,
@@ -405,7 +419,7 @@ pub fn all(state: &Value, units: &Units, tops: &mut TopSpeeds) -> Vec<Option<Con
         None,
         gps(state, units),
         battery(state, units),
-        altitude(state, units),
+        altitude(state, units, rangefinder),
         tops.groundspeed(state, units),
         tops.vspeed(state, units),
     ]
@@ -444,7 +458,7 @@ mod tests {
         let u = Units::default();
         assert!(gps(&json!({"connected": false}), &u).is_none());
         assert!(battery(&json!({}), &u).is_none());
-        assert!(altitude(&json!({}), &u).is_none());
+        assert!(altitude(&json!({}), &u, false).is_none());
     }
 
     #[test]
@@ -528,9 +542,30 @@ mod tests {
     }
 
     #[test]
+    fn the_distance_sensor_row_is_there_only_when_asked_for() {
+        let u = Units::default();
+        let st =
+            json!({"connected": true, "altitude_amsl": 610.4, "altitude_agl": 12.2, "rangefinder_distance": 4.256});
+        let off = altitude(&st, &u, false).unwrap();
+        assert!(rows(&off).iter().all(|r| r.0 != "Distance sensor"));
+        let on = altitude(&st, &u, true).unwrap();
+        let r = rows(&on);
+        assert_eq!(r.last().unwrap().0, "Distance sensor");
+        assert_eq!(r.last().unwrap().1, "4.26 m");
+        let far = json!({"connected": true, "rangefinder_distance": 12.34});
+        assert_eq!(rows(&altitude(&far, &u, true).unwrap()).last().unwrap().1, "12.3 m");
+        let none = json!({"connected": true});
+        let r = rows(&altitude(&none, &u, true).unwrap());
+        assert_eq!(
+            (r.last().unwrap().1.as_str(), r.last().unwrap().2),
+            ("no reading", "muted")
+        );
+    }
+
+    #[test]
     fn the_altitude_card_has_the_references() {
         let st = json!({"connected": true, "altitude_amsl": 610.4, "altitude_agl": 12.2, "gps_altitude": 611.0});
-        let c = altitude(&st, &Units::default()).unwrap();
+        let c = altitude(&st, &Units::default(), false).unwrap();
         assert_eq!(
             rows(&c),
             vec![
