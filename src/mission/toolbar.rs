@@ -145,7 +145,7 @@ pub const SHAPES: [(Shape, &str, &str, &str); 3] = [
 ];
 
 /// `updateHint`: the line under the bar for the tool and the plan as they stand.
-pub fn hint_for(plan: &Plan, tool: Tool, link: &Link, draft: &Draft) -> String {
+pub fn hint_for(plan: &Plan, tool: Tool, link: &Link, draft: &Draft, touch: bool) -> String {
     let _ = draft;
     let aboard = link.start.is_some();
     let drives = plan.drives;
@@ -166,6 +166,16 @@ pub fn hint_for(plan: &Plan, tool: Tool, link: &Link, draft: &Draft) -> String {
             }
         }
         Tool::Shape(s) => {
+            // What Enter and a double click do with a mouse, a finger does
+            // with the FINISH button (`touchHint`).
+            if touch {
+                let text = match s {
+                    Shape::Circle => "Tap the centre, then tap the edge of the circle to fly.",
+                    Shape::Corridor => "Tap along the centre line of the corridor, then press FINISH.",
+                    Shape::Area => "Tap the corners of the area, then press FINISH.",
+                };
+                return format!("{text} Hold the map to take a point back.");
+            }
             let text = SHAPES.iter().find(|x| x.0 == s).map_or("", |x| x.3);
             format!("{text} Right click undoes a point. Esc to stop.")
         }
@@ -314,7 +324,19 @@ impl MissionPage {
             painter.galley(hint.min + Vec2::new(12.0, 8.0), g, style::text_2());
             below = hint.bottom() + 8.0;
         }
-        let _ = below;
+        // FINISH: tablet mode only, and only while a shape can be finished.
+        if crate::app::touch::on()
+            && matches!(self.tool, Tool::Shape(Shape::Corridor | Shape::Area))
+            && self.pattern_ready()
+        {
+            let b = crate::ui::kit::Button::new("FINISH", crate::ui::kit::Variant::Primary)
+                .icon("check")
+                .small();
+            let r = Rect::from_min_size(Pos2::new(bar.left(), below), Vec2::new(b.width(ui), b.height()));
+            if b.show(ui, r, "patterndone") {
+                self.commit_pattern();
+            }
+        }
         if let Some(btn) = pattern_btn {
             self.pattern_card(ui, bar, btn, btn_h, now);
         }
@@ -424,7 +446,7 @@ mod tests {
     }
 
     fn hint(p: &Plan, t: Tool, link: &Link) -> String {
-        hint_for(p, t, link, &Draft::default())
+        hint_for(p, t, link, &Draft::default(), false)
     }
 
     #[test]

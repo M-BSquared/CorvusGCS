@@ -138,12 +138,61 @@ pub fn show(
     columns: usize,
     id: &str,
 ) -> (f32, Option<String>) {
+    grid(ui, x, y, w, cards, selected, columns, id, false)
+}
+
+/// `show` whose descriptions wrap to the card instead of ending at its edge
+/// (`.welcome-review-cards .option-card-desc`).
+#[allow(clippy::too_many_arguments)]
+pub fn show_wrapped(
+    ui: &mut egui::Ui,
+    x: f32,
+    y: f32,
+    w: f32,
+    cards: &[Card],
+    selected: Option<&str>,
+    columns: usize,
+    id: &str,
+) -> (f32, Option<String>) {
+    grid(ui, x, y, w, cards, selected, columns, id, true)
+}
+
+fn wrapped_desc(ui: &egui::Ui, card: &Card, cw: f32, color: Color32) -> std::sync::Arc<egui::Galley> {
+    let avail = (cw - 2.0 - 2.0 * PAD_X - card.lead_w()).max(10.0);
+    crate::ui::kit::wrapped_weight(ui, &card.desc, 10.5, Weight::W400, color, avail, 1.35)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn grid(
+    ui: &mut egui::Ui,
+    x: f32,
+    y: f32,
+    w: f32,
+    cards: &[Card],
+    selected: Option<&str>,
+    columns: usize,
+    id: &str,
+    wrap: bool,
+) -> (f32, Option<String>) {
     let columns = columns.max(1);
     let cw = (w - GAP * (columns as f32 - 1.0)) / columns as f32;
     let mut pressed = None;
     let mut cy = y;
     for (ri, row) in cards.chunks(columns).enumerate() {
-        let h = row_height(row);
+        let h = if wrap {
+            row.iter()
+                .map(|c| {
+                    let d = if c.desc.is_empty() {
+                        0.0
+                    } else {
+                        2.0 + wrapped_desc(ui, c, cw, style::text_3()).size().y
+                    };
+                    2.0 + 2.0 * PAD_Y + (14.5 + d).max(c.lead_h())
+                })
+                .fold(0.0, f32::max)
+        } else {
+            row_height(row)
+        };
         for (ci, card) in row.iter().enumerate() {
             let rect = Rect::from_min_size(Pos2::new(x + ci as f32 * (cw + GAP), cy), Vec2::new(cw, h));
             let resp = ui.interact(rect, ui.scope_id().with((id, ri, ci)), egui::Sense::click());
@@ -205,13 +254,25 @@ pub fn show(
             let label = ellipsize(ui, &card.label, 12.0, Weight::W600, avail);
             let lg = style::galley(ui, &label, 12.0, Weight::W600, label_c, 0.0);
             let lh = lg.size().y;
-            let content = lh + if card.desc.is_empty() { 0.0 } else { 2.0 + 12.5 };
+            let dc = if on { style::text_2() } else { style::text_3() };
+            let dg = (!card.desc.is_empty()).then(|| {
+                if wrap {
+                    wrapped_desc(ui, card, cw, dc)
+                } else {
+                    let desc = ellipsize(ui, &card.desc, 10.5, Weight::W400, avail);
+                    style::galley(ui, &desc, 10.5, Weight::W400, dc, 0.0)
+                }
+            });
+            let dh = dg.as_ref().map_or(12.5, |g| g.size().y);
+            let content = lh
+                + if card.desc.is_empty() {
+                    0.0
+                } else {
+                    2.0 + if wrap { dh } else { 12.5 }
+                };
             let top = rect.center().y - content / 2.0;
             ui.painter().galley(Pos2::new(tx, top), lg, label_c);
-            if !card.desc.is_empty() {
-                let desc = ellipsize(ui, &card.desc, 10.5, Weight::W400, avail);
-                let dc = if on { style::text_2() } else { style::text_3() };
-                let dg = style::galley(ui, &desc, 10.5, Weight::W400, dc, 0.0);
+            if let Some(dg) = dg {
                 ui.painter().galley(Pos2::new(tx, top + lh + 2.0), dg, dc);
             }
             if resp.clicked() {

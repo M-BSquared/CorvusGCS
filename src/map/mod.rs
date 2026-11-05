@@ -6,13 +6,16 @@
 //! itself never talks to a tile server. The source is `satellite` (Esri), the
 //! web map's first layer; picking another comes with the map controls.
 
+pub mod cameras;
 pub mod measure;
+pub mod others;
 pub mod rail;
 pub mod regions;
 pub mod search;
 pub mod search_card;
 pub mod tiles_card;
 pub mod tiles_model;
+pub mod tools;
 
 use eframe::egui::{self, Color32, Pos2, Shape, Stroke, Vec2};
 use serde_json::Value;
@@ -83,6 +86,48 @@ pub(crate) fn describe(sources: &Value, id: &str) -> (String, u8) {
     (attribution, max_zoom)
 }
 
+/// How the track is drawn (Settings, Map: `ui.track_*`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TrackLook {
+    /// Earlier flights in a lighter colour of their own.
+    pub earlier: bool,
+    /// Each earlier flight in a colour of its own.
+    pub rainbow: bool,
+    /// Cleared when the autopilot reboots.
+    pub clear_on_restart: bool,
+    /// In 3D, a thin line at the height flown above the track on the ground.
+    pub in_air: bool,
+}
+
+impl Default for TrackLook {
+    fn default() -> TrackLook {
+        TrackLook {
+            earlier: true,
+            rainbow: false,
+            clear_on_restart: false,
+            in_air: true,
+        }
+    }
+}
+
+/// The colour of each earlier flight, oldest first (`pastColors`): the same
+/// as the flight in progress when earlier flights have no colour of their
+/// own, a tone each with the rainbow, else one lighter tone.
+pub fn past_colors(look: &TrackLook, hex: &str, count: usize) -> Vec<Color32> {
+    let (main, past) = crate::map::others::line_colors(hex, look.rainbow && look.earlier, 0);
+    (0..count)
+        .map(|i| {
+            if !look.earlier {
+                main
+            } else if look.rainbow {
+                crate::map::others::line_colors(hex, true, i).1
+            } else {
+                past
+            }
+        })
+        .collect()
+}
+
 /// The map and what it remembers between frames.
 pub struct Map {
     server: Server,
@@ -108,6 +153,17 @@ pub struct Map {
     pub measure: crate::map::measure::Measure,
     /// Where the place search landed.
     pub pin: Option<[f64; 2]>,
+    /// The fly-to-points plan and the menu on a point.
+    pub tools: crate::map::tools::Tools,
+    /// The vehicles that are not flown, and whose track `track` is.
+    pub others: crate::map::others::Others,
+    track_owner: Option<String>,
+    pub look: TrackLook,
+    last_boot_ms: Option<f64>,
+    /// `~/.corvus/gui-tracks.json`, and when the tracks were last written.
+    store: Option<std::path::PathBuf>,
+    saved_at: Option<std::time::Instant>,
+    saved_rev: u64,
     /// 3D mode: the tilted view, made when it is first switched on.
     three: Option<Map3d>,
     three_d: bool,
@@ -163,6 +219,14 @@ impl Map {
             regions_asked: f64::NEG_INFINITY,
             measure: crate::map::measure::Measure::default(),
             pin: None,
+            tools: Default::default(),
+            others: Default::default(),
+            track_owner: None,
+            look: TrackLook::default(),
+            last_boot_ms: None,
+            store: None,
+            saved_at: None,
+            saved_rev: 0,
             three: None,
             three_d: false,
             view: None,
@@ -307,6 +371,13 @@ impl Map {
             t.cam.lat = lat;
         }
         let height = state.get("altitude_agl").and_then(Value::as_f64).unwrap_or(0.0);
+        let flown_hex = self
+            .others
+            .flown_color
+            .map(|c| format!("#{:02X}{:02X}{:02X}", c.r(), c.g(), c.b()));
+        let (track_color, _) = crate::map::others::line_colors(flown_hex.as_deref().unwrap_or(""), false, 0);
+        let past_colors = past_colors(&self.look, flown_hex.as_deref().unwrap_or(""), self.track.past.len());
+        let vehicle_color = self.others.flown_color.unwrap_or_else(style::vehicle);
         let input = t.show(
             ui,
             rect,
@@ -317,10 +388,36 @@ impl Map {
                 heading,
                 height,
                 shapes: self.plugins.shapes(),
+                vehicle_color,
+                track_color,
+                past_colors,
+                in_air: self.look.in_air,
             },
         );
         if input.dragged {
             self.follow = false;
+        }
+        {
+            let (rect_c, t) = (rect, &*t);
+            let at = |p: [f64; 2]| t.place_on_screen(rect_c, p);
+            let painter = ui.painter_at(rect);
+            self.others.paint(&painter, &at, false);
+            let mut marker_hit = false;
+            if let Some(q) = input.press {
+                if let Some(id) = self.others.hit(&at, q) {
+                    self.others.click = Some(id);
+                    marker_hit = true;
+                }
+            }
+            if !self.planner {
+                if let Some((g, secondary)) = input.click {
+                    self.tools.click(g, secondary, self.measure.active || marker_hit);
+                }
+                if self.tools.plan.active && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                    self.tools.plan.set_active(false);
+                }
+                self.tools.paint(&painter, &at, vehicle);
+            }
         }
         if std::env::var_os("CORVUS_GUI_3D_PANEL").is_some() {
             let anchor =
@@ -349,10 +446,91 @@ impl Map {
         }
     }
 
+    /// Reads the tracks of the last run (`restoreTrack`), unless Settings
+    /// clears them on restart; from now on they are written when they change.
+    pub fn restore_tracks(&mut self, keep: bool) {
+        self.store = crate::data::track_store::default_path();
+        let Some(path) = self.store.clone() else { return };
+        if !keep {
+            let _ = std::fs::remove_file(&path);
+            return;
+        }
+        let stored = crate::data::track_store::load(&path);
+        self.track.swap(stored.main.0, stored.main.1);
+        for (id, (current, past)) in stored.fleet {
+            self.others.tracks.stash(&id, current, past);
+        }
+        self.others.tracks.dirty = false;
+        self.saved_rev = self.track.revision;
+    }
+
+    /// Writes the tracks a few seconds after they changed, so a drive of
+    /// telemetry does not become a drive of the disk.
+    fn save_tracks(&mut self) {
+        const DELAY: std::time::Duration = std::time::Duration::from_secs(5);
+        let Some(path) = self.store.clone() else { return };
+        let changed = self.track.revision != self.saved_rev || self.others.tracks.dirty;
+        if !changed || self.saved_at.is_some_and(|t| t.elapsed() < DELAY) {
+            return;
+        }
+        self.saved_at = Some(std::time::Instant::now());
+        self.saved_rev = self.track.revision;
+        self.others.tracks.dirty = false;
+        let main = (self.track.current.clone(), self.track.past.clone());
+        crate::data::track_store::save(&path, &main, &self.others.tracks.snapshot());
+    }
+
+    /// Whether any vehicle has a track to clear (`updateTrackControl`).
+    pub fn has_any_track(&self) -> bool {
+        self.track.has_line() || self.others.tracks.has_lines(&self.others.owner)
+    }
+
+    /// Clears every vehicle's track.
+    pub fn clear_tracks(&mut self) {
+        self.track.clear();
+        self.others.tracks.clear();
+    }
+
+    /// The vehicle whose marker was pressed since the last call.
+    pub fn take_vehicle_click(&mut self) -> Option<String> {
+        self.others.click.take()
+    }
+
+    /// Feeds the fleet list and the flown vehicle: the others' tracks and
+    /// markers, and the hand-over of the flown track when the flown vehicle
+    /// changes (`noteVehicle`). True while a marker is easing.
+    pub fn sync_fleet(&mut self, snap: &crate::fleet::Snapshot, state: &Value, dt: f32) -> bool {
+        let id = state.get("vehicle_id").and_then(Value::as_str).unwrap_or("");
+        if !id.is_empty() && self.track_owner.as_deref() != Some(id) {
+            if let Some(old) = self.track_owner.replace(id.to_string()) {
+                let next = self.others.tracks.take(id).unwrap_or_default();
+                let (current, past) = self.track.swap(next.0, next.1);
+                self.others.tracks.stash(&old, current, past);
+            }
+        }
+        let owner = self.track_owner.clone().unwrap_or_default();
+        self.others.sync(snap, &owner, dt)
+    }
+
+    /// The operator removed a vehicle.
+    pub fn forget_vehicle(&mut self, id: &str) {
+        self.others.forget(id);
+    }
+
     /// Feeds one telemetry state: the track, and the first-fix jump.
     pub fn update(&mut self, state: &Value) {
+        self.save_tracks();
         if state.get("connected") != Some(&Value::Bool(true)) {
             return;
+        }
+        let boot = state.get("boot_ms").and_then(Value::as_f64).filter(|b| *b > 0.0);
+        if let Some(b) = boot {
+            // time_boot_ms restarts near zero on boot, so a value that moves
+            // backwards is a new flight session, never a link drop.
+            if self.look.clear_on_restart && self.last_boot_ms.is_some_and(|p| b < p) {
+                self.track.clear();
+            }
+            self.last_boot_ms = Some(b);
         }
         if self
             .track
@@ -508,6 +686,9 @@ impl Map {
             plugins: &mut self.plugins,
             overlay,
             pin: &mut self.pin,
+            tools: (!self.planner).then_some(&mut self.tools),
+            others: &mut self.others,
+            look: self.look,
             measure: &mut self.measure,
             regions,
             outline,
@@ -575,6 +756,8 @@ impl Map {
 
     /// Lets go of the tile downloader and joins its thread.
     pub fn shut_down(&mut self) {
+        self.saved_at = None;
+        self.save_tracks();
         self.tiles = None;
     }
 }
@@ -584,6 +767,8 @@ struct Layers<'a, 'o> {
     plugins: &'a mut crate::plugins::layer::Layer,
     overlay: Option<&'a mut (dyn Overlay + 'o)>,
     pin: &'a mut Option<[f64; 2]>,
+    tools: Option<&'a mut crate::map::tools::Tools>,
+    others: &'a mut crate::map::others::Others,
     measure: &'a mut crate::map::measure::Measure,
     regions: Vec<crate::map::regions::Merged>,
     /// The geofence area, when the Home map is asked to show it.
@@ -592,6 +777,7 @@ struct Layers<'a, 'o> {
     home: Option<(f64, f64)>,
     vehicle: Option<(f64, f64)>,
     heading: f32,
+    look: TrackLook,
 }
 
 /// An outlined downloaded area (`offline-regions-fill` and `-line`, #4CC9FF)
@@ -678,14 +864,29 @@ pub(crate) fn paint_flight(painter: &egui::Painter, pts: &[Pos2], color: Color32
 }
 
 /// The vehicle marker (map.js buildVehicleMarker, 48 px): a blurred halo,
-/// the heading cone, a white ring, the red body and a white centre dot.
-pub(crate) fn paint_vehicle(painter: &egui::Painter, c: Pos2, heading: f32) {
-    for (r, a) in [(17.0, 0.07), (14.0, 0.07), (11.0, 0.08)] {
-        painter.circle_filled(c, r, style::rgba(style::vehicle_rgb(), a));
+/// the heading cone, a white ring, the body and a white centre dot, in the
+/// vehicle's own colour. `scale` shrinks the 48 px box (the fleet's markers
+/// are 40 px), `halo` is the blur round the flown aircraft, `fade` the
+/// opacity of a lost one.
+pub(crate) fn paint_vehicle_in(
+    painter: &egui::Painter,
+    c: Pos2,
+    heading: f32,
+    color: Color32,
+    scale: f32,
+    halo: bool,
+    fade: f32,
+) {
+    let rgb = (u32::from(color.r()) << 16) | (u32::from(color.g()) << 8) | u32::from(color.b());
+    let f = |a: f32| a * fade;
+    if halo {
+        for (r, a) in [(17.0, 0.07), (14.0, 0.07), (11.0, 0.08)] {
+            painter.circle_filled(c, r * scale, style::rgba(rgb, f(a)));
+        }
     }
     // The SVG's 48 px box, centred, rotated by the heading.
     let rot = egui::emath::Rot2::from_angle(heading.to_radians());
-    let at = |x: f32, y: f32| c + rot * Vec2::new(x - 24.0, y - 24.0);
+    let at = |x: f32, y: f32| c + rot * (Vec2::new(x - 24.0, y - 24.0) * scale);
     // M24 1 L31.5 15.5 A16 16 0 0 0 16.5 15.5 Z: with sweep 0 and the small
     // arc, the circle's centre lies below the chord, so the base curves up
     // towards the tip.
@@ -701,7 +902,7 @@ pub(crate) fn paint_vehicle(painter: &egui::Painter, c: Pos2, heading: f32) {
     cone.push(at(16.5, 15.5));
     // The base curves in, so the outline is not convex: filled as a fan
     // from the tip, which sees every point of it.
-    let fill = style::rgba(style::vehicle_rgb(), 0.62);
+    let fill = style::rgba(rgb, f(0.62));
     let mut mesh = egui::Mesh::default();
     for p in &cone {
         mesh.colored_vertex(*p, fill);
@@ -712,11 +913,14 @@ pub(crate) fn paint_vehicle(painter: &egui::Painter, c: Pos2, heading: f32) {
     painter.add(mesh);
     painter.add(Shape::closed_line(
         cone,
-        Stroke::new(0.9, Color32::from_rgba_unmultiplied(255, 255, 255, 140)),
+        Stroke::new(
+            0.9,
+            Color32::from_rgba_unmultiplied(255, 255, 255, (140.0 * fade) as u8),
+        ),
     ));
-    painter.circle_filled(c, 10.5, Color32::WHITE);
-    painter.circle_filled(c, 9.0, style::vehicle());
-    painter.circle_filled(c, 2.4, Color32::WHITE);
+    painter.circle_filled(c, 10.5 * scale, Color32::WHITE.gamma_multiply(fade));
+    painter.circle_filled(c, 9.0 * scale, color.gamma_multiply(fade));
+    painter.circle_filled(c, 2.4 * scale, Color32::WHITE.gamma_multiply(fade));
 }
 
 /// The home marker (buildHomeMarker, 32 px): crosshair ticks, a white ring,
@@ -791,31 +995,57 @@ impl Plugin for Layers<'_, '_> {
         }
         self.plugins.paint_areas(&painter, projector, rect);
         let flown = !self.planner;
-        for flight in self.track.past.iter().filter(|_| flown) {
+        let at = |p: [f64; 2]| {
+            Some(screen(
+                projector,
+                rect,
+                &Point {
+                    lng: p[0],
+                    lat: p[1],
+                    alt: None,
+                },
+            ))
+        };
+        self.others.paint(&painter, &at, self.look.rainbow && self.look.earlier);
+        let flown_hex = self
+            .others
+            .flown_color
+            .map(|c| format!("#{:02X}{:02X}{:02X}", c.r(), c.g(), c.b()));
+        let (line_main, line_past) = crate::map::others::line_colors(flown_hex.as_deref().unwrap_or(""), false, 0);
+        let past = past_colors(&self.look, flown_hex.as_deref().unwrap_or(""), self.track.past.len());
+        let _ = line_past;
+        for (flight, color) in self.track.past.iter().zip(&past).filter(|_| flown) {
             let pts: Vec<Pos2> = track::smooth(flight)
                 .iter()
                 .map(|p| screen(projector, rect, p))
                 .collect();
-            paint_flight(&painter, &pts, style::track_past(), true);
+            paint_flight(&painter, &pts, *color, true);
         }
         if flown {
             let pts: Vec<Pos2> = track::smooth(&self.track.current)
                 .iter()
                 .map(|p| screen(projector, rect, p))
                 .collect();
-            paint_flight(&painter, &pts, style::track(), false);
+            paint_flight(&painter, &pts, line_main, false);
         }
         if let Some((lng, lat)) = self.home.filter(|_| flown) {
             paint_home(&painter, screen(projector, rect, &Point { lng, lat, alt: None }));
         }
         if let Some((lng, lat)) = self.vehicle {
-            paint_vehicle(
+            let c = screen(projector, rect, &Point { lng, lat, alt: None });
+            paint_vehicle_in(
                 &painter,
-                screen(projector, rect, &Point { lng, lat, alt: None }),
+                c,
                 self.heading,
+                self.others.flown_color.unwrap_or_else(style::vehicle),
+                1.0,
+                true,
+                1.0,
             );
+            self.others.paint_flown_label(&painter, c);
         }
         self.plugins.marks(ui, response, projector, rect);
+        let mut pin_hit = false;
         if let Some(p) = *self.pin {
             let c = screen(
                 projector,
@@ -832,7 +1062,35 @@ impl Plugin for Layers<'_, '_> {
                 && !self.measure.active
             {
                 *self.pin = None;
+                pin_hit = true;
             }
+        }
+        let mut marker_hit = false;
+        if response.clicked() {
+            if let Some(q) = response.interact_pointer_pos() {
+                if let Some(id) = self.others.hit(&at, q) {
+                    self.others.click = Some(id);
+                    marker_hit = true;
+                }
+            }
+        }
+        if let Some(tools) = self.tools.as_deref_mut() {
+            if tools.plan.active {
+                if response.hovered() {
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair);
+                }
+                if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                    tools.plan.set_active(false);
+                }
+            }
+            let secondary = response.secondary_clicked();
+            if response.clicked() || secondary {
+                if let Some(q) = response.interact_pointer_pos() {
+                    let g = projector.unproject(q.to_vec2());
+                    tools.click([g.x(), g.y()], secondary, self.measure.active || pin_hit || marker_hit);
+                }
+            }
+            tools.paint(&painter, &at, self.vehicle);
         }
         if self.measure.active {
             drive_measure(ui, response, projector, self.measure);
@@ -946,6 +1204,67 @@ mod tests {
     use serde_json::json;
 
     #[test]
+    fn earlier_flights_follow_the_track_switches() {
+        let theme_main = style::track();
+        let on = TrackLook::default();
+        let lighter = past_colors(&on, "", 2);
+        assert_eq!(lighter, vec![style::track_past(); 2]);
+        let same = past_colors(&TrackLook { earlier: false, ..on }, "", 2);
+        assert_eq!(same, vec![theme_main; 2]);
+        let rainbow = past_colors(&TrackLook { rainbow: true, ..on }, "", 3);
+        assert_ne!(rainbow[0], rainbow[1]);
+        assert_ne!(rainbow[1], rainbow[2]);
+        // The rainbow needs earlier flights in their own colour.
+        let none = past_colors(
+            &TrackLook {
+                earlier: false,
+                rainbow: true,
+                ..on
+            },
+            "",
+            2,
+        );
+        assert_eq!(none, vec![theme_main; 2]);
+        assert!(past_colors(&on, "#2BC4E4", 0).is_empty());
+    }
+
+    #[test]
+    fn a_reboot_clears_the_track_only_when_asked() {
+        let mut m = test_map();
+        m.look.clear_on_restart = true;
+        let st = |boot: f64| json!({"connected": true, "boot_ms": boot, "position": [11.6, 48.1]});
+        m.update(&st(60_000.0));
+        m.track.current.push(Point {
+            lng: 11.6,
+            lat: 48.1,
+            alt: None,
+        });
+        m.track.current.push(Point {
+            lng: 11.7,
+            lat: 48.1,
+            alt: None,
+        });
+        m.update(&st(61_000.0));
+        assert!(m.track.has_line());
+        m.update(&st(2_000.0));
+        assert!(!m.track.has_line() || m.track.current.len() < 2);
+        let mut keep = test_map();
+        keep.update(&st(60_000.0));
+        keep.track.current.push(Point {
+            lng: 11.6,
+            lat: 48.1,
+            alt: None,
+        });
+        keep.track.current.push(Point {
+            lng: 11.7,
+            lat: 48.1,
+            alt: None,
+        });
+        keep.update(&st(2_000.0));
+        assert!(keep.track.has_line());
+    }
+
+    #[test]
     fn the_source_is_described_from_the_backend() {
         let sources = json!({"sources": [
             {"id": "osm", "attribution": "OSM", "maxzoom": 19},
@@ -980,10 +1299,8 @@ mod tests {
         assert_eq!(real_fix(None), None);
     }
 
-    #[test]
-    fn the_first_fix_records_a_track_point() {
-        let ctx = egui::Context::default();
-        let mut m = Map {
+    fn test_map() -> Map {
+        Map {
             server: Server::local(1),
             env: crate::setup::geofence::Env::new(Value::Null),
             sources: Value::Null,
@@ -1001,13 +1318,27 @@ mod tests {
             regions_asked: f64::NEG_INFINITY,
             measure: crate::map::measure::Measure::default(),
             pin: None,
+            tools: Default::default(),
+            others: Default::default(),
+            track_owner: None,
+            look: TrackLook::default(),
+            last_boot_ms: None,
+            store: None,
+            saved_at: None,
+            saved_rev: 0,
             three: None,
             three_d: false,
             view: None,
             planner: false,
             bottom_lift: 0.0,
             plugins: Default::default(),
-        };
+        }
+    }
+
+    #[test]
+    fn the_first_fix_records_a_track_point() {
+        let ctx = egui::Context::default();
+        let mut m = test_map();
         let _ = ctx;
         m.update(&json!({"connected": true, "armed": false, "position": [11.6, 48.1]}));
         assert!(!m.first_fix);

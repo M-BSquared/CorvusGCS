@@ -7,6 +7,7 @@ pub mod buildings;
 pub mod camera;
 pub mod gpu;
 pub mod panel;
+pub mod ribbon;
 pub mod terrain;
 pub mod tile_cache;
 
@@ -51,11 +52,24 @@ pub struct Layers3d<'a> {
     pub height: f64,
     /// What the plugins draw.
     pub shapes: &'a [crate::plugins::shapes::Shape],
+    /// The flown vehicle's own colour, and its track's: the theme's unless
+    /// the operator chose one.
+    pub vehicle_color: Color32,
+    pub track_color: Color32,
+    /// One colour per earlier flight, oldest first.
+    pub past_colors: Vec<Color32>,
+    /// A thin line at the height flown, above the track on the ground.
+    pub in_air: bool,
 }
 
 /// What the pointer did to the camera this frame.
 pub struct Input {
     pub dragged: bool,
+    /// Where a press-and-release landed on the ground (longitude, latitude)
+    /// and whether it was the right button.
+    pub click: Option<([f64; 2], bool)>,
+    /// Where a left press-and-release landed on the screen.
+    pub press: Option<Pos2>,
 }
 
 /// The base layer's tiles as a decoded image.
@@ -561,6 +575,7 @@ impl Map3d {
             ground: self.cam.ground,
             ground_items,
             building_items,
+            line_items: self.line_items(layers),
         };
         painter.add(egui::PaintCallback {
             rect,
@@ -584,7 +599,14 @@ impl Map3d {
         }
         self.paint_layers(ui, &painter, rect.min, layers);
         self.paint_credit(ui, rect);
-        Input { dragged }
+        let secondary = resp.secondary_clicked();
+        let click = (resp.clicked() || secondary)
+            .then(|| resp.interact_pointer_pos())
+            .flatten()
+            .and_then(|p| self.pick(rect, p))
+            .map(|g| (g, secondary));
+        let press = resp.clicked().then(|| resp.interact_pointer_pos()).flatten();
+        Input { dragged, click, press }
     }
 
     /// `setSky`: the sky over the horizon in the theme's own greys. At 60
@@ -731,31 +753,105 @@ impl Map3d {
             .map(|s| Pos2::new(origin.x + s.x as f32, origin.y + s.y as f32))
     }
 
+    /// The longitude and latitude of the ground under screen point `p`, on
+    /// the plane of the centre's ground.
+    pub fn pick(&self, rect: Rect, p: Pos2) -> Option<[f64; 2]> {
+        let (e, n) = self
+            .cam
+            .ground_at(f64::from(p.x - rect.min.x), f64::from(p.y - rect.min.y), 0.0)?;
+        let (lng, lat) = self.cam.geo_of(e, n);
+        Some([lng, lat])
+    }
+
+    /// Where a place on the ground is on screen, when the camera sees it.
+    pub fn place_on_screen(&self, rect: Rect, p: [f64; 2]) -> Option<Pos2> {
+        let h = self.ground_at(p[0], p[1]);
+        self.screen_of(rect.min, self.cam.local_of(p[0], p[1], h))
+    }
+
+    /// Whether the ground between the camera and `target` (local metres) is
+    /// higher than the line of sight: a hill in front of it.
+    fn hidden(&self, target: V3) -> bool {
+        let view = self.cam.view();
+        const STEPS: usize = 48;
+        for i in 1..STEPS {
+            let t = i as f64 / STEPS as f64;
+            if t > 0.97 {
+                break;
+            }
+            let p = [
+                view.pos[0] + (target[0] - view.pos[0]) * t,
+                view.pos[1] + (target[1] - view.pos[1]) * t,
+                view.pos[2] + (target[2] - view.pos[2]) * t,
+            ];
+            let (lng, lat) = self.cam.geo_of(p[0], p[1]);
+            let terrain = self.ground_at(lng, lat) - self.cam.ground;
+            if terrain > p[2] + 1.0 {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// The flown track as ribbons the depth test can hide behind a hill: a
+    /// dark casing and the colour on top, earlier flights quieter.
+    fn line_items(&self, layers: &Layers3d<'_>) -> Vec<gpu::Item> {
+        let rgb = |c: Color32| {
+            [
+                f32::from(c.r()) / 255.0,
+                f32::from(c.g()) / 255.0,
+                f32::from(c.b()) / 255.0,
+            ]
+        };
+        let centre = crate::map3d::camera::mercator(self.cam.lng, self.cam.lat);
+        let mut items = Vec::new();
+        let mut add = |pts: &[Point], color: Color32, past: bool, air: bool| {
+            let local: Vec<V3> = track::smooth(pts)
+                .iter()
+                .map(|p| {
+                    let up = if air { p.alt.unwrap_or(0.0) } else { 0.0 };
+                    self.cam.local_of(p.lng, p.lat, self.ground_at(p.lng, p.lat) + up)
+                })
+                .collect();
+            let (casing, casing_a, core, core_a) = match (past, air) {
+                (_, true) => (2.4, 0.4, 1.2, 0.8),
+                (true, false) => (4.6, 0.45, 2.2, 0.85),
+                (false, false) => (5.5, 0.55, 2.6, 0.95),
+            };
+            for (width, color, alpha) in [(casing, [0.0, 0.0, 0.0], casing_a), (core, rgb(color), core_a)] {
+                if let Some((verts, indices)) = ribbon::build(&local, width, &self.cam, self.cam.ground) {
+                    items.push(gpu::Item {
+                        mesh: Arc::new(gpu::MeshData::new(verts, indices)),
+                        origin: centre,
+                        texture: None,
+                        uv: [0.0, 0.0, 1.0, 1.0],
+                        flat: false,
+                        color,
+                        alpha,
+                    });
+                }
+            }
+        };
+        for (flight, color) in layers.track.past.iter().zip(&layers.past_colors) {
+            add(flight, *color, true, false);
+            if layers.in_air {
+                add(flight, *color, true, true);
+            }
+        }
+        add(&layers.track.current, layers.track_color, false, false);
+        if layers.in_air {
+            add(&layers.track.current, layers.track_color, false, true);
+        }
+        items
+    }
+
     fn paint_layers(&self, ui: &egui::Ui, painter: &egui::Painter, origin: Pos2, layers: &Layers3d<'_>) {
         let cam = &self.cam;
         let project = |p: [f64; 2]| self.screen_of(origin, cam.local_of(p[0], p[1], self.ground_at(p[0], p[1])));
         crate::plugins::shapes::paint_areas(painter, &project, layers.shapes);
-        // A run of the track ends where it goes behind the camera, so the
-        // gap is not drawn as a line across the screen.
-        let paint_track = |pts: &[Point], color: Color32, past: bool| {
-            let mut run: Vec<Pos2> = Vec::new();
-            for p in pts {
-                let h = self.ground_at(p.lng, p.lat) + p.alt.unwrap_or(0.0);
-                match self.screen_of(origin, cam.local_of(p.lng, p.lat, h)) {
-                    Some(q) => run.push(q),
-                    None => {
-                        crate::map::paint_flight(painter, &std::mem::take(&mut run), color, past);
-                    }
-                }
-            }
-            crate::map::paint_flight(painter, &run, color, past);
-        };
-        for flight in &layers.track.past {
-            paint_track(&track::smooth(flight), crate::ui::style::track_past(), true);
-        }
-        paint_track(&track::smooth(&layers.track.current), crate::ui::style::track(), false);
         if let Some((lng, lat)) = layers.home {
-            if let Some(p) = self.screen_of(origin, cam.local_of(lng, lat, self.ground_at(lng, lat))) {
+            let at = cam.local_of(lng, lat, self.ground_at(lng, lat));
+            if let (false, Some(p)) = (self.hidden(at), self.screen_of(origin, at)) {
                 crate::map::paint_home(painter, p);
             }
         }
@@ -763,10 +859,22 @@ impl Map3d {
             let base = self.ground_at(lng, lat);
             let ground = cam.local_of(lng, lat, base);
             let air = cam.local_of(lng, lat, base + layers.height);
-            if let (Some(g), Some(a)) = (self.screen_of(origin, ground), self.screen_of(origin, air)) {
+            if let (false, Some(g), Some(a)) = (
+                self.hidden(air),
+                self.screen_of(origin, ground),
+                self.screen_of(origin, air),
+            ) {
                 painter.line_segment([g, a], Stroke::new(1.0, Color32::from_black_alpha(110)));
                 painter.circle_filled(g, 3.0, Color32::from_black_alpha(90));
-                crate::map::paint_vehicle(painter, a, layers.heading - cam.bearing as f32);
+                crate::map::paint_vehicle_in(
+                    painter,
+                    a,
+                    layers.heading - cam.bearing as f32,
+                    layers.vehicle_color,
+                    1.0,
+                    true,
+                    1.0,
+                );
             }
         }
         crate::plugins::shapes::paint_marks(ui, painter, &project, layers.shapes, None);

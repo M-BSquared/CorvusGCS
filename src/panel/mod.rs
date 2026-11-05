@@ -249,32 +249,40 @@ impl Panel {
         let body = Rect::from_min_max(Pos2::new(handle.right(), rect.top()), rect.max);
         painter.rect_filled(body, 0, style::surface_1());
 
-        // .panel-grip: 7 px over the handle's right edge
-        let grip = Rect::from_min_size(
-            Pos2::new(handle.right() - 3.0, rect.top()),
-            Vec2::new(7.0, rect.height()),
-        );
-        let gresp = ui
-            .interact(grip, ui.scope_id().with("grip"), egui::Sense::click_and_drag())
-            .on_hover_text("Drag to resize, double click to reset")
-            .on_hover_cursor(egui::CursorIcon::ResizeColumn);
-        if gresp.dragged() {
-            let now = self.width.unwrap_or(rect.width());
-            self.width = Some((now - gresp.drag_delta().x).clamp(MIN_WIDTH, MAX_WIDTH));
-        }
-        if gresp.double_clicked() {
-            self.width = None;
-        }
-        if gresp.hovered() || gresp.dragged() {
-            ui.painter().vline(
-                grip.left() + 4.0,
-                grip.y_range(),
-                Stroke::new(2.0, Color32::from_rgba_unmultiplied(27, 31, 38, 178)),
+        // The resize edge is a 7 px line to drag: no finger finds it, so
+        // tablet mode takes it away.
+        if !crate::app::touch::on() {
+            // .panel-grip: 7 px over the handle's right edge
+            let grip = Rect::from_min_size(
+                Pos2::new(handle.right() - 3.0, rect.top()),
+                Vec2::new(7.0, rect.height()),
             );
+            let gresp = ui
+                .interact(grip, ui.scope_id().with("grip"), egui::Sense::click_and_drag())
+                .on_hover_text("Drag to resize, double click to reset")
+                .on_hover_cursor(egui::CursorIcon::ResizeColumn);
+            if gresp.dragged() {
+                let now = self.width.unwrap_or(rect.width());
+                self.width = Some((now - gresp.drag_delta().x).clamp(MIN_WIDTH, MAX_WIDTH));
+            }
+            if gresp.double_clicked() {
+                self.width = None;
+            }
+            if gresp.hovered() || gresp.dragged() {
+                ui.painter().vline(
+                    grip.left() + 4.0,
+                    grip.y_range(),
+                    Stroke::new(2.0, Color32::from_rgba_unmultiplied(27, 31, 38, 178)),
+                );
+            }
         }
 
         // .panel-tabs-wrap: padding 8 12 0, a rule under it
-        let shown = tabs(self.console_tab, self.ssh_tab, &plugins.tabbed());
+        let shown = tabs(
+            self.console_tab,
+            self.ssh_tab && !crate::app::touch::on(),
+            &plugins.tabbed(),
+        );
         if !shown.contains(&self.active) {
             self.active = Tab::Link;
         }

@@ -244,8 +244,6 @@ pub struct CalibrationPage {
     server: Server,
     sub: Sub,
     mount: Mounting,
-    supported: Option<Vec<String>>,
-    caps: Option<Pending<Result<Value, String>>>,
     last_stack: String,
     last_connected: Option<bool>,
     errors: Vec<String>,
@@ -262,8 +260,6 @@ impl CalibrationPage {
             server,
             sub: Sub::List,
             mount: Mounting::default(),
-            supported: None,
-            caps: None,
             last_stack: String::new(),
             last_connected: None,
             errors: Vec::new(),
@@ -273,7 +269,6 @@ impl CalibrationPage {
             reboot: None,
         };
         p.load_mounting(ctx);
-        p.load_caps(ctx);
         p
     }
 
@@ -308,18 +303,6 @@ impl CalibrationPage {
         self.mount.loading = Some(Pending::spawn(ctx, move || http::get_json(&s, "/api/mounting")));
     }
 
-    /// A different aircraft is a different feature set, and the capabilities
-    /// are cached per stack, so a change of stack is what asks again.
-    fn load_caps(&mut self, ctx: &egui::Context) {
-        if self.caps.is_some() {
-            return;
-        }
-        let s = self.server.clone();
-        self.caps = Some(Pending::spawn(ctx, move || {
-            http::get_json(&s, "/api/mavlink/capabilities")
-        }));
-    }
-
     fn take_answers(&mut self, ctx: &egui::Context, state: &Value) {
         if let Some(r) = self.mount.loading.as_ref().and_then(Pending::take) {
             self.mount.loading = None;
@@ -340,17 +323,6 @@ impl CalibrationPage {
                 })
                 .unwrap_or_default();
         }
-        if let Some(r) = self.caps.as_ref().and_then(Pending::take) {
-            self.caps = None;
-            self.supported = r.ok().and_then(|d| {
-                let list: Vec<String> = d
-                    .get("calibrations")
-                    .and_then(Value::as_array)
-                    .map(|a| a.iter().filter_map(|c| c.as_str().map(String::from)).collect())
-                    .unwrap_or_default();
-                (!list.is_empty()).then_some(list)
-            });
-        }
         self.mount.form.take_answers(&mut self.mount.fields);
         if std::mem::take(&mut self.mount.form.written)
             && self
@@ -369,7 +341,6 @@ impl CalibrationPage {
         let connected = state.get("connected") == Some(&Value::Bool(true));
         if stack != self.last_stack {
             self.last_stack = stack;
-            self.load_caps(ctx);
             self.load_mounting(ctx);
         } else if self.last_connected.is_some_and(|c| c != connected) {
             self.load_mounting(ctx);
@@ -393,7 +364,7 @@ impl CalibrationPage {
     }
 
     fn is_supported(&self, kind: &str) -> bool {
-        self.supported.as_ref().is_none_or(|l| l.iter().any(|k| k == kind))
+        crate::data::capabilities::peek().has_calibration(kind)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1300,11 +1271,12 @@ impl CalibrationPage {
         }
         if modal_open {
             let mut go = false;
-            let closed = modal::show(
+            let closed = modal::show_toned(
                 ctx,
                 "calibmotor",
                 modal::Size::Sm,
                 "Motor / ESC Calibration",
+                true,
                 |ui, mx, my, mw| {
                     let mut lines = Vec::new();
                     for (_, text) in proc.prep {
@@ -1508,7 +1480,9 @@ fn calib_card(ui: &mut egui::Ui, r: Rect, p: &Procedure, disabled: bool, support
     if !supported {
         let g = kit::wrapped_weight(
             ui,
-            "Not available on the connected autopilot.",
+            &crate::data::capabilities::peek()
+                .reason(crate::data::capabilities::Feature::Calibration(p.kind))
+                .unwrap_or_default(),
             11.5,
             Weight::W400,
             style::warning().gamma_multiply(fade),

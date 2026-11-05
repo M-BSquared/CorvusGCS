@@ -104,6 +104,24 @@ pub struct MissionPage {
     last_plan: Option<String>,
     first: bool,
     open_first: Option<String>,
+    /// The plan has not been looked for on the map yet (`notePlanOffscreen`),
+    /// and whether the status line says it is outside the view.
+    check_view: bool,
+    offscreen: bool,
+}
+
+/// The ground a map of `size` pixels shows around its centre at `zoom`, as
+/// `[west, south, east, north]`.
+pub fn view_box(centre: (f64, f64), zoom: f64, size: (f32, f32)) -> [f64; 4] {
+    let metres_per_px = 156_543.033_9 * centre.1.to_radians().cos() / 2f64.powf(zoom);
+    let d_lat = f64::from(size.1) / 2.0 * metres_per_px / 111_320.0;
+    let d_lon = f64::from(size.0) / 2.0 * metres_per_px / (111_320.0 * centre.1.to_radians().cos().max(0.01));
+    [centre.0 - d_lon, centre.1 - d_lat, centre.0 + d_lon, centre.1 + d_lat]
+}
+
+/// `boxesOverlap`: two `[w, s, e, n]` boxes share some ground.
+pub fn boxes_overlap(a: [f64; 4], b: [f64; 4]) -> bool {
+    a[0] <= b[2] && a[2] >= b[0] && a[1] <= b[3] && a[3] >= b[1]
 }
 
 /// `lngLatPoint`: a telemetry `[lon, lat]`, or None for none or 0/0.
@@ -159,6 +177,8 @@ impl MissionPage {
             fit_pending: false,
             last_plan: None,
             first: true,
+            check_view: false,
+            offscreen: false,
             open_first: None,
         }
     }
@@ -177,6 +197,7 @@ impl MissionPage {
 
     /// Leaving the page: whatever was half done is let go of.
     pub fn suspend(&mut self) {
+        self.check_view = true;
         self.draft.pts.clear();
         self.draft.cursor = None;
         self.side.end_row_drag();
@@ -354,6 +375,8 @@ impl MissionPage {
                         if !quiet {
                             self.fit_pending = true;
                             self.say(Level::Ok, format!("Opened {shown}."));
+                        } else {
+                            self.check_view = true;
                         }
                     }
                 }
@@ -436,7 +459,7 @@ impl MissionPage {
     /// The hint under the bar: what the next step is, in the order a mission
     /// is drawn in.
     pub(crate) fn update_hint(&mut self) {
-        self.hint = toolbar::hint_for(&self.plan, self.tool, &self.link, &self.draft);
+        self.hint = toolbar::hint_for(&self.plan, self.tool, &self.link, &self.draft, crate::app::touch::on());
     }
 
     pub(crate) fn set_tool(&mut self, next: Tool) {
@@ -779,6 +802,33 @@ impl MissionPage {
         [w, s, e, n].iter().all(|v| v.is_finite()).then_some([w, s, e, n])
     }
 
+    /// `notePlanOffscreen` and `clearOffscreenNotice`: a plan that is nowhere
+    /// on screen is said out loud (the page opens on the view the operator
+    /// last aimed, and framing the plan over it would undo that), and the
+    /// line comes down once the plan is in view, however it got there.
+    fn check_offscreen(&mut self, map: &Map, size: egui::Vec2) {
+        let Some((lng, lat, zoom)) = map.camera() else { return };
+        let view = view_box((lng, lat), zoom, (size.x, size.y));
+        let plan = self.bounds();
+        if std::mem::take(&mut self.check_view) {
+            if let Some(b) = plan {
+                if !boxes_overlap(b, view) {
+                    let name = if self.plan.name.is_empty() {
+                        "The mission"
+                    } else {
+                        self.plan.name.as_str()
+                    };
+                    let text = format!("{name} is outside this view. Use Fit to frame it.");
+                    self.say(Level::Warn, text);
+                    self.offscreen = true;
+                }
+            }
+        } else if self.offscreen && plan.is_none_or(|b| boxes_overlap(b, view)) {
+            self.clear_status();
+            self.offscreen = false;
+        }
+    }
+
     /// `fitMission`.
     fn fit(&mut self, map: &mut Map, size: egui::Vec2, lift: f32) {
         let Some([w, s, e, n]) = self.bounds() else { return };
@@ -816,6 +866,7 @@ impl MissionPage {
         self.sample_ground(&ctx, now);
         if self.first {
             self.first = false;
+            self.check_view = true;
             self.update_hint();
             if let Some(name) = self.open_first.take() {
                 self.send(&ctx, Job::LoadPlan { name, quiet: false });
@@ -865,6 +916,7 @@ impl MissionPage {
             self.fit(map, map_rect.size(), lift);
         }
         self.apply_map(out);
+        self.check_offscreen(map, map_rect.size());
         self.show_side(ui, side_rect, narrow);
         self.show_dialogs(&ctx);
         self.keys(&ctx);
@@ -874,6 +926,27 @@ impl MissionPage {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_view_box_is_the_ground_the_map_shows() {
+        // At zoom 16 a pixel is about 1.6 m at 48 degrees north.
+        let px = 156_543.033_9 * 48.08f64.to_radians().cos() / 65_536.0;
+        let b = view_box((11.64, 48.08), 16.0, (1000.0, 700.0));
+        let width_m = (b[2] - b[0]) * 111_320.0 * 48.08f64.to_radians().cos();
+        let height_m = (b[3] - b[1]) * 111_320.0;
+        assert!((width_m - 1000.0 * px).abs() < 3.0, "{width_m}");
+        assert!((height_m - 700.0 * px).abs() < 3.0, "{height_m}");
+        assert!(((b[0] + b[2]) / 2.0 - 11.64).abs() < 1e-9);
+    }
+
+    #[test]
+    fn boxes_that_touch_overlap_and_boxes_apart_do_not() {
+        let a = [11.0, 48.0, 11.1, 48.1];
+        assert!(boxes_overlap(a, [11.05, 48.05, 11.2, 48.2]));
+        assert!(boxes_overlap(a, [11.1, 48.1, 11.2, 48.2]));
+        assert!(!boxes_overlap(a, [11.2, 48.0, 11.3, 48.1]));
+        assert!(!boxes_overlap(a, [11.0, 48.2, 11.1, 48.3]));
+    }
+
     use super::*;
     use serde_json::json;
 

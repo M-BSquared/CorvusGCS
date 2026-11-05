@@ -9,11 +9,14 @@
 
 mod analysis;
 mod app;
+mod control;
 mod data;
+mod fleet;
 mod home;
 mod logs;
 mod map;
 mod map3d;
+mod mcp;
 mod mission;
 mod net;
 mod notify;
@@ -23,6 +26,8 @@ mod settings;
 mod setup;
 mod term;
 mod ui;
+mod update;
+mod welcome;
 
 use std::path::PathBuf;
 use std::process::ExitCode;

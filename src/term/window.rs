@@ -38,6 +38,8 @@ pub struct TermWindow {
     pos: Pos2,
     size: Vec2,
     maximized: Option<(Pos2, Vec2)>,
+    /// In a native window of its own, not a frame in the app.
+    pub popped: bool,
 }
 
 impl TermWindow {
@@ -70,13 +72,34 @@ impl TermWindow {
             pos,
             size,
             maximized: None,
+            popped: !crate::app::popout::in_app(),
         }
     }
 
+    /// The frame, in the app or in a window of its own.
     pub fn show(&mut self, ctx: &egui::Context) -> Out {
+        if !self.popped {
+            return self.frame(ctx, false);
+        }
+        let key = format!("term:{}", self.name);
+        let title = format!("{} \u{b7} {}", self.title, self.host);
+        let size = self.size;
+        let (out, popped) = crate::app::popout::show(ctx, &key, &title, size, |c| self.frame(c, true));
+        if popped.embedded {
+            self.popped = false;
+        }
+        if popped.close && out == Out::None {
+            return Out::Close;
+        }
+        out
+    }
+
+    fn frame(&mut self, ctx: &egui::Context, popped: bool) -> Out {
         let screen = ctx.content_rect();
         let mut out = Out::None;
-        let (pos, size) = if self.maximized.is_some() {
+        let (pos, size) = if popped {
+            (screen.min, screen.size())
+        } else if self.maximized.is_some() {
             (screen.min + Vec2::splat(12.0), screen.size() - Vec2::splat(24.0))
         } else {
             let size = self.size.max(MIN).min(screen.size());
@@ -123,10 +146,10 @@ impl TermWindow {
                 );
                 painter.hline(bar.x_range(), bar.bottom() - 0.5, Stroke::new(1.0, style::border()));
                 let bar_resp = ui.interact(bar, ui.scope_id().with("termbar"), egui::Sense::click_and_drag());
-                if bar_resp.dragged() && self.maximized.is_none() {
+                if bar_resp.dragged() && self.maximized.is_none() && !popped {
                     dragged = bar_resp.drag_delta();
                 }
-                if bar_resp.double_clicked() {
+                if bar_resp.double_clicked() && !popped {
                     self.toggle_max(rect);
                 }
                 crate::ui::icons::paint(
@@ -136,7 +159,7 @@ impl TermWindow {
                     style::text_2(),
                 );
                 let tx = bar.left() + 10.0 + 14.0 + 8.0;
-                let tools_w = 3.0 * 24.0 + 2.0 + 6.0;
+                let tools_w = if popped { 3.0 } else { 4.0 } * 24.0 + 2.0 + 6.0;
                 let status_alive = !self.session.is_closed();
                 let status = if status_alive { "CONNECTED" } else { "OFFLINE" };
                 let sc = if status_alive {
@@ -176,24 +199,48 @@ impl TermWindow {
                     out = Out::Close;
                 }
                 bx -= 25.0;
-                let max_icon = if self.maximized.is_some() {
-                    "minimize-2"
+                if popped {
+                    if kit::icon_btn(
+                        ui,
+                        Rect::from_min_size(Pos2::new(bx, bar.center().y - 12.0), Vec2::splat(24.0)),
+                        "minimize-2",
+                        "Back in the Corvus window",
+                        false,
+                        "termdock",
+                    ) {
+                        self.popped = false;
+                    }
                 } else {
-                    "maximize-2"
-                };
-                if kit::icon_btn(
-                    ui,
-                    Rect::from_min_size(Pos2::new(bx, bar.center().y - 12.0), Vec2::splat(24.0)),
-                    max_icon,
-                    if self.maximized.is_some() {
-                        "Restore"
+                    let max_icon = if self.maximized.is_some() {
+                        "minimize-2"
                     } else {
-                        "Maximize"
-                    },
-                    false,
-                    "termmax",
-                ) {
-                    self.toggle_max(rect);
+                        "maximize-2"
+                    };
+                    if kit::icon_btn(
+                        ui,
+                        Rect::from_min_size(Pos2::new(bx, bar.center().y - 12.0), Vec2::splat(24.0)),
+                        max_icon,
+                        if self.maximized.is_some() {
+                            "Restore"
+                        } else {
+                            "Maximize"
+                        },
+                        false,
+                        "termmax",
+                    ) {
+                        self.toggle_max(rect);
+                    }
+                    bx -= 25.0;
+                    if kit::icon_btn(
+                        ui,
+                        Rect::from_min_size(Pos2::new(bx, bar.center().y - 12.0), Vec2::splat(24.0)),
+                        "square-arrow-out-up-right",
+                        "Open in a window of its own",
+                        false,
+                        "termout",
+                    ) {
+                        self.popped = true;
+                    }
                 }
                 bx -= 25.0;
                 let dr = Rect::from_min_size(Pos2::new(bx, bar.center().y - 12.0), Vec2::splat(24.0));
@@ -211,7 +258,7 @@ impl TermWindow {
                 if hover {
                     icons_hot(ui, dr);
                 }
-                if self.maximized.is_none() {
+                if self.maximized.is_none() && !popped {
                     let grip = Rect::from_min_size(rect.right_bottom() - Vec2::splat(16.0), Vec2::splat(16.0));
                     let gr = ui.interact(grip, ui.scope_id().with("termgrip"), egui::Sense::drag());
                     if gr.hovered() || gr.dragged() {
@@ -232,7 +279,7 @@ impl TermWindow {
                 }
                 painter.set(bg, card::window(rect, 0.97, style::border_strong()));
             });
-        if self.maximized.is_none() {
+        if self.maximized.is_none() && !popped {
             self.pos += dragged;
             self.size = (self.size + resized).max(MIN);
         }

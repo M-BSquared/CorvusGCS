@@ -246,6 +246,11 @@ impl SetupPage {
     }
 
     /// The camera windows, drawn over the whole app.
+    /// The camera windows, which the map's camera button opens too.
+    pub fn video_windows(&mut self) -> &mut VideoWindows {
+        &mut self.video_windows
+    }
+
     pub fn windows(&mut self, ctx: &egui::Context) {
         self.video_windows.show(ctx);
     }

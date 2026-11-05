@@ -61,6 +61,14 @@ pub struct Screen {
     pub depth: f64,
 }
 
+/// The camera's position and the directions it faces, in local metres.
+#[derive(Debug, Clone, Copy)]
+pub struct View {
+    pub pos: V3,
+    pub right: V3,
+    pub forward: V3,
+}
+
 /// Where the camera looks from and at.
 #[derive(Debug, Clone, Copy)]
 pub struct Camera {
@@ -89,6 +97,12 @@ impl Camera {
     /// Metres between the camera and the point it looks at.
     pub fn distance(&self) -> f64 {
         self.focal() * metres_per_pixel(self.lat, self.zoom)
+    }
+
+    /// Where the camera is and which way it faces, in local metres.
+    pub fn view(&self) -> View {
+        let (pos, right, _, forward) = self.basis();
+        View { pos, right, forward }
     }
 
     /// The camera's position and its right, up and forward unit vectors.

@@ -35,6 +35,20 @@ pub fn show(
     title: &str,
     body: impl FnOnce(&mut egui::Ui, f32, f32, f32) -> f32,
 ) -> bool {
+    show_toned(ctx, id, size, title, false, body)
+}
+
+/// `show` with the critical cue on the title (`.modal:has(.motor-calib-warning)
+/// .modal-title`): a 3 px red border to its left and 10 px of padding, for the
+/// dialog that carries a danger warning.
+pub fn show_toned(
+    ctx: &egui::Context,
+    id: &str,
+    size: Size,
+    title: &str,
+    danger: bool,
+    body: impl FnOnce(&mut egui::Ui, f32, f32, f32) -> f32,
+) -> bool {
     let screen = ctx.content_rect();
     let w = size.width().min(screen.width() - 32.0);
     let hkey = egui::Id::NULL.with(("modal-h", id));
@@ -58,7 +72,15 @@ pub fn show(
             let (ix, iw) = (panel.left() + 20.0, w - 40.0);
             let mut cy = panel.top() + 20.0;
             let tg = style::galley(ui, title, 15.0, Weight::W700, style::text_1(), 0.3);
-            ui.painter().galley(Pos2::new(ix, cy), tg.clone(), style::text_1());
+            let tx = if danger { ix + 3.0 + 10.0 } else { ix };
+            if danger {
+                ui.painter().rect_filled(
+                    Rect::from_min_size(Pos2::new(ix, cy), Vec2::new(3.0, tg.size().y)),
+                    0,
+                    style::critical(),
+                );
+            }
+            ui.painter().galley(Pos2::new(tx, cy), tg.clone(), style::text_1());
             let xr = Rect::from_min_size(
                 Pos2::new(ix + iw - 28.0, cy + tg.size().y / 2.0 - 14.0),
                 Vec2::splat(28.0),

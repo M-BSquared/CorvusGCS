@@ -20,6 +20,15 @@ const INSET: f32 = 14.0;
 const GAP: f32 = 8.0;
 const BTN: f32 = 34.0;
 
+/// A rail button's side: 34 px, or `--touch-target` in tablet mode.
+pub fn btn() -> f32 {
+    if crate::app::touch::on() {
+        crate::app::touch::TARGET
+    } else {
+        BTN
+    }
+}
+
 /// One slot of the rail.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Item {
@@ -33,6 +42,8 @@ pub enum Item {
     Regions,
     ThreeD,
     Measure,
+    /// The camera windows; there once a camera is set up.
+    Camera,
 }
 
 impl Item {
@@ -46,6 +57,7 @@ impl Item {
             Item::Regions => ("frame", "Show downloaded areas"),
             Item::ThreeD => ("box", "3D mode"),
             Item::Measure => ("ruler", "Measure a distance (click two points)"),
+            Item::Camera => ("video", "Camera windows (set up under Setup, Video)"),
             Item::Divider => ("", ""),
         }
     }
@@ -61,13 +73,23 @@ impl Item {
                 | Item::Regions
                 | Item::Measure
                 | Item::ThreeD
+                | Item::Camera
         )
     }
 }
 
 /// The rail, top to bottom; the ruler only while `ui.measure_tool` is on.
 /// The camera group stays hidden until cameras are set up.
-pub fn items(measure: bool, planner: bool) -> Vec<Item> {
+pub fn items(measure: bool, planner: bool, camera: bool) -> Vec<Item> {
+    let mut v = items_all(measure, planner, camera);
+    if crate::app::touch::on() {
+        // Zooming is two fingers on the map itself.
+        v.retain(|i| !matches!(i, Item::ZoomIn | Item::ZoomOut));
+    }
+    v
+}
+
+fn items_all(measure: bool, planner: bool, camera: bool) -> Vec<Item> {
     if planner {
         return vec![
             Item::ZoomIn,
@@ -91,6 +113,9 @@ pub fn items(measure: bool, planner: bool) -> Vec<Item> {
     if measure {
         v.push(Item::Measure);
     }
+    if camera {
+        v.extend([Item::Divider, Item::Camera]);
+    }
     v
 }
 
@@ -110,6 +135,9 @@ pub struct MapRail {
     pub fit_requested: bool,
     /// A word for the operator, set when the centre button had no fix to go to.
     pub notice: Option<&'static str>,
+    /// The cameras the button opens, and which have a window.
+    pub cameras: crate::map::cameras::Cameras,
+    pub open_cameras: Vec<String>,
 }
 
 /// The aircraft's position, when it has a real fix.
@@ -127,16 +155,16 @@ impl MapRail {
     /// Draws the rail and the two buttons inside `area` (the map view).
     pub fn show(&mut self, ui: &mut egui::Ui, area: Rect, map: &mut Map, state: &Value) {
         let painter = ui.painter().clone();
-        let list = items(self.measure, self.planner);
+        let list = items(self.measure, self.planner, !self.cameras.list.is_empty());
         let h = 12.0
             + list
                 .iter()
-                .map(|i| if *i == Item::Divider { 1.0 + 4.0 } else { BTN })
+                .map(|i| if *i == Item::Divider { 1.0 + 4.0 } else { btn() })
                 .sum::<f32>()
             + 6.0 * (list.len() as f32 - 1.0);
         let rail = Rect::from_min_size(
-            Pos2::new(area.right() - INSET - (BTN + 12.0), area.top() + INSET),
-            Vec2::new(BTN + 12.0 + 2.0, h + 2.0),
+            Pos2::new(area.right() - INSET - (btn() + 12.0), area.top() + INSET),
+            Vec2::new(btn() + 12.0 + 2.0, h + 2.0),
         );
         glass_box(&painter, ("maprail", 0), rail);
         ui.interact(rail, ui.scope_id().with("mapctl"), egui::Sense::click_and_drag());
@@ -144,21 +172,25 @@ impl MapRail {
         let x = rail.left() + 7.0;
         let mut layers_anchor = None;
         let mut three_anchor = None;
+        let mut camera_anchor = None;
+        let mut camera_hover = false;
         for item in list {
             if item == Item::Divider {
                 painter.hline(
-                    egui::Rangef::new(x + 4.0, x + BTN - 4.0),
+                    egui::Rangef::new(x + 4.0, x + btn() - 4.0),
                     y + 2.0 + 0.5,
                     Stroke::new(1.0, style::border_soft()),
                 );
                 y += 5.0 + 6.0;
                 continue;
             }
-            let r = Rect::from_min_size(Pos2::new(x, y), Vec2::splat(BTN));
+            let r = Rect::from_min_size(Pos2::new(x, y), Vec2::splat(btn()));
             let (icon, title) = item.icon();
             let works = item.works();
             let title = if item == Item::Center && self.planner {
                 "Go to the aircraft".to_string()
+            } else if item == Item::Camera {
+                self.cameras.title()
             } else if works {
                 title.to_string()
             } else {
@@ -176,7 +208,8 @@ impl MapRail {
                 || (item == Item::Layers && self.layers_open)
                 || (item == Item::Regions && map.regions_visible)
                 || (item == Item::Measure && map.measure.active)
-                || (item == Item::ThreeD && map.three_d());
+                || (item == Item::ThreeD && map.three_d())
+                || (item == Item::Camera && !self.open_cameras.is_empty());
             let (fill, color) = if active {
                 (style::accent_dark(), style::text_1())
             } else if resp.hovered() && works {
@@ -215,11 +248,19 @@ impl MapRail {
                         let on = !map.regions_visible;
                         map.set_regions_visible(on);
                     }
+                    Item::Camera => self.cameras.press(),
                     _ => {}
                 }
             }
             if item == Item::Layers {
                 layers_anchor = Some(r);
+            }
+            if item == Item::Camera {
+                camera_anchor = Some(r);
+                camera_hover = resp.hovered();
+                if resp.secondary_clicked() {
+                    self.cameras.list_open = self.cameras.list.len() > 1;
+                }
             }
             if item == Item::ThreeD {
                 three_anchor = Some(r);
@@ -238,14 +279,21 @@ impl MapRail {
                     self.three_panel = true;
                 }
             }
-            y += BTN + 6.0;
+            y += btn() + 6.0;
         }
 
+        if let Some(anchor) = camera_anchor {
+            let now = ui.input(|i| i.time);
+            let open = self.open_cameras.clone();
+            let list_rect = self.cameras.menu(ui, anchor, &open);
+            let over_list = list_rect.is_some_and(|r| ui.rect_contains_pointer(r));
+            self.cameras.hover(camera_hover, over_list, now, ui.ctx());
+        }
         // .tiles-trigger right of the search, both left of the rail
-        let clear = INSET + 48.0 + GAP;
+        let clear = INSET + btn() + 14.0 + GAP;
         let download = Rect::from_min_size(
-            Pos2::new(area.right() - clear - BTN, area.top() + INSET),
-            Vec2::splat(BTN),
+            Pos2::new(area.right() - clear - btn(), area.top() + INSET),
+            Vec2::splat(btn()),
         );
         glass_box(&painter, ("trigger", 0), download);
         let dresp = ui
@@ -272,7 +320,7 @@ impl MapRail {
                 self.tiles.open(ui.ctx(), map, area);
             }
         }
-        let search = download.translate(Vec2::new(-(BTN + GAP), 0.0));
+        let search = download.translate(Vec2::new(-(btn() + GAP), 0.0));
         let units = map.measure.units;
         self.search.show(ui, search, area, map, &units);
 
@@ -301,8 +349,8 @@ impl MapRail {
     /// `.track-clear`: a quiet 25 px disc above the attribution, only while
     /// there is a track to clear.
     fn track_clear(&mut self, ui: &mut egui::Ui, area: Rect, map: &mut Map) {
-        if map.track.has_line() && clear_disc(ui, area, 0.0, "Clear the flown track") {
-            map.track.clear();
+        if map.has_any_track() && clear_disc(ui, area, 0.0, "Clear the flown track") {
+            map.clear_tracks();
         }
     }
 }
@@ -425,11 +473,11 @@ mod tests {
 
     #[test]
     fn the_rail_as_map_js_builds_it() {
-        assert_eq!(items(true, false).len(), 8);
-        assert_eq!(*items(false, false).last().unwrap(), Item::ThreeD);
-        assert_eq!(items(true, false)[3], Item::Divider);
+        assert_eq!(items(true, false, false).len(), 8);
+        assert_eq!(*items(false, false, false).last().unwrap(), Item::ThreeD);
+        assert_eq!(items(true, false, false)[3], Item::Divider);
         assert_eq!(
-            items(true, true),
+            items(true, true, false),
             [
                 Item::ZoomIn,
                 Item::ZoomOut,

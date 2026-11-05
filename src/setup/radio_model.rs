@@ -7,6 +7,17 @@
 
 use std::collections::BTreeMap;
 
+/// `.rc-cal-row { min-width: 580px }`: below this the table scrolls sideways.
+pub const CAL_TABLE_MIN_W: f32 = 580.0;
+
+/// The height of the calibration table for `rows` channels: the head, then
+/// each row's padding and field, with a hairline between rows.
+pub fn cal_table_height(rows: usize) -> f32 {
+    let head = 6.0 + 12.1 + 6.0 + 1.0;
+    let row = 6.0 + 29.5 + 6.0;
+    head + rows as f32 * row + rows.saturating_sub(1) as f32
+}
+
 use serde_json::Value;
 
 use crate::data::units::js_round;
@@ -599,6 +610,14 @@ pub fn can_advance(step: Step, rc_live: bool, latest: &[f64], m: &Measurement) -
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_calibration_table_is_as_tall_as_its_rows() {
+        assert_eq!(super::cal_table_height(0), 25.1);
+        assert_eq!(super::cal_table_height(1), 25.1 + 41.5);
+        assert_eq!(super::cal_table_height(8), 25.1 + 8.0 * 41.5 + 7.0);
+        assert_eq!(super::CAL_TABLE_MIN_W, 580.0);
+    }
+
     use super::*;
     use serde_json::json;
 

@@ -16,6 +16,7 @@ use eframe::egui::{self, Pos2, Rect, Stroke, Vec2};
 use serde_json::{json, Value};
 
 use crate::data::units::{js_round, Units};
+use crate::map::tools::{Action, Tools};
 use crate::net::http::{self, Server};
 use crate::ui::fabar;
 use crate::ui::field::TextField;
@@ -36,6 +37,8 @@ const BAR_MIN_SCALE: f32 = 0.85;
 const BAR_TIGHT_SCALE: f32 = 0.8;
 /// `--map-rail-inset` and `--map-trigger-clear`: where the bar's room ends.
 const TRIGGER_CLEAR: f32 = 154.0;
+/// `FLIGHT_BAR_SHARE`: how much of the map the shrinking bar may cover.
+pub const SHRINK_SHARE: f32 = 0.5;
 
 /// How `fitBar` sets the bar's buttons in the room it has.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -93,7 +96,6 @@ const ALTITUDE_COARSE_STEP_M: f64 = 5.0;
 const AIRBORNE_LANDED: [i64; 3] = [2, 3, 4];
 const LANDED_ON_GROUND: i64 = 1;
 const AIRBORNE_FALLBACK_M: f64 = 1.5;
-const GROUND_TYPES: [&str; 3] = ["GROUNDED_ROVER", "GROUND_ROVER", "SURFACE_BOAT"];
 
 /// "air", "ground" or "" (unknown, or no link), as app.js flightPhase.
 pub fn flight_phase(s: &Value) -> &'static str {
@@ -116,6 +118,23 @@ pub fn flight_phase(s: &Value) -> &'static str {
     }
 }
 
+/// The two buttons when TAKEOFF and LAND stand apart: in the air TAKEOFF is
+/// greyed, on the ground LAND is. Each is its tooltip and whether it works.
+pub fn split_buttons(phase: &str) -> ((&'static str, bool), (&'static str, bool)) {
+    (
+        if phase == "air" {
+            ("Takeoff: already in the air", false)
+        } else {
+            ("Takeoff", true)
+        },
+        if phase == "ground" {
+            ("Land: on the ground", false)
+        } else {
+            ("Land", true)
+        },
+    )
+}
+
 /// What the single TAKEOFF / LAND button does: LAND in the air, and for an
 /// armed vehicle whose phase cannot be told; a takeoff card over something
 /// that may be hovering is not harmless, a land on the ground is.
@@ -130,9 +149,8 @@ pub fn single_button_role(s: &Value) -> &'static str {
     }
 }
 
-fn is_ground(s: &Value) -> bool {
-    s.get("connected") == Some(&Value::Bool(true))
-        && GROUND_TYPES.contains(&s.get("vehicle_type").and_then(Value::as_str).unwrap_or(""))
+pub fn is_ground(s: &Value) -> bool {
+    crate::data::capabilities::is_ground(s)
 }
 
 /// The slider is logarithmic: a fixed distance along it is the same share of
@@ -204,6 +222,12 @@ enum Command {
     Land,
     Rtl,
     Mode,
+    /// FLY of the plan card.
+    Plan,
+    /// The map menu's "Fly to this point".
+    Goto,
+    /// The map menu's "Set home here".
+    SetHome,
 }
 
 /// What the command threads leave for the bar and the board.
@@ -224,6 +248,11 @@ pub struct FlightBar {
     /// Where the bar ended last frame, in the map's own coordinates: an
     /// unmoved checklist window starts 10 px under it.
     pub bar_bottom: f32,
+    /// `ui.takeoff_land_split`: TAKEOFF and LAND as two buttons.
+    pub split: bool,
+    /// `ui.flight_bar_shrink`: narrow the bar as soon as it would cover more
+    /// than half the map.
+    pub shrink: bool,
     modes: Arc<Mutex<Vec<Mode>>>,
     outcome: Arc<Mutex<Outcome>>,
     takeoff_open: bool,
@@ -233,6 +262,9 @@ pub struct FlightBar {
     was_connected: bool,
     next_token: u64,
     attempts: std::collections::HashMap<u64, u64>,
+    /// The token of the plan sent, and whether the vehicle took it.
+    plan_token: Option<u64>,
+    plan_done: bool,
 }
 
 impl FlightBar {
@@ -240,6 +272,8 @@ impl FlightBar {
         let bar = FlightBar {
             server,
             bar_bottom: 0.0,
+            split: false,
+            shrink: false,
             modes: Arc::default(),
             outcome: Arc::default(),
             takeoff_open: false,
@@ -249,6 +283,8 @@ impl FlightBar {
             was_connected: false,
             next_token: 0,
             attempts: std::collections::HashMap::new(),
+            plan_token: None,
+            plan_done: false,
         };
         bar.load_modes(ctx);
         bar
@@ -336,6 +372,10 @@ impl FlightBar {
             self.attempts.insert(token, attempt);
         }
         for (token, result) in settled {
+            if self.plan_token == Some(token) {
+                self.plan_token = None;
+                self.plan_done = result.is_ok();
+            }
             let Some(attempt) = self.attempts.remove(&token) else {
                 continue;
             };
@@ -350,7 +390,7 @@ impl FlightBar {
     }
 
     /// Draws the bar and its card inside `area` (the map).
-    pub fn show(&mut self, ui: &mut egui::Ui, area: Rect, s: &Value, units: &Units) {
+    pub fn show(&mut self, ui: &mut egui::Ui, area: Rect, s: &Value, units: &Units, tools: &mut Tools) {
         let ctx = ui.ctx().clone();
         let connected = s.get("connected") == Some(&Value::Bool(true));
         if connected && !self.was_connected {
@@ -360,7 +400,9 @@ impl FlightBar {
         let armed = s.get("armed") == Some(&Value::Bool(true));
         let ground = is_ground(s);
         let role = single_button_role(s);
-        if role == "land" || ground {
+        // Single: the one button turns into LAND in the air and the card is
+        // closed with it. Split: TAKEOFF is greyed in the air.
+        if (!self.split && role == "land") || ground || (self.split && flight_phase(s) == "air") {
             self.takeoff_open = false;
         }
 
@@ -383,7 +425,7 @@ impl FlightBar {
         };
         let select_g = style::galley(ui, &select_text, 11.0, Weight::W600, style::text_1(), 0.5);
         let select_w = (10.0 + select_g.size().x + 26.0 + 2.0).max(120.0);
-        let select_h = 2.0 + 8.0 + 11.0 * 1.21 + 8.0;
+        let select_h = (2.0f32 + 8.0 + 11.0 * 1.21 + 8.0).max(if crate::app::touch::on() { 54.0 } else { 0.0 });
 
         let mut buttons: Vec<(Command, &'static str, &str, &str, bool)> = vec![(
             Command::Arm,
@@ -392,7 +434,11 @@ impl FlightBar {
             "Arm / Disarm",
             true,
         )];
-        if !ground {
+        if !ground && self.split {
+            let ((tt, te), (lt, le)) = split_buttons(flight_phase(s));
+            buttons.push((Command::Takeoff, "arrow-up", "TAKEOFF", tt, te));
+            buttons.push((Command::Land, "arrow-down", "LAND", lt, le));
+        } else if !ground {
             let land = role == "land";
             buttons.push((
                 if land { Command::Land } else { Command::Takeoff },
@@ -411,7 +457,11 @@ impl FlightBar {
         ));
         let n = buttons.len() as f32 + 1.0;
         // the room the bar sits in ends where the map's own controls begin
-        let room = area.width() - INSET - TRIGGER_CLEAR;
+        let room = if self.shrink {
+            area.width() * SHRINK_SHARE
+        } else {
+            area.width() - INSET - TRIGGER_CLEAR
+        };
         let mut longest = 0.0f32;
         for c in ["DISARM", "TAKEOFF", "LAND", "RETURN", "PLAN"] {
             let g = style::galley(ui, c, 10.0, Weight::W600, style::text_2(), 0.6);
@@ -423,6 +473,16 @@ impl FlightBar {
             (fit.width, 1.0 + 9.0 + 17.0 + 9.0 + 1.0)
         } else {
             (fit.width, btn_h)
+        };
+        // Tablet mode: the tallest targets in the app (`.fa-btn` min 80 by 54,
+        // 54 wide when the bar is narrowed).
+        let (btn_w, btn_h) = if crate::app::touch::on() {
+            (
+                btn_w.max(if fit.compact || fit.width < BTN_W { 54.0 } else { 80.0 }),
+                btn_h.max(54.0),
+            )
+        } else {
+            (btn_w, btn_h)
         };
         let select_w = if fit.compact { (select_w).max(96.0) } else { select_w };
         let bar_w = BAR_PAD * 2.0 + n * btn_w + n * BAR_GAP + 5.0 + BAR_GAP + select_w + 2.0;
@@ -447,7 +507,11 @@ impl FlightBar {
                 title,
                 *enabled,
                 busy,
-                *cmd == Command::Arm && armed,
+                if *cmd == Command::Arm && armed {
+                    Lit::Armed
+                } else {
+                    Lit::Off
+                },
                 (fit.scale, fit.compact),
             );
             if clicked && !busy {
@@ -485,27 +549,41 @@ impl FlightBar {
                         json!({}),
                         "Return rejected".into(),
                     ),
-                    Command::Mode => {}
+                    Command::Mode | Command::Plan | Command::Goto | Command::SetHome => {}
                 }
             }
-            if matches!(cmd, Command::Takeoff | Command::Land) {
+            if *cmd == Command::Takeoff || (*cmd == Command::Land && !self.split) {
                 takeoff_anchor = Some(r);
             }
             x += btn_w + BAR_GAP;
         }
-        // PLAN: the fly-to-points planner comes with the planning step.
+        // PLAN: click the map to add points, FLY sends them.
         let plan = Rect::from_min_size(Pos2::new(x, y), Vec2::new(btn_w, btn_h));
-        fa_button(
+        if !connected && tools.plan.active {
+            tools.plan.set_active(false);
+        }
+        let plan_title = if ground {
+            "Plan drive-to-points route"
+        } else {
+            "Plan fly-to-points mission"
+        };
+        if fa_button(
             ui,
             plan,
             "route",
             "PLAN",
-            "Plan fly-to-points mission (not in this build yet)",
+            plan_title,
+            connected,
             false,
-            false,
-            false,
+            if tools.plan.active { Lit::Plan } else { Lit::Off },
             (fit.scale, fit.compact),
-        );
+        ) {
+            let on = !tools.plan.active;
+            tools.plan.set_active(on);
+            self.takeoff_open = false;
+            self.mode_open = false;
+        }
+        let plan_anchor = plan;
         x += btn_w + BAR_GAP;
         // .fa-divider: 1 x 34, margin 0 2
         painter.vline(
@@ -530,10 +608,311 @@ impl FlightBar {
             ground,
         );
 
+        if std::mem::take(&mut self.plan_done) {
+            tools.plan.set_active(false);
+            tools.plan.clear();
+            tools.plan.panel = false;
+        }
         if self.takeoff_open {
             if let Some(anchor) = takeoff_anchor {
+                self.plan_card_closed(tools);
                 self.takeoff_card(ui, &ctx, area, anchor, units);
             }
+        }
+        if tools.plan.panel && !self.takeoff_open {
+            self.plan_card(ui, &ctx, area, plan_anchor, units, tools, s, ground);
+        }
+    }
+
+    /// The two cards never show together.
+    fn plan_card_closed(&mut self, tools: &mut Tools) {
+        tools.plan.panel = false;
+    }
+
+    /// The plan card: hangs 16 px under PLAN, 260 px wide. Closing it keeps
+    /// the points; FLY drops the plan once the vehicle accepts it.
+    #[allow(clippy::too_many_arguments)]
+    fn plan_card(
+        &mut self,
+        ui: &mut egui::Ui,
+        ctx: &egui::Context,
+        area: Rect,
+        anchor: Rect,
+        units: &Units,
+        tools: &mut Tools,
+        state: &Value,
+        ground: bool,
+    ) {
+        let w = 260.0;
+        let title_text = if ground { "DRIVE TO POINTS" } else { "FLY TO POINTS" };
+        let title = style::galley(ui, title_text, 11.0, Weight::W600, style::text_2(), 1.0);
+        let count_h = 7.0 * 2.0 + 15.0 * 1.21 + 2.0;
+        let slider_h = 30.0;
+        let actions_h = 10.0 * 2.0 + 15.0 + 2.0;
+        let h = 14.0 + 20.0 + 12.0 + count_h + 12.0 + if ground { 0.0 } else { slider_h + 12.0 } + actions_h + 14.0;
+        let left = anchor.left().min(area.right() - w - 14.0).max(area.left());
+        let card = Rect::from_min_size(Pos2::new(left, anchor.bottom() + 1.0 + BAR_PAD + 16.0), Vec2::new(w, h));
+        let mut fly = false;
+        let mut cleared = false;
+        let mut closed = false;
+        egui::Area::new(ui.scope_id().with("plancard"))
+            .order(egui::Order::Middle)
+            .fixed_pos(card.min)
+            .show(ctx, |ui| {
+                let painter = ui.painter().clone();
+                style::glass_panel(&painter, "plan", card, style::RADIUS, 0.6);
+                ui.allocate_rect(card, egui::Sense::click_and_drag());
+                let inner = card.shrink(14.0);
+                painter.galley(
+                    Pos2::new(inner.left(), inner.top() + 10.0 - title.size().y / 2.0),
+                    title,
+                    style::text_2(),
+                );
+                let close =
+                    Rect::from_center_size(Pos2::new(inner.right() - 10.0, inner.top() + 10.0), Vec2::splat(20.0));
+                let resp = ui.interact(close, ui.scope_id().with("planclose"), egui::Sense::click());
+                if resp.hovered() {
+                    painter.rect_filled(close, 5, style::surface_hover());
+                }
+                icons::paint(
+                    ui,
+                    "x",
+                    close.shrink(3.0),
+                    if resp.hovered() {
+                        style::text_1()
+                    } else {
+                        style::text_3()
+                    },
+                );
+                if resp.on_hover_text("Close").clicked() {
+                    closed = true;
+                }
+
+                // POINTS n
+                let mut y = inner.top() + 20.0 + 12.0;
+                let count = Rect::from_min_size(Pos2::new(inner.left(), y), Vec2::new(inner.width(), count_h));
+                painter.rect_filled(count, style::RADIUS_BTN, style::surface_2());
+                painter.rect_stroke(
+                    count,
+                    style::RADIUS_BTN,
+                    Stroke::new(1.0, style::border_soft()),
+                    egui::StrokeKind::Inside,
+                );
+                let n = tools.plan.points.len();
+                let label = style::galley(ui, "POINTS", 10.0, Weight::W600, style::text_3(), 0.9);
+                let value = style::galley(
+                    ui,
+                    &tools.plan.count_text(),
+                    15.0,
+                    Weight::W700,
+                    if n == 0 {
+                        style::text_3()
+                    } else {
+                        style::accent_bright()
+                    },
+                    0.0,
+                );
+                let base = count.center().y + value.size().y / 2.0 - 3.0;
+                painter.galley(
+                    Pos2::new(count.left() + 10.0, base - label.size().y + 1.0),
+                    label,
+                    style::text_3(),
+                );
+                painter.galley(
+                    Pos2::new(
+                        count.right() - 10.0 - value.size().x,
+                        count.center().y - value.size().y / 2.0,
+                    ),
+                    value,
+                    if n == 0 {
+                        style::text_3()
+                    } else {
+                        style::accent_bright()
+                    },
+                );
+                y += count_h + 12.0;
+
+                if !ground {
+                    let alt_text = format!("{} AGL", units.format_length(tools.plan.alt_agl(), 0, false, false));
+                    let value = style::galley(ui, &alt_text, 16.0, Weight::W600, style::healthy(), 0.0);
+                    let vw = value.size().x.max(48.0);
+                    let row_y = y + slider_h / 2.0;
+                    let track = egui::Rangef::new(inner.left(), inner.right() - 10.0 - vw);
+                    let span = crate::map::tools::ALT_MAX_M - crate::map::tools::ALT_MIN_M;
+                    let t = ((tools.plan.alt_agl() - crate::map::tools::ALT_MIN_M) / span) as f32;
+                    let thumb_x = track.min + (track.max - track.min) * t;
+                    let track_rect = Rect::from_x_y_ranges(track, egui::Rangef::new(row_y - 2.0, row_y + 2.0));
+                    painter.rect_filled(track_rect, 2, style::surface_3());
+                    let hit = Rect::from_x_y_ranges(track, egui::Rangef::new(row_y - 9.0, row_y + 9.0));
+                    let slide = ui.interact(hit, ui.scope_id().with("planslider"), egui::Sense::click_and_drag());
+                    if let Some(p) = slide
+                        .interact_pointer_pos()
+                        .filter(|_| slide.dragged() || slide.clicked())
+                    {
+                        let t = f64::from(((p.x - track.min) / (track.max - track.min)).clamp(0.0, 1.0));
+                        tools.plan.alt = (crate::map::tools::ALT_MIN_M + t * span).round();
+                    }
+                    painter.circle(
+                        Pos2::new(thumb_x, row_y),
+                        8.0,
+                        style::accent(),
+                        Stroke::new(2.0, style::text_1()),
+                    );
+                    painter.galley(
+                        Pos2::new(inner.right() - value.size().x, row_y - value.size().y / 2.0),
+                        value,
+                        style::healthy(),
+                    );
+                    y += slider_h + 12.0;
+                }
+
+                // FLY and CLEAR
+                let clear_label = style::galley(ui, "CLEAR", 12.0, Weight::W600, style::text_1(), 0.5);
+                let clear_w = 10.0 * 2.0 + 14.0 + 6.0 + clear_label.size().x + 2.0;
+                let fly_rect = Rect::from_min_size(
+                    Pos2::new(inner.left(), y),
+                    Vec2::new(inner.width() - 8.0 - clear_w, actions_h),
+                );
+                let clear_rect =
+                    Rect::from_min_size(Pos2::new(fly_rect.right() + 8.0, y), Vec2::new(clear_w, actions_h));
+                let ready = tools.plan.fly_ready(state);
+                let busy = self.busy(Command::Plan);
+                let fly_resp = ui.interact(
+                    fly_rect,
+                    ui.scope_id().with("planfly"),
+                    if ready {
+                        egui::Sense::click()
+                    } else {
+                        egui::Sense::hover()
+                    },
+                );
+                let fill = if ready && fly_resp.hovered() {
+                    style::accent_hover()
+                } else {
+                    style::accent()
+                };
+                let alpha = if !ready {
+                    0.4
+                } else if busy {
+                    0.5
+                } else {
+                    1.0
+                };
+                painter.rect_filled(fly_rect, style::RADIUS_BTN, fill.gamma_multiply(alpha));
+                let fly_text = style::galley(
+                    ui,
+                    if ground { "DRIVE" } else { "FLY" },
+                    12.0,
+                    Weight::W700,
+                    style::text_inverted(),
+                    0.6,
+                );
+                let total = 15.0 + 6.0 + fly_text.size().x;
+                let start = fly_rect.center().x - total / 2.0;
+                icons::paint(
+                    ui,
+                    "send",
+                    Rect::from_min_size(Pos2::new(start, fly_rect.center().y - 7.5), Vec2::splat(15.0)),
+                    style::text_inverted().gamma_multiply(alpha),
+                );
+                painter.galley(
+                    Pos2::new(start + 21.0, fly_rect.center().y - fly_text.size().y / 2.0),
+                    fly_text,
+                    style::text_inverted().gamma_multiply(alpha),
+                );
+                if fly_resp.clicked() && ready && !busy {
+                    fly = true;
+                }
+
+                let clear_resp = ui.interact(clear_rect, ui.scope_id().with("planclear"), egui::Sense::click());
+                painter.rect_filled(
+                    clear_rect,
+                    style::RADIUS_BTN,
+                    if clear_resp.hovered() {
+                        style::surface_hover()
+                    } else {
+                        style::surface_2()
+                    },
+                );
+                painter.rect_stroke(
+                    clear_rect,
+                    style::RADIUS_BTN,
+                    Stroke::new(1.0, style::border()),
+                    egui::StrokeKind::Inside,
+                );
+                let total = 14.0 + 6.0 + clear_label.size().x;
+                let start = clear_rect.center().x - total / 2.0;
+                icons::paint(
+                    ui,
+                    "rotate-ccw",
+                    Rect::from_min_size(Pos2::new(start, clear_rect.center().y - 7.0), Vec2::splat(14.0)),
+                    style::text_1(),
+                );
+                painter.galley(
+                    Pos2::new(start + 20.0, clear_rect.center().y - clear_label.size().y / 2.0),
+                    clear_label,
+                    style::text_1(),
+                );
+                if clear_resp.clicked() {
+                    cleared = true;
+                }
+            });
+        if closed {
+            tools.plan.panel = false;
+        }
+        if cleared {
+            tools.plan.clear();
+        }
+        if fly {
+            let body = tools.plan.body(ground);
+            let (label, fallback) = if ground {
+                ("gotopoints", "Drive to points rejected")
+            } else {
+                ("gotopoints", "Fly to points rejected")
+            };
+            self.send(
+                ctx,
+                Command::Plan,
+                &[label],
+                "/api/mavlink/gotopoints",
+                body,
+                fallback.into(),
+            );
+            self.plan_token = Some(self.next_token);
+        }
+    }
+
+    /// A row of the map menu was chosen.
+    pub fn run_action(&mut self, ctx: &egui::Context, action: Action, ground: bool, plan_alt: f64) {
+        match action {
+            Action::Goto(p) => {
+                let point = if ground {
+                    json!({"lat": p[1], "lon": p[0]})
+                } else {
+                    json!({"lat": p[1], "lon": p[0], "alt_agl": plan_alt})
+                };
+                self.send(
+                    ctx,
+                    Command::Goto,
+                    &["gotopoints"],
+                    "/api/mavlink/gotopoints",
+                    json!({"points": [point]}),
+                    if ground {
+                        "Drive to point rejected"
+                    } else {
+                        "Fly to point rejected"
+                    }
+                    .into(),
+                );
+            }
+            Action::SetHome(p) => self.send(
+                ctx,
+                Command::SetHome,
+                &["sethome"],
+                "/api/mavlink/sethome",
+                json!({"lat": p[1], "lon": p[0]}),
+                "Set home rejected".into(),
+            ),
         }
     }
 
@@ -791,6 +1170,15 @@ impl FlightBar {
     }
 }
 
+/// How a `.fa-btn` is filled: not at all, `.armed` green or `.plan.active`
+/// accent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Lit {
+    Off,
+    Armed,
+    Plan,
+}
+
 /// One `.fa-btn` of the flight bar: icon over caption; hover lifts it,
 /// `.armed` fills it green, disabled is 40 % and busy 50 % with a pulsing ring.
 #[allow(clippy::too_many_arguments)]
@@ -802,11 +1190,12 @@ fn fa_button(
     title: &str,
     enabled: bool,
     busy: bool,
-    armed: bool,
+    lit: Lit,
     fit: (f32, bool),
 ) -> bool {
     let look = fabar::Look {
-        armed,
+        armed: lit == Lit::Armed,
+        active: lit == Lit::Plan,
         busy,
         disabled: !enabled,
         ..Default::default()
@@ -816,6 +1205,20 @@ fn fa_button(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn apart_takeoff_is_greyed_in_the_air_and_land_on_the_ground() {
+        assert_eq!(
+            split_buttons("air"),
+            (("Takeoff: already in the air", false), ("Land", true))
+        );
+        assert_eq!(
+            split_buttons("ground"),
+            (("Takeoff", true), ("Land: on the ground", false))
+        );
+        // Unknown: both offered, as the web bar does.
+        assert_eq!(split_buttons(""), (("Takeoff", true), ("Land", true)));
+    }
+
     use super::*;
 
     #[test]

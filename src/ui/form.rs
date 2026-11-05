@@ -359,8 +359,37 @@ pub fn option_cards(
     selected: &str,
     columns: usize,
 ) -> Option<String> {
+    option_cards_with(ui, f, id, opts, selected, columns, false)
+}
+
+/// `option_cards` whose descriptions wrap rather than end at the edge
+/// (`.welcome-review-cards .option-card-desc`).
+pub fn option_cards_wrapped(
+    ui: &mut egui::Ui,
+    f: &mut Form,
+    id: &str,
+    opts: &[Card],
+    selected: &str,
+    columns: usize,
+) -> Option<String> {
+    option_cards_with(ui, f, id, opts, selected, columns, true)
+}
+
+fn option_cards_with(
+    ui: &mut egui::Ui,
+    f: &mut Form,
+    id: &str,
+    opts: &[Card],
+    selected: &str,
+    columns: usize,
+    wrap: bool,
+) -> Option<String> {
     let cols = columns.clamp(1, opts.len().max(1));
-    let (bottom, pressed) = optioncards::show(ui, f.x, f.y, f.w, opts, Some(selected), cols, id);
+    let (bottom, pressed) = if wrap {
+        optioncards::show_wrapped(ui, f.x, f.y, f.w, opts, Some(selected), cols, id)
+    } else {
+        optioncards::show(ui, f.x, f.y, f.w, opts, Some(selected), cols, id)
+    };
     f.y = bottom;
     f.stacked_switch = false;
     pressed.filter(|p| p != selected)

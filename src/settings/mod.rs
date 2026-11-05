@@ -42,6 +42,17 @@ pub struct Effects {
     pub console_tab: bool,
     pub ssh_tab: bool,
     pub base_layer: String,
+    pub controls: crate::control::model::Config,
+    pub flight_hud: bool,
+    pub hud_square: bool,
+    pub compass_nose_up: bool,
+    pub windows_in_app: bool,
+    pub rangefinder: bool,
+    pub flight_bar_shrink: bool,
+    pub takeoff_land_split: bool,
+    pub track: crate::map::TrackLook,
+    /// The top bar blocks switched off, by caption.
+    pub topbar_hidden: Vec<&'static str>,
 }
 
 impl Effects {
@@ -56,6 +67,29 @@ impl Effects {
             console_tab: model::flag(cfg, "ui", "console_tab", true),
             ssh_tab: model::flag(cfg, "ui", "ssh_tab", true),
             base_layer: model::text(cfg, "map", "base_layer").to_string(),
+            controls: crate::control::model::Config::from_config(cfg),
+            flight_hud: model::flag(cfg, "ui", "flight_hud", true),
+            hud_square: model::flag(cfg, "ui", "hud_square", false),
+            compass_nose_up: model::flag(cfg, "ui", "compass_nose_up", false),
+            windows_in_app: model::flag(cfg, "ui", "windows_in_app", false),
+            rangefinder: model::flag(cfg, "ui", "topbar_show_rangefinder", false),
+            flight_bar_shrink: model::flag(cfg, "ui", "flight_bar_shrink", false),
+            takeoff_land_split: model::flag(cfg, "ui", "takeoff_land_split", false),
+            track: crate::map::TrackLook {
+                earlier: model::flag(cfg, "ui", "track_earlier_flights", true),
+                rainbow: model::flag(cfg, "ui", "track_rainbow", false),
+                clear_on_restart: model::flag(cfg, "ui", "track_clear_on_restart", false),
+                in_air: model::flag(cfg, "ui", "track_in_air", true),
+            },
+            topbar_hidden: [
+                ("topbar_show_altitude", true, "Altitude"),
+                ("topbar_show_groundspeed", true, "Groundspeed"),
+                ("topbar_show_vspeed", true, "Vertical speed"),
+            ]
+            .into_iter()
+            .filter(|(k, d, _)| !model::flag(cfg, "ui", k, *d))
+            .map(|(_, _, l)| l)
+            .collect(),
         }
     }
 }
@@ -106,6 +140,8 @@ pub(crate) enum Dialog {
 /// The page's state.
 pub struct SettingsPage {
     server: Server,
+    /// The tablet mode switch was pressed: the window keeps the choice.
+    touch_request: Option<bool>,
     cfg: Value,
     tab: usize,
     calls: Vec<Call>,
@@ -138,6 +174,7 @@ impl SettingsPage {
     pub fn new(server: Server, config: &Value) -> SettingsPage {
         SettingsPage {
             server,
+            touch_request: None,
             cfg: config.clone(),
             tab: 0,
             calls: Vec::new(),
@@ -177,6 +214,13 @@ impl SettingsPage {
     }
 
     /// Opens on a pill by its id (the `--page settings:map` flag).
+    /// Opens the Data pill with the Import dialog over it (the first start
+    /// page's "Import settings").
+    pub fn open_import(&mut self) {
+        self.open_tab("data");
+        self.dialog = Some(Dialog::Import);
+    }
+
     pub fn open_tab(&mut self, id: &str) {
         if let Some(i) = TABS.iter().position(|t| t.0 == id) {
             self.tab = i;
@@ -191,6 +235,11 @@ impl SettingsPage {
     /// Notices for the notification board.
     pub fn take_notes(&mut self) -> Vec<String> {
         std::mem::take(&mut self.notes)
+    }
+
+    /// The tablet mode switch, once, when it was pressed.
+    pub fn take_touch(&mut self) -> Option<bool> {
+        self.touch_request.take()
     }
 
     /// The new values for the window, once, when the config changed them.
@@ -482,6 +531,21 @@ fn refused(answer: &Result<Value, String>, fallback: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_track_compass_and_top_bar_switches_reach_the_window() {
+        let none = Effects::of(&serde_json::json!({}));
+        assert!(none.track.earlier && !none.track.rainbow && !none.track.clear_on_restart && none.track.in_air);
+        assert!(!none.compass_nose_up && none.topbar_hidden.is_empty());
+        let set = Effects::of(&serde_json::json!({"ui": {
+            "track_earlier_flights": false, "track_rainbow": true, "track_clear_on_restart": true,
+            "track_in_air": false, "compass_nose_up": true,
+            "topbar_show_altitude": false, "topbar_show_vspeed": false, "topbar_show_groundspeed": true
+        }}));
+        assert!(!set.track.earlier && set.track.rainbow && set.track.clear_on_restart && !set.track.in_air);
+        assert!(set.compass_nose_up);
+        assert_eq!(set.topbar_hidden, vec!["Altitude", "Vertical speed"]);
+    }
+
     use super::*;
     use serde_json::json;
 

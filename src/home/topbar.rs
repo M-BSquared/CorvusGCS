@@ -527,6 +527,20 @@ pub fn shrink(items: &[(f32, f32)], available: f32) -> Vec<f32> {
     w
 }
 
+/// What the Vehicle block shows of the fleet: the colour dot in its caption,
+/// once there is more than one vehicle (`.tb-fleet-swatch`).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct FleetDot {
+    pub color: Option<Color32>,
+}
+
+/// What a click on the bar chose.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Clicked {
+    pub notifications: bool,
+    pub vehicles: bool,
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn show(
     ui: &mut egui::Ui,
@@ -537,7 +551,9 @@ pub fn show(
     notifications: &crate::notify::Summary,
     board_open: bool,
     vw: &crate::app::responsive::Vw,
-) -> bool {
+    fleet: FleetDot,
+) -> Clicked {
+    let mut clicked = Clicked::default();
     let painter = ui.painter_at(rect);
     // background: linear-gradient(180deg, var(--surface-1), var(--bg))
     let mut mesh = egui::Mesh::default();
@@ -662,10 +678,11 @@ pub fn show(
         let clip = ui.painter_at(block);
         let card = cards.get(l.index).and_then(|c| c.as_ref());
         let id = ui.scope_id().with(("tb", l.index));
+        let is_vehicle = b.label == "Vehicle";
         let response = ui.interact(
             block,
             id,
-            if card.is_some() {
+            if card.is_some() || is_vehicle {
                 egui::Sense::click()
             } else {
                 egui::Sense::hover()
@@ -681,7 +698,17 @@ pub fn show(
         let label_h = l.label.size().y;
         let value_h = value_size * 1.1;
         let top = block.center().y - (label_h + 2.0 + value_h) / 2.0;
-        clip.galley(Pos2::new(x + pad_x, top), l.label.clone(), style::text_3());
+        let mut label_x = x + pad_x;
+        if let (true, Some(color)) = (is_vehicle, fleet.color) {
+            let c = Pos2::new(label_x + 4.0, top + label_h / 2.0);
+            clip.circle_filled(c, 5.25, Color32::from_white_alpha(217));
+            clip.circle_filled(c, 4.0, color);
+            label_x += 8.0 + 5.0;
+        }
+        clip.galley(Pos2::new(label_x, top), l.label.clone(), style::text_3());
+        if is_vehicle && response.clicked() {
+            clicked.vehicles = true;
+        }
         let base = top + label_h + 2.0;
         let vy = base + (value_h - l.value.size().y) / 2.0;
         clip.galley(Pos2::new(x + pad_x, vy), l.value.clone(), b.tone.color());
@@ -708,7 +735,7 @@ pub fn show(
         x += w;
     }
     // The NOTIFICATIONS block closes the row, as the last of blocks().
-    let (_, clicked) = crate::notify::overlay::block(
+    let (_, note_clicked) = crate::notify::overlay::block(
         ui,
         rect,
         x + 3.0 - 1.0 + 1.0,
@@ -716,6 +743,7 @@ pub fn show(
         board_open,
         Some(widths[widths.len() - 1]),
     );
+    clicked.notifications = note_clicked;
     clicked
 }
 

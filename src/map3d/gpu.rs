@@ -87,6 +87,9 @@ pub struct Scene {
     pub ground: f64,
     pub ground_items: Vec<Item>,
     pub building_items: Vec<Item>,
+    /// The track and other lines: ribbons the depth test hides behind the
+    /// ground, blended, a little nearer than the ground they lie on.
+    pub line_items: Vec<Item>,
 }
 
 struct GlMesh {
@@ -421,6 +424,17 @@ pub unsafe fn paint(gl: &glow::Context, scene: &Scene) {
         for item in &scene.building_items {
             gpu.draw(gl, scene, item, &mut uploads);
         }
+        gl.disable(glow::BLEND);
+    }
+    if !scene.line_items.is_empty() {
+        gl.enable(glow::BLEND);
+        gl.blend_func(glow::SRC_ALPHA, glow::ONE_MINUS_SRC_ALPHA);
+        gl.enable(glow::POLYGON_OFFSET_FILL);
+        gl.polygon_offset(-2.0, -2.0);
+        for item in &scene.line_items {
+            gpu.draw(gl, scene, item, &mut uploads);
+        }
+        gl.disable(glow::POLYGON_OFFSET_FILL);
         gl.disable(glow::BLEND);
     }
     gl.bind_vertex_array(None);

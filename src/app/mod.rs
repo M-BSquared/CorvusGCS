@@ -3,7 +3,9 @@
 //! bar, HUD and map controls over it on HOME) and the right panel.
 
 pub mod nav;
+pub mod popout;
 pub mod responsive;
+pub mod touch;
 
 use std::process::ExitCode;
 use std::sync::OnceLock;
@@ -38,11 +40,25 @@ static LOGO_FOR_DARK: &[u8] = include_bytes!("../../assets/CorvusGCS_logo.png");
 
 struct App {
     server: Server,
+    control: crate::control::Control,
+    welcome: crate::welcome::Welcome,
+    caps: crate::data::capabilities::Cache,
+    mcp: crate::mcp::Mcp,
+    update: crate::update::Update,
+    updates_on: bool,
+    topbar_hidden: Vec<&'static str>,
+    rangefinder: bool,
+    rangefinder_asked: bool,
+    rangefinder_retry: f64,
+    rangefinder_failed: std::sync::Arc<std::sync::Mutex<bool>>,
+    fleet: crate::fleet::Fleet,
+    fleet_dialog: crate::fleet::dialog::Dialog,
     board: Board,
     telemetry: Telemetry,
     units: Units,
     top_speeds: topbar_cards::TopSpeeds,
     checklist: crate::setup::checklist::Checklist,
+    touch: touch::Touch,
     shot_sent: bool,
     click_stage: u32,
     map: Map,
@@ -108,20 +124,95 @@ impl App {
     /// What the Settings page changed that the rest of the window reads from
     /// the config: theme, size, units, the Mission entry, the distance tool,
     /// the side panel's tabs, the base layer.
-    fn apply_settings(&mut self, ctx: &egui::Context) {
-        if let Some(e) = self.settings.take_effects() {
-            style::set_theme(e.theme);
-            style::apply(ctx);
-            self.logo = logo_source();
-            if !e.base_layer.is_empty() && self.map.has_layer(&e.base_layer) {
-                self.map.set_source(ctx, &e.base_layer);
+    /// Puts what a config names in force: theme, size, units, the Mission
+    /// entry, the tabs, the controls, the HUD.
+    fn apply_effects(&mut self, ctx: &egui::Context, e: settings::Effects) {
+        style::set_theme(e.theme);
+        style::apply(ctx);
+        self.logo = logo_source();
+        if !e.base_layer.is_empty() && self.map.has_layer(&e.base_layer) {
+            self.map.set_source(ctx, &e.base_layer);
+        }
+        ctx.set_zoom_factor(e.scale);
+        self.units = e.units;
+        self.mission_page = e.mission_page;
+        self.rail.measure = e.measure_tool;
+        self.panel.console_tab = e.console_tab;
+        self.panel.ssh_tab = e.ssh_tab;
+        self.control.set_config(e.controls);
+        self.hud.visible = e.flight_hud;
+        self.hud.square = e.hud_square;
+    }
+
+    /// What the map's camera button asked of the camera windows.
+    fn apply_camera(&mut self, ctx: &egui::Context, cmd: crate::map::cameras::Cmd, now: f64) {
+        use crate::map::cameras::Cmd;
+        let server = self.server.clone();
+        let list = self.rail.cameras.list.clone();
+        let windows = self.setup.video_windows();
+        match cmd {
+            Cmd::Toggle(raw) => {
+                let id = raw.get("id").and_then(Value::as_str).unwrap_or("").to_string();
+                if windows.has(&id) {
+                    windows.close(&id);
+                } else {
+                    windows.open(ctx, &server, &raw);
+                }
             }
-            ctx.set_zoom_factor(e.scale);
-            self.units = e.units;
-            self.mission_page = e.mission_page;
-            self.rail.measure = e.measure_tool;
-            self.panel.console_tab = e.console_tab;
-            self.panel.ssh_tab = e.ssh_tab;
+            Cmd::CloseAll => windows.close_all(),
+            Cmd::OpenAll => {
+                if windows.ids().is_empty() {
+                    if list.is_empty() {
+                        self.board
+                            .add_local("info", "No camera is set up yet. Add one under Setup, Video.", now);
+                    }
+                    self.rail.cameras.open_all(ctx, &server, self.setup.video_windows());
+                } else {
+                    windows.close_all();
+                }
+            }
+        }
+    }
+
+    /// Asks for the distance sensor's stream, or hands it back, once per
+    /// connection and change of mind. Nothing is sent while the altitude
+    /// block is off the bar: its card could not be opened to read it.
+    fn sync_rangefinder(&mut self, state: &Value, now: f64) {
+        if state.get("connected") != Some(&Value::Bool(true)) {
+            self.rangefinder_asked = false;
+            return;
+        }
+        let want = self.rangefinder && !self.topbar_hidden.contains(&"Altitude");
+        if want == self.rangefinder_asked || (want && now < self.rangefinder_retry) {
+            return;
+        }
+        self.rangefinder_asked = want;
+        let server = self.server.clone();
+        let shared = self.rangefinder_failed.clone();
+        std::thread::spawn(move || {
+            let answer = http::post_json(
+                &server,
+                "/api/rangefinder/stream",
+                &serde_json::json!({"enabled": want}),
+            );
+            let refused = match answer {
+                Ok(d) => d.get("ok") == Some(&Value::Bool(false)),
+                Err(_) => true,
+            };
+            if refused && want {
+                if let Ok(mut f) = shared.lock() {
+                    *f = true;
+                }
+            }
+        });
+    }
+
+    fn apply_settings(&mut self, ctx: &egui::Context) {
+        if let Some(on) = self.settings.take_touch() {
+            self.touch.set_enabled(on);
+        }
+        if let Some(e) = self.settings.take_effects() {
+            self.apply_effects(ctx, e);
         }
         if self.settings.take_sources_dirty() {
             if let Ok(sources) = http::get_json(&self.server, "/api/tiles/sources") {
@@ -186,6 +277,20 @@ impl App {
         let state: Value = self.telemetry.state();
         let now = now_ms();
         self.map.update(&state);
+        let caps = self.caps.get(ui.ctx(), &self.server, &state).clone();
+        self.control
+            .update(ui.ctx(), &state, &caps, self.page == Page::Home, now);
+        for e in self.control.take_notes() {
+            self.board.add_local("critical", &e, now);
+        }
+        let snap = self.fleet.snapshot();
+        let dt = ui.input(|i| i.stable_dt).min(0.1);
+        if self.map.sync_fleet(&snap, &state, dt) {
+            ui.ctx().request_repaint();
+        }
+        for (level, text) in self.fleet.take_notes() {
+            self.board.add_local(&level, &text, now);
+        }
         self.run_plugins(ui.ctx(), &state, now);
         self.board.update(&state, now);
         self.flight.settle(&mut self.board, now);
@@ -226,16 +331,51 @@ impl App {
         let summary = self.board.summary(now);
 
         let vw = crate::app::responsive::Vw::of(ui.ctx());
-        let blocks = topbar::blocks(&state, &self.units);
-        let cards = topbar_cards::all(&state, &self.units, &mut self.top_speeds);
+        let mut blocks = topbar::blocks(&state, &self.units);
+        if let Some(b) = blocks.first_mut() {
+            b.value = crate::fleet::vehicle_label(&state, &snap, &b.value);
+        }
+        let own = state.get("vehicle_id").and_then(Value::as_str).unwrap_or("");
+        let dot = topbar::FleetDot {
+            color: snap
+                .is_multi()
+                .then(|| crate::fleet::parse_hex(snap.color_of(own)).unwrap_or_else(style::vehicle)),
+        };
+        let mut cards = topbar_cards::all(&state, &self.units, &mut self.top_speeds, self.rangefinder);
+        // Blocks the operator switched off (Settings, Interface, Top bar).
+        let keep: Vec<bool> = blocks.iter().map(|b| !self.topbar_hidden.contains(&b.label)).collect();
+        let mut at = 0;
+        blocks.retain(|_| {
+            at += 1;
+            keep[at - 1]
+        });
+        let mut at = 0;
+        cards.retain(|_| {
+            at += 1;
+            keep.get(at - 1).copied().unwrap_or(true)
+        });
         egui::Panel::top("topbar")
             .exact_size(vw.top_height())
             .frame(egui::Frame::NONE)
             .show(ui, |ui| {
                 let rect = ui.max_rect();
-                if topbar::show(ui, rect, &self.logo, &blocks, &cards, &summary, self.board.open, &vw) {
+                let clicked = topbar::show(
+                    ui,
+                    rect,
+                    &self.logo,
+                    &blocks,
+                    &cards,
+                    &summary,
+                    self.board.open,
+                    &vw,
+                    dot,
+                );
+                if clicked.notifications {
                     let open = !self.board.open;
                     self.board.set_open(open, now);
+                }
+                if clicked.vehicles {
+                    self.fleet_dialog.open(ui.ctx(), &self.server, None);
                 }
             });
         egui::CentralPanel::default()
@@ -261,13 +401,37 @@ impl App {
                     self.map.measure.units = self.units;
                     self.map.show(&mut map_ui, &state);
                     let inset = if vw.max959 { 12.0 } else { 16.0 };
-                    let corner = main.max - egui::vec2(inset, inset);
-                    self.hud
-                        .show(&mut map_ui, corner, &state, &self.units, now, vw.hud_width(), vw.max600);
+                    self.hud.show(
+                        &mut map_ui,
+                        main,
+                        inset,
+                        &state,
+                        &self.units,
+                        now,
+                        vw.hud_width(),
+                        vw.max600,
+                    );
+                    let t = ui.input(|i| i.time);
+                    self.rail.cameras.poll(ui.ctx(), &self.server, t);
+                    self.rail.open_cameras = self.setup.video_windows().ids();
                     self.rail.show(&mut map_ui, main, &mut self.map, &state);
-                    self.flight.show(&mut map_ui, main, &state, &self.units);
+                    for cmd in self.rail.cameras.take_cmds() {
+                        self.apply_camera(ui.ctx(), cmd, now);
+                    }
+                    self.flight
+                        .show(&mut map_ui, main, &state, &self.units, &mut self.map.tools);
+                    let ground = crate::home::flight::is_ground(&state);
+                    if let Some(action) = self
+                        .map
+                        .tools
+                        .menu(&map_ui, &state, ground, &self.units, now / 1000.0, main)
+                    {
+                        let alt = self.map.tools.plan.alt_agl();
+                        self.flight.run_action(ui.ctx(), action, ground, alt);
+                    }
                     let below = self.flight.bar_bottom + 10.0;
                     self.checklist.window(&mut map_ui, ui.ctx(), main, below);
+                    self.control.show(&mut map_ui, main, now);
                 } else if self.page == Page::Mission {
                     self.mission
                         .show(ui, main, &state, &self.units, &mut self.map, &mut self.rail, vw.max1279);
@@ -287,7 +451,14 @@ impl App {
                 } else {
                     nav::placeholder(ui, main, self.page);
                 }
-                if let Some(page) = nav::show(ui, rail, self.mission_page, self.page, !vw.max1279) {
+                if let Some(page) = nav::show(
+                    ui,
+                    rail,
+                    self.mission_page,
+                    self.page,
+                    !vw.max1279,
+                    self.update.available.as_deref(),
+                ) {
                     if page == Page::Setup && self.page == Page::Setup {
                         self.setup.reset();
                     }
@@ -311,6 +482,65 @@ impl App {
                 self.panel.windows(ui.ctx());
                 self.setup.windows(ui.ctx());
             });
+        if let Some(id) = self.map.take_vehicle_click() {
+            self.fleet_dialog.open(ui.ctx(), &self.server, Some(id));
+        }
+        self.fleet_dialog
+            .show(ui.ctx(), &self.fleet, &self.server, &state, &self.units, &mut self.map);
+        for id in self.fleet_dialog.take_removed() {
+            self.map.forget_vehicle(&id);
+        }
+        for e in self.fleet.take_errors() {
+            self.board.add_local("critical", &e, now);
+        }
+        match self.welcome.show(ui.ctx(), &self.server, &self.logo) {
+            crate::welcome::Event::None => {}
+            crate::welcome::Event::Preview(cfg) | crate::welcome::Event::Restore(cfg) => {
+                self.apply_effects(ui.ctx(), settings::Effects::of(&cfg));
+            }
+            crate::welcome::Event::Done(cfg) => {
+                self.apply_effects(ui.ctx(), settings::Effects::of(&cfg));
+                self.board.add_local(
+                    "info",
+                    "Corvus GCS is set up. Everything can be changed under Settings.",
+                    now,
+                );
+            }
+            crate::welcome::Event::Import => {
+                self.page = Page::Settings;
+                self.settings.enter(ui.ctx());
+                self.settings.open_import();
+            }
+        }
+        let screen_rect = ui.ctx().content_rect();
+        let main_rect = egui::Rect::from_min_max(
+            egui::pos2(nav::WIDTH, screen_rect.top() + vw.top_height()),
+            screen_rect.max,
+        );
+        let below = self.flight.bar_bottom + crate::home::flight::INSET;
+        self.mcp
+            .show(ui.ctx(), (self.page == Page::Home).then_some(main_rect), below);
+        for (level, text) in self.mcp.take_notes() {
+            self.board.add_local(&level, &text, now);
+        }
+        if self
+            .rangefinder_failed
+            .lock()
+            .map(|mut f| std::mem::take(&mut *f))
+            .unwrap_or(false)
+        {
+            self.rangefinder_asked = false;
+            self.rangefinder_retry = now + 15_000.0;
+        }
+        self.sync_rangefinder(&state, now);
+        let first_run = self.welcome.is_open();
+        self.update.show(
+            ui.ctx(),
+            &self.server,
+            &state,
+            now / 1000.0,
+            self.updates_on && !first_run,
+        );
         self.checklist.dialog(ui.ctx());
         if let Some(step) =
             self.first_setup
@@ -364,6 +594,11 @@ impl eframe::App for App {
     /// hint can be looked at without a hand on the mouse.
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
         self.shoot(ctx, raw_input);
+        let now = raw_input.time.unwrap_or(0.0);
+        self.touch.handle(raw_input, now);
+        if self.touch.waiting() {
+            ctx.request_repaint_after(std::time::Duration::from_millis(100));
+        }
         // CORVUS_GUI_CLICK="x,y;x,y;enter" presses at each point in turn, the
         // first at 6 s and one more every half second, for a menu or a drawn
         // shape to look at; `enter` presses the Enter key.
@@ -444,6 +679,9 @@ impl eframe::App for App {
         }
         self.telemetry.stop();
         self.plugins.shut_down(&egui::Context::default(), &Value::Null);
+        self.fleet.shut_down();
+        self.control.shut_down();
+        self.mcp.shut_down();
         self.panel.shut_down();
         self.map.shut_down();
     }
@@ -548,12 +786,20 @@ pub fn run(
             let env = geofence::Env::new(sources.clone());
             env.load(&ctx, &server);
             let mut map = Map::new(&ctx, &server, &sources, env.clone());
+            map.look = settings::Effects::of(&config).track;
+            map.restore_tracks(!map.look.clear_on_restart);
             if let Some(layer) = Some(settings::model::text(&config, "map", "base_layer")).filter(|l| !l.is_empty()) {
                 if map.has_layer(layer) {
                     map.set_source(&ctx, layer);
                 }
             }
-            let flight = FlightBar::new(server.clone(), &ctx);
+            let mut flight = FlightBar::new(server.clone(), &ctx);
+            {
+                let e = settings::Effects::of(&config);
+                flight.split = e.takeoff_land_split;
+                popout::set_in_app(e.windows_in_app);
+                flight.shrink = e.flight_bar_shrink;
+            }
             ctx.set_zoom_factor(scale);
             let panel = Panel::new(server.clone(), &ctx, &config);
             let plugins = Registry::new(server.clone(), &ctx, &config);
@@ -562,15 +808,45 @@ pub fn run(
             let logo = logo_source();
             Ok(Box::new(App {
                 server: server.clone(),
+                control: crate::control::Control::new(
+                    server.clone(),
+                    crate::control::model::Config::from_config(&config),
+                ),
+                caps: Default::default(),
+                mcp: crate::mcp::Mcp::start(server.clone(), &ctx),
+                update: crate::update::Update::new(),
+                topbar_hidden: settings::Effects::of(&config).topbar_hidden,
+                rangefinder: settings::Effects::of(&config).rangefinder,
+                rangefinder_asked: false,
+                rangefinder_retry: 0.0,
+                rangefinder_failed: Default::default(),
+                updates_on: config.get("updates").and_then(|u| u.get("check")) != Some(&Value::Bool(false)),
+                welcome: {
+                    let mut w = crate::welcome::Welcome::start(&server, &ctx);
+                    if page == Some("welcome") {
+                        w.open_now(&server, &ctx, config.clone());
+                    }
+                    w
+                },
+                fleet: crate::fleet::Fleet::start(server.clone(), &ctx),
+                fleet_dialog: Default::default(),
                 board: Board::default(),
                 telemetry,
                 units,
                 top_speeds: Default::default(),
                 checklist: crate::setup::checklist::Checklist::new(server.clone(), &ctx),
+                touch: touch::Touch::load(),
                 shot_sent: false,
                 click_stage: 0,
                 map,
-                hud: Hud::default(),
+                hud: {
+                    let mut h = Hud::new();
+                    let e = settings::Effects::of(&config);
+                    h.visible = e.flight_hud;
+                    h.square = e.hud_square;
+                    h.nose_up = e.compass_nose_up;
+                    h
+                },
                 flight,
                 logo,
                 page: start_page,

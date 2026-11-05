@@ -247,6 +247,8 @@ pub struct VideoWindow {
     pos: Pos2,
     size: Vec2,
     maximized: bool,
+    /// In a native window of its own, not a frame in the app.
+    pub popped: bool,
 }
 
 impl Drop for VideoWindow {
@@ -304,6 +306,7 @@ impl VideoWindow {
             ),
             size: DEF_SIZE,
             maximized: false,
+            popped: !crate::app::popout::in_app(),
         }
     }
 
@@ -312,10 +315,29 @@ impl VideoWindow {
         self.shared.lock().map(|s| s.local.clone()).unwrap_or_default()
     }
 
+    /// The frame, in the app or in a window of its own.
     fn show(&mut self, ctx: &egui::Context) -> Out {
+        if !self.popped {
+            return self.frame(ctx, false);
+        }
+        let key = format!("video:{}", self.id);
+        let (title, size) = (self.title.clone(), self.size);
+        let (out, popped) = crate::app::popout::show(ctx, &key, &title, size, |c| self.frame(c, true));
+        if popped.embedded {
+            self.popped = false;
+        }
+        if popped.close && out == Out::None {
+            return Out::Close;
+        }
+        out
+    }
+
+    fn frame(&mut self, ctx: &egui::Context, popped: bool) -> Out {
         let screen = ctx.content_rect();
         let mut out = Out::None;
-        let (pos, size) = if self.maximized {
+        let (pos, size) = if popped {
+            (screen.min, screen.size())
+        } else if self.maximized {
             (screen.min + Vec2::splat(12.0), screen.size() - Vec2::splat(24.0))
         } else {
             let size = self.size.max(MIN).min(screen.size());
@@ -404,10 +426,10 @@ impl VideoWindow {
                 );
                 painter.hline(bar.x_range(), bar.bottom() - 0.5, Stroke::new(1.0, style::border()));
                 let bar_resp = ui.interact(bar, ui.scope_id().with("videobar"), egui::Sense::click_and_drag());
-                if bar_resp.dragged() && !self.maximized {
+                if bar_resp.dragged() && !self.maximized && !popped {
                     dragged = bar_resp.drag_delta();
                 }
-                if bar_resp.double_clicked() {
+                if bar_resp.double_clicked() && !popped {
                     toggle = true;
                 }
                 crate::ui::icons::paint(
@@ -417,7 +439,7 @@ impl VideoWindow {
                     style::text_2(),
                 );
                 let tx = bar.left() + 10.0 + 14.0 + 8.0;
-                let tools_w = 2.0 * 24.0 + 1.0 + 6.0;
+                let tools_w = if popped { 2.0 } else { 3.0 } * 24.0 + 1.0 + 6.0;
                 let (pill_text, tone) = pill(&local.state);
                 let sc = match tone {
                     "on" => style::healthy(),
@@ -458,17 +480,41 @@ impl VideoWindow {
                     out = Out::Close;
                 }
                 bx -= 25.0;
-                if kit::icon_btn(
-                    ui,
-                    Rect::from_min_size(Pos2::new(bx, bar.center().y - 12.0), Vec2::splat(24.0)),
-                    if self.maximized { "minimize-2" } else { "maximize-2" },
-                    if self.maximized { "Restore" } else { "Maximize" },
-                    false,
-                    "videomax",
-                ) {
-                    toggle = true;
+                if popped {
+                    if kit::icon_btn(
+                        ui,
+                        Rect::from_min_size(Pos2::new(bx, bar.center().y - 12.0), Vec2::splat(24.0)),
+                        "minimize-2",
+                        "Back in the Corvus window",
+                        false,
+                        "videodock",
+                    ) {
+                        self.popped = false;
+                    }
+                } else {
+                    if kit::icon_btn(
+                        ui,
+                        Rect::from_min_size(Pos2::new(bx, bar.center().y - 12.0), Vec2::splat(24.0)),
+                        if self.maximized { "minimize-2" } else { "maximize-2" },
+                        if self.maximized { "Restore" } else { "Maximize" },
+                        false,
+                        "videomax",
+                    ) {
+                        toggle = true;
+                    }
+                    bx -= 25.0;
+                    if kit::icon_btn(
+                        ui,
+                        Rect::from_min_size(Pos2::new(bx, bar.center().y - 12.0), Vec2::splat(24.0)),
+                        "square-arrow-out-up-right",
+                        "Open in a window of its own",
+                        false,
+                        "videoout",
+                    ) {
+                        self.popped = true;
+                    }
                 }
-                if !self.maximized {
+                if !self.maximized && !popped {
                     let grip = Rect::from_min_size(rect.right_bottom() - Vec2::splat(16.0), Vec2::splat(16.0));
                     let gr = ui.interact(grip, ui.scope_id().with("videogrip"), egui::Sense::drag());
                     if gr.hovered() || gr.dragged() {
@@ -492,7 +538,7 @@ impl VideoWindow {
         if toggle {
             self.maximized = !self.maximized;
         }
-        if !self.maximized {
+        if !self.maximized && !popped {
             self.pos += dragged;
             self.size = (self.size + resized).max(MIN);
         }
@@ -523,6 +569,15 @@ impl VideoWindows {
 
     pub fn has(&self, id: &str) -> bool {
         self.windows.iter().any(|w| w.id == id)
+    }
+
+    /// The cameras that have a window.
+    pub fn ids(&self) -> Vec<String> {
+        self.windows.iter().map(|w| w.id.clone()).collect()
+    }
+
+    pub fn close_all(&mut self) {
+        self.windows.clear();
     }
 
     /// What a camera's window shows, or none when it has no window.
