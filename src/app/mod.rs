@@ -158,8 +158,8 @@ impl App {
             self.board.add_local(level, &format!("{name}: {text}"), now);
             self.board.toast(level, &text, &name, "", now);
         }
-        for conn in out.terminals {
-            self.panel.open_terminal_window(ctx, &conn);
+        for (conn, reattach, existing_only) in out.terminals {
+            self.panel.open_terminal_window(ctx, &conn, reattach, existing_only);
         }
         if let Some(coords) = out.fit {
             self.page = Page::Home;

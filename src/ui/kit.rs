@@ -41,6 +41,8 @@ pub struct Button<'a> {
     pub pad: Option<(f32, f32)>,
     /// A page's own icon size and the gap after it.
     pub icon_gap: Option<(f32, f32)>,
+    /// `justify-content: flex-start`: the content starts at the left padding.
+    pub start: bool,
 }
 
 impl<'a> Button<'a> {
@@ -55,7 +57,13 @@ impl<'a> Button<'a> {
             title: "",
             pad: None,
             icon_gap: None,
+            start: false,
         }
+    }
+    /// The content at the left instead of the middle.
+    pub fn align_start(mut self) -> Self {
+        self.start = true;
+        self
     }
     /// `.params-actions .btn`: 8 px 13 px, a 13 px icon and a 6 px gap.
     pub fn actions(mut self) -> Self {
@@ -195,7 +203,11 @@ impl<'a> Button<'a> {
             0.0
         };
         let total = icon_w + gap + g.size().x;
-        let x = rect.center().x - total / 2.0;
+        let x = if self.start {
+            rect.left() + 1.0 + self.pad.map_or(if self.small { 11.0 } else { 14.0 }, |p| p.1)
+        } else {
+            rect.center().x - total / 2.0
+        };
         if let Some(icon) = self.icon {
             let r = Rect::from_min_size(Pos2::new(x, rect.center().y - icon_w / 2.0), Vec2::splat(icon_w));
             icons::paint(ui, icon, r, fade(text));

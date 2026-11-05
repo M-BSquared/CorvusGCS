@@ -19,6 +19,8 @@
 pub mod layer;
 pub mod options;
 pub mod shapes;
+pub mod ssh_launcher;
+mod ssh_setup;
 pub mod vibration;
 mod view;
 
@@ -95,6 +97,10 @@ pub trait Plugin {
     /// The pointer did something to one of this plugin's shapes.
     fn map_event(&mut self, _e: MapEvent, _h: &mut Host) {}
 
+    /// The operator answered the login dialog this plugin asked for with
+    /// `ssh_setup`: `saved` is whether a login was saved under that name.
+    fn ssh_setup_done(&mut self, _tag: u64, _saved: bool, _h: &mut Host) {}
+
     /// The tools this plugin offers an AI client over MCP.
     fn mcp_tools(&self) -> Vec<McpTool> {
         Vec::new()
@@ -119,7 +125,10 @@ pub struct McpTool {
 
 /// The compiled-in plugins, in the order of their `order`.
 pub fn builtin() -> Vec<Box<dyn Plugin>> {
-    let mut all: Vec<Box<dyn Plugin>> = vec![Box::new(vibration::Vibration::default())];
+    let mut all: Vec<Box<dyn Plugin>> = vec![
+        Box::new(vibration::Vibration::default()),
+        Box::new(ssh_launcher::SshLauncher::default()),
+    ];
     all.sort_by(|a, b| {
         let (a, b) = (a.info(), b.info());
         (a.order, a.name.to_lowercase()).cmp(&(b.order, b.name.to_lowercase()))
@@ -134,8 +143,12 @@ pub struct Outbox {
     pub notices: Vec<(String, &'static str, String)>,
     /// `(level, text)` lines for the console.
     pub console: Vec<(String, String)>,
-    /// Saved SSH connections to show in a terminal window of their own.
-    pub terminals: Vec<Value>,
+    /// Saved SSH connections to show in a terminal window of their own, with
+    /// whether the window is made again (`reattach`) and whether none is
+    /// opened when there is not one already (`existing_only`).
+    pub terminals: Vec<(Value, bool, bool)>,
+    /// Login dialogs asked for: `(plugin, tag, what is missing)`.
+    pub ssh_setups: Vec<(&'static str, u64, ssh_launcher::model::SshNeed)>,
     /// Frame these `[lng, lat]` on the Home map.
     pub fit: Option<Vec<[f64; 2]>>,
     /// Who waits for a click on the map.
@@ -174,6 +187,7 @@ pub struct Registry {
     out: Outbox,
     saving: Vec<Saving>,
     option_error: Option<String>,
+    setups: Vec<ssh_setup::SshSetup>,
     /// The card opened under PLUGINS.
     open: Option<usize>,
     shapes_dirty: bool,
@@ -302,7 +316,22 @@ impl Host<'_> {
     /// opened, in a window of its own. `session` is `{name, title, host,
     /// port, username}`.
     pub fn terminal(&mut self, session: Value) {
-        self.out.terminals.push(session);
+        self.terminal_with(session, false, false);
+    }
+
+    /// `terminal` with its two options: `reattach` right after (re)connecting,
+    /// so an open window takes the new shell instead of a dead stream, and
+    /// `existing_only` to repair a window that is already open without
+    /// opening one.
+    pub fn terminal_with(&mut self, session: Value, reattach: bool, existing_only: bool) {
+        self.out.terminals.push((session, reattach, existing_only));
+    }
+
+    /// `sshSetup`: asks the operator for what a failed connect or run said a
+    /// saved connection lacks. The answer comes back to `ssh_setup_done` with
+    /// the same `tag`.
+    pub fn ssh_setup(&mut self, need: ssh_launcher::model::SshNeed, tag: u64) {
+        self.out.ssh_setups.push((self.id, tag, need));
     }
 
     /// `fit`: bring the Home page forward and frame these points.
@@ -359,6 +388,7 @@ impl Registry {
             out: Outbox::default(),
             saving: Vec::new(),
             option_error: None,
+            setups: Vec::new(),
             open: None,
             shapes_dirty: true,
         }
@@ -469,8 +499,39 @@ impl Registry {
             }
             self.with(i, ctx, state, |p, h| p.tick(h));
         }
+        self.run_setups(ctx, state);
         if self.entries.iter_mut().fold(false, |a, e| e.shapes.take_changed() | a) {
             self.shapes_dirty = true;
+        }
+    }
+
+    /// The login dialogs plugins asked for, one per connection name.
+    fn run_setups(&mut self, ctx: &egui::Context, state: &Value) {
+        for (owner, tag, need) in std::mem::take(&mut self.out.ssh_setups) {
+            let asker = ssh_setup::Asker { owner, tag };
+            match self.setups.iter_mut().find(|s| s.need.name == need.name) {
+                Some(s) => s.askers.push(asker),
+                None => self
+                    .setups
+                    .push(ssh_setup::SshSetup::new(ctx, &self.server, need, asker)),
+            }
+        }
+        let server = self.server.clone();
+        let mut done: Vec<(usize, bool)> = Vec::new();
+        for (i, s) in self.setups.iter_mut().enumerate() {
+            match s.show(ctx, &server) {
+                ssh_setup::Outcome::Open => {}
+                ssh_setup::Outcome::Saved => done.push((i, true)),
+                ssh_setup::Outcome::Cancelled => done.push((i, false)),
+            }
+        }
+        for (i, saved) in done.into_iter().rev() {
+            let s = self.setups.remove(i);
+            for a in s.askers {
+                if let Some(k) = self.index_of(a.owner) {
+                    self.with(k, ctx, state, |p, h| p.ssh_setup_done(a.tag, saved, h));
+                }
+            }
         }
     }
 
@@ -696,7 +757,7 @@ mod tests {
     #[test]
     fn the_four_bundled_plugins_are_listed_in_the_order_of_their_manifests() {
         let ids: Vec<_> = builtin().iter().map(|p| p.info().id).collect();
-        assert_eq!(ids, ["vibration"]);
+        assert_eq!(ids, ["vibration", "ssh-launcher"]);
     }
 
     #[test]

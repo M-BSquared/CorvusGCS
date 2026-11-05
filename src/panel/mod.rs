@@ -355,8 +355,18 @@ impl Panel {
 
     /// A saved connection's terminal in a window of its own, for a plugin that
     /// opened the session (`api.terminal`). The session is already up.
-    pub fn open_terminal_window(&mut self, ctx: &egui::Context, conn: &Value) {
-        self.open_window(ctx, conn);
+    pub fn open_terminal_window(&mut self, ctx: &egui::Context, conn: &Value, reattach: bool, existing_only: bool) {
+        let name = conn.get("name").and_then(Value::as_str).unwrap_or("");
+        match self.windows.iter().position(|w| w.name == name) {
+            Some(i) if reattach => {
+                self.windows.remove(i);
+                self.windows
+                    .insert(i.min(self.windows.len()), TermWindow::new(ctx, &self.server, conn, i));
+            }
+            Some(_) => {}
+            None if existing_only => {}
+            None => self.open_window(ctx, conn),
+        }
     }
 
     fn start_connect(&mut self, ctx: &egui::Context, conn: Value, connected: bool, to_window: bool) {
