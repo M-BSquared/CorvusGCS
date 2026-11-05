@@ -17,7 +17,6 @@ use crate::ui::icons;
 use crate::ui::style::{self, Weight};
 
 const DEBOUNCE: f64 = 0.35;
-const BTN: f32 = 34.0;
 const GAP: f32 = 8.0;
 
 /// The search box's state.
@@ -193,7 +192,10 @@ impl SearchCard {
 
         let vw = ctx.content_rect().width();
         let fw = 272.0f32.min(0.44 * vw);
-        let field = Rect::from_min_size(Pos2::new(trigger.left() - GAP - fw, trigger.top()), Vec2::new(fw, BTN));
+        let field = Rect::from_min_size(
+            Pos2::new(trigger.left() - GAP - fw, trigger.top()),
+            Vec2::new(fw, crate::map::rail::btn()),
+        );
         let focused_id = ui.scope_id().with("searchinput");
         egui::Area::new(ui.scope_id().with("searchbox"))
             .order(egui::Order::Foreground)

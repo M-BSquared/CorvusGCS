@@ -27,7 +27,7 @@ otherwise; "native file" is in `src/`.
 | Responsive width classes (1279, 959, 900, 720, 600) | css/responsive.css | app/responsive.rs | done |
 | Interface scale (Settings, `ui.scale`, steps 0.8 to 1.5) | scale.js | app/mod.rs (`set_zoom_factor`) | done |
 | Theme from the config, six themes | theme.js | ui/style.rs | done |
-| Tablet and touch mode: larger targets, long press as right click, hover controls shown | touch.js, css/touch.css | app/touch.rs | missing |
+| Tablet and touch mode: flight bar and rail targets, no zoom buttons, long press as right click, HUD buttons shown, SSH tab and panel edge gone, kept on this device | touch.js, css/touch.css | app/touch.rs, home/flight.rs, map/rail.rs, home/hud.rs, panel/mod.rs, settings/tabs.rs | partial: the long press and the mode are unit tested, the sizes seen on screen with the mode on; not done: bigger form controls, Settings pills, setup pages, fullscreen entry, hold to move the HUD, double tap |
 | Window title from `/api/version` | app.js | app/mod.rs | done |
 | First start page (welcome): look, units and review, workspace, controls, import, skip | welcome.js | welcome/mod.rs, welcome/model.rs | done: start page and four steps drawn and unit tested; the steps after the first were not clicked through against the sandbox |
 | Update check, "newer release" dialog, skip this version, open release page | update.js | update/mod.rs, settings/about.rs | done: unit tested, the dialog was not seen against a real answer (the sandbox is offline) |

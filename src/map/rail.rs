@@ -19,6 +19,15 @@ const INSET: f32 = 14.0;
 const GAP: f32 = 8.0;
 const BTN: f32 = 34.0;
 
+/// A rail button's side: 34 px, or `--touch-target` in tablet mode.
+pub fn btn() -> f32 {
+    if crate::app::touch::on() {
+        crate::app::touch::TARGET
+    } else {
+        BTN
+    }
+}
+
 /// One slot of the rail.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Item {
@@ -71,6 +80,15 @@ impl Item {
 /// The rail, top to bottom; the ruler only while `ui.measure_tool` is on.
 /// The camera group stays hidden until cameras are set up.
 pub fn items(measure: bool, planner: bool, camera: bool) -> Vec<Item> {
+    let mut v = items_all(measure, planner, camera);
+    if crate::app::touch::on() {
+        // Zooming is two fingers on the map itself.
+        v.retain(|i| !matches!(i, Item::ZoomIn | Item::ZoomOut));
+    }
+    v
+}
+
+fn items_all(measure: bool, planner: bool, camera: bool) -> Vec<Item> {
     if planner {
         return vec![
             Item::ZoomIn,
@@ -140,12 +158,12 @@ impl MapRail {
         let h = 12.0
             + list
                 .iter()
-                .map(|i| if *i == Item::Divider { 1.0 + 4.0 } else { BTN })
+                .map(|i| if *i == Item::Divider { 1.0 + 4.0 } else { btn() })
                 .sum::<f32>()
             + 6.0 * (list.len() as f32 - 1.0);
         let rail = Rect::from_min_size(
-            Pos2::new(area.right() - INSET - (BTN + 12.0), area.top() + INSET),
-            Vec2::new(BTN + 12.0 + 2.0, h + 2.0),
+            Pos2::new(area.right() - INSET - (btn() + 12.0), area.top() + INSET),
+            Vec2::new(btn() + 12.0 + 2.0, h + 2.0),
         );
         glass_box(&painter, ("maprail", 0), rail);
         ui.interact(rail, ui.scope_id().with("mapctl"), egui::Sense::click_and_drag());
@@ -158,14 +176,14 @@ impl MapRail {
         for item in list {
             if item == Item::Divider {
                 painter.hline(
-                    egui::Rangef::new(x + 4.0, x + BTN - 4.0),
+                    egui::Rangef::new(x + 4.0, x + btn() - 4.0),
                     y + 2.0 + 0.5,
                     Stroke::new(1.0, style::border_soft()),
                 );
                 y += 5.0 + 6.0;
                 continue;
             }
-            let r = Rect::from_min_size(Pos2::new(x, y), Vec2::splat(BTN));
+            let r = Rect::from_min_size(Pos2::new(x, y), Vec2::splat(btn()));
             let (icon, title) = item.icon();
             let works = item.works();
             let title = if item == Item::Center && self.planner {
@@ -260,7 +278,7 @@ impl MapRail {
                     self.three_panel = true;
                 }
             }
-            y += BTN + 6.0;
+            y += btn() + 6.0;
         }
 
         if let Some(anchor) = camera_anchor {
@@ -271,10 +289,10 @@ impl MapRail {
             self.cameras.hover(camera_hover, over_list, now, ui.ctx());
         }
         // .tiles-trigger right of the search, both left of the rail
-        let clear = INSET + 48.0 + GAP;
+        let clear = INSET + btn() + 14.0 + GAP;
         let download = Rect::from_min_size(
-            Pos2::new(area.right() - clear - BTN, area.top() + INSET),
-            Vec2::splat(BTN),
+            Pos2::new(area.right() - clear - btn(), area.top() + INSET),
+            Vec2::splat(btn()),
         );
         glass_box(&painter, ("trigger", 0), download);
         let dresp = ui
@@ -301,7 +319,7 @@ impl MapRail {
                 self.tiles.open(ui.ctx(), map, area);
             }
         }
-        let search = download.translate(Vec2::new(-(BTN + GAP), 0.0));
+        let search = download.translate(Vec2::new(-(btn() + GAP), 0.0));
         let units = map.measure.units;
         self.search.show(ui, search, area, map, &units);
 

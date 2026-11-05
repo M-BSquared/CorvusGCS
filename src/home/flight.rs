@@ -423,7 +423,7 @@ impl FlightBar {
         };
         let select_g = style::galley(ui, &select_text, 11.0, Weight::W600, style::text_1(), 0.5);
         let select_w = (10.0 + select_g.size().x + 26.0 + 2.0).max(120.0);
-        let select_h = 2.0 + 8.0 + 11.0 * 1.21 + 8.0;
+        let select_h = (2.0f32 + 8.0 + 11.0 * 1.21 + 8.0).max(if crate::app::touch::on() { 54.0 } else { 0.0 });
 
         let mut buttons: Vec<(Command, &'static str, &str, &str, bool)> = vec![(
             Command::Arm,
@@ -471,6 +471,16 @@ impl FlightBar {
             (fit.width, 1.0 + 9.0 + 17.0 + 9.0 + 1.0)
         } else {
             (fit.width, btn_h)
+        };
+        // Tablet mode: the tallest targets in the app (`.fa-btn` min 80 by 54,
+        // 54 wide when the bar is narrowed).
+        let (btn_w, btn_h) = if crate::app::touch::on() {
+            (
+                btn_w.max(if fit.compact || fit.width < BTN_W { 54.0 } else { 80.0 }),
+                btn_h.max(54.0),
+            )
+        } else {
+            (btn_w, btn_h)
         };
         let select_w = if fit.compact { (select_w).max(96.0) } else { select_w };
         let bar_w = BAR_PAD * 2.0 + n * btn_w + n * BAR_GAP + 5.0 + BAR_GAP + select_w + 2.0;

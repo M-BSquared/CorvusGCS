@@ -209,6 +209,8 @@ const CONTROLS: [(&str, &str, &str, &str); 4] = [
 
 const KEY_STRENGTH_HINT: &str = "How far a held arrow or W/A/S/D key pushes the stick, as a share of full travel. Hold Shift for twice that while it is down. Keys only. The sticks always reach their own stops. 50% is the default.";
 
+const TOUCH_HINT: &str = "Larger buttons for a finger, a long press where a mouse would right click, and none of the parts that need a mouse or a keyboard, such as the SSH terminal tab. Saved on this device only, so a tablet and the computer it connects to each keep their own.";
+
 const LANGUAGE_INFO: &str = "More languages can be added: copy a language file into the languages folder of your Corvus folder (~/.corvus/languages), then press Reload languages. One file per language, named after its code, for example es.json. A text a file does not list stays English.\nA file there with the code of a language that ships with Corvus replaces it.";
 
 impl SettingsPage {
@@ -246,6 +248,7 @@ impl SettingsPage {
             self.theme_card(ui, f);
             self.scale_card(ui, f);
             self.units_card(ui, f);
+            self.touch_card(ui, f);
         });
         form::section(ui, f, "Branding", |ui, f| {
             self.logo_card(ui, f);
@@ -487,6 +490,24 @@ impl SettingsPage {
                 self.sync_effects();
             }
         }
+    }
+
+    /// Tablet mode. Unlike everything else on this page it is not in the
+    /// backend config: a tablet reaches Corvus over the network and shares the
+    /// laptop's config, so the choice is kept on the device that made it.
+    fn touch_card(&mut self, ui: &mut egui::Ui, f: &mut Form) {
+        form::card(ui, f, "Tablet mode", |ui, f| {
+            if let Some(v) = form::switch(
+                ui,
+                f,
+                "touchmode",
+                "Touch screen layout",
+                TOUCH_HINT,
+                crate::app::touch::on(),
+            ) {
+                self.touch_request = Some(v);
+            }
+        });
     }
 
     fn units_card(&mut self, ui: &mut egui::Ui, f: &mut Form) {

@@ -137,6 +137,8 @@ pub(crate) enum Dialog {
 /// The page's state.
 pub struct SettingsPage {
     server: Server,
+    /// The tablet mode switch was pressed: the window keeps the choice.
+    touch_request: Option<bool>,
     cfg: Value,
     tab: usize,
     calls: Vec<Call>,
@@ -167,6 +169,7 @@ impl SettingsPage {
     pub fn new(server: Server, config: &Value) -> SettingsPage {
         SettingsPage {
             server,
+            touch_request: None,
             cfg: config.clone(),
             tab: 0,
             calls: Vec::new(),
@@ -226,6 +229,11 @@ impl SettingsPage {
     /// Notices for the notification board.
     pub fn take_notes(&mut self) -> Vec<String> {
         std::mem::take(&mut self.notes)
+    }
+
+    /// The tablet mode switch, once, when it was pressed.
+    pub fn take_touch(&mut self) -> Option<bool> {
+        self.touch_request.take()
     }
 
     /// The new values for the window, once, when the config changed them.

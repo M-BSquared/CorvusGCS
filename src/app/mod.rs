@@ -4,6 +4,7 @@
 
 pub mod nav;
 pub mod responsive;
+pub mod touch;
 
 use std::process::ExitCode;
 use std::sync::OnceLock;
@@ -55,6 +56,7 @@ struct App {
     units: Units,
     top_speeds: topbar_cards::TopSpeeds,
     checklist: crate::setup::checklist::Checklist,
+    touch: touch::Touch,
     shot_sent: bool,
     click_stage: u32,
     map: Map,
@@ -203,6 +205,9 @@ impl App {
     }
 
     fn apply_settings(&mut self, ctx: &egui::Context) {
+        if let Some(on) = self.settings.take_touch() {
+            self.touch.set_enabled(on);
+        }
         if let Some(e) = self.settings.take_effects() {
             self.apply_effects(ctx, e);
         }
@@ -540,6 +545,11 @@ impl eframe::App for App {
     /// hint can be looked at without a hand on the mouse.
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
         self.shoot(ctx, raw_input);
+        let now = raw_input.time.unwrap_or(0.0);
+        self.touch.handle(raw_input, now);
+        if self.touch.waiting() {
+            ctx.request_repaint_after(std::time::Duration::from_millis(100));
+        }
         // CORVUS_GUI_CLICK="x,y;x,y;enter" presses at each point in turn, the
         // first at 6 s and one more every half second, for a menu or a drawn
         // shape to look at; `enter` presses the Enter key.
@@ -771,6 +781,7 @@ pub fn run(
                 units,
                 top_speeds: Default::default(),
                 checklist: crate::setup::checklist::Checklist::new(server.clone(), &ctx),
+                touch: touch::Touch::load(),
                 shot_sent: false,
                 click_stage: 0,
                 map,

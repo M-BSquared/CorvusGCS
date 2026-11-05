@@ -445,7 +445,8 @@ impl Hud {
             )
         };
         let hovered = ui.rect_contains_pointer(rect.union(bar));
-        let fade = if look.collapsed {
+        // A finger never hovers, so the buttons stay.
+        let fade = if look.collapsed || crate::app::touch::on() {
             1.0
         } else {
             ui.ctx()
