@@ -92,7 +92,8 @@ pub fn select_padded(
         None => (placeholder, style::text_3()),
     };
     let g = if mono {
-        style::galley_mono(ui, text, 12.0, color)
+        // a port name is data and is not in any language file; the prompt row is
+        style::galley_mono(ui, &crate::i18n::tr(text), 12.0, color)
     } else {
         style::galley(ui, text, 12.0, Weight::W400, color, 0.0)
     };

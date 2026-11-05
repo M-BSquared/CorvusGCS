@@ -1,0 +1,12 @@
+{
+  "strings": {
+    "Accel HF": "Accél. HF",
+    "Accel HF vibration (z)": "Vibration HF accéléromètre (z)",
+    "Gyro HF": "Gyro HF",
+    "Gyro HF vibration (y)": "Vibration HF gyro (y)",
+    "Gyro coning": "Coning gyro",
+    "Gyro coning (x)": "Coning gyro (x)",
+    "Live PX4 vibration metrics and accelerometer clipping": "Mesures de vibration PX4 en direct et saturation de l'accéléromètre",
+    "Vibration metric (unitless)": "Indice de vibration (sans unité)"
+  }
+}

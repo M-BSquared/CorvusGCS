@@ -37,7 +37,7 @@ otherwise; "native file" is in `src/`.
 | Vehicle capabilities, greyed controls with the reason | capabilities.js | data/capabilities.rs (calibration cards, the control pad's stick mode, ground vehicle words) | done; the Mission page still reads its own `mission_unsupported` copy of the document |
 | Lazy vendor bundles | lazy.js | n/a | n/a: nothing to load lazily in a compiled program |
 | Credits dialog | credits.js | settings/credits.rs | done |
-| Language files, translation function | i18n.js | n/a | later: the language session |
+| Language files, translation function | i18n.js | i18n/, lang/ | done: looked at in German on the plugin pages (Schwalby shelf, editor and popup, Vibration, SSH Launcher, Map Entities), Settings Plugins, the Vehicles and Offline map dialogs and the notification board; nothing clipped. Texts the web leaves in English were added in `lang/native` and the plugins' own files. The rail's PROTOKOLLE is wider than its 58 px item, as it is on the web page |
 | Unit conversion and display | units.js | data/units.rs | done |
 | Animation helpers | anim.js | (egui animates natively) | n/a |
 
