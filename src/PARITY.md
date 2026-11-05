@@ -98,8 +98,9 @@ otherwise; "native file" is in `src/`.
 | Floating frame: drag, corner size grip, maximize, close, shared layer, cascade | float-window.js | term/window.rs, setup/video_window.rs | done (two copies) |
 | Terminal in a floating window | term-window.js | term/window.rs | done |
 | Camera in a floating window | video-window.js | setup/video_window.rs | done |
-| Window of its own: terminal or camera in a native viewport | popout.js, popout-page.js, popout.html | window/ | missing |
-| "Open inside the Corvus window" setting, frameless Corvus title bar, pin above | popout.js, popout-page.js | window/ | missing |
+| Window of its own: terminal or camera in a native viewport, back in with a button | popout.js, popout-page.js, popout.html | app/popout.rs, term/window.rs, setup/video_window.rs | done: the frame in the app was seen with its new button; the window out was started without error but a screenshot cannot see a second window |
+| "Open inside the Corvus window" setting | popout.js | app/popout.rs, settings/mod.rs `Effects` | done |
+| Frameless Corvus title bar, pin above the Corvus window, drag past the edge to carry a frame out | popout.js, popout-page.js | n/a | not done: egui draws the window out with the system's title bar, and has no always-on-top above one window only |
 
 ## Setup
 

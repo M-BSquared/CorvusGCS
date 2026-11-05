@@ -3,6 +3,7 @@
 //! bar, HUD and map controls over it on HOME) and the right panel.
 
 pub mod nav;
+pub mod popout;
 pub mod responsive;
 pub mod touch;
 
@@ -747,6 +748,7 @@ pub fn run(
             {
                 let e = settings::Effects::of(&config);
                 flight.split = e.takeoff_land_split;
+                popout::set_in_app(e.windows_in_app);
                 flight.shrink = e.flight_bar_shrink;
             }
             ctx.set_zoom_factor(scale);
