@@ -1074,8 +1074,10 @@ mod tests {
     fn the_list_rows_read_as_the_web_rows_do() {
         let g = gate();
         assert_eq!(row_detail(&g, None).0, "14.9 m");
-        let mut r = Results::default();
-        r.passes = 2;
+        let r = Results {
+            passes: 2,
+            ..Default::default()
+        };
         assert_eq!(row_detail(&g, Some(&r)), ("2\u{d7} through".into(), "good"));
         let mut t = zone("tree", 3.0, 360.0, 0.0);
         t.height = 12.0;
@@ -1083,7 +1085,7 @@ mod tests {
         let z = zone("radar", 500.0, 90.0, 0.0);
         assert_eq!(row_detail(&z, None).0, "r 500 m \u{b7} 90\u{b0}");
         assert_eq!(row_detail(&zone("flag", 0.0, 360.0, 0.0), None).0, "");
-        assert_eq!(metres(3.14159), "3.1 m");
+        assert_eq!(metres(3.15159), "3.2 m");
         assert_eq!(metres(10.0), "10 m");
         assert_eq!(
             log_text(

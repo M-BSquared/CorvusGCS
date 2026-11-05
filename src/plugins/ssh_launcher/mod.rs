@@ -35,7 +35,7 @@ enum Stage {
     Send(Rep, bool),
     Connect(Rep, bool),
     /// The login dialog is open for this tag; the reply that asked for it.
-    Setup(u64, Value, bool),
+    Setup(u64, Value),
     Run(Rep, bool),
     Disconnect(Rep),
 }
@@ -99,7 +99,6 @@ impl Plugin for SshLauncher {
             icon: "rocket",
             description: "One-press buttons that start programs on a companion computer",
             version: "1.3.0",
-            author: "Maximilian Böck",
             order: 20,
             can_tab: false,
         }
@@ -375,7 +374,7 @@ impl SshLauncher {
             .find(|c| c.get("name").and_then(Value::as_str) == Some(b.connection.as_str()))
             .cloned()
             .unwrap_or_else(|| json!({}));
-        h.terminal_with(
+        h.terminal(
             json!({
                 "name": session_name(&b.id), "title": b.label,
                 "host": c.get("host"), "port": c.get("port"), "username": c.get("username"),
@@ -583,7 +582,7 @@ impl SshLauncher {
                     if let Some(need) = ssh_needs(&res) {
                         self.tag += 1;
                         h.ssh_setup(need, self.tag);
-                        t.stage = Some(Stage::Setup(self.tag, res, false));
+                        t.stage = Some(Stage::Setup(self.tag, res));
                         return false;
                     }
                 }
@@ -595,9 +594,9 @@ impl SshLauncher {
                 self.failed(&b, said, h);
                 true
             }
-            Stage::Setup(tag, res, _) => {
+            Stage::Setup(tag, res) => {
                 let Some(i) = self.setups.iter().position(|s| s.0 == tag) else {
-                    t.stage = Some(Stage::Setup(tag, res, false));
+                    t.stage = Some(Stage::Setup(tag, res));
                     return false;
                 };
                 let (_, saved) = self.setups.remove(i);
@@ -631,7 +630,7 @@ impl SshLauncher {
                     if let Some(need) = ssh_needs(&res) {
                         self.tag += 1;
                         h.ssh_setup(need, self.tag);
-                        t.stage = Some(Stage::Setup(self.tag, res, false));
+                        t.stage = Some(Stage::Setup(self.tag, res));
                         return false;
                     }
                 }

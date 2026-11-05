@@ -6,8 +6,7 @@
 //! projection, so the flat map and the tilted 3D map draw the same set. Only
 //! the flat map answers the pointer for markers and buttons.
 
-use eframe::egui::{self, Color32, CornerRadius, Pos2, Rect, Shape as Paint, Stroke, StrokeKind, Vec2};
-use serde_json::Value;
+use eframe::egui::{self, Color32, Pos2, Rect, Shape as Paint, Stroke, StrokeKind, Vec2};
 
 use crate::ui::style::{self, Weight};
 
@@ -18,6 +17,7 @@ pub const DEFAULT_COLOR: Color32 = Color32::from_rgb(0x2B, 0xC4, 0xE4);
 
 /// `LINE_COLORS`: colours that read against imagery and cannot be mistaken
 /// for the track (red) or the plan route (amber). `(id, label, colour)`.
+#[allow(dead_code)]
 pub const COLORS: [(&str, &str, Color32); 5] = [
     ("cyan", "Cyan", Color32::from_rgb(0x2B, 0xC4, 0xE4)),
     ("lime", "Lime", Color32::from_rgb(0x7B, 0xD3, 0x89)),
@@ -87,6 +87,7 @@ fn plain(text: &str) -> String {
 }
 
 /// What a shape is.
+#[allow(dead_code)] // every kind of `api.map`, whether or not a bundled plugin draws it
 #[derive(Debug, Clone, PartialEq)]
 pub enum Kind {
     Line {
@@ -183,6 +184,7 @@ pub struct ShapeSet {
     changed: bool,
 }
 
+#[allow(dead_code)] // the whole of `api.map`, whether or not a bundled plugin uses it
 impl ShapeSet {
     pub fn new(owner: &'static str) -> ShapeSet {
         ShapeSet {
@@ -711,18 +713,6 @@ fn paint_paths(ui: &egui::Ui, paths: &[String], rect: Rect, color: Color32, stro
     egui::Image::from_bytes(uri, icon_svg(paths, stroke))
         .tint(color)
         .paint_at(ui, rect);
-}
-
-/// `rect_stroke` shorthand kept here so plugins draw their own badges alike.
-pub fn corner(r: u8) -> CornerRadius {
-    CornerRadius::same(r)
-}
-
-/// A plain value as a longitude and latitude, for a plugin that reads them
-/// from saved settings.
-pub fn point_of(v: &Value) -> Option<[f64; 2]> {
-    let a = v.as_array()?;
-    Some([a.first()?.as_f64()?, a.get(1)?.as_f64()?])
 }
 
 #[cfg(test)]

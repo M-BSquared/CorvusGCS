@@ -12,6 +12,7 @@ pub const OPTIONS_KEY: &str = "_options";
 pub const TAB_OPTION: &str = "tab";
 
 /// What kind of value an option holds.
+#[allow(dead_code)] // every type the web's `options` has
 #[derive(Debug, Clone, PartialEq)]
 pub enum Kind {
     Toggle,
@@ -37,6 +38,7 @@ pub struct OptionSpec {
     pub default: Value,
 }
 
+#[allow(dead_code)] // a constructor for every type of option
 impl OptionSpec {
     pub fn toggle(key: &str, label: &str, default: bool) -> OptionSpec {
         OptionSpec::raw(key, label, Kind::Toggle, json!(default))

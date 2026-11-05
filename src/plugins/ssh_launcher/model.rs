@@ -292,7 +292,7 @@ pub fn new_connection_error(c: &NewConn, taken: &[String]) -> String {
             _ => return "The port has to be a number between 1 and 65535.".into(),
         }
     }
-    if taken.iter().any(|t| *t == name) {
+    if taken.contains(&name) {
         return format!("\"{name}\" is already saved. Pick it above, or save this one as another name.");
     }
     String::new()

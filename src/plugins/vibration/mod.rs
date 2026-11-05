@@ -117,7 +117,6 @@ impl Plugin for Vibration {
             icon: "activity",
             description: "Live PX4 vibration metrics and accelerometer clipping",
             version: "1.0.0",
-            author: "Maximilian Böck",
             order: 10,
             can_tab: false,
         }

@@ -45,7 +45,6 @@ pub struct Info {
     pub icon: &'static str,
     pub description: &'static str,
     pub version: &'static str,
-    pub author: &'static str,
     /// Where the card sits in the grid: lower is earlier, ties by name.
     pub order: i32,
     /// Whether it can live in a tab of its own, switched on with "Own tab".
@@ -101,27 +100,6 @@ pub trait Plugin {
     /// The operator answered the login dialog this plugin asked for with
     /// `ssh_setup`: `saved` is whether a login was saved under that name.
     fn ssh_setup_done(&mut self, _tag: u64, _saved: bool, _h: &mut Host) {}
-
-    /// The tools this plugin offers an AI client over MCP.
-    fn mcp_tools(&self) -> Vec<McpTool> {
-        Vec::new()
-    }
-
-    /// Runs a tool of `mcp_tools`; an `Err` is what the agent is told.
-    fn mcp_call(&mut self, _tool: &str, _args: &Value, _h: &mut Host) -> Result<Value, String> {
-        Err("No such tool.".into())
-    }
-}
-
-/// One tool offered to an AI client (`mcpTools`).
-#[derive(Debug, Clone, PartialEq)]
-pub struct McpTool {
-    pub name: String,
-    pub title: String,
-    pub description: String,
-    pub input_schema: Value,
-    pub confirm: bool,
-    pub read_only: bool,
 }
 
 /// The compiled-in plugins, in the order of their `order`.
@@ -235,18 +213,6 @@ impl Host<'_> {
         self.opts
     }
 
-    pub fn option_bool(&self, key: &str) -> bool {
-        self.opts.get(key).and_then(Value::as_bool).unwrap_or(false)
-    }
-
-    pub fn option_str(&self, key: &str) -> &str {
-        self.opts.get(key).and_then(Value::as_str).unwrap_or("")
-    }
-
-    pub fn option_f64(&self, key: &str) -> f64 {
-        self.opts.get(key).and_then(Value::as_f64).unwrap_or(0.0)
-    }
-
     /// `saveSettings`: merges `patch` into the saved state (or stores it as
     /// the whole with `replace`) and persists it through
     /// `POST /api/plugins/settings`. The options are the operator's and are
@@ -317,15 +283,13 @@ impl Host<'_> {
     /// `terminal`: show the live terminal of an SSH session this plugin
     /// opened, in a window of its own. `session` is `{name, title, host,
     /// port, username}`.
-    pub fn terminal(&mut self, session: Value) {
-        self.terminal_with(session, false, false);
-    }
-
-    /// `terminal` with its two options: `reattach` right after (re)connecting,
+    /// `terminal`: show the live terminal of an SSH session this plugin
+    /// opened, in a window of its own; `session` is `{name, title, host, port,
+    /// username}`. `reattach` right after (re)connecting,
     /// so an open window takes the new shell instead of a dead stream, and
     /// `existing_only` to repair a window that is already open without
     /// opening one.
-    pub fn terminal_with(&mut self, session: Value, reattach: bool, existing_only: bool) {
+    pub fn terminal(&mut self, session: Value, reattach: bool, existing_only: bool) {
         self.out.terminals.push((session, reattach, existing_only));
     }
 
@@ -396,15 +360,6 @@ impl Registry {
         }
     }
 
-    /// `setTabsAllowed`: the old global switch, now only the default for a
-    /// plugin whose own "Own tab" the operator has not set.
-    pub fn set_tabs_allowed(&mut self, on: bool) {
-        if self.tabs_allowed != on {
-            self.tabs_allowed = on;
-            self.sync_tabs();
-        }
-    }
-
     /// The saved settings that came with `GET /api/plugins`, or `{}`.
     fn adopt(&mut self, data: &Value) {
         if let Some(all) = data.get("settings").and_then(Value::as_object) {
@@ -435,12 +390,9 @@ impl Registry {
         self.entries[i].info
     }
 
+    #[allow(clippy::len_without_is_empty)]
     pub fn len(&self) -> usize {
         self.entries.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.entries.is_empty()
     }
 
     pub fn index_of(&self, id: &str) -> Option<usize> {
@@ -706,35 +658,6 @@ impl Registry {
             self.option_error = Some(msg);
             self.shapes_dirty = true;
         }
-    }
-
-    /// Why the last option save failed, once.
-    pub fn take_option_error(&mut self) -> Option<String> {
-        self.option_error.take()
-    }
-
-    // ---- MCP ------------------------------------------------------------------
-
-    /// Every tool of every plugin whose own `mcp` option allows tools, as
-    /// `(plugin id, tool)`.
-    pub fn mcp_tools(&self) -> Vec<(&'static str, McpTool)> {
-        self.entries
-            .iter()
-            .flat_map(|e| e.plugin.mcp_tools().into_iter().map(|t| (e.info.id, t)))
-            .collect()
-    }
-
-    /// Runs a plugin's tool for an AI client.
-    pub fn mcp_call(
-        &mut self,
-        ctx: &egui::Context,
-        state: &Value,
-        id: &str,
-        tool: &str,
-        args: &Value,
-    ) -> Result<Value, String> {
-        let i = self.index_of(id).ok_or("No such plugin.")?;
-        self.with(i, ctx, state, |p, h| p.mcp_call(tool, args, h))
     }
 
     /// Ends every plugin's view.

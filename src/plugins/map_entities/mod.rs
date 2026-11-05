@@ -90,7 +90,6 @@ impl Plugin for MapEntities {
             icon: "map-pin",
             description: "Gates, trees, people and devices with a range, placed exactly on the Home map",
             version: "1.0.0",
-            author: "Maximilian Böck",
             order: 35,
             can_tab: true,
         }
