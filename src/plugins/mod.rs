@@ -17,6 +17,7 @@
 //! app what the plugins asked for through the [`Outbox`].
 
 pub mod layer;
+pub mod map_entities;
 pub mod options;
 pub mod shapes;
 pub mod ssh_launcher;
@@ -128,6 +129,7 @@ pub fn builtin() -> Vec<Box<dyn Plugin>> {
     let mut all: Vec<Box<dyn Plugin>> = vec![
         Box::new(vibration::Vibration::default()),
         Box::new(ssh_launcher::SshLauncher::default()),
+        Box::new(map_entities::MapEntities::default()),
     ];
     all.sort_by(|a, b| {
         let (a, b) = (a.info(), b.info());
@@ -757,7 +759,7 @@ mod tests {
     #[test]
     fn the_four_bundled_plugins_are_listed_in_the_order_of_their_manifests() {
         let ids: Vec<_> = builtin().iter().map(|p| p.info().id).collect();
-        assert_eq!(ids, ["vibration", "ssh-launcher"]);
+        assert_eq!(ids, ["vibration", "ssh-launcher", "map-entities"]);
     }
 
     #[test]

@@ -145,6 +145,7 @@ const ICONS: &[(&str, &str)] = &[
     ("waypoints", "Waypoints"),
     ("vector-square", "VectorSquare"),
     ("mouse-pointer-2", "MousePointer2"),
+    ("maximize", "Maximize"),
     ("rocket", "Rocket"),
     ("bird", "Bird"),
     ("square", "Square"),

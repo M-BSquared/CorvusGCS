@@ -249,7 +249,7 @@ impl ShapeSet {
             return false;
         }
         let outline = match outline {
-            Some(w) if w == 0.0 => 0.0,
+            Some(0.0) => 0.0,
             other => width_of(other, 2.0),
         };
         let fill = fill_opacity
@@ -299,6 +299,7 @@ impl ShapeSet {
     }
 
     /// `drawButton`: a label that takes the pointer; 9 to 32 px (13 by default).
+    #[allow(clippy::too_many_arguments)]
     pub fn button(
         &mut self,
         key: &str,
@@ -436,9 +437,9 @@ pub fn icon_paths(name: &str) -> Option<&'static [&'static str]> {
     ICONS.iter().find(|i| i.0 == name).map(|i| i.2)
 }
 
-fn icon_svg(paths: &[String]) -> Vec<u8> {
-    let mut s = String::from(
-        "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"white\" stroke-width=\"2.2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">",
+fn icon_svg(paths: &[String], stroke: f32) -> Vec<u8> {
+    let mut s = format!(
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"white\" stroke-width=\"{stroke}\" stroke-linecap=\"round\" stroke-linejoin=\"round\">",
     );
     for p in paths {
         s.push_str(&format!("<path d=\"{p}\"/>"));
@@ -592,6 +593,7 @@ fn lerp(a: Color32, b: Color32, t: f32) -> Color32 {
     Color32::from_rgb(m(a.r(), b.r()), m(a.g(), b.g()), m(a.b(), b.b()))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn halo(
     ui: &egui::Ui,
     painter: &egui::Painter,
@@ -676,10 +678,7 @@ fn paint_marker(
         painter.circle_filled(c, r, faded(ink, 0.78 * s.opacity));
         painter.circle_stroke(c, r - 1.0, Stroke::new(2.0, col));
         let side = (r * 2.0) * 0.62;
-        let uri = format!("bytes://plugin-icon/{}.svg", icon.join("|").replace(['/', ' '], "_"));
-        egui::Image::from_bytes(uri, icon_svg(icon))
-            .tint(col)
-            .paint_at(ui, Rect::from_center_size(c, Vec2::splat(side)));
+        paint_paths(ui, icon, Rect::from_center_size(c, Vec2::splat(side)), col, 2.2);
     }
     if !label.is_empty() {
         let g = style::galley(ui, label, 12.0, Weight::W700, Color32::WHITE, 0.0);
@@ -695,6 +694,23 @@ fn paint_marker(
             Color32::BLACK,
         );
     }
+}
+
+/// A named symbol drawn as strokes on a 24 grid into `rect` (`glyph` of
+/// `map-entities.js`, the marker's own glyph).
+pub fn paint_glyph(ui: &egui::Ui, name: &str, rect: Rect, color: Color32, stroke: f32) {
+    if let Some(p) = icon_paths(name) {
+        let paths: Vec<String> = p.iter().map(|s| s.to_string()).collect();
+        paint_paths(ui, &paths, rect, color, stroke);
+    }
+}
+
+fn paint_paths(ui: &egui::Ui, paths: &[String], rect: Rect, color: Color32, stroke: f32) {
+    let key = paths.join("|").replace(['/', ' '], "_");
+    let uri = format!("bytes://plugin-icon/{stroke}/{key}.svg");
+    egui::Image::from_bytes(uri, icon_svg(paths, stroke))
+        .tint(color)
+        .paint_at(ui, rect);
 }
 
 /// `rect_stroke` shorthand kept here so plugins draw their own badges alike.
@@ -718,7 +734,7 @@ mod tests {
         let ring = circle_ring([11.5, 48.1], 100.0, None);
         assert_eq!(ring.len(), 72);
         let d = |p: [f64; 2]| {
-            let k = 111_194.9266;
+            let k = 111_194.926_6;
             let dx = (p[0] - 11.5) * k * 48.1f64.to_radians().cos();
             let dy = (p[1] - 48.1) * k;
             (dx * dx + dy * dy).sqrt()
