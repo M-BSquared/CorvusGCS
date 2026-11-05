@@ -13,6 +13,7 @@ mod control;
 mod data;
 mod fleet;
 mod home;
+mod i18n;
 mod logs;
 mod map;
 mod map3d;
