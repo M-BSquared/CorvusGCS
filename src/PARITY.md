@@ -113,7 +113,7 @@ otherwise; "native file" is in `src/`.
 | Safety and sensors, geofence, landing | setup-safety.js, setup-geofence.js | setup/safety.rs, geofence*.rs, landing.rs | done |
 | Battery and power | setup-battery.js | setup/battery*.rs | done |
 | Calibration, figures, protocol | setup-calibration.js, calib-*.js | setup/calib*.rs | done |
-| Radio Control, wizard | setup-control.js | setup/radio*.rs | partial: wizard not clicked through against the simulator |
+| Radio Control, wizard | setup-control.js | setup/radio*.rs | partial: the wizard opens against the simulator and shows step 1 of 5; Next to Write to vehicle was not driven (the harness cannot scroll to the buttons or move the simulated sticks), the later steps rest on the model tests |
 | Radio table scrolls sideways under 580 px | setup-control.js | setup/radio.rs | done: built, not looked at on screen |
 | RC transmitter drawing, learn, inspector | rc-transmitter.js | setup/rc_*.rs | done |
 | PID tuning; run bar sticks to the top | setup-tuning.js | setup/tuning.rs | done: built, not looked at on screen |
@@ -146,7 +146,7 @@ otherwise; "native file" is in `src/`.
 | Settings export and import | settings-transfer.js | settings/data_cards.rs | done |
 | Logs page | sidenav.js | logs/ | done |
 | Analysis: logs, Flight Review, Telemetry Review, Live Messages | analysis.js | analysis/ | done |
-| Review ground track over satellite imagery | analysis.js | analysis/review.rs | missing |
+| Review ground track over satellite imagery | analysis.js | analysis/review.rs | missing: needs the tile layer drawn under the plot, which the chart module does not have; not started |
 
 ## Right panel
 
