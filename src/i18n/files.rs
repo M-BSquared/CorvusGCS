@@ -31,14 +31,6 @@ const PLUGIN_FILES: &[(&str, &str)] = &[
     ("dl", include_str!("../plugins/map_entities/lang/dl.json")),
 ];
 
-/// Where a language came from.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Source {
-    Builtin,
-    Bundled,
-    User,
-}
-
 /// One language file, validated.
 #[derive(Debug, Clone)]
 pub struct Language {
@@ -46,7 +38,6 @@ pub struct Language {
     pub name: String,
     pub native_name: String,
     pub last: bool,
-    pub source: Source,
     pub strings: HashMap<String, String>,
 }
 
@@ -66,7 +57,6 @@ impl Language {
             name: "English".into(),
             native_name: "English".into(),
             last: false,
-            source: Source::Builtin,
             strings: HashMap::new(),
         }
     }
@@ -118,7 +108,7 @@ pub fn clean_strings(raw: Option<&Value>) -> HashMap<String, String> {
 }
 
 /// A language from the JSON `body` of the file named `code`, or None.
-pub fn parse(code: &str, body: &str, source: Source) -> Option<Language> {
+pub fn parse(code: &str, body: &str) -> Option<Language> {
     if !is_valid_code(code) {
         return None;
     }
@@ -137,12 +127,11 @@ pub fn parse(code: &str, body: &str, source: Source) -> Option<Language> {
         name,
         native_name: native,
         last: meta.and_then(|m| m.get("last")).and_then(Value::as_bool) == Some(true),
-        source,
         strings: clean_strings(obj.get("strings")),
     })
 }
 
-fn scan(dir: &Path, source: Source, into: &mut HashMap<String, Language>) {
+fn scan(dir: &Path, into: &mut HashMap<String, Language>) {
     let Ok(read) = std::fs::read_dir(dir) else {
         return;
     };
@@ -158,7 +147,7 @@ fn scan(dir: &Path, source: Source, into: &mut HashMap<String, Language>) {
         if !ext.eq_ignore_ascii_case("json") || std::fs::metadata(&p).map_or(true, |m| m.len() > MAX_FILE_BYTES) {
             continue;
         }
-        if let Some(lang) = std::fs::read_to_string(&p).ok().and_then(|b| parse(stem, &b, source)) {
+        if let Some(lang) = std::fs::read_to_string(&p).ok().and_then(|b| parse(stem, &b)) {
             into.insert(lang.code.clone(), lang);
         }
     }
@@ -169,12 +158,12 @@ fn scan(dir: &Path, source: Source, into: &mut HashMap<String, Language>) {
 pub fn discover(user: Option<&Path>) -> Vec<Language> {
     let mut found: HashMap<String, Language> = HashMap::new();
     for (code, body) in BUNDLED {
-        if let Some(l) = parse(code, body, Source::Bundled) {
+        if let Some(l) = parse(code, body) {
             found.insert(l.code.clone(), l);
         }
     }
     if let Some(dir) = user {
-        scan(dir, Source::User, &mut found);
+        scan(dir, &mut found);
     }
     found.entry(DEFAULT_CODE.into()).or_insert_with(Language::english);
     let mut rows: Vec<Language> = found.into_values().collect();
@@ -196,7 +185,7 @@ pub fn plugin_strings(code: &str) -> HashMap<String, String> {
         if *c != code {
             continue;
         }
-        if let Some(v) = serde_json::from_str::<Value>(body).ok() {
+        if let Ok(v) = serde_json::from_str::<Value>(body) {
             out.extend(clean_strings(v.get("strings")));
         }
     }
@@ -241,13 +230,13 @@ mod tests {
     fn parse_cleans_and_names() {
         let body = r#"{"meta":{"name":"German","native_name":"Deutsch"},
             "strings":{"A":"B","C":"","  ":"x","D":5}}"#;
-        let l = parse("de", body, Source::Bundled).unwrap();
+        let l = parse("de", body).unwrap();
         assert_eq!(l.label(), "Deutsch (German)");
         assert_eq!(l.strings.len(), 1);
-        assert!(parse("DE", body, Source::Bundled).is_none());
-        assert!(parse("de", "not json", Source::Bundled).is_none());
-        assert!(parse("de", "[]", Source::Bundled).is_none());
-        let bare = parse("es", r#"{"strings":{}}"#, Source::User).unwrap();
+        assert!(parse("DE", body).is_none());
+        assert!(parse("de", "not json").is_none());
+        assert!(parse("de", "[]").is_none());
+        let bare = parse("es", r#"{"strings":{}}"#).unwrap();
         assert_eq!(bare.name, "es");
     }
 
@@ -280,7 +269,6 @@ mod tests {
         std::fs::write(dir.join("broken.json"), "{").unwrap();
         let list = discover(Some(&dir));
         let de = list.iter().find(|l| l.code == "de").unwrap();
-        assert_eq!(de.source, Source::User);
         assert_eq!(de.strings.get("Settings").map(String::as_str), Some("Optionen"));
         assert!(list.iter().any(|l| l.code == "es"));
         let _ = std::fs::remove_dir_all(&dir);

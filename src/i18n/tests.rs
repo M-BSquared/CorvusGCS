@@ -189,3 +189,10 @@ fn every_key_used_in_the_program_is_in_the_language_files() {
     }
     assert!(absent.is_empty(), "keys with no entry:\n{}", absent.join("\n"));
 }
+
+#[test]
+fn text_set_in_capitals_is_found_under_its_web_wording() {
+    with_language("de", || {
+        assert_eq!(tr("SETTINGS"), "EINSTELLUNGEN");
+    });
+}

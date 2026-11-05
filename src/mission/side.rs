@@ -368,13 +368,32 @@ impl MissionPage {
             ),
             ("New", "file-plus", Variant::Ghost, ""),
         ];
-        for (k, (label, icon, variant, title)) in specs.into_iter().enumerate() {
-            let r = Rect::from_min_size(Pos2::new(inner.left() + k as f32 * (cw + 4.0), y), Vec2::new(cw, sm_h));
-            let b = Button::new(label, variant)
-                .icon(icon)
-                .small()
-                .title(title)
-                .enabled(!(k == 2 && busy_read));
+        let buttons: Vec<Button> = specs
+            .into_iter()
+            .enumerate()
+            .map(|(k, (label, icon, variant, title))| {
+                Button::new(label, variant)
+                    .icon(icon)
+                    .small()
+                    .title(title)
+                    .enabled(!(k == 2 && busy_read))
+            })
+            .collect();
+        // Four equal columns, unless a longer word needs more: then each
+        // column takes its text's share, as a grid track does (`1fr` never
+        // goes below the content).
+        let natural: Vec<f32> = buttons.iter().map(|b| b.width(ui)).collect();
+        let widths: Vec<f32> = if natural.iter().any(|n| *n > cw) {
+            let total: f32 = natural.iter().sum();
+            let room = w - 12.0;
+            natural.iter().map(|n| n * room / total).collect()
+        } else {
+            vec![cw; 4]
+        };
+        let mut x = inner.left();
+        for (k, b) in buttons.into_iter().enumerate() {
+            let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(widths[k], sm_h));
+            x += widths[k] + 4.0;
             if b.show(ui, r, ("mfile", k)) {
                 match k {
                     0 => self.save_plan(&ctx),

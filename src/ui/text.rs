@@ -9,7 +9,7 @@ use crate::ui::style::{self, Weight};
 /// Text wrapped to `width`, for hints and notes.
 pub fn wrapped(ui: &egui::Ui, text: &str, size: f32, color: Color32, width: f32) -> Arc<Galley> {
     let mut job = egui::text::LayoutJob::single_section(
-        text.to_string(),
+        crate::i18n::tr(text).into_owned(),
         egui::TextFormat {
             font_id: style::font(size, Weight::W400),
             color,
@@ -33,7 +33,7 @@ pub fn wrapped_weight(
     line: f32,
 ) -> Arc<Galley> {
     let mut job = egui::text::LayoutJob::single_section(
-        text.to_string(),
+        crate::i18n::tr(text).into_owned(),
         egui::TextFormat {
             font_id: style::font(size, weight),
             color,
@@ -42,6 +42,37 @@ pub fn wrapped_weight(
         },
     );
     job.wrap.max_width = width;
+    ui.painter().layout_job(job)
+}
+
+/// Text kept to `rows` lines, the last one cut with an ellipsis at `width`
+/// (`white-space: nowrap; text-overflow: ellipsis` for one row,
+/// `-webkit-line-clamp` for more). `letter` is the letter spacing in px.
+#[allow(clippy::too_many_arguments)]
+pub fn clamped(
+    ui: &egui::Ui,
+    text: &str,
+    size: f32,
+    weight: Weight,
+    color: Color32,
+    letter: f32,
+    width: f32,
+    rows: usize,
+    line: Option<f32>,
+) -> Arc<Galley> {
+    let mut job = egui::text::LayoutJob::single_section(
+        crate::i18n::tr(text).into_owned(),
+        egui::TextFormat {
+            font_id: style::font(size, weight),
+            color,
+            extra_letter_spacing: letter,
+            line_height: line.map(|l| size * l),
+            ..Default::default()
+        },
+    );
+    job.wrap.max_width = width;
+    job.wrap.max_rows = rows;
+    job.wrap.overflow_character = Some('\u{2026}');
     ui.painter().layout_job(job)
 }
 

@@ -380,35 +380,11 @@ impl SettingsPage {
     }
 
     fn language_card(&mut self, ui: &mut egui::Ui, f: &mut Form) {
-        let langs = self.want(ui.ctx(), "languages", "/api/languages");
-        let list: Vec<Value> = langs
-            .as_ref()
-            .and_then(|l| l.get("languages"))
-            .and_then(Value::as_array)
-            .cloned()
-            .unwrap_or_default();
-        let choices: Vec<Choice> = if list.is_empty() {
-            vec![Choice::new("en", "English")]
-        } else {
-            list.iter()
-                .map(|l| {
-                    let s = |k: &str| l.get(k).and_then(Value::as_str).unwrap_or("").to_string();
-                    let (name, native) = (s("name"), s("native_name"));
-                    let label = if name != native {
-                        format!("{native} ({name})")
-                    } else {
-                        native
-                    };
-                    Choice::new(s("code"), label)
-                })
-                .collect()
-        };
-        let current = self
-            .cfg
-            .get("language")
-            .and_then(Value::as_str)
-            .unwrap_or("en")
-            .to_string();
+        let choices: Vec<Choice> = crate::i18n::languages()
+            .into_iter()
+            .map(|l| Choice::new(l.code, l.label))
+            .collect();
+        let current = crate::i18n::language();
         let mut picked = None;
         let mut reload = false;
         form::card(ui, f, "Language", |ui, f| {
@@ -427,23 +403,17 @@ impl SettingsPage {
             }
         });
         if let Some(code) = picked {
+            crate::i18n::set_language(&code);
             self.write(ui.ctx(), json!({ "language": code }), false);
         }
         if reload {
-            self.hush("language");
-            self.res.remove("languages");
-            self.get(ui.ctx(), "languages", "/api/languages");
-            self.say("language", "Reloading\u{2026}", Tone::Plain);
-        }
-        if self.msgs.get("language").is_some_and(|m| m.0.starts_with("Reloading"))
-            && self.res.get("languages").is_some_and(|s| s.value.is_some())
-        {
-            let n = list.len();
-            self.say(
-                "language",
-                format!("Reloaded. {n} language{} installed.", if n == 1 { "" } else { "s" }),
-                Tone::Ok,
-            );
+            let n = crate::i18n::reload();
+            let key = if n == 1 {
+                "Reloaded. 1 language installed."
+            } else {
+                "Reloaded. {n} languages installed."
+            };
+            self.say("language", crate::i18n::tr_fmt(key, &[("n", &n.to_string())]), Tone::Ok);
         }
     }
 

@@ -95,15 +95,15 @@ pub fn tile(ui: &mut egui::Ui, rect: Rect, icon: &'static str, title: &str, desc
     icons::paint(ui, "chevron-right", chevron, style::text_3());
     let tx = box_.right() + 14.0;
     let tw = chevron.left() - 14.0 - tx;
-    let t = style::galley(ui, title, 14.0, Weight::W600, style::text_1(), 0.2);
-    let d = crate::ui::kit::wrapped_weight(ui, desc, 11.5, Weight::W400, style::text_3(), tw, 1.45);
+    let t = crate::ui::text::clamped(ui, title, 14.0, Weight::W600, style::text_1(), 0.2, tw, 1, None);
+    let d = crate::ui::text::clamped(ui, desc, 11.5, Weight::W400, style::text_3(), 0.0, tw, 2, Some(1.45));
     let desc_h = 2.0 * 11.5 * 1.45;
     let total = t.size().y + 3.0 + desc_h;
     let top = rect.center().y - total / 2.0;
     let clip = Rect::from_min_size(Pos2::new(tx, top), Vec2::new(tw, total));
     let p = ui.painter_at(clip);
     p.galley(Pos2::new(tx, top), t.clone(), style::text_1());
-    // Two lines at most: whatever the third would show is cut by the clip.
+    // Two lines at most, the second ending in an ellipsis as `line-clamp` does.
     ui.painter_at(Rect::from_min_size(
         Pos2::new(tx, top + t.size().y + 3.0),
         Vec2::new(tw, desc_h),

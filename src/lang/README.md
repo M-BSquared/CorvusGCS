@@ -1,3 +1,7 @@
+> This folder is the one the native interface (`src/i18n`) compiles in. `python/src/lang` is the same
+> set for the web interface, held identical by a test until the web interface is removed: change a
+> file in both places.
+
 # Interface languages
 
 One JSON file per language, named after its code: `en.json`, `de.json`,

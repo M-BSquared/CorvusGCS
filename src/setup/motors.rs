@@ -1505,9 +1505,9 @@ impl MotorsPage {
         let mut hx = x + name_w;
         for (label, unit) in &cols {
             let text = if unit.is_empty() {
-                label.to_uppercase()
+                crate::i18n::tr(label).to_uppercase()
             } else {
-                format!("{} {}", label.to_uppercase(), unit)
+                format!("{} {}", crate::i18n::tr(label).to_uppercase(), unit)
             };
             let g = style::galley(ui, &text, 10.0, Weight::W600, style::text_3(), 0.7);
             ui.painter_at(Rect::from_min_size(Pos2::new(hx, cy), Vec2::new(col_w, 16.0)))
@@ -1649,9 +1649,9 @@ impl MotorsPage {
             .iter()
             .map(|(pin, label, unit)| {
                 let text = if unit.is_empty() {
-                    label.to_uppercase()
+                    crate::i18n::tr(label).to_uppercase()
                 } else {
-                    format!("{} {}", label.to_uppercase(), unit)
+                    format!("{} {}", crate::i18n::tr(label).to_uppercase(), unit)
                 };
                 let field = doc.motors.iter().find_map(|m| {
                     let list = if *pin { &m.output_fields } else { &m.fields };
@@ -1708,9 +1708,9 @@ impl MotorsPage {
                 }
                 for ((_, label, unit), cw) in cols.iter().zip(&col_ws) {
                     let text = if unit.is_empty() {
-                        label.to_uppercase()
+                        crate::i18n::tr(label).to_uppercase()
                     } else {
-                        format!("{} {}", label.to_uppercase(), unit)
+                        format!("{} {}", crate::i18n::tr(label).to_uppercase(), unit)
                     };
                     let g = style::galley(ui, &text, 10.0, Weight::W600, style::text_3(), 0.7);
                     painter.galley(Pos2::new(hx + 4.0, hy), g, style::text_3());

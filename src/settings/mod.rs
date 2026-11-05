@@ -34,6 +34,7 @@ use model::TABS;
 /// What the window takes from the config as the page changes it.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Effects {
+    pub language: String,
     pub theme: &'static str,
     pub scale: f32,
     pub units: Units,
@@ -59,6 +60,7 @@ impl Effects {
     /// The values a config names, with the web interface's defaults.
     pub fn of(cfg: &Value) -> Effects {
         Effects {
+            language: crate::i18n::from_config(cfg),
             theme: style::theme_from_config(cfg),
             scale: model::scale_from_config(cfg),
             units: model::units_in_force(cfg),

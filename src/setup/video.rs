@@ -794,8 +794,9 @@ fn dot_color(level: &str) -> egui::Color32 {
 
 /// One line of text cut with an ellipsis at `w` (`text-overflow: ellipsis`).
 fn one_line(ui: &egui::Ui, text: &str, size: f32, mono: bool, color: egui::Color32, w: f32) -> Arc<Galley> {
+    let shown = if mono { text.into() } else { crate::i18n::tr(text) };
     let mut job = egui::text::LayoutJob::single_section(
-        text.to_string(),
+        shown.into_owned(),
         egui::TextFormat {
             font_id: if mono {
                 style::mono(size)

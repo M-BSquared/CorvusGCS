@@ -26,7 +26,7 @@ mod table;
 
 use std::borrow::Cow;
 use std::collections::{BTreeSet, HashMap, HashSet};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 
 use serde_json::Value;
@@ -39,7 +39,6 @@ const MISSED_MAX: usize = 6000;
 
 /// One language in force: its table and the answers already worked out.
 struct Active {
-    code: String,
     table: table::Table,
     values: HashSet<String>,
     cache: Mutex<HashMap<String, Option<String>>>,
@@ -57,7 +56,6 @@ static STATE: Mutex<State> = Mutex::new(State {
 });
 static ACTIVE: RwLock<Option<Arc<Active>>> = RwLock::new(None);
 static ON: AtomicBool = AtomicBool::new(false);
-static GENERATION: AtomicU64 = AtomicU64::new(0);
 static MISSED: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());
 
 #[cfg(test)]
@@ -102,7 +100,6 @@ impl Active {
         let table = table::Table::new(strings.iter());
         let values = strings.values().map(|v| normalize(v)).collect();
         Active {
-            code: lang.code.clone(),
             table,
             values,
             cache: Mutex::new(HashMap::new()),
@@ -201,12 +198,6 @@ pub fn language() -> String {
     with_languages(|_, code| code.clone().unwrap_or_else(|| DEFAULT_CODE.into()))
 }
 
-/// How often the language has changed since the start; a cache of translated
-/// text compares it.
-pub fn generation() -> u64 {
-    GENERATION.load(Ordering::Relaxed)
-}
-
 fn apply(list: &[Language], code: &mut Option<String>, target: &str) {
     let lang = list.iter().find(|l| l.code == target);
     let active = lang
@@ -220,7 +211,6 @@ fn apply(list: &[Language], code: &mut Option<String>, target: &str) {
         m.clear();
     }
     *code = Some(target.to_string());
-    GENERATION.fetch_add(1, Ordering::Relaxed);
 }
 
 /// Put `wanted` (a code, or what [`files::match_code`] maps to one) in force.

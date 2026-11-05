@@ -592,7 +592,7 @@ impl Map3d {
             painter.text(
                 rect.center(),
                 egui::Align2::CENTER_CENTER,
-                text,
+                crate::i18n::tr(&text),
                 egui::FontId::proportional(13.0),
                 crate::ui::style::text_2(),
             );

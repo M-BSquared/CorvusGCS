@@ -47,7 +47,6 @@ struct Session {
     /// -1 is the start page.
     step: i32,
     languages: Vec<Choice>,
-    lang_load: Option<Pending<Result<Value, String>>>,
     message: Option<String>,
     saving: Option<Pending<Result<(), String>>>,
     height: f32,
@@ -103,8 +102,8 @@ impl Welcome {
     }
 
     /// Opens the dialog at once, whatever the backend says (`--page welcome`).
-    pub fn open_now(&mut self, server: &Server, ctx: &egui::Context, cfg: Value) {
-        self.session = Some(Session::new(server, ctx, cfg));
+    pub fn open_now(&mut self, server: &Server, cfg: Value) {
+        self.session = Some(Session::new(server, cfg));
     }
 
     /// Whether the dialog is up or about to be: the update notice waits for
@@ -118,7 +117,7 @@ impl Welcome {
         if let Some(cfg) = self.check.as_ref().and_then(Pending::take) {
             self.check = None;
             if let Some(cfg) = cfg {
-                self.session = Some(Session::new(server, ctx, cfg));
+                self.session = Some(Session::new(server, cfg));
             }
         }
         let Some(s) = self.session.as_mut() else {
@@ -133,47 +132,21 @@ impl Welcome {
 }
 
 impl Session {
-    fn new(server: &Server, ctx: &egui::Context, base: Value) -> Session {
+    fn new(server: &Server, base: Value) -> Session {
         let initial = model::choices_from(&base);
-        let s = server.clone();
         Session {
             server: server.clone(),
             base,
             choices: initial.clone(),
             initial,
             step: -1,
-            languages: vec![Choice::new("en", "English")],
-            lang_load: Some(Pending::spawn(ctx, move || http::get_json(&s, "/api/languages"))),
+            languages: crate::i18n::languages()
+                .into_iter()
+                .map(|l| Choice::new(l.code, l.label))
+                .collect(),
             message: None,
             saving: None,
             height: 300.0,
-        }
-    }
-
-    fn poll(&mut self) {
-        if let Some(Ok(v)) = self.lang_load.as_ref().and_then(Pending::take) {
-            self.lang_load = None;
-            let list: Vec<Choice> = v
-                .get("languages")
-                .and_then(Value::as_array)
-                .map(|l| {
-                    l.iter()
-                        .map(|l| {
-                            let s = |k: &str| l.get(k).and_then(Value::as_str).unwrap_or("").to_string();
-                            let (name, native) = (s("name"), s("native_name"));
-                            let label = if name != native {
-                                format!("{native} ({name})")
-                            } else {
-                                native
-                            };
-                            Choice::new(s("code"), label)
-                        })
-                        .collect()
-                })
-                .unwrap_or_default();
-            if !list.is_empty() {
-                self.languages = list;
-            }
         }
     }
 
@@ -182,7 +155,6 @@ impl Session {
     }
 
     fn show(&mut self, ctx: &egui::Context, server: &Server, logo: &egui::ImageSource<'static>) -> Event {
-        self.poll();
         let mut event = Event::None;
         if let Some(r) = self.saving.as_ref().and_then(Pending::take) {
             self.saving = None;
@@ -355,8 +327,9 @@ impl Session {
             );
             icons::paint(ui, "chevron-right", chev, style::text_3());
             let tx = c.right() + 12.0;
-            let t = style::galley(ui, title, 13.0, Weight::W600, style::text_1(), 0.0);
-            let d = style::galley(ui, desc, 11.5, Weight::W400, style::text_3(), 0.0);
+            let room = chev.left() - 4.0 - tx;
+            let t = crate::ui::text::clamped(ui, title, 13.0, Weight::W600, style::text_1(), 0.0, room, 1, None);
+            let d = crate::ui::text::clamped(ui, desc, 11.5, Weight::W400, style::text_3(), 0.0, room, 1, None);
             let block = t.size().y + 1.0 + d.size().y;
             let ty = r.center().y - block / 2.0;
             let clip = Rect::from_min_max(Pos2::new(tx, r.top()), Pos2::new(chev.left() - 4.0, r.bottom()));

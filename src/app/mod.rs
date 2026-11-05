@@ -127,6 +127,7 @@ impl App {
     /// Puts what a config names in force: theme, size, units, the Mission
     /// entry, the tabs, the controls, the HUD.
     fn apply_effects(&mut self, ctx: &egui::Context, e: settings::Effects) {
+        crate::i18n::set_language(&e.language);
         style::set_theme(e.theme);
         style::apply(ctx);
         self.logo = logo_source();
@@ -562,6 +563,8 @@ impl App {
 impl App {
     /// `CORVUS_GUI_SHOT=file.png` saves the window's own pixels once
     /// `CORVUS_GUI_SHOT_AFTER` seconds (9 by default) have passed, and quits.
+    /// `CORVUS_GUI_I18N_MISSING=file.json` also writes the English texts the
+    /// language in force did not have, as a blank language file's `strings`.
     fn shoot(&mut self, ctx: &egui::Context, raw_input: &egui::RawInput) {
         let Ok(path) = std::env::var("CORVUS_GUI_SHOT") else {
             return;
@@ -572,6 +575,13 @@ impl App {
             .unwrap_or(9.0);
         if raw_input.time.unwrap_or(0.0) > after && !self.shot_sent {
             self.shot_sent = true;
+            if let Ok(out) = std::env::var("CORVUS_GUI_I18N_MISSING") {
+                let template: serde_json::Map<String, Value> = crate::i18n::missing()
+                    .into_iter()
+                    .map(|k| (k, Value::String(String::new())))
+                    .collect();
+                let _ = std::fs::write(out, serde_json::to_string_pretty(&template).unwrap_or_default());
+            }
             let ctx_done = ctx.clone();
             ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::ScreenshotCallback::new(
                 move |image| {
@@ -729,6 +739,7 @@ pub fn run(
     // Before anything is built, so every colour of the first frame is the
     // theme's (js/theme.js fromConfig).
     style::set_theme(style::theme_from_config(&config));
+    crate::i18n::set_language(&crate::i18n::from_config(&config));
     let ui_flag = |k: &str, default: bool| {
         config
             .get("ui")
@@ -824,7 +835,7 @@ pub fn run(
                 welcome: {
                     let mut w = crate::welcome::Welcome::start(&server, &ctx);
                     if page == Some("welcome") {
-                        w.open_now(&server, &ctx, config.clone());
+                        w.open_now(&server, config.clone());
                     }
                     w
                 },

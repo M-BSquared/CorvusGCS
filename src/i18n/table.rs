@@ -80,6 +80,9 @@ impl Pattern {
 /// One language's strings, ready to look up.
 pub struct Table {
     exact: HashMap<String, String>,
+    /// The exact entries again in capitals, for text a page sets in capitals
+    /// where the web interface leaves that to CSS `text-transform`.
+    upper: HashMap<String, String>,
     patterns: Vec<Pattern>,
 }
 
@@ -147,11 +150,19 @@ impl Table {
                 weight: key.len(),
             });
         }
-        patterns.sort_by(|a, b| b.weight.cmp(&a.weight));
-        Table { exact, patterns }
+        patterns.sort_by_key(|p| std::cmp::Reverse(p.weight));
+        let mut upper = HashMap::new();
+        for (k, v) in &exact {
+            let (uk, uv) = (k.to_uppercase(), v.to_uppercase());
+            if uk != *k && !exact.contains_key(&uk) {
+                upper.entry(uk).or_insert(uv);
+            }
+        }
+        Table { exact, upper, patterns }
     }
 
     /// How many entries it holds.
+    #[cfg(test)]
     pub fn len(&self) -> usize {
         self.exact.len() + self.patterns.len()
     }
@@ -170,6 +181,9 @@ impl Table {
             return None;
         }
         if let Some(hit) = self.exact.get(key) {
+            return Some(hit.clone());
+        }
+        if let Some(hit) = self.upper.get(key) {
             return Some(hit.clone());
         }
         if depth > DEPTH_MAX {
@@ -244,6 +258,14 @@ mod tests {
             ("Delete {a} items", "{a} Eintraege loeschen"),
         ]);
         assert_eq!(t.lookup("Delete 3 items"), Some("3 Eintraege loeschen".into()));
+    }
+
+    #[test]
+    fn capitals_find_the_mixed_case_entry() {
+        let t = table(&[("Mode", "Modus"), ("MODE", "Betriebsart"), ("Battery", "Akku")]);
+        assert_eq!(t.lookup("MODE"), Some("Betriebsart".into()));
+        assert_eq!(t.lookup("BATTERY"), Some("AKKU".into()));
+        assert_eq!(t.lookup("BATTERIES"), None);
     }
 
     #[test]
