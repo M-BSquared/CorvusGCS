@@ -22,7 +22,7 @@ use crate::setup::sik_model::{self as model, Edits, Field, Kind, Loaded, Side};
 use crate::ui::card;
 use crate::ui::formfield as ff;
 use crate::ui::kit::{self, Button, Choice, Variant};
-use crate::ui::message::{self, Kind as Msg};
+use crate::ui::message::{self, Tone as Msg};
 use crate::ui::modal;
 use crate::ui::pagekit;
 use crate::ui::style::{self, Weight};
@@ -587,13 +587,7 @@ impl SikPage {
             }
             if dirty {
                 let p = ui.painter();
-                p.rect_filled(rect, style::RADIUS_BTN, style::accent_dim());
-                p.rect_stroke(
-                    rect,
-                    style::RADIUS_BTN,
-                    Stroke::new(1.0, style::accent()),
-                    egui::StrokeKind::Inside,
-                );
+                card::paint(p, rect, card::Look::Chosen);
             }
             ff::CONTROL_H
         });
@@ -738,13 +732,7 @@ impl SikPage {
                 .collect();
             let h: f32 = gs.iter().map(|g| g.size().y).sum::<f32>() + 8.0 + 24.0 + 2.0;
             let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, h));
-            ui.painter().rect_filled(r, style::RADIUS_BTN, style::critical_dark());
-            ui.painter().rect_stroke(
-                r,
-                style::RADIUS_BTN,
-                Stroke::new(1.0, style::critical()),
-                egui::StrokeKind::Inside,
-            );
+            card::paint(ui.painter(), r, card::Look::Tone(crate::ui::message::Tone::Err));
             let mut ty = y + 13.0;
             for g in gs {
                 let gh = g.size().y;
@@ -775,17 +763,7 @@ impl SikPage {
 
 /// `.params-desc`: a grey box that explains a card; returns its bottom.
 fn desc_box(ui: &egui::Ui, x: f32, y: f32, w: f32, text: &str) -> f32 {
-    let g = kit::wrapped_weight(ui, text, 12.0, Weight::W400, style::text_2(), w - 28.0, 1.55);
-    let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, g.size().y + 24.0 + 2.0));
-    ui.painter().rect_filled(r, style::RADIUS_BTN, style::surface_2());
-    ui.painter().rect_stroke(
-        r,
-        style::RADIUS_BTN,
-        Stroke::new(1.0, style::border_soft()),
-        egui::StrokeKind::Inside,
-    );
-    ui.painter().galley(r.min + Vec2::new(15.0, 13.0), g, style::text_2());
-    r.bottom()
+    message::boxed(ui, x, y, w, text, Msg::Plain)
 }
 
 /// `.page-row`: a label at the left and a mono value at the right, a rule

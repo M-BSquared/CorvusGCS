@@ -13,10 +13,11 @@ use serde_json::{json, Value};
 use crate::net::bg::Pending;
 use crate::net::http::{self, Server};
 use crate::setup::rtk_model::{self as model, Form};
-use crate::ui::card;
+use crate::ui::card::{self};
 use crate::ui::chip::Chip;
 use crate::ui::formfield as ff;
 use crate::ui::kit::{self, Button, Choice, Variant};
+use crate::ui::message::{self, Tone};
 use crate::ui::pagekit;
 use crate::ui::style::{self, Weight};
 
@@ -327,25 +328,7 @@ impl RtkPage {
         let bg = card::reserve(&painter);
         let (ix, iw) = (x + 19.0, w - 38.0);
         let mut cy = pagekit::section_title(ui, ix, y + 19.0, iw, "Where the corrections come from") + 12.0;
-        let g = kit::wrapped_weight(
-            ui,
-            "Corvus looks for an RTK receiver on this computer by itself and starts correcting as soon as one is plugged in. Nothing here needs changing for that. The flight controller's own port is never used, so the aircraft's telemetry link is never at risk.",
-            12.0,
-            Weight::W400,
-            style::text_2(),
-            iw - 28.0,
-            1.55,
-        );
-        let r = Rect::from_min_size(Pos2::new(ix, cy), Vec2::new(iw, g.size().y + 24.0 + 2.0));
-        painter.rect_filled(r, style::RADIUS_BTN, style::surface_2());
-        painter.rect_stroke(
-            r,
-            style::RADIUS_BTN,
-            Stroke::new(1.0, style::border_soft()),
-            egui::StrokeKind::Inside,
-        );
-        painter.galley(r.min + Vec2::new(15.0, 13.0), g, style::text_2());
-        cy = r.bottom() + 12.0;
+        cy = message::boxed(ui, ix, cy, iw, "Corvus looks for an RTK receiver on this computer by itself and starts correcting as soon as one is plugged in. Nothing here needs changing for that. The flight controller's own port is never used, so the aircraft's telemetry link is never at risk.", Tone::Plain) + 12.0;
 
         let mut save = false;
         // the master switch

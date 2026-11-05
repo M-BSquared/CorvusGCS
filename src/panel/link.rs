@@ -13,7 +13,7 @@ use serde_json::{json, Value};
 
 use crate::net::bg::Pending;
 use crate::net::http::{self, Server};
-use crate::ui::card;
+use crate::ui::card::{self, Look};
 use crate::ui::icons;
 use crate::ui::kit::{self, Button, Choice, Variant};
 use crate::ui::segmented::{self, Segment};
@@ -689,8 +689,7 @@ impl LinkTab {
                     };
                     {
                         let r = row;
-                        painter.rect_filled(r, style::RADIUS_BTN, fill);
-                        painter.rect_stroke(r, style::RADIUS_BTN, Stroke::new(1.0, stroke), egui::StrokeKind::Inside);
+                        card::paint(&painter, r, Look::custom(fill, stroke, style::RADIUS_BTN));
                     }
                     let ng = style::galley(
                         ui,

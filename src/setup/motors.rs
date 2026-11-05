@@ -25,6 +25,7 @@ use crate::setup::check::{self, Check};
 use crate::setup::schema_form::{self, Field, FormState, Look};
 use crate::ui::card;
 use crate::ui::kit::{self, Button, Choice, Variant};
+use crate::ui::message::Tone;
 use crate::ui::pagekit;
 use crate::ui::style::{self, Weight};
 
@@ -748,13 +749,7 @@ impl MotorsPage {
             );
             let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, g.size().y + 24.0));
             {
-                ui.painter().rect_filled(r, style::RADIUS_BTN, style::warning_dark());
-                ui.painter().rect_stroke(
-                    r,
-                    style::RADIUS_BTN,
-                    Stroke::new(1.0, style::warning()),
-                    egui::StrokeKind::Inside,
-                );
+                card::paint(ui.painter(), r, card::Look::Tone(Tone::Warn));
             }
             ui.painter().galley(r.min + Vec2::new(14.0, 12.0), g, style::warning());
             y = r.bottom() + 4.0;
@@ -814,13 +809,7 @@ impl MotorsPage {
         let card = Rect::from_min_max(Pos2::new(x, y), Pos2::new(x + w, r.bottom() + 19.0));
         card::paint(&painter, card, card::Look::Page);
         {
-            painter.rect_filled(r, style::RADIUS_BTN, style::surface_2());
-            painter.rect_stroke(
-                r,
-                style::RADIUS_BTN,
-                Stroke::new(1.0, style::border_soft()),
-                egui::StrokeKind::Inside,
-            );
+            card::paint(&painter, r, card::Look::Note);
         }
         painter.galley(r.min + Vec2::new(14.0, 12.0), g, style::text_2());
         cy = card.bottom();
@@ -1373,13 +1362,7 @@ impl MotorsPage {
                 .unwrap_or_else(|| schema_form::format_number(*value));
             if armed {
                 {
-                    painter.rect_filled(r, style::RADIUS_BTN, style::surface_2());
-                    painter.rect_stroke(
-                        r,
-                        style::RADIUS_BTN,
-                        Stroke::new(1.0, style::border()),
-                        egui::StrokeKind::Inside,
-                    );
+                    card::paint(&painter, r, card::Look::Raised);
                 }
                 painter.galley(
                     Pos2::new(r.left() + 8.0, r.center().y - 8.0),
@@ -1778,13 +1761,7 @@ impl MotorsPage {
                             .map_or(String::new(), |c| c.label.clone());
                         {
                             let r = sel;
-                            painter.rect_filled(r, style::RADIUS_BTN, style::surface_2());
-                            painter.rect_stroke(
-                                r,
-                                style::RADIUS_BTN,
-                                Stroke::new(1.0, style::border()),
-                                egui::StrokeKind::Inside,
-                            );
+                            card::paint(&painter, r, card::Look::Raised);
                         }
                         let g = style::galley(ui, &label, 12.0, Weight::W400, style::text_3(), 0.0);
                         ui.painter_at(sel.shrink2(Vec2::new(7.0, 0.0))).galley(
@@ -1937,13 +1914,7 @@ impl MotorsPage {
         let strip = Rect::from_min_size(Pos2::new(ix, cy), Vec2::new(iw, strip_h));
         {
             let r = strip;
-            painter.rect_filled(r, style::RADIUS_BTN, style::critical_dark());
-            painter.rect_stroke(
-                r,
-                style::RADIUS_BTN,
-                Stroke::new(1.0, style::critical()),
-                egui::StrokeKind::Inside,
-            );
+            card::paint(&painter, r, card::Look::Tone(Tone::Err));
         }
         painter.galley(
             Pos2::new(strip.left() + 10.0, strip.top() + 7.0),
@@ -1965,8 +1936,15 @@ impl MotorsPage {
             self.props_off = !self.props_off;
         }
         let on = self.props_off;
-        painter.rect_filled(sw, 10.0, if on { style::accent() } else { style::surface_3() });
-        painter.rect_stroke(sw, 10.0, Stroke::new(1.0, style::border()), egui::StrokeKind::Inside);
+        card::paint(
+            &painter,
+            sw,
+            card::Look::custom(
+                if on { style::accent() } else { style::surface_3() },
+                style::border(),
+                10,
+            ),
+        );
         painter.circle_filled(
             Pos2::new(if on { sw.right() - 10.0 } else { sw.left() + 10.0 }, sw.center().y),
             8.0,

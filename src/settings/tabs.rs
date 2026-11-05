@@ -7,8 +7,10 @@ use serde_json::{json, Value};
 
 use super::model;
 use super::SettingsPage;
-use crate::ui::form::{self, Form, Opt, Tone, CONTROL_H};
+use crate::ui::form::{self, Form, CONTROL_H};
 use crate::ui::kit::{self, Button, Choice, Variant};
+use crate::ui::message::Tone;
+use crate::ui::optioncards::Card;
 
 /// One switch of the config.
 pub(super) struct Sw {
@@ -273,7 +275,7 @@ impl SettingsPage {
             form::card(ui, f, "Top bar", |ui, f| {
                 self.switches(ui, f, &[TOP_BAR_DOTS]);
                 let current = model::altitude_ref(&self.cfg);
-                let opts: Vec<Opt> = model::ALTITUDE_REFS.iter().map(|o| Opt::new(o.0, o.1, o.2)).collect();
+                let opts: Vec<Card> = model::ALTITUDE_REFS.iter().map(|o| Card::new(o.0, o.1, o.2)).collect();
                 let mut picked = None;
                 form::field(
                     ui,
@@ -444,12 +446,9 @@ impl SettingsPage {
 
     fn theme_card(&mut self, ui: &mut egui::Ui, f: &mut Form) {
         let current = crate::ui::style::theme_from_config(&self.cfg);
-        let opts: Vec<Opt> = model::THEMES
+        let opts: Vec<Card> = model::THEMES
             .iter()
-            .map(|t| Opt {
-                swatch: Some(t.3),
-                ..Opt::new(t.0, t.1, t.2)
-            })
+            .map(|t| Card::new(t.0, t.1, t.2).swatch(t.3))
             .collect();
         let mut picked = None;
         form::card(ui, f, "Color theme", |ui, f| {
@@ -492,7 +491,7 @@ impl SettingsPage {
     fn units_card(&mut self, ui: &mut egui::Ui, f: &mut Form) {
         let units = model::units_of(&self.cfg);
         let preset = model::system_of(&units).unwrap_or("");
-        let opts: Vec<Opt> = model::UNIT_SYSTEMS.iter().map(|s| Opt::new(s.0, s.1, s.2)).collect();
+        let opts: Vec<Card> = model::UNIT_SYSTEMS.iter().map(|s| Card::new(s.0, s.1, s.2)).collect();
         let mut new_units: Option<[String; 4]> = None;
         form::card(ui, f, "Units", |ui, f| {
             let mut picked = None;
@@ -537,7 +536,7 @@ impl SettingsPage {
     }
 }
 
-const FIELD_GAP: f32 = form::FIELD_GAP;
+const FIELD_GAP: f32 = crate::ui::formfield::GAP;
 
 #[cfg(test)]
 mod tests {

@@ -10,8 +10,9 @@ use super::{model, AnalysisPage, View};
 use crate::net::bg::Pending;
 use crate::net::http;
 use crate::ui::card::{self, Look};
-use crate::ui::form::{self, Form, Tone};
+use crate::ui::form::{self, Form};
 use crate::ui::kit::{self, Button, Variant};
+use crate::ui::message::Tone;
 use crate::ui::style::{self, Weight};
 
 /// `SCOPE_POLL_MS`.

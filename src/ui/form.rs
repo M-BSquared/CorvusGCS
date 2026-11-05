@@ -9,16 +9,16 @@
 use eframe::egui::{self, Color32, Pos2, Rect, Stroke, Vec2};
 
 use crate::ui::card::{self, Look};
+use crate::ui::formfield;
 use crate::ui::icons;
 use crate::ui::kit;
+use crate::ui::message::{self, Tone};
+use crate::ui::optioncards::{self, Card};
 use crate::ui::pagekit;
 use crate::ui::popover;
 use crate::ui::style::{self, Weight};
 
-/// `.field` and `.page-card` spacing.
-pub const FIELD_GAP: f32 = 5.0;
-/// A `.field-input` / `.field-select` at 12 px with 8 px padding.
-pub const CONTROL_H: f32 = 32.5;
+pub use crate::ui::formfield::CONTROL_H;
 const CARD_PAD: f32 = 19.0;
 
 /// Where the next block goes.
@@ -83,20 +83,9 @@ impl Form {
     }
 }
 
-fn paint_hint(ui: &egui::Ui, at: Pos2, text: &str, w: f32) -> f32 {
-    if text.is_empty() {
-        return 0.0;
-    }
-    let g = kit::wrapped_weight(ui, text, 10.5, Weight::W400, style::text_3(), w, 1.4);
-    let h = g.size().y;
-    ui.painter().galley(at, g, style::text_3());
-    h
-}
-
 /// A muted note under a card's fields (`.field-hint` as a block).
 pub fn note(ui: &egui::Ui, f: &mut Form, text: &str) {
-    let h = paint_hint(ui, f.pos(), text, f.w);
-    f.y += h;
+    f.y += formfield::hint(ui, f.x, f.y, f.w, text);
     f.stacked_switch = false;
 }
 
@@ -109,23 +98,6 @@ pub fn desc(ui: &egui::Ui, f: &mut Form, text: &str) {
     f.stacked_switch = false;
 }
 
-/// The caption of a field: 10 px capitals, with the hint icon beside it when
-/// there is `info`. Returns the height.
-fn caption(ui: &mut egui::Ui, f: &Form, label: &str, info: &str, id: &str) -> f32 {
-    if label.is_empty() {
-        return 0.0;
-    }
-    let g = style::galley(ui, &label.to_uppercase(), 10.0, Weight::W600, style::text_3(), 0.7);
-    let h = g.size().y.max(if info.is_empty() { 0.0 } else { 16.0 });
-    let gw = g.size().x;
-    ui.painter()
-        .galley(Pos2::new(f.x, f.y + (h - g.size().y) / 2.0), g, style::text_3());
-    if !info.is_empty() {
-        popover::info(ui, Pos2::new(f.x + gw + 6.0 + 8.0, f.y + h / 2.0), label, info, id);
-    }
-    h
-}
-
 /// A `.field`: caption, the control `draw` paints at the given `x, y, w` and
 /// returns its height of, then the hint.
 pub fn field(
@@ -136,17 +108,8 @@ pub fn field(
     hint: &str,
     draw: impl FnOnce(&mut egui::Ui, f32, f32, f32) -> f32,
 ) {
-    let mut y = f.y;
-    let cap = caption(ui, f, label, info, label);
-    if cap > 0.0 {
-        y += cap + FIELD_GAP;
-    }
-    y += draw(ui, f.x, y, f.w);
-    if !hint.is_empty() {
-        y += FIELD_GAP;
-        y += paint_hint(ui, Pos2::new(f.x, y), hint, f.w);
-    }
-    f.y = y;
+    let (x, w) = (f.x, f.w);
+    f.y = formfield::field_with(ui, x, f.y, w, label, info, hint, |ui, y| draw(ui, x, y, w));
     f.stacked_switch = false;
 }
 
@@ -166,15 +129,7 @@ pub fn input(
 ) -> egui::Response {
     let mut out = None;
     field(ui, f, label, info, hint, |ui, x, y, w| {
-        let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, CONTROL_H));
-        let mut t = crate::ui::field::TextField::new(buf)
-            .hint(placeholder)
-            .mono(mono)
-            .pad(11.0, 11.0);
-        if secret {
-            t = t.password();
-        }
-        out = Some(t.show(ui, r, id));
+        out = Some(formfield::input(ui, x, y, w, buf, placeholder, mono, secret, id));
         CONTROL_H
     });
     out.expect("the field is drawn")
@@ -269,7 +224,7 @@ pub fn switch_field(
     let mut y = f.y + row_h;
     if !s.hint.is_empty() {
         y += 8.0;
-        y += paint_hint(ui, Pos2::new(f.x, y), s.hint, f.w - 50.0);
+        y += formfield::hint(ui, f.x, y, f.w - 50.0, s.hint);
     }
     f.y = y;
     f.stacked_switch = true;
@@ -326,43 +281,12 @@ pub fn row(ui: &egui::Ui, f: &mut Form, label: &str, value: &str, last: bool) {
     f.stacked_switch = false;
 }
 
-/// How a `.ui-msg` is coloured.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Tone {
-    Plain,
-    Ok,
-    Err,
-    Warn,
-}
-
 /// `.ui-msg`: a tinted line with a status dot for a severity.
 pub fn message(ui: &egui::Ui, f: &mut Form, text: &str, tone: Tone) {
     if text.is_empty() {
         return;
     }
-    let (color, fill) = match tone {
-        Tone::Plain => (style::text_2(), Color32::TRANSPARENT),
-        Tone::Ok => (style::healthy(), style::healthy_dark()),
-        Tone::Err => (style::critical(), style::critical_dark()),
-        Tone::Warn => (style::warning(), style::warning_dark()),
-    };
-    let left = if tone == Tone::Plain { 10.0 } else { 25.0 };
-    let g = kit::wrapped_weight(ui, text, 11.5, Weight::W400, color, f.w - left - 10.0, 1.4);
-    let rect = f.rect(g.size().y + 16.0);
-    if tone != Tone::Plain {
-        ui.painter().rect_filled(rect, style::RADIUS_BTN, fill);
-        ui.painter().rect_stroke(
-            rect,
-            style::RADIUS_BTN,
-            Stroke::new(1.0, color),
-            egui::StrokeKind::Inside,
-        );
-        ui.painter()
-            .circle_filled(Pos2::new(rect.left() + 14.0, rect.top() + 8.0 + 11.5 * 0.7), 3.5, color);
-    }
-    ui.painter()
-        .galley(Pos2::new(rect.left() + left, rect.top() + 8.0), g, color);
-    f.y = rect.bottom();
+    f.y = message::show(ui, f.x, f.y, f.w, text, tone);
     f.stacked_switch = false;
 }
 
@@ -406,21 +330,7 @@ pub fn block_button(ui: &mut egui::Ui, f: &mut Form, button: kit::Button<'_>, id
 /// `.params-desc` (an inset box of explaining text) or, with a tone, the amber
 /// `.params-banner`.
 pub fn box_note(ui: &egui::Ui, f: &mut Form, text: &str, tone: Tone) {
-    let (fill, line, color, size, lh) = match tone {
-        Tone::Warn => (style::warning_dark(), style::warning(), style::warning(), 11.5, 1.4),
-        _ => (style::surface_2(), style::border_soft(), style::text_2(), 12.0, 1.55),
-    };
-    let g = kit::wrapped_weight(ui, text, size, Weight::W400, color, f.w - 28.0, lh);
-    let rect = f.rect(g.size().y + 24.0);
-    ui.painter().rect_filled(rect, style::RADIUS_BTN, fill);
-    ui.painter().rect_stroke(
-        rect,
-        style::RADIUS_BTN,
-        Stroke::new(1.0, line),
-        egui::StrokeKind::Inside,
-    );
-    ui.painter().galley(rect.min + Vec2::new(14.0, 12.0), g, color);
-    f.y = rect.bottom();
+    f.y = message::boxed(ui, f.x, f.y, f.w, text, tone);
     f.stacked_switch = false;
 }
 
@@ -438,158 +348,21 @@ pub fn head_title(ui: &egui::Ui, at: Pos2, text: &str) -> (f32, f32) {
     (w, h + 9.0)
 }
 
-/// One option of `option_cards`.
-#[derive(Clone, Debug)]
-pub struct Opt {
-    pub id: String,
-    pub label: String,
-    pub desc: String,
-    pub icon: Option<&'static str>,
-    pub swatch: Option<[u32; 3]>,
-}
-
-impl Opt {
-    pub fn new(id: &str, label: &str, desc: &str) -> Opt {
-        Opt {
-            id: id.into(),
-            label: label.into(),
-            desc: desc.into(),
-            icon: None,
-            swatch: None,
-        }
-    }
-}
-
-/// `.option-cards`: a grid of selectable cards. Returns the id picked.
+/// `.option-cards`: a grid of selectable cards. Returns the id picked, never
+/// the one already chosen.
 pub fn option_cards(
     ui: &mut egui::Ui,
     f: &mut Form,
     id: &str,
-    opts: &[Opt],
+    opts: &[Card],
     selected: &str,
     columns: usize,
 ) -> Option<String> {
     let cols = columns.clamp(1, opts.len().max(1));
-    let card_w = (f.w - 8.0 * (cols as f32 - 1.0)) / cols as f32;
-    let mut picked = None;
-    let mut bottom = f.y;
-    let mut row_top = f.y;
-    let mut row_h = 0.0f32;
-    for (row_start, chunk) in opts.chunks(cols).enumerate().map(|(r, c)| (r * cols, c)) {
-        let text_w = |o: &Opt| {
-            let lead = if o.swatch.is_some() {
-                34.0 + 10.0
-            } else if o.icon.is_some() {
-                16.0 + 10.0
-            } else {
-                0.0
-            };
-            card_w - 2.0 - 24.0 - lead
-        };
-        let heights: Vec<f32> = chunk
-            .iter()
-            .map(|o| {
-                let l = style::galley(ui, &o.label, 12.0, Weight::W600, style::text_1(), 0.0);
-                let d = style::galley(ui, &o.desc, 10.5, Weight::W400, style::text_3(), 0.0);
-                let text = l.size().y + if o.desc.is_empty() { 0.0 } else { 2.0 + d.size().y };
-                let lead = if o.swatch.is_some() {
-                    22.0
-                } else if o.icon.is_some() {
-                    16.0
-                } else {
-                    0.0
-                };
-                2.0 + 20.0 + text.max(lead)
-            })
-            .collect();
-        row_h = heights.iter().copied().fold(0.0, f32::max);
-        for (i, o) in chunk.iter().enumerate() {
-            let col = i as f32;
-            let r = Rect::from_min_size(Pos2::new(f.x + col * (card_w + 8.0), row_top), Vec2::new(card_w, row_h));
-            let resp = ui.interact(r, ui.scope_id().with((id, row_start + i)), egui::Sense::click());
-            let on = o.id == selected;
-            let p = ui.painter();
-            if on {
-                p.rect_stroke(
-                    r.expand(1.0),
-                    style::RADIUS_BTN + 1,
-                    Stroke::new(1.0, style::accent()),
-                    egui::StrokeKind::Inside,
-                );
-                p.rect_filled(r, style::RADIUS_BTN, style::accent_dark());
-                p.rect_stroke(
-                    r,
-                    style::RADIUS_BTN,
-                    Stroke::new(1.0, style::accent()),
-                    egui::StrokeKind::Inside,
-                );
-            } else {
-                let (fill, line) = if resp.hovered() {
-                    (style::glass(0.95), style::tint(0.15))
-                } else {
-                    (style::glass(0.82), style::tint(0.09))
-                };
-                p.rect_filled(r, style::RADIUS_BTN, fill);
-                p.rect_stroke(r, style::RADIUS_BTN, Stroke::new(1.0, line), egui::StrokeKind::Inside);
-            }
-            let text_color = if on || resp.hovered() {
-                style::text_1()
-            } else {
-                style::text_2()
-            };
-            let mut tx = r.left() + 13.0;
-            if let Some(sw) = o.swatch {
-                let s = Rect::from_min_size(Pos2::new(tx, r.center().y - 11.0), Vec2::new(34.0, 22.0));
-                let third = s.width() / 3.0;
-                for (k, c) in sw.iter().enumerate() {
-                    let cell = Rect::from_min_size(
-                        Pos2::new(s.left() + third * k as f32, s.top()),
-                        Vec2::new(third, s.height()),
-                    );
-                    ui.painter().rect_filled(cell, 0, rgb(*c));
-                }
-                ui.painter()
-                    .rect_stroke(s, 5, Stroke::new(1.0, style::tint(0.12)), egui::StrokeKind::Inside);
-                tx += 34.0 + 10.0;
-            } else if let Some(icon) = o.icon {
-                icons::paint(
-                    ui,
-                    icon,
-                    Rect::from_center_size(Pos2::new(tx + 8.0, r.center().y), Vec2::splat(16.0)),
-                    text_color,
-                );
-                tx += 16.0 + 10.0;
-            }
-            let l = style::galley(ui, &o.label, 12.0, Weight::W600, text_color, 0.0);
-            let d_color = if on { style::text_2() } else { style::text_3() };
-            let d = style::galley(ui, &o.desc, 10.5, Weight::W400, d_color, 0.0);
-            let total = l.size().y + if o.desc.is_empty() { 0.0 } else { 2.0 + d.size().y };
-            let clip = Rect::from_min_size(
-                Pos2::new(tx, r.top() + 1.0),
-                Vec2::new(text_w(o).max(10.0), r.height() - 2.0),
-            );
-            let top = r.center().y - total / 2.0;
-            let lh = l.size().y;
-            let pa = ui.painter_at(clip);
-            pa.galley(Pos2::new(tx, top), l, text_color);
-            if !o.desc.is_empty() {
-                pa.galley(Pos2::new(tx, top + lh + 2.0), d, d_color);
-            }
-            if resp.clicked() && !on {
-                picked = Some(o.id.clone());
-            }
-        }
-        bottom = row_top + row_h;
-        row_top = bottom + 8.0;
-    }
-    let _ = row_h;
+    let (bottom, pressed) = optioncards::show(ui, f.x, f.y, f.w, opts, Some(selected), cols, id);
     f.y = bottom;
     f.stacked_switch = false;
-    picked
-}
-
-fn rgb(c: u32) -> Color32 {
-    Color32::from_rgb((c >> 16) as u8, (c >> 8) as u8, c as u8)
+    pressed.filter(|p| p != selected)
 }
 
 /// `.ui-slider`: a stepped slider with a mark and a caption per step. Returns

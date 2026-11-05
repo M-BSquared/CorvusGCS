@@ -62,7 +62,7 @@ use crate::setup::sik::SikPage;
 use crate::setup::tuning::TuningPage;
 use crate::setup::video::VideoPage;
 use crate::setup::video_window::VideoWindows;
-use crate::ui::card;
+use crate::ui::card::{self, Look};
 use crate::ui::pagekit;
 use crate::ui::style::{self, Weight};
 
@@ -434,13 +434,7 @@ impl SetupPage {
                         );
                         let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, g.size().y + 24.0));
                         {
-                            ui.painter().rect_filled(r, style::RADIUS_BTN, style::surface_2());
-                            ui.painter().rect_stroke(
-                                r,
-                                style::RADIUS_BTN,
-                                Stroke::new(1.0, style::border_soft()),
-                                egui::StrokeKind::Inside,
-                            );
+                            card::paint(ui.painter(), r, Look::Note);
                         }
                         ui.painter().galley(r.min + Vec2::new(14.0, 12.0), g, style::text_2());
                         y = r.bottom();

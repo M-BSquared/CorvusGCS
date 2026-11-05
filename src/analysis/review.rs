@@ -17,8 +17,9 @@ use crate::data::units::Units;
 use crate::net::bg::Pending;
 use crate::net::http::{self, Server};
 use crate::ui::card::{self, Look};
-use crate::ui::form::{self, Form, Tone};
+use crate::ui::form::{self, Form};
 use crate::ui::kit::{self, Button, Choice, Variant};
+use crate::ui::message::Tone;
 use crate::ui::style::{self, Weight};
 
 /// One log read into what the page shows.
@@ -754,9 +755,7 @@ fn finding_row(ui: &mut egui::Ui, f: &mut Form, fnd: &Value, open: bool) -> bool
     };
     let h = 16.0 + 2.0 + head_h + detail_h;
     let r = f.rect(h);
-    ui.painter().rect_filled(r, style::RADIUS_BTN, fill);
-    ui.painter()
-        .rect_stroke(r, style::RADIUS_BTN, Stroke::new(1.0, line), egui::StrokeKind::Inside);
+    card::paint(ui.painter(), r, Look::custom(fill, line, style::RADIUS_BTN));
     let icon = match level {
         "ok" => "circle-check",
         "note" => "info",

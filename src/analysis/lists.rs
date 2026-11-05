@@ -7,8 +7,9 @@ use serde_json::{json, Value};
 
 use super::{model, AnalysisPage, View};
 use crate::ui::card::{self, Look};
-use crate::ui::form::{self, Form, Tone};
+use crate::ui::form::{self, Form};
 use crate::ui::kit::{self, Button, Choice, Variant};
+use crate::ui::message::Tone;
 use crate::ui::style::{self, Weight};
 
 /// `TLOG_ROWS`.
@@ -289,12 +290,10 @@ impl AnalysisPage {
                             Stroke::new(1.8, Color32::WHITE),
                         );
                     } else {
-                        ui.painter().rect_filled(bx, 3, style::surface_1());
-                        ui.painter().rect_stroke(
+                        card::paint(
+                            ui.painter(),
                             bx,
-                            3,
-                            Stroke::new(1.0, style::border_strong()),
-                            egui::StrokeKind::Inside,
+                            Look::custom(style::surface_1(), style::border_strong(), 3),
                         );
                     }
                     let tx = bx.right() + 10.0;
@@ -310,9 +309,11 @@ impl AnalysisPage {
                             Pos2::new(tx + tw + 7.0, row.top() + 7.0 + (th - (tag.size().y + 2.0)) / 2.0),
                             Vec2::new(tag.size().x + 12.0, tag.size().y + 2.0),
                         );
-                        ui.painter().rect_filled(r, 4, style::healthy_dark());
-                        ui.painter()
-                            .rect_stroke(r, 4, Stroke::new(1.0, style::healthy()), egui::StrokeKind::Inside);
+                        card::paint(
+                            ui.painter(),
+                            r,
+                            Look::custom(style::healthy_dark(), style::healthy(), 4),
+                        );
                         ui.painter().galley(r.min + Vec2::new(6.0, 1.0), tag, style::healthy());
                     }
                     let mut meta = format!(

@@ -19,7 +19,7 @@ use crate::panel::link::LinkTab;
 use crate::term::session::SshSession;
 use crate::term::view::TermState;
 use crate::term::window::TermWindow;
-use crate::ui::card;
+use crate::ui::card::{self, Look};
 use crate::ui::icons;
 use crate::ui::kit::{self, Button, Variant};
 use crate::ui::style::{self, Weight};
@@ -547,13 +547,7 @@ impl Panel {
             let card = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, 13.0 * 2.0 + 18.0));
             {
                 let r = card;
-                painter.rect_filled(r, style::RADIUS, style::surface_2());
-                painter.rect_stroke(
-                    r,
-                    style::RADIUS,
-                    Stroke::new(1.0, style::border()),
-                    egui::StrokeKind::Inside,
-                );
+                card::paint(&painter, r, Look::Panel);
             }
             let g = style::galley(
                 ui,
@@ -582,13 +576,7 @@ impl Panel {
             let card = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, 13.0 * 2.0 + 34.0 + 10.0 + 38.0 + error_h));
             {
                 let r = card;
-                painter.rect_filled(r, style::RADIUS, style::surface_2());
-                painter.rect_stroke(
-                    r,
-                    style::RADIUS,
-                    Stroke::new(1.0, style::border()),
-                    egui::StrokeKind::Inside,
-                );
+                card::paint(&painter, r, Look::Panel);
             }
             let inner = card.shrink(13.0);
             let tile = Rect::from_min_size(inner.min, Vec2::splat(34.0));
@@ -722,8 +710,7 @@ fn plugins_empty(ui: &egui::Ui, rect: Rect) {
     let tile = Rect::from_center_size(Pos2::new(rect.center().x, y + 26.0), Vec2::splat(52.0));
     {
         let r = tile;
-        painter.rect_filled(r, 14, style::surface_2());
-        painter.rect_stroke(r, 14, Stroke::new(1.0, style::border()), egui::StrokeKind::Inside);
+        card::paint(painter, r, Look::custom(style::surface_2(), style::border(), 14));
     }
     icons::paint(
         ui,

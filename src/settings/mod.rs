@@ -25,7 +25,8 @@ use serde_json::Value;
 use crate::data::units::Units;
 use crate::net::bg::Pending;
 use crate::net::http::{self, Server};
-use crate::ui::form::{self, Form, Tone};
+use crate::ui::form::{self, Form};
+use crate::ui::message::Tone;
 use crate::ui::{pagekit, style};
 
 use model::TABS;

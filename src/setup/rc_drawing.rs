@@ -18,6 +18,7 @@ use serde_json::Value;
 use crate::setup::rc_transmitter::{
     self as model, CalloutSide, Control, Gimbal, Glide, Kind, Store, KNOB_SPAN, LEARN_TIMEOUT_MS, STICK_R,
 };
+use crate::ui::card::{self, Look};
 use crate::ui::kit::{self, Button, Choice, Variant};
 use crate::ui::style::{self, Weight};
 
@@ -1033,8 +1034,7 @@ impl Transmitter {
                 cy += row_h + 6.0;
             }
             let r = Rect::from_min_size(Pos2::new(cx, cy), Vec2::new(cw, row_h));
-            painter.rect_filled(r, 255, style::accent_dark());
-            painter.rect_stroke(r, 255, Stroke::new(1.0, style::accent()), egui::StrokeKind::Inside);
+            card::paint(&painter, r, Look::custom(style::accent_dark(), style::accent(), 255));
             painter.galley(
                 Pos2::new(r.left() + 10.0, r.center().y - g.size().y / 2.0),
                 g.clone(),
@@ -1085,13 +1085,7 @@ impl Transmitter {
         }
         let sel = Rect::from_min_size(Pos2::new(cx, cy - 3.0), Vec2::new(sw, 28.5));
         if armed {
-            painter.rect_filled(sel, style::RADIUS_BTN, style::surface_2());
-            painter.rect_stroke(
-                sel,
-                style::RADIUS_BTN,
-                Stroke::new(1.0, style::border()),
-                egui::StrokeKind::Inside,
-            );
+            card::paint(&painter, sel, Look::Raised);
             let g = style::galley(
                 ui,
                 "Assign a function\u{2026}",

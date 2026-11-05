@@ -7,6 +7,7 @@
 use eframe::egui::{self, epaint::TextShape, Color32, Pos2, Rect, Stroke, Vec2};
 use serde_json::Value;
 
+use crate::ui::card::{self, Look};
 use crate::ui::style::{self, Weight};
 
 /// `margin: { l: 52, r: 12, t: 6, b: 62 }`.
@@ -475,12 +476,10 @@ pub fn show(ui: &mut egui::Ui, rect: Rect, plot: &Plot, bands: &[Band], st: &mut
     }
     if let (Some(a), Some(b)) = (st.drag_from, resp.interact_pointer_pos()) {
         if resp.dragged() {
-            plot_clip.rect_filled(Rect::from_two_pos(a, b), 0, style::accent().gamma_multiply(0.18));
-            plot_clip.rect_stroke(
+            card::paint(
+                &plot_clip,
                 Rect::from_two_pos(a, b),
-                0,
-                Stroke::new(1.0, style::accent()),
-                egui::StrokeKind::Inside,
+                Look::custom(style::accent().gamma_multiply(0.18), style::accent(), 0),
             );
         }
     }
@@ -525,8 +524,7 @@ pub fn show(ui: &mut egui::Ui, rect: Rect, plot: &Plot, bands: &[Band], st: &mut
                 g.size() + Vec2::new(10.0, 8.0),
             );
             let p = ui.painter().clone();
-            p.rect_filled(box_, 4, style::surface_2());
-            p.rect_stroke(box_, 4, Stroke::new(1.0, series_color(i)), egui::StrokeKind::Inside);
+            card::paint(&p, box_, Look::custom(style::surface_2(), series_color(i), 4));
             p.galley(box_.min + Vec2::new(5.0, 4.0), g, style::text_1());
         }
     }

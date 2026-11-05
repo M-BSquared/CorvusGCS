@@ -1,11 +1,12 @@
 //! The confirmations and the list of saved plans (`confirmUpload`,
 //! `readFromVehicle`, `confirmClear`, `openPlanDialog` of `mission.js`).
 
-use eframe::egui::{self, Pos2, Rect, Stroke, Vec2};
+use eframe::egui::{self, Pos2, Rect, Vec2};
 
 use crate::mission::backend::{Job, Saved};
 use crate::mission::issues::{distance_text, Issue};
 use crate::mission::{Dialog, MissionPage};
+use crate::ui::card::{self, Look};
 use crate::ui::kit::{self, Button, Variant};
 use crate::ui::modal::{self, Size};
 use crate::ui::style::{self, Weight};
@@ -223,12 +224,14 @@ fn warning_list(ui: &egui::Ui, x: f32, y: f32, w: f32, warnings: &[Issue]) -> f3
         let h = g.size().y + 12.0;
         let r = Rect::from_min_size(Pos2::new(x, cy), Vec2::new(w, h));
         let painter = ui.painter();
-        painter.rect_filled(r, style::RADIUS_BTN, style::warning().gamma_multiply(0.10));
-        painter.rect_stroke(
+        card::paint(
+            painter,
             r,
-            style::RADIUS_BTN,
-            Stroke::new(1.0, style::warning().gamma_multiply(0.45)),
-            egui::StrokeKind::Inside,
+            Look::custom(
+                style::warning().gamma_multiply(0.10),
+                style::warning().gamma_multiply(0.45),
+                style::RADIUS_BTN,
+            ),
         );
         crate::ui::icons::paint(
             ui,
@@ -259,20 +262,18 @@ fn saved_row(
     let name = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w - 34.0, h));
     let resp = ui.interact(name, ui.scope_id().with(("msaved", k)), egui::Sense::click());
     let painter = ui.painter();
-    painter.rect_filled(
+    card::paint(
+        painter,
         name,
-        style::RADIUS_BTN,
-        if resp.hovered() {
-            style::surface_hover()
-        } else {
-            style::surface_2()
-        },
-    );
-    painter.rect_stroke(
-        name,
-        style::RADIUS_BTN,
-        Stroke::new(1.0, style::border_soft()),
-        egui::StrokeKind::Inside,
+        Look::custom(
+            if resp.hovered() {
+                style::surface_hover()
+            } else {
+                style::surface_2()
+            },
+            style::border_soft(),
+            style::RADIUS_BTN,
+        ),
     );
     let tg = style::galley(ui, &p.title, 12.5, Weight::W400, style::text_1(), 0.0);
     painter.galley(

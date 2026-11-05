@@ -12,10 +12,10 @@ use crate::net::bg::Pending;
 use crate::net::http::{self, Server};
 use crate::setup::video_model::{self as model, Draft, Kind};
 use crate::setup::video_window::VideoWindows;
-use crate::ui::card;
+use crate::ui::card::{self};
 use crate::ui::formfield as ff;
 use crate::ui::kit::{self, Button, Choice, Variant};
-use crate::ui::message::{self, Kind as Msg};
+use crate::ui::message::{self, Tone as Msg};
 use crate::ui::modal;
 use crate::ui::pagekit;
 use crate::ui::style::{self, Weight};
@@ -440,25 +440,7 @@ impl VideoPage {
         let bg = card::reserve(&painter);
         let (ix, iw) = (x + 19.0, w - 38.0);
         let mut cy = pagekit::section_title(ui, ix, y + 19.0, iw, "Decoder") + 12.0;
-        let g = kit::wrapped_weight(
-            ui,
-            "RTSP cameras send H.264 or H.265, which Corvus hands to ffmpeg to decode. It runs only while a camera window is open, and stops a few seconds after the last one closes. WebRTC cameras need no ffmpeg: the window decodes them itself.",
-            12.0,
-            Weight::W400,
-            style::text_2(),
-            iw - 28.0,
-            1.55,
-        );
-        let r = Rect::from_min_size(Pos2::new(ix, cy), Vec2::new(iw, g.size().y + 24.0 + 2.0));
-        painter.rect_filled(r, style::RADIUS_BTN, style::surface_2());
-        painter.rect_stroke(
-            r,
-            style::RADIUS_BTN,
-            Stroke::new(1.0, style::border_soft()),
-            egui::StrokeKind::Inside,
-        );
-        painter.galley(r.min + Vec2::new(15.0, 13.0), g, style::text_2());
-        cy = r.bottom() + 12.0;
+        cy = message::boxed(ui, ix, cy, iw, "RTSP cameras send H.264 or H.265, which Corvus hands to ffmpeg to decode. It runs only while a camera window is open, and stops a few seconds after the last one closes. WebRTC cameras need no ffmpeg: the window decodes them itself.", Msg::Plain) + 12.0;
         if model::old_decoder(&self.status) {
             let g = kit::wrapped_weight(
                 ui,

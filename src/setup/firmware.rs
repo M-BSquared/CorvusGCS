@@ -24,6 +24,7 @@ use crate::ui::card;
 use crate::ui::formfield as ff;
 use crate::ui::icons;
 use crate::ui::kit::{self, Button, Choice, Variant};
+use crate::ui::message::{self, Tone};
 use crate::ui::pagekit;
 use crate::ui::style::{self, Weight};
 
@@ -489,15 +490,15 @@ impl FirmwarePage {
         let mut cy = pagekit::section_title(ui, ix, y + 19.0, iw, "Status") + 2.0;
         let can_flash = self.status.as_ref().is_none_or(|s| s.can_flash);
         if can_flash && !armed {
-            cy = notice(ui, ix, cy, iw, "Ready to flash.", Tone::Desc) + 14.0;
+            cy = message::boxed(ui, ix, cy, iw, "Ready to flash.", Tone::Plain) + 14.0;
         }
         if !can_flash {
             let text = self.status.as_ref().map(Status::gate_text).unwrap_or_default();
-            cy = notice(ui, ix, cy, iw, &text, Tone::Warning) + 14.0;
+            cy = message::boxed(ui, ix, cy, iw, &text, Tone::Warn) + 14.0;
         }
         // the armed notice is the last child, so it keeps no bottom margin
         if armed {
-            cy = notice(ui, ix, cy, iw, "Cannot flash while armed. Disarm first.", Tone::Warning);
+            cy = message::boxed(ui, ix, cy, iw, "Cannot flash while armed. Disarm first.", Tone::Warn);
         }
         cy + 19.0
     }
@@ -507,13 +508,13 @@ impl FirmwarePage {
         let bg = card::reserve(&painter);
         let (ix, iw) = (x + 19.0, w - 38.0);
         let mut cy = pagekit::section_title(ui, ix, y + 19.0, iw, "Firmware") + GAP;
-        cy = notice(
+        cy = message::boxed(
             ui,
             ix,
             cy,
             iw,
             "Pick PX4 or ArduPilot, a release and your board and Corvus downloads the image for you, or select a local file. Flashing reboots the autopilot into its bootloader and uploads over USB. Keep the USB cable connected.",
-            Tone::Desc,
+            Tone::Plain,
         ) + GAP;
 
         // the source switch
@@ -600,8 +601,11 @@ impl FirmwarePage {
 
         // the bar and its label
         let bar = Rect::from_min_size(Pos2::new(ix, cy), Vec2::new(iw, 8.0));
-        painter.rect_filled(bar, 4, style::surface_3());
-        painter.rect_stroke(bar, 4, Stroke::new(1.0, style::border_soft()), egui::StrokeKind::Inside);
+        card::paint(
+            &painter,
+            bar,
+            card::Look::custom(style::surface_3(), style::border_soft(), 4),
+        );
         let inner = bar.shrink(1.0);
         if self.bar.0 > 0 {
             painter.rect_filled(
@@ -670,13 +674,7 @@ impl FirmwarePage {
             galleys.iter().map(|g| g.size().y).sum::<f32>() + 2.0 * galleys.len().saturating_sub(1) as f32;
         let h = (content + 16.0).min(LOG_MAX_H) + 2.0;
         let rect = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, h));
-        painter.rect_filled(rect, style::RADIUS_BTN, style::terminal_bg());
-        painter.rect_stroke(
-            rect,
-            style::RADIUS_BTN,
-            Stroke::new(1.0, style::border_soft()),
-            egui::StrokeKind::Inside,
-        );
+        card::paint(&painter, rect, card::Look::Console);
         // the list scrolls to its end, so the newest lines are what shows
         let clip = rect.shrink2(Vec2::new(1.0, 1.0));
         let p = painter.with_clip_rect(clip);
@@ -915,30 +913,6 @@ impl FirmwarePage {
     }
 }
 
-/// The three notices the page draws.
-#[derive(Clone, Copy)]
-enum Tone {
-    /// `.params-desc`.
-    Desc,
-    /// `.params-banner`.
-    Warning,
-}
-
-/// A boxed notice (`.params-desc`, `.params-banner`); returns its bottom.
-fn notice(ui: &egui::Ui, x: f32, y: f32, w: f32, text: &str, tone: Tone) -> f32 {
-    let (size, line, color, fill, line_c) = match tone {
-        Tone::Desc => (12.0, 1.55, style::text_2(), style::surface_2(), style::border_soft()),
-        Tone::Warning => (11.5, 1.4, style::warning(), style::warning_dark(), style::warning()),
-    };
-    let g = kit::wrapped_weight(ui, text, size, Weight::W400, color, w - 30.0, line);
-    let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, g.size().y + 26.0));
-    let p = ui.painter();
-    p.rect_filled(r, style::RADIUS_BTN, fill);
-    p.rect_stroke(r, style::RADIUS_BTN, Stroke::new(1.0, line_c), egui::StrokeKind::Inside);
-    p.galley(r.min + Vec2::new(15.0, 13.0), g, color);
-    r.bottom()
-}
-
 /// `.firmware-detected`: the board the backend recognised, in the healthy
 /// colours, with a check before the sentence.
 fn detected_note(ui: &egui::Ui, x: f32, y: f32, w: f32, text: &str) -> f32 {
@@ -953,13 +927,7 @@ fn detected_note(ui: &egui::Ui, x: f32, y: f32, w: f32, text: &str) -> f32 {
     );
     let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, g.size().y + 16.0 + 2.0));
     let p = ui.painter();
-    p.rect_filled(r, style::RADIUS_BTN, style::healthy_dark());
-    p.rect_stroke(
-        r,
-        style::RADIUS_BTN,
-        Stroke::new(1.0, style::healthy()),
-        egui::StrokeKind::Inside,
-    );
+    card::paint(p, r, card::Look::Tone(crate::ui::message::Tone::Ok));
     icons::paint(
         ui,
         "circle-check",
@@ -995,13 +963,7 @@ fn board_detail(ui: &egui::Ui, x: f32, y: f32, w: f32, b: &model::Board) -> f32 
     let chip_h = 9.5 * 1.21 + 2.0;
     let h = 2.0 + 16.0 + meta_h + if chips.is_empty() { 0.0 } else { 5.0 + chip_h };
     let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, h));
-    p.rect_filled(r, style::RADIUS_BTN, style::input(0.6));
-    p.rect_stroke(
-        r,
-        style::RADIUS_BTN,
-        Stroke::new(1.0, style::border()),
-        egui::StrokeKind::Inside,
-    );
+    card::paint(p, r, card::Look::Well);
     let (ix, iw) = (r.left() + 11.0, w - 22.0);
     let top = r.top() + 9.0;
     // the size keeps its width and the file name gives way to it
@@ -1047,13 +1009,7 @@ fn toggle_button(
     }
     let resp = ui.interact(rect, ui.scope_id().with(id), egui::Sense::click());
     let p = ui.painter();
-    p.rect_filled(rect, style::RADIUS_BTN, style::accent_dim());
-    p.rect_stroke(
-        rect,
-        style::RADIUS_BTN,
-        Stroke::new(1.0, style::accent()),
-        egui::StrokeKind::Inside,
-    );
+    card::paint(p, rect, card::Look::Chosen);
     let g = style::galley(ui, label, 11.0, Weight::W600, style::text_1(), 0.1);
     let icon_w = if icon.is_some() { 13.0 + 7.0 } else { 0.0 };
     let x = rect.center().x - (icon_w + g.size().x) / 2.0;
@@ -1076,12 +1032,14 @@ fn toggle_button(
 /// A `.field-select:disabled`: the select at half strength, saying why.
 fn disabled_select(ui: &egui::Ui, rect: Rect, text: &str) {
     let p = ui.painter();
-    p.rect_filled(rect, style::RADIUS_BTN, style::input(0.6).gamma_multiply(0.5));
-    p.rect_stroke(
+    card::paint(
+        p,
         rect,
-        style::RADIUS_BTN,
-        Stroke::new(1.0, style::border().gamma_multiply(0.5)),
-        egui::StrokeKind::Inside,
+        card::Look::custom(
+            style::input(0.6).gamma_multiply(0.5),
+            style::border().gamma_multiply(0.5),
+            style::RADIUS_BTN,
+        ),
     );
     let c = style::text_3().gamma_multiply(0.5);
     let g = style::galley(ui, text, 12.0, Weight::W400, c, 0.0);

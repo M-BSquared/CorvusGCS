@@ -31,6 +31,7 @@ use crate::ui::chart::{self, Series};
 use crate::ui::chip::Chip;
 use crate::ui::icons;
 use crate::ui::kit::{self, Button, Variant};
+use crate::ui::message::Tone;
 use crate::ui::pagekit;
 use crate::ui::style::{self, Weight};
 
@@ -649,13 +650,7 @@ impl TuningPage {
             let tg = kit::wrapped_weight(ui, reason, 11.5, Weight::W400, style::warning(), tw, 1.4);
             let h = tg.size().y.max(bh) + 24.0;
             let r = Rect::from_min_size(Pos2::new(ix, cy), Vec2::new(iw, h));
-            painter.rect_filled(r, style::RADIUS_BTN, style::warning_dark());
-            painter.rect_stroke(
-                r,
-                style::RADIUS_BTN,
-                Stroke::new(1.0, style::warning()),
-                egui::StrokeKind::Inside,
-            );
+            card::paint(&painter, r, card::Look::Tone(Tone::Warn));
             painter.galley(
                 Pos2::new(r.left() + 14.0, r.center().y - tg.size().y / 2.0),
                 tg.clone(),
@@ -795,13 +790,7 @@ impl TuningPage {
         if !g.hint.is_empty() {
             let tg = kit::wrapped_weight(ui, &g.hint, 12.0, Weight::W400, style::text_2(), w - 24.0, 1.55);
             let r = Rect::from_min_size(Pos2::new(x, cy), Vec2::new(w, tg.size().y + 20.0 + 2.0));
-            painter.rect_filled(r, style::RADIUS_BTN, style::surface_2());
-            painter.rect_stroke(
-                r,
-                style::RADIUS_BTN,
-                Stroke::new(1.0, style::border_soft()),
-                egui::StrokeKind::Inside,
-            );
+            card::paint(&painter, r, card::Look::Note);
             painter.galley(Pos2::new(r.left() + 13.0, r.top() + 11.0), tg, style::text_2());
             cy = r.bottom() + 10.0;
         }
@@ -859,13 +848,7 @@ impl TuningPage {
     /// One graph: the response and, when the vehicle sends one, the setpoint.
     fn chart_host(&mut self, ui: &mut egui::Ui, spec: &ChartSpec, r: Rect, state: &Value) {
         let painter = ui.painter().clone();
-        painter.rect_filled(r, style::RADIUS_BTN, style::surface_1());
-        painter.rect_stroke(
-            r,
-            style::RADIUS_BTN,
-            Stroke::new(1.0, style::border_soft()),
-            egui::StrokeKind::Inside,
-        );
+        card::paint(&painter, r, card::Look::Quiet);
         let title = style::galley(ui, &spec.title, 11.0, Weight::W600, style::text_2(), 0.3);
         painter.galley(Pos2::new(r.left() + 13.0, r.top() + 9.0), title, style::text_2());
         // the live pill: a pulsing dot and the word
@@ -1069,8 +1052,11 @@ fn fixed_axes(ui: &mut egui::Ui, a: &model::Axes, x: f32, y: f32, w: f32) -> f32
     for l in &a.labels {
         let g = style::galley(ui, l, 11.5, Weight::W400, style::text_3(), 0.0);
         let r = Rect::from_min_size(Pos2::new(bx, top + 2.0), Vec2::splat(14.0));
-        painter.rect_filled(r, 3, style::text_3());
-        painter.rect_stroke(r, 3, Stroke::new(1.0, style::border_strong()), egui::StrokeKind::Inside);
+        card::paint(
+            &painter,
+            r,
+            card::Look::custom(style::text_3(), style::border_strong(), 3),
+        );
         painter.line(
             vec![
                 r.left_top() + Vec2::new(3.2, 7.2),

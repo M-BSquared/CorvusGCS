@@ -16,6 +16,7 @@ use serde_json::{json, Value};
 use crate::net::bg::Pending;
 use crate::net::http::{self, Server};
 use crate::net::stream::Stream;
+use crate::ui::card::{self, Look};
 use crate::ui::field::{Surface, TextField};
 use crate::ui::icons;
 use crate::ui::kit;
@@ -564,13 +565,7 @@ impl ConsoleTab {
     fn paint_stream(&self, ui: &mut egui::Ui, r: Rect) {
         let painter = ui.painter().clone();
         {
-            painter.rect_filled(r, style::RADIUS_BTN, style::terminal_bg());
-            painter.rect_stroke(
-                r,
-                style::RADIUS_BTN,
-                Stroke::new(1.0, style::border_soft()),
-                egui::StrokeKind::Inside,
-            );
+            card::paint(&painter, r, Look::Console);
         }
         let inner = r.shrink2(Vec2::new(12.0, 8.0));
         let lines = self.visible();

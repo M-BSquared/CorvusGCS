@@ -11,6 +11,7 @@ use crate::mission::geometry::{
 use crate::mission::issues::{degrees_text, length_text, GLIDE_MAX_DEG};
 use crate::mission::plan::{Aircraft, Kind, AIRCRAFT, APPROACH_MIN_M, DEFAULT_ALT_M};
 use crate::mission::MissionPage;
+use crate::ui::card::{self, Look};
 use crate::ui::kit::{self, Choice};
 use crate::ui::style::{self, Weight};
 
@@ -245,12 +246,14 @@ impl MissionPage {
                     .iter()
                     .find(|c| c.value == current)
                     .map_or("", |c| c.label.as_str());
-                painter.rect_filled(sel, style::RADIUS_BTN, style::input(0.6).gamma_multiply(0.5));
-                painter.rect_stroke(
+                card::paint(
+                    &painter,
                     sel,
-                    style::RADIUS_BTN,
-                    Stroke::new(1.0, style::border()),
-                    egui::StrokeKind::Inside,
+                    Look::custom(
+                        style::input(0.6).gamma_multiply(0.5),
+                        style::border(),
+                        style::RADIUS_BTN,
+                    ),
                 );
                 let g = style::galley(ui, label, 11.0, Weight::W400, style::text_3(), 0.0);
                 painter.galley(Pos2::new(sel.left() + 8.0, cy - g.size().y / 2.0), g, style::text_3());

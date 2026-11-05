@@ -17,6 +17,7 @@ use crate::net::bg::Pending;
 use crate::net::http::{self, Server};
 use crate::setup::geofence::{self, Corner, Env, Fence};
 use crate::setup::schema_form::{Field, FormState};
+use crate::ui::card::{self, Look};
 use crate::ui::icons;
 use crate::ui::kit::{self, Button, Variant};
 use crate::ui::style::{self, Weight};
@@ -1117,8 +1118,7 @@ impl GeofenceCard {
                     }
                     .as_shape(panel, 14),
                 );
-                painter.rect_filled(panel, 14, style::surface_1());
-                painter.rect_stroke(panel, 14, Stroke::new(1.0, style::border()), egui::StrokeKind::Inside);
+                card::paint(&painter, panel, Look::custom(style::surface_1(), style::border(), 14));
                 let inner = panel.shrink(14.0);
                 let title = style::galley(ui, "Geofence area", 13.0, Weight::W600, style::text_1(), 0.0);
                 let summary_text = self.summary(connected, Self::vehicle(state));

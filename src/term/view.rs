@@ -6,6 +6,7 @@ use eframe::egui::{self, Color32, Pos2, Rect, Stroke, Vec2};
 
 use crate::term::emu::{Cell, Colour, Screen};
 use crate::term::session::{key_bytes, SshSession};
+use crate::ui::card::{self, Look};
 use crate::ui::style;
 
 pub const FONT: f32 = 12.0;
@@ -118,12 +119,10 @@ pub fn show(ui: &mut egui::Ui, rect: Rect, session: &mut SshSession, st: &mut Te
     let painter = ui.painter().clone();
     let bg_default = background();
     if frame {
-        painter.rect_filled(rect, style::RADIUS_BTN, bg_default);
-        painter.rect_stroke(
+        card::paint(
+            &painter,
             rect,
-            style::RADIUS_BTN,
-            Stroke::new(1.0, style::border()),
-            egui::StrokeKind::Inside,
+            Look::custom(bg_default, style::border(), style::RADIUS_BTN),
         );
     }
     let (pt, pr, pb, pl) = (8.0, 4.0, 8.0, 10.0);

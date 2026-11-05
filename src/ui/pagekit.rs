@@ -238,17 +238,7 @@ pub fn head_actions_with(
 
 /// `.params-banner`: the amber notice that gates a card; returns its bottom.
 pub fn warning_banner(ui: &egui::Ui, x: f32, y: f32, w: f32, text: &str) -> f32 {
-    let g = crate::ui::kit::wrapped_weight(ui, text, 11.5, Weight::W400, style::warning(), w - 28.0, 1.4);
-    let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, g.size().y + 24.0));
-    ui.painter().rect_filled(r, style::RADIUS_BTN, style::warning_dark());
-    ui.painter().rect_stroke(
-        r,
-        style::RADIUS_BTN,
-        Stroke::new(1.0, style::warning()),
-        egui::StrokeKind::Inside,
-    );
-    ui.painter().galley(r.min + Vec2::new(14.0, 12.0), g, style::warning());
-    r.bottom()
+    crate::ui::message::boxed(ui, x, y, w, text, crate::ui::message::Tone::Warn)
 }
 
 /// `.tune-tabs`: a row of text tabs on a rule, the active one in the accent

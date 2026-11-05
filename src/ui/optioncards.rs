@@ -3,8 +3,9 @@
 //! description under it. The chosen one wears the accent border with a ring
 //! outside it.
 
-use eframe::egui::{self, Pos2, Rect, Stroke, Vec2};
+use eframe::egui::{self, Color32, Pos2, Rect, Stroke, Vec2};
 
+use crate::ui::icons;
 use crate::ui::style::{self, Weight};
 
 /// One card.
@@ -13,6 +14,8 @@ pub struct Card {
     pub id: String,
     pub label: String,
     pub desc: String,
+    pub icon: Option<&'static str>,
+    pub swatch: Option<[u32; 3]>,
 }
 
 impl Card {
@@ -21,6 +24,40 @@ impl Card {
             id: id.into(),
             label: label.into(),
             desc: desc.into(),
+            icon: None,
+            swatch: None,
+        }
+    }
+
+    /// A 16 px icon before the words (`.option-card-icon`).
+    pub fn icon(mut self, icon: &'static str) -> Card {
+        self.icon = Some(icon);
+        self
+    }
+
+    /// Three colours butted into one 34 by 22 pill (`.option-card-swatch`).
+    pub fn swatch(mut self, colors: [u32; 3]) -> Card {
+        self.swatch = Some(colors);
+        self
+    }
+
+    fn lead_w(&self) -> f32 {
+        if self.swatch.is_some() {
+            SWATCH_W + LEAD_GAP
+        } else if self.icon.is_some() {
+            ICON + LEAD_GAP
+        } else {
+            0.0
+        }
+    }
+
+    fn lead_h(&self) -> f32 {
+        if self.swatch.is_some() {
+            SWATCH_H
+        } else if self.icon.is_some() {
+            ICON
+        } else {
+            0.0
         }
     }
 }
@@ -31,11 +68,32 @@ const GAP: f32 = 8.0;
 const PAD_X: f32 = 12.0;
 const PAD_Y: f32 = 10.0;
 
-fn card_height(has_desc: bool) -> f32 {
+const SWATCH_W: f32 = 34.0;
+const SWATCH_H: f32 = 22.0;
+const ICON: f32 = 16.0;
+/// `.option-card { gap: 10px }` between the lead and the words.
+const LEAD_GAP: f32 = 10.0;
+
+fn text_height(has_desc: bool) -> f32 {
     // what the web fonts measure: a 12 px label and a 10.5 px description
     let label = 14.5;
     let desc = if has_desc { 2.0 + 12.5 } else { 0.0 };
-    2.0 + 2.0 * PAD_Y + label + desc
+    label + desc
+}
+
+#[cfg(test)]
+fn card_height(has_desc: bool) -> f32 {
+    2.0 + 2.0 * PAD_Y + text_height(has_desc)
+}
+
+fn row_height(row: &[Card]) -> f32 {
+    let text = text_height(row.iter().any(|c| !c.desc.is_empty()));
+    let lead = row.iter().map(Card::lead_h).fold(0.0, f32::max);
+    2.0 + 2.0 * PAD_Y + text.max(lead)
+}
+
+fn rgb(c: u32) -> Color32 {
+    Color32::from_rgb((c >> 16) as u8, (c >> 8) as u8, c as u8)
 }
 
 /// The text trimmed with an ellipsis to fit `width` (`text-overflow`).
@@ -62,10 +120,7 @@ pub fn height(cards: &[Card], columns: usize, w: f32) -> f32 {
     let _ = w;
     let columns = columns.max(1);
     let rows: Vec<&[Card]> = cards.chunks(columns).collect();
-    let h: f32 = rows
-        .iter()
-        .map(|r| card_height(r.iter().any(|c| !c.desc.is_empty())))
-        .sum();
+    let h: f32 = rows.iter().map(|r| row_height(r)).sum();
     h + GAP * rows.len().saturating_sub(1) as f32
 }
 
@@ -87,7 +142,7 @@ pub fn show(
     let mut pressed = None;
     let mut cy = y;
     for (ri, row) in cards.chunks(columns).enumerate() {
-        let h = card_height(row.iter().any(|c| !c.desc.is_empty()));
+        let h = row_height(row);
         for (ci, card) in row.iter().enumerate() {
             let rect = Rect::from_min_size(Pos2::new(x + ci as f32 * (cw + GAP), cy), Vec2::new(cw, h));
             let resp = ui.interact(rect, ui.scope_id().with((id, ri, ci)), egui::Sense::click());
@@ -117,25 +172,48 @@ pub fn show(
                 p.rect_stroke(
                     rect,
                     style::RADIUS_BTN,
-                    Stroke::new(1.0, if hover { style::tint(0.14) } else { style::tint(0.09) }),
+                    Stroke::new(1.0, if hover { style::tint(0.15) } else { style::tint(0.09) }),
                     egui::StrokeKind::Inside,
                 );
             }
             let label_c = if on || hover { style::text_1() } else { style::text_2() };
-            let avail = cw - 2.0 - 2.0 * PAD_X;
+            let mut tx = rect.left() + 1.0 + PAD_X;
+            if let Some(sw) = card.swatch {
+                let s = Rect::from_min_size(
+                    Pos2::new(tx, rect.center().y - SWATCH_H / 2.0),
+                    Vec2::new(SWATCH_W, SWATCH_H),
+                );
+                let third = s.width() / 3.0;
+                for (k, c) in sw.iter().enumerate() {
+                    let cell = Rect::from_min_size(
+                        Pos2::new(s.left() + third * k as f32, s.top()),
+                        Vec2::new(third, s.height()),
+                    );
+                    ui.painter().rect_filled(cell, 0, rgb(*c));
+                }
+                ui.painter()
+                    .rect_stroke(s, 5, Stroke::new(1.0, style::tint(0.12)), egui::StrokeKind::Inside);
+            } else if let Some(icon) = card.icon {
+                icons::paint(
+                    ui,
+                    icon,
+                    Rect::from_center_size(Pos2::new(tx + ICON / 2.0, rect.center().y), Vec2::splat(ICON)),
+                    label_c,
+                );
+            }
+            tx += card.lead_w();
+            let avail = (rect.right() - 1.0 - PAD_X - tx).max(10.0);
             let label = ellipsize(ui, &card.label, 12.0, Weight::W600, avail);
             let lg = style::galley(ui, &label, 12.0, Weight::W600, label_c, 0.0);
             let lh = lg.size().y;
             let content = lh + if card.desc.is_empty() { 0.0 } else { 2.0 + 12.5 };
             let top = rect.center().y - content / 2.0;
-            ui.painter()
-                .galley(Pos2::new(rect.left() + 1.0 + PAD_X, top), lg, label_c);
+            ui.painter().galley(Pos2::new(tx, top), lg, label_c);
             if !card.desc.is_empty() {
                 let desc = ellipsize(ui, &card.desc, 10.5, Weight::W400, avail);
                 let dc = if on { style::text_2() } else { style::text_3() };
                 let dg = style::galley(ui, &desc, 10.5, Weight::W400, dc, 0.0);
-                ui.painter()
-                    .galley(Pos2::new(rect.left() + 1.0 + PAD_X, top + lh + 2.0), dg, dc);
+                ui.painter().galley(Pos2::new(tx, top + lh + 2.0), dg, dc);
             }
             if resp.clicked() {
                 pressed = Some(card.id.clone());
