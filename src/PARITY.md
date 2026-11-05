@@ -133,7 +133,8 @@ otherwise; "native file" is in `src/`.
 | Upload, save, open, read, new, clear confirmations | mission.js | mission/dialogs.rs | done |
 | Fly a mission end to end (upload, start, progress) against the simulator | mission.js | mission/ | done: the simulated PX4 accepts MISSION_START; verified upload, start and "Flying to 2" |
 | Row dragging, profile height dragging, marker dragging | mission.js | mission/side.rs, profile.rs, mapview.rs | partial: unit tested only |
-| Touch FINISH button, offscreen plan notice, stacked layout under 960, last plan reopening | mission.js | mission/ | missing |
+| Touch FINISH button (tablet mode), offscreen plan notice | mission.js | mission/toolbar.rs, mission/mod.rs | done |
+| Stacked layout under 960 px, last plan reopening | mission.js | mission/ | missing: the native page keeps the side panel beside the map down to its narrow layout (1279 px); not changed |
 | Shortcuts: Esc cancels row drag, search, pattern, tool; Enter finishes a pattern; Delete removes the point | mission.js | mission/mod.rs | check |
 
 ## Settings, Logs, Analysis

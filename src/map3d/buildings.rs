@@ -281,7 +281,10 @@ mod tests {
 
     #[test]
     fn a_cell_the_backend_made_from_an_overpass_answer_is_read_and_extruded() {
-        assert!(SERVED.starts_with(&[0x1f, 0x8b]), "served gzipped, as the backend stores it");
+        assert!(
+            SERVED.starts_with(&[0x1f, 0x8b]),
+            "served gzipped, as the backend stores it"
+        );
         let b = decode(SERVED).expect("a cell");
         let heights: Vec<f64> = b.iter().map(|b| b.height).collect();
         assert_eq!(heights, vec![12.0, 13.8, 8.0], "the road is not a building");
@@ -291,7 +294,10 @@ mod tests {
         // Three houses of four walls and a roof: 20 vertices each.
         assert_eq!(m.verts.len() / FLOATS, 60);
         let top = m.verts.chunks(FLOATS).map(|v| v[2]).fold(0.0f32, f32::max);
-        assert!((top - 533.8).abs() < 1e-3, "the tallest roof is 13.8 m over the ground: {top}");
+        assert!(
+            (top - 533.8).abs() < 1e-3,
+            "the tallest roof is 13.8 m over the ground: {top}"
+        );
         // Nothing is under the ground, and nothing floats.
         let low = m.verts.chunks(FLOATS).map(|v| v[2]).fold(f32::MAX, f32::min);
         assert!((low - 520.0).abs() < 1e-3, "{low}");
