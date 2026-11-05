@@ -83,6 +83,16 @@ pub fn paint(painter: &Painter, rect: Rect, look: Look) {
     painter.rect_stroke(rect, look.radius(), Stroke::new(1.0, line), egui::StrokeKind::Inside);
 }
 
+/// The surface of a floating window: the pop shadow, the glass at `alpha`
+/// and a 1 px border in `line`, 12 px round. Put it in a `reserve`d slot.
+pub fn window(rect: Rect, alpha: f32, line: Color32) -> Shape {
+    Shape::Vec(vec![
+        Shape::Rect(style::shadow_pop().as_shape(rect, 12)),
+        Shape::rect_filled(rect, 12, style::glass(alpha)),
+        Shape::rect_stroke(rect, 12, Stroke::new(1.0, line), egui::StrokeKind::Inside),
+    ])
+}
+
 /// A place for a card's surface under the content that follows.
 pub fn reserve(painter: &Painter) -> egui::layers::ShapeIdx {
     painter.add(Shape::Noop)

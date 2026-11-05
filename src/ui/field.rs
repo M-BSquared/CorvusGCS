@@ -87,6 +87,17 @@ pub struct TextField<'a> {
     secret: bool,
 }
 
+/// A 1 px outline over a field in `color`: the red of a value that did not
+/// pass, the colour of a changed one.
+pub fn outline(painter: &egui::Painter, rect: Rect, color: Color32) {
+    painter.rect_stroke(
+        rect,
+        style::RADIUS_BTN,
+        Stroke::new(1.0, color),
+        egui::StrokeKind::Inside,
+    );
+}
+
 fn focus_ring(painter: &egui::Painter, rect: Rect, focused: bool) {
     if focused {
         painter.rect_stroke(

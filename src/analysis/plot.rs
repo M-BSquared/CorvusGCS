@@ -8,6 +8,7 @@ use eframe::egui::{self, epaint::TextShape, Color32, Pos2, Rect, Stroke, Vec2};
 use serde_json::Value;
 
 use crate::ui::card::{self, Look};
+use crate::ui::chart;
 use crate::ui::style::{self, Weight};
 
 /// `margin: { l: 52, r: 12, t: 6, b: 62 }`.
@@ -123,35 +124,14 @@ pub fn nice_ticks(lo: f64, hi: f64, target: usize) -> (Vec<f64>, f64) {
     if span <= 0.0 || !span.is_finite() {
         return (vec![lo], 1.0);
     }
-    let raw = span / target.max(1) as f64;
-    let mag = 10f64.powf(raw.log10().floor());
-    let norm = raw / mag;
-    let step = mag
-        * if norm <= 1.0 {
-            1.0
-        } else if norm <= 2.0 {
-            2.0
-        } else if norm <= 5.0 {
-            5.0
-        } else {
-            10.0
-        };
+    let step = chart::tick_step(span, target as f64);
     let first = (lo / step).ceil();
     let last = (hi / step).floor();
     let ticks = (first as i64..=last as i64).map(|i| i as f64 * step).collect();
     (ticks, step)
 }
 
-/// A tick's label: as many decimals as the step needs.
-pub fn tick_label(v: f64, step: f64) -> String {
-    let decimals = if step >= 1.0 {
-        0
-    } else {
-        (-step.log10().floor()) as usize
-    };
-    let v = if v.abs() < step * 1e-9 { 0.0 } else { v };
-    format!("{v:.decimals$}")
-}
+pub use crate::ui::chart::tick_label;
 
 /// The range an axis shows: the data's extent, padded by 5 % where Plotly
 /// pads (y), and never empty.

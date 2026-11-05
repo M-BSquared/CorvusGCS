@@ -8,6 +8,7 @@ use serde_json::{json, Value};
 
 use super::tabs::{MEASURE, TRACK};
 use super::{model, refused, Dialog, SettingsPage};
+use crate::ui::chip::Chip;
 use crate::ui::form::{self, Form, CONTROL_H};
 use crate::ui::kit::{self, Button, Choice, Variant};
 use crate::ui::message::Tone;
@@ -874,23 +875,16 @@ fn dem_row(
     // the name and chip
     let ny = top + (head_h - n.size().y) / 2.0;
     ui.painter().galley(Pos2::new(f.x, ny), n.clone(), style::text_1());
-    if let (Some(c), Some(k)) = (chip, kind) {
+    if let (Some(_), Some(k)) = (chip, kind) {
         let color = if s(m, "kind") == "surface" {
             style::accent()
         } else {
             style::text_3()
         };
-        let cw = c.size().x + 10.0;
-        let ch = c.size().y + 4.0;
-        let r = Rect::from_min_size(
-            Pos2::new(f.x + n.size().x + 8.0, top + (head_h - ch) / 2.0),
-            Vec2::new(cw, ch),
-        );
-        ui.painter()
-            .rect_stroke(r, 255, Stroke::new(1.0, color), egui::StrokeKind::Inside);
-        let c = style::galley(ui, k.0, 9.5, Weight::W700, color, 0.6);
-        ui.painter()
-            .galley(Pos2::new(r.left() + 5.0, r.center().y - c.size().y / 2.0), c, color);
+        let mut tag = Chip::tag(k.0, 9.5, Weight::W700, 0.6, color);
+        tag.pad = (1.0, 4.0, 1.0, 4.0);
+        let ch = tag.measure(ui).y;
+        tag.paint(ui, Pos2::new(f.x + n.size().x + 8.0, top + (head_h - ch) / 2.0));
     }
     // the summary and the buttons, right aligned (below when they do not fit)
     let my = if wrap { top + head_h + 4.0 } else { top };

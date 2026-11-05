@@ -17,6 +17,7 @@ use crate::setup::check::{self, Check};
 use crate::setup::remoteid_model::{self as model, Commit, Opt, Range, VehicleSection};
 use crate::setup::schema_form::{FormState, Look};
 use crate::ui::card;
+use crate::ui::field;
 use crate::ui::field::TextField;
 use crate::ui::formfield as ff;
 use crate::ui::kit::{self, Button, Choice, Variant};
@@ -1231,12 +1232,7 @@ impl RemoteIdPage {
                     self.texts.insert(id.clone(), text.clone());
                 }
                 if bad {
-                    painter.rect_stroke(
-                        rect,
-                        style::RADIUS_BTN,
-                        Stroke::new(1.0, style::critical()),
-                        egui::StrokeKind::Inside,
-                    );
+                    field::outline(&painter, rect, style::critical());
                 }
                 let cg = style::galley(
                     ui,

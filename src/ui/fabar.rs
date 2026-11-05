@@ -17,6 +17,12 @@ pub struct Look {
     pub blocked: bool,
     /// `.is-next`: outlined in the accent, the step the eye should land on.
     pub next: bool,
+    /// `.armed`: the Arm button while the aircraft is armed, filled green.
+    pub armed: bool,
+    /// A command is in flight: 50 %, no hover and a pulsing ring.
+    pub busy: bool,
+    /// Nothing to press: 40 % and no click, only the hint.
+    pub disabled: bool,
 }
 
 /// One button in `r`; true when pressed. `fit` is the bar's caption scale and
@@ -32,14 +38,28 @@ pub fn button(
     fit: (f32, bool),
     id: impl std::hash::Hash + std::fmt::Debug,
 ) -> bool {
-    let resp = ui.interact(r, ui.scope_id().with(id), egui::Sense::click());
+    let sense = if look.disabled {
+        egui::Sense::hover()
+    } else {
+        egui::Sense::click()
+    };
+    let resp = ui.interact(r, ui.scope_id().with(id), sense);
     let resp = if title.is_empty() {
         resp
     } else {
         resp.on_hover_text(title)
     };
-    let hovered = resp.hovered();
-    let (fill, color) = if look.active {
+    let hovered = resp.hovered() && !look.disabled && !look.busy;
+    let (fill, color) = if look.armed {
+        (
+            if hovered {
+                style::healthy_bright()
+            } else {
+                style::healthy()
+            },
+            style::text_inverted(),
+        )
+    } else if look.active {
         (
             if hovered {
                 style::accent_hover()
@@ -62,7 +82,13 @@ pub fn button(
     } else {
         (Color32::TRANSPARENT, style::text_2())
     };
-    let alpha = if look.blocked { 0.4 } else { 1.0 };
+    let alpha = if look.disabled || look.blocked {
+        0.4
+    } else if look.busy {
+        0.5
+    } else {
+        1.0
+    };
     let painter = ui.painter();
     painter.rect_filled(r, style::RADIUS_BTN, fill.gamma_multiply(alpha));
     if look.next && !look.active {
@@ -102,6 +128,17 @@ pub fn button(
             g,
             color.gamma_multiply(alpha),
         );
+    }
+    if look.busy {
+        let t = ui.input(|i| i.time) as f32;
+        let pulse = 0.675 + 0.325 * (t / 1.6 * std::f32::consts::TAU).cos();
+        ui.painter().rect_stroke(
+            r,
+            style::RADIUS_BTN,
+            Stroke::new(2.0, style::accent_bright().gamma_multiply(pulse)),
+            egui::StrokeKind::Outside,
+        );
+        ui.ctx().request_repaint();
     }
     resp.clicked()
 }

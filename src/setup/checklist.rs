@@ -9,13 +9,14 @@
 //!
 //! The window on the Home map is `checklist_window.rs`.
 
-use eframe::egui::{self, Color32, Pos2, Rect, Stroke, Vec2};
+use eframe::egui::{self, Pos2, Rect, Stroke, Vec2};
 use serde_json::{json, Value};
 
 use crate::net::bg::Pending;
 use crate::net::http::{self, Server};
 use crate::ui::icons;
 use crate::ui::kit::{self, Button, Variant};
+use crate::ui::modal;
 use crate::ui::style::{self, Weight};
 
 /// One row of a list: an item to tick, or a section heading.
@@ -478,70 +479,16 @@ impl Checklist {
     /// The dialog, when open: a dimmed scrim and a panel in the middle.
     pub fn dialog(&mut self, ctx: &egui::Context) {
         self.take_answers();
-        if self.dialog.is_none() {
-            return;
-        }
-        let screen = ctx.content_rect();
-        let w = 560.0f32.min(screen.width() - 48.0);
-        let hkey = egui::Id::unique("checklist-dialog-h");
-        let last_h = ctx.data(|d| d.get_temp::<f32>(hkey)).unwrap_or(300.0);
-        let top = ((screen.height() - last_h) / 2.0).max(24.0);
-        let panel = Rect::from_min_size(Pos2::new(screen.center().x - w / 2.0, top), Vec2::new(w, last_h));
-        let mut close = false;
-        let mut height = last_h;
-        egui::Area::new(egui::Id::unique("checklist-dialog"))
-            .order(egui::Order::Foreground)
-            .fixed_pos(screen.min)
-            .show(ctx, |ui| {
-                ui.set_clip_rect(screen);
-                let scrim = ui.allocate_rect(screen, egui::Sense::click());
-                ui.painter().rect_filled(
-                    screen,
-                    0,
-                    Color32::from_black_alpha(if style::is_dark() { 150 } else { 90 }),
-                );
-                let bg = ui.painter().add(egui::Shape::Noop);
-                let (ix, iw) = (panel.left() + 20.0, w - 40.0);
-                let mut cy = panel.top() + 20.0;
-                let title = match &self.dialog {
-                    Some(Dialog::Edit { is_new: true, .. }) => "New checklist",
-                    Some(Dialog::Edit { .. }) => "Edit checklist",
-                    _ => "Preflight checklists",
-                };
-                let tg = style::galley(ui, title, 15.0, Weight::W700, style::text_1(), 0.3);
-                ui.painter().galley(Pos2::new(ix, cy), tg.clone(), style::text_1());
-                let xr = Rect::from_min_size(
-                    Pos2::new(ix + iw - 28.0, cy + tg.size().y / 2.0 - 14.0),
-                    Vec2::splat(28.0),
-                );
-                if kit::icon_btn(ui, xr, "x", "Close", false, "clclose") {
-                    close = true;
-                }
-                cy += tg.size().y.max(28.0) + 16.0 - (28.0 - tg.size().y).max(0.0) / 2.0;
-                cy = self.dialog_body(ui, ctx, ix, cy, iw, screen.height());
-                let rect = Rect::from_min_max(panel.min, Pos2::new(panel.right(), cy + 20.0));
-                height = rect.height();
-                ui.painter().set(
-                    bg,
-                    egui::Shape::Vec(vec![
-                        egui::Shape::Rect(style::shadow_pop().as_shape(rect, 12)),
-                        egui::Shape::rect_filled(rect, 12, style::glass(0.96)),
-                        egui::Shape::rect_stroke(
-                            rect,
-                            12,
-                            Stroke::new(1.0, style::tint(0.06)),
-                            egui::StrokeKind::Inside,
-                        ),
-                    ]),
-                );
-                if scrim.clicked() && !rect.contains(scrim.interact_pointer_pos().unwrap_or(Pos2::ZERO)) {
-                    close = true;
-                }
-            });
-        ctx.data_mut(|d| d.insert_temp(hkey, height));
-        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-            close = true;
-        }
+        let title = match &self.dialog {
+            None => return,
+            Some(Dialog::Edit { is_new: true, .. }) => "New checklist",
+            Some(Dialog::Edit { .. }) => "Edit checklist",
+            _ => "Preflight checklists",
+        };
+        let screen_h = ctx.content_rect().height();
+        let close = modal::show(ctx, "checklist-dialog", modal::Size::Lg, title, |ui, x, y, w| {
+            self.dialog_body(ui, ctx, x, y, w, screen_h)
+        });
         if close {
             self.dialog = None;
         }

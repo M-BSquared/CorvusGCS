@@ -12,6 +12,7 @@ use crate::net::http::Server;
 use crate::panel::ssh_address;
 use crate::term::session::SshSession;
 use crate::term::view::TermState;
+use crate::ui::card;
 use crate::ui::kit;
 use crate::ui::style::{self, Weight};
 
@@ -229,19 +230,7 @@ impl TermWindow {
                         );
                     }
                 }
-                painter.set(
-                    bg,
-                    egui::Shape::Vec(vec![
-                        egui::Shape::Rect(style::shadow_pop().as_shape(rect, 12)),
-                        egui::Shape::rect_filled(rect, 12, style::glass(0.97)),
-                        egui::Shape::rect_stroke(
-                            rect,
-                            12,
-                            Stroke::new(1.0, style::border_strong()),
-                            egui::StrokeKind::Inside,
-                        ),
-                    ]),
-                );
+                painter.set(bg, card::window(rect, 0.97, style::border_strong()));
             });
         if self.maximized.is_none() {
             self.pos += dragged;

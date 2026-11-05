@@ -20,6 +20,7 @@ use serde_json::{json, Value};
 use crate::net::bg::Pending;
 use crate::net::http::{self, Server};
 use crate::ui::card;
+use crate::ui::field;
 use crate::ui::kit::{self, Choice};
 use crate::ui::style::{self, Weight};
 
@@ -547,12 +548,7 @@ impl FormState {
                         self.status.remove(&f.param);
                     }
                     if !problem.is_empty() {
-                        painter.rect_stroke(
-                            r,
-                            style::RADIUS_BTN,
-                            Stroke::new(1.0, style::critical()),
-                            egui::StrokeKind::Inside,
-                        );
+                        field::outline(&painter, r, style::critical());
                     }
                     let committed = resp.lost_focus();
                     if committed && self.texts.contains_key(&f.param) {

@@ -22,6 +22,7 @@ use crate::net::http::{self, Server};
 use crate::setup::params_dialogs::{self as dialogs, ExportDlg, ImportDlg};
 use crate::setup::params_files as files;
 use crate::ui::card::{self, Look};
+use crate::ui::field;
 use crate::ui::kit::{self, Button, Choice, Variant};
 use crate::ui::message::Tone;
 use crate::ui::pagekit;
@@ -1868,7 +1869,7 @@ impl ParamsPage {
                     new_text = Some(text);
                 }
                 if let Some(c) = border {
-                    painter.rect_stroke(field, style::RADIUS_BTN, Stroke::new(1.0, c), egui::StrokeKind::Inside);
+                    field::outline(&painter, field, c);
                 }
                 if resp.has_focus()
                     && ui.input(|i| i.key_pressed(egui::Key::Escape))

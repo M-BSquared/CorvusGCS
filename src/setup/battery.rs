@@ -20,6 +20,7 @@ use crate::setup::battery_model::{self as model, Anchor, Doc, Flag, Live, Settin
 use crate::setup::check::{self, Check};
 use crate::setup::schema_form::{self, FormState, Look};
 use crate::ui::card;
+use crate::ui::field;
 use crate::ui::kit::{self, Button, Choice, Variant};
 use crate::ui::pagekit;
 use crate::ui::popover;
@@ -905,12 +906,7 @@ impl BatteryPage {
             }
         }
         if self.setting_status.get(spec.key).is_some_and(|s| s.0 == "err") && self.typed.contains_key(spec.key) {
-            ui.painter().rect_stroke(
-                rect,
-                style::RADIUS_BTN,
-                Stroke::new(1.0, style::critical()),
-                egui::StrokeKind::Inside,
-            );
+            field::outline(ui.painter(), rect, style::critical());
         }
         let mut ux = rect.right() + 8.0;
         let g = style::galley(ui, spec.unit, 11.0, Weight::W400, style::text_3(), 0.0);
