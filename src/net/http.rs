@@ -235,6 +235,32 @@ pub fn post_json(server: &Server, path: &str, body: &serde_json::Value) -> Resul
     json_body(server, path, r)
 }
 
+/// POST a JSON document and read the JSON answer whatever the status: the
+/// body is the thing worth showing when a remote command fails, so an HTTP
+/// error does not throw it away. A network error or a body that is not JSON
+/// is still an error.
+pub fn post_json_any(
+    server: &Server,
+    path: &str,
+    body: &serde_json::Value,
+) -> Result<(u16, serde_json::Value), String> {
+    let text = body.to_string();
+    let r = request(
+        server,
+        "POST",
+        path,
+        Some(&text),
+        "application/json",
+        Duration::from_secs(60),
+    )
+    .map_err(|e| format!("{}{path}: {e}", server.url()))?;
+    let status = r.status;
+    let text = r.text().map_err(|e| format!("{}{path}: {e}", server.url()))?;
+    serde_json::from_str(&text)
+        .map(|v| (status, v))
+        .map_err(|_| format!("Invalid response from {path}"))
+}
+
 /// GET a JSON document that may take a while to be made (a log read into
 /// plots); `wait` bounds each read.
 pub fn get_json_wait(server: &Server, path: &str, wait: Duration) -> Result<serde_json::Value, String> {

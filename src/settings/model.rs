@@ -522,7 +522,9 @@ pub fn ssh_line(c: &Value) -> String {
     format!("{} \u{b7} {}:{} ({})", s("name"), s("host"), port, s("username"))
 }
 
-/// The plugin line on the right of its name.
+/// The plugin line on the right of its name (`pluginRow`): where it came
+/// from, its version, whether it has a tab of its own and whether it is not
+/// loaded at all.
 pub fn plugin_origin(p: &Value) -> String {
     let where_ = if p.get("source").and_then(Value::as_str) == Some("bundled") {
         "built in"
@@ -530,7 +532,57 @@ pub fn plugin_origin(p: &Value) -> String {
         "installed"
     };
     let version = p.get("version").and_then(Value::as_str).filter(|v| !v.is_empty());
-    format!("{where_}{}", version.map_or(String::new(), |v| format!(" {v}")))
+    let flag = |k: &str| p.get(k).and_then(Value::as_bool).unwrap_or(false);
+    let tab = if flag("in_tab") { " \u{b7} own tab" } else { "" };
+    let failed = if p.get("loaded").and_then(Value::as_bool) == Some(false) {
+        " \u{b7} not loaded"
+    } else {
+        ""
+    };
+    format!(
+        "{where_}{}{tab}{failed}",
+        version.map_or(String::new(), |v| format!(" {v}"))
+    )
+}
+
+/// The rows of Settings, Plugins: what the backend lists, each marked with
+/// what the registry knows of it (loaded, in a tab, has a gear), then the
+/// compiled-in plugins the backend does not list. A plugin of the backend's
+/// folder that is not compiled in cannot run here and reads "not loaded".
+pub fn plugin_rows(listed: &[Value], registry: &crate::plugins::Registry) -> Vec<Value> {
+    let mut rows: Vec<Value> = Vec::new();
+    for p in listed {
+        let Some(id) = p.get("id").and_then(Value::as_str) else {
+            continue;
+        };
+        let mut row = p.clone();
+        let known = registry.index_of(id);
+        if let Some(o) = row.as_object_mut() {
+            o.insert("loaded".into(), serde_json::json!(known.is_some()));
+            if let Some(i) = known {
+                o.insert("in_tab".into(), serde_json::json!(registry.in_tab(i)));
+                o.insert("gear".into(), serde_json::json!(registry.has_options(i)));
+            }
+        }
+        rows.push(row);
+    }
+    let mut own: Vec<usize> = (0..registry.len())
+        .filter(|&i| {
+            !rows
+                .iter()
+                .any(|r| r.get("id").and_then(Value::as_str) == Some(registry.info(i).id))
+        })
+        .collect();
+    own.sort_by_key(|&i| (registry.info(i).order, registry.info(i).name.to_lowercase()));
+    for i in own {
+        let info = registry.info(i);
+        rows.push(serde_json::json!({
+            "id": info.id, "name": info.name, "description": info.description,
+            "version": info.version, "source": "bundled", "loaded": true,
+            "in_tab": registry.in_tab(i), "gear": registry.has_options(i),
+        }));
+    }
+    rows
 }
 
 /// "N copies, K kB in DIR" (`paramDefaultsCacheCard`).

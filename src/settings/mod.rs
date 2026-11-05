@@ -116,6 +116,8 @@ pub struct SettingsPage {
     ticks: HashMap<String, bool>,
     busy: HashMap<&'static str, bool>,
     dialog: Option<Dialog>,
+    /// The plugin whose options are open.
+    plugin_dialog: Option<String>,
     effects: Effects,
     effects_due: bool,
     errors: Vec<String>,
@@ -146,6 +148,7 @@ impl SettingsPage {
             ticks: HashMap::new(),
             busy: HashMap::new(),
             dialog: None,
+            plugin_dialog: None,
             effects: Effects::of(config),
             effects_due: false,
             errors: Vec::new(),
@@ -376,7 +379,7 @@ impl SettingsPage {
     // ---- drawing ----
 
     /// Draws the page into `rect`.
-    pub fn show(&mut self, ui: &mut egui::Ui, rect: egui::Rect) {
+    pub fn show(&mut self, ui: &mut egui::Ui, rect: egui::Rect, plugins: &mut crate::plugins::Registry, state: &Value) {
         if !self.entered {
             self.enter(ui.ctx());
         }
@@ -396,16 +399,17 @@ impl SettingsPage {
             let top = ui.max_rect().top();
             let mut f = Form::new(x, top + pagekit::PAD_Y, w);
             f.y = pagekit::header(ui, f.x, f.y, "Settings", "Application configuration") + 28.0;
-            self.body(ui, &mut f);
+            self.body(ui, &mut f, plugins);
             ui.allocate_space(egui::vec2(rect.width() - 1.0, f.y + pagekit::PAD_Y - top));
         });
         self.dialogs(ui.ctx());
+        self.plugin_options(ui.ctx(), plugins, state);
         if !self.calls.is_empty() {
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
         }
     }
 
-    fn body(&mut self, ui: &mut egui::Ui, f: &mut Form) {
+    fn body(&mut self, ui: &mut egui::Ui, f: &mut Form, plugins: &mut crate::plugins::Registry) {
         if self.failed("config") && self.res.get("config").is_some_and(|s| s.value.is_none()) {
             form::card(ui, f, "", |ui, f| {
                 form::desc(
@@ -437,7 +441,7 @@ impl SettingsPage {
             "controls" => self.controls_tab(ui, f),
             "connections" => self.connections_tab(ui, f),
             "data" => self.data_tab(ui, f),
-            "plugins" => self.plugins_tab(ui, f),
+            "plugins" => self.plugins_tab(ui, f, plugins),
             _ => self.about(ui, f),
         }
     }

@@ -15,6 +15,7 @@ src/ui/                the shared widgets and the design tokens (kit, card, menu
 src/home/ map/ map3d/  the Home page: flight bar, HUD, top bar, the 2D and the 3D map
 src/mission/ setup/    the Mission planner and the Setup pages
 src/settings/ logs/ analysis/ notify/ panel/ term/
+src/plugins/           the plugin system and the bundled plugins, one folder each
 src/link/              the MAVLink crate for the Python backend
 ```
 
@@ -149,16 +150,126 @@ SIGKILL if it is still there after 8 s. If the window does not close within
 | `src/analysis/plot.rs` | the plotting module that stands in for Plotly: linear axes with nice ticks, lines, markers and steps, flight mode bands, threshold line, legend, hover read out, drag to zoom and double click to reset, long traces reduced per pixel column |
 | `src/data/clock.rs` | calendar dates from Unix times, UTC and local |
 | `src/ui/form.rs` | the form vocabulary of a page that is a column of cards: the `Form` cursor over `formfield`, `message`, `optioncards`, `slider` and `pills`, with section, card, switch field, rows, actions |
+| `src/plugins/mod.rs` | the `Plugin` trait, the `Host` a plugin talks through, the `Registry` (starts the plugins once `GET /api/plugins` has answered, ticks them every frame, keeps their options and what they ask of the window) (`python/src/js/plugins.js`, `python/corvus/plugin_registry.py`) |
+| `src/plugins/options.rs` | the options a plugin declares (toggle, select, text, number), cleaned, coerced and saved under `_options` as the web does |
+| `src/plugins/shapes.rs`, `src/plugins/layer.rs` | `api.map`: lines, areas, circles, text, buttons and icon markers in longitude and latitude, painted on the flat map (with the pointer on markers and buttons, and `pick_point`) and on the 3D map (`map-overlays.js`, `map-icons.js`, `.map-overlay-*` of `map.css`) |
+| `src/plugins/view.rs` | the cards under PLUGINS, the opened plugin, a plugin's own tab and the options dialog of its gear in Settings (`.plugin-*` of `panel.css`) |
+| `src/plugins/ssh_setup.rs` | `sshSetup`: the login dialog for a saved SSH connection this computer lacks (`askSSHConnection` of `python/src/js/panel.js`) |
+| `src/plugins/vibration/` | Vibration Monitor: PX4's vibration metrics on a live chart, the 10 Hz stream while it is open, the one-shot warning (`python/plugins/vibration`) |
+| `src/plugins/ssh_launcher/` | SSH Launcher: the shelf, the editor, terminal and background runs, restart, stop, the live dot (`python/plugins/ssh-launcher`); `model.rs` holds its rules, held to the web helpers |
+| `src/plugins/map_entities/` | Map Entities: gates, trees and symbols with an area on the Home map, and the watch over the aircraft's track (`python/plugins/map-entities`); `model.rs` holds the geometry and the rules, held to values dumped from the web code |
 | `src/notify/mod.rs` | the notification board, its read and dismiss rules, the command dedupe and the toasts (`python/src/js/topbar.js`) |
 | `src/notify/overlay.rs` | the NOTIFICATIONS pill, the board and the toast stack |
 | `src/ui/frost.rs` | the frosted glass under every `.glass` surface |
 | `src/ui/fonts.rs`, `src/ui/icons.rs`, `build.rs` | Inter, JetBrains Mono and the Lucide icons, from the web's own files |
+
+## Plugins
+
+A plugin is a Rust type behind the `Plugin` trait (`src/plugins/mod.rs`),
+compiled into the program and listed in `plugins::builtin()`. There is no
+loader and no JavaScript: a plugin works the same on every platform the program
+is built for, Android included. Third party JavaScript plugins that the web
+interface loads from `~/.corvus/plugins` do not run here; Settings lists them
+as "installed, not loaded".
+
+What the operator sees is what the web interface shows:
+
+- **PLUGINS tab.** One card per plugin (icon, name, description), a click opens
+  the plugin under a back button. A plugin that can have a tab and whose
+  **Own tab** option is on has a tab of its own before PLUGINS instead. That
+  option is the only per plugin switch the web has, so there is no separate
+  enable switch here either; `ui.plugin_tabs` is its default.
+- **Settings, Plugins.** The rows of `GET /api/plugins` marked with what the
+  registry knows ("built in 1.0.0 · own tab", "not loaded"), and a gear for a
+  plugin with options. The gear opens a dialog in which every change is in
+  force at once and saved through `POST /api/plugins/settings` (`_options`
+  of the plugin's own `config.json`); a refused save puts the control back.
+- **Saved state.** `Host::save_settings(patch, replace)` writes the plugin's own
+  `config.json` through the same endpoint, merging unless `replace` is set. The
+  options are the operator's: a plugin neither writes nor clears them.
+
+### Writing one
+
+```rust
+pub struct Hello { opened: f64 }
+
+impl Plugin for Hello {
+    fn info(&self) -> Info {
+        Info { id: "hello", name: "Hello", icon: "puzzle", description: "Says hello",
+               version: "1.0.0", order: 100, can_tab: false }
+    }
+    fn options(&self) -> Vec<OptionSpec> { vec![OptionSpec::toggle("loud", "Say it loudly", false)] }
+    fn open(&mut self, h: &mut Host) { self.opened = h.now; }
+    fn show(&mut self, ui: &mut egui::Ui, area: egui::Rect, h: &mut Host) -> f32 {
+        // draw into `area` from its top and return the height used
+        let g = style::galley(ui, "Hello", 13.0, Weight::W600, style::text_1(), 0.0);
+        ui.painter().galley(area.min, g.clone(), style::text_1());
+        g.size().y
+    }
+}
+```
+
+Then add `pub mod hello;` and `Box::new(hello::Hello::default())` to
+`plugins::builtin()`. The id is the folder name of the plugin's settings, so it
+must be a safe name (`[A-Za-z0-9][A-Za-z0-9_.-]*`); `order` places the card
+(lower is earlier, ties by name). What the trait offers, all optional but
+`info` and `show`:
+
+| | |
+| --- | --- |
+| `options()` | the settings of the gear: `OptionSpec::toggle`, `select`, `text`, `number`; read them with `h.options()` |
+| `start(h)` | once per session, as soon as the saved settings are known, open or not: put a saved shape back on the map |
+| `tick(h)` | every frame, open or not; the telemetry state is `h.state` (the browser's `subscribe`) |
+| `open(h)`, `close(h)` | the view is about to be shown, and gone (`init` and `destroy`): leave nothing behind |
+| `show(ui, area, h)` | draws the view; the registry gives it a scrolling area 14 px from the sides |
+| `options_changed(h)` | the operator changed an option; every value is in `h.options()` |
+| `map_event(event, h)` | the pointer did something to one of its shapes: `Click`, `Drag`, `DragEnd`, or the `Picked` point of `h.pick_point()` (`PickCancelled` on Escape or a right click) |
+| `ssh_setup_done(tag, saved, h)` | the login dialog asked for with `h.ssh_setup(need, tag)` was answered |
+
+The `Host` is the browser's `api`: `h.map()` (`drawLine`, `drawPolygon`,
+`drawCircle`, `drawText`, `drawButton`, `drawMarker`, `remove`, with the 21
+symbols of `shapes::ICONS`; each key is the plugin's own and drawing it again
+replaces it), `h.settings()` and `h.save_settings()`, `h.get`, `h.post` and
+`h.post_any` (a POST whose body is the answer whatever the status), all on a
+thread of their own and picked up by polling the returned `Reply`, `h.notify`
+(a toast and a line on the board, both marked with the plugin's name),
+`h.console`, `h.terminal` (a terminal window on a saved SSH session),
+`h.fit` (frame points on the Home map) and `h.pick_point`.
+
+UI is built from `src/ui/` like any page: `form::Form` is a cursor and
+`form::field`, `form::switch_field`, `kit::select`, `kit::Button` and
+`field::committed` paint one block each. A plugin does not paint a box or a list
+of its own. Shapes are painted on both maps; only the flat map answers the
+pointer for markers and buttons.
+
+Rules go in a `model.rs` beside the plugin, with no `egui` in it, and their
+tests quote what the web helper answered (run the plugin's `.js` under `node`
+with a stub `window.Corvus` and print the result, as the existing tests did).
+
+### What is not ported
+
+- **Schwalby** (`python/plugins/schwalby`) is not in the native interface yet:
+  its shelf has an edit mode with drag reordering, AI added buttons that wait
+  for approval, a companion indicator with ping, a popup and a power menu, and
+  MCP tools, about 2,900 lines of which none can be faked by a smaller shelf.
+  It stays a web plugin until it is ported whole.
+- **MCP tools.** The backend does have the hook (`POST /api/mcp/window` with the
+  tools, the `mcp` event topic for calls, `POST /api/mcp/result` for the
+  answers), but only Schwalby offers tools, so the trait has no method for them
+  yet.
+- **Flight bar buttons.** The web `Corvus.plugins` has none; `drawButton` on the
+  map is the closest thing and is in `shapes.rs`.
+- **Reload plugins** re-reads the list of installed folders, as it always did;
+  a compiled-in plugin has nothing to reload.
+- Markers and buttons answer the pointer on the flat map only. On the 3D map
+  they are drawn, not clickable.
 
 ## Settings
 
 The page writes what the web page writes, key for key, so the two interfaces
 share one config. Differences that follow from a native window:
 
+- **Plugins.** The Plugins pill lists the compiled-in plugins with a gear for their options (see Plugins below).
 - **Files.** There is no file picker without a dependency, so the company logo,
   elevation files (a file or a folder of them), a settings file to import and
   a private key ask for a path.
