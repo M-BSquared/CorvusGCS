@@ -7,6 +7,7 @@
     "Gyro coning": "Gyro-Coning",
     "Gyro coning (x)": "Gyro-Coning (x)",
     "Live PX4 vibration metrics and accelerometer clipping": "Live-Vibrationswerte von PX4 und Clipping des Beschleunigungssensors",
+    "PX4 repurposes these fields: vibration_x = gyro delta-angle coning, vibration_y = gyro high-frequency, vibration_z = accel high-frequency vibration. Higher accel-HF (red) = more mechanical vibration.": "PX4 verwendet diese Felder anders: vibration_x = Coning des Gyro-Delta-Winkels, vibration_y = Gyro Hochfrequenz, vibration_z = Beschleunigung Hochfrequenz. Höhere Beschleunigung-HF (rot) = mehr mechanische Vibration.",
     "Vibration metric (unitless)": "Vibrationsmaß (einheitenlos)"
   }
 }
