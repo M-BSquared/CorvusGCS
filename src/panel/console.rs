@@ -241,6 +241,11 @@ impl ConsoleTab {
         }
     }
 
+    /// One line from outside the stream (a plugin's `api.console`).
+    pub fn add_line(&self, level: &str, text: &str) {
+        self.buffer.lock().expect("console").add(level, text);
+    }
+
     /// Every line of the buffer as a transcript, a filter typed into the tab
     /// notwithstanding (`consoleText({all: true})`).
     pub fn transcript(&self) -> String {

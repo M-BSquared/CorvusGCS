@@ -49,6 +49,8 @@ pub struct Layers3d<'a> {
     pub heading: f32,
     /// The aircraft's height above the ground, in metres.
     pub height: f64,
+    /// What the plugins draw.
+    pub shapes: &'a [crate::plugins::shapes::Shape],
 }
 
 /// What the pointer did to the camera this frame.
@@ -580,7 +582,7 @@ impl Map3d {
                 crate::ui::style::text_2(),
             );
         }
-        self.paint_layers(&painter, rect.min, layers);
+        self.paint_layers(ui, &painter, rect.min, layers);
         self.paint_credit(ui, rect);
         Input { dragged }
     }
@@ -729,8 +731,10 @@ impl Map3d {
             .map(|s| Pos2::new(origin.x + s.x as f32, origin.y + s.y as f32))
     }
 
-    fn paint_layers(&self, painter: &egui::Painter, origin: Pos2, layers: &Layers3d<'_>) {
+    fn paint_layers(&self, ui: &egui::Ui, painter: &egui::Painter, origin: Pos2, layers: &Layers3d<'_>) {
         let cam = &self.cam;
+        let project = |p: [f64; 2]| self.screen_of(origin, cam.local_of(p[0], p[1], self.ground_at(p[0], p[1])));
+        crate::plugins::shapes::paint_areas(painter, &project, layers.shapes);
         // A run of the track ends where it goes behind the camera, so the
         // gap is not drawn as a line across the screen.
         let paint_track = |pts: &[Point], color: Color32, past: bool| {
@@ -765,6 +769,7 @@ impl Map3d {
                 crate::map::paint_vehicle(painter, a, layers.heading - cam.bearing as f32);
             }
         }
+        crate::plugins::shapes::paint_marks(ui, painter, &project, layers.shapes, None);
     }
 }
 

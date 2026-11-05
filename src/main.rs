@@ -18,6 +18,7 @@ mod mission;
 mod net;
 mod notify;
 mod panel;
+mod plugins;
 mod settings;
 mod setup;
 mod term;

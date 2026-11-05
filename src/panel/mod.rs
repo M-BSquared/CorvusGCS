@@ -3,8 +3,8 @@
 //!
 //! LINK and CONSOLE are whole. SSH lists the connections the backend knows,
 //! as panel.js draws them; the terminal behind CONNECT is its own step.
-//! PLUGINS shows the tab's empty state: the plugins in plugins/ are
-//! JavaScript, which this app does not run, and Rust plugins come later.
+//! PLUGINS shows the cards of the compiled-in plugins (`crate::plugins`); a
+//! plugin with "Own tab" switched on has a tab of its own before it.
 
 pub mod console;
 pub mod link;
@@ -16,6 +16,7 @@ use crate::net::bg::Pending;
 use crate::net::http::{self, Server};
 use crate::panel::console::ConsoleTab;
 use crate::panel::link::LinkTab;
+use crate::plugins::Registry;
 use crate::term::session::SshSession;
 use crate::term::view::TermState;
 use crate::term::window::TermWindow;
@@ -36,23 +37,26 @@ pub enum Tab {
     Link,
     Console,
     Ssh,
+    /// The plugin of that index in the registry, in a tab of its own.
+    Own(usize),
     Plugins,
 }
 
 impl Tab {
-    fn caption(self) -> &'static str {
+    fn caption(self, plugins: &Registry) -> String {
         match self {
-            Tab::Link => "LINK",
-            Tab::Console => "CONSOLE",
-            Tab::Ssh => "SSH",
-            Tab::Plugins => "PLUGINS",
+            Tab::Link => "LINK".into(),
+            Tab::Console => "CONSOLE".into(),
+            Tab::Ssh => "SSH".into(),
+            Tab::Own(i) => plugins.info(i).name.to_uppercase(),
+            Tab::Plugins => "PLUGINS".into(),
         }
     }
 }
 
 /// The tabs shown: CONSOLE and SSH can be switched off in the config
 /// (`ui.console_tab`, `ui.ssh_tab`), LINK and PLUGINS cannot.
-pub fn tabs(console: bool, ssh: bool) -> Vec<Tab> {
+pub fn tabs(console: bool, ssh: bool, own: &[usize]) -> Vec<Tab> {
     let mut v = vec![Tab::Link];
     if console {
         v.push(Tab::Console);
@@ -60,6 +64,7 @@ pub fn tabs(console: bool, ssh: bool) -> Vec<Tab> {
     if ssh {
         v.push(Tab::Ssh);
     }
+    v.extend(own.iter().map(|i| Tab::Own(*i)));
     v.push(Tab::Plugins);
     v
 }
@@ -169,6 +174,11 @@ impl Panel {
         self.console.transcript()
     }
 
+    /// A line a plugin wrote to the console (`api.console`).
+    pub fn console_line(&mut self, level: &str, text: &str) {
+        self.console.add_line(level, text);
+    }
+
     pub fn follow_window(&mut self, vw: &crate::app::responsive::Vw) {
         if self.user_toggled {
             return;
@@ -188,7 +198,7 @@ impl Panel {
     }
 
     /// Draws the panel into `rect` (its full current width).
-    pub fn show(&mut self, ui: &mut egui::Ui, rect: Rect, state: &Value) {
+    pub fn show(&mut self, ui: &mut egui::Ui, rect: Rect, state: &Value, plugins: &mut Registry) {
         let painter = ui.painter_at(rect);
         // .panel-handle
         let handle = Rect::from_min_size(rect.min, Vec2::new(HANDLE, rect.height()));
@@ -264,7 +274,7 @@ impl Panel {
         }
 
         // .panel-tabs-wrap: padding 8 12 0, a rule under it
-        let shown = tabs(self.console_tab, self.ssh_tab);
+        let shown = tabs(self.console_tab, self.ssh_tab, &plugins.tabbed());
         if !shown.contains(&self.active) {
             self.active = Tab::Link;
         }
@@ -273,7 +283,7 @@ impl Panel {
         painter.hline(strip.x_range(), strip.bottom() - 0.5, Stroke::new(1.0, style::border()));
         let galleys: Vec<_> = shown
             .iter()
-            .map(|t| style::galley(ui, t.caption(), 11.0, Weight::W600, style::text_3(), 0.9))
+            .map(|t| style::galley(ui, &t.caption(plugins), 11.0, Weight::W600, style::text_3(), 0.9))
             .collect();
         let natural: f32 = galleys.iter().map(|g| g.size().x + 20.0).sum::<f32>() + 2.0 * (shown.len() as f32 - 1.0);
         let extra = ((strip.width() - 24.0 - natural) / shown.len() as f32).max(0.0);
@@ -305,7 +315,7 @@ impl Panel {
             if active {
                 painter.hline(r.x_range(), r.bottom() - 1.0, Stroke::new(2.0, style::accent()));
             }
-            let g = style::galley(ui, t.caption(), 11.0, Weight::W600, color, 0.9);
+            let g = style::galley(ui, &t.caption(plugins), 11.0, Weight::W600, color, 0.9);
             painter.galley(
                 Pos2::new(r.center().x - g.size().x / 2.0, r.center().y - 1.0 - g.size().y / 2.0),
                 g,
@@ -327,7 +337,8 @@ impl Panel {
             Tab::Link => self.link.show(&mut child, content, state),
             Tab::Console => self.console.show(&mut child, content),
             Tab::Ssh => self.ssh(&mut child, content),
-            Tab::Plugins => plugins_empty(&child, content),
+            Tab::Own(i) => plugins.show_own(&mut child, content, state, i),
+            Tab::Plugins => plugins.show_cards(&mut child, content, state),
         }
     }
 
@@ -340,6 +351,12 @@ impl Panel {
         let to_window = !self.ssh_tab;
         let connected = conn.get("connected").and_then(Value::as_bool).unwrap_or(false);
         self.start_connect(ctx, conn, connected, to_window);
+    }
+
+    /// A saved connection's terminal in a window of its own, for a plugin that
+    /// opened the session (`api.terminal`). The session is already up.
+    pub fn open_terminal_window(&mut self, ctx: &egui::Context, conn: &Value) {
+        self.open_window(ctx, conn);
     }
 
     fn start_connect(&mut self, ctx: &egui::Context, conn: Value, connected: bool, to_window: bool) {
@@ -713,10 +730,10 @@ pub fn ssh_address(conn: &Value) -> String {
 }
 
 /// The PLUGINS tab with nothing in it (`.future-empty`).
-fn plugins_empty(ui: &egui::Ui, rect: Rect) {
+pub(crate) fn plugins_empty(ui: &egui::Ui, rect: Rect, text: &str) {
     let painter = ui.painter();
     let title = style::galley(ui, "Tools & Plugins", 13.0, Weight::W600, style::text_1(), 0.0);
-    let desc = kit::wrapped(ui, "Extensions and tools plug in here.", 11.0, style::text_3(), 220.0);
+    let desc = kit::wrapped(ui, text, 11.0, style::text_3(), 220.0);
     let h = 52.0 + 14.0 + title.size().y + 14.0 + desc.size().y;
     let mut y = rect.center().y - h / 2.0;
     let tile = Rect::from_center_size(Pos2::new(rect.center().x, y + 26.0), Vec2::splat(52.0));
@@ -752,9 +769,13 @@ mod tests {
 
     #[test]
     fn the_tabs_follow_the_config() {
-        assert_eq!(tabs(true, true), vec![Tab::Link, Tab::Console, Tab::Ssh, Tab::Plugins]);
-        assert_eq!(tabs(false, true), vec![Tab::Link, Tab::Ssh, Tab::Plugins]);
-        assert_eq!(tabs(false, false), vec![Tab::Link, Tab::Plugins]);
+        assert_eq!(
+            tabs(true, true, &[]),
+            vec![Tab::Link, Tab::Console, Tab::Ssh, Tab::Plugins]
+        );
+        assert_eq!(tabs(false, true, &[]), vec![Tab::Link, Tab::Ssh, Tab::Plugins]);
+        assert_eq!(tabs(false, false, &[]), vec![Tab::Link, Tab::Plugins]);
+        assert_eq!(tabs(false, false, &[2]), vec![Tab::Link, Tab::Own(2), Tab::Plugins]);
     }
 
     #[test]

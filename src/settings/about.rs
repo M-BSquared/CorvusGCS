@@ -5,6 +5,7 @@ use eframe::egui::{self, Pos2, Rect, Stroke, Vec2};
 use serde_json::{json, Value};
 
 use super::{credits, model, Dialog, SettingsPage};
+use crate::plugins::Registry;
 use crate::ui::form::{self, Form, Tone};
 use crate::ui::kit::{Button, Variant};
 use crate::ui::style::{self, Weight};
@@ -14,15 +15,32 @@ const PLUGIN_FOLDER_INFO: &str = "One folder per plugin, each with a plugin.json
 const UPDATES_INFO: &str = "Compares the running version against the published releases on GitHub and shows a notice when a newer one exists. Nothing is downloaded and nothing is sent about this machine beyond the request itself. The check never runs while the vehicle is armed, and with no internet it fails silently. Corvus never needs the network to fly.";
 
 impl SettingsPage {
-    pub(super) fn plugins_tab(&mut self, ui: &mut egui::Ui, f: &mut Form) {
+    /// The gear's dialog: a plugin's options, each in force and saved at once.
+    pub(super) fn plugin_options(&mut self, ctx: &egui::Context, plugins: &mut Registry, state: &Value) {
+        let Some(id) = self.plugin_dialog.clone() else {
+            return;
+        };
+        match plugins.index_of(&id) {
+            Some(i) => {
+                if plugins.options_dialog(ctx, state, i) {
+                    self.plugin_dialog = None;
+                }
+            }
+            None => self.plugin_dialog = None,
+        }
+    }
+
+    pub(super) fn plugins_tab(&mut self, ui: &mut egui::Ui, f: &mut Form, registry: &mut Registry) {
         let data = self.want(ui.ctx(), "plugins", "/api/plugins");
         let failed = data.is_none() && self.failed("plugins");
-        let plugins: Vec<Value> = data
-            .as_ref()
-            .and_then(|d| d.get("plugins"))
-            .and_then(Value::as_array)
-            .cloned()
-            .unwrap_or_default();
+        let plugins: Vec<Value> = model::plugin_rows(
+            data.as_ref()
+                .and_then(|d| d.get("plugins"))
+                .and_then(Value::as_array)
+                .map(Vec::as_slice)
+                .unwrap_or(&[]),
+            registry,
+        );
         let dir = data
             .as_ref()
             .and_then(|d| d.get("user_dir"))
@@ -32,6 +50,7 @@ impl SettingsPage {
         let msg = self.msgs.get("plugins").cloned();
         let (reloading, opening) = (self.is_busy("plugins_reload"), self.is_busy("plugins_folder"));
         let mut hit = None;
+        let mut gear: Option<String> = None;
         form::section(ui, f, "Plugins", |ui, f| {
             form::card(ui, f, "", |ui, f| {
                 if failed {
@@ -42,7 +61,9 @@ impl SettingsPage {
                     form::desc(ui, f, "No plugins installed.");
                 }
                 for (i, p) in plugins.iter().enumerate() {
-                    plugin_row(ui, f, p, i == 0);
+                    if plugin_row(ui, f, p, i == 0) {
+                        gear = p.get("id").and_then(Value::as_str).map(str::to_string);
+                    }
                 }
                 f.skip(18.0);
                 form::field(ui, f, "Plugin folder", PLUGIN_FOLDER_INFO, "", |ui, x, y, w| {
@@ -90,6 +111,9 @@ impl SettingsPage {
                 }
             });
         });
+        if gear.is_some() {
+            self.plugin_dialog = gear;
+        }
         match hit {
             Some(0) => {
                 self.hush("plugins");
@@ -321,7 +345,7 @@ fn kit_wrapped_path(ui: &egui::Ui, text: &str, w: f32) -> std::sync::Arc<egui::G
 }
 
 /// One plugin: its name, where it came from, and what it does.
-fn plugin_row(ui: &egui::Ui, f: &mut Form, p: &Value, first: bool) {
+fn plugin_row(ui: &mut egui::Ui, f: &mut Form, p: &Value, first: bool) -> bool {
     let name = p
         .get("name")
         .and_then(Value::as_str)
@@ -332,13 +356,28 @@ fn plugin_row(ui: &egui::Ui, f: &mut Form, p: &Value, first: bool) {
     let n = style::galley(ui, name, 13.0, Weight::W500, style::text_1(), 0.0);
     let o = style::galley_mono(ui, &model::plugin_origin(p), 12.0, style::text_3());
     let head_h = 28.0;
+    let gear = p.get("gear").and_then(Value::as_bool).unwrap_or(false);
+    let right = f.x + f.w - if gear { 28.0 + 8.0 } else { 0.0 };
     ui.painter()
         .galley(Pos2::new(f.x, top + (head_h - n.size().y) / 2.0), n, style::text_1());
     ui.painter().galley(
-        Pos2::new(f.x + f.w - o.size().x, top + (head_h - o.size().y) / 2.0),
+        Pos2::new(right - o.size().x, top + (head_h - o.size().y) / 2.0),
         o,
         style::text_3(),
     );
+    let mut pressed = false;
+    if gear {
+        let id = p.get("id").and_then(Value::as_str).unwrap_or("");
+        let name = p.get("name").and_then(Value::as_str).unwrap_or(id);
+        pressed = crate::ui::kit::icon_btn(
+            ui,
+            Rect::from_min_size(Pos2::new(f.x + f.w - 28.0, top), Vec2::splat(28.0)),
+            "settings",
+            &format!("Settings of {name}"),
+            false,
+            ("plugingear", id),
+        );
+    }
     let mut y = top + head_h;
     if let Some(d) = p.get("description").and_then(Value::as_str).filter(|d| !d.is_empty()) {
         let g = crate::ui::kit::wrapped_weight(ui, d, 12.0, Weight::W400, style::text_3(), f.w, 1.5);
@@ -353,4 +392,5 @@ fn plugin_row(ui: &egui::Ui, f: &mut Form, p: &Value, first: bool) {
         Stroke::new(1.0, style::border_soft()),
     );
     f.y = y + 1.0;
+    pressed
 }

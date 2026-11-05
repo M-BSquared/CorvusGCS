@@ -117,6 +117,8 @@ pub struct Map {
     pub planner: bool,
     /// Room the page keeps along the bottom, which the credit moves above.
     pub bottom_lift: f32,
+    /// What the plugins draw on it.
+    pub plugins: crate::plugins::layer::Layer,
 }
 
 /// Something a page draws on the flat map in its own pixels, over the
@@ -165,6 +167,7 @@ impl Map {
             view: None,
             planner: false,
             bottom_lift: 0.0,
+            plugins: Default::default(),
         };
         map.set_source(ctx, DEFAULT_SOURCE);
         map
@@ -312,6 +315,7 @@ impl Map {
                 vehicle,
                 heading,
                 height,
+                shapes: self.plugins.shapes(),
             },
         );
         if input.dragged {
@@ -500,6 +504,7 @@ impl Map {
         let double_click_zoom = !overlay.as_ref().is_some_and(|o| o.takes_double_click());
         let layers = Layers {
             planner: self.planner,
+            plugins: &mut self.plugins,
             overlay,
             pin: &mut self.pin,
             measure: &mut self.measure,
@@ -575,6 +580,7 @@ impl Map {
 
 struct Layers<'a, 'o> {
     planner: bool,
+    plugins: &'a mut crate::plugins::layer::Layer,
     overlay: Option<&'a mut (dyn Overlay + 'o)>,
     pin: &'a mut Option<[f64; 2]>,
     measure: &'a mut crate::map::measure::Measure,
@@ -783,6 +789,7 @@ impl Plugin for Layers<'_, '_> {
         for r in &self.regions {
             paint_region(&painter, projector, rect, r);
         }
+        self.plugins.paint_areas(&painter, projector, rect);
         let flown = !self.planner;
         for flight in self.track.past.iter().filter(|_| flown) {
             let pts: Vec<Pos2> = track::smooth(flight)
@@ -808,6 +815,7 @@ impl Plugin for Layers<'_, '_> {
                 self.heading,
             );
         }
+        self.plugins.marks(ui, response, projector, rect);
         if let Some(p) = *self.pin {
             let c = screen(
                 projector,
@@ -1000,6 +1008,7 @@ mod tests {
             view: None,
             planner: false,
             bottom_lift: 0.0,
+            plugins: Default::default(),
         };
         let _ = ctx;
         m.update(&json!({"connected": true, "armed": false, "position": [11.6, 48.1]}));

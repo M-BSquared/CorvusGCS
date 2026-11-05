@@ -25,6 +25,7 @@ use crate::mission::MissionPage;
 use crate::net::http::{self, Server};
 use crate::notify::Board;
 use crate::panel::Panel;
+use crate::plugins::Registry;
 use crate::settings::{self, SettingsPage};
 use crate::setup::geofence;
 use crate::setup::SetupPage;
@@ -58,6 +59,7 @@ struct App {
     mission_page: bool,
     panel: Panel,
     rail: MapRail,
+    plugins: Registry,
 }
 
 /// The id a dock ties the window to its launcher entry by: `corvus-gcs`, as the
@@ -135,10 +137,56 @@ impl App {
         }
     }
 
+    /// The plugins' frame: ticks, what they drew on the map, what the map
+    /// saw of it, and what they asked of the rest of the window.
+    fn run_plugins(&mut self, ctx: &egui::Context, state: &Value, now: f64) {
+        self.plugins.update(ctx, state);
+        if let Some(shapes) = self.plugins.take_shapes() {
+            self.map.plugins.set(shapes);
+        }
+        let out = self.plugins.take_out();
+        if let Some(owner) = out.pick {
+            self.map.plugins.pick = Some(owner);
+        }
+        if out.cancel_pick && out.pick.is_none() {
+            self.map.plugins.pick = None;
+        }
+        for (level, text) in out.console {
+            self.panel.console_line(&level, &text);
+        }
+        for (name, level, text) in out.notices {
+            self.board.add_local(level, &format!("{name}: {text}"), now);
+            self.board.toast(level, &text, &name, "", now);
+        }
+        for conn in out.terminals {
+            self.panel.open_terminal_window(ctx, &conn);
+        }
+        if let Some(coords) = out.fit {
+            self.page = Page::Home;
+            self.fit_map(&coords, ctx);
+        }
+        for (owner, event) in self.map.plugins.take_events() {
+            self.plugins.dispatch(ctx, state, owner, event);
+        }
+    }
+
+    /// `fitCoords`: frames these points on the map with 80 px around them.
+    fn fit_map(&mut self, coords: &[[f64; 2]], ctx: &egui::Context) {
+        let corners: Vec<[f64; 2]> = coords.to_vec();
+        let size = ctx.content_rect().size();
+        let (w, h) = ((size.x - nav::WIDTH - 360.0).max(200.0), (size.y - 60.0).max(200.0));
+        if corners.len() == 1 {
+            self.map.go_to(corners[0][0], corners[0][1], 16.0);
+        } else if let Some((zoom, c)) = crate::setup::geofence::fit(&corners, (w, h), 80.0, 18.0) {
+            self.map.go_to(c[0], c[1], zoom);
+        }
+    }
+
     fn draw(&mut self, ui: &mut egui::Ui) {
         let state: Value = self.telemetry.state();
         let now = now_ms();
         self.map.update(&state);
+        self.run_plugins(ui.ctx(), &state, now);
         self.board.update(&state, now);
         self.flight.settle(&mut self.board, now);
         self.checklist.poll();
@@ -235,7 +283,7 @@ impl App {
                     let transcript = self.panel.console_transcript();
                     self.logs.show(ui, main, &transcript);
                 } else if self.page == Page::Settings {
-                    self.settings.show(ui, main);
+                    self.settings.show(ui, main, &mut self.plugins, &state);
                 } else {
                     nav::placeholder(ui, main, self.page);
                 }
@@ -259,7 +307,7 @@ impl App {
                 }
                 let mut panel_ui = ui.new_child(egui::UiBuilder::new().max_rect(panel));
                 panel_ui.set_clip_rect(panel);
-                self.panel.show(&mut panel_ui, panel, &state);
+                self.panel.show(&mut panel_ui, panel, &state, &mut self.plugins);
                 self.panel.windows(ui.ctx());
                 self.setup.windows(ui.ctx());
             });
@@ -395,6 +443,7 @@ impl eframe::App for App {
             crate::map3d::gpu::destroy(gl);
         }
         self.telemetry.stop();
+        self.plugins.shut_down(&egui::Context::default(), &Value::Null);
         self.panel.shut_down();
         self.map.shut_down();
     }
@@ -507,6 +556,7 @@ pub fn run(
             let flight = FlightBar::new(server.clone(), &ctx);
             ctx.set_zoom_factor(scale);
             let panel = Panel::new(server.clone(), &ctx, &config);
+            let plugins = Registry::new(server.clone(), &ctx, &config);
             let mut rail = MapRail::default();
             rail.measure = measure;
             let logo = logo_source();
@@ -563,6 +613,7 @@ pub fn run(
                 mission_page,
                 panel,
                 rail,
+                plugins,
             }))
         }),
     );
