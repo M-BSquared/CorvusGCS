@@ -281,7 +281,7 @@ impl<'a> TextField<'a> {
             .frame(egui::Frame::NONE)
             .font(font)
             .text_color(self.color)
-            .hint_text(egui::RichText::new(self.hint).color(style::text_3()))
+            .hint_text(egui::RichText::new(crate::i18n::tr(self.hint)).color(style::text_3()))
             .align(if self.align_right {
                 Align2::RIGHT_CENTER
             } else {

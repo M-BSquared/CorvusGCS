@@ -34,6 +34,7 @@ use model::TABS;
 /// What the window takes from the config as the page changes it.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Effects {
+    pub language: String,
     pub theme: &'static str,
     pub scale: f32,
     pub units: Units,
@@ -59,6 +60,7 @@ impl Effects {
     /// The values a config names, with the web interface's defaults.
     pub fn of(cfg: &Value) -> Effects {
         Effects {
+            language: crate::i18n::from_config(cfg),
             theme: style::theme_from_config(cfg),
             scale: model::scale_from_config(cfg),
             units: model::units_in_force(cfg),
@@ -563,6 +565,17 @@ mod tests {
         let d = Effects::of(&json!({}));
         assert_eq!((d.theme, d.scale), ("light", 1.0));
         assert!(!d.mission_page && d.measure_tool && d.console_tab && d.ssh_tab);
+        assert_eq!(d.language, "en");
+        assert_eq!(Effects::of(&json!({"language": "de"})).language, "de");
+    }
+
+    #[test]
+    fn a_changed_language_is_an_effect_the_window_applies() {
+        let mut page = SettingsPage::new(Server::local(1), &json!({"language": "en"}));
+        assert!(page.take_effects().is_none());
+        page.cfg = json!({"language": "fr"});
+        page.sync_effects();
+        assert_eq!(page.take_effects().map(|e| e.language), Some("fr".to_string()));
     }
 
     #[test]

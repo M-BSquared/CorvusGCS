@@ -475,11 +475,13 @@ pub fn galley_mono_letter(ui: &egui::Ui, text: &str, size: f32, color: Color32, 
     ui.painter().layout_job(job)
 }
 
-/// One run of text as CSS sets it: size, weight, colour, letter spacing.
+/// One run of text as CSS sets it: size, weight, colour, letter spacing, in the
+/// interface language.
 pub fn galley(ui: &egui::Ui, text: &str, size: f32, weight: Weight, color: Color32, letter: f32) -> Arc<Galley> {
+    let text = crate::i18n::tr(text);
     let mut job = LayoutJob::default();
     job.append(
-        text,
+        &text,
         0.0,
         TextFormat {
             font_id: font(size, weight),

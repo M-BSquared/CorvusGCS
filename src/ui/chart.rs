@@ -158,13 +158,17 @@ pub fn draw(ui: &egui::Ui, rect: Rect, x: &[f64], series: &[Series<'_>], x_title
         flush(&mut run);
     }
     let title_font = style::mono(10.0);
-    let g = p.layout_no_wrap(x_title.to_string(), title_font.clone(), style::text_2());
+    let g = p.layout_no_wrap(
+        crate::i18n::tr(x_title).into_owned(),
+        title_font.clone(),
+        style::text_2(),
+    );
     p.galley(
         Pos2::new(plot.center().x - g.size().x / 2.0, rect.bottom() - 1.0 - g.size().y),
         g,
         style::text_2(),
     );
-    let g = p.layout_no_wrap(y_title.to_string(), title_font, style::text_2());
+    let g = p.layout_no_wrap(crate::i18n::tr(y_title).into_owned(), title_font, style::text_2());
     let (gw, gh) = (g.size().x, g.size().y);
     // turned a quarter turn: the text runs up the left edge
     let origin = Pos2::new(rect.left() + 3.0, plot.center().y + gw / 2.0);

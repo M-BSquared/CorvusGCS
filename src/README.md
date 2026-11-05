@@ -14,6 +14,7 @@ src/net/ data/         the HTTP/SSE client, the backend child, telemetry, units,
 src/ui/                the shared widgets and the design tokens (kit, card, menu, field, ...)
 src/home/ map/ map3d/  the Home page: flight bar, HUD, top bar, the 2D and the 3D map
 src/mission/ setup/    the Mission planner and the Setup pages
+src/i18n/ lang/        the interface language: the translation layer and the language files
 src/settings/ logs/ analysis/ notify/ panel/ term/
 src/plugins/           the plugin system and the bundled plugins, one folder each
 src/link/              the MAVLink crate for the Python backend
@@ -160,8 +161,58 @@ SIGKILL if it is still there after 8 s. If the window does not close within
 | `src/plugins/map_entities/` | Map Entities: gates, trees and symbols with an area on the Home map, and the watch over the aircraft's track (`python/plugins/map-entities`); `model.rs` holds the geometry and the rules, held to values dumped from the web code |
 | `src/notify/mod.rs` | the notification board, its read and dismiss rules, the command dedupe and the toasts (`python/src/js/topbar.js`) |
 | `src/notify/overlay.rs` | the NOTIFICATIONS pill, the board and the toast stack |
+| `src/i18n/mod.rs`, `src/i18n/table.rs`, `src/i18n/files.rs` | the interface language (see "Languages" below): `tr`, `tr_fmt`, the table with `{name}` patterns, the language files compiled in and the operator's folder |
+| `src/lang/*.json` | the four languages (en, de, fr, dl), the web interface's own files; the Map Entities plugin's files sit in `src/plugins/map_entities/lang/` |
 | `src/ui/frost.rs` | the frosted glass under every `.glass` surface |
 | `src/ui/fonts.rs`, `src/ui/icons.rs`, `build.rs` | Inter, JetBrains Mono and the Lucide icons, from the web's own files |
+
+## Languages
+
+The interface is multilingual the way the web interface is, with the same
+files (`src/lang/en.json`, `de.json`, `fr.json`, `dl.json`, compiled into the
+program). The English text of the interface is the key and there are no
+message ids, so a page writes plain English and a text a language does not
+list stays English. `en.json` is empty on purpose: English is the built in
+default. `python/src/lang` holds the same files for the web interface; a test
+(`the_bundled_files_are_the_web_interfaces_files`) fails when the two copies
+differ, until the web interface is removed.
+
+Where the swap happens. The translation sits where text is laid out, so a
+widget follows the language without its page knowing: `ui::style::galley`,
+`ui::text::wrapped`, `wrapped_weight` and `clamped`, the hint of a text box
+and the plot titles all call `i18n::tr`. A text built with `format!` is
+translated whole, as the web translates a text node, so `Settings of Vibration`
+is found by the entry `Settings of {name}`. Call `i18n::tr` and `i18n::tr_fmt`
+yourself where text is stored or compared away from a painter:
+
+```rust
+use crate::i18n::{tr, tr_fmt};
+let title = tr("Reload languages");
+let line = tr_fmt("Reloaded. {n} languages installed.", &[("n", "4")]);
+```
+
+- A missing key, an empty translation, an unreadable file and a text without a
+  letter all give the English text back; nothing panics.
+- Text set in capitals (`MODE`) is found under its web wording (`Mode`, which
+  CSS capitalises there) and comes back in capitals.
+- A label that ends in a parameter (`Action on RC loss (NAV_RCL_ACT)`) is
+  translated by the label alone.
+- Data is not wording and is laid out with `style::galley_mono`, which does not
+  translate: parameter values, names, the log, the terminal.
+- The language comes from the config's `language` (`settings::Effects`), is
+  put in force at start and on every change, and the Settings picker writes it
+  the way the web does. The picker lists the compiled in languages and the files in
+  `~/.corvus/languages`; Reload languages reads that folder again.
+- A longer text must still fit. Where the web ellipsizes (`text-overflow`,
+  `line-clamp`) use `ui::text::clamped`; a row of buttons shares its width by
+  the width of their text, as a grid does.
+- `CORVUS_GUI_I18N_MISSING=file.json` (with `CORVUS_GUI_SHOT`) writes the
+  English texts the page showed that the language lacks, as a blank file's
+  `strings`. `tools/i18n.py` in `python/` still checks the files.
+
+`cargo test i18n` holds the loader, the fallback, a missing key, placeholders
+and that every literal given to `tr` or `tr_fmt` in `src/` is in every language
+file.
 
 ## Plugins
 

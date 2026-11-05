@@ -1199,7 +1199,7 @@ impl CalibrationPage {
                 .show(&mut child, |ui| {
                     if wz.log.is_empty() {
                         ui.label(
-                            egui::RichText::new(wz.log_placeholder)
+                            egui::RichText::new(crate::i18n::tr(wz.log_placeholder))
                                 .font(style::mono(11.5))
                                 .color(style::text_3()),
                         );
