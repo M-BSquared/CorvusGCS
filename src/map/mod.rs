@@ -159,6 +159,10 @@ pub struct Map {
     track_owner: Option<String>,
     pub look: TrackLook,
     last_boot_ms: Option<f64>,
+    /// `~/.corvus/gui-tracks.json`, and when the tracks were last written.
+    store: Option<std::path::PathBuf>,
+    saved_at: Option<std::time::Instant>,
+    saved_rev: u64,
     /// 3D mode: the tilted view, made when it is first switched on.
     three: Option<Map3d>,
     three_d: bool,
@@ -217,6 +221,9 @@ impl Map {
             track_owner: None,
             look: TrackLook::default(),
             last_boot_ms: None,
+            store: None,
+            saved_at: None,
+            saved_rev: 0,
             three: None,
             three_d: false,
             view: None,
@@ -434,6 +441,40 @@ impl Map {
         }
     }
 
+    /// Reads the tracks of the last run (`restoreTrack`), unless Settings
+    /// clears them on restart; from now on they are written when they change.
+    pub fn restore_tracks(&mut self, keep: bool) {
+        self.store = crate::data::track_store::default_path();
+        let Some(path) = self.store.clone() else { return };
+        if !keep {
+            let _ = std::fs::remove_file(&path);
+            return;
+        }
+        let stored = crate::data::track_store::load(&path);
+        self.track.swap(stored.main.0, stored.main.1);
+        for (id, (current, past)) in stored.fleet {
+            self.others.tracks.stash(&id, current, past);
+        }
+        self.others.tracks.dirty = false;
+        self.saved_rev = self.track.revision;
+    }
+
+    /// Writes the tracks a few seconds after they changed, so a drive of
+    /// telemetry does not become a drive of the disk.
+    fn save_tracks(&mut self) {
+        const DELAY: std::time::Duration = std::time::Duration::from_secs(5);
+        let Some(path) = self.store.clone() else { return };
+        let changed = self.track.revision != self.saved_rev || self.others.tracks.dirty;
+        if !changed || self.saved_at.is_some_and(|t| t.elapsed() < DELAY) {
+            return;
+        }
+        self.saved_at = Some(std::time::Instant::now());
+        self.saved_rev = self.track.revision;
+        self.others.tracks.dirty = false;
+        let main = (self.track.current.clone(), self.track.past.clone());
+        crate::data::track_store::save(&path, &main, &self.others.tracks.snapshot());
+    }
+
     /// Whether any vehicle has a track to clear (`updateTrackControl`).
     pub fn has_any_track(&self) -> bool {
         self.track.has_line() || self.others.tracks.has_lines(&self.others.owner)
@@ -473,6 +514,7 @@ impl Map {
 
     /// Feeds one telemetry state: the track, and the first-fix jump.
     pub fn update(&mut self, state: &Value) {
+        self.save_tracks();
         if state.get("connected") != Some(&Value::Bool(true)) {
             return;
         }
@@ -708,6 +750,8 @@ impl Map {
 
     /// Lets go of the tile downloader and joins its thread.
     pub fn shut_down(&mut self) {
+        self.saved_at = None;
+        self.save_tracks();
         self.tiles = None;
     }
 }
@@ -1273,6 +1317,9 @@ mod tests {
             track_owner: None,
             look: TrackLook::default(),
             last_boot_ms: None,
+            store: None,
+            saved_at: None,
+            saved_rev: 0,
             three: None,
             three_d: false,
             view: None,

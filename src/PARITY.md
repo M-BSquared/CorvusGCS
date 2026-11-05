@@ -52,7 +52,7 @@ otherwise; "native file" is in `src/`.
 | Distance tool | map-measure.js | map/measure.rs | done |
 | Offline map dialog | tiles.js | map/tiles_*.rs | done |
 | Downloaded areas outline | map.js | map/regions.rs | done |
-| Track: record, smooth, clear, per-flight colours, keep over restart | map.js | data/track.rs | partial: not kept over restart |
+| Track: record, smooth, clear, per-flight colours, keep over restart | map.js | data/track.rs, data/track_store.rs | done |
 | Track drawn in 3D with the depth test (a ribbon mesh, constant width on the screen) | map.js `renderTrack3D` | map3d/ribbon.rs, map3d/gpu.rs | done |
 | Vehicle and home hidden behind a hill in 3D | map.js `occludedByGlobe` | map3d/mod.rs `hidden` | done: a terrain ray test on the screen markers, not a depth test |
 | 3D map: terrain, imagery, hillshade, sky, buildings | map.js | map3d/ | done |
@@ -60,7 +60,7 @@ otherwise; "native file" is in `src/`.
 | Context menu on the map: Fly to this point, Set home here, copy coordinates | map.js, app.js | map/tools.rs | done |
 | Fly-to-points plan (PLAN button, click to add, slider AGL, FLY, CLEAR) | map.js, app.js | map/tools.rs, home/flight.rs | done |
 | Home and vehicle markers | map.js | map/mod.rs | done |
-| Other vehicles on the map in their own colour, name under, own track, click opens the dialog | map-fleet.js | map/others.rs, fleet/tracks.rs | done (tracks are not kept over a restart) |
+| Other vehicles on the map in their own colour, name under, own track, click opens the dialog | map-fleet.js | map/others.rs, fleet/tracks.rs | done (kept over a restart in ~/.corvus/gui-tracks.json) |
 | Plugin overlays on the map: lines, areas, labels, buttons, markers, icons | map-overlays.js, map-icons.js | plugins/ (another session) | not mine |
 | Geofence drawn on the map | geofence.js | setup/geofence.rs | done |
 

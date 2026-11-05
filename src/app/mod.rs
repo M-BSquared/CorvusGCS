@@ -736,6 +736,8 @@ pub fn run(
             let env = geofence::Env::new(sources.clone());
             env.load(&ctx, &server);
             let mut map = Map::new(&ctx, &server, &sources, env.clone());
+            map.look = settings::Effects::of(&config).track;
+            map.restore_tracks(!map.look.clear_on_restart);
             if let Some(layer) = Some(settings::model::text(&config, "map", "base_layer")).filter(|l| !l.is_empty()) {
                 if map.has_layer(layer) {
                     map.set_source(&ctx, layer);

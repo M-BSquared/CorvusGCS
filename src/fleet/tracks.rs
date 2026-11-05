@@ -39,6 +39,8 @@ pub struct Tracks {
     flights: HashMap<String, Flights>,
     order: Vec<String>,
     removed: HashSet<String>,
+    /// Changed since it was last written.
+    pub dirty: bool,
 }
 
 impl Tracks {
@@ -57,6 +59,12 @@ impl Tracks {
     /// Extends `id`'s track with one sample; true when it changed. A new
     /// arm closes the flight in progress into the past.
     pub fn record(&mut self, id: &str, position: [f64; 2], armed: Option<bool>) -> bool {
+        let changed = self.record_inner(id, position, armed);
+        self.dirty |= changed;
+        changed
+    }
+
+    fn record_inner(&mut self, id: &str, position: [f64; 2], armed: Option<bool>) -> bool {
         let t = self.entry(id);
         let mut changed = false;
         if let Some(a) = armed {
@@ -97,6 +105,7 @@ impl Tracks {
         if id.is_empty() {
             return;
         }
+        self.dirty = true;
         self.flights.remove(id);
         self.order.retain(|o| o != id);
         if self.removed.contains(id) {
@@ -112,6 +121,7 @@ impl Tracks {
 
     /// The map takes the track of the vehicle it starts drawing.
     pub fn take(&mut self, id: &str) -> Option<(Vec<Point>, Vec<Vec<Point>>)> {
+        self.dirty = true;
         self.order.retain(|o| o != id);
         self.flights.remove(id).map(|t| (t.current, t.past))
     }
@@ -119,6 +129,7 @@ impl Tracks {
     /// The operator removed `id`: its track goes, and one handed over for
     /// it afterwards is dropped, until the vehicle is heard again.
     pub fn forget(&mut self, id: &str) {
+        self.dirty = true;
         self.removed.insert(id.to_string());
         self.flights.remove(id);
         self.order.retain(|o| o != id);
@@ -130,8 +141,17 @@ impl Tracks {
     }
 
     pub fn clear(&mut self) {
+        self.dirty = true;
         self.flights.clear();
         self.order.clear();
+    }
+
+    /// Every vehicle's flights, for the file.
+    pub fn snapshot(&self) -> std::collections::BTreeMap<String, (Vec<Point>, Vec<Vec<Point>>)> {
+        self.flights
+            .iter()
+            .map(|(id, t)| (id.clone(), (t.current.clone(), t.past.clone())))
+            .collect()
     }
 
     /// Whether any vehicle but `owner` has a line.
