@@ -140,7 +140,8 @@ otherwise; "native file" is in `src/`.
 | --- | --- | --- | --- |
 | Settings: Interface, Layout, Flight view, Map, Controls, Connections, Data, Plugins, About | sidenav.js | settings/ | done |
 | Switches: HUD and square HUD take effect | sidenav.js | settings/mod.rs `Effects` | done |
-| Switches: track options, top bar blocks, compass, flight bar take effect | sidenav.js | settings/mod.rs `Effects` | partial: stored, not read by the native pages |
+| Switches: track options (earlier flights, rainbow, clear on restart, in the air in 3D), altitude, groundspeed and vertical speed blocks, compass nose up | sidenav.js | settings/mod.rs `Effects`, map/mod.rs `TrackLook`, home/hud.rs | done |
+| Switches: flight bar shrink and separate Takeoff and Land; the distance sensor reading | sidenav.js | settings/mod.rs | partial: stored, the flight bar and the altitude card do not read them yet |
 | MCP settings, permissions, connect dialog, token | settings-mcp.js | settings/conn_cards.rs | done |
 | Settings export and import | settings-transfer.js | settings/data_cards.rs | done |
 | Logs page | sidenav.js | logs/ | done |

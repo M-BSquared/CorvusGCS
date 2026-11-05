@@ -44,6 +44,10 @@ pub struct Effects {
     pub controls: crate::control::model::Config,
     pub flight_hud: bool,
     pub hud_square: bool,
+    pub compass_nose_up: bool,
+    pub track: crate::map::TrackLook,
+    /// The top bar blocks switched off, by caption.
+    pub topbar_hidden: Vec<&'static str>,
 }
 
 impl Effects {
@@ -61,6 +65,22 @@ impl Effects {
             controls: crate::control::model::Config::from_config(cfg),
             flight_hud: model::flag(cfg, "ui", "flight_hud", true),
             hud_square: model::flag(cfg, "ui", "hud_square", false),
+            compass_nose_up: model::flag(cfg, "ui", "compass_nose_up", false),
+            track: crate::map::TrackLook {
+                earlier: model::flag(cfg, "ui", "track_earlier_flights", true),
+                rainbow: model::flag(cfg, "ui", "track_rainbow", false),
+                clear_on_restart: model::flag(cfg, "ui", "track_clear_on_restart", false),
+                in_air: model::flag(cfg, "ui", "track_in_air", true),
+            },
+            topbar_hidden: [
+                ("topbar_show_altitude", true, "Altitude"),
+                ("topbar_show_groundspeed", true, "Groundspeed"),
+                ("topbar_show_vspeed", true, "Vertical speed"),
+            ]
+            .into_iter()
+            .filter(|(k, d, _)| !model::flag(cfg, "ui", k, *d))
+            .map(|(_, _, l)| l)
+            .collect(),
         }
     }
 }
@@ -490,6 +510,21 @@ fn refused(answer: &Result<Value, String>, fallback: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_track_compass_and_top_bar_switches_reach_the_window() {
+        let none = Effects::of(&serde_json::json!({}));
+        assert!(none.track.earlier && !none.track.rainbow && !none.track.clear_on_restart && none.track.in_air);
+        assert!(!none.compass_nose_up && none.topbar_hidden.is_empty());
+        let set = Effects::of(&serde_json::json!({"ui": {
+            "track_earlier_flights": false, "track_rainbow": true, "track_clear_on_restart": true,
+            "track_in_air": false, "compass_nose_up": true,
+            "topbar_show_altitude": false, "topbar_show_vspeed": false, "topbar_show_groundspeed": true
+        }}));
+        assert!(!set.track.earlier && set.track.rainbow && set.track.clear_on_restart && !set.track.in_air);
+        assert!(set.compass_nose_up);
+        assert_eq!(set.topbar_hidden, vec!["Altitude", "Vertical speed"]);
+    }
+
     use super::*;
     use serde_json::json;
 

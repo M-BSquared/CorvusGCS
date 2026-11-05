@@ -42,6 +42,7 @@ struct App {
     mcp: crate::mcp::Mcp,
     update: crate::update::Update,
     updates_on: bool,
+    topbar_hidden: Vec<&'static str>,
     fleet: crate::fleet::Fleet,
     fleet_dialog: crate::fleet::dialog::Dialog,
     board: Board,
@@ -216,7 +217,19 @@ impl App {
                 .is_multi()
                 .then(|| crate::fleet::parse_hex(snap.color_of(own)).unwrap_or_else(style::vehicle)),
         };
-        let cards = topbar_cards::all(&state, &self.units, &mut self.top_speeds);
+        let mut cards = topbar_cards::all(&state, &self.units, &mut self.top_speeds);
+        // Blocks the operator switched off (Settings, Interface, Top bar).
+        let keep: Vec<bool> = blocks.iter().map(|b| !self.topbar_hidden.contains(&b.label)).collect();
+        let mut at = 0;
+        blocks.retain(|_| {
+            at += 1;
+            keep[at - 1]
+        });
+        let mut at = 0;
+        cards.retain(|_| {
+            at += 1;
+            keep.get(at - 1).copied().unwrap_or(true)
+        });
         egui::Panel::top("topbar")
             .exact_size(vw.top_height())
             .frame(egui::Frame::NONE)
@@ -639,6 +652,7 @@ pub fn run(
                 ),
                 mcp: crate::mcp::Mcp::start(server.clone(), &ctx),
                 update: crate::update::Update::new(),
+                topbar_hidden: settings::Effects::of(&config).topbar_hidden,
                 updates_on: config.get("updates").and_then(|u| u.get("check")) != Some(&Value::Bool(false)),
                 welcome: {
                     let mut w = crate::welcome::Welcome::start(&server, &ctx);
@@ -662,6 +676,7 @@ pub fn run(
                     let e = settings::Effects::of(&config);
                     h.visible = e.flight_hud;
                     h.square = e.hud_square;
+                    h.nose_up = e.compass_nose_up;
                     h
                 },
                 flight,

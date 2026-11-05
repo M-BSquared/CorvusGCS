@@ -54,7 +54,10 @@ pub struct Layers3d<'a> {
     /// the operator chose one.
     pub vehicle_color: Color32,
     pub track_color: Color32,
-    pub past_color: Color32,
+    /// One colour per earlier flight, oldest first.
+    pub past_colors: Vec<Color32>,
+    /// A thin line at the height flown, above the track on the ground.
+    pub in_air: bool,
 }
 
 /// What the pointer did to the camera this frame.
@@ -800,18 +803,18 @@ impl Map3d {
         };
         let centre = crate::map3d::camera::mercator(self.cam.lng, self.cam.lat);
         let mut items = Vec::new();
-        let mut add = |pts: &[Point], color: Color32, past: bool| {
+        let mut add = |pts: &[Point], color: Color32, past: bool, air: bool| {
             let local: Vec<V3> = track::smooth(pts)
                 .iter()
                 .map(|p| {
-                    self.cam
-                        .local_of(p.lng, p.lat, self.ground_at(p.lng, p.lat) + p.alt.unwrap_or(0.0))
+                    let up = if air { p.alt.unwrap_or(0.0) } else { 0.0 };
+                    self.cam.local_of(p.lng, p.lat, self.ground_at(p.lng, p.lat) + up)
                 })
                 .collect();
-            let (casing, casing_a, core, core_a) = if past {
-                (4.6, 0.45, 2.2, 0.85)
-            } else {
-                (5.5, 0.55, 2.6, 0.95)
+            let (casing, casing_a, core, core_a) = match (past, air) {
+                (_, true) => (2.4, 0.4, 1.2, 0.8),
+                (true, false) => (4.6, 0.45, 2.2, 0.85),
+                (false, false) => (5.5, 0.55, 2.6, 0.95),
             };
             for (width, color, alpha) in [(casing, [0.0, 0.0, 0.0], casing_a), (core, rgb(color), core_a)] {
                 if let Some((verts, indices)) = ribbon::build(&local, width, &self.cam, self.cam.ground) {
@@ -827,10 +830,16 @@ impl Map3d {
                 }
             }
         };
-        for flight in &layers.track.past {
-            add(flight, layers.past_color, true);
+        for (flight, color) in layers.track.past.iter().zip(&layers.past_colors) {
+            add(flight, *color, true, false);
+            if layers.in_air {
+                add(flight, *color, true, true);
+            }
         }
-        add(&layers.track.current, layers.track_color, false);
+        add(&layers.track.current, layers.track_color, false, false);
+        if layers.in_air {
+            add(&layers.track.current, layers.track_color, false, true);
+        }
         items
     }
 

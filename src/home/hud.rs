@@ -63,6 +63,8 @@ pub struct Hud {
     pub visible: bool,
     /// `ui.hud_square`: square corners.
     pub square: bool,
+    /// `ui.compass_nose_up`: the rose turns, the needle stays at the top.
+    pub nose_up: bool,
 }
 
 /// How the panel is folded, from what the operator pressed.
@@ -372,7 +374,7 @@ impl Hud {
             left.translate(Vec2::new(dial + gap, 0.0))
         };
         let shown_h = (js_round(f64::from(norm_angle(h))) as i64) % 360;
-        compass(ui, painter, left, shown_h as f32);
+        compass(ui, painter, left, shown_h as f32, self.nose_up);
         attitude(ui, painter, right, p, r);
         let sign = |v: f32| if v >= 0.0 { "+" } else { "" };
         let att = format!(
@@ -609,8 +611,11 @@ fn text_centered(
 
 /// The compass, north up: the card is fixed and the needle carries the
 /// heading.
-fn compass(ui: &egui::Ui, painter: &egui::Painter, rect: Rect, heading: f32) {
+fn compass(ui: &egui::Ui, painter: &egui::Painter, rect: Rect, heading: f32, nose_up: bool) {
     let vb = ViewBox::new(rect);
+    // Nose up: the rose turns by minus the heading and the needle points to
+    // the top; otherwise north stays up and the needle turns in the rose.
+    let (turn, heading) = if nose_up { (-heading, 0.0) } else { (0.0, heading) };
     painter.circle(
         vb.c,
         vb.w(88.0),
@@ -641,17 +646,17 @@ fn compass(ui: &egui::Ui, painter: &egui::Painter, rect: Rect, heading: f32) {
         } else {
             (style::tint(0.22), 0.9)
         };
-        let (x1, y1) = polar(deg as f32, r1);
-        let (x2, y2) = polar(deg as f32, 86.0);
+        let (x1, y1) = polar(deg as f32 + turn, r1);
+        let (x2, y2) = polar(deg as f32 + turn, 86.0);
         line_round(painter, vb.p(x1, y1), vb.p(x2, y2), vb.w(width), color);
     }
     for (d, t) in [(0.0, "N"), (90.0, "E"), (180.0, "S"), (270.0, "W")] {
-        let (x, y) = polar(d, 60.0);
+        let (x, y) = polar(d + turn, 60.0);
         let color = if t == "N" { style::nav() } else { style::text_2() };
         text_centered(ui, painter, vb.p(x, y), t, vb.w(13.0), Weight::W700, color, vb.w(0.3));
     }
     for d in [30, 60, 120, 150, 210, 240, 300, 330] {
-        let (x, y) = polar(d as f32, 60.0);
+        let (x, y) = polar(d as f32 + turn, 60.0);
         text_centered(
             ui,
             painter,

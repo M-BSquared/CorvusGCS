@@ -84,6 +84,48 @@ pub(crate) fn describe(sources: &Value, id: &str) -> (String, u8) {
     (attribution, max_zoom)
 }
 
+/// How the track is drawn (Settings, Map: `ui.track_*`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TrackLook {
+    /// Earlier flights in a lighter colour of their own.
+    pub earlier: bool,
+    /// Each earlier flight in a colour of its own.
+    pub rainbow: bool,
+    /// Cleared when the autopilot reboots.
+    pub clear_on_restart: bool,
+    /// In 3D, a thin line at the height flown above the track on the ground.
+    pub in_air: bool,
+}
+
+impl Default for TrackLook {
+    fn default() -> TrackLook {
+        TrackLook {
+            earlier: true,
+            rainbow: false,
+            clear_on_restart: false,
+            in_air: true,
+        }
+    }
+}
+
+/// The colour of each earlier flight, oldest first (`pastColors`): the same
+/// as the flight in progress when earlier flights have no colour of their
+/// own, a tone each with the rainbow, else one lighter tone.
+pub fn past_colors(look: &TrackLook, hex: &str, count: usize) -> Vec<Color32> {
+    let (main, past) = crate::map::others::line_colors(hex, look.rainbow && look.earlier, 0);
+    (0..count)
+        .map(|i| {
+            if !look.earlier {
+                main
+            } else if look.rainbow {
+                crate::map::others::line_colors(hex, true, i).1
+            } else {
+                past
+            }
+        })
+        .collect()
+}
+
 /// The map and what it remembers between frames.
 pub struct Map {
     server: Server,
@@ -114,6 +156,8 @@ pub struct Map {
     /// The vehicles that are not flown, and whose track `track` is.
     pub others: crate::map::others::Others,
     track_owner: Option<String>,
+    pub look: TrackLook,
+    last_boot_ms: Option<f64>,
     /// 3D mode: the tilted view, made when it is first switched on.
     three: Option<Map3d>,
     three_d: bool,
@@ -170,6 +214,8 @@ impl Map {
             tools: Default::default(),
             others: Default::default(),
             track_owner: None,
+            look: TrackLook::default(),
+            last_boot_ms: None,
             three: None,
             three_d: false,
             view: None,
@@ -317,7 +363,8 @@ impl Map {
             .others
             .flown_color
             .map(|c| format!("#{:02X}{:02X}{:02X}", c.r(), c.g(), c.b()));
-        let (track_color, past_color) = crate::map::others::line_colors(flown_hex.as_deref().unwrap_or(""), false, 0);
+        let (track_color, _) = crate::map::others::line_colors(flown_hex.as_deref().unwrap_or(""), false, 0);
+        let past_colors = past_colors(&self.look, flown_hex.as_deref().unwrap_or(""), self.track.past.len());
         let vehicle_color = self.others.flown_color.unwrap_or_else(style::vehicle);
         let input = t.show(
             ui,
@@ -330,7 +377,8 @@ impl Map {
                 height,
                 vehicle_color,
                 track_color,
-                past_color,
+                past_colors,
+                in_air: self.look.in_air,
             },
         );
         if input.dragged {
@@ -426,6 +474,15 @@ impl Map {
     pub fn update(&mut self, state: &Value) {
         if state.get("connected") != Some(&Value::Bool(true)) {
             return;
+        }
+        let boot = state.get("boot_ms").and_then(Value::as_f64).filter(|b| *b > 0.0);
+        if let Some(b) = boot {
+            // time_boot_ms restarts near zero on boot, so a value that moves
+            // backwards is a new flight session, never a link drop.
+            if self.look.clear_on_restart && self.last_boot_ms.is_some_and(|p| b < p) {
+                self.track.clear();
+            }
+            self.last_boot_ms = Some(b);
         }
         if self
             .track
@@ -582,6 +639,7 @@ impl Map {
             pin: &mut self.pin,
             tools: (!self.planner).then_some(&mut self.tools),
             others: &mut self.others,
+            look: self.look,
             measure: &mut self.measure,
             regions,
             outline,
@@ -667,6 +725,7 @@ struct Layers<'a, 'o> {
     home: Option<(f64, f64)>,
     vehicle: Option<(f64, f64)>,
     heading: f32,
+    look: TrackLook,
 }
 
 /// An outlined downloaded area (`offline-regions-fill` and `-line`, #4CC9FF)
@@ -895,18 +954,20 @@ impl Plugin for Layers<'_, '_> {
                 },
             ))
         };
-        self.others.paint(&painter, &at, false);
+        self.others.paint(&painter, &at, self.look.rainbow && self.look.earlier);
         let flown_hex = self
             .others
             .flown_color
             .map(|c| format!("#{:02X}{:02X}{:02X}", c.r(), c.g(), c.b()));
         let (line_main, line_past) = crate::map::others::line_colors(flown_hex.as_deref().unwrap_or(""), false, 0);
-        for flight in self.track.past.iter().filter(|_| flown) {
+        let past = past_colors(&self.look, flown_hex.as_deref().unwrap_or(""), self.track.past.len());
+        let _ = line_past;
+        for (flight, color) in self.track.past.iter().zip(&past).filter(|_| flown) {
             let pts: Vec<Pos2> = track::smooth(flight)
                 .iter()
                 .map(|p| screen(projector, rect, p))
                 .collect();
-            paint_flight(&painter, &pts, line_past, true);
+            paint_flight(&painter, &pts, *color, true);
         }
         if flown {
             let pts: Vec<Pos2> = track::smooth(&self.track.current)
@@ -1092,6 +1153,67 @@ mod tests {
     use serde_json::json;
 
     #[test]
+    fn earlier_flights_follow_the_track_switches() {
+        let theme_main = style::track();
+        let on = TrackLook::default();
+        let lighter = past_colors(&on, "", 2);
+        assert_eq!(lighter, vec![style::track_past(); 2]);
+        let same = past_colors(&TrackLook { earlier: false, ..on }, "", 2);
+        assert_eq!(same, vec![theme_main; 2]);
+        let rainbow = past_colors(&TrackLook { rainbow: true, ..on }, "", 3);
+        assert_ne!(rainbow[0], rainbow[1]);
+        assert_ne!(rainbow[1], rainbow[2]);
+        // The rainbow needs earlier flights in their own colour.
+        let none = past_colors(
+            &TrackLook {
+                earlier: false,
+                rainbow: true,
+                ..on
+            },
+            "",
+            2,
+        );
+        assert_eq!(none, vec![theme_main; 2]);
+        assert!(past_colors(&on, "#2BC4E4", 0).is_empty());
+    }
+
+    #[test]
+    fn a_reboot_clears_the_track_only_when_asked() {
+        let mut m = test_map();
+        m.look.clear_on_restart = true;
+        let st = |boot: f64| json!({"connected": true, "boot_ms": boot, "position": [11.6, 48.1]});
+        m.update(&st(60_000.0));
+        m.track.current.push(Point {
+            lng: 11.6,
+            lat: 48.1,
+            alt: None,
+        });
+        m.track.current.push(Point {
+            lng: 11.7,
+            lat: 48.1,
+            alt: None,
+        });
+        m.update(&st(61_000.0));
+        assert!(m.track.has_line());
+        m.update(&st(2_000.0));
+        assert!(!m.track.has_line() || m.track.current.len() < 2);
+        let mut keep = test_map();
+        keep.update(&st(60_000.0));
+        keep.track.current.push(Point {
+            lng: 11.6,
+            lat: 48.1,
+            alt: None,
+        });
+        keep.track.current.push(Point {
+            lng: 11.7,
+            lat: 48.1,
+            alt: None,
+        });
+        keep.update(&st(2_000.0));
+        assert!(keep.track.has_line());
+    }
+
+    #[test]
     fn the_source_is_described_from_the_backend() {
         let sources = json!({"sources": [
             {"id": "osm", "attribution": "OSM", "maxzoom": 19},
@@ -1126,10 +1248,8 @@ mod tests {
         assert_eq!(real_fix(None), None);
     }
 
-    #[test]
-    fn the_first_fix_records_a_track_point() {
-        let ctx = egui::Context::default();
-        let mut m = Map {
+    fn test_map() -> Map {
+        Map {
             server: Server::local(1),
             env: crate::setup::geofence::Env::new(Value::Null),
             sources: Value::Null,
@@ -1150,12 +1270,20 @@ mod tests {
             tools: Default::default(),
             others: Default::default(),
             track_owner: None,
+            look: TrackLook::default(),
+            last_boot_ms: None,
             three: None,
             three_d: false,
             view: None,
             planner: false,
             bottom_lift: 0.0,
-        };
+        }
+    }
+
+    #[test]
+    fn the_first_fix_records_a_track_point() {
+        let ctx = egui::Context::default();
+        let mut m = test_map();
         let _ = ctx;
         m.update(&json!({"connected": true, "armed": false, "position": [11.6, 48.1]}));
         assert!(!m.first_fix);
