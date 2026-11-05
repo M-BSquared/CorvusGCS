@@ -175,7 +175,7 @@ def plan(root: Path, arch: str = HOST_ARCH) -> Plan:
 
 def has_native_link(root: Path) -> bool:
     """Whether the compiled corvus_link module is anywhere under *root*."""
-    for dirpath, _dirnames, files in os.walk(root):
+    for _dirpath, _dirnames, files in os.walk(root):
         for name in files:
             if name.startswith(NATIVE_LINK) and name.endswith((".so", ".pyd", ".dylib")):
                 return True
