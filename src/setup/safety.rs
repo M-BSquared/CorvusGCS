@@ -14,7 +14,7 @@
 //! The geofence card and its large editor are `geofence_card.rs`; the
 //! Landing card is `landing.rs`; the preflight checklist is `checklist.rs`.
 
-use eframe::egui::{self, Pos2, Rect, Stroke, Vec2};
+use eframe::egui::{self, Pos2, Rect, Vec2};
 use serde_json::{json, Value};
 
 use crate::net::bg::Pending;
@@ -26,9 +26,10 @@ use crate::setup::geofence_card::{GeofenceCard, Props};
 use crate::setup::schema_form::{self, Field, FormState};
 use crate::setup::sensor_view::{self, Event, SensorUi};
 use crate::setup::sensors::{self, Extras, Preset, Toggle};
-use crate::ui::card;
+use crate::ui::card::{self, Look};
 use crate::ui::icons;
 use crate::ui::kit::{self, Button, Variant};
+use crate::ui::message::Tone;
 use crate::ui::pagekit;
 use crate::ui::style::{self, Weight};
 
@@ -751,13 +752,7 @@ impl SafetyPage {
             );
             let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, g.size().y + 24.0));
             {
-                ui.painter().rect_filled(r, style::RADIUS_BTN, style::warning_dark());
-                ui.painter().rect_stroke(
-                    r,
-                    style::RADIUS_BTN,
-                    Stroke::new(1.0, style::warning()),
-                    egui::StrokeKind::Inside,
-                );
+                card::paint(ui.painter(), r, Look::Tone(Tone::Warn));
             }
             ui.painter().galley(r.min + Vec2::new(14.0, 12.0), g, style::warning());
             y = r.bottom() + 4.0;
@@ -874,13 +869,7 @@ impl SafetyPage {
                 let g = kit::wrapped_weight(ui, "Connect to a vehicle to read its safety limits, failsafe actions and sensor configuration. The page shows only what the connected firmware actually reports.", 12.0, Weight::W400, style::text_2(), iw - 28.0, 1.55);
                 let r = Rect::from_min_size(Pos2::new(ix, cy - 2.0), Vec2::new(iw, g.size().y + 24.0));
                 {
-                    painter.rect_filled(r, style::RADIUS_BTN, style::surface_2());
-                    painter.rect_stroke(
-                        r,
-                        style::RADIUS_BTN,
-                        Stroke::new(1.0, style::border_soft()),
-                        egui::StrokeKind::Inside,
-                    );
+                    card::paint(&painter, r, Look::Note);
                 }
                 painter.galley(r.min + Vec2::new(14.0, 12.0), g, style::text_2());
                 cy = r.bottom();
@@ -1188,8 +1177,7 @@ fn sensor_tile(ui: &mut egui::Ui, r: Rect, s: &Section) -> bool {
     };
     let p = ui.painter().clone();
     {
-        p.rect_filled(r, style::RADIUS, fill);
-        p.rect_stroke(r, style::RADIUS, Stroke::new(1.0, stroke), egui::StrokeKind::Inside);
+        card::paint(&p, r, Look::custom(fill, stroke, style::RADIUS));
     }
     let inner = r.shrink2(Vec2::new(16.0, 14.0));
     let icon_box = Rect::from_min_size(inner.min, Vec2::splat(34.0));
@@ -1229,8 +1217,7 @@ fn sensor_tile(ui: &mut egui::Ui, r: Rect, s: &Section) -> bool {
     };
     {
         let r = pill;
-        p.rect_filled(r, 255, pf);
-        p.rect_stroke(r, 255, Stroke::new(1.0, ps), egui::StrokeKind::Inside);
+        card::paint(&p, r, Look::custom(pf, ps, 255));
     }
     p.galley(pill.min + Vec2::new(7.0, 2.0), pg, color);
     if !sensor.detail.is_empty() {

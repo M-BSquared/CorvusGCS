@@ -1,8 +1,9 @@
 //! `.modal` (components.css): a centred card on a scrim, a title row with a
 //! close button, a body and a row of actions at the right.
 
-use eframe::egui::{self, Color32, Pos2, Rect, Stroke, Vec2};
+use eframe::egui::{self, Color32, Pos2, Rect, Vec2};
 
+use crate::ui::card;
 use crate::ui::kit;
 use crate::ui::style::{self, Weight};
 
@@ -69,14 +70,7 @@ pub fn show(
             cy = body(ui, ix, cy, iw);
             let rect = Rect::from_min_max(panel.min, Pos2::new(panel.right(), cy + 20.0));
             height = rect.height();
-            ui.painter().set(
-                bg,
-                egui::Shape::Vec(vec![
-                    egui::Shape::Rect(style::shadow_pop().as_shape(rect, 12)),
-                    egui::Shape::rect_filled(rect, 12, style::glass(0.96)),
-                    egui::Shape::rect_stroke(rect, 12, Stroke::new(1.0, style::tint(0.06)), egui::StrokeKind::Inside),
-                ]),
-            );
+            ui.painter().set(bg, card::window(rect, 0.96, style::tint(0.06)));
             if scrim.clicked() && !rect.contains(scrim.interact_pointer_pos().unwrap_or(Pos2::ZERO)) {
                 close = true;
             }

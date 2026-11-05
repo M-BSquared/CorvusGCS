@@ -5,8 +5,9 @@ use eframe::egui::{self, Pos2, Rect, Stroke, Vec2};
 use serde_json::{json, Value};
 
 use super::{credits, model, Dialog, SettingsPage};
-use crate::ui::form::{self, Form, Tone};
+use crate::ui::form::{self, Form};
 use crate::ui::kit::{Button, Variant};
+use crate::ui::message::Tone;
 use crate::ui::style::{self, Weight};
 
 const PLUGIN_FOLDER_INFO: &str = "One folder per plugin, each with a plugin.json. After copying one in, changing one or deleting one, press Reload plugins.\nEach plugin keeps its settings in its own config.json in there (<id>/config.json), apart from the app's config. Copy that file to the same place on another computer to set it up the same way.\nThe folder's own README.md describes the format, and the plugins that ship with Corvus are worked examples.";

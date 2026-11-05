@@ -8,8 +8,11 @@ use serde_json::{json, Value};
 
 use super::tabs::{MEASURE, TRACK};
 use super::{model, refused, Dialog, SettingsPage};
-use crate::ui::form::{self, Form, Opt, Tone, CONTROL_H};
+use crate::ui::chip::Chip;
+use crate::ui::form::{self, Form, CONTROL_H};
 use crate::ui::kit::{self, Button, Choice, Variant};
+use crate::ui::message::Tone;
+use crate::ui::optioncards::Card;
 use crate::ui::style::{self, Weight};
 
 const MAP_RATE_HINT: &str = "How many times a second the aircraft on the map move, in 3D with their height line and shadow. 30 Hz needs about a third less CPU in 3D, which a laptop on battery notices. 60 Hz (the default) moves them more smoothly. The flight instruments and moving the map by hand always run at the display's full rate.";
@@ -54,8 +57,8 @@ impl SettingsPage {
             let mut picked = None;
             form::card(ui, f, "Map animation", |ui, f| {
                 let opts = [
-                    Opt::new("30", "30 Hz", "Saves power"),
-                    Opt::new("60", "60 Hz", "Smoother"),
+                    Card::new("30", "30 Hz", "Saves power"),
+                    Card::new("60", "60 Hz", "Smoother"),
                 ];
                 form::field(ui, f, "Aircraft on the map", "", MAP_RATE_HINT, |ui, x, y, w| {
                     let mut inner = Form::new(x, y, w);
@@ -117,12 +120,9 @@ impl SettingsPage {
                 return;
             }
             let shown = model::shown_providers(&providers, &active);
-            let opts: Vec<Opt> = shown
+            let opts: Vec<Card> = shown
                 .iter()
-                .map(|p| Opt {
-                    icon: Some("map"),
-                    ..Opt::new(s(p, "id"), s(p, "label"), &model::describe_provider(p, &sources))
-                })
+                .map(|p| Card::new(s(p, "id"), s(p, "label"), model::describe_provider(p, &sources)).icon("map"))
                 .collect();
             if let Some(id) = form::option_cards(ui, f, "provider", &opts, &active, 2) {
                 if let Some(p) = providers.iter().find(|p| s(p, "id") == id) {
@@ -875,23 +875,16 @@ fn dem_row(
     // the name and chip
     let ny = top + (head_h - n.size().y) / 2.0;
     ui.painter().galley(Pos2::new(f.x, ny), n.clone(), style::text_1());
-    if let (Some(c), Some(k)) = (chip, kind) {
+    if let (Some(_), Some(k)) = (chip, kind) {
         let color = if s(m, "kind") == "surface" {
             style::accent()
         } else {
             style::text_3()
         };
-        let cw = c.size().x + 10.0;
-        let ch = c.size().y + 4.0;
-        let r = Rect::from_min_size(
-            Pos2::new(f.x + n.size().x + 8.0, top + (head_h - ch) / 2.0),
-            Vec2::new(cw, ch),
-        );
-        ui.painter()
-            .rect_stroke(r, 255, Stroke::new(1.0, color), egui::StrokeKind::Inside);
-        let c = style::galley(ui, k.0, 9.5, Weight::W700, color, 0.6);
-        ui.painter()
-            .galley(Pos2::new(r.left() + 5.0, r.center().y - c.size().y / 2.0), c, color);
+        let mut tag = Chip::tag(k.0, 9.5, Weight::W700, 0.6, color);
+        tag.pad = (1.0, 4.0, 1.0, 4.0);
+        let ch = tag.measure(ui).y;
+        tag.paint(ui, Pos2::new(f.x + n.size().x + 8.0, top + (head_h - ch) / 2.0));
     }
     // the summary and the buttons, right aligned (below when they do not fit)
     let my = if wrap { top + head_h + 4.0 } else { top };

@@ -5,8 +5,9 @@ use eframe::egui::{self, Pos2, Rect, Stroke, Vec2};
 use serde_json::{json, Value};
 
 use super::{refused, Dialog, SettingsPage};
-use crate::ui::form::{self, Form, Tone};
+use crate::ui::form::{self, Form};
 use crate::ui::kit::{Button, Variant};
+use crate::ui::message::Tone;
 use crate::ui::style::{self, Weight};
 
 /// The PNG signature the backend checks too.

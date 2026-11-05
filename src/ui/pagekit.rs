@@ -4,6 +4,7 @@
 
 use eframe::egui::{self, Color32, Pos2, Rect, Stroke, Vec2};
 
+use crate::ui::card::{self, Look};
 use crate::ui::icons;
 use crate::ui::kit::{Button, Variant};
 use crate::ui::segmented::{self, Opts, Segment};
@@ -79,8 +80,7 @@ pub fn tile(ui: &mut egui::Ui, rect: Rect, icon: &'static str, title: &str, desc
     let painter = ui.painter().clone();
     {
         let r = rect;
-        painter.rect_filled(r, style::RADIUS, fill);
-        painter.rect_stroke(r, style::RADIUS, Stroke::new(1.0, stroke), egui::StrokeKind::Inside);
+        card::paint(&painter, r, Look::custom(fill, stroke, style::RADIUS));
     }
     let inner = rect.shrink2(Vec2::new(20.0, 18.0));
     let box_ = Rect::from_min_size(Pos2::new(inner.left(), rect.center().y - 20.0), Vec2::splat(40.0));
@@ -236,19 +236,14 @@ pub fn head_actions_with(
     (bottom + 26.0, pressed)
 }
 
+/// The page's own ground, under everything the page draws.
+pub fn background(ui: &egui::Ui, rect: Rect) {
+    ui.painter().rect_filled(rect, 0, style::bg());
+}
+
 /// `.params-banner`: the amber notice that gates a card; returns its bottom.
 pub fn warning_banner(ui: &egui::Ui, x: f32, y: f32, w: f32, text: &str) -> f32 {
-    let g = crate::ui::kit::wrapped_weight(ui, text, 11.5, Weight::W400, style::warning(), w - 28.0, 1.4);
-    let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, g.size().y + 24.0));
-    ui.painter().rect_filled(r, style::RADIUS_BTN, style::warning_dark());
-    ui.painter().rect_stroke(
-        r,
-        style::RADIUS_BTN,
-        Stroke::new(1.0, style::warning()),
-        egui::StrokeKind::Inside,
-    );
-    ui.painter().galley(r.min + Vec2::new(14.0, 12.0), g, style::warning());
-    r.bottom()
+    crate::ui::message::boxed(ui, x, y, w, text, crate::ui::message::Tone::Warn)
 }
 
 /// `.tune-tabs`: a row of text tabs on a rule, the active one in the accent

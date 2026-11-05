@@ -14,6 +14,7 @@ use crate::map::tiles_model as model;
 use crate::map::Map;
 use crate::net::bg::Pending;
 use crate::net::http::{self, Server};
+use crate::ui::card::{self, Look};
 use crate::ui::kit::{self, Button, Choice, Variant};
 use crate::ui::modal;
 use crate::ui::style::{self, Weight};
@@ -603,12 +604,10 @@ impl TilesCard {
                 Pos2::new(x, cy),
                 Vec2::new(w, 8.0 * 2.0 + 13.0 * 1.21 + 1.0 + 10.0 * 1.21 + 2.0),
             );
-            ui.painter().rect_filled(est, style::RADIUS_BTN, style::glass(0.6));
-            ui.painter().rect_stroke(
+            card::paint(
+                ui.painter(),
                 est,
-                style::RADIUS_BTN,
-                Stroke::new(1.0, style::tint(0.09)),
-                egui::StrokeKind::Inside,
+                Look::custom(style::glass(0.6), style::tint(0.09), style::RADIUS_BTN),
             );
             let el = style::galley(ui, "ESTIMATE", 10.0, Weight::W600, style::text_3(), 0.7);
             ui.painter().galley(
@@ -662,9 +661,11 @@ impl TilesCard {
             cy += 14.0;
             if self.running {
                 let bar = Rect::from_min_size(Pos2::new(x, cy), Vec2::new(w, 8.0));
-                ui.painter().rect_filled(bar, 4, style::surface_3());
-                ui.painter()
-                    .rect_stroke(bar, 4, Stroke::new(1.0, style::border_soft()), egui::StrokeKind::Inside);
+                card::paint(
+                    ui.painter(),
+                    bar,
+                    Look::custom(style::surface_3(), style::border_soft(), 4),
+                );
                 if self.progress.1 > 0 {
                     let f = (self.progress.0 as f32 / self.progress.1 as f32).clamp(0.0, 1.0);
                     ui.painter().rect_filled(
@@ -813,12 +814,14 @@ impl TilesCard {
                         Vec2::new(w, row_h),
                     );
                     let hot = ui.rect_contains_pointer(rr);
-                    painter.rect_filled(rr, style::RADIUS_BTN, style::glass(if hot { 0.8 } else { 0.6 }));
-                    painter.rect_stroke(
+                    card::paint(
+                        &painter,
                         rr,
-                        style::RADIUS_BTN,
-                        Stroke::new(1.0, if running { style::warning() } else { style::tint(0.09) }),
-                        egui::StrokeKind::Inside,
+                        Look::custom(
+                            style::glass(if hot { 0.8 } else { 0.6 }),
+                            if running { style::warning() } else { style::tint(0.09) },
+                            style::RADIUS_BTN,
+                        ),
                     );
                     let tools_w = 2.0 * 28.0 + 2.0;
                     let main = Rect::from_min_max(

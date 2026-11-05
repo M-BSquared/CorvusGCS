@@ -12,16 +12,17 @@ mod scope;
 use std::collections::BTreeSet;
 use std::time::Duration;
 
-use eframe::egui::{self, Pos2, Rect, Stroke, Vec2};
+use eframe::egui::{self, Pos2, Rect, Vec2};
 use serde_json::{json, Value};
 
 use crate::data::units::Units;
 use crate::net::bg::Pending;
 use crate::net::http::{self, Server};
+use crate::ui::card::{self, Look};
 use crate::ui::form::{self, Form};
 use crate::ui::kit::{Button, Variant};
+use crate::ui::pagekit;
 use crate::ui::style::{self, Weight};
-use crate::ui::{card, pagekit};
 
 /// The views of the page.
 #[derive(Debug, Clone, PartialEq)]
@@ -271,7 +272,7 @@ impl AnalysisPage {
         if ready && self.deferred_scroll.is_some() {
             self.scroll_to = self.deferred_scroll.take();
         }
-        ui.painter().rect_filled(rect, 0, style::bg());
+        pagekit::background(ui, rect);
         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
         child.set_clip_rect(rect);
         let mut area = egui::ScrollArea::vertical()
@@ -407,13 +408,7 @@ impl AnalysisPage {
     fn folder_row(&mut self, ui: &mut egui::Ui, f: &mut Form) {
         let h = 6.0 * 2.0 + 2.0 + 25.0;
         let row = f.rect(h);
-        ui.painter().rect_filled(row, style::RADIUS_BTN, style::surface_1());
-        ui.painter().rect_stroke(
-            row,
-            style::RADIUS_BTN,
-            Stroke::new(1.0, style::border_soft()),
-            egui::StrokeKind::Inside,
-        );
+        card::paint(ui.painter(), row, Look::Quiet);
         crate::ui::icons::paint(
             ui,
             "folder",
@@ -436,12 +431,10 @@ impl AnalysisPage {
         );
         let focused = ui.memory(|m| m.has_focus(ui.scope_id().with("logdir")));
         if focused {
-            ui.painter().rect_filled(input, style::RADIUS_BTN, style::input(0.6));
-            ui.painter().rect_stroke(
+            card::paint(
+                ui.painter(),
                 input,
-                style::RADIUS_BTN,
-                Stroke::new(1.0, style::accent()),
-                egui::StrokeKind::Inside,
+                Look::custom(style::input(0.6), style::accent(), style::RADIUS_BTN),
             );
         }
         let before = self.dir_text.clone();

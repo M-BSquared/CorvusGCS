@@ -12,13 +12,15 @@
 
 use std::sync::{Arc, Mutex};
 
-use eframe::egui::{self, Color32, Pos2, Rect, Stroke, Vec2};
+use eframe::egui::{self, Pos2, Rect, Stroke, Vec2};
 use serde_json::{json, Value};
 
 use crate::data::units::{js_round, Units};
 use crate::net::http::{self, Server};
+use crate::ui::fabar;
 use crate::ui::field::TextField;
 use crate::ui::icons;
+use crate::ui::listrow::{self, Mark};
 use crate::ui::menu;
 use crate::ui::style::{self, Weight};
 
@@ -661,7 +663,7 @@ impl FlightBar {
                     Rect::from_center_size(Pos2::new(inner.right() - 10.0, inner.top() + 10.0), Vec2::splat(20.0));
                 let resp = ui.interact(close, ui.scope_id().with("takeoffclose"), egui::Sense::click());
                 if resp.hovered() {
-                    painter.rect_filled(close, 5, style::surface_hover());
+                    listrow::paint(&painter, close, 5, Mark::Hover);
                 }
                 icons::paint(
                     ui,
@@ -789,8 +791,8 @@ impl FlightBar {
     }
 }
 
-/// One `.fa-btn`: icon over caption; hover lifts it, `.armed` fills it
-/// green, disabled is 40 % and busy 50 % with a pulsing ring.
+/// One `.fa-btn` of the flight bar: icon over caption; hover lifts it,
+/// `.armed` fills it green, disabled is 40 % and busy 50 % with a pulsing ring.
 #[allow(clippy::too_many_arguments)]
 fn fa_button(
     ui: &mut egui::Ui,
@@ -801,81 +803,15 @@ fn fa_button(
     enabled: bool,
     busy: bool,
     armed: bool,
-    (scale, compact): (f32, bool),
+    fit: (f32, bool),
 ) -> bool {
-    let id = ui.scope_id().with(("fa", caption));
-    let sense = if enabled {
-        egui::Sense::click()
-    } else {
-        egui::Sense::hover()
+    let look = fabar::Look {
+        armed,
+        busy,
+        disabled: !enabled,
+        ..Default::default()
     };
-    let resp = ui.interact(r, id, sense).on_hover_text(title);
-    let hovered = resp.hovered() && enabled && !busy;
-    let (fill, color) = if armed {
-        (
-            if hovered {
-                style::healthy_bright()
-            } else {
-                style::healthy()
-            },
-            style::text_inverted(),
-        )
-    } else if hovered {
-        (style::surface_hover(), style::text_1())
-    } else {
-        (Color32::TRANSPARENT, style::text_2())
-    };
-    let alpha = if !enabled {
-        0.4
-    } else if busy {
-        0.5
-    } else {
-        1.0
-    };
-    let painter = ui.painter();
-    painter.rect_filled(r, style::RADIUS_BTN, fill.gamma_multiply(alpha));
-    if compact {
-        icons::paint(
-            ui,
-            icon,
-            Rect::from_center_size(r.center(), Vec2::splat(17.0)),
-            color.gamma_multiply(alpha),
-        );
-    } else {
-        let caption_g = style::galley(
-            ui,
-            caption,
-            10.0 * scale,
-            Weight::W600,
-            color.gamma_multiply(alpha),
-            0.6 * scale,
-        );
-        let total = 17.0 + 3.0 + caption_g.size().y;
-        let top = r.center().y - total / 2.0;
-        icons::paint(
-            ui,
-            icon,
-            Rect::from_center_size(Pos2::new(r.center().x, top + 8.5), Vec2::splat(17.0)),
-            color.gamma_multiply(alpha),
-        );
-        painter.galley(
-            Pos2::new(r.center().x - caption_g.size().x / 2.0, top + 20.0),
-            caption_g,
-            color.gamma_multiply(alpha),
-        );
-    }
-    if busy {
-        let t = ui.input(|i| i.time) as f32;
-        let pulse = 0.675 + 0.325 * (t / 1.6 * std::f32::consts::TAU).cos();
-        painter.rect_stroke(
-            r,
-            style::RADIUS_BTN,
-            Stroke::new(2.0, style::accent_bright().gamma_multiply(pulse)),
-            egui::StrokeKind::Outside,
-        );
-        ui.ctx().request_repaint();
-    }
-    resp.clicked()
+    fabar::button(ui, r, icon, caption, title, look, fit, ("fa", caption))
 }
 
 #[cfg(test)]

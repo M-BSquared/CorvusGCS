@@ -17,6 +17,7 @@ use crate::setup::check::{self, Check};
 use crate::setup::remoteid_model::{self as model, Commit, Opt, Range, VehicleSection};
 use crate::setup::schema_form::{FormState, Look};
 use crate::ui::card;
+use crate::ui::field;
 use crate::ui::field::TextField;
 use crate::ui::formfield as ff;
 use crate::ui::kit::{self, Button, Choice, Variant};
@@ -341,13 +342,7 @@ impl RemoteIdPage {
         ) + 10.0;
         // the switch
         let row = Rect::from_min_size(Pos2::new(ix, cy), Vec2::new(iw, 55.5));
-        painter.rect_filled(row, 10, style::surface_2());
-        painter.rect_stroke(
-            row,
-            10,
-            Stroke::new(1.0, style::border_soft()),
-            egui::StrokeKind::Inside,
-        );
+        card::paint(&painter, row, card::Look::Inset);
         let title = style::galley(ui, "Broadcast this identity", 13.0, Weight::W600, style::text_1(), 0.0);
         let sub = style::galley(
             ui,
@@ -1237,12 +1232,7 @@ impl RemoteIdPage {
                     self.texts.insert(id.clone(), text.clone());
                 }
                 if bad {
-                    painter.rect_stroke(
-                        rect,
-                        style::RADIUS_BTN,
-                        Stroke::new(1.0, style::critical()),
-                        egui::StrokeKind::Inside,
-                    );
+                    field::outline(&painter, rect, style::critical());
                 }
                 let cg = style::galley(
                     ui,

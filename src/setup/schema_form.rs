@@ -19,6 +19,8 @@ use serde_json::{json, Value};
 
 use crate::net::bg::Pending;
 use crate::net::http::{self, Server};
+use crate::ui::card;
+use crate::ui::field;
 use crate::ui::kit::{self, Choice};
 use crate::ui::style::{self, Weight};
 
@@ -475,13 +477,7 @@ impl FormState {
                         .find(|c| c.value == current.to_string())
                         .map_or(String::new(), |c| c.label.clone());
                     {
-                        painter.rect_filled(r, style::RADIUS_BTN, style::surface_2());
-                        painter.rect_stroke(
-                            r,
-                            style::RADIUS_BTN,
-                            Stroke::new(1.0, style::border()),
-                            egui::StrokeKind::Inside,
-                        );
+                        card::paint(&painter, r, card::Look::Raised);
                     }
                     let g = style::galley(ui, &label, 12.0, Weight::W400, style::text_3(), 0.0);
                     ui.painter_at(r.shrink2(Vec2::new(11.0, 0.0))).galley(
@@ -529,13 +525,7 @@ impl FormState {
                 };
                 if armed {
                     {
-                        painter.rect_filled(r, style::RADIUS_BTN, style::surface_2());
-                        painter.rect_stroke(
-                            r,
-                            style::RADIUS_BTN,
-                            Stroke::new(1.0, style::border()),
-                            egui::StrokeKind::Inside,
-                        );
+                        card::paint(&painter, r, card::Look::Raised);
                     }
                     let g = style::galley_mono(ui, &text, 12.0, style::text_3());
                     painter.galley(
@@ -558,12 +548,7 @@ impl FormState {
                         self.status.remove(&f.param);
                     }
                     if !problem.is_empty() {
-                        painter.rect_stroke(
-                            r,
-                            style::RADIUS_BTN,
-                            Stroke::new(1.0, style::critical()),
-                            egui::StrokeKind::Inside,
-                        );
+                        field::outline(&painter, r, style::critical());
                     }
                     let committed = resp.lost_focus();
                     if committed && self.texts.contains_key(&f.param) {
@@ -619,12 +604,14 @@ impl FormState {
                         let r = Rect::from_min_size(Pos2::new(bx, by), Vec2::new(lw, 18.0));
                         {
                             let r = Rect::from_min_size(Pos2::new(bx, by + 2.0), Vec2::splat(14.0));
-                            painter.rect_filled(r, 3, if dim { style::text_3() } else { style::surface_2() });
-                            painter.rect_stroke(
+                            card::paint(
+                                &painter,
                                 r,
-                                3,
-                                Stroke::new(1.0, style::border_strong()),
-                                egui::StrokeKind::Inside,
+                                card::Look::custom(
+                                    if dim { style::text_3() } else { style::surface_2() },
+                                    style::border_strong(),
+                                    3,
+                                ),
                             );
                         }
                         let g = style::galley(ui, label, 11.5, Weight::W400, style::text_3(), 0.0);

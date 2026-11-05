@@ -26,8 +26,10 @@ use crate::ui::card;
 use crate::ui::chip::Chip;
 use crate::ui::icons;
 use crate::ui::kit::{self, Button, Variant};
+use crate::ui::message::Tone;
 use crate::ui::modal;
 use crate::ui::pagekit;
+use crate::ui::progress::Bar;
 use crate::ui::style::{self, Weight};
 
 /// No autopilot word within this long of a successful start means something
@@ -901,12 +903,10 @@ impl CalibrationPage {
             Pos2::new(ix, y + 19.0 + (inner_h - panel_h) / 2.0),
             Vec2::new(fig_panel_w, panel_h),
         );
-        painter.rect_filled(panel, style::RADIUS, style::surface_2());
-        painter.rect_stroke(
+        card::paint(
+            &painter,
             panel,
-            style::RADIUS,
-            Stroke::new(1.0, style::border_soft()),
-            egui::StrokeKind::Inside,
+            card::Look::custom(style::surface_2(), style::border_soft(), style::RADIUS),
         );
         wz.figure.set(
             wz.preview.unwrap_or(st.pose),
@@ -969,31 +969,19 @@ impl CalibrationPage {
         if let Some(p) = st.progress {
             ty += 8.0 + 4.0;
             let bar = Rect::from_min_size(Pos2::new(text_x, ty), Vec2::new(text_w, 5.0));
-            painter.rect_filled(bar, 3, style::surface_3());
-            let fw = text_w * (p.clamp(0.0, 100.0) as f32) / 100.0;
-            if fw > 0.0 {
-                painter.rect_filled(
-                    Rect::from_min_size(bar.min, Vec2::new(fw, 5.0)),
-                    3,
-                    if st.phase == Phase::Done {
-                        style::healthy()
-                    } else {
-                        style::nav()
-                    },
-                );
-            }
+            Bar::new(p.clamp(0.0, 100.0) as f32 / 100.0)
+                .fill(if st.phase == Phase::Done {
+                    style::healthy()
+                } else {
+                    style::nav()
+                })
+                .show(&painter, bar);
             ty += 5.0;
         }
         if let Some(g) = dog_g {
             ty += 8.0;
             let r = Rect::from_min_size(Pos2::new(text_x, ty), Vec2::new(text_w, g.size().y + 18.0));
-            painter.rect_filled(r, style::RADIUS_BTN, style::warning_dark());
-            painter.rect_stroke(
-                r,
-                style::RADIUS_BTN,
-                Stroke::new(1.0, style::warning()),
-                egui::StrokeKind::Inside,
-            );
+            card::paint(&painter, r, card::Look::Tone(Tone::Warn));
             painter.galley(r.min + Vec2::new(11.0, 9.0), g, style::warning());
             ty = r.bottom();
         }
@@ -1102,8 +1090,7 @@ impl CalibrationPage {
                         style::text_2(),
                     ),
                 };
-                painter.rect_filled(r, style::RADIUS, bg);
-                painter.rect_stroke(r, style::RADIUS, Stroke::new(1.0, bd), egui::StrokeKind::Inside);
+                card::paint(&painter, r, card::Look::custom(bg, bd, style::RADIUS));
                 let fade = if side == Side::Done { 0.45 } else { 1.0 };
                 let inner_w = cw - 14.0;
                 let fig_area =
@@ -1229,13 +1216,7 @@ impl CalibrationPage {
             };
             let box_h = (rows_h + 16.0 + 2.0).min(200.0);
             let rect = Rect::from_min_size(Pos2::new(lx, ly), Vec2::new(lw, box_h));
-            painter.rect_filled(rect, style::RADIUS_BTN, style::terminal_bg());
-            painter.rect_stroke(
-                rect,
-                style::RADIUS_BTN,
-                Stroke::new(1.0, style::border_soft()),
-                egui::StrokeKind::Inside,
-            );
+            card::paint(&painter, rect, card::Look::Console);
             let inner = rect.shrink2(Vec2::new(11.0, 9.0));
             let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner));
             child.set_clip_rect(inner);
@@ -1341,13 +1322,7 @@ impl CalibrationPage {
                         + 8.0 * (lines.len() as f32 - 1.0)
                         + 24.0;
                     let r = Rect::from_min_size(Pos2::new(mx, my), Vec2::new(mw, h));
-                    ui.painter().rect_filled(r, style::RADIUS_BTN, style::critical_dark());
-                    ui.painter().rect_stroke(
-                        r,
-                        style::RADIUS_BTN,
-                        Stroke::new(1.0, style::critical()),
-                        egui::StrokeKind::Inside,
-                    );
+                    card::paint(ui.painter(), r, card::Look::Tone(Tone::Err));
                     let mut ly = r.top() + 12.0;
                     for (g, (icon, _)) in lines.into_iter().zip(proc.prep) {
                         let lh = g.size().y.max(18.0);
@@ -1471,12 +1446,10 @@ fn calib_card(ui: &mut egui::Ui, r: Rect, p: &Procedure, disabled: bool, support
     } else {
         (style::surface_1(), style::border_soft())
     };
-    painter.rect_filled(r, style::RADIUS, bg.gamma_multiply(fade));
-    painter.rect_stroke(
+    card::paint(
+        &painter,
         r,
-        style::RADIUS,
-        Stroke::new(1.0, bd.gamma_multiply(fade)),
-        egui::StrokeKind::Inside,
+        card::Look::custom(bg.gamma_multiply(fade), bd.gamma_multiply(fade), style::RADIUS),
     );
     let icon_box = Rect::from_min_size(Pos2::new(r.left() + 17.0, r.center().y - 19.0), Vec2::splat(38.0));
     let (ibg, ifg) = if p.danger {

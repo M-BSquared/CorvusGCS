@@ -7,8 +7,10 @@ use eframe::egui::{self, Pos2, Rect, Stroke, Vec2};
 use serde_json::{json, Value};
 
 use super::{model, refused, Dialog, SettingsPage};
-use crate::ui::form::{self, Form, Tone, CONTROL_H};
+use crate::ui::card::{self, Look};
+use crate::ui::form::{self, Form, CONTROL_H};
 use crate::ui::kit::{self, Button, Variant};
+use crate::ui::message::Tone;
 use crate::ui::style::{self, Weight};
 
 const FLEET_HINT: &str = "One link is one vehicle. A second vehicle needs a radio of its own and a link of its own. Another autopilot heard on a link is ignored.";
@@ -81,12 +83,14 @@ impl SettingsPage {
                 let h = 35.0;
                 let r = f.rect(h);
                 let on = s(l, "id") == active;
-                ui.painter().rect_filled(r, style::RADIUS, style::glass(0.82));
-                ui.painter().rect_stroke(
+                card::paint(
+                    ui.painter(),
                     r,
-                    style::RADIUS,
-                    Stroke::new(1.0, if on { style::accent() } else { style::tint(0.09) }),
-                    egui::StrokeKind::Inside,
+                    Look::custom(
+                        style::glass(0.82),
+                        if on { style::accent() } else { style::tint(0.09) },
+                        style::RADIUS,
+                    ),
                 );
                 let color = match link_level(s(l, "status")) {
                     "healthy" => style::healthy(),
@@ -844,13 +848,7 @@ impl SettingsPage {
                         let g = style::galley_mono(ui, &cfg, 11.0, style::text_2());
                         let ch = g.size().y + 20.0;
                         let r = f.rect(ch);
-                        ui.painter().rect_filled(r, style::RADIUS_BTN, style::input(0.6));
-                        ui.painter().rect_stroke(
-                            r,
-                            style::RADIUS_BTN,
-                            Stroke::new(1.0, style::border()),
-                            egui::StrokeKind::Inside,
-                        );
+                        card::paint(ui.painter(), r, Look::Well);
                         ui.painter().galley(r.min + Vec2::new(10.0, 10.0), g, style::text_2());
                         f.y = r.bottom() + 8.0;
                         if form::actions(

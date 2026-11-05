@@ -737,8 +737,11 @@ impl RadioPage {
                 1.5,
             );
             let r = Rect::from_min_size(Pos2::new(x, y - 14.0), Vec2::new(w, g.size().y + 20.0));
-            painter.rect_filled(r, 10, style::critical_dark());
-            painter.rect_stroke(r, 10, Stroke::new(1.0, style::critical()), egui::StrokeKind::Inside);
+            card::paint(
+                &painter,
+                r,
+                card::Look::custom(style::critical_dark(), style::critical(), 10),
+            );
             icons::paint(
                 ui,
                 "triangle-alert",
@@ -970,12 +973,14 @@ impl RadioPage {
                 Vec2::new(cw, slot_h),
             );
             let on = active == Some(i);
-            painter.rect_filled(r, 9, if on { style::surface_2() } else { style::surface_1() });
-            painter.rect_stroke(
+            card::paint(
+                &painter,
                 r,
-                9,
-                Stroke::new(1.0, if on { style::nav() } else { style::border_soft() }),
-                egui::StrokeKind::Inside,
+                card::Look::custom(
+                    if on { style::surface_2() } else { style::surface_1() },
+                    if on { style::nav() } else { style::border_soft() },
+                    9,
+                ),
             );
             let g = style::galley_mono(
                 ui,
@@ -1486,8 +1491,11 @@ impl RadioPage {
                     cy += 10.0;
                     let g = kit::wrapped_weight(ui, &t, 11.5, Weight::W400, style::critical_bright(), iw - 22.0, 1.5);
                     let r = Rect::from_min_size(Pos2::new(ix, cy), Vec2::new(iw, g.size().y + 18.0));
-                    painter.rect_filled(r, 9, style::critical_dark());
-                    painter.rect_stroke(r, 9, Stroke::new(1.0, style::critical()), egui::StrokeKind::Inside);
+                    card::paint(
+                        &painter,
+                        r,
+                        card::Look::custom(style::critical_dark(), style::critical(), 9),
+                    );
                     painter.galley(r.min + Vec2::new(11.0, 9.0), g, style::critical_bright());
                     cy = r.bottom();
                 }

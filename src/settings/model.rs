@@ -548,8 +548,8 @@ pub fn cache_line(data: &Value) -> String {
 }
 
 /// The verdict a finished update check shows (`Check now`).
-pub fn update_verdict(data: &Value) -> (String, crate::ui::form::Tone) {
-    use crate::ui::form::Tone;
+pub fn update_verdict(data: &Value) -> (String, crate::ui::message::Tone) {
+    use crate::ui::message::Tone;
     let latest = data.get("latest").and_then(Value::as_str).unwrap_or("");
     if data.get("enabled").and_then(Value::as_bool) == Some(false) {
         ("Update checks are switched off.".into(), Tone::Warn)

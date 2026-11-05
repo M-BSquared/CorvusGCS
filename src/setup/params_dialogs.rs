@@ -10,6 +10,7 @@ use eframe::egui::{self, Pos2, Rect, Stroke, Vec2};
 
 use crate::net::bg::Pending;
 use crate::setup::params_files::{self as files, Preview, FORMATS};
+use crate::ui::card::{self, Look};
 use crate::ui::kit::{self, Button, Choice, Variant};
 use crate::ui::modal;
 use crate::ui::style::{self, Weight};
@@ -57,13 +58,7 @@ pub enum Out {
 fn desc_box(ui: &egui::Ui, x: f32, y: f32, w: f32, text: &str) -> f32 {
     let g = kit::wrapped_weight(ui, text, 12.0, Weight::W400, style::text_2(), w - 28.0, 1.55);
     let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, g.size().y + 24.0));
-    ui.painter().rect_filled(r, style::RADIUS_BTN, style::surface_2());
-    ui.painter().rect_stroke(
-        r,
-        style::RADIUS_BTN,
-        Stroke::new(1.0, style::border_soft()),
-        egui::StrokeKind::Inside,
-    );
+    card::paint(ui.painter(), r, Look::Note);
     ui.painter().galley(r.min + Vec2::new(14.0, 12.0), g, style::text_2());
     r.bottom()
 }

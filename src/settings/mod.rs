@@ -25,7 +25,8 @@ use serde_json::Value;
 use crate::data::units::Units;
 use crate::net::bg::Pending;
 use crate::net::http::{self, Server};
-use crate::ui::form::{self, Form, Tone};
+use crate::ui::form::{self, Form};
+use crate::ui::message::Tone;
 use crate::ui::{pagekit, style};
 
 use model::TABS;
@@ -380,7 +381,7 @@ impl SettingsPage {
             self.enter(ui.ctx());
         }
         self.poll(ui.ctx());
-        ui.painter().rect_filled(rect, 0, style::bg());
+        pagekit::background(ui, rect);
         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
         child.set_clip_rect(rect);
         let mut area = egui::ScrollArea::vertical()

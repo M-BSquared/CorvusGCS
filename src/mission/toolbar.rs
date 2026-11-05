@@ -288,6 +288,7 @@ impl MissionPage {
                 active: self.tool_active(e.tool),
                 blocked: blocked.is_some(),
                 next: e.tool == Tool::Home && self.plan.home.is_none(),
+                ..Default::default()
             };
             if fabar::button(ui, r, icon, caption, &title, look, (fit.scale, fit.compact), ("mt", k)) {
                 pressed = Some(e.tool);
@@ -357,6 +358,7 @@ impl MissionPage {
                 active: self.tool == tool,
                 blocked: blocked.is_some(),
                 next: false,
+                ..Default::default()
             };
             let title = blocked.unwrap_or_else(|| hint.to_string());
             if fabar::button(

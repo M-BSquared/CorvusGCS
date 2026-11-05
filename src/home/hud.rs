@@ -12,6 +12,7 @@ use serde_json::Value;
 
 use crate::data::units::{js_round, js_to_fixed, Units};
 use crate::home::topbar::is_airborne;
+use crate::ui::card::{self, Look};
 use crate::ui::style::{self, Weight};
 
 const PAD: f32 = 8.0;
@@ -242,12 +243,10 @@ impl Hud {
         );
         {
             let r = grid;
-            painter.rect_filled(r, style::RADIUS_BTN, style::border_soft());
-            painter.rect_stroke(
+            card::paint(
+                &painter,
                 r,
-                style::RADIUS_BTN,
-                Stroke::new(1.0, style::border_soft()),
-                egui::StrokeKind::Inside,
+                Look::custom(style::border_soft(), style::border_soft(), style::RADIUS_BTN),
             );
         }
         let inner = grid.shrink(1.0);

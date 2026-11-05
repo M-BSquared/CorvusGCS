@@ -22,6 +22,7 @@ use walkers::{HttpOptions, HttpTiles, MapMemory, Plugin, Projector, TileId};
 use crate::data::track::{self, Point, Track};
 use crate::map3d::{Layers3d, Map3d};
 use crate::net::http::Server;
+use crate::ui::card::{self, Look};
 use crate::ui::style;
 
 /// The web map's start: where it opens before any aircraft is heard.
@@ -611,19 +612,18 @@ fn paint_region(painter: &egui::Painter, projector: &Projector, rect: egui::Rect
     let w = name.size().x.max(meta.size().x) + 16.0 + 2.0;
     let h = name.size().y + 1.0 + meta.size().y + 8.0 + 2.0;
     let chip = egui::Rect::from_center_size(c, Vec2::new(w, h));
-    painter.rect_filled(chip, style::RADIUS_BTN, style::glass(0.72));
-    painter.rect_stroke(
+    card::paint(
+        painter,
         chip,
-        style::RADIUS_BTN,
-        Stroke::new(
-            1.0,
+        Look::custom(
+            style::glass(0.72),
             if r.running {
                 style::warning()
             } else {
                 blue.gamma_multiply(0.45)
             },
+            style::RADIUS_BTN,
         ),
-        egui::StrokeKind::Inside,
     );
     painter.galley(
         Pos2::new(c.x - name.size().x / 2.0, chip.top() + 5.0),
@@ -907,12 +907,10 @@ fn paint_measure(
         let h = dg.size().y.max(hg.size().y) + 6.0 + 2.0;
         let mid = at(crate::map::measure::midpoint(line.from, line.to));
         let chip = egui::Rect::from_min_size(Pos2::new(mid.x - w / 2.0, mid.y - 10.0 - h), Vec2::new(w, h));
-        painter.rect_filled(chip, style::RADIUS_BTN, style::glass(0.85));
-        painter.rect_stroke(
+        card::paint(
+            painter,
             chip,
-            style::RADIUS_BTN,
-            Stroke::new(1.0, style::tint(0.1)),
-            egui::StrokeKind::Inside,
+            Look::custom(style::glass(0.85), style::tint(0.1), style::RADIUS_BTN),
         );
         let base = chip.bottom() - 1.0 - 3.0;
         painter.galley(

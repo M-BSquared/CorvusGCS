@@ -10,6 +10,7 @@ use walkers::Projector;
 use crate::map::Overlay;
 use crate::mission::geometry::{self, circle_ring, distance_ll, ring_radius, stations};
 use crate::mission::plan::{Item, Kind, Plan, Shape, Tool, RADIUS_MAX_M, RADIUS_MIN_M};
+use crate::ui::card;
 use crate::ui::icons;
 use crate::ui::style::{self, Weight};
 
@@ -309,8 +310,11 @@ fn paint_point(ui: &egui::Ui, c: Pos2, number: usize, item: &Item, look: &Look) 
         let size = g.size() + pad * 2.0 + Vec2::splat(2.0);
         let left = c.x + 14.0 * look.scale + 6.0 * look.scale;
         let rect = Rect::from_min_size(Pos2::new(left, c.y - size.y / 2.0), size);
-        painter.rect_filled(rect, 4, with(PLAN_INK, 0.8));
-        painter.rect_stroke(rect, 4, Stroke::new(1.0, with(PLAN, 0.55)), egui::StrokeKind::Inside);
+        card::paint(
+            painter,
+            rect,
+            card::Look::custom(with(PLAN_INK, 0.8), with(PLAN, 0.55), 4),
+        );
         painter.galley(rect.min + pad + Vec2::splat(1.0), g, Color32::WHITE);
     }
 }

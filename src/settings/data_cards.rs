@@ -7,8 +7,10 @@ use eframe::egui::{self};
 use serde_json::{json, Value};
 
 use super::{model, refused, Dialog, SettingsPage};
-use crate::ui::form::{self, Form, Opt, Switch, Tone};
+use crate::ui::form::{self, Form, Switch};
 use crate::ui::kit::{Button, Variant};
+use crate::ui::message::Tone;
+use crate::ui::optioncards::Card;
 use crate::ui::style;
 
 /// The parts a settings file is chosen by (`SECTIONS` of settings-transfer.js).
@@ -138,7 +140,7 @@ impl SettingsPage {
         });
         form::section(ui, f, "Analysis", |ui, f| {
             let cur = model::review_of(&self.cfg);
-            let opts: Vec<Opt> = model::REVIEW.iter().map(|r| Opt::new(r.0, r.1, r.2)).collect();
+            let opts: Vec<Card> = model::REVIEW.iter().map(|r| Card::new(r.0, r.1, r.2)).collect();
             let mut picked = None;
             form::card(ui, f, "Flight review", |ui, f| {
                 form::field(

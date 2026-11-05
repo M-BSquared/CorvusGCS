@@ -10,8 +10,10 @@ use super::{model, AnalysisPage, View};
 use crate::net::bg::Pending;
 use crate::net::http;
 use crate::ui::card::{self, Look};
-use crate::ui::form::{self, Form, Tone};
+use crate::ui::form::{self, Form};
 use crate::ui::kit::{self, Button, Variant};
+use crate::ui::listrow::{self, Mark};
+use crate::ui::message::Tone;
 use crate::ui::style::{self, Weight};
 
 /// `SCOPE_POLL_MS`.
@@ -196,11 +198,7 @@ impl AnalysisPage {
                     let row = Rect::from_min_size(Pos2::new(left, y), Vec2::new(inner.w - 8.0, row_h));
                     let resp = ui.interact(row, ui.scope_id().with(("scoperow", key)), egui::Sense::click());
                     let sel = key == selected;
-                    if sel {
-                        ui.painter().rect_filled(row, 6, style::nav().gamma_multiply(0.16));
-                    } else if resp.hovered() {
-                        ui.painter().rect_filled(row, 6, style::surface_hover());
-                    }
+                    listrow::paint(ui.painter(), row, 6, Mark::of(sel, resp.hovered()));
                     let n = |k: &str| r.get(k).and_then(Value::as_f64).unwrap_or(0.0);
                     let quiet = n("rate").is_nan() || n("rate") <= 0.0;
                     let color = if quiet { style::text_3() } else { style::text_1() };

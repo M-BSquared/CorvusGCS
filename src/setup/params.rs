@@ -21,9 +21,12 @@ use crate::net::bg::Pending;
 use crate::net::http::{self, Server};
 use crate::setup::params_dialogs::{self as dialogs, ExportDlg, ImportDlg};
 use crate::setup::params_files as files;
-use crate::ui::card;
+use crate::ui::card::{self, Look};
+use crate::ui::field;
 use crate::ui::kit::{self, Button, Choice, Variant};
+use crate::ui::message::Tone;
 use crate::ui::pagekit;
+use crate::ui::progress::Bar;
 use crate::ui::style::{self, Weight};
 
 /// Rows drawn at once.
@@ -1281,13 +1284,7 @@ impl ParamsPage {
         let box_ = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, g.size().y + 24.0));
         {
             let r = box_;
-            ui.painter().rect_filled(r, style::RADIUS_BTN, style::surface_2());
-            ui.painter().rect_stroke(
-                r,
-                style::RADIUS_BTN,
-                Stroke::new(1.0, style::border_soft()),
-                egui::StrokeKind::Inside,
-            );
+            card::paint(ui.painter(), r, Look::Note);
         }
         ui.painter().galley(Pos2::new(x + 14.0, y + 12.0), g, style::text_2());
         y = box_.bottom() + 12.0;
@@ -1317,21 +1314,15 @@ impl ParamsPage {
     fn progress(&mut self, ui: &mut egui::Ui, x: f32, mut y: f32, w: f32, received: u64, count: u64) -> f32 {
         y = pagekit::section_title(ui, x, y, w, "Downloading Parameters");
         let bar = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, 8.0));
-        let painter = ui.painter();
-        {
-            let r = bar;
-            painter.rect_filled(r, 4, style::surface_3());
-            painter.rect_stroke(r, 4, Stroke::new(1.0, style::border_soft()), egui::StrokeKind::Inside);
-        }
         let pct = if count > 0 {
             ((received as f64 / count as f64) * 100.0).round().min(100.0)
         } else {
             0.0
         };
-        if pct > 0.0 {
-            let fill = Rect::from_min_size(bar.min, Vec2::new(bar.width() * pct as f32 / 100.0, 8.0));
-            painter.rect_filled(fill, 4, style::accent());
-        }
+        Bar::new(pct as f32 / 100.0)
+            .track(style::surface_3())
+            .bordered()
+            .show(ui.painter(), bar);
         y = bar.bottom() + 8.0;
         let label = if count > 0 {
             format!("{received} / {count} parameters \u{00b7} {pct}%")
@@ -1382,13 +1373,7 @@ impl ParamsPage {
             );
             let r = Rect::from_min_size(Pos2::new(x, y + 12.0), Vec2::new(w, g.size().y + 24.0));
             {
-                ui.painter().rect_filled(r, style::RADIUS_BTN, style::warning_dark());
-                ui.painter().rect_stroke(
-                    r,
-                    style::RADIUS_BTN,
-                    Stroke::new(1.0, style::warning()),
-                    egui::StrokeKind::Inside,
-                );
+                card::paint(ui.painter(), r, Look::Tone(Tone::Warn));
             }
             ui.painter().galley(r.min + Vec2::new(14.0, 12.0), g, style::warning());
             y = r.bottom();
@@ -1578,12 +1563,10 @@ impl ParamsPage {
         let bar = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, 10.0 * 2.0 + 29.0));
         {
             let r = bar;
-            ui.painter().rect_filled(r, style::RADIUS_BTN, style::surface_1());
-            ui.painter().rect_stroke(
+            card::paint(
+                ui.painter(),
                 r,
-                style::RADIUS_BTN,
-                Stroke::new(1.0, style::nav()),
-                egui::StrokeKind::Inside,
+                Look::custom(style::surface_1(), style::nav(), style::RADIUS_BTN),
             );
         }
         let text = format!("{n} unsaved change{}", if n == 1 { "" } else { "s" });
@@ -1844,13 +1827,7 @@ impl ParamsPage {
                     .map_or(draft.clone(), |c| c.label.clone());
                 {
                     let r = field;
-                    painter.rect_filled(r, style::RADIUS_BTN, style::surface_2());
-                    painter.rect_stroke(
-                        r,
-                        style::RADIUS_BTN,
-                        Stroke::new(1.0, style::border()),
-                        egui::StrokeKind::Inside,
-                    );
+                    card::paint(&painter, r, Look::Raised);
                 }
                 painter.galley(
                     Pos2::new(field.left() + 11.0, field.center().y - 8.0),
@@ -1879,13 +1856,7 @@ impl ParamsPage {
             if armed {
                 {
                     let r = field;
-                    painter.rect_filled(r, style::RADIUS_BTN, style::surface_2());
-                    painter.rect_stroke(
-                        r,
-                        style::RADIUS_BTN,
-                        Stroke::new(1.0, style::border()),
-                        egui::StrokeKind::Inside,
-                    );
+                    card::paint(&painter, r, Look::Raised);
                 }
                 painter.galley(
                     Pos2::new(field.left() + 9.0, field.center().y - 8.0),
@@ -1898,7 +1869,7 @@ impl ParamsPage {
                     new_text = Some(text);
                 }
                 if let Some(c) = border {
-                    painter.rect_stroke(field, style::RADIUS_BTN, Stroke::new(1.0, c), egui::StrokeKind::Inside);
+                    field::outline(&painter, field, c);
                 }
                 if resp.has_focus()
                     && ui.input(|i| i.key_pressed(egui::Key::Escape))

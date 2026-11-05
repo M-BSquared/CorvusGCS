@@ -11,6 +11,7 @@ use eframe::egui::{self, Color32, Pos2, Rect, Stroke, Vec2};
 use serde_json::Value;
 
 use crate::map::Map;
+use crate::ui::card::{self, Look};
 use crate::ui::icons;
 use crate::ui::style::{self, Weight};
 
@@ -326,12 +327,14 @@ pub fn clear_disc(ui: &mut egui::Ui, area: Rect, lift: f32, title: &str) -> bool
             (style::text_2(), 0.85)
         };
         if hot {
-            painter.rect_filled(r, 255u8, style::critical().gamma_multiply(0.14));
-            painter.rect_stroke(
+            card::paint(
+                &painter,
                 r,
-                255u8,
-                Stroke::new(1.0, style::critical().gamma_multiply(0.45)),
-                egui::StrokeKind::Inside,
+                Look::custom(
+                    style::critical().gamma_multiply(0.14),
+                    style::critical().gamma_multiply(0.45),
+                    255u8,
+                ),
             );
         }
         icons::paint(

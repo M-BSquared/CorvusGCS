@@ -12,6 +12,7 @@ use eframe::egui::{self, Color32, Pos2, Rect, Vec2};
 use serde_json::Value;
 
 use crate::data::units::{js_to_fixed, Units};
+use crate::ui::listrow::{self, Mark};
 use crate::ui::style::{self, Weight};
 
 /// What a value is saying: its class in the web bar (`.tb-value.<cls>`).
@@ -672,7 +673,7 @@ pub fn show(
         );
         let open = crate::ui::popover::is_open(ui.ctx(), id);
         if response.hovered() || open {
-            painter.rect_filled(block, 0, style::surface_hover());
+            listrow::paint(&painter, block, 0, Mark::Hover);
         } else if let Some(fill) = tile(b) {
             painter.rect_filled(block, 0, fill);
         }

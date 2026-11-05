@@ -5,6 +5,7 @@
 
 use eframe::egui::{self, Align2, Color32, Id, Pos2, Rect, Stroke, Vec2};
 
+use crate::ui::card::{self, Look};
 use crate::ui::icons;
 use crate::ui::style::{self, Weight};
 
@@ -84,6 +85,28 @@ pub struct TextField<'a> {
     name: &'static str,
     focus: Option<Color32>,
     secret: bool,
+}
+
+/// A 1 px outline over a field in `color`: the red of a value that did not
+/// pass, the colour of a changed one.
+pub fn outline(painter: &egui::Painter, rect: Rect, color: Color32) {
+    painter.rect_stroke(
+        rect,
+        style::RADIUS_BTN,
+        Stroke::new(1.0, color),
+        egui::StrokeKind::Inside,
+    );
+}
+
+fn focus_ring(painter: &egui::Painter, rect: Rect, focused: bool) {
+    if focused {
+        painter.rect_stroke(
+            rect.expand(2.0),
+            style::RADIUS_BTN + 2,
+            Stroke::new(2.0, style::accent_dim()),
+            egui::StrokeKind::Inside,
+        );
+    }
 }
 
 impl<'a> TextField<'a> {
@@ -188,45 +211,22 @@ impl<'a> TextField<'a> {
         let painter = ui.painter().clone();
         match self.surface {
             Surface::Well => {
-                if focused {
-                    painter.rect_stroke(
-                        rect.expand(2.0),
-                        style::RADIUS_BTN + 2,
-                        Stroke::new(2.0, style::accent_dim()),
-                        egui::StrokeKind::Inside,
-                    );
-                }
-                painter.rect_filled(rect, style::RADIUS_BTN, style::input(0.6));
-                painter.rect_stroke(
-                    rect,
-                    style::RADIUS_BTN,
-                    Stroke::new(
-                        1.0,
-                        if focused {
-                            self.focus.unwrap_or_else(style::accent)
-                        } else {
-                            style::border()
-                        },
-                    ),
-                    egui::StrokeKind::Inside,
-                );
+                focus_ring(&painter, rect, focused);
+                let line = if focused {
+                    self.focus.unwrap_or_else(style::accent)
+                } else {
+                    style::border()
+                };
+                card::paint(&painter, rect, Look::custom(style::input(0.6), line, style::RADIUS_BTN));
             }
             Surface::Bare => {}
             Surface::Glass => {
-                if focused {
-                    painter.rect_stroke(
-                        rect.expand(2.0),
-                        style::RADIUS_BTN + 2,
-                        Stroke::new(2.0, style::accent_dim()),
-                        egui::StrokeKind::Inside,
-                    );
-                }
-                painter.rect_filled(rect, style::RADIUS_BTN, style::glass(0.82));
-                painter.rect_stroke(
+                focus_ring(&painter, rect, focused);
+                let line = if focused { style::accent() } else { style::tint(0.09) };
+                card::paint(
+                    &painter,
                     rect,
-                    style::RADIUS_BTN,
-                    Stroke::new(1.0, if focused { style::accent() } else { style::tint(0.09) }),
-                    egui::StrokeKind::Inside,
+                    Look::custom(style::glass(0.82), line, style::RADIUS_BTN),
                 );
             }
             Surface::Floating { rest, focus } => {
@@ -292,4 +292,35 @@ impl<'a> TextField<'a> {
             .min_size(Vec2::new(0.0, rect.height()));
         child.add(edit)
     }
+}
+
+/// A `.field-input`: the recessed well, 1 px border, a focus ring in the
+/// accent. `mono` sets it in JetBrains Mono like `.field-input-mono`.
+pub fn text_field(
+    ui: &mut egui::Ui,
+    rect: Rect,
+    text: &mut String,
+    placeholder: &str,
+    mono: bool,
+    id: impl std::hash::Hash + std::fmt::Debug,
+) -> egui::Response {
+    text_field_padded(ui, rect, text, placeholder, mono, id, 11.0)
+}
+
+/// `text_field` with the control's own side padding: 10 px by default, 6 in
+/// a table cell.
+pub fn text_field_padded(
+    ui: &mut egui::Ui,
+    rect: Rect,
+    text: &mut String,
+    placeholder: &str,
+    mono: bool,
+    id: impl std::hash::Hash + std::fmt::Debug,
+    pad: f32,
+) -> egui::Response {
+    TextField::new(text)
+        .hint(placeholder)
+        .mono(mono)
+        .pad(pad, pad)
+        .show(ui, rect, id)
 }

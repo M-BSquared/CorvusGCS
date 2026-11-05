@@ -18,6 +18,7 @@ use serde_json::Value;
 
 use crate::net::http::{self, Server};
 use crate::setup::video_model::Local;
+use crate::ui::card;
 use crate::ui::kit;
 use crate::ui::style::{self, Weight};
 
@@ -486,19 +487,7 @@ impl VideoWindow {
                         );
                     }
                 }
-                painter.set(
-                    bg,
-                    egui::Shape::Vec(vec![
-                        egui::Shape::Rect(style::shadow_pop().as_shape(rect, 12)),
-                        egui::Shape::rect_filled(rect, 12, style::glass(0.97)),
-                        egui::Shape::rect_stroke(
-                            rect,
-                            12,
-                            Stroke::new(1.0, style::border_strong()),
-                            egui::StrokeKind::Inside,
-                        ),
-                    ]),
-                );
+                painter.set(bg, card::window(rect, 0.97, style::border_strong()));
             });
         if toggle {
             self.maximized = !self.maximized;

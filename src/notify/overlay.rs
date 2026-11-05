@@ -9,6 +9,7 @@ use eframe::egui::{self, Color32, CornerRadius, Pos2, Rect, Stroke, Vec2};
 use crate::notify::{Board, Notification, Summary};
 use crate::ui::icons;
 use crate::ui::kit;
+use crate::ui::listrow::{self, Mark};
 use crate::ui::style::{self, Weight};
 
 const GUTTER: f32 = 9.0;
@@ -90,7 +91,7 @@ pub fn block(ui: &mut egui::Ui, bar: Rect, x: f32, summary: &Summary, open: bool
     let painter = ui.painter_at(r);
     let resp = ui.interact(r, ui.scope_id().with("tbwarnings"), egui::Sense::click());
     if resp.hovered() || open {
-        painter.rect_filled(r, 0, style::surface_hover());
+        listrow::paint(&painter, r, 0, Mark::Hover);
     }
     let value_h = 15.0 * 1.1;
     let top = r.center().y - (label.size().y + 2.0 + value_h) / 2.0;
@@ -214,7 +215,7 @@ fn row(
         .interact(d, ui.scope_id().with(("dismiss", &id)), egui::Sense::click())
         .on_hover_text("Dismiss");
     if dr.hovered() {
-        painter.rect_filled(d, style::RADIUS_BTN, style::surface_hover());
+        listrow::paint(painter, d, style::RADIUS_BTN, Mark::Hover);
     }
     icons::paint(
         ui,

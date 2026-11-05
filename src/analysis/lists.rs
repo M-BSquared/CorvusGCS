@@ -7,8 +7,12 @@ use serde_json::{json, Value};
 
 use super::{model, AnalysisPage, View};
 use crate::ui::card::{self, Look};
-use crate::ui::form::{self, Form, Tone};
+use crate::ui::chip::Chip;
+use crate::ui::form::{self, Form};
 use crate::ui::kit::{self, Button, Choice, Variant};
+use crate::ui::listrow::{self, Mark};
+use crate::ui::message::Tone;
+use crate::ui::progress::Bar;
 use crate::ui::style::{self, Weight};
 
 /// `TLOG_ROWS`.
@@ -270,33 +274,15 @@ impl AnalysisPage {
                     } else {
                         ""
                     };
-                    if state == "active" {
-                        ui.painter().rect_filled(row, style::RADIUS_BTN, nav_dark());
-                    } else if resp.hovered() {
-                        ui.painter().rect_filled(row, style::RADIUS_BTN, style::surface_hover());
-                    }
+                    listrow::paint(
+                        ui.painter(),
+                        row,
+                        style::RADIUS_BTN,
+                        Mark::of(state == "active", resp.hovered()),
+                    );
                     let on = selected.contains(&id);
                     let bx = Rect::from_min_size(Pos2::new(row.left() + 9.0, row.center().y - 7.0), Vec2::splat(14.0));
-                    if on {
-                        ui.painter().rect_filled(bx, 3, style::accent());
-                        let a = bx.left_top();
-                        ui.painter().line(
-                            vec![
-                                a + Vec2::new(3.2, 7.2),
-                                a + Vec2::new(6.0, 10.0),
-                                a + Vec2::new(11.0, 4.2),
-                            ],
-                            Stroke::new(1.8, Color32::WHITE),
-                        );
-                    } else {
-                        ui.painter().rect_filled(bx, 3, style::surface_1());
-                        ui.painter().rect_stroke(
-                            bx,
-                            3,
-                            Stroke::new(1.0, style::border_strong()),
-                            egui::StrokeKind::Inside,
-                        );
-                    }
+                    crate::ui::toggle::check_box(ui.painter(), bx, on, style::accent());
                     let tx = bx.right() + 10.0;
                     let title = style::galley(ui, &format!("Log {id}"), 12.5, Weight::W600, style::text_1(), 0.0);
                     let tw = title.size().x;
@@ -305,15 +291,11 @@ impl AnalysisPage {
                         .galley(Pos2::new(tx, row.top() + 7.0), title, style::text_1());
                     let downloaded = l.get("downloaded").and_then(Value::as_bool).unwrap_or(false);
                     if downloaded {
-                        let tag = style::galley(ui, "IN FOLDER", 9.0, Weight::W700, style::healthy(), 0.5);
-                        let r = Rect::from_min_size(
-                            Pos2::new(tx + tw + 7.0, row.top() + 7.0 + (th - (tag.size().y + 2.0)) / 2.0),
-                            Vec2::new(tag.size().x + 12.0, tag.size().y + 2.0),
-                        );
-                        ui.painter().rect_filled(r, 4, style::healthy_dark());
-                        ui.painter()
-                            .rect_stroke(r, 4, Stroke::new(1.0, style::healthy()), egui::StrokeKind::Inside);
-                        ui.painter().galley(r.min + Vec2::new(6.0, 1.0), tag, style::healthy());
+                        let tag = Chip::tag("IN FOLDER", 9.0, Weight::W700, 0.5, style::healthy())
+                            .radius(4)
+                            .fill(style::healthy_dark());
+                        let th_tag = tag.measure(ui).y;
+                        tag.paint(ui, Pos2::new(tx + tw + 7.0, row.top() + 7.0 + (th - th_tag) / 2.0));
                     }
                     let mut meta = format!(
                         "{}  \u{b7}  {}",
@@ -408,9 +390,9 @@ impl AnalysisPage {
         if running {
             inner.skip(10.0 + 4.0);
             let bar = inner.rect(5.0);
-            ui.painter().rect_filled(bar, 3, style::surface_3());
-            let fill = Rect::from_min_size(bar.min, Vec2::new(bar.width() * (percent as f32 / 100.0), 5.0));
-            ui.painter().rect_filled(fill, 3, style::nav());
+            Bar::new(percent as f32 / 100.0)
+                .fill(style::nav())
+                .show(ui.painter(), bar);
             inner.y = bar.bottom();
         }
         inner.skip(10.0);

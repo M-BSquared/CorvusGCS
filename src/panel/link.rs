@@ -13,7 +13,8 @@ use serde_json::{json, Value};
 
 use crate::net::bg::Pending;
 use crate::net::http::{self, Server};
-use crate::ui::card;
+use crate::ui::card::{self, Look};
+use crate::ui::chip::Chip;
 use crate::ui::icons;
 use crate::ui::kit::{self, Button, Choice, Variant};
 use crate::ui::segmented::{self, Segment};
@@ -445,13 +446,8 @@ impl LinkTab {
                     "warning" => style::warning(),
                     _ => style::critical(),
                 };
-                let pg = style::galley(ui, q, 9.5, Weight::W700, color, 0.6);
-                let pill = Rect::from_min_size(
-                    Pos2::new(px, cy - (pg.size().y + 6.0) / 2.0),
-                    pg.size() + Vec2::new(12.0, 6.0),
-                );
-                painter.rect_stroke(pill, 255, Stroke::new(1.0, color), egui::StrokeKind::Inside);
-                painter.galley(pill.min + Vec2::new(6.0, 3.0), pg, color);
+                let chip = Chip::tag(q.to_string(), 9.5, Weight::W700, 0.6, color).pad_y(2.0);
+                let pill = chip.paint(ui, Pos2::new(px, cy - chip.measure(ui).y / 2.0));
                 px = pill.right();
             }
         }
@@ -689,8 +685,7 @@ impl LinkTab {
                     };
                     {
                         let r = row;
-                        painter.rect_filled(r, style::RADIUS_BTN, fill);
-                        painter.rect_stroke(r, style::RADIUS_BTN, Stroke::new(1.0, stroke), egui::StrokeKind::Inside);
+                        card::paint(&painter, r, Look::custom(fill, stroke, style::RADIUS_BTN));
                     }
                     let ng = style::galley(
                         ui,

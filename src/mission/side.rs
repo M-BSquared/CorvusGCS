@@ -17,9 +17,11 @@ use crate::mission::plan::{
 };
 use crate::mission::progress::vehicle_line;
 use crate::mission::{Dialog, Level, MissionPage};
+use crate::ui::card::{self, Look};
 use crate::ui::field;
 use crate::ui::icons;
 use crate::ui::kit::{self, Button, Choice, Variant};
+use crate::ui::listrow::{self, Mark};
 use crate::ui::popover;
 use crate::ui::style::{self, Weight};
 
@@ -554,12 +556,14 @@ impl MissionPage {
                 if !issues.is_empty() {
                     for (k, issue) in issues.iter().enumerate() {
                         let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, 27.0));
-                        painter.rect_filled(r, style::RADIUS_BTN, style::warning().gamma_multiply(0.10));
-                        painter.rect_stroke(
+                        card::paint(
+                            &painter,
                             r,
-                            style::RADIUS_BTN,
-                            Stroke::new(1.0, mix(style::warning(), style::border_soft(), 0.45)),
-                            egui::StrokeKind::Inside,
+                            Look::custom(
+                                style::warning().gamma_multiply(0.10),
+                                mix(style::warning(), style::border_soft(), 0.45),
+                                style::RADIUS_BTN,
+                            ),
                         );
                         icons::paint(
                             ui,
@@ -699,23 +703,27 @@ impl MissionPage {
             let hover = resp.hovered() && self.side.row_drag.is_none();
             if is_carried {
                 painter.add(style::shadow_pop().as_shape(r, style::RADIUS_BTN));
-                painter.rect_filled(r, style::RADIUS_BTN, style::surface_2());
-                painter.rect_stroke(
+                card::paint(
+                    &painter,
                     r,
-                    style::RADIUS_BTN,
-                    Stroke::new(1.0, mix(style::nav(), style::border(), 0.5)),
-                    egui::StrokeKind::Inside,
+                    Look::custom(
+                        style::surface_2(),
+                        mix(style::nav(), style::border(), 0.5),
+                        style::RADIUS_BTN,
+                    ),
                 );
             } else if selected {
-                painter.rect_filled(r, style::RADIUS_BTN, style::surface_2());
-                painter.rect_stroke(
+                card::paint(
+                    &painter,
                     r,
-                    style::RADIUS_BTN,
-                    Stroke::new(1.0, mix(style::nav(), style::border(), 0.5)),
-                    egui::StrokeKind::Inside,
+                    Look::custom(
+                        style::surface_2(),
+                        mix(style::nav(), style::border(), 0.5),
+                        style::RADIUS_BTN,
+                    ),
                 );
             } else if hover {
-                painter.rect_filled(r, style::RADIUS_BTN, style::surface_hover());
+                listrow::paint(&painter, r, style::RADIUS_BTN, Mark::Hover);
             }
             if current {
                 painter.rect_filled(
