@@ -1004,9 +1004,41 @@ impl RadioPage {
     }
 
     /// The per channel calibration table: the numbers themselves, editable,
-    /// with the live pulse beside them.
+    /// with the live pulse beside them. Under 580 px it scrolls sideways
+    /// inside its card rather than widening it (`.rc-cal-table`,
+    /// `.rc-cal-row { min-width: 580px }`).
     #[allow(clippy::too_many_arguments)]
     fn channel_table(
+        &mut self,
+        ui: &mut egui::Ui,
+        ctx: &egui::Context,
+        doc: &Doc,
+        s: &model::Section,
+        x: f32,
+        y: f32,
+        w: f32,
+        armed: bool,
+    ) -> f32 {
+        if w >= model::CAL_TABLE_MIN_W {
+            return self.channel_rows(ui, ctx, doc, s, x, y, w, armed);
+        }
+        let height = model::cal_table_height(s.rows.len());
+        let area = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, height));
+        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(area));
+        child.set_clip_rect(area.expand2(Vec2::new(0.0, 4.0)).intersect(ui.clip_rect()));
+        egui::ScrollArea::horizontal()
+            .id_salt("rc-cal-table")
+            .auto_shrink([false, true])
+            .show(&mut child, |ui| {
+                let o = ui.cursor().min;
+                let bottom = self.channel_rows(ui, ctx, doc, s, o.x, o.y, model::CAL_TABLE_MIN_W, armed);
+                ui.allocate_space(Vec2::new(model::CAL_TABLE_MIN_W, bottom - o.y));
+            });
+        y + height
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn channel_rows(
         &mut self,
         ui: &mut egui::Ui,
         ctx: &egui::Context,

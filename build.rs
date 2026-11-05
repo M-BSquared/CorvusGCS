@@ -153,6 +153,7 @@ const ICONS: &[(&str, &str)] = &[
     ("pin-off", "PinOff"),
     ("chevrons-down-up", "ChevronsDownUp"),
     ("chevrons-up-down", "ChevronsUpDown"),
+    ("skip-forward", "SkipForward"),
 ];
 
 fn main() {

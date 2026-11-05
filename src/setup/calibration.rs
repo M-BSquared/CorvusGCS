@@ -1319,11 +1319,12 @@ impl CalibrationPage {
         }
         if modal_open {
             let mut go = false;
-            let closed = modal::show(
+            let closed = modal::show_toned(
                 ctx,
                 "calibmotor",
                 modal::Size::Sm,
                 "Motor / ESC Calibration",
+                true,
                 |ui, mx, my, mw| {
                     let mut lines = Vec::new();
                     for (_, text) in proc.prep {

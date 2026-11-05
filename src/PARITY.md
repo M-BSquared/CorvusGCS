@@ -29,7 +29,7 @@ otherwise; "native file" is in `src/`.
 | Theme from the config, six themes | theme.js | ui/style.rs | done |
 | Tablet and touch mode: larger targets, long press as right click, hover controls shown | touch.js, css/touch.css | app/touch.rs | missing |
 | Window title from `/api/version` | app.js | app/mod.rs | done |
-| First start page (welcome): look, units and review, workspace, controls, import, skip | welcome.js | welcome/ | missing |
+| First start page (welcome): look, units and review, workspace, controls, import, skip | welcome.js | welcome/mod.rs, welcome/model.rs | done: start page and four steps drawn and unit tested; the steps after the first were not clicked through against the sandbox |
 | Update check, badge and "newer release" dialog, skip this version, open release page | update.js | settings/about.rs (check only) | partial: no automatic check, no dialog |
 | MCP: question dialog (Allow, Refuse), indicator pill with Stop, plugin tools heartbeat | mcp.js | mcp/ | missing |
 | One shared `/api/events` stream for console, params, firmware, tiles, shell, mcp, fleet | events.js | net/stream.rs (one stream per topic) | done |
@@ -107,14 +107,14 @@ otherwise; "native file" is in `src/`.
 | First Setup wizard and new controller detection | setup-firstsetup.js, first-setup.js | setup/firstsetup*.rs | done |
 | Firmware | setup-firmware.js | setup/firmware*.rs | done |
 | Parameters | setup-parameters.js | setup/params*.rs | done |
-| Motors; motor dialog title border in red | setup-motors.js | setup/motors.rs | partial: no red title border |
+| Motors; motor dialog title border in red | setup-motors.js | setup/calibration.rs, ui/modal.rs | done |
 | Safety and sensors, geofence, landing | setup-safety.js, setup-geofence.js | setup/safety.rs, geofence*.rs, landing.rs | done |
 | Battery and power | setup-battery.js | setup/battery*.rs | done |
 | Calibration, figures, protocol | setup-calibration.js, calib-*.js | setup/calib*.rs | done |
 | Radio Control, wizard | setup-control.js | setup/radio*.rs | partial: wizard not clicked through against the simulator |
-| Radio table scrolls sideways under 580 px | setup-control.js | setup/radio.rs | missing |
+| Radio table scrolls sideways under 580 px | setup-control.js | setup/radio.rs | done: built, not looked at on screen |
 | RC transmitter drawing, learn, inspector | rc-transmitter.js | setup/rc_*.rs | done |
-| PID tuning; run bar sticks to the top | setup-tuning.js | setup/tuning.rs | partial: run bar scrolls away |
+| PID tuning; run bar sticks to the top | setup-tuning.js | setup/tuning.rs | done: built, not looked at on screen |
 | Telemetry radio (SiK) | setup-sik.js | setup/sik*.rs | done |
 | RTK GPS | setup-rtk.js | setup/rtk*.rs | done |
 | Video | setup-video.js | setup/video*.rs | done |

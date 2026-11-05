@@ -24,6 +24,7 @@ mod settings;
 mod setup;
 mod term;
 mod ui;
+mod welcome;
 
 use std::path::PathBuf;
 use std::process::ExitCode;

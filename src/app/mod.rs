@@ -38,6 +38,7 @@ static LOGO_FOR_DARK: &[u8] = include_bytes!("../../assets/CorvusGCS_logo.png");
 struct App {
     server: Server,
     control: crate::control::Control,
+    welcome: crate::welcome::Welcome,
     fleet: crate::fleet::Fleet,
     fleet_dialog: crate::fleet::dialog::Dialog,
     board: Board,
@@ -109,23 +110,29 @@ impl App {
     /// What the Settings page changed that the rest of the window reads from
     /// the config: theme, size, units, the Mission entry, the distance tool,
     /// the side panel's tabs, the base layer.
+    /// Puts what a config names in force: theme, size, units, the Mission
+    /// entry, the tabs, the controls, the HUD.
+    fn apply_effects(&mut self, ctx: &egui::Context, e: settings::Effects) {
+        style::set_theme(e.theme);
+        style::apply(ctx);
+        self.logo = logo_source();
+        if !e.base_layer.is_empty() && self.map.has_layer(&e.base_layer) {
+            self.map.set_source(ctx, &e.base_layer);
+        }
+        ctx.set_zoom_factor(e.scale);
+        self.units = e.units;
+        self.mission_page = e.mission_page;
+        self.rail.measure = e.measure_tool;
+        self.panel.console_tab = e.console_tab;
+        self.panel.ssh_tab = e.ssh_tab;
+        self.control.set_config(e.controls);
+        self.hud.visible = e.flight_hud;
+        self.hud.square = e.hud_square;
+    }
+
     fn apply_settings(&mut self, ctx: &egui::Context) {
         if let Some(e) = self.settings.take_effects() {
-            style::set_theme(e.theme);
-            style::apply(ctx);
-            self.logo = logo_source();
-            if !e.base_layer.is_empty() && self.map.has_layer(&e.base_layer) {
-                self.map.set_source(ctx, &e.base_layer);
-            }
-            ctx.set_zoom_factor(e.scale);
-            self.units = e.units;
-            self.mission_page = e.mission_page;
-            self.rail.measure = e.measure_tool;
-            self.panel.console_tab = e.console_tab;
-            self.panel.ssh_tab = e.ssh_tab;
-            self.control.set_config(e.controls);
-            self.hud.visible = e.flight_hud;
-            self.hud.square = e.hud_square;
+            self.apply_effects(ctx, e);
         }
         if self.settings.take_sources_dirty() {
             if let Ok(sources) = http::get_json(&self.server, "/api/tiles/sources") {
@@ -332,6 +339,25 @@ impl App {
         }
         for e in self.fleet.take_errors() {
             self.board.add_local("critical", &e, now);
+        }
+        match self.welcome.show(ui.ctx(), &self.server, &self.logo) {
+            crate::welcome::Event::None => {}
+            crate::welcome::Event::Preview(cfg) | crate::welcome::Event::Restore(cfg) => {
+                self.apply_effects(ui.ctx(), settings::Effects::of(&cfg));
+            }
+            crate::welcome::Event::Done(cfg) => {
+                self.apply_effects(ui.ctx(), settings::Effects::of(&cfg));
+                self.board.add_local(
+                    "info",
+                    "Corvus GCS is set up. Everything can be changed under Settings.",
+                    now,
+                );
+            }
+            crate::welcome::Event::Import => {
+                self.page = Page::Settings;
+                self.settings.enter(ui.ctx());
+                self.settings.open_import();
+            }
         }
         self.checklist.dialog(ui.ctx());
         if let Some(step) =
@@ -588,6 +614,13 @@ pub fn run(
                     server.clone(),
                     crate::control::model::Config::from_config(&config),
                 ),
+                welcome: {
+                    let mut w = crate::welcome::Welcome::start(&server, &ctx);
+                    if page == Some("welcome") {
+                        w.open_now(&server, &ctx, config.clone());
+                    }
+                    w
+                },
                 fleet: crate::fleet::Fleet::start(server.clone(), &ctx),
                 fleet_dialog: Default::default(),
                 board: Board::default(),

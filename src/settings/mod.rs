@@ -179,6 +179,13 @@ impl SettingsPage {
     }
 
     /// Opens on a pill by its id (the `--page settings:map` flag).
+    /// Opens the Data pill with the Import dialog over it (the first start
+    /// page's "Import settings").
+    pub fn open_import(&mut self) {
+        self.open_tab("data");
+        self.dialog = Some(Dialog::Import);
+    }
+
     pub fn open_tab(&mut self, id: &str) {
         if let Some(i) = TABS.iter().position(|t| t.0 == id) {
             self.tab = i;

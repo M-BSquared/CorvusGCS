@@ -63,6 +63,10 @@ pub struct TuningPage {
     scroll_to: Option<String>,
     loop_tops: Vec<(String, f32)>,
     run_start: Option<f64>,
+    /// The run strip's height and where the page ended last frame, which
+    /// the strip needs to stick to the top of the scroll and let go at the end.
+    strip_h: f32,
+    content_bottom: f32,
     last_phase: String,
     errors: Vec<String>,
     notes: Vec<String>,
@@ -94,6 +98,8 @@ impl TuningPage {
             scroll_to: None,
             loop_tops: Vec::new(),
             run_start: None,
+            strip_h: 0.0,
+            content_bottom: 0.0,
             last_phase: String::new(),
             errors: Vec::new(),
             notes: Vec::new(),
@@ -269,6 +275,63 @@ impl TuningPage {
 
     /// Draws the page from `y`; returns the bottom.
     pub fn show(&mut self, ui: &mut egui::Ui, x: f32, y: f32, w: f32, state: &Value, now: f64) -> f32 {
+        let end = self.show_page(ui, x, y, w, state, now);
+        self.content_bottom = end;
+        end
+    }
+
+    /// The run strip stays in view while the operator scrolls from one
+    /// loop's graphs to the next (`.tune-run`, sticky at the top in a window
+    /// 760 px or more high): once its place has scrolled past the top it is
+    /// drawn there instead, until the page's own end pushes it up. Returns
+    /// the bottom of its place in the page.
+    #[allow(clippy::too_many_arguments)]
+    fn run_strip_sticky(
+        &mut self,
+        ui: &mut egui::Ui,
+        ctx: &egui::Context,
+        g: &Group,
+        x: f32,
+        y: f32,
+        w: f32,
+        v: &Vehicle,
+    ) -> f32 {
+        let top = ui.clip_rect().top();
+        let tall = ctx.content_rect().height() >= 760.0;
+        if !(tall && self.strip_h > 0.0 && top > y) {
+            let bottom = self.run_strip(ui, ctx, g, x, y, w, v);
+            self.strip_h = bottom - y;
+            return bottom;
+        }
+        let limit = if self.content_bottom > 0.0 {
+            self.content_bottom - self.strip_h
+        } else {
+            f32::MAX
+        };
+        let at = top.min(limit).max(y);
+        let clip = ui.clip_rect();
+        egui::Area::new(ui.scope_id().with("tune-run-sticky"))
+            .order(egui::Order::Middle)
+            .fixed_pos(Pos2::new(x, at))
+            .show(ctx, |area| {
+                area.set_clip_rect(clip);
+                let shadow = Rect::from_min_size(Pos2::new(x, at), Vec2::new(w, self.strip_h));
+                area.painter().add(
+                    egui::epaint::Shadow {
+                        offset: [0, 6],
+                        blur: 14,
+                        spread: 0,
+                        color: egui::Color32::from_black_alpha(46),
+                    }
+                    .as_shape(shadow, style::RADIUS),
+                );
+                let bottom = self.run_strip(area, ctx, g, x, at, w, v);
+                self.strip_h = bottom - at;
+            });
+        y + self.strip_h
+    }
+
+    fn show_page(&mut self, ui: &mut egui::Ui, x: f32, y: f32, w: f32, state: &Value, now: f64) -> f32 {
         let ctx = ui.ctx().clone();
         let now_ms = now;
         let start = *self.start.get_or_insert(now_ms);
@@ -471,7 +534,7 @@ impl TuningPage {
             now: now_ms,
         };
         if let Some(g) = autotune {
-            y = self.run_strip(ui, &ctx, g, x, y, w, &ctxv) + 26.0;
+            y = self.run_strip_sticky(ui, &ctx, g, x, y, w, &ctxv) + 26.0;
             y = self.autotune_card(ui, &ctx, g, x, y, w, &ctxv) + 26.0 + 10.0;
         }
         self.loop_tops.clear();
