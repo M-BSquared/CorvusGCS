@@ -134,6 +134,36 @@ impl App {
         self.hud.square = e.hud_square;
     }
 
+    /// What the map's camera button asked of the camera windows.
+    fn apply_camera(&mut self, ctx: &egui::Context, cmd: crate::map::cameras::Cmd, now: f64) {
+        use crate::map::cameras::Cmd;
+        let server = self.server.clone();
+        let list = self.rail.cameras.list.clone();
+        let windows = self.setup.video_windows();
+        match cmd {
+            Cmd::Toggle(raw) => {
+                let id = raw.get("id").and_then(Value::as_str).unwrap_or("").to_string();
+                if windows.has(&id) {
+                    windows.close(&id);
+                } else {
+                    windows.open(ctx, &server, &raw);
+                }
+            }
+            Cmd::CloseAll => windows.close_all(),
+            Cmd::OpenAll => {
+                if windows.ids().is_empty() {
+                    if list.is_empty() {
+                        self.board
+                            .add_local("info", "No camera is set up yet. Add one under Setup, Video.", now);
+                    }
+                    self.rail.cameras.open_all(ctx, &server, self.setup.video_windows());
+                } else {
+                    windows.close_all();
+                }
+            }
+        }
+    }
+
     fn apply_settings(&mut self, ctx: &egui::Context) {
         if let Some(e) = self.settings.take_effects() {
             self.apply_effects(ctx, e);
@@ -287,7 +317,13 @@ impl App {
                         vw.hud_width(),
                         vw.max600,
                     );
+                    let t = ui.input(|i| i.time);
+                    self.rail.cameras.poll(ui.ctx(), &self.server, t);
+                    self.rail.open_cameras = self.setup.video_windows().ids();
                     self.rail.show(&mut map_ui, main, &mut self.map, &state);
+                    for cmd in self.rail.cameras.take_cmds() {
+                        self.apply_camera(ui.ctx(), cmd, now);
+                    }
                     self.flight
                         .show(&mut map_ui, main, &state, &self.units, &mut self.map.tools);
                     let ground = crate::home::flight::is_ground(&state);

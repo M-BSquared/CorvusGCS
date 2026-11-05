@@ -47,7 +47,7 @@ otherwise; "native file" is in `src/`.
 | --- | --- | --- | --- |
 | 2D map on the tile proxy, layers, offline | map.js | map/mod.rs | done |
 | Rail: zoom, centre/follow, layers, 3D, areas, measure, clear track | map.js | map/rail.rs | done |
-| Camera button and the camera list (opens a video window) | map.js `wireCameraButton` | map/rail.rs | missing |
+| Camera button and the camera list (opens a video window) | map.js `wireCameraButton` | map/cameras.rs, map/rail.rs | done |
 | Search box: coordinates, areas, geocode | map-search.js | map/search*.rs | done |
 | Distance tool | map-measure.js | map/measure.rs | done |
 | Offline map dialog | tiles.js | map/tiles_*.rs | done |

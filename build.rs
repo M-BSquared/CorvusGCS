@@ -154,6 +154,7 @@ const ICONS: &[(&str, &str)] = &[
     ("chevrons-down-up", "ChevronsDownUp"),
     ("chevrons-up-down", "ChevronsUpDown"),
     ("skip-forward", "SkipForward"),
+    ("layout-grid", "LayoutGrid"),
 ];
 
 fn main() {

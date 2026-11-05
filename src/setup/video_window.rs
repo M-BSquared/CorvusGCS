@@ -536,6 +536,15 @@ impl VideoWindows {
         self.windows.iter().any(|w| w.id == id)
     }
 
+    /// The cameras that have a window.
+    pub fn ids(&self) -> Vec<String> {
+        self.windows.iter().map(|w| w.id.clone()).collect()
+    }
+
+    pub fn close_all(&mut self) {
+        self.windows.clear();
+    }
+
     /// What a camera's window shows, or none when it has no window.
     pub fn local(&self, id: &str) -> Option<Local> {
         self.windows.iter().find(|w| w.id == id).map(VideoWindow::local)

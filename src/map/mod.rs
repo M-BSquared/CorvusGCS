@@ -6,6 +6,7 @@
 //! itself never talks to a tile server. The source is `satellite` (Esri), the
 //! web map's first layer; picking another comes with the map controls.
 
+pub mod cameras;
 pub mod measure;
 pub mod others;
 pub mod rail;
