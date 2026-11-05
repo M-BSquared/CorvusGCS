@@ -149,7 +149,7 @@ otherwise; "native file" is in `src/`.
 | Settings export and import | settings-transfer.js | settings/data_cards.rs | done |
 | Logs page | sidenav.js | logs/ | done |
 | Analysis: logs, Flight Review, Telemetry Review, Live Messages | analysis.js | analysis/ | done |
-| Review ground track over satellite imagery | analysis.js | analysis/review.rs | missing: needs the tile layer drawn under the plot, which the chart module does not have; not started |
+| Review ground track over satellite imagery: the Chart / Satellite switch, the layer rule, fit with 36 px padding, the key, the zoom buttons, ctrl + scroll to zoom with its hint | analysis.js | analysis/trackmap.rs, analysis/review.rs | done: seen against the simulator's flight log on the Esri layer; the imagery's square corners poke 2 px past the rounded border |
 
 ## Right panel
 

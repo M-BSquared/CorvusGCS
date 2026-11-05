@@ -443,7 +443,11 @@ impl App {
                     self.setup.units = self.units;
                     self.setup.show(ui, main, &state, now, &mut self.checklist);
                 } else if self.page == Page::Analysis {
-                    self.analysis.show(ui, main, &state, &self.units);
+                    let imagery = crate::analysis::trackmap::Imagery {
+                        layer: &self.map.source,
+                        sources: self.map.sources(),
+                    };
+                    self.analysis.show(ui, main, &state, &self.units, &imagery);
                 } else if self.page == Page::Logs {
                     let transcript = self.panel.console_transcript();
                     self.logs.show(ui, main, &transcript);

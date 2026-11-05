@@ -232,7 +232,7 @@ pub struct PlotState {
     drag_from: Option<Pos2>,
 }
 
-fn series_color(i: usize) -> Color32 {
+pub fn series_color(i: usize) -> Color32 {
     match i % 5 {
         0 => style::nav(),
         1 => style::healthy(),

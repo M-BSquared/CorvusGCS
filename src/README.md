@@ -148,6 +148,7 @@ SIGKILL if it is still there after 8 s. If the window does not close within
 | `src/logs/mod.rs` | the Logs page: the last 30 console lines, Export log through `POST /api/console/save` and Copy (`renderLogsPage` of `python/src/js/sidenav.js`) |
 | `src/analysis/mod.rs`, `src/analysis/model.rs` | the Analysis page: live telemetry tiles, the download folder, the four tiles, the status poll and its jobs, and the rules (sizes, local times, rates, sorting, findings, summary facts) with the web's expected text in tests (`python/src/js/analysis.js`) |
 | `src/analysis/lists.rs`, `src/analysis/scope.rs`, `src/analysis/review.rs` | the vehicle log list with sequential download and erase, the recorded tlogs, Live Messages, and Flight Review and Telemetry Review: summary, mode strip, findings, plots by group, the aircraft's messages |
+| `src/analysis/trackmap.rs` | the ground track over imagery: the inverse of the backend's projection, which layer opens, the fit, the map on the backend's tile proxy with the track as casing and core, the key, the zoom buttons and the ctrl + scroll hint (`trackMapView` of `python/src/js/analysis.js`); held to values the web code answered |
 | `src/analysis/plot.rs` | the plotting module that stands in for Plotly: linear axes with nice ticks, lines, markers and steps, flight mode bands, threshold line, legend, hover read out, drag to zoom and double click to reset, long traces reduced per pixel column |
 | `src/data/clock.rs` | calendar dates from Unix times, UTC and local |
 | `src/ui/form.rs` | the form vocabulary of a page that is a column of cards: the `Form` cursor over `formfield`, `message`, `optioncards`, `slider` and `pills`, with section, card, switch field, rows, actions |
@@ -340,9 +341,10 @@ share one config. Differences that follow from a native window:
 
 ## Analysis
 
-The review's ground track is drawn as a chart with equal axes. The web page's
-Satellite switch, which lays the same path over imagery, is not in the native
-page yet. A ULog from outside the download folder is opened by its path, and
+The review's ground track is drawn as a chart with equal axes, and has the web
+page's Chart / Satellite switch: the same path over imagery of the Home map's
+layer (or its provider's satellite layer when that is a street map), on the
+backend's tile proxy so it works offline. A ULog from outside the download folder is opened by its path, and
 posted to the backend as bytes the way the web page posts a picked file.
 `--page analysis:ulog`, `analysis:tlog`, `analysis:review` and
 `analysis:scope` open a view, `--page logs` and `--page settings:map` the
