@@ -31,7 +31,7 @@ otherwise; "native file" is in `src/`.
 | Window title from `/api/version` | app.js | app/mod.rs | done |
 | First start page (welcome): look, units and review, workspace, controls, import, skip | welcome.js | welcome/mod.rs, welcome/model.rs | done: start page and four steps drawn and unit tested; the steps after the first were not clicked through against the sandbox |
 | Update check, "newer release" dialog, skip this version, open release page | update.js | update/mod.rs, settings/about.rs | done: unit tested, the dialog was not seen against a real answer (the sandbox is offline) |
-| Update marker (a dot on SET) | update.js | update/mod.rs `available` | partial: the version is kept, the rail draws no dot |
+| Update marker (a dot on SET, the version in its tooltip) | update.js | app/nav.rs, update/mod.rs | done (the dot on the About pill is not drawn) |
 | MCP: question dialog (Allow, Refuse), indicator pill with Stop, refusals on the board, window heartbeat | mcp.js | mcp/mod.rs | done: unit tested, not seen with a live client; plugin tools are the plugins session's (the heartbeat sends none) |
 | One shared `/api/events` stream for console, params, firmware, tiles, shell, mcp, fleet | events.js | net/stream.rs (one stream per topic) | done |
 | Vehicle capabilities, greyed controls with the reason | capabilities.js | setup/calibration.rs, mission/backend.rs | partial: no shared module, Home flight bar not gated |

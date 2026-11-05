@@ -321,7 +321,14 @@ impl App {
                 } else {
                     nav::placeholder(ui, main, self.page);
                 }
-                if let Some(page) = nav::show(ui, rail, self.mission_page, self.page, !vw.max1279) {
+                if let Some(page) = nav::show(
+                    ui,
+                    rail,
+                    self.mission_page,
+                    self.page,
+                    !vw.max1279,
+                    self.update.available.as_deref(),
+                ) {
                     if page == Page::Setup && self.page == Page::Setup {
                         self.setup.reset();
                     }

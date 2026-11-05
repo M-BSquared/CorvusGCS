@@ -77,7 +77,33 @@ pub fn slots(mission: bool) -> Vec<Slot> {
 }
 
 /// Draws the rail into `rect`; returns the page clicked, if any.
-pub fn show(ui: &mut egui::Ui, rect: Rect, mission: bool, active: Page, labels: bool) -> Option<Page> {
+/// The tooltip of SET: names the release while one is waiting.
+pub fn settings_title(update: Option<&str>) -> String {
+    match update {
+        Some(v) => format!("Settings. Version {v} is available"),
+        None => "Settings".to_string(),
+    }
+}
+
+/// `--notice`: the colour of the dot that says a release is waiting.
+fn notice() -> Color32 {
+    if style::is_dark() {
+        Color32::from_rgb(0xF5, 0x8A, 0x2B)
+    } else {
+        Color32::from_rgb(0xCE, 0x5E, 0x00)
+    }
+}
+
+/// `update` is the release waiting, when there is one: SET gets a dot on the
+/// icon's top right corner (`.nav-item.has-update::after`).
+pub fn show(
+    ui: &mut egui::Ui,
+    rect: Rect,
+    mission: bool,
+    active: Page,
+    labels: bool,
+    update: Option<&str>,
+) -> Option<Page> {
     let painter = ui.painter_at(rect);
     painter.rect_filled(rect, 0, style::surface_1());
     painter.vline(
@@ -113,10 +139,14 @@ pub fn show(ui: &mut egui::Ui, rect: Rect, mission: bool, active: Page, labels: 
             Slot::Spacer => y += spacer,
             Slot::Item(page) => {
                 let r = Rect::from_min_size(Pos2::new(cx - ITEM_W / 2.0, y), Vec2::new(ITEM_W, ITEM_H));
-                let title = if page == Page::Settings { "Settings" } else { "" };
+                let title = if page == Page::Settings {
+                    settings_title(update)
+                } else {
+                    String::new()
+                };
                 let mut resp = ui.interact(r, ui.scope_id().with(("nav", page as u8)), egui::Sense::click());
                 if !title.is_empty() {
-                    resp = resp.on_hover_text(title);
+                    resp = resp.on_hover_text(&title);
                 }
                 let is_active = page == active;
                 let (fill, icon_c, label_c) = if is_active {
@@ -150,6 +180,14 @@ pub fn show(ui: &mut egui::Ui, rect: Rect, mission: bool, active: Page, labels: 
                     painter.galley(Pos2::new(r.center().x - g.size().x / 2.0, top + 20.0), g, label_c);
                 } else {
                     icons::paint(ui, icon, Rect::from_center_size(r.center(), Vec2::splat(16.0)), icon_c);
+                }
+                if page == Page::Settings && update.is_some() {
+                    crate::ui::kit::dot(
+                        &painter,
+                        Pos2::new(r.center().x + 6.0 + 3.5, r.top() + 6.0 + 3.5),
+                        notice(),
+                        true,
+                    );
                 }
                 if resp.clicked() {
                     clicked = Some(page);
@@ -225,5 +263,14 @@ mod tests {
         );
         assert_eq!(slots(true)[1..3], [Slot::Item(Mission), Slot::Divider]);
         assert_eq!(Settings.item(), ("SET", "settings"));
+    }
+
+    #[test]
+    fn set_names_the_release_that_is_waiting() {
+        assert_eq!(settings_title(None), "Settings");
+        assert_eq!(
+            settings_title(Some("2026.12.01")),
+            "Settings. Version 2026.12.01 is available"
+        );
     }
 }
