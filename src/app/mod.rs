@@ -39,6 +39,8 @@ struct App {
     server: Server,
     control: crate::control::Control,
     welcome: crate::welcome::Welcome,
+    update: crate::update::Update,
+    updates_on: bool,
     fleet: crate::fleet::Fleet,
     fleet_dialog: crate::fleet::dialog::Dialog,
     board: Board,
@@ -359,6 +361,14 @@ impl App {
                 self.settings.open_import();
             }
         }
+        let first_run = self.welcome.is_open();
+        self.update.show(
+            ui.ctx(),
+            &self.server,
+            &state,
+            now / 1000.0,
+            self.updates_on && !first_run,
+        );
         self.checklist.dialog(ui.ctx());
         if let Some(step) =
             self.first_setup
@@ -614,6 +624,8 @@ pub fn run(
                     server.clone(),
                     crate::control::model::Config::from_config(&config),
                 ),
+                update: crate::update::Update::new(),
+                updates_on: config.get("updates").and_then(|u| u.get("check")) != Some(&Value::Bool(false)),
                 welcome: {
                     let mut w = crate::welcome::Welcome::start(&server, &ctx);
                     if page == Some("welcome") {

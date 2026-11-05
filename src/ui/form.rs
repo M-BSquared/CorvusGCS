@@ -469,6 +469,31 @@ pub fn option_cards(
     selected: &str,
     columns: usize,
 ) -> Option<String> {
+    option_cards_with(ui, f, id, opts, selected, columns, false)
+}
+
+/// `option_cards` whose descriptions wrap rather than end at the edge
+/// (`.welcome-review-cards .option-card-desc`).
+pub fn option_cards_wrapped(
+    ui: &mut egui::Ui,
+    f: &mut Form,
+    id: &str,
+    opts: &[Opt],
+    selected: &str,
+    columns: usize,
+) -> Option<String> {
+    option_cards_with(ui, f, id, opts, selected, columns, true)
+}
+
+fn option_cards_with(
+    ui: &mut egui::Ui,
+    f: &mut Form,
+    id: &str,
+    opts: &[Opt],
+    selected: &str,
+    columns: usize,
+    wrap: bool,
+) -> Option<String> {
     let cols = columns.clamp(1, opts.len().max(1));
     let card_w = (f.w - 8.0 * (cols as f32 - 1.0)) / cols as f32;
     let mut picked = None;
@@ -490,7 +515,19 @@ pub fn option_cards(
             .iter()
             .map(|o| {
                 let l = style::galley(ui, &o.label, 12.0, Weight::W600, style::text_1(), 0.0);
-                let d = style::galley(ui, &o.desc, 10.5, Weight::W400, style::text_3(), 0.0);
+                let d = if wrap {
+                    kit::wrapped_weight(
+                        ui,
+                        &o.desc,
+                        10.5,
+                        Weight::W400,
+                        style::text_3(),
+                        text_w(o).max(10.0),
+                        1.35,
+                    )
+                } else {
+                    style::galley(ui, &o.desc, 10.5, Weight::W400, style::text_3(), 0.0)
+                };
                 let text = l.size().y + if o.desc.is_empty() { 0.0 } else { 2.0 + d.size().y };
                 let lead = if o.swatch.is_some() {
                     22.0
@@ -562,7 +599,11 @@ pub fn option_cards(
             }
             let l = style::galley(ui, &o.label, 12.0, Weight::W600, text_color, 0.0);
             let d_color = if on { style::text_2() } else { style::text_3() };
-            let d = style::galley(ui, &o.desc, 10.5, Weight::W400, d_color, 0.0);
+            let d = if wrap {
+                kit::wrapped_weight(ui, &o.desc, 10.5, Weight::W400, d_color, text_w(o).max(10.0), 1.35)
+            } else {
+                style::galley(ui, &o.desc, 10.5, Weight::W400, d_color, 0.0)
+            };
             let total = l.size().y + if o.desc.is_empty() { 0.0 } else { 2.0 + d.size().y };
             let clip = Rect::from_min_size(
                 Pos2::new(tx, r.top() + 1.0),

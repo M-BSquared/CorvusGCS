@@ -105,6 +105,12 @@ impl Welcome {
         self.session = Some(Session::new(server, ctx, cfg));
     }
 
+    /// Whether the dialog is up or about to be: the update notice waits for
+    /// it, so it never lands on top of the setup.
+    pub fn is_open(&self) -> bool {
+        self.session.is_some() || self.check.is_some()
+    }
+
     /// Draws the dialog when it is open; returns what the window must do.
     pub fn show(&mut self, ctx: &egui::Context, server: &Server, logo: &egui::ImageSource<'static>) -> Event {
         if let Some(cfg) = self.check.as_ref().and_then(Pending::take) {
@@ -630,7 +636,7 @@ impl Session {
             "How readily a number in a flight log or a telemetry recording becomes a warning. It can be changed later in Settings under Analysis.",
             |ui, x, y, w| {
                 let mut inner = Form::new(x, y, w);
-                picked = form::option_cards(ui, &mut inner, "welcomereview", &opts, &current, 3);
+                picked = form::option_cards_wrapped(ui, &mut inner, "welcomereview", &opts, &current, 3);
                 inner.y - y
             },
         );

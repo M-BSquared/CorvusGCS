@@ -24,6 +24,7 @@ mod settings;
 mod setup;
 mod term;
 mod ui;
+mod update;
 mod welcome;
 
 use std::path::PathBuf;
