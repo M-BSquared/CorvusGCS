@@ -159,11 +159,12 @@ SIGKILL if it is still there after 8 s. If the window does not close within
 | `src/plugins/ssh_setup.rs` | `sshSetup`: the login dialog for a saved SSH connection this computer lacks (`askSSHConnection` of `python/src/js/panel.js`) |
 | `src/plugins/vibration/` | Vibration Monitor: PX4's vibration metrics on a live chart, the 10 Hz stream while it is open, the one-shot warning (`python/plugins/vibration`) |
 | `src/plugins/ssh_launcher/` | SSH Launcher: the shelf, the editor, terminal and background runs, restart, stop, the live dot (`python/plugins/ssh-launcher`); `model.rs` holds its rules, held to the web helpers |
+| `src/plugins/schwalby/` | Schwalby: the shelf of one-press buttons that run here (`/api/local/*`) or over SSH, with edit mode and drag reordering, colours, the companion computer's ping strip with its popup and power menu, and the AI client's half over MCP (`python/plugins/schwalby`); `model.rs` holds the rules, held to `model_cases.json`, what the web functions answered; `companion.rs` the ping loop, the popup's state and the power calls; `mcp.rs` the tools; `view.rs` everything drawn; its language files are in `lang/` |
 | `src/plugins/map_entities/` | Map Entities: gates, trees and symbols with an area on the Home map, and the watch over the aircraft's track (`python/plugins/map-entities`); `model.rs` holds the geometry and the rules, held to values dumped from the web code |
 | `src/notify/mod.rs` | the notification board, its read and dismiss rules, the command dedupe and the toasts (`python/src/js/topbar.js`) |
 | `src/notify/overlay.rs` | the NOTIFICATIONS pill, the board and the toast stack |
 | `src/i18n/mod.rs`, `src/i18n/table.rs`, `src/i18n/files.rs` | the interface language (see "Languages" below): `tr`, `tr_fmt`, the table with `{name}` patterns, the language files compiled in and the operator's folder |
-| `src/lang/*.json` | the four languages (en, de, fr, dl), the web interface's own files; the Map Entities plugin's files sit in `src/plugins/map_entities/lang/` |
+| `src/lang/*.json` | the four languages (en, de, fr, dl), the web interface's own files; the Map Entities and Schwalby plugins' files sit in their own `lang/` folders |
 | `src/ui/frost.rs` | the frosted glass under every `.glass` surface |
 | `src/ui/fonts.rs`, `src/ui/icons.rs`, `build.rs` | Inter, JetBrains Mono and the Lucide icons, from the web's own files |
 
@@ -300,15 +301,13 @@ with a stub `window.Corvus` and print the result, as the existing tests did).
 
 ### What is not ported
 
-- **Schwalby** (`python/plugins/schwalby`) is not in the native interface yet:
-  its shelf has an edit mode with drag reordering, AI added buttons that wait
-  for approval, a companion indicator with ping, a popup and a power menu, and
-  MCP tools, about 2,900 lines of which none can be faked by a smaller shelf.
-  It stays a web plugin until it is ported whole.
-- **MCP tools.** The backend does have the hook (`POST /api/mcp/window` with the
-  tools, the `mcp` event topic for calls, `POST /api/mcp/result` for the
-  answers), but only Schwalby offers tools, so the trait has no method for them
-  yet.
+- **MCP tools.** A plugin offers tools to an AI client with `mcp_tools(h)`
+  (the web's `mcpTools`), runs a call in `mcp_call(name, args, token, h)` and
+  hands the answer back from `mcp_take(token)` once it has one, which may take
+  frames (a save, a press). The window announces the tools with its heartbeat
+  and at once when they change, and answers a `call` event through
+  `POST /api/mcp/result` (`src/mcp/mod.rs`). Schwalby is the one plugin that
+  offers any, behind its two switches.
 - **Flight bar buttons.** The web `Corvus.plugins` has none; `drawButton` on the
   map is the closest thing and is in `shapes.rs`.
 - **Reload plugins** re-reads the list of installed folders, as it always did;

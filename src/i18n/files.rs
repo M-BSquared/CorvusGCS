@@ -29,6 +29,9 @@ const PLUGIN_FILES: &[(&str, &str)] = &[
     ("de", include_str!("../plugins/map_entities/lang/de.json")),
     ("fr", include_str!("../plugins/map_entities/lang/fr.json")),
     ("dl", include_str!("../plugins/map_entities/lang/dl.json")),
+    ("de", include_str!("../plugins/schwalby/lang/de.json")),
+    ("fr", include_str!("../plugins/schwalby/lang/fr.json")),
+    ("dl", include_str!("../plugins/schwalby/lang/dl.json")),
 ];
 
 /// One language file, validated.

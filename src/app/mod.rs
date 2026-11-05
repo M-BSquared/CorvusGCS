@@ -260,6 +260,15 @@ impl App {
         for (owner, event) in self.map.plugins.take_events() {
             self.plugins.dispatch(ctx, state, owner, event);
         }
+        // tools for an AI client: what the plugins offer, the calls, the answers
+        let tools = self.plugins.mcp_tools(ctx, state);
+        self.mcp.set_tools(tools);
+        for (id, plugin, tool, args) in self.mcp.take_calls() {
+            self.plugins.mcp_call(&id, &plugin, &tool, &args, ctx, state);
+        }
+        for (id, result) in self.plugins.mcp_answers(ctx, state) {
+            self.mcp.reply(&id, result);
+        }
     }
 
     /// `fitCoords`: frames these points on the map with 80 px around them.

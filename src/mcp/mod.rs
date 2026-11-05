@@ -13,8 +13,10 @@
 //! * THE LINE. What the server says it did goes to the notification board
 //!   when it refused something.
 //!
-//! Plugin tools (`mcpTools`) belong to the plugins session: this window tells
-//! the backend every 10 s that it is open, with no tools of its own.
+//! PLUGIN TOOLS (`mcpTools`). Every 10 s, and at once when they change, this
+//! window tells the backend it is open and which tools its plugins offer; a
+//! `call` event addressed to this window is handed to the plugin
+//! (`take_calls`) and its answer goes back through `reply`.
 
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -122,6 +124,9 @@ impl Question {
 
 #[derive(Default)]
 struct Shared {
+    /// This window's id: a call is for it only when it names it.
+    window: String,
+    calls: Vec<(String, String, String, Value)>,
     status: Value,
     questions: Vec<Question>,
     closed: Vec<String>,
@@ -134,6 +139,7 @@ pub struct Mcp {
     shared: Arc<Mutex<Shared>>,
     stream: Option<Stream>,
     window: String,
+    tools: Vec<Value>,
     last_beat: Option<Instant>,
     stopping: bool,
     stop_answer: Option<crate::net::bg::Pending<Result<Value, String>>>,
@@ -170,6 +176,14 @@ fn take_event(shared: &Mutex<Shared>, e: &Value) {
                 g.closed.push(id.to_string());
             }
         }
+        Some("call") => {
+            let for_us = e.get("window").and_then(Value::as_str) == Some(g.window.as_str());
+            let text = |k: &str| e.get(k).and_then(Value::as_str).map(str::to_string);
+            if let (true, Some(id), Some(plugin), Some(tool)) = (for_us, text("id"), text("plugin"), text("tool")) {
+                g.calls
+                    .push((id, plugin, tool, e.get("args").cloned().unwrap_or_else(|| json!({}))));
+            }
+        }
         Some("log") => {
             let text = e.get("text").and_then(Value::as_str).unwrap_or("");
             // A warning, never a critical: a refused call is news, not an
@@ -184,7 +198,11 @@ fn take_event(shared: &Mutex<Shared>, e: &Value) {
 
 impl Mcp {
     pub fn start(server: Server, ctx: &egui::Context) -> Mcp {
-        let shared: Arc<Mutex<Shared>> = Arc::default();
+        let window = format!("n{:x}", std::process::id() as u64 * 7919 + 13);
+        let shared: Arc<Mutex<Shared>> = Arc::new(Mutex::new(Shared {
+            window: window.clone(),
+            ..Default::default()
+        }));
         let (s, c) = (shared.clone(), ctx.clone());
         let stream = Stream::start(server.clone(), "/api/events?topics=mcp".into(), move |ev| {
             if ev.name == "mcp" {
@@ -211,7 +229,8 @@ impl Mcp {
             server,
             shared,
             stream: Some(stream),
-            window: format!("n{:x}", std::process::id() as u64 * 7919 + 13),
+            window,
+            tools: Vec::new(),
             last_beat: None,
             stopping: false,
             stop_answer: None,
@@ -221,6 +240,34 @@ impl Mcp {
 
     pub fn badge(&self) -> Option<Badge> {
         self.shared.lock().ok().and_then(|g| badge_state(&g.status))
+    }
+
+    /// The plugins' tools as they stand now. A change is announced at once.
+    pub fn set_tools(&mut self, tools: Vec<Value>) {
+        if tools != self.tools {
+            self.tools = tools;
+            self.last_beat = None;
+        }
+    }
+
+    /// The calls an AI client made for this window: `(id, plugin, tool, args)`.
+    pub fn take_calls(&mut self) -> Vec<(String, String, String, Value)> {
+        self.shared
+            .lock()
+            .map(|mut g| std::mem::take(&mut g.calls))
+            .unwrap_or_default()
+    }
+
+    /// A plugin's answer to a call.
+    pub fn reply(&self, id: &str, result: Result<Value, String>) {
+        let (server, id) = (self.server.clone(), id.to_string());
+        std::thread::spawn(move || {
+            let body = match result {
+                Ok(v) => json!({"id": id, "ok": true, "result": v, "error": null}),
+                Err(e) => json!({"id": id, "ok": false, "result": null, "error": e}),
+            };
+            let _ = http::post_json(&server, "/api/mcp/result", &body);
+        });
     }
 
     /// What the server refused, for the board.
@@ -255,9 +302,9 @@ impl Mcp {
             .unwrap_or(false);
         if enabled && self.last_beat.is_none_or(|t| now.duration_since(t) >= HEARTBEAT) {
             self.last_beat = Some(now);
-            let (server, id) = (self.server.clone(), self.window.clone());
+            let (server, id, tools) = (self.server.clone(), self.window.clone(), self.tools.clone());
             std::thread::spawn(move || {
-                let _ = http::post_json(&server, "/api/mcp/window", &json!({"id": id, "tools": []}));
+                let _ = http::post_json(&server, "/api/mcp/window", &json!({"id": id, "tools": tools}));
             });
         }
         if let Some(r) = self.stop_answer.as_ref().and_then(crate::net::bg::Pending::take) {

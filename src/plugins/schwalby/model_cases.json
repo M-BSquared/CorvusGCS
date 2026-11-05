@@ -1,0 +1,2267 @@
+{
+ "coerceButton": [
+  {
+   "in": {
+    "id": "a",
+    "command": "./start.sh",
+    "label": "Start"
+   },
+   "out": {
+    "id": "a",
+    "label": "Start",
+    "target": "local",
+    "connection": "",
+    "directory": "",
+    "command": "./start.sh",
+    "mode": "terminal",
+    "restart": false,
+    "color": ""
+   }
+  },
+  {
+   "in": {
+    "id": "b",
+    "command": "  ls -la  ",
+    "label": "  ",
+    "directory": " ~/mission ",
+    "target": "local",
+    "connection": "stale",
+    "mode": "background",
+    "restart": true,
+    "color": "#2f6fed"
+   },
+   "out": {
+    "id": "b",
+    "label": "ls -la",
+    "target": "local",
+    "connection": "",
+    "directory": "~/mission",
+    "command": "ls -la",
+    "mode": "background",
+    "restart": true,
+    "color": "#2F6FED"
+   }
+  },
+  {
+   "in": {
+    "id": "c",
+    "command": "run",
+    "connection": "mission-pc"
+   },
+   "out": {
+    "id": "c",
+    "label": "run",
+    "target": "ssh",
+    "connection": "mission-pc",
+    "directory": "",
+    "command": "run",
+    "mode": "terminal",
+    "restart": false,
+    "color": ""
+   }
+  },
+  {
+   "in": {
+    "id": "d",
+    "command": "run",
+    "target": "ssh",
+    "connection": " rover ",
+    "detach": true
+   },
+   "out": {
+    "id": "d",
+    "label": "run",
+    "target": "ssh",
+    "connection": "rover",
+    "directory": "",
+    "command": "run",
+    "mode": "background",
+    "restart": false,
+    "color": ""
+   }
+  },
+  {
+   "in": {
+    "id": "e",
+    "command": "run",
+    "target": "nonsense"
+   },
+   "out": {
+    "id": "e",
+    "label": "run",
+    "target": "local",
+    "connection": "",
+    "directory": "",
+    "command": "run",
+    "mode": "terminal",
+    "restart": false,
+    "color": ""
+   }
+  },
+  {
+   "in": {
+    "id": "f",
+    "command": "",
+    "label": "No command"
+   },
+   "out": null
+  },
+  {
+   "in": {
+    "id": "g",
+    "command": "x",
+    "restart": "yes",
+    "color": "red"
+   },
+   "out": {
+    "id": "g",
+    "label": "x",
+    "target": "local",
+    "connection": "",
+    "directory": "",
+    "command": "x",
+    "mode": "terminal",
+    "restart": false,
+    "color": ""
+   }
+  },
+  {
+   "in": {
+    "id": "h",
+    "command": "x",
+    "by_mcp": true,
+    "pending": true
+   },
+   "out": {
+    "id": "h",
+    "label": "x",
+    "target": "local",
+    "connection": "",
+    "directory": "",
+    "command": "x",
+    "mode": "terminal",
+    "restart": false,
+    "color": "",
+    "by_mcp": true,
+    "pending": true
+   }
+  },
+  {
+   "in": {
+    "id": "i",
+    "command": "x",
+    "by_mcp": true
+   },
+   "out": {
+    "id": "i",
+    "label": "x",
+    "target": "local",
+    "connection": "",
+    "directory": "",
+    "command": "x",
+    "mode": "terminal",
+    "restart": false,
+    "color": "",
+    "by_mcp": true
+   }
+  },
+  {
+   "in": {
+    "id": "j",
+    "command": "x",
+    "pending": true
+   },
+   "out": {
+    "id": "j",
+    "label": "x",
+    "target": "local",
+    "connection": "",
+    "directory": "",
+    "command": "x",
+    "mode": "terminal",
+    "restart": false,
+    "color": ""
+   }
+  },
+  {
+   "in": {
+    "id": "k",
+    "command": "x",
+    "mode": "terminal",
+    "detach": true
+   },
+   "out": {
+    "id": "k",
+    "label": "x",
+    "target": "local",
+    "connection": "",
+    "directory": "",
+    "command": "x",
+    "mode": "terminal",
+    "restart": false,
+    "color": ""
+   }
+  },
+  {
+   "in": {
+    "id": "l",
+    "command": 5,
+    "label": 7
+   },
+   "out": {
+    "id": "l",
+    "label": "7",
+    "target": "local",
+    "connection": "",
+    "directory": "",
+    "command": "5",
+    "mode": "terminal",
+    "restart": false,
+    "color": ""
+   }
+  },
+  {
+   "in": {
+    "id": "m",
+    "command": "x",
+    "color": "#abcdef"
+   },
+   "out": {
+    "id": "m",
+    "label": "x",
+    "target": "local",
+    "connection": "",
+    "directory": "",
+    "command": "x",
+    "mode": "terminal",
+    "restart": false,
+    "color": "#ABCDEF"
+   }
+  },
+  {
+   "in": {
+    "id": "n",
+    "command": "x",
+    "color": "#abcde"
+   },
+   "out": {
+    "id": "n",
+    "label": "x",
+    "target": "local",
+    "connection": "",
+    "directory": "",
+    "command": "x",
+    "mode": "terminal",
+    "restart": false,
+    "color": ""
+   }
+  },
+  {
+   "in": {
+    "id": "o",
+    "command": "x",
+    "color": " #A1B2C3 "
+   },
+   "out": {
+    "id": "o",
+    "label": "x",
+    "target": "local",
+    "connection": "",
+    "directory": "",
+    "command": "x",
+    "mode": "terminal",
+    "restart": false,
+    "color": "#A1B2C3"
+   }
+  },
+  {
+   "in": null,
+   "out": null
+  },
+  {
+   "in": "text",
+   "out": null
+  },
+  {
+   "in": 3,
+   "out": null
+  },
+  {
+   "in": [],
+   "out": null
+  },
+  {
+   "in": {
+    "id": "p",
+    "command": "x"
+   },
+   "out": {
+    "id": "p",
+    "label": "x",
+    "target": "local",
+    "connection": "",
+    "directory": "",
+    "command": "x",
+    "mode": "terminal",
+    "restart": false,
+    "color": ""
+   }
+  }
+ ],
+ "coerceTarget": [
+  {
+   "in": {},
+   "out": "local"
+  },
+  {
+   "in": {
+    "target": "local"
+   },
+   "out": "local"
+  },
+  {
+   "in": {
+    "target": "ssh"
+   },
+   "out": "ssh"
+  },
+  {
+   "in": {
+    "target": "x"
+   },
+   "out": "local"
+  },
+  {
+   "in": {
+    "connection": "a"
+   },
+   "out": "ssh"
+  },
+  {
+   "in": {
+    "connection": "  "
+   },
+   "out": "local"
+  },
+  {
+   "in": {
+    "target": "x",
+    "connection": "a"
+   },
+   "out": "ssh"
+  },
+  {
+   "in": {
+    "connection": null
+   },
+   "out": "local"
+  }
+ ],
+ "coerceColor": [
+  {
+   "in": null,
+   "out": ""
+  },
+  {
+   "in": "",
+   "out": ""
+  },
+  {
+   "in": "#2f6fed",
+   "out": "#2F6FED"
+  },
+  {
+   "in": "#2F6FED",
+   "out": "#2F6FED"
+  },
+  {
+   "in": " #2f6fed ",
+   "out": "#2F6FED"
+  },
+  {
+   "in": "2f6fed",
+   "out": ""
+  },
+  {
+   "in": "#12345",
+   "out": ""
+  },
+  {
+   "in": "#1234567",
+   "out": ""
+  },
+  {
+   "in": "#gggggg",
+   "out": ""
+  },
+  {
+   "in": 5,
+   "out": ""
+  },
+  {
+   "in": "#00ff00",
+   "out": "#00FF00"
+  }
+ ],
+ "readableOn": [
+  {
+   "in": "#000000",
+   "out": "#FFFFFF"
+  },
+  {
+   "in": "#FFFFFF",
+   "out": "#111111"
+  },
+  {
+   "in": "#2F6FED",
+   "out": "#FFFFFF"
+  },
+  {
+   "in": "#0F9D8A",
+   "out": "#FFFFFF"
+  },
+  {
+   "in": "#2E9E4F",
+   "out": "#FFFFFF"
+  },
+  {
+   "in": "#D98A00",
+   "out": "#FFFFFF"
+  },
+  {
+   "in": "#E0572B",
+   "out": "#FFFFFF"
+  },
+  {
+   "in": "#D62B4A",
+   "out": "#FFFFFF"
+  },
+  {
+   "in": "#8E4FD6",
+   "out": "#FFFFFF"
+  },
+  {
+   "in": "#5B6770",
+   "out": "#FFFFFF"
+  },
+  {
+   "in": "#FFFF00",
+   "out": "#111111"
+  },
+  {
+   "in": "#777777",
+   "out": "#FFFFFF"
+  },
+  {
+   "in": "#808080",
+   "out": "#FFFFFF"
+  },
+  {
+   "in": "",
+   "out": ""
+  },
+  {
+   "in": "bad",
+   "out": ""
+  },
+  {
+   "in": "#7f7f7f",
+   "out": "#FFFFFF"
+  },
+  {
+   "in": "#767676",
+   "out": "#FFFFFF"
+  }
+ ],
+ "moveButton": [
+  {
+   "id": "a",
+   "slot": 0,
+   "out": [
+    "a",
+    "b",
+    "c",
+    "d"
+   ]
+  },
+  {
+   "id": "a",
+   "slot": 1,
+   "out": [
+    "b",
+    "a",
+    "c",
+    "d"
+   ]
+  },
+  {
+   "id": "a",
+   "slot": 2,
+   "out": [
+    "b",
+    "c",
+    "a",
+    "d"
+   ]
+  },
+  {
+   "id": "a",
+   "slot": 3,
+   "out": [
+    "b",
+    "c",
+    "d",
+    "a"
+   ]
+  },
+  {
+   "id": "a",
+   "slot": 4,
+   "out": [
+    "a",
+    "b",
+    "c",
+    "d"
+   ]
+  },
+  {
+   "id": "b",
+   "slot": 0,
+   "out": [
+    "b",
+    "a",
+    "c",
+    "d"
+   ]
+  },
+  {
+   "id": "b",
+   "slot": 1,
+   "out": [
+    "a",
+    "b",
+    "c",
+    "d"
+   ]
+  },
+  {
+   "id": "b",
+   "slot": 2,
+   "out": [
+    "a",
+    "c",
+    "b",
+    "d"
+   ]
+  },
+  {
+   "id": "b",
+   "slot": 3,
+   "out": [
+    "a",
+    "c",
+    "d",
+    "b"
+   ]
+  },
+  {
+   "id": "b",
+   "slot": 4,
+   "out": [
+    "a",
+    "b",
+    "c",
+    "d"
+   ]
+  },
+  {
+   "id": "c",
+   "slot": 0,
+   "out": [
+    "c",
+    "a",
+    "b",
+    "d"
+   ]
+  },
+  {
+   "id": "c",
+   "slot": 1,
+   "out": [
+    "a",
+    "c",
+    "b",
+    "d"
+   ]
+  },
+  {
+   "id": "c",
+   "slot": 2,
+   "out": [
+    "a",
+    "b",
+    "c",
+    "d"
+   ]
+  },
+  {
+   "id": "c",
+   "slot": 3,
+   "out": [
+    "a",
+    "b",
+    "d",
+    "c"
+   ]
+  },
+  {
+   "id": "c",
+   "slot": 4,
+   "out": [
+    "a",
+    "b",
+    "c",
+    "d"
+   ]
+  },
+  {
+   "id": "d",
+   "slot": 0,
+   "out": [
+    "d",
+    "a",
+    "b",
+    "c"
+   ]
+  },
+  {
+   "id": "d",
+   "slot": 1,
+   "out": [
+    "a",
+    "d",
+    "b",
+    "c"
+   ]
+  },
+  {
+   "id": "d",
+   "slot": 2,
+   "out": [
+    "a",
+    "b",
+    "d",
+    "c"
+   ]
+  },
+  {
+   "id": "d",
+   "slot": 3,
+   "out": [
+    "a",
+    "b",
+    "c",
+    "d"
+   ]
+  },
+  {
+   "id": "d",
+   "slot": 4,
+   "out": [
+    "a",
+    "b",
+    "c",
+    "d"
+   ]
+  },
+  {
+   "id": "zz",
+   "slot": 0,
+   "out": [
+    "a",
+    "b",
+    "c",
+    "d"
+   ]
+  },
+  {
+   "id": "zz",
+   "slot": 1,
+   "out": [
+    "a",
+    "b",
+    "c",
+    "d"
+   ]
+  },
+  {
+   "id": "zz",
+   "slot": 2,
+   "out": [
+    "a",
+    "b",
+    "c",
+    "d"
+   ]
+  },
+  {
+   "id": "zz",
+   "slot": 3,
+   "out": [
+    "a",
+    "b",
+    "c",
+    "d"
+   ]
+  },
+  {
+   "id": "zz",
+   "slot": 4,
+   "out": [
+    "a",
+    "b",
+    "c",
+    "d"
+   ]
+  }
+ ],
+ "terminalLine": [
+  {
+   "in": {
+    "id": "a",
+    "command": "./start.sh"
+   },
+   "out": "./start.sh"
+  },
+  {
+   "in": {
+    "id": "a",
+    "command": "./start.sh",
+    "directory": "/home/pilot/mission"
+   },
+   "out": "cd -- '/home/pilot/mission' && ./start.sh"
+  },
+  {
+   "in": {
+    "id": "a",
+    "command": "ls",
+    "directory": "~"
+   },
+   "out": "cd -- ~ && ls"
+  },
+  {
+   "in": {
+    "id": "a",
+    "command": "ls",
+    "directory": "~/"
+   },
+   "out": "cd -- ~/ && ls"
+  },
+  {
+   "in": {
+    "id": "a",
+    "command": "ls",
+    "directory": "~/my dir"
+   },
+   "out": "cd -- ~/'my dir' && ls"
+  },
+  {
+   "in": {
+    "id": "a",
+    "command": "ls",
+    "directory": "~/it's"
+   },
+   "out": "cd -- ~/'it'\\''s' && ls"
+  },
+  {
+   "in": {
+    "id": "a",
+    "command": "ls",
+    "directory": "-weird"
+   },
+   "out": "cd -- '-weird' && ls"
+  },
+  {
+   "in": {
+    "id": "a",
+    "command": "ls",
+    "directory": "it's here"
+   },
+   "out": "cd -- 'it'\\''s here' && ls"
+  },
+  {
+   "in": {
+    "id": "a",
+    "command": "ls",
+    "directory": "~user/x"
+   },
+   "out": "cd -- '~user/x' && ls"
+  },
+  {
+   "in": {
+    "id": "a",
+    "command": "a | b && c",
+    "directory": "/tmp"
+   },
+   "out": "cd -- '/tmp' && a | b && c"
+  }
+ ],
+ "previewLine": [
+  {
+   "in": {
+    "id": "a",
+    "command": "./start.sh"
+   },
+   "out": "./start.sh"
+  },
+  {
+   "in": {
+    "id": "a",
+    "command": "./start.sh",
+    "directory": "/x",
+    "mode": "background"
+   },
+   "out": "cd /x && ./start.sh &"
+  },
+  {
+   "in": {
+    "id": "a",
+    "command": "./start.sh",
+    "mode": "background"
+   },
+   "out": "./start.sh &"
+  },
+  {
+   "in": {
+    "id": "a",
+    "command": "run",
+    "target": "ssh",
+    "connection": "rover"
+   },
+   "out": "ssh rover 'run'"
+  },
+  {
+   "in": {
+    "id": "a",
+    "command": "run",
+    "target": "ssh",
+    "connection": "rover",
+    "directory": "/x"
+   },
+   "out": "ssh rover 'cd /x && run'"
+  },
+  {
+   "in": {
+    "id": "a",
+    "command": "run",
+    "target": "ssh",
+    "connection": "rover",
+    "mode": "background"
+   },
+   "out": "ssh rover 'nohup run &'"
+  },
+  {
+   "in": {
+    "id": "a",
+    "command": "run",
+    "target": "ssh",
+    "connection": "rover",
+    "mode": "background",
+    "directory": "/x"
+   },
+   "out": "ssh rover 'cd /x && nohup run &'"
+  },
+  {
+   "in": {
+    "id": "a",
+    "command": "run",
+    "target": "ssh",
+    "connection": ""
+   },
+   "out": "run"
+  },
+  {
+   "in": {
+    "id": "a",
+    "command": "run",
+    "target": "ssh"
+   },
+   "out": "run"
+  },
+  {
+   "in": {
+    "id": "a",
+    "command": "run",
+    "directory": "~/mission",
+    "mode": "terminal"
+   },
+   "out": "cd ~/mission && run"
+  }
+ ],
+ "sshSummary": [
+  {
+   "in": {},
+   "out": {
+    "text": "The command failed.",
+    "kind": "err"
+   }
+  },
+  {
+   "in": {
+    "ok": false
+   },
+   "out": {
+    "text": "The command failed.",
+    "kind": "err"
+   }
+  },
+  {
+   "in": {
+    "ok": false,
+    "stderr": "boom\nmore"
+   },
+   "out": {
+    "text": "boom",
+    "kind": "err"
+   }
+  },
+  {
+   "in": {
+    "ok": false,
+    "error": "Not found"
+   },
+   "out": {
+    "text": "Not found",
+    "kind": "err"
+   }
+  },
+  {
+   "in": {
+    "ok": false,
+    "stderr": "",
+    "error": "E1"
+   },
+   "out": {
+    "text": "E1",
+    "kind": "err"
+   }
+  },
+  {
+   "in": {
+    "ok": true
+   },
+   "out": {
+    "text": "Running in the background",
+    "kind": "ok"
+   }
+  },
+  {
+   "in": {
+    "ok": true,
+    "stdout": "1234\n"
+   },
+   "out": {
+    "text": "Running in the background (pid 1234)",
+    "kind": "ok"
+   }
+  },
+  {
+   "in": {
+    "ok": true,
+    "stdout": "  "
+   },
+   "out": {
+    "text": "Running in the background",
+    "kind": "ok"
+   }
+  },
+  {
+   "in": null,
+   "out": {
+    "text": "The command failed.",
+    "kind": "err"
+   }
+  },
+  {
+   "in": {
+    "ok": false,
+    "stderr": "  \n x"
+   },
+   "out": {
+    "text": "x",
+    "kind": "err"
+   }
+  }
+ ],
+ "localSummary": [
+  {
+   "in": {},
+   "out": {
+    "text": "The command failed.",
+    "kind": "err"
+   }
+  },
+  {
+   "in": {
+    "ok": false
+   },
+   "out": {
+    "text": "The command failed.",
+    "kind": "err"
+   }
+  },
+  {
+   "in": {
+    "ok": false,
+    "error": "Nope\nmore"
+   },
+   "out": {
+    "text": "Nope",
+    "kind": "err"
+   }
+  },
+  {
+   "in": {
+    "ok": true,
+    "pid": 99
+   },
+   "out": {
+    "text": "Running in the background (pid 99), stops with Corvus",
+    "kind": "ok"
+   }
+  },
+  {
+   "in": {
+    "ok": true
+   },
+   "out": {
+    "text": "Running in the background, stops with Corvus",
+    "kind": "ok"
+   }
+  },
+  {
+   "in": {
+    "ok": true,
+    "pid": 0
+   },
+   "out": {
+    "text": "Running in the background, stops with Corvus",
+    "kind": "ok"
+   }
+  },
+  {
+   "in": {
+    "exited": true,
+    "ok": true
+   },
+   "out": {
+    "text": "Ran and finished",
+    "kind": "ok"
+   }
+  },
+  {
+   "in": {
+    "exited": true,
+    "ok": false,
+    "code": 2,
+    "output": "bad thing\nmore"
+   },
+   "out": {
+    "text": "bad thing",
+    "kind": "err"
+   }
+  },
+  {
+   "in": {
+    "exited": true,
+    "ok": false,
+    "code": 127
+   },
+   "out": {
+    "text": "Ended at once with exit code 127",
+    "kind": "err"
+   }
+  },
+  {
+   "in": {
+    "exited": true,
+    "ok": false,
+    "code": 1,
+    "output": "  "
+   },
+   "out": {
+    "text": "Ended at once with exit code 1",
+    "kind": "err"
+   }
+  },
+  {
+   "in": {
+    "exited": true,
+    "ok": false
+   },
+   "out": {
+    "text": "Ended at once with exit code undefined",
+    "kind": "err"
+   }
+  },
+  {
+   "in": {
+    "ok": true,
+    "pid": "55"
+   },
+   "out": {
+    "text": "Running in the background (pid 55), stops with Corvus",
+    "kind": "ok"
+   }
+  },
+  {
+   "in": null,
+   "out": {
+    "text": "The command failed.",
+    "kind": "err"
+   }
+  }
+ ],
+ "missingConnections": [
+  {
+   "buttons": [],
+   "connections": [
+    {
+     "name": "rover"
+    },
+    {
+     "name": "base"
+    }
+   ],
+   "out": []
+  },
+  {
+   "buttons": [
+    {
+     "id": "a",
+     "command": "x"
+    }
+   ],
+   "connections": [
+    {
+     "name": "rover"
+    },
+    {
+     "name": "base"
+    }
+   ],
+   "out": []
+  },
+  {
+   "buttons": [
+    {
+     "id": "a",
+     "command": "x",
+     "connection": "rover"
+    }
+   ],
+   "connections": [
+    {
+     "name": "rover"
+    },
+    {
+     "name": "base"
+    }
+   ],
+   "out": []
+  },
+  {
+   "buttons": [
+    {
+     "id": "a",
+     "command": "x",
+     "connection": "gone"
+    },
+    {
+     "id": "b",
+     "command": "y",
+     "target": "ssh",
+     "connection": "gone"
+    },
+    {
+     "id": "c",
+     "command": "z",
+     "target": "ssh",
+     "connection": "other"
+    }
+   ],
+   "connections": [
+    {
+     "name": "rover"
+    },
+    {
+     "name": "base"
+    }
+   ],
+   "out": [
+    "gone",
+    "other"
+   ]
+  },
+  {
+   "buttons": [
+    {
+     "id": "a",
+     "command": "x",
+     "target": "local",
+     "connection": "gone"
+    }
+   ],
+   "connections": [
+    {
+     "name": "rover"
+    },
+    {
+     "name": "base"
+    }
+   ],
+   "out": []
+  }
+ ],
+ "hostError": [
+  {
+   "in": "",
+   "out": "Enter an IP address or host name."
+  },
+  {
+   "in": " ",
+   "out": "Enter an IP address or host name."
+  },
+  {
+   "in": "192.168.2.10",
+   "out": ""
+  },
+  {
+   "in": "corvus.local",
+   "out": ""
+  },
+  {
+   "in": "fe80::1%eth0",
+   "out": ""
+  },
+  {
+   "in": "::1",
+   "out": ""
+  },
+  {
+   "in": "a",
+   "out": ""
+  },
+  {
+   "in": "-bad",
+   "out": "That is not an IP address or host name."
+  },
+  {
+   "in": "bad-",
+   "out": "That is not an IP address or host name."
+  },
+  {
+   "in": "a b",
+   "out": "That is not an IP address or host name."
+  },
+  {
+   "in": "a_b",
+   "out": ""
+  },
+  {
+   "in": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+   "out": ""
+  },
+  {
+   "in": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+   "out": "That is not an IP address or host name."
+  },
+  {
+   "in": "1.2.3.4 ",
+   "out": ""
+  },
+  {
+   "in": "host!",
+   "out": "That is not an IP address or host name."
+  },
+  {
+   "in": ":a",
+   "out": ""
+  },
+  {
+   "in": "a:",
+   "out": "That is not an IP address or host name."
+  },
+  {
+   "in": "a.",
+   "out": "That is not an IP address or host name."
+  },
+  {
+   "in": ".a",
+   "out": "That is not an IP address or host name."
+  },
+  {
+   "in": "%a",
+   "out": "That is not an IP address or host name."
+  },
+  {
+   "in": "a%",
+   "out": "That is not an IP address or host name."
+  }
+ ],
+ "normalizeCompanion": [
+  {
+   "in": null,
+   "out": null
+  },
+  {
+   "in": {},
+   "out": null
+  },
+  {
+   "in": {
+    "host": ""
+   },
+   "out": null
+  },
+  {
+   "in": {
+    "host": "bad host"
+   },
+   "out": null
+  },
+  {
+   "in": {
+    "host": "192.168.2.10"
+   },
+   "out": {
+    "name": "",
+    "host": "192.168.2.10",
+    "interval_s": 2,
+    "timeout_s": 6
+   }
+  },
+  {
+   "in": {
+    "host": "10.0.0.1",
+    "name": "  Mission PC  ",
+    "interval_s": 3,
+    "timeout_s": 10
+   },
+   "out": {
+    "name": "Mission PC",
+    "host": "10.0.0.1",
+    "interval_s": 3,
+    "timeout_s": 10
+   }
+  },
+  {
+   "in": {
+    "host": "10.0.0.1",
+    "interval_s": 4,
+    "timeout_s": 3
+   },
+   "out": {
+    "name": "",
+    "host": "10.0.0.1",
+    "interval_s": 3,
+    "timeout_s": 4
+   }
+  },
+  {
+   "in": {
+    "host": "10.0.0.1",
+    "interval_s": 10,
+    "timeout_s": 10
+   },
+   "out": {
+    "name": "",
+    "host": "10.0.0.1",
+    "interval_s": 10,
+    "timeout_s": 15
+   }
+  },
+  {
+   "in": {
+    "host": "10.0.0.1",
+    "interval_s": 7,
+    "timeout_s": 12
+   },
+   "out": {
+    "name": "",
+    "host": "10.0.0.1",
+    "interval_s": 5,
+    "timeout_s": 10
+   }
+  },
+  {
+   "in": {
+    "host": "10.0.0.1",
+    "interval_s": "5",
+    "timeout_s": "20"
+   },
+   "out": {
+    "name": "",
+    "host": "10.0.0.1",
+    "interval_s": 5,
+    "timeout_s": 20
+   }
+  },
+  {
+   "in": {
+    "host": "10.0.0.1",
+    "interval_s": "x",
+    "timeout_s": null
+   },
+   "out": {
+    "name": "",
+    "host": "10.0.0.1",
+    "interval_s": 2,
+    "timeout_s": 3
+   }
+  },
+  {
+   "in": {
+    "host": "10.0.0.1",
+    "interval_s": 0,
+    "timeout_s": 100
+   },
+   "out": {
+    "name": "",
+    "host": "10.0.0.1",
+    "interval_s": 1,
+    "timeout_s": 30
+   }
+  },
+  {
+   "in": {
+    "host": "10.0.0.1",
+    "name": "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN",
+    "connection": " rover "
+   },
+   "out": {
+    "name": "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN",
+    "host": "10.0.0.1",
+    "interval_s": 2,
+    "timeout_s": 6,
+    "connection": "rover"
+   }
+  },
+  {
+   "in": {
+    "host": "10.0.0.1",
+    "connection": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+   },
+   "out": {
+    "name": "",
+    "host": "10.0.0.1",
+    "interval_s": 2,
+    "timeout_s": 6,
+    "connection": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+   }
+  },
+  {
+   "in": {
+    "host": "10.0.0.1",
+    "interval_s": 2.5,
+    "timeout_s": 5
+   },
+   "out": {
+    "name": "",
+    "host": "10.0.0.1",
+    "interval_s": 2,
+    "timeout_s": 4
+   }
+  },
+  {
+   "in": {
+    "host": "10.0.0.1",
+    "interval_s": 30,
+    "timeout_s": 3
+   },
+   "out": {
+    "name": "",
+    "host": "10.0.0.1",
+    "interval_s": 10,
+    "timeout_s": 15
+   }
+  }
+ ],
+ "companionEntry": [
+  {
+   "in": {
+    "host": "192.168.2.10"
+   },
+   "out": null
+  },
+  {
+   "in": {
+    "host": "10.0.0.1",
+    "name": "  Mission PC  ",
+    "interval_s": 3,
+    "timeout_s": 10
+   },
+   "out": null
+  },
+  {
+   "in": {
+    "host": "10.0.0.1",
+    "interval_s": 4,
+    "timeout_s": 3
+   },
+   "out": null
+  },
+  {
+   "in": {
+    "host": "10.0.0.1",
+    "interval_s": 10,
+    "timeout_s": 10
+   },
+   "out": null
+  },
+  {
+   "in": {
+    "host": "10.0.0.1",
+    "interval_s": 7,
+    "timeout_s": 12
+   },
+   "out": null
+  },
+  {
+   "in": {
+    "host": "10.0.0.1",
+    "interval_s": "5",
+    "timeout_s": "20"
+   },
+   "out": null
+  },
+  {
+   "in": {
+    "host": "10.0.0.1",
+    "interval_s": "x",
+    "timeout_s": null
+   },
+   "out": null
+  },
+  {
+   "in": {
+    "host": "10.0.0.1",
+    "interval_s": 0,
+    "timeout_s": 100
+   },
+   "out": null
+  },
+  {
+   "in": {
+    "host": "10.0.0.1",
+    "name": "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN",
+    "connection": " rover "
+   },
+   "out": [
+    "companion",
+    "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN",
+    "ssh",
+    "rover"
+   ]
+  },
+  {
+   "in": {
+    "host": "10.0.0.1",
+    "connection": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+   },
+   "out": [
+    "companion",
+    "Companion computer",
+    "ssh",
+    "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+   ]
+  },
+  {
+   "in": {
+    "host": "10.0.0.1",
+    "interval_s": 2.5,
+    "timeout_s": 5
+   },
+   "out": null
+  },
+  {
+   "in": {
+    "host": "10.0.0.1",
+    "interval_s": 30,
+    "timeout_s": 3
+   },
+   "out": null
+  }
+ ],
+ "probeWaitMs": [
+  {
+   "in": 0,
+   "out": 2000
+  },
+  {
+   "in": 1,
+   "out": 1000
+  },
+  {
+   "in": 2,
+   "out": 2000
+  },
+  {
+   "in": 3,
+   "out": 3000
+  },
+  {
+   "in": 5,
+   "out": 5000
+  },
+  {
+   "in": 10,
+   "out": 5000
+  },
+  {
+   "in": 100,
+   "out": 5000
+  }
+ ],
+ "timeoutFor": [
+  {
+   "in": 0,
+   "out": 3
+  },
+  {
+   "in": 1,
+   "out": 3
+  },
+  {
+   "in": 2,
+   "out": 3
+  },
+  {
+   "in": 3,
+   "out": 4
+  },
+  {
+   "in": 5,
+   "out": 6
+  },
+  {
+   "in": 9,
+   "out": 10
+  },
+  {
+   "in": 10,
+   "out": 15
+  },
+  {
+   "in": 29,
+   "out": 30
+  },
+  {
+   "in": 30,
+   "out": 30
+  },
+  {
+   "in": 31,
+   "out": 30
+  }
+ ],
+ "intervalFor": [
+  {
+   "in": 0,
+   "out": 1
+  },
+  {
+   "in": 1,
+   "out": 1
+  },
+  {
+   "in": 3,
+   "out": 2
+  },
+  {
+   "in": 4,
+   "out": 3
+  },
+  {
+   "in": 5,
+   "out": 3
+  },
+  {
+   "in": 6,
+   "out": 5
+  },
+  {
+   "in": 10,
+   "out": 5
+  },
+  {
+   "in": 11,
+   "out": 10
+  },
+  {
+   "in": 31,
+   "out": 10
+  }
+ ],
+ "companionState": [
+  {
+   "in": {
+    "host": "",
+    "startedAt": 0,
+    "lastOkAt": null,
+    "error": "",
+    "now": 100,
+    "timeoutMs": 6000
+   },
+   "out": "unset"
+  },
+  {
+   "in": {
+    "host": "h",
+    "startedAt": 0,
+    "lastOkAt": null,
+    "error": "",
+    "now": 1000,
+    "timeoutMs": 6000
+   },
+   "out": "checking"
+  },
+  {
+   "in": {
+    "host": "h",
+    "startedAt": 0,
+    "lastOkAt": null,
+    "error": "",
+    "now": 6000,
+    "timeoutMs": 6000
+   },
+   "out": "offline"
+  },
+  {
+   "in": {
+    "host": "h",
+    "startedAt": 0,
+    "lastOkAt": null,
+    "error": "",
+    "now": 9000,
+    "timeoutMs": 6000
+   },
+   "out": "offline"
+  },
+  {
+   "in": {
+    "host": "h",
+    "startedAt": 0,
+    "lastOkAt": null,
+    "error": "no ping",
+    "now": 1000,
+    "timeoutMs": 6000
+   },
+   "out": "error"
+  },
+  {
+   "in": {
+    "host": "h",
+    "startedAt": 0,
+    "lastOkAt": 5000,
+    "error": "",
+    "now": 9000,
+    "timeoutMs": 6000
+   },
+   "out": "online"
+  },
+  {
+   "in": {
+    "host": "h",
+    "startedAt": 0,
+    "lastOkAt": 5000,
+    "error": "",
+    "now": 11000,
+    "timeoutMs": 6000
+   },
+   "out": "online"
+  },
+  {
+   "in": {
+    "host": "h",
+    "startedAt": 0,
+    "lastOkAt": 5000,
+    "error": "",
+    "now": 11001,
+    "timeoutMs": 6000
+   },
+   "out": "offline"
+  },
+  {
+   "in": {
+    "host": "h",
+    "startedAt": 0,
+    "lastOkAt": 5000,
+    "error": "no ping",
+    "now": 9000,
+    "timeoutMs": 6000
+   },
+   "out": "online"
+  },
+  {
+   "in": {
+    "host": "h",
+    "startedAt": 0,
+    "lastOkAt": 5000,
+    "error": "no ping",
+    "now": 12000,
+    "timeoutMs": 6000
+   },
+   "out": "error"
+  },
+  {
+   "in": {
+    "host": "h",
+    "startedAt": 0,
+    "lastOkAt": 0,
+    "error": "",
+    "now": 6000,
+    "timeoutMs": 6000
+   },
+   "out": "online"
+  }
+ ],
+ "mcpButton": [
+  {
+   "args": {
+    "label": "Go",
+    "command": "./go.sh"
+   },
+   "base": null,
+   "out": {
+    "label": "Go",
+    "target": "local",
+    "connection": "",
+    "directory": "",
+    "command": "./go.sh",
+    "mode": "terminal",
+    "restart": false,
+    "color": "",
+    "by_mcp": true,
+    "pending": true
+   }
+  },
+  {
+   "args": {
+    "label": "Go",
+    "command": "./go.sh",
+    "directory": " /d ",
+    "mode": "background",
+    "restart": true,
+    "color": "#e0572b"
+   },
+   "base": null,
+   "out": {
+    "label": "Go",
+    "target": "local",
+    "connection": "",
+    "directory": "/d",
+    "command": "./go.sh",
+    "mode": "background",
+    "restart": true,
+    "color": "#E0572B",
+    "by_mcp": true,
+    "pending": true
+   }
+  },
+  {
+   "args": {
+    "label": "Go"
+   },
+   "base": null,
+   "out": null,
+   "error": "command is required"
+  },
+  {
+   "args": {
+    "command": "x"
+   },
+   "base": null,
+   "out": null,
+   "error": "label is required"
+  },
+  {
+   "args": {
+    "label": 5,
+    "command": "x"
+   },
+   "base": null,
+   "out": null,
+   "error": "label must be a string"
+  },
+  {
+   "args": {
+    "label": "a",
+    "command": "x",
+    "mode": "weird"
+   },
+   "base": null,
+   "out": null,
+   "error": "mode must be \"terminal\" or \"background\""
+  },
+  {
+   "args": {
+    "label": "a",
+    "command": "x",
+    "restart": "yes"
+   },
+   "base": null,
+   "out": null,
+   "error": "restart must be true or false"
+  },
+  {
+   "args": {
+    "label": "a",
+    "command": "  "
+   },
+   "base": null,
+   "out": null,
+   "error": "command must not be empty"
+  },
+  {
+   "args": {
+    "label": "a",
+    "command": "x",
+    "color": "nope"
+   },
+   "base": null,
+   "out": {
+    "label": "a",
+    "target": "local",
+    "connection": "",
+    "directory": "",
+    "command": "x",
+    "mode": "terminal",
+    "restart": false,
+    "color": "",
+    "by_mcp": true,
+    "pending": true
+   }
+  },
+  {
+   "args": {
+    "label": "New label"
+   },
+   "base": {
+    "id": "x1",
+    "label": "A",
+    "target": "local",
+    "connection": "",
+    "directory": "/d",
+    "command": "./a.sh",
+    "mode": "terminal",
+    "restart": false,
+    "color": "",
+    "by_mcp": true
+   },
+   "out": {
+    "label": "New label",
+    "target": "local",
+    "connection": "",
+    "directory": "/d",
+    "command": "./a.sh",
+    "mode": "terminal",
+    "restart": false,
+    "color": "",
+    "by_mcp": true
+   }
+  },
+  {
+   "args": {
+    "command": "./a.sh"
+   },
+   "base": {
+    "id": "x1",
+    "label": "A",
+    "target": "local",
+    "connection": "",
+    "directory": "/d",
+    "command": "./a.sh",
+    "mode": "terminal",
+    "restart": false,
+    "color": "",
+    "by_mcp": true
+   },
+   "out": {
+    "label": "A",
+    "target": "local",
+    "connection": "",
+    "directory": "/d",
+    "command": "./a.sh",
+    "mode": "terminal",
+    "restart": false,
+    "color": "",
+    "by_mcp": true
+   }
+  },
+  {
+   "args": {
+    "command": "./c.sh"
+   },
+   "base": {
+    "id": "x1",
+    "label": "A",
+    "target": "local",
+    "connection": "",
+    "directory": "/d",
+    "command": "./a.sh",
+    "mode": "terminal",
+    "restart": false,
+    "color": "",
+    "by_mcp": true
+   },
+   "out": {
+    "label": "A",
+    "target": "local",
+    "connection": "",
+    "directory": "/d",
+    "command": "./c.sh",
+    "mode": "terminal",
+    "restart": false,
+    "color": "",
+    "by_mcp": true,
+    "pending": true
+   }
+  },
+  {
+   "args": {
+    "directory": "/other"
+   },
+   "base": {
+    "id": "x1",
+    "label": "A",
+    "target": "local",
+    "connection": "",
+    "directory": "/d",
+    "command": "./a.sh",
+    "mode": "terminal",
+    "restart": false,
+    "color": "",
+    "by_mcp": true
+   },
+   "out": {
+    "label": "A",
+    "target": "local",
+    "connection": "",
+    "directory": "/other",
+    "command": "./a.sh",
+    "mode": "terminal",
+    "restart": false,
+    "color": "",
+    "by_mcp": true,
+    "pending": true
+   }
+  },
+  {
+   "args": {
+    "mode": "background"
+   },
+   "base": {
+    "id": "x1",
+    "label": "A",
+    "target": "local",
+    "connection": "",
+    "directory": "/d",
+    "command": "./a.sh",
+    "mode": "terminal",
+    "restart": false,
+    "color": "",
+    "by_mcp": true
+   },
+   "out": {
+    "label": "A",
+    "target": "local",
+    "connection": "",
+    "directory": "/d",
+    "command": "./a.sh",
+    "mode": "background",
+    "restart": false,
+    "color": "",
+    "by_mcp": true,
+    "pending": true
+   }
+  },
+  {
+   "args": {
+    "restart": true
+   },
+   "base": {
+    "id": "x1",
+    "label": "A",
+    "target": "local",
+    "connection": "",
+    "directory": "/d",
+    "command": "./a.sh",
+    "mode": "terminal",
+    "restart": false,
+    "color": "",
+    "by_mcp": true
+   },
+   "out": {
+    "label": "A",
+    "target": "local",
+    "connection": "",
+    "directory": "/d",
+    "command": "./a.sh",
+    "mode": "terminal",
+    "restart": true,
+    "color": "",
+    "by_mcp": true,
+    "pending": true
+   }
+  },
+  {
+   "args": {
+    "label": "A2",
+    "color": "#2f6fed"
+   },
+   "base": {
+    "id": "x1",
+    "label": "A",
+    "target": "local",
+    "connection": "",
+    "directory": "/d",
+    "command": "./a.sh",
+    "mode": "terminal",
+    "restart": false,
+    "color": "",
+    "by_mcp": true
+   },
+   "out": {
+    "label": "A2",
+    "target": "local",
+    "connection": "",
+    "directory": "/d",
+    "command": "./a.sh",
+    "mode": "terminal",
+    "restart": false,
+    "color": "#2F6FED",
+    "by_mcp": true
+   }
+  },
+  {
+   "args": {
+    "label": "Moved"
+   },
+   "base": {
+    "id": "x2",
+    "label": "B",
+    "target": "ssh",
+    "connection": "rover",
+    "directory": "",
+    "command": "./b.sh",
+    "mode": "terminal",
+    "restart": false,
+    "color": ""
+   },
+   "out": {
+    "label": "Moved",
+    "target": "local",
+    "connection": "",
+    "directory": "",
+    "command": "./b.sh",
+    "mode": "terminal",
+    "restart": false,
+    "color": "",
+    "by_mcp": true
+   }
+  },
+  {
+   "args": {
+    "command": ""
+   },
+   "base": {
+    "id": "x1",
+    "label": "A",
+    "target": "local",
+    "connection": "",
+    "directory": "/d",
+    "command": "./a.sh",
+    "mode": "terminal",
+    "restart": false,
+    "color": "",
+    "by_mcp": true
+   },
+   "out": null,
+   "error": "command must not be empty"
+  },
+  {
+   "args": {},
+   "base": null,
+   "out": null,
+   "error": "label is required"
+  },
+  {
+   "args": null,
+   "base": null,
+   "out": null,
+   "error": "label is required"
+  }
+ ],
+ "describeButton": [
+  {
+   "in": {
+    "id": "a",
+    "command": "x"
+   },
+   "out": {
+    "id": "a",
+    "label": "x",
+    "runs_on": "this computer",
+    "directory": "",
+    "command": "x",
+    "mode": "terminal",
+    "restart": false,
+    "added_by_ai": false,
+    "waiting_for_operator": false
+   }
+  },
+  {
+   "in": {
+    "id": "b",
+    "command": "y",
+    "target": "ssh",
+    "connection": "rover",
+    "mode": "background",
+    "restart": true,
+    "directory": "/d",
+    "label": "Y"
+   },
+   "out": {
+    "id": "b",
+    "label": "Y",
+    "runs_on": "ssh rover",
+    "directory": "/d",
+    "command": "y",
+    "mode": "background",
+    "restart": true,
+    "added_by_ai": false,
+    "waiting_for_operator": false
+   }
+  },
+  {
+   "in": {
+    "id": "c",
+    "command": "z",
+    "by_mcp": true,
+    "pending": true
+   },
+   "out": {
+    "id": "c",
+    "label": "z",
+    "runs_on": "this computer",
+    "directory": "",
+    "command": "z",
+    "mode": "terminal",
+    "restart": false,
+    "added_by_ai": true,
+    "waiting_for_operator": true
+   }
+  }
+ ]
+}
