@@ -39,6 +39,7 @@ struct App {
     server: Server,
     control: crate::control::Control,
     welcome: crate::welcome::Welcome,
+    mcp: crate::mcp::Mcp,
     update: crate::update::Update,
     updates_on: bool,
     fleet: crate::fleet::Fleet,
@@ -361,6 +362,17 @@ impl App {
                 self.settings.open_import();
             }
         }
+        let screen_rect = ui.ctx().content_rect();
+        let main_rect = egui::Rect::from_min_max(
+            egui::pos2(nav::WIDTH, screen_rect.top() + vw.top_height()),
+            screen_rect.max,
+        );
+        let below = self.flight.bar_bottom + crate::home::flight::INSET;
+        self.mcp
+            .show(ui.ctx(), (self.page == Page::Home).then_some(main_rect), below);
+        for (level, text) in self.mcp.take_notes() {
+            self.board.add_local(&level, &text, now);
+        }
         let first_run = self.welcome.is_open();
         self.update.show(
             ui.ctx(),
@@ -503,6 +515,7 @@ impl eframe::App for App {
         self.telemetry.stop();
         self.fleet.shut_down();
         self.control.shut_down();
+        self.mcp.shut_down();
         self.panel.shut_down();
         self.map.shut_down();
     }
@@ -624,6 +637,7 @@ pub fn run(
                     server.clone(),
                     crate::control::model::Config::from_config(&config),
                 ),
+                mcp: crate::mcp::Mcp::start(server.clone(), &ctx),
                 update: crate::update::Update::new(),
                 updates_on: config.get("updates").and_then(|u| u.get("check")) != Some(&Value::Bool(false)),
                 welcome: {

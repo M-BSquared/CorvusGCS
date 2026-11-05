@@ -16,6 +16,7 @@ mod home;
 mod logs;
 mod map;
 mod map3d;
+mod mcp;
 mod mission;
 mod net;
 mod notify;
