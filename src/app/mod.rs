@@ -37,6 +37,8 @@ static LOGO_FOR_DARK: &[u8] = include_bytes!("../../assets/CorvusGCS_logo.png");
 
 struct App {
     server: Server,
+    fleet: crate::fleet::Fleet,
+    fleet_dialog: crate::fleet::dialog::Dialog,
     board: Board,
     telemetry: Telemetry,
     units: Units,
@@ -139,6 +141,14 @@ impl App {
         let state: Value = self.telemetry.state();
         let now = now_ms();
         self.map.update(&state);
+        let snap = self.fleet.snapshot();
+        let dt = ui.input(|i| i.stable_dt).min(0.1);
+        if self.map.sync_fleet(&snap, &state, dt) {
+            ui.ctx().request_repaint();
+        }
+        for (level, text) in self.fleet.take_notes() {
+            self.board.add_local(&level, &text, now);
+        }
         self.board.update(&state, now);
         self.flight.settle(&mut self.board, now);
         self.checklist.poll();
@@ -178,16 +188,39 @@ impl App {
         let summary = self.board.summary(now);
 
         let vw = crate::app::responsive::Vw::of(ui.ctx());
-        let blocks = topbar::blocks(&state, &self.units);
+        let mut blocks = topbar::blocks(&state, &self.units);
+        if let Some(b) = blocks.first_mut() {
+            b.value = crate::fleet::vehicle_label(&state, &snap, &b.value);
+        }
+        let own = state.get("vehicle_id").and_then(Value::as_str).unwrap_or("");
+        let dot = topbar::FleetDot {
+            color: snap
+                .is_multi()
+                .then(|| crate::fleet::parse_hex(snap.color_of(own)).unwrap_or_else(style::vehicle)),
+        };
         let cards = topbar_cards::all(&state, &self.units, &mut self.top_speeds);
         egui::Panel::top("topbar")
             .exact_size(vw.top_height())
             .frame(egui::Frame::NONE)
             .show(ui, |ui| {
                 let rect = ui.max_rect();
-                if topbar::show(ui, rect, &self.logo, &blocks, &cards, &summary, self.board.open, &vw) {
+                let clicked = topbar::show(
+                    ui,
+                    rect,
+                    &self.logo,
+                    &blocks,
+                    &cards,
+                    &summary,
+                    self.board.open,
+                    &vw,
+                    dot,
+                );
+                if clicked.notifications {
                     let open = !self.board.open;
                     self.board.set_open(open, now);
+                }
+                if clicked.vehicles {
+                    self.fleet_dialog.open(ui.ctx(), &self.server, None);
                 }
             });
         egui::CentralPanel::default()
@@ -273,6 +306,17 @@ impl App {
                 self.panel.windows(ui.ctx());
                 self.setup.windows(ui.ctx());
             });
+        if let Some(id) = self.map.take_vehicle_click() {
+            self.fleet_dialog.open(ui.ctx(), &self.server, Some(id));
+        }
+        self.fleet_dialog
+            .show(ui.ctx(), &self.fleet, &self.server, &state, &self.units, &mut self.map);
+        for id in self.fleet_dialog.take_removed() {
+            self.map.forget_vehicle(&id);
+        }
+        for e in self.fleet.take_errors() {
+            self.board.add_local("critical", &e, now);
+        }
         self.checklist.dialog(ui.ctx());
         if let Some(step) =
             self.first_setup
@@ -405,6 +449,7 @@ impl eframe::App for App {
             crate::map3d::gpu::destroy(gl);
         }
         self.telemetry.stop();
+        self.fleet.shut_down();
         self.panel.shut_down();
         self.map.shut_down();
     }
@@ -522,6 +567,8 @@ pub fn run(
             let logo = logo_source();
             Ok(Box::new(App {
                 server: server.clone(),
+                fleet: crate::fleet::Fleet::start(server.clone(), &ctx),
+                fleet_dialog: Default::default(),
                 board: Board::default(),
                 telemetry,
                 units,

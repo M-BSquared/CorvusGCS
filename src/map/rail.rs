@@ -300,8 +300,8 @@ impl MapRail {
     /// `.track-clear`: a quiet 25 px disc above the attribution, only while
     /// there is a track to clear.
     fn track_clear(&mut self, ui: &mut egui::Ui, area: Rect, map: &mut Map) {
-        if map.track.has_line() && clear_disc(ui, area, 0.0, "Clear the flown track") {
-            map.track.clear();
+        if map.has_any_track() && clear_disc(ui, area, 0.0, "Clear the flown track") {
+            map.clear_tracks();
         }
     }
 }

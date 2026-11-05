@@ -174,6 +174,19 @@ impl Track {
         self.revision += 1;
     }
 
+    /// Puts another vehicle's flights in place of these and returns these.
+    /// Its first sample is the baseline again, so the other vehicle's armed
+    /// state is not read as a takeoff.
+    pub fn swap(&mut self, current: Vec<Point>, past: Vec<Vec<Point>>) -> (Vec<Point>, Vec<Vec<Point>>) {
+        self.window.clear();
+        self.last_armed = None;
+        self.revision += 1;
+        (
+            std::mem::replace(&mut self.current, current),
+            std::mem::replace(&mut self.past, past),
+        )
+    }
+
     /// Whether there is a track to clear: a flight under way needs two
     /// points to be a line (`updateTrackControl`).
     pub fn has_line(&self) -> bool {

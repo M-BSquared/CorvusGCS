@@ -19,9 +19,9 @@ otherwise; "native file" is in `src/`.
 | --- | --- | --- | --- |
 | Top bar: logo, vehicle, mode, readiness, GPS, battery, altitude, speeds, flight clock, notifications pill | topbar.js | home/topbar.rs | done |
 | Hover cards behind GPS, Battery, Altitude, Groundspeed, Vertical speed | topbar.js | home/topbar_cards.rs | done |
-| Vehicle block shows the fleet colour swatch and the vehicle count; click opens the Vehicles dialog | topbar.js, fleet.js | home/topbar.rs, fleet/ | missing |
+| Vehicle block shows the fleet colour swatch and the vehicle name; click opens the Vehicles dialog | topbar.js, fleet.js | home/topbar.rs, fleet/mod.rs | done |
 | Notification board, toasts, command dedupe, clear all | topbar.js, notification_dedupe.js | notify/ | done |
-| Notifications from vehicles that are not flown (fleet events) | fleet.js `announce` | fleet/ | missing |
+| Notifications from vehicles that are not flown (fleet events) | fleet.js `announce` | fleet/mod.rs `new_events` | done |
 | Left rail: HOME, MISSION (when enabled), SETUP, ANALYSIS, LOGS, SET | sidenav.js | app/nav.rs | done |
 | Right panel with LINK, CONSOLE, SSH, PLUGINS tabs, resize grip, collapse handle, scroll arrows | panel.js | panel/mod.rs | done |
 | Responsive width classes (1279, 959, 900, 720, 600) | css/responsive.css | app/responsive.rs | done |
@@ -55,10 +55,10 @@ otherwise; "native file" is in `src/`.
 | Track and vehicle drawn in 3D with the depth test | map.js `renderTrack3D` | map3d/gpu.rs | missing: screen overlays today |
 | 3D map: terrain, imagery, hillshade, sky, buildings | map.js | map3d/ | done |
 | 3D panel: detail, elevation model | map.js | map3d/panel.rs | done |
-| Context menu on the map: Fly to this point, Set home here, copy coordinates | map.js, app.js | map/context.rs | missing |
-| Fly-to-points plan (PLAN button, click to add, slider AGL, FLY, CLEAR) | map.js, app.js | home/plan.rs | missing |
+| Context menu on the map: Fly to this point, Set home here, copy coordinates | map.js, app.js | map/tools.rs | done |
+| Fly-to-points plan (PLAN button, click to add, slider AGL, FLY, CLEAR) | map.js, app.js | map/tools.rs, home/flight.rs | done |
 | Home and vehicle markers | map.js | map/mod.rs | done |
-| Other vehicles on the map in their own colour, name under, own track | map-fleet.js | fleet/map.rs | missing |
+| Other vehicles on the map in their own colour, name under, own track, click opens the dialog | map-fleet.js | map/others.rs, fleet/tracks.rs | done (tracks are not kept over a restart) |
 | Plugin overlays on the map: lines, areas, labels, buttons, markers, icons | map-overlays.js, map-icons.js | plugins/ (another session) | not mine |
 | Geofence drawn on the map | geofence.js | setup/geofence.rs | done |
 
@@ -68,7 +68,7 @@ otherwise; "native file" is in `src/`.
 | --- | --- | --- | --- |
 | Flight bar: ARM/DISARM, TAKEOFF, LAND, RTL, mode picker, phase | app.js | home/flight.rs | done |
 | Takeoff card: altitude slider, entry, confirm | app.js | home/flight.rs | done |
-| PLAN button on the flight bar | app.js | home/flight.rs | missing (button says "not in this build yet") |
+| PLAN button on the flight bar | app.js | home/flight.rs | done |
 | Flight bar adapts to ground vehicles (Drive, no takeoff) | app.js | home/flight.rs | check |
 | HUD: compass, attitude indicator, six readouts | instruments.js | home/hud.rs | done |
 | HUD window: drag, pin, compact, hide readouts, collapse to a pill, position kept | hud-panel.js | home/hud.rs | missing |
@@ -81,11 +81,11 @@ otherwise; "native file" is in `src/`.
 
 | Feature | Web file | Native file | Status |
 | --- | --- | --- | --- |
-| Fleet state from the `fleet` topic and `/api/fleet` | fleet.js | fleet/mod.rs | missing |
-| Vehicles dialog: rows with colour, name edit, status, readout, locate, Take control, remove | fleet.js | fleet/dialog.rs | missing |
-| Take control confirmation while the flown vehicle is armed | fleet.js | fleet/dialog.rs | missing |
-| Remove vehicle confirmation (primary link, armed warning) | fleet.js | fleet/dialog.rs | missing |
-| Links panel: rows, plugged-in offer, free serial ports, open link, close link | fleet.js | fleet/dialog.rs | missing |
+| Fleet state from the `fleet` topic and `/api/fleet` | fleet.js | fleet/mod.rs | done |
+| Vehicles dialog: rows with colour, name edit, status, readout, locate, Take control, remove | fleet.js | fleet/dialog.rs | done |
+| Take control confirmation while the flown vehicle is armed | fleet.js | fleet/dialog.rs | done |
+| Remove vehicle confirmation (primary link, armed warning) | fleet.js | fleet/dialog.rs | done |
+| Links panel: rows, plugged-in offer, free serial ports, open link, close link | fleet.js | fleet/dialog.rs | done |
 | Settings Connections: vehicles section | sidenav.js `renderVehiclesSection` | settings/conn_cards.rs | partial |
 
 ## Pop-out and floating windows
@@ -126,7 +126,7 @@ otherwise; "native file" is in `src/`.
 | --- | --- | --- | --- |
 | Planner on the Home map: tools, items, editor, profile, patterns, terrain | mission.js, mission-geometry.js | mission/ | done |
 | Upload, save, open, read, new, clear confirmations | mission.js | mission/dialogs.rs | done |
-| Fly a mission end to end (upload, start, progress) against the simulator | mission.js | mission/ | partial: simulator answers MISSION_START with UNSUPPORTED |
+| Fly a mission end to end (upload, start, progress) against the simulator | mission.js | mission/ | done: the simulated PX4 accepts MISSION_START; verified upload, start and "Flying to 2" |
 | Row dragging, profile height dragging, marker dragging | mission.js | mission/side.rs, profile.rs, mapview.rs | partial: unit tested only |
 | Touch FINISH button, offscreen plan notice, stacked layout under 960, last plan reopening | mission.js | mission/ | missing |
 | Shortcuts: Esc cancels row drag, search, pattern, tool; Enter finishes a pattern; Delete removes the point | mission.js | mission/mod.rs | check |

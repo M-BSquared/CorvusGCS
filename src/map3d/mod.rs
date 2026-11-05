@@ -49,6 +49,11 @@ pub struct Layers3d<'a> {
     pub heading: f32,
     /// The aircraft's height above the ground, in metres.
     pub height: f64,
+    /// The flown vehicle's own colour, and its track's: the theme's unless
+    /// the operator chose one.
+    pub vehicle_color: Color32,
+    pub track_color: Color32,
+    pub past_color: Color32,
 }
 
 /// What the pointer did to the camera this frame.
@@ -57,6 +62,8 @@ pub struct Input {
     /// Where a press-and-release landed on the ground (longitude, latitude)
     /// and whether it was the right button.
     pub click: Option<([f64; 2], bool)>,
+    /// Where a left press-and-release landed on the screen.
+    pub press: Option<Pos2>,
 }
 
 /// The base layer's tiles as a decoded image.
@@ -591,7 +598,8 @@ impl Map3d {
             .flatten()
             .and_then(|p| self.pick(rect, p))
             .map(|g| (g, secondary));
-        Input { dragged, click }
+        let press = resp.clicked().then(|| resp.interact_pointer_pos()).flatten();
+        Input { dragged, click, press }
     }
 
     /// `setSky`: the sky over the horizon in the theme's own greys. At 60
@@ -772,9 +780,9 @@ impl Map3d {
             crate::map::paint_flight(painter, &run, color, past);
         };
         for flight in &layers.track.past {
-            paint_track(&track::smooth(flight), crate::ui::style::track_past(), true);
+            paint_track(&track::smooth(flight), layers.past_color, true);
         }
-        paint_track(&track::smooth(&layers.track.current), crate::ui::style::track(), false);
+        paint_track(&track::smooth(&layers.track.current), layers.track_color, false);
         if let Some((lng, lat)) = layers.home {
             if let Some(p) = self.screen_of(origin, cam.local_of(lng, lat, self.ground_at(lng, lat))) {
                 crate::map::paint_home(painter, p);
@@ -787,7 +795,15 @@ impl Map3d {
             if let (Some(g), Some(a)) = (self.screen_of(origin, ground), self.screen_of(origin, air)) {
                 painter.line_segment([g, a], Stroke::new(1.0, Color32::from_black_alpha(110)));
                 painter.circle_filled(g, 3.0, Color32::from_black_alpha(90));
-                crate::map::paint_vehicle(painter, a, layers.heading - cam.bearing as f32);
+                crate::map::paint_vehicle_in(
+                    painter,
+                    a,
+                    layers.heading - cam.bearing as f32,
+                    layers.vehicle_color,
+                    1.0,
+                    true,
+                    1.0,
+                );
             }
         }
     }

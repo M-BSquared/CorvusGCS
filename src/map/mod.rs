@@ -7,6 +7,7 @@
 //! web map's first layer; picking another comes with the map controls.
 
 pub mod measure;
+pub mod others;
 pub mod rail;
 pub mod regions;
 pub mod search;
@@ -110,6 +111,9 @@ pub struct Map {
     pub pin: Option<[f64; 2]>,
     /// The fly-to-points plan and the menu on a point.
     pub tools: crate::map::tools::Tools,
+    /// The vehicles that are not flown, and whose track `track` is.
+    pub others: crate::map::others::Others,
+    track_owner: Option<String>,
     /// 3D mode: the tilted view, made when it is first switched on.
     three: Option<Map3d>,
     three_d: bool,
@@ -164,6 +168,8 @@ impl Map {
             measure: crate::map::measure::Measure::default(),
             pin: None,
             tools: Default::default(),
+            others: Default::default(),
+            track_owner: None,
             three: None,
             three_d: false,
             view: None,
@@ -307,6 +313,12 @@ impl Map {
             t.cam.lat = lat;
         }
         let height = state.get("altitude_agl").and_then(Value::as_f64).unwrap_or(0.0);
+        let flown_hex = self
+            .others
+            .flown_color
+            .map(|c| format!("#{:02X}{:02X}{:02X}", c.r(), c.g(), c.b()));
+        let (track_color, past_color) = crate::map::others::line_colors(flown_hex.as_deref().unwrap_or(""), false, 0);
+        let vehicle_color = self.others.flown_color.unwrap_or_else(style::vehicle);
         let input = t.show(
             ui,
             rect,
@@ -316,22 +328,35 @@ impl Map {
                 vehicle,
                 heading,
                 height,
+                vehicle_color,
+                track_color,
+                past_color,
             },
         );
         if input.dragged {
             self.follow = false;
         }
-        if !self.planner {
-            if let Some((g, secondary)) = input.click {
-                self.tools.click(g, secondary, self.measure.active);
-            }
-            if self.tools.plan.active && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-                self.tools.plan.set_active(false);
-            }
+        {
             let (rect_c, t) = (rect, &*t);
             let at = |p: [f64; 2]| t.place_on_screen(rect_c, p);
             let painter = ui.painter_at(rect);
-            self.tools.paint(&painter, &at, vehicle);
+            self.others.paint(&painter, &at, false);
+            let mut marker_hit = false;
+            if let Some(q) = input.press {
+                if let Some(id) = self.others.hit(&at, q) {
+                    self.others.click = Some(id);
+                    marker_hit = true;
+                }
+            }
+            if !self.planner {
+                if let Some((g, secondary)) = input.click {
+                    self.tools.click(g, secondary, self.measure.active || marker_hit);
+                }
+                if self.tools.plan.active && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                    self.tools.plan.set_active(false);
+                }
+                self.tools.paint(&painter, &at, vehicle);
+            }
         }
         if std::env::var_os("CORVUS_GUI_3D_PANEL").is_some() {
             let anchor =
@@ -358,6 +383,43 @@ impl Map {
         if let Some((lng, lat)) = real_fix(state.get("position")) {
             self.memory.center_at(walkers::lon_lat(lng, lat));
         }
+    }
+
+    /// Whether any vehicle has a track to clear (`updateTrackControl`).
+    pub fn has_any_track(&self) -> bool {
+        self.track.has_line() || self.others.tracks.has_lines(&self.others.owner)
+    }
+
+    /// Clears every vehicle's track.
+    pub fn clear_tracks(&mut self) {
+        self.track.clear();
+        self.others.tracks.clear();
+    }
+
+    /// The vehicle whose marker was pressed since the last call.
+    pub fn take_vehicle_click(&mut self) -> Option<String> {
+        self.others.click.take()
+    }
+
+    /// Feeds the fleet list and the flown vehicle: the others' tracks and
+    /// markers, and the hand-over of the flown track when the flown vehicle
+    /// changes (`noteVehicle`). True while a marker is easing.
+    pub fn sync_fleet(&mut self, snap: &crate::fleet::Snapshot, state: &Value, dt: f32) -> bool {
+        let id = state.get("vehicle_id").and_then(Value::as_str).unwrap_or("");
+        if !id.is_empty() && self.track_owner.as_deref() != Some(id) {
+            if let Some(old) = self.track_owner.replace(id.to_string()) {
+                let next = self.others.tracks.take(id).unwrap_or_default();
+                let (current, past) = self.track.swap(next.0, next.1);
+                self.others.tracks.stash(&old, current, past);
+            }
+        }
+        let owner = self.track_owner.clone().unwrap_or_default();
+        self.others.sync(snap, &owner, dt)
+    }
+
+    /// The operator removed a vehicle.
+    pub fn forget_vehicle(&mut self, id: &str) {
+        self.others.forget(id);
     }
 
     /// Feeds one telemetry state: the track, and the first-fix jump.
@@ -519,6 +581,7 @@ impl Map {
             overlay,
             pin: &mut self.pin,
             tools: (!self.planner).then_some(&mut self.tools),
+            others: &mut self.others,
             measure: &mut self.measure,
             regions,
             outline,
@@ -595,6 +658,7 @@ struct Layers<'a, 'o> {
     overlay: Option<&'a mut (dyn Overlay + 'o)>,
     pin: &'a mut Option<[f64; 2]>,
     tools: Option<&'a mut crate::map::tools::Tools>,
+    others: &'a mut crate::map::others::Others,
     measure: &'a mut crate::map::measure::Measure,
     regions: Vec<crate::map::regions::Merged>,
     /// The geofence area, when the Home map is asked to show it.
@@ -690,14 +754,29 @@ pub(crate) fn paint_flight(painter: &egui::Painter, pts: &[Pos2], color: Color32
 }
 
 /// The vehicle marker (map.js buildVehicleMarker, 48 px): a blurred halo,
-/// the heading cone, a white ring, the red body and a white centre dot.
-pub(crate) fn paint_vehicle(painter: &egui::Painter, c: Pos2, heading: f32) {
-    for (r, a) in [(17.0, 0.07), (14.0, 0.07), (11.0, 0.08)] {
-        painter.circle_filled(c, r, style::rgba(style::vehicle_rgb(), a));
+/// the heading cone, a white ring, the body and a white centre dot, in the
+/// vehicle's own colour. `scale` shrinks the 48 px box (the fleet's markers
+/// are 40 px), `halo` is the blur round the flown aircraft, `fade` the
+/// opacity of a lost one.
+pub(crate) fn paint_vehicle_in(
+    painter: &egui::Painter,
+    c: Pos2,
+    heading: f32,
+    color: Color32,
+    scale: f32,
+    halo: bool,
+    fade: f32,
+) {
+    let rgb = (u32::from(color.r()) << 16) | (u32::from(color.g()) << 8) | u32::from(color.b());
+    let f = |a: f32| a * fade;
+    if halo {
+        for (r, a) in [(17.0, 0.07), (14.0, 0.07), (11.0, 0.08)] {
+            painter.circle_filled(c, r * scale, style::rgba(rgb, f(a)));
+        }
     }
     // The SVG's 48 px box, centred, rotated by the heading.
     let rot = egui::emath::Rot2::from_angle(heading.to_radians());
-    let at = |x: f32, y: f32| c + rot * Vec2::new(x - 24.0, y - 24.0);
+    let at = |x: f32, y: f32| c + rot * (Vec2::new(x - 24.0, y - 24.0) * scale);
     // M24 1 L31.5 15.5 A16 16 0 0 0 16.5 15.5 Z: with sweep 0 and the small
     // arc, the circle's centre lies below the chord, so the base curves up
     // towards the tip.
@@ -713,7 +792,7 @@ pub(crate) fn paint_vehicle(painter: &egui::Painter, c: Pos2, heading: f32) {
     cone.push(at(16.5, 15.5));
     // The base curves in, so the outline is not convex: filled as a fan
     // from the tip, which sees every point of it.
-    let fill = style::rgba(style::vehicle_rgb(), 0.62);
+    let fill = style::rgba(rgb, f(0.62));
     let mut mesh = egui::Mesh::default();
     for p in &cone {
         mesh.colored_vertex(*p, fill);
@@ -724,11 +803,14 @@ pub(crate) fn paint_vehicle(painter: &egui::Painter, c: Pos2, heading: f32) {
     painter.add(mesh);
     painter.add(Shape::closed_line(
         cone,
-        Stroke::new(0.9, Color32::from_rgba_unmultiplied(255, 255, 255, 140)),
+        Stroke::new(
+            0.9,
+            Color32::from_rgba_unmultiplied(255, 255, 255, (140.0 * fade) as u8),
+        ),
     ));
-    painter.circle_filled(c, 10.5, Color32::WHITE);
-    painter.circle_filled(c, 9.0, style::vehicle());
-    painter.circle_filled(c, 2.4, Color32::WHITE);
+    painter.circle_filled(c, 10.5 * scale, Color32::WHITE.gamma_multiply(fade));
+    painter.circle_filled(c, 9.0 * scale, color.gamma_multiply(fade));
+    painter.circle_filled(c, 2.4 * scale, Color32::WHITE.gamma_multiply(fade));
 }
 
 /// The home marker (buildHomeMarker, 32 px): crosshair ticks, a white ring,
@@ -802,29 +884,52 @@ impl Plugin for Layers<'_, '_> {
             paint_region(&painter, projector, rect, r);
         }
         let flown = !self.planner;
+        let at = |p: [f64; 2]| {
+            Some(screen(
+                projector,
+                rect,
+                &Point {
+                    lng: p[0],
+                    lat: p[1],
+                    alt: None,
+                },
+            ))
+        };
+        self.others.paint(&painter, &at, false);
+        let flown_hex = self
+            .others
+            .flown_color
+            .map(|c| format!("#{:02X}{:02X}{:02X}", c.r(), c.g(), c.b()));
+        let (line_main, line_past) = crate::map::others::line_colors(flown_hex.as_deref().unwrap_or(""), false, 0);
         for flight in self.track.past.iter().filter(|_| flown) {
             let pts: Vec<Pos2> = track::smooth(flight)
                 .iter()
                 .map(|p| screen(projector, rect, p))
                 .collect();
-            paint_flight(&painter, &pts, style::track_past(), true);
+            paint_flight(&painter, &pts, line_past, true);
         }
         if flown {
             let pts: Vec<Pos2> = track::smooth(&self.track.current)
                 .iter()
                 .map(|p| screen(projector, rect, p))
                 .collect();
-            paint_flight(&painter, &pts, style::track(), false);
+            paint_flight(&painter, &pts, line_main, false);
         }
         if let Some((lng, lat)) = self.home.filter(|_| flown) {
             paint_home(&painter, screen(projector, rect, &Point { lng, lat, alt: None }));
         }
         if let Some((lng, lat)) = self.vehicle {
-            paint_vehicle(
+            let c = screen(projector, rect, &Point { lng, lat, alt: None });
+            paint_vehicle_in(
                 &painter,
-                screen(projector, rect, &Point { lng, lat, alt: None }),
+                c,
                 self.heading,
+                self.others.flown_color.unwrap_or_else(style::vehicle),
+                1.0,
+                true,
+                1.0,
             );
+            self.others.paint_flown_label(&painter, c);
         }
         let mut pin_hit = false;
         if let Some(p) = *self.pin {
@@ -846,18 +951,16 @@ impl Plugin for Layers<'_, '_> {
                 pin_hit = true;
             }
         }
+        let mut marker_hit = false;
+        if response.clicked() {
+            if let Some(q) = response.interact_pointer_pos() {
+                if let Some(id) = self.others.hit(&at, q) {
+                    self.others.click = Some(id);
+                    marker_hit = true;
+                }
+            }
+        }
         if let Some(tools) = self.tools.as_deref_mut() {
-            let at = |p: [f64; 2]| {
-                Some(screen(
-                    projector,
-                    rect,
-                    &Point {
-                        lng: p[0],
-                        lat: p[1],
-                        alt: None,
-                    },
-                ))
-            };
             if tools.plan.active {
                 if response.hovered() {
                     ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair);
@@ -870,7 +973,7 @@ impl Plugin for Layers<'_, '_> {
             if response.clicked() || secondary {
                 if let Some(q) = response.interact_pointer_pos() {
                     let g = projector.unproject(q.to_vec2());
-                    tools.click([g.x(), g.y()], secondary, self.measure.active || pin_hit);
+                    tools.click([g.x(), g.y()], secondary, self.measure.active || pin_hit || marker_hit);
                 }
             }
             tools.paint(&painter, &at, self.vehicle);
@@ -1045,6 +1148,8 @@ mod tests {
             measure: crate::map::measure::Measure::default(),
             pin: None,
             tools: Default::default(),
+            others: Default::default(),
+            track_owner: None,
             three: None,
             three_d: false,
             view: None,

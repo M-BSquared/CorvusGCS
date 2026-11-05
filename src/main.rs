@@ -10,6 +10,7 @@
 mod analysis;
 mod app;
 mod data;
+mod fleet;
 mod home;
 mod logs;
 mod map;
