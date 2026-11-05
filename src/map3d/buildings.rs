@@ -272,6 +272,31 @@ mod tests {
         assert!((tops - 510.0).abs() < 1e-3, "the roof is 10 m over the ground: {tops}");
     }
 
+    /// What the backend serves for a cell whose Overpass answer was stubbed
+    /// (`buildings_cell.json.gz`, made by running the real `BuildingService`
+    /// against a stand-in Overpass server: two ways and a multipolygon
+    /// relation, one of the ways with a height tag, one with building:levels,
+    /// and a road that is not a building). The sandbox blocks the real one.
+    const SERVED: &[u8] = include_bytes!("buildings_cell.json.gz");
+
+    #[test]
+    fn a_cell_the_backend_made_from_an_overpass_answer_is_read_and_extruded() {
+        assert!(SERVED.starts_with(&[0x1f, 0x8b]), "served gzipped, as the backend stores it");
+        let b = decode(SERVED).expect("a cell");
+        let heights: Vec<f64> = b.iter().map(|b| b.height).collect();
+        assert_eq!(heights, vec![12.0, 13.8, 8.0], "the road is not a building");
+        assert!(b.iter().all(|b| b.min_height == 0.0 && b.ring.len() == 4));
+        let origin = mercator(11.64, 48.08);
+        let m = cell_mesh(&b, origin, &|_, _| Some(520.0)).expect("a mesh");
+        // Three houses of four walls and a roof: 20 vertices each.
+        assert_eq!(m.verts.len() / FLOATS, 60);
+        let top = m.verts.chunks(FLOATS).map(|v| v[2]).fold(0.0f32, f32::max);
+        assert!((top - 533.8).abs() < 1e-3, "the tallest roof is 13.8 m over the ground: {top}");
+        // Nothing is under the ground, and nothing floats.
+        let low = m.verts.chunks(FLOATS).map(|v| v[2]).fold(f32::MAX, f32::min);
+        assert!((low - 520.0).abs() < 1e-3, "{low}");
+    }
+
     #[test]
     fn a_cell_waits_for_the_terrain() {
         let b = Building {

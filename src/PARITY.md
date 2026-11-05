@@ -57,6 +57,7 @@ otherwise; "native file" is in `src/`.
 | Vehicle and home hidden behind a hill in 3D | map.js `occludedByGlobe` | map3d/mod.rs `hidden` | done: a terrain ray test on the screen markers, not a depth test |
 | 3D map: terrain, imagery, hillshade, sky, buildings | map.js | map3d/ | done |
 | 3D panel: detail, elevation model | map.js | map3d/panel.rs | done |
+| 3D buildings from an Overpass answer, through the backend's own cell | map.js, python/corvus/buildings.py | map3d/buildings.rs | done: a cell made by the real `BuildingService` from a stubbed Overpass server is read and extruded in a test (`make_buildings_cell.py` in the notes folder made the fixture); not seen drawn live, the sandbox blocks the real service |
 | Context menu on the map: Fly to this point, Set home here, copy coordinates | map.js, app.js | map/tools.rs | done |
 | Fly-to-points plan (PLAN button, click to add, slider AGL, FLY, CLEAR) | map.js, app.js | map/tools.rs, home/flight.rs | done |
 | Home and vehicle markers | map.js | map/mod.rs | done |
