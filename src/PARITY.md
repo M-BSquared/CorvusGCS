@@ -30,8 +30,9 @@ otherwise; "native file" is in `src/`.
 | Tablet and touch mode: larger targets, long press as right click, hover controls shown | touch.js, css/touch.css | app/touch.rs | missing |
 | Window title from `/api/version` | app.js | app/mod.rs | done |
 | First start page (welcome): look, units and review, workspace, controls, import, skip | welcome.js | welcome/mod.rs, welcome/model.rs | done: start page and four steps drawn and unit tested; the steps after the first were not clicked through against the sandbox |
-| Update check, badge and "newer release" dialog, skip this version, open release page | update.js | settings/about.rs (check only) | partial: no automatic check, no dialog |
-| MCP: question dialog (Allow, Refuse), indicator pill with Stop, plugin tools heartbeat | mcp.js | mcp/ | missing |
+| Update check, "newer release" dialog, skip this version, open release page | update.js | update/mod.rs, settings/about.rs | done: unit tested, the dialog was not seen against a real answer (the sandbox is offline) |
+| Update marker (a dot on SET) | update.js | update/mod.rs `available` | partial: the version is kept, the rail draws no dot |
+| MCP: question dialog (Allow, Refuse), indicator pill with Stop, refusals on the board, window heartbeat | mcp.js | mcp/mod.rs | done: unit tested, not seen with a live client; plugin tools are the plugins session's (the heartbeat sends none) |
 | One shared `/api/events` stream for console, params, firmware, tiles, shell, mcp, fleet | events.js | net/stream.rs (one stream per topic) | done |
 | Vehicle capabilities, greyed controls with the reason | capabilities.js | setup/calibration.rs, mission/backend.rs | partial: no shared module, Home flight bar not gated |
 | Lazy vendor bundles | lazy.js | n/a | n/a: nothing to load lazily in a compiled program |
@@ -52,7 +53,8 @@ otherwise; "native file" is in `src/`.
 | Offline map dialog | tiles.js | map/tiles_*.rs | done |
 | Downloaded areas outline | map.js | map/regions.rs | done |
 | Track: record, smooth, clear, per-flight colours, keep over restart | map.js | data/track.rs | partial: not kept over restart |
-| Track and vehicle drawn in 3D with the depth test | map.js `renderTrack3D` | map3d/gpu.rs | missing: screen overlays today |
+| Track drawn in 3D with the depth test (a ribbon mesh, constant width on the screen) | map.js `renderTrack3D` | map3d/ribbon.rs, map3d/gpu.rs | done |
+| Vehicle and home hidden behind a hill in 3D | map.js `occludedByGlobe` | map3d/mod.rs `hidden` | done: a terrain ray test on the screen markers, not a depth test |
 | 3D map: terrain, imagery, hillshade, sky, buildings | map.js | map3d/ | done |
 | 3D panel: detail, elevation model | map.js | map3d/panel.rs | done |
 | Context menu on the map: Fly to this point, Set home here, copy coordinates | map.js, app.js | map/tools.rs | done |
@@ -76,7 +78,7 @@ otherwise; "native file" is in `src/`.
 | Checklist editor | checklist-editor.js | setup/checklist.rs | done |
 | Virtual joystick pad, arrow keys, WASD, lock and unlock, boost, key strength, collapse, drag, position kept, 20 Hz and 5 Hz stream | joystick.js | control/mod.rs, control/model.rs, home/mapwindow.rs | done |
 | USB gamepad: the block, the sticks summed into the frame, the arm gesture and the gate after it | joystick.js | control/model.rs, control/mod.rs | partial: the rules are done and tested with fed axes; reading a device needs a crate (gilrs, which needs libudev on the Linux build host), left for the user to decide |
-| MCP "AI client connected" pill with Stop | mcp.js | mcp/ | missing |
+| MCP "AI client connected" pill with Stop | mcp.js | mcp/mod.rs | done |
 
 ## Multi-vehicle
 

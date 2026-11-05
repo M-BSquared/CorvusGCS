@@ -7,6 +7,7 @@ pub mod buildings;
 pub mod camera;
 pub mod gpu;
 pub mod panel;
+pub mod ribbon;
 pub mod terrain;
 pub mod tile_cache;
 
@@ -569,6 +570,7 @@ impl Map3d {
             ground: self.cam.ground,
             ground_items,
             building_items,
+            line_items: self.line_items(layers),
         };
         painter.add(egui::PaintCallback {
             rect,
@@ -762,29 +764,81 @@ impl Map3d {
         self.screen_of(rect.min, self.cam.local_of(p[0], p[1], h))
     }
 
-    fn paint_layers(&self, painter: &egui::Painter, origin: Pos2, layers: &Layers3d<'_>) {
-        let cam = &self.cam;
-        // A run of the track ends where it goes behind the camera, so the
-        // gap is not drawn as a line across the screen.
-        let paint_track = |pts: &[Point], color: Color32, past: bool| {
-            let mut run: Vec<Pos2> = Vec::new();
-            for p in pts {
-                let h = self.ground_at(p.lng, p.lat) + p.alt.unwrap_or(0.0);
-                match self.screen_of(origin, cam.local_of(p.lng, p.lat, h)) {
-                    Some(q) => run.push(q),
-                    None => {
-                        crate::map::paint_flight(painter, &std::mem::take(&mut run), color, past);
-                    }
+    /// Whether the ground between the camera and `target` (local metres) is
+    /// higher than the line of sight: a hill in front of it.
+    fn hidden(&self, target: V3) -> bool {
+        let view = self.cam.view();
+        const STEPS: usize = 48;
+        for i in 1..STEPS {
+            let t = i as f64 / STEPS as f64;
+            if t > 0.97 {
+                break;
+            }
+            let p = [
+                view.pos[0] + (target[0] - view.pos[0]) * t,
+                view.pos[1] + (target[1] - view.pos[1]) * t,
+                view.pos[2] + (target[2] - view.pos[2]) * t,
+            ];
+            let (lng, lat) = self.cam.geo_of(p[0], p[1]);
+            let terrain = self.ground_at(lng, lat) - self.cam.ground;
+            if terrain > p[2] + 1.0 {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// The flown track as ribbons the depth test can hide behind a hill: a
+    /// dark casing and the colour on top, earlier flights quieter.
+    fn line_items(&self, layers: &Layers3d<'_>) -> Vec<gpu::Item> {
+        let rgb = |c: Color32| {
+            [
+                f32::from(c.r()) / 255.0,
+                f32::from(c.g()) / 255.0,
+                f32::from(c.b()) / 255.0,
+            ]
+        };
+        let centre = crate::map3d::camera::mercator(self.cam.lng, self.cam.lat);
+        let mut items = Vec::new();
+        let mut add = |pts: &[Point], color: Color32, past: bool| {
+            let local: Vec<V3> = track::smooth(pts)
+                .iter()
+                .map(|p| {
+                    self.cam
+                        .local_of(p.lng, p.lat, self.ground_at(p.lng, p.lat) + p.alt.unwrap_or(0.0))
+                })
+                .collect();
+            let (casing, casing_a, core, core_a) = if past {
+                (4.6, 0.45, 2.2, 0.85)
+            } else {
+                (5.5, 0.55, 2.6, 0.95)
+            };
+            for (width, color, alpha) in [(casing, [0.0, 0.0, 0.0], casing_a), (core, rgb(color), core_a)] {
+                if let Some((verts, indices)) = ribbon::build(&local, width, &self.cam, self.cam.ground) {
+                    items.push(gpu::Item {
+                        mesh: Arc::new(gpu::MeshData::new(verts, indices)),
+                        origin: centre,
+                        texture: None,
+                        uv: [0.0, 0.0, 1.0, 1.0],
+                        flat: false,
+                        color,
+                        alpha,
+                    });
                 }
             }
-            crate::map::paint_flight(painter, &run, color, past);
         };
         for flight in &layers.track.past {
-            paint_track(&track::smooth(flight), layers.past_color, true);
+            add(flight, layers.past_color, true);
         }
-        paint_track(&track::smooth(&layers.track.current), layers.track_color, false);
+        add(&layers.track.current, layers.track_color, false);
+        items
+    }
+
+    fn paint_layers(&self, painter: &egui::Painter, origin: Pos2, layers: &Layers3d<'_>) {
+        let cam = &self.cam;
         if let Some((lng, lat)) = layers.home {
-            if let Some(p) = self.screen_of(origin, cam.local_of(lng, lat, self.ground_at(lng, lat))) {
+            let at = cam.local_of(lng, lat, self.ground_at(lng, lat));
+            if let (false, Some(p)) = (self.hidden(at), self.screen_of(origin, at)) {
                 crate::map::paint_home(painter, p);
             }
         }
@@ -792,7 +846,11 @@ impl Map3d {
             let base = self.ground_at(lng, lat);
             let ground = cam.local_of(lng, lat, base);
             let air = cam.local_of(lng, lat, base + layers.height);
-            if let (Some(g), Some(a)) = (self.screen_of(origin, ground), self.screen_of(origin, air)) {
+            if let (false, Some(g), Some(a)) = (
+                self.hidden(air),
+                self.screen_of(origin, ground),
+                self.screen_of(origin, air),
+            ) {
                 painter.line_segment([g, a], Stroke::new(1.0, Color32::from_black_alpha(110)));
                 painter.circle_filled(g, 3.0, Color32::from_black_alpha(90));
                 crate::map::paint_vehicle_in(
