@@ -31,6 +31,8 @@ const ROW_H: f32 = 28.6;
 const ROW_GAP: f32 = 2.0;
 const FIELD_H: f32 = 26.5;
 const LABEL_H: f32 = 12.0;
+/// `.mission-list` when the sidebar is stacked under the map.
+const STACKED_LIST_MAX: f32 = 320.0;
 
 /// A row being carried to a new place in the plan.
 #[derive(Debug, Clone, Copy)]
@@ -261,18 +263,31 @@ impl MissionPage {
         self.refresh();
     }
 
-    /// Draws the sidebar into `rect`.
-    pub(crate) fn show_side(&mut self, ui: &mut egui::Ui, rect: Rect, narrow: bool) {
+    /// Draws the sidebar into `rect`. Stacked under the map (a window under
+    /// 960 px) the sidebar is as tall as its content, which is returned so the
+    /// page can reserve it; beside the map it fills `rect`.
+    pub(crate) fn show_side(&mut self, ui: &mut egui::Ui, rect: Rect, narrow: bool, stacked: bool) -> f32 {
         let _ = narrow;
         let ctx = ui.ctx().clone();
         let painter = ui.painter().clone();
         painter.rect_filled(rect, 0, style::surface_1());
-        painter.vline(rect.left() + 0.5, rect.y_range(), Stroke::new(1.0, style::border()));
+        if stacked {
+            painter.hline(rect.x_range(), rect.top() + 0.5, Stroke::new(1.0, style::border()));
+        } else {
+            painter.vline(rect.left() + 0.5, rect.y_range(), Stroke::new(1.0, style::border()));
+        }
         ui.interact(rect, ui.scope_id().with("missionside"), egui::Sense::hover());
-        let inner = Rect::from_min_max(
-            Pos2::new(rect.left() + 1.0 + PAD, rect.top() + PAD),
-            Pos2::new(rect.right() - PAD, rect.bottom() - PAD),
-        );
+        let inner = if stacked {
+            Rect::from_min_max(
+                Pos2::new(rect.left() + PAD, rect.top() + 1.0 + PAD),
+                Pos2::new(rect.right() - PAD, rect.bottom() - PAD),
+            )
+        } else {
+            Rect::from_min_max(
+                Pos2::new(rect.left() + 1.0 + PAD, rect.top() + PAD),
+                Pos2::new(rect.right() - PAD, rect.bottom() - PAD),
+            )
+        };
         let w = inner.width();
 
         // The bottom stack first: its height decides what the list gets.
@@ -299,18 +314,30 @@ impl MissionPage {
             16.0
         };
         let max_detail = (inner.height() * 0.42).max(120.0);
-        let detail_h = content_h.min(max_detail);
+        // `.mission-detail { max-height: none }` when stacked
+        let detail_h = if stacked { content_h } else { content_h.min(max_detail) };
         let detail_block = 1.0 + 10.0 + detail_h;
 
-        let actions_top = inner.bottom() - actions_h;
-        let status_top = actions_top - status_block;
-        let detail_top = status_top - GAP - detail_block;
-        let scroll = Rect::from_min_max(
-            Pos2::new(rect.left() + 1.0, inner.top()),
-            Pos2::new(rect.right(), (detail_top - GAP).max(inner.top() + 80.0)),
-        );
-
-        self.list_area(ui, &ctx, scroll, w);
+        let (detail_top, status_top, actions_top);
+        if stacked {
+            let scroll = Rect::from_min_max(
+                Pos2::new(rect.left(), inner.top()),
+                Pos2::new(rect.right(), rect.bottom()),
+            );
+            let used = self.list_area(ui, &ctx, scroll, w, true);
+            detail_top = inner.top() + used + GAP;
+            status_top = detail_top + detail_block + GAP;
+            actions_top = status_top + status_block;
+        } else {
+            actions_top = inner.bottom() - actions_h;
+            status_top = actions_top - status_block;
+            detail_top = status_top - GAP - detail_block;
+            let scroll = Rect::from_min_max(
+                Pos2::new(rect.left() + 1.0, inner.top()),
+                Pos2::new(rect.right(), (detail_top - GAP).max(inner.top() + 80.0)),
+            );
+            self.list_area(ui, &ctx, scroll, w, false);
+        }
 
         // The editor of the selected item.
         painter.hline(
@@ -403,6 +430,11 @@ impl MissionPage {
                 }
             }
         }
+        if stacked {
+            actions_top + actions_h + PAD - rect.top()
+        } else {
+            rect.height()
+        }
     }
 
     pub(crate) fn upload_plan(&mut self, ctx: &egui::Context, fly: bool) {
@@ -472,173 +504,237 @@ impl MissionPage {
     }
 
     /// Everything above the editor, which scrolls as one.
-    fn list_area(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, scroll: Rect, w: f32) {
-        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(scroll));
-        child.set_clip_rect(scroll);
-        let x = scroll.left() + PAD;
-        let units = self.units;
-        let mut act: Option<ListAct> = None;
-        egui::ScrollArea::vertical()
-            .id_salt("missionside-scroll")
-            .auto_shrink([false, false])
-            .show(&mut child, |ui| {
-                let top = ui.max_rect().top();
-                let clip_top = ui.clip_rect().top();
-                let painter = ui.painter().clone();
-                let mut y = top;
-
-                // the plan's name beside its caption
-                let cap = style::galley(ui, "Mission", 13.0, Weight::W700, style::text_1(), 0.0);
-                let in_h = 30.0;
-                painter.galley(
-                    Pos2::new(x, y + (in_h - cap.size().y) / 2.0),
-                    cap.clone(),
-                    style::text_1(),
-                );
-                let name_r = Rect::from_min_size(
-                    Pos2::new(x + cap.size().x + 10.0, y),
-                    Vec2::new(w - cap.size().x - 10.0, in_h),
-                );
-                let name = self.plan.name.clone();
-                if let Some(t) = field::committed(ui, name_r, "planname", &name, "Mission", false) {
-                    let t = t.trim();
-                    self.plan.name = if t.is_empty() { "Mission".into() } else { t.to_string() };
-                }
-                y += in_h + GAP;
-
-                // summary
-                let cells = summary(&self.plan, &units, self.ground.as_ref());
-                let cw = (w - 5.0) / 2.0;
-                let ch = 24.5;
-                for (k, (label, value, warn)) in cells.iter().enumerate() {
-                    let r = Rect::from_min_size(
-                        Pos2::new(x + (k % 2) as f32 * (cw + 5.0), y + (k / 2) as f32 * (ch + 5.0)),
-                        Vec2::new(cw, ch),
-                    );
-                    painter.rect_filled(r, style::RADIUS_BTN, style::surface_2());
-                    let line = if *warn {
-                        mix(style::warning(), style::border_soft(), 0.55)
+    /// The height of the item rows.
+    fn rows_height(&self, ui: &egui::Ui, w: f32) -> f32 {
+        if self.plan.items.is_empty() {
+            let text = if self.plan.home.is_some() {
+                "Nothing planned yet. Add points from the tool bar.".to_string()
+            } else {
+                format!(
+                    "Nothing planned yet. Press START and click where the {} {}.",
+                    self.plan.craft(),
+                    if self.plan.drives {
+                        "starts driving"
                     } else {
-                        style::border_soft()
-                    };
-                    painter.rect_stroke(r, style::RADIUS_BTN, Stroke::new(1.0, line), egui::StrokeKind::Inside);
-                    let lg = style::galley(ui, &label.to_uppercase(), 9.0, Weight::W400, style::text_3(), 0.7);
-                    painter.galley(
-                        Pos2::new(r.left() + 9.0, r.center().y - lg.size().y / 2.0),
-                        lg.clone(),
-                        style::text_3(),
-                    );
-                    let vc = if *warn { style::warning() } else { style::text_1() };
-                    let vg = style::galley_mono(ui, value, 12.0, vc);
-                    painter.galley(
-                        Pos2::new(r.right() - 9.0 - vg.size().x, r.center().y - vg.size().y / 2.0),
-                        vg,
-                        vc,
-                    );
-                }
-                y += (cells.len().div_ceil(2)) as f32 * (ch + 5.0) - 5.0 + GAP;
-
-                // the vehicle's side of it
-                let (text, level, offer) = vehicle_line(&self.tracker, &self.plan);
-                if !text.is_empty() {
-                    let btn = Button::new("Read it", Variant::Secondary).icon("download").small();
-                    let bw = if offer { btn.width(ui) } else { 0.0 };
-                    let tw = (w - 18.0 - if offer { bw + 8.0 } else { 0.0 }).max(80.0);
-                    let g = kit::wrapped_weight(ui, &text, 12.0, Weight::W400, style::text_2(), tw, 1.4);
-                    let h = (g.size().y.max(if offer { btn.height() } else { 0.0 })) + 14.0 + 2.0;
-                    let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, h));
-                    painter.rect_filled(r, style::RADIUS_BTN, style::surface_2());
-                    let line = match level {
-                        "live" => mix(style::healthy(), style::border(), 0.55),
-                        "warn" => mix(style::warning(), style::border(), 0.55),
-                        _ => style::border(),
-                    };
-                    painter.rect_stroke(r, style::RADIUS_BTN, Stroke::new(1.0, line), egui::StrokeKind::Inside);
-                    painter.galley(Pos2::new(r.left() + 10.0, r.top() + 8.0), g, style::text_2());
-                    if offer {
-                        let b = Rect::from_min_size(
-                            Pos2::new(r.right() - 9.0 - bw, r.center().y - btn.height() / 2.0),
-                            Vec2::new(bw, btn.height()),
-                        );
-                        if btn.show(ui, b, "mreadit") {
-                            act = Some(ListAct::Read);
-                        }
+                        "takes off"
                     }
-                    y += h + GAP;
-                }
+                )
+            };
+            let g = kit::wrapped_weight(ui, &text, 12.0, Weight::W400, style::text_3(), w - 16.0, 1.4);
+            return g.size().y + 16.0;
+        }
+        self.plan.items.len() as f32 * (ROW_H + ROW_GAP) - ROW_GAP
+    }
 
-                // what is wrong with the plan
-                let issues: Vec<_> = problems(&self.plan, &units, self.ground.as_ref(), self.link.start)
-                    .into_iter()
-                    .filter(|i| i.text != EMPTY_PLAN)
-                    .collect();
-                if !issues.is_empty() {
-                    for (k, issue) in issues.iter().enumerate() {
-                        let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, 27.0));
-                        card::paint(
-                            &painter,
-                            r,
-                            Look::custom(
-                                style::warning().gamma_multiply(0.10),
-                                mix(style::warning(), style::border_soft(), 0.45),
-                                style::RADIUS_BTN,
-                            ),
-                        );
-                        icons::paint(
-                            ui,
-                            "triangle-alert",
-                            Rect::from_center_size(Pos2::new(r.left() + 8.0 + 7.0, r.center().y), Vec2::splat(12.0)),
-                            style::warning(),
-                        );
-                        let room = w - 8.0 - 14.0 - 6.0 - if issue.info.is_empty() { 8.0 } else { 16.0 + 6.0 + 8.0 };
-                        let g = style::galley(ui, &issue.text, 11.0, Weight::W400, style::text_2(), 0.0);
-                        let clip = Rect::from_min_size(
-                            Pos2::new(r.left() + 8.0 + 14.0 + 6.0, r.top()),
-                            Vec2::new(room, r.height()),
-                        );
-                        ui.painter_at(clip).galley(
-                            Pos2::new(clip.left(), r.center().y - g.size().y / 2.0),
-                            g,
-                            style::text_2(),
-                        );
-                        if !issue.info.is_empty() {
-                            popover::info(
-                                ui,
-                                Pos2::new(r.right() - 8.0 - 8.0, r.center().y),
-                                "",
-                                &issue.info,
-                                ("missue", k),
-                            );
-                        }
-                        y += 27.0 + 4.0;
-                    }
-                    y += GAP - 4.0;
-                }
+    /// Name, summary, the vehicle's line, the warnings and the list, drawn
+    /// from `ui`'s top. Returns the height used.
+    fn list_content(
+        &mut self,
+        ui: &mut egui::Ui,
+        x: f32,
+        w: f32,
+        scroll: Rect,
+        stacked: bool,
+        act: &mut Option<ListAct>,
+    ) -> f32 {
+        let units = self.units;
+        let top = ui.max_rect().top();
+        let clip_top = ui.clip_rect().top();
+        let painter = ui.painter().clone();
+        let mut y = top;
 
-                // the list
-                let head_natural = y;
-                y += 24.0 + 3.0 + 1.0 + GAP - 6.0;
-                let list_top = y;
-                let list_end = self.rows(ui, x, y, w, &mut act);
-                y = list_end;
-                // the head stays in reach on a plan longer than the panel
-                let hy = head_natural.max(clip_top);
-                let head = Rect::from_min_size(Pos2::new(scroll.left(), hy), Vec2::new(scroll.width(), 28.0));
-                painter.rect_filled(head, 0, style::surface_1());
-                painter.hline(
-                    head.x_range(),
-                    head.bottom() - 0.5,
-                    Stroke::new(1.0, style::border_soft()),
+        // the plan's name beside its caption
+        let cap = style::galley(ui, "Mission", 13.0, Weight::W700, style::text_1(), 0.0);
+        let in_h = 30.0;
+        painter.galley(
+            Pos2::new(x, y + (in_h - cap.size().y) / 2.0),
+            cap.clone(),
+            style::text_1(),
+        );
+        let name_r = Rect::from_min_size(
+            Pos2::new(x + cap.size().x + 10.0, y),
+            Vec2::new(w - cap.size().x - 10.0, in_h),
+        );
+        let name = self.plan.name.clone();
+        if let Some(t) = field::committed(ui, name_r, "planname", &name, "Mission", false) {
+            let t = t.trim();
+            self.plan.name = if t.is_empty() { "Mission".into() } else { t.to_string() };
+        }
+        y += in_h + GAP;
+
+        // summary
+        let cells = summary(&self.plan, &units, self.ground.as_ref());
+        let cw = (w - 5.0) / 2.0;
+        let ch = 24.5;
+        for (k, (label, value, warn)) in cells.iter().enumerate() {
+            let r = Rect::from_min_size(
+                Pos2::new(x + (k % 2) as f32 * (cw + 5.0), y + (k / 2) as f32 * (ch + 5.0)),
+                Vec2::new(cw, ch),
+            );
+            painter.rect_filled(r, style::RADIUS_BTN, style::surface_2());
+            let line = if *warn {
+                mix(style::warning(), style::border_soft(), 0.55)
+            } else {
+                style::border_soft()
+            };
+            painter.rect_stroke(r, style::RADIUS_BTN, Stroke::new(1.0, line), egui::StrokeKind::Inside);
+            let lg = style::galley(ui, &label.to_uppercase(), 9.0, Weight::W400, style::text_3(), 0.7);
+            painter.galley(
+                Pos2::new(r.left() + 9.0, r.center().y - lg.size().y / 2.0),
+                lg.clone(),
+                style::text_3(),
+            );
+            let vc = if *warn { style::warning() } else { style::text_1() };
+            let vg = style::galley_mono(ui, value, 12.0, vc);
+            painter.galley(
+                Pos2::new(r.right() - 9.0 - vg.size().x, r.center().y - vg.size().y / 2.0),
+                vg,
+                vc,
+            );
+        }
+        y += (cells.len().div_ceil(2)) as f32 * (ch + 5.0) - 5.0 + GAP;
+
+        // the vehicle's side of it
+        let (text, level, offer) = vehicle_line(&self.tracker, &self.plan);
+        if !text.is_empty() {
+            let btn = Button::new("Read it", Variant::Secondary).icon("download").small();
+            let bw = if offer { btn.width(ui) } else { 0.0 };
+            let tw = (w - 18.0 - if offer { bw + 8.0 } else { 0.0 }).max(80.0);
+            let g = kit::wrapped_weight(ui, &text, 12.0, Weight::W400, style::text_2(), tw, 1.4);
+            let h = (g.size().y.max(if offer { btn.height() } else { 0.0 })) + 14.0 + 2.0;
+            let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, h));
+            painter.rect_filled(r, style::RADIUS_BTN, style::surface_2());
+            let line = match level {
+                "live" => mix(style::healthy(), style::border(), 0.55),
+                "warn" => mix(style::warning(), style::border(), 0.55),
+                _ => style::border(),
+            };
+            painter.rect_stroke(r, style::RADIUS_BTN, Stroke::new(1.0, line), egui::StrokeKind::Inside);
+            painter.galley(Pos2::new(r.left() + 10.0, r.top() + 8.0), g, style::text_2());
+            if offer {
+                let b = Rect::from_min_size(
+                    Pos2::new(r.right() - 9.0 - bw, r.center().y - btn.height() / 2.0),
+                    Vec2::new(bw, btn.height()),
                 );
-                let tg = style::galley(ui, "ITEMS", 10.0, Weight::W400, style::text_3(), 0.9);
-                painter.galley(Pos2::new(x, head.top() + 12.0 - tg.size().y / 2.0), tg, style::text_3());
-                let tr = Rect::from_min_size(Pos2::new(x + w - 24.0, head.top()), Vec2::splat(24.0));
-                if kit::icon_btn(ui, tr, "trash-2", "Clear the whole plan", false, "mclear") {
-                    act = Some(ListAct::Clear);
+                if btn.show(ui, b, "mreadit") {
+                    *act = Some(ListAct::Read);
                 }
-                let _ = list_top;
-                ui.allocate_space(Vec2::new(scroll.width(), (y - top).max(1.0) + 4.0));
-            });
+            }
+            y += h + GAP;
+        }
+
+        // what is wrong with the plan
+        let issues: Vec<_> = problems(&self.plan, &units, self.ground.as_ref(), self.link.start)
+            .into_iter()
+            .filter(|i| i.text != EMPTY_PLAN)
+            .collect();
+        if !issues.is_empty() {
+            for (k, issue) in issues.iter().enumerate() {
+                let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, 27.0));
+                card::paint(
+                    &painter,
+                    r,
+                    Look::custom(
+                        style::warning().gamma_multiply(0.10),
+                        mix(style::warning(), style::border_soft(), 0.45),
+                        style::RADIUS_BTN,
+                    ),
+                );
+                icons::paint(
+                    ui,
+                    "triangle-alert",
+                    Rect::from_center_size(Pos2::new(r.left() + 8.0 + 7.0, r.center().y), Vec2::splat(12.0)),
+                    style::warning(),
+                );
+                let room = w - 8.0 - 14.0 - 6.0 - if issue.info.is_empty() { 8.0 } else { 16.0 + 6.0 + 8.0 };
+                let g = style::galley(ui, &issue.text, 11.0, Weight::W400, style::text_2(), 0.0);
+                let clip = Rect::from_min_size(
+                    Pos2::new(r.left() + 8.0 + 14.0 + 6.0, r.top()),
+                    Vec2::new(room, r.height()),
+                );
+                ui.painter_at(clip).galley(
+                    Pos2::new(clip.left(), r.center().y - g.size().y / 2.0),
+                    g,
+                    style::text_2(),
+                );
+                if !issue.info.is_empty() {
+                    popover::info(
+                        ui,
+                        Pos2::new(r.right() - 8.0 - 8.0, r.center().y),
+                        "",
+                        &issue.info,
+                        ("missue", k),
+                    );
+                }
+                y += 27.0 + 4.0;
+            }
+            y += GAP - 4.0;
+        }
+
+        // the list
+        let head_natural = y;
+        y += 24.0 + 3.0 + 1.0 + GAP - 6.0;
+        let list_top = y;
+        let rows_h = self.rows_height(ui, w);
+        if stacked && rows_h > STACKED_LIST_MAX {
+            // `.mission-list { max-height: 320px; overflow-y: auto }`
+            let r = Rect::from_min_size(Pos2::new(scroll.left(), y), Vec2::new(scroll.width(), STACKED_LIST_MAX));
+            let mut c = ui.new_child(egui::UiBuilder::new().max_rect(r));
+            c.set_clip_rect(r.intersect(ui.clip_rect()));
+            egui::ScrollArea::vertical()
+                .id_salt("missionlist")
+                .auto_shrink([false, false])
+                .show(&mut c, |ui| {
+                    let t = ui.max_rect().top();
+                    self.rows(ui, x, t, w, act);
+                    ui.allocate_space(Vec2::new(r.width(), rows_h + 4.0));
+                });
+            y += STACKED_LIST_MAX;
+        } else {
+            y = self.rows(ui, x, y, w, act);
+        }
+        // the head stays in reach on a plan longer than the panel; stacked,
+        // it is static (`.mission-list-head { position: static }`)
+        let hy = if stacked {
+            head_natural
+        } else {
+            head_natural.max(clip_top)
+        };
+        let head = Rect::from_min_size(Pos2::new(scroll.left(), hy), Vec2::new(scroll.width(), 28.0));
+        painter.rect_filled(head, 0, style::surface_1());
+        painter.hline(
+            head.x_range(),
+            head.bottom() - 0.5,
+            Stroke::new(1.0, style::border_soft()),
+        );
+        let tg = style::galley(ui, "ITEMS", 10.0, Weight::W400, style::text_3(), 0.9);
+        painter.galley(Pos2::new(x, head.top() + 12.0 - tg.size().y / 2.0), tg, style::text_3());
+        let tr = Rect::from_min_size(Pos2::new(x + w - 24.0, head.top()), Vec2::splat(24.0));
+        if kit::icon_btn(ui, tr, "trash-2", "Clear the whole plan", false, "mclear") {
+            *act = Some(ListAct::Clear);
+        }
+        let _ = list_top;
+        y - top
+    }
+
+    fn list_area(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, scroll: Rect, w: f32, stacked: bool) -> f32 {
+        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(scroll));
+        child.set_clip_rect(scroll.intersect(ui.clip_rect()));
+        let x = scroll.left() + PAD;
+        let mut act: Option<ListAct> = None;
+        let used = if stacked {
+            self.list_content(&mut child, x, w, scroll, true, &mut act)
+        } else {
+            let mut h = 0.0;
+            egui::ScrollArea::vertical()
+                .id_salt("missionside-scroll")
+                .auto_shrink([false, false])
+                .show(&mut child, |ui| {
+                    h = self.list_content(ui, x, w, scroll, false, &mut act);
+                    ui.allocate_space(Vec2::new(scroll.width(), h.max(1.0) + 4.0));
+                });
+            h
+        };
         match act {
             Some(ListAct::Read) => self.start_read(ctx),
             Some(ListAct::Clear) => self.confirm_clear(),
@@ -657,6 +753,7 @@ impl MissionPage {
             }
             None => {}
         }
+        used
     }
 
     /// The items, one row each; returns the bottom.

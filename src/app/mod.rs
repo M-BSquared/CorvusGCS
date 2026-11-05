@@ -434,8 +434,16 @@ impl App {
                     self.checklist.window(&mut map_ui, ui.ctx(), main, below);
                     self.control.show(&mut map_ui, main, now);
                 } else if self.page == Page::Mission {
-                    self.mission
-                        .show(ui, main, &state, &self.units, &mut self.map, &mut self.rail, vw.max1279);
+                    self.mission.show(
+                        ui,
+                        main,
+                        &state,
+                        &self.units,
+                        &mut self.map,
+                        &mut self.rail,
+                        vw.max1279,
+                        vw.max959,
+                    );
                     for (level, text) in self.mission.take_notices() {
                         self.board.add_local(level, &text, now);
                     }

@@ -133,8 +133,9 @@ otherwise; "native file" is in `src/`.
 | Upload, save, open, read, new, clear confirmations | mission.js | mission/dialogs.rs | done |
 | Fly a mission end to end (upload, start, progress) against the simulator | mission.js | mission/ | done: the simulated PX4 accepts MISSION_START; verified upload, start and "Flying to 2" |
 | Row dragging, profile height dragging, marker dragging | mission.js | mission/side.rs, profile.rs, mapview.rs | partial: unit tested only |
-| Touch FINISH button (tablet mode), offscreen plan notice | mission.js | mission/toolbar.rs, mission/mod.rs | done |
-| Stacked layout under 960 px, last plan reopening | mission.js | mission/ | missing: the native page keeps the side panel beside the map down to its narrow layout (1279 px); not changed |
+| Touch FINISH button (tablet mode), offscreen plan notice | mission.js | mission/toolbar.rs, mission/mod.rs | done: both seen in the running app against the simulator (the plan notice after a quiet reopening of a plan in another city; FINISH ending a drawn area with 16 points). Found and fixed: a finished shape still said "Enter or a double click" in tablet mode instead of "Press FINISH ..." |
+| Stacked layout under 960 px: map at 55 percent of the window (not under 320 px), the profile as a band, the sidebar at its natural height with the list capped at 320 px, one column that scrolls | mission.js, css/mission.css | mission/mod.rs `show_stacked`, mission/side.rs, mission/profile.rs | done: seen at 900 px with a drawn plan; scrolling was exercised with a forced offset only |
+| Last plan reopening (the plan last saved or opened, kept in `~/.corvus/gui-mission-last.txt`, opened quietly, forgotten when deleted) | mission.js | mission/mod.rs `last` | done |
 | Shortcuts: Esc cancels row drag, search, pattern, tool; Enter finishes a pattern; Delete removes the point | mission.js | mission/mod.rs | check |
 
 ## Settings, Logs, Analysis
