@@ -796,6 +796,8 @@ class SimVehicle:
         elif command == m.MAV_CMD_NAV_RETURN_TO_LAUNCH:
             self.mode = "RTL"
             self._ack(command, m.MAV_RESULT_ACCEPTED)
+        elif command == m.MAV_CMD_MISSION_START:
+            self._start_mission()
         elif command == m.MAV_CMD_DO_SET_HOME:
             if params[4] or params[5]:
                 self.model.home = (params[4], params[5])
@@ -820,6 +822,24 @@ class SimVehicle:
                             f"at {int(params[2])} %")
         else:
             self._ack(command, m.MAV_RESULT_UNSUPPORTED)
+
+    def _start_mission(self) -> None:
+        """MAV_CMD_MISSION_START the way PX4 takes it: it switches to the
+        mission and arms in one step, and refuses with nothing uploaded."""
+        command = mavlink2.MAV_CMD_MISSION_START
+        if not self._mission_items:
+            self._ack(command, mavlink2.MAV_RESULT_DENIED)
+            self.statustext("No valid mission available", mavlink2.MAV_SEVERITY_WARNING)
+            return
+        if self._calibration is not None:
+            self._ack(command, mavlink2.MAV_RESULT_TEMPORARILY_REJECTED)
+            return
+        if not self.opts.follow_missions:
+            self._adopt_mission()
+        self.armed = True
+        self.mode = "MISSION"
+        self._ack(command, mavlink2.MAV_RESULT_ACCEPTED)
+        self.statustext("Mission started")
 
     def _request_message(self, message_id: int) -> None:
         if message_id == mavlink2.MAVLINK_MSG_ID_AUTOPILOT_VERSION:

@@ -146,6 +146,7 @@ const ICONS: &[(&str, &str)] = &[
     ("vector-square", "VectorSquare"),
     ("mouse-pointer-2", "MousePointer2"),
     ("move", "Move"),
+    ("navigation", "Navigation"),
 ];
 
 fn main() {

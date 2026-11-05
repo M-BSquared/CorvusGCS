@@ -217,7 +217,17 @@ impl App {
                     self.hud
                         .show(&mut map_ui, corner, &state, &self.units, now, vw.hud_width(), vw.max600);
                     self.rail.show(&mut map_ui, main, &mut self.map, &state);
-                    self.flight.show(&mut map_ui, main, &state, &self.units);
+                    self.flight
+                        .show(&mut map_ui, main, &state, &self.units, &mut self.map.tools);
+                    let ground = crate::home::flight::is_ground(&state);
+                    if let Some(action) = self
+                        .map
+                        .tools
+                        .menu(&map_ui, &state, ground, &self.units, now / 1000.0, main)
+                    {
+                        let alt = self.map.tools.plan.alt_agl();
+                        self.flight.run_action(ui.ctx(), action, ground, alt);
+                    }
                     let below = self.flight.bar_bottom + 10.0;
                     self.checklist.window(&mut map_ui, ui.ctx(), main, below);
                 } else if self.page == Page::Mission {

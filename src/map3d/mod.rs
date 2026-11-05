@@ -54,6 +54,9 @@ pub struct Layers3d<'a> {
 /// What the pointer did to the camera this frame.
 pub struct Input {
     pub dragged: bool,
+    /// Where a press-and-release landed on the ground (longitude, latitude)
+    /// and whether it was the right button.
+    pub click: Option<([f64; 2], bool)>,
 }
 
 /// The base layer's tiles as a decoded image.
@@ -582,7 +585,13 @@ impl Map3d {
         }
         self.paint_layers(&painter, rect.min, layers);
         self.paint_credit(ui, rect);
-        Input { dragged }
+        let secondary = resp.secondary_clicked();
+        let click = (resp.clicked() || secondary)
+            .then(|| resp.interact_pointer_pos())
+            .flatten()
+            .and_then(|p| self.pick(rect, p))
+            .map(|g| (g, secondary));
+        Input { dragged, click }
     }
 
     /// `setSky`: the sky over the horizon in the theme's own greys. At 60
@@ -727,6 +736,22 @@ impl Map3d {
         self.cam
             .project(p)
             .map(|s| Pos2::new(origin.x + s.x as f32, origin.y + s.y as f32))
+    }
+
+    /// The longitude and latitude of the ground under screen point `p`, on
+    /// the plane of the centre's ground.
+    pub fn pick(&self, rect: Rect, p: Pos2) -> Option<[f64; 2]> {
+        let (e, n) = self
+            .cam
+            .ground_at(f64::from(p.x - rect.min.x), f64::from(p.y - rect.min.y), 0.0)?;
+        let (lng, lat) = self.cam.geo_of(e, n);
+        Some([lng, lat])
+    }
+
+    /// Where a place on the ground is on screen, when the camera sees it.
+    pub fn place_on_screen(&self, rect: Rect, p: [f64; 2]) -> Option<Pos2> {
+        let h = self.ground_at(p[0], p[1]);
+        self.screen_of(rect.min, self.cam.local_of(p[0], p[1], h))
     }
 
     fn paint_layers(&self, painter: &egui::Painter, origin: Pos2, layers: &Layers3d<'_>) {

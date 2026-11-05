@@ -885,3 +885,35 @@ def test_the_rover_stays_on_the_ground() -> None:
     model = rover.build_model()
     for second in (1.0, 20.0, 40.0):
         assert model.sample(second).alt_agl == 0.0
+
+
+def _command(sim: vehicle.SimVehicle, command: int) -> list[tuple[int, int]]:
+    """Feed one COMMAND_LONG to the vehicle and return the ACKs it sent."""
+    from types import SimpleNamespace
+
+    acks: list[tuple[int, int]] = []
+    sim._ack = lambda cmd, result: acks.append((cmd, result))  # type: ignore[method-assign]
+    sim.statustext = lambda *a, **k: None  # type: ignore[method-assign]
+    msg = SimpleNamespace(command=command, **{f"param{i}": 0.0 for i in range(1, 8)})
+    sim._handle_command(msg)
+    return acks
+
+
+def test_mission_start_arms_and_flies_what_was_uploaded() -> None:
+    """PX4 answers MAV_CMD_MISSION_START by switching to the mission and arming
+    in one step; the vehicle answered UNSUPPORTED, so the planner's fly and the
+    map's fly to points could never be seen to work against it."""
+    start = vehicle.mavlink2.MAV_CMD_MISSION_START
+    sim = vehicle.SimVehicle(options=vehicle.VehicleOptions(mode="LOITER"))
+    sim.armed = False
+    sim._mission_items = [(3, 16, 0, 0, 0, 0, 0, 0, 10.0)]
+    assert _command(sim, start) == [(start, vehicle.mavlink2.MAV_RESULT_ACCEPTED)]
+    assert sim.armed and sim.mode == "MISSION"
+
+
+def test_mission_start_is_refused_with_nothing_uploaded() -> None:
+    start = vehicle.mavlink2.MAV_CMD_MISSION_START
+    sim = vehicle.SimVehicle()
+    sim.armed = False
+    assert _command(sim, start) == [(start, vehicle.mavlink2.MAV_RESULT_DENIED)]
+    assert not sim.armed

@@ -13,6 +13,7 @@ pub mod search;
 pub mod search_card;
 pub mod tiles_card;
 pub mod tiles_model;
+pub mod tools;
 
 use eframe::egui::{self, Color32, Pos2, Shape, Stroke, Vec2};
 use serde_json::Value;
@@ -107,6 +108,8 @@ pub struct Map {
     pub measure: crate::map::measure::Measure,
     /// Where the place search landed.
     pub pin: Option<[f64; 2]>,
+    /// The fly-to-points plan and the menu on a point.
+    pub tools: crate::map::tools::Tools,
     /// 3D mode: the tilted view, made when it is first switched on.
     three: Option<Map3d>,
     three_d: bool,
@@ -160,6 +163,7 @@ impl Map {
             regions_asked: f64::NEG_INFINITY,
             measure: crate::map::measure::Measure::default(),
             pin: None,
+            tools: Default::default(),
             three: None,
             three_d: false,
             view: None,
@@ -316,6 +320,18 @@ impl Map {
         );
         if input.dragged {
             self.follow = false;
+        }
+        if !self.planner {
+            if let Some((g, secondary)) = input.click {
+                self.tools.click(g, secondary, self.measure.active);
+            }
+            if self.tools.plan.active && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                self.tools.plan.set_active(false);
+            }
+            let (rect_c, t) = (rect, &*t);
+            let at = |p: [f64; 2]| t.place_on_screen(rect_c, p);
+            let painter = ui.painter_at(rect);
+            self.tools.paint(&painter, &at, vehicle);
         }
         if std::env::var_os("CORVUS_GUI_3D_PANEL").is_some() {
             let anchor =
@@ -502,6 +518,7 @@ impl Map {
             planner: self.planner,
             overlay,
             pin: &mut self.pin,
+            tools: (!self.planner).then_some(&mut self.tools),
             measure: &mut self.measure,
             regions,
             outline,
@@ -577,6 +594,7 @@ struct Layers<'a, 'o> {
     planner: bool,
     overlay: Option<&'a mut (dyn Overlay + 'o)>,
     pin: &'a mut Option<[f64; 2]>,
+    tools: Option<&'a mut crate::map::tools::Tools>,
     measure: &'a mut crate::map::measure::Measure,
     regions: Vec<crate::map::regions::Merged>,
     /// The geofence area, when the Home map is asked to show it.
@@ -808,6 +826,7 @@ impl Plugin for Layers<'_, '_> {
                 self.heading,
             );
         }
+        let mut pin_hit = false;
         if let Some(p) = *self.pin {
             let c = screen(
                 projector,
@@ -824,7 +843,37 @@ impl Plugin for Layers<'_, '_> {
                 && !self.measure.active
             {
                 *self.pin = None;
+                pin_hit = true;
             }
+        }
+        if let Some(tools) = self.tools.as_deref_mut() {
+            let at = |p: [f64; 2]| {
+                Some(screen(
+                    projector,
+                    rect,
+                    &Point {
+                        lng: p[0],
+                        lat: p[1],
+                        alt: None,
+                    },
+                ))
+            };
+            if tools.plan.active {
+                if response.hovered() {
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair);
+                }
+                if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                    tools.plan.set_active(false);
+                }
+            }
+            let secondary = response.secondary_clicked();
+            if response.clicked() || secondary {
+                if let Some(q) = response.interact_pointer_pos() {
+                    let g = projector.unproject(q.to_vec2());
+                    tools.click([g.x(), g.y()], secondary, self.measure.active || pin_hit);
+                }
+            }
+            tools.paint(&painter, &at, self.vehicle);
         }
         if self.measure.active {
             drive_measure(ui, response, projector, self.measure);
@@ -995,6 +1044,7 @@ mod tests {
             regions_asked: f64::NEG_INFINITY,
             measure: crate::map::measure::Measure::default(),
             pin: None,
+            tools: Default::default(),
             three: None,
             three_d: false,
             view: None,
