@@ -5,6 +5,7 @@
 
 use eframe::egui::{self, Color32, Pos2, Rect, Stroke, Vec2};
 
+use crate::ui::card::{self, Look};
 use crate::ui::icons;
 use crate::ui::style::{self, Weight};
 
@@ -164,16 +165,14 @@ pub fn show(
                     egui::StrokeKind::Inside,
                 );
             } else {
-                p.rect_filled(
+                card::paint(
+                    p,
                     rect,
-                    style::RADIUS_BTN,
-                    if hover { style::glass(0.95) } else { style::glass(0.82) },
-                );
-                p.rect_stroke(
-                    rect,
-                    style::RADIUS_BTN,
-                    Stroke::new(1.0, if hover { style::tint(0.15) } else { style::tint(0.09) }),
-                    egui::StrokeKind::Inside,
+                    Look::custom(
+                        if hover { style::glass(0.95) } else { style::glass(0.82) },
+                        if hover { style::tint(0.15) } else { style::tint(0.09) },
+                        style::RADIUS_BTN,
+                    ),
                 );
             }
             let label_c = if on || hover { style::text_1() } else { style::text_2() };

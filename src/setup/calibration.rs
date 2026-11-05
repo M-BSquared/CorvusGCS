@@ -29,6 +29,7 @@ use crate::ui::kit::{self, Button, Variant};
 use crate::ui::message::Tone;
 use crate::ui::modal;
 use crate::ui::pagekit;
+use crate::ui::progress::Bar;
 use crate::ui::style::{self, Weight};
 
 /// No autopilot word within this long of a successful start means something
@@ -968,19 +969,13 @@ impl CalibrationPage {
         if let Some(p) = st.progress {
             ty += 8.0 + 4.0;
             let bar = Rect::from_min_size(Pos2::new(text_x, ty), Vec2::new(text_w, 5.0));
-            painter.rect_filled(bar, 3, style::surface_3());
-            let fw = text_w * (p.clamp(0.0, 100.0) as f32) / 100.0;
-            if fw > 0.0 {
-                painter.rect_filled(
-                    Rect::from_min_size(bar.min, Vec2::new(fw, 5.0)),
-                    3,
-                    if st.phase == Phase::Done {
-                        style::healthy()
-                    } else {
-                        style::nav()
-                    },
-                );
-            }
+            Bar::new(p.clamp(0.0, 100.0) as f32 / 100.0)
+                .fill(if st.phase == Phase::Done {
+                    style::healthy()
+                } else {
+                    style::nav()
+                })
+                .show(&painter, bar);
             ty += 5.0;
         }
         if let Some(g) = dog_g {

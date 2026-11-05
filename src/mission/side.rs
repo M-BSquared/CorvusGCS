@@ -21,6 +21,7 @@ use crate::ui::card::{self, Look};
 use crate::ui::field;
 use crate::ui::icons;
 use crate::ui::kit::{self, Button, Choice, Variant};
+use crate::ui::listrow::{self, Mark};
 use crate::ui::popover;
 use crate::ui::style::{self, Weight};
 
@@ -722,7 +723,7 @@ impl MissionPage {
                     ),
                 );
             } else if hover {
-                painter.rect_filled(r, style::RADIUS_BTN, style::surface_hover());
+                listrow::paint(&painter, r, style::RADIUS_BTN, Mark::Hover);
             }
             if current {
                 painter.rect_filled(

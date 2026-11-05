@@ -3,8 +3,9 @@
 //! this one control: segments as wide as their content, or stretched to a
 //! given width with the content centred.
 
-use eframe::egui::{self, Pos2, Rect, Stroke, Vec2};
+use eframe::egui::{self, Pos2, Rect, Vec2};
 
+use crate::ui::card::{self, Look};
 use crate::ui::icons;
 use crate::ui::style::{self, Weight};
 
@@ -130,12 +131,10 @@ pub fn show(
     };
     let h = height(&opts);
     let rect = Rect::from_min_size(at, Vec2::new(width(ui, segs, &opts), h));
-    painter.rect_filled(rect, style::RADIUS_BTN, style::glass(0.82));
-    painter.rect_stroke(
+    card::paint(
+        &painter,
         rect,
-        style::RADIUS_BTN,
-        Stroke::new(1.0, style::tint(0.09)),
-        egui::StrokeKind::Inside,
+        Look::custom(style::glass(0.82), style::tint(0.09), style::RADIUS_BTN),
     );
     let mut x = rect.left() + 4.0;
     let mut clicked = None;

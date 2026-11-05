@@ -25,6 +25,7 @@ use crate::ui::card::{self, Look};
 use crate::ui::kit::{self, Button, Choice, Variant};
 use crate::ui::message::Tone;
 use crate::ui::pagekit;
+use crate::ui::progress::Bar;
 use crate::ui::style::{self, Weight};
 
 /// Rows drawn at once.
@@ -1312,20 +1313,15 @@ impl ParamsPage {
     fn progress(&mut self, ui: &mut egui::Ui, x: f32, mut y: f32, w: f32, received: u64, count: u64) -> f32 {
         y = pagekit::section_title(ui, x, y, w, "Downloading Parameters");
         let bar = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, 8.0));
-        let painter = ui.painter();
-        {
-            let r = bar;
-            card::paint(painter, r, Look::custom(style::surface_3(), style::border_soft(), 4));
-        }
         let pct = if count > 0 {
             ((received as f64 / count as f64) * 100.0).round().min(100.0)
         } else {
             0.0
         };
-        if pct > 0.0 {
-            let fill = Rect::from_min_size(bar.min, Vec2::new(bar.width() * pct as f32 / 100.0, 8.0));
-            painter.rect_filled(fill, 4, style::accent());
-        }
+        Bar::new(pct as f32 / 100.0)
+            .track(style::surface_3())
+            .bordered()
+            .show(ui.painter(), bar);
         y = bar.bottom() + 8.0;
         let label = if count > 0 {
             format!("{received} / {count} parameters \u{00b7} {pct}%")

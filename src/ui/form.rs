@@ -10,12 +10,13 @@ use eframe::egui::{self, Color32, Pos2, Rect, Stroke, Vec2};
 
 use crate::ui::card::{self, Look};
 use crate::ui::formfield;
-use crate::ui::icons;
 use crate::ui::kit;
 use crate::ui::message::{self, Tone};
 use crate::ui::optioncards::{self, Card};
 use crate::ui::pagekit;
+use crate::ui::pills;
 use crate::ui::popover;
+use crate::ui::slider;
 use crate::ui::style::{self, Weight};
 
 pub use crate::ui::formfield::CONTROL_H;
@@ -369,61 +370,8 @@ pub fn option_cards(
 /// the step index while it is dragged or clicked, and whether the pointer was
 /// released this frame.
 pub fn slider(ui: &mut egui::Ui, f: &mut Form, id: &str, steps: &[String], current: usize) -> Option<(usize, bool)> {
-    let thumb = 16.0;
-    let row = Rect::from_min_size(Pos2::new(f.x, f.y + 4.0), Vec2::new(f.w, thumb));
-    let n = steps.len().max(2) as f32 - 1.0;
-    let pos_of = |i: usize| row.left() + thumb / 2.0 + (f.w - thumb) * i as f32 / n;
-    let resp = ui.interact(row, ui.scope_id().with(("slider", id)), egui::Sense::click_and_drag());
-    let mut out = None;
-    if resp.dragged() || resp.clicked() || resp.drag_stopped() {
-        if let Some(p) = resp.interact_pointer_pos() {
-            let t = ((p.x - row.left() - thumb / 2.0) / (f.w - thumb)).clamp(0.0, 1.0);
-            let i = (t * n).round() as usize;
-            out = Some((i, resp.drag_stopped() || resp.clicked()));
-        }
-    }
-    let shown = out.map_or(current, |o| o.0);
-    let p = ui.painter();
-    let cy = row.center().y;
-    p.rect_filled(
-        Rect::from_min_max(Pos2::new(row.left(), cy - 2.0), Pos2::new(row.right(), cy + 2.0)),
-        2,
-        style::surface_3(),
-    );
-    let fill_to = pos_of(shown);
-    p.rect_filled(
-        Rect::from_min_max(Pos2::new(row.left(), cy - 2.0), Pos2::new(fill_to, cy + 2.0)),
-        2,
-        style::accent(),
-    );
-    for i in 0..steps.len() {
-        let x = pos_of(i);
-        let color = if i <= shown {
-            style::text_inverted().gamma_multiply(0.6)
-        } else {
-            style::border_strong()
-        };
-        p.rect_filled(Rect::from_center_size(Pos2::new(x, cy), Vec2::new(2.0, 9.0)), 1, color);
-    }
-    p.circle_filled(Pos2::new(fill_to, cy + 1.0), thumb / 2.0, style::tint(0.12));
-    p.circle_filled(Pos2::new(fill_to, cy), thumb / 2.0, style::surface_1());
-    p.circle_filled(Pos2::new(fill_to, cy), thumb / 2.0 - 2.0, style::accent());
-    let label_y = row.bottom() + 4.0 + 2.0 - 4.0;
-    for (i, s) in steps.iter().enumerate() {
-        let c = if i == shown { style::accent() } else { style::text_3() };
-        let g = style::galley(ui, s, 9.5, Weight::W600, c, 0.3);
-        let w = g.size().x + 4.0;
-        let lr = Rect::from_min_size(Pos2::new(pos_of(i) - w / 2.0, label_y), Vec2::new(w, 15.0));
-        let r = ui.interact(lr, ui.scope_id().with(("sliderstep", id, i)), egui::Sense::click());
-        let c = if r.hovered() && i != shown { style::text_2() } else { c };
-        let g = style::galley(ui, s, 9.5, Weight::W600, c, 0.3);
-        ui.painter()
-            .galley(Pos2::new(lr.left() + 2.0, lr.center().y - g.size().y / 2.0), g, c);
-        if r.clicked() {
-            out = Some((i, true));
-        }
-    }
-    f.y = label_y + 15.0;
+    let (bottom, out) = slider::show(ui, f.x, f.y, f.w, id, steps, current);
+    f.y = bottom;
     f.stacked_switch = false;
     out
 }
@@ -437,61 +385,8 @@ pub fn pills(
     selected: usize,
     dots: &[bool],
 ) -> Option<usize> {
-    let mut x = f.x;
-    let mut y = f.y;
-    let mut hit = None;
-    let mut line_h = 0.0f32;
-    for (i, (label, icon)) in items.iter().enumerate() {
-        let on = i == selected;
-        let color = if on { style::text_1() } else { style::text_3() };
-        let g = style::galley(ui, label, 11.5, Weight::W600, color, 0.0);
-        let w = 2.0 + 11.0 + 14.0 + 7.0 + g.size().x + 13.0;
-        let h = 2.0 + 14.0 + g.size().y.max(14.0);
-        if x > f.x && x + w > f.x + f.w {
-            x = f.x;
-            y += line_h + 6.0;
-            line_h = 0.0;
-        }
-        let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, h));
-        let resp = ui.interact(r, ui.scope_id().with(("pill", i)), egui::Sense::click());
-        let (fill, line) = if on {
-            (style::accent_dim(), style::accent())
-        } else if resp.hovered() {
-            (style::surface_hover(), style::border_soft())
-        } else {
-            (Color32::TRANSPARENT, style::border_soft())
-        };
-        let color = if !on && resp.hovered() { style::text_1() } else { color };
-        let g = style::galley(ui, label, 11.5, Weight::W600, color, 0.0);
-        let p = ui.painter();
-        p.rect_filled(r, 255, fill);
-        p.rect_stroke(r, 255, Stroke::new(1.0, line), egui::StrokeKind::Inside);
-        icons::paint(
-            ui,
-            icon,
-            Rect::from_center_size(Pos2::new(r.left() + 12.0 + 7.0, r.center().y), Vec2::splat(14.0)),
-            if on { style::accent_bright() } else { color },
-        );
-        ui.painter().galley(
-            Pos2::new(r.left() + 12.0 + 14.0 + 7.0, r.center().y - g.size().y / 2.0),
-            g,
-            color,
-        );
-        if dots.get(i).copied().unwrap_or(false) {
-            kit::dot(
-                ui.painter(),
-                Pos2::new(r.right() - 6.5, r.top() + 6.5),
-                style::accent(),
-                true,
-            );
-        }
-        if resp.clicked() {
-            hit = Some(i);
-        }
-        x += w + 6.0;
-        line_h = line_h.max(h);
-    }
-    f.y = y + line_h;
+    let (bottom, hit) = pills::show(ui, f.x, f.y, f.w, items, selected, dots);
+    f.y = bottom;
     f.stacked_switch = false;
     hit
 }

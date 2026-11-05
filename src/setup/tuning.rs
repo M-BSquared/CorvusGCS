@@ -33,6 +33,7 @@ use crate::ui::icons;
 use crate::ui::kit::{self, Button, Variant};
 use crate::ui::message::Tone;
 use crate::ui::pagekit;
+use crate::ui::progress::Bar;
 use crate::ui::style::{self, Weight};
 
 type Status = (&'static str, String);
@@ -579,7 +580,6 @@ impl TuningPage {
         let eg = style::galley(ui, &elapsed, 11.0, Weight::W400, style::text_3(), 0.0);
         let bar_w = iw - 10.0 - 36.0 - 10.0 - eg.size().x - if eg.size().x > 0.0 { 0.0 } else { -10.0 };
         let bar = Rect::from_min_size(Pos2::new(ix, cy), Vec2::new(bar_w.max(40.0), 8.0));
-        painter.rect_filled(bar, 4, style::surface_3());
         let fill_col = if v.phase == "done" {
             style::healthy()
         } else {
@@ -587,23 +587,12 @@ impl TuningPage {
         };
         if indeterminate {
             // `tuneSweep`: a third of the bar sweeping across, 1.5 s
-            let k = ((v.now / 1500.0).fract() as f32 * 1.35) - 0.35;
-            let seg = Rect::from_min_size(
-                Pos2::new(bar.left() + bar.width() * k, bar.top()),
-                Vec2::new(bar.width() * 0.35, 8.0),
-            );
-            painter.with_clip_rect(bar).rect_filled(
-                seg.intersect(bar.expand2(Vec2::new(bar.width(), 0.0))),
-                4,
-                fill_col,
-            );
+            Bar::indeterminate((v.now / 1500.0).fract() as f32)
+                .fill(fill_col)
+                .show(&painter, bar);
             _ctx.request_repaint();
-        } else if share > 0.0 {
-            painter.rect_filled(
-                Rect::from_min_size(bar.min, Vec2::new(bar.width() * (share / 100.0) as f32, 8.0)),
-                4,
-                fill_col,
-            );
+        } else {
+            Bar::new((share / 100.0) as f32).fill(fill_col).show(&painter, bar);
         }
         let px = bar.right() + 10.0;
         painter.galley(

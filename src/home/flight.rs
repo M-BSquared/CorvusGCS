@@ -19,6 +19,7 @@ use crate::data::units::{js_round, Units};
 use crate::net::http::{self, Server};
 use crate::ui::field::TextField;
 use crate::ui::icons;
+use crate::ui::listrow::{self, Mark};
 use crate::ui::menu;
 use crate::ui::style::{self, Weight};
 
@@ -661,7 +662,7 @@ impl FlightBar {
                     Rect::from_center_size(Pos2::new(inner.right() - 10.0, inner.top() + 10.0), Vec2::splat(20.0));
                 let resp = ui.interact(close, ui.scope_id().with("takeoffclose"), egui::Sense::click());
                 if resp.hovered() {
-                    painter.rect_filled(close, 5, style::surface_hover());
+                    listrow::paint(&painter, close, 5, Mark::Hover);
                 }
                 icons::paint(
                     ui,

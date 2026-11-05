@@ -272,7 +272,7 @@ impl AnalysisPage {
         if ready && self.deferred_scroll.is_some() {
             self.scroll_to = self.deferred_scroll.take();
         }
-        ui.painter().rect_filled(rect, 0, style::bg());
+        pagekit::background(ui, rect);
         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
         child.set_clip_rect(rect);
         let mut area = egui::ScrollArea::vertical()

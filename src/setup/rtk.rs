@@ -19,6 +19,7 @@ use crate::ui::formfield as ff;
 use crate::ui::kit::{self, Button, Choice, Variant};
 use crate::ui::message::{self, Tone};
 use crate::ui::pagekit;
+use crate::ui::progress::Bar;
 use crate::ui::style::{self, Weight};
 
 type Status = (&'static str, String);
@@ -250,14 +251,9 @@ impl RtkPage {
                 .unwrap_or(0.0)
                 .clamp(0.0, 100.0);
             let bar = Rect::from_min_size(Pos2::new(ix, cy), Vec2::new(iw, 6.0));
-            painter.rect_filled(bar, 3, style::surface_2());
-            if pct > 0.0 {
-                painter.rect_filled(
-                    Rect::from_min_size(bar.min, Vec2::new(iw * (pct / 100.0) as f32, 6.0)),
-                    3,
-                    style::accent(),
-                );
-            }
+            Bar::new((pct / 100.0) as f32)
+                .track(style::surface_2())
+                .show(&painter, bar);
             let g = kit::wrapped_weight(
                 ui,
                 &model::survey_sentence(&d, pct),

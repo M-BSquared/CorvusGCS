@@ -14,6 +14,7 @@ use crate::net::bg::Pending;
 use crate::net::http;
 use crate::ui::field::{Surface, TextField};
 use crate::ui::icons;
+use crate::ui::listrow::{self, Mark};
 use crate::ui::style::{self, Weight};
 
 const DEBOUNCE: f64 = 0.35;
@@ -231,7 +232,7 @@ impl SearchCard {
                 if !self.text.is_empty() {
                     let hot = ui.rect_contains_pointer(clear);
                     if hot {
-                        painter.rect_filled(clear, style::RADIUS_BTN, style::surface_hover());
+                        listrow::paint(&painter, clear, style::RADIUS_BTN, Mark::Hover);
                     }
                     icons::paint(
                         ui,
@@ -346,7 +347,7 @@ impl SearchCard {
             let resp = ui.interact(rr, ui.scope_id().with(("searchrow", i)), egui::Sense::click());
             let active = self.index == Some(i);
             if active || resp.hovered() {
-                painter.rect_filled(rr, style::RADIUS_BTN, style::surface_hover());
+                listrow::paint(&painter, rr, style::RADIUS_BTN, Mark::Hover);
             }
             let icon = match row.kind.as_str() {
                 "coordinates" => "crosshair",

@@ -4,6 +4,7 @@
 
 use eframe::egui::{self, Color32, Pos2, Rect, Stroke, Vec2};
 
+use crate::ui::card::{self, Look};
 use crate::ui::icons;
 use crate::ui::kit::{Button, Variant};
 use crate::ui::segmented::{self, Opts, Segment};
@@ -79,8 +80,7 @@ pub fn tile(ui: &mut egui::Ui, rect: Rect, icon: &'static str, title: &str, desc
     let painter = ui.painter().clone();
     {
         let r = rect;
-        painter.rect_filled(r, style::RADIUS, fill);
-        painter.rect_stroke(r, style::RADIUS, Stroke::new(1.0, stroke), egui::StrokeKind::Inside);
+        card::paint(&painter, r, Look::custom(fill, stroke, style::RADIUS));
     }
     let inner = rect.shrink2(Vec2::new(20.0, 18.0));
     let box_ = Rect::from_min_size(Pos2::new(inner.left(), rect.center().y - 20.0), Vec2::splat(40.0));
@@ -234,6 +234,11 @@ pub fn head_actions_with(
     ui.painter()
         .galley(Pos2::new(status_x, ay + rh / 2.0 - sg.size().y / 2.0), sg, color);
     (bottom + 26.0, pressed)
+}
+
+/// The page's own ground, under everything the page draws.
+pub fn background(ui: &egui::Ui, rect: Rect) {
+    ui.painter().rect_filled(rect, 0, style::bg());
 }
 
 /// `.params-banner`: the amber notice that gates a card; returns its bottom.

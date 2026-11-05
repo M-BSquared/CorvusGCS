@@ -318,7 +318,7 @@ impl SetupPage {
         now: f64,
         checklist: &mut crate::setup::checklist::Checklist,
     ) {
-        ui.painter().rect_filled(rect, 0, style::bg());
+        pagekit::background(ui, rect);
         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
         child.set_clip_rect(rect);
         let mut area = egui::ScrollArea::vertical()

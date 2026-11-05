@@ -17,6 +17,7 @@ use crate::data::units::Units;
 use crate::net::bg::Pending;
 use crate::net::http::{self, Server};
 use crate::ui::card::{self, Look};
+use crate::ui::chip::Chip;
 use crate::ui::form::{self, Form};
 use crate::ui::kit::{self, Button, Choice, Variant};
 use crate::ui::message::Tone;
@@ -734,18 +735,11 @@ fn finding_row(ui: &mut egui::Ui, f: &mut Form, fnd: &Value, open: bool) -> bool
     let inner_w = f.w - 20.0 - 14.0 - 8.0;
     let g = kit::wrapped_weight(ui, text, 12.0, Weight::W400, color, inner_w - 24.0, 1.5);
     let mut head_h = g.size().y;
-    let mut extra_w = 0.0;
     let tg = when.map(|t| style::galley_mono(ui, &model::clock_text(t), 10.0, color));
-    if let Some(t) = &tg {
-        extra_w += 8.0 + t.size().x;
-    }
-    let mg = mode
-        .zip(when)
-        .map(|(m, _)| style::galley(ui, &m.to_uppercase(), 9.0, Weight::W700, color, 0.4));
-    if let Some(m) = &mg {
-        extra_w += 8.0 + m.size().x + 12.0;
-    }
-    let _ = extra_w;
+    let mg = mode.zip(when).map(|(m, _)| {
+        Chip::tag(m.to_uppercase(), 9.0, Weight::W700, 0.4, color)
+            .border(mode.map_or(style::border_soft(), |n| hexc(model::mode_color(n))))
+    });
     head_h = head_h.max(14.0);
     let dg = detail.map(|d| kit::wrapped_weight(ui, d, 11.5, Weight::W400, color, inner_w - 12.0, 1.6));
     let detail_h = if open {
@@ -788,14 +782,7 @@ fn finding_row(ui: &mut egui::Ui, f: &mut Form, fnd: &Value, open: bool) -> bool
         hx += w + 8.0;
     }
     if let Some(m) = mg {
-        let rr = Rect::from_min_size(Pos2::new(hx, by - 1.0), Vec2::new(m.size().x + 12.0, m.size().y + 2.0));
-        ui.painter().rect_stroke(
-            rr,
-            255,
-            Stroke::new(1.0, mode.map_or(style::border_soft(), |n| hexc(model::mode_color(n)))),
-            egui::StrokeKind::Inside,
-        );
-        ui.painter().galley(rr.min + Vec2::new(6.0, 1.0), m, color);
+        let rr = m.paint(ui, Pos2::new(hx, by - 1.0));
         hx += rr.width() + 8.0;
     }
     if detail.is_some() {

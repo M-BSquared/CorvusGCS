@@ -3,7 +3,9 @@
 //! `.calib-prep-item`). Drawn at a position and measured by the same code, so
 //! a row of them can be laid out before it is painted.
 
-use eframe::egui::{self, Color32, Pos2, Rect, Stroke, Vec2};
+use eframe::egui::{self, Color32, Pos2, Rect, Vec2};
+
+use crate::ui::card::{self, Look};
 
 use crate::ui::icons;
 use crate::ui::kit;
@@ -25,6 +27,8 @@ pub struct Chip {
     pub icon: Option<(&'static str, f32, Color32)>,
     /// A status dot before the text: its colour and whether it glows.
     pub dot: Option<(Color32, bool)>,
+    /// The corner; the full pill unless set.
+    pub radius: Option<u8>,
 }
 
 impl Chip {
@@ -41,7 +45,45 @@ impl Chip {
             border: style::border_soft(),
             icon: None,
             dot: None,
+            radius: None,
         }
+    }
+
+    /// A small outlined label (`IN FOLDER`, a mode name, a severity): `fg` is
+    /// the text and the border, 1 px of padding above and below.
+    pub fn tag(text: impl Into<String>, size: f32, weight: Weight, letter: f32, fg: Color32) -> Chip {
+        Chip {
+            size,
+            weight,
+            letter,
+            pad: (0.0, 5.0, 0.0, 5.0),
+            fg,
+            bg: Color32::TRANSPARENT,
+            border: fg,
+            ..Chip::new(text)
+        }
+    }
+
+    pub fn radius(mut self, radius: u8) -> Chip {
+        self.radius = Some(radius);
+        self
+    }
+
+    pub fn fill(mut self, bg: Color32) -> Chip {
+        self.bg = bg;
+        self
+    }
+
+    pub fn border(mut self, border: Color32) -> Chip {
+        self.border = border;
+        self
+    }
+
+    /// Vertical padding of a tag, above and below.
+    pub fn pad_y(mut self, y: f32) -> Chip {
+        self.pad.0 = y;
+        self.pad.2 = y;
+        self
     }
 
     fn lead(&self) -> f32 {
@@ -69,9 +111,8 @@ impl Chip {
         let size = self.measure(ui);
         let rect = Rect::from_min_size(at, size);
         let p = ui.painter();
-        let radius = (size.y / 2.0).min(255.0) as u8;
-        p.rect_filled(rect, radius, self.bg);
-        p.rect_stroke(rect, radius, Stroke::new(1.0, self.border), egui::StrokeKind::Inside);
+        let radius = self.radius.unwrap_or((size.y / 2.0).min(255.0) as u8);
+        card::paint(p, rect, Look::custom(self.bg, self.border, radius));
         let mut x = rect.left() + 1.0 + self.pad.3;
         let cy = rect.center().y;
         if let Some((name, s, color)) = self.icon {
