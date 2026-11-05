@@ -124,6 +124,8 @@ impl App {
             self.panel.console_tab = e.console_tab;
             self.panel.ssh_tab = e.ssh_tab;
             self.control.set_config(e.controls);
+            self.hud.visible = e.flight_hud;
+            self.hud.square = e.hud_square;
         }
         if self.settings.take_sources_dirty() {
             if let Ok(sources) = http::get_json(&self.server, "/api/tiles/sources") {
@@ -252,9 +254,16 @@ impl App {
                     self.map.measure.units = self.units;
                     self.map.show(&mut map_ui, &state);
                     let inset = if vw.max959 { 12.0 } else { 16.0 };
-                    let corner = main.max - egui::vec2(inset, inset);
-                    self.hud
-                        .show(&mut map_ui, corner, &state, &self.units, now, vw.hud_width(), vw.max600);
+                    self.hud.show(
+                        &mut map_ui,
+                        main,
+                        inset,
+                        &state,
+                        &self.units,
+                        now,
+                        vw.hud_width(),
+                        vw.max600,
+                    );
                     self.rail.show(&mut map_ui, main, &mut self.map, &state);
                     self.flight
                         .show(&mut map_ui, main, &state, &self.units, &mut self.map.tools);
@@ -589,7 +598,13 @@ pub fn run(
                 shot_sent: false,
                 click_stage: 0,
                 map,
-                hud: Hud::default(),
+                hud: {
+                    let mut h = Hud::new();
+                    let e = settings::Effects::of(&config);
+                    h.visible = e.flight_hud;
+                    h.square = e.hud_square;
+                    h
+                },
                 flight,
                 logo,
                 page: start_page,

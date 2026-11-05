@@ -149,6 +149,10 @@ const ICONS: &[(&str, &str)] = &[
     ("navigation", "Navigation"),
     ("grip-horizontal", "GripHorizontal"),
     ("arrow-left", "ArrowLeft"),
+    ("pin", "Pin"),
+    ("pin-off", "PinOff"),
+    ("chevrons-down-up", "ChevronsDownUp"),
+    ("chevrons-up-down", "ChevronsUpDown"),
 ];
 
 fn main() {

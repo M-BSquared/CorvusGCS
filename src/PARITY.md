@@ -71,7 +71,7 @@ otherwise; "native file" is in `src/`.
 | PLAN button on the flight bar | app.js | home/flight.rs | done |
 | Flight bar adapts to ground vehicles (Drive, no takeoff) | app.js | home/flight.rs | check |
 | HUD: compass, attitude indicator, six readouts | instruments.js | home/hud.rs | done |
-| HUD window: drag, pin, compact, hide readouts, collapse to a pill, position kept | hud-panel.js | home/hud.rs | missing |
+| HUD window: drag, pin, compact, hide readouts, collapse to a pill, position kept, square corners, switched off | hud-panel.js | home/hud.rs, home/mapwindow.rs | done |
 | Checklist window on the map, arming warning | checklist.js | home/checklist_window.rs | done |
 | Checklist editor | checklist-editor.js | setup/checklist.rs | done |
 | Virtual joystick pad, arrow keys, WASD, lock and unlock, boost, key strength, collapse, drag, position kept, 20 Hz and 5 Hz stream | joystick.js | control/mod.rs, control/model.rs, home/mapwindow.rs | done |
@@ -137,7 +137,8 @@ otherwise; "native file" is in `src/`.
 | Feature | Web file | Native file | Status |
 | --- | --- | --- | --- |
 | Settings: Interface, Layout, Flight view, Map, Controls, Connections, Data, Plugins, About | sidenav.js | settings/ | done |
-| Switches: HUD, track, top bar blocks, compass, flight bar take effect | sidenav.js | settings/mod.rs `Effects` | partial: stored, not read by the native pages |
+| Switches: HUD and square HUD take effect | sidenav.js | settings/mod.rs `Effects` | done |
+| Switches: track options, top bar blocks, compass, flight bar take effect | sidenav.js | settings/mod.rs `Effects` | partial: stored, not read by the native pages |
 | MCP settings, permissions, connect dialog, token | settings-mcp.js | settings/conn_cards.rs | done |
 | Settings export and import | settings-transfer.js | settings/data_cards.rs | done |
 | Logs page | sidenav.js | logs/ | done |

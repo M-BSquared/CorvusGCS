@@ -11,6 +11,7 @@ use eframe::egui::{self, Color32, CornerRadius, Pos2, Rect, Shape, Stroke, Vec2}
 use serde_json::Value;
 
 use crate::data::units::{js_round, js_to_fixed, Units};
+use crate::home::mapwindow::{self, Placement};
 use crate::home::topbar::is_airborne;
 use crate::ui::style::{self, Weight};
 
@@ -55,9 +56,119 @@ pub struct Hud {
     shown: Option<(f32, f32, f32)>,
     flight_start: Option<f64>,
     flight_end: Option<f64>,
+    /// Where it sits and what is folded (`hud-panel.js`): the position and the
+    /// pinned, compact, collapsed and readouts flags, in `~/.corvus/hud.json`.
+    place: Placement,
+    /// `ui.flight_hud`: on the map at all.
+    pub visible: bool,
+    /// `ui.hud_square`: square corners.
+    pub square: bool,
+}
+
+/// How the panel is folded, from what the operator pressed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Look {
+    pub compact: bool,
+    pub readouts: bool,
+    pub collapsed: bool,
+    pub square: bool,
+}
+
+impl Look {
+    /// `.is-square:not(.is-collapsed)` takes the 12 px frame.
+    fn pad(&self) -> f32 {
+        if self.square && !self.collapsed {
+            12.0
+        } else {
+            PAD
+        }
+    }
+
+    fn dial_gap(&self) -> f32 {
+        if self.compact {
+            8.0
+        } else {
+            DIAL_GAP
+        }
+    }
+
+    /// The gap between the dials and the numbers.
+    fn body_gap(&self) -> f32 {
+        if self.compact {
+            7.0
+        } else {
+            10.0
+        }
+    }
+
+    /// `.is-compact`: smaller readout and cell text.
+    fn readout_sizes(&self) -> (f32, f32) {
+        if self.compact {
+            (7.5, 11.0)
+        } else {
+            (8.5, 13.0)
+        }
+    }
+
+    fn cell_sizes(&self) -> (f32, f32) {
+        if self.compact {
+            (7.5, 12.0)
+        } else {
+            (8.5, 15.0)
+        }
+    }
+
+    /// The panel's width: `--hud-w`, 0.72 of it compact; the pill is as wide
+    /// as its buttons.
+    fn width(&self, hud_w: f32) -> f32 {
+        if self.collapsed {
+            3.0 * 20.0 + 2.0 + 2.0 * 5.0
+        } else if self.compact {
+            hud_w * 0.72
+        } else {
+            hud_w
+        }
+    }
+
+    /// `--hud-corner` for the top corners.
+    fn top_corner(&self, hud_w: f32, single: bool) -> u8 {
+        if self.collapsed {
+            9
+        } else if self.square {
+            style::RADIUS
+        } else if single {
+            (f32::from(style::RADIUS) + 14.0).round() as u8
+        } else if self.compact {
+            ((hud_w * 0.72 - 24.0) / 4.0 + 8.0).round() as u8
+        } else {
+            ((hud_w - 26.0) / 4.0 + 8.0).round() as u8
+        }
+    }
 }
 
 impl Hud {
+    /// The panel as the station left it.
+    pub fn new() -> Hud {
+        Hud {
+            place: Placement::load("hud.json"),
+            visible: true,
+            ..Default::default()
+        }
+    }
+
+    fn look(&self) -> Look {
+        Look {
+            compact: self.place.flag("compact"),
+            readouts: !self
+                .place
+                .extra
+                .get("readouts")
+                .is_some_and(|v| v == &Value::Bool(false)),
+            collapsed: self.place.flag("collapsed"),
+            square: self.square,
+        }
+    }
+
     /// Seconds in the air this flight: from take-off to touchdown or disarm;
     /// the last flight stays shown until the next take-off.
     pub fn flight_seconds(&mut self, s: &Value, now: f64) -> f64 {
@@ -159,71 +270,110 @@ impl Hud {
 
     /// The panel's height for the dial width the CSS gives it. Under 601 the
     /// two instruments stack, each as wide as the panel.
-    pub fn height(ui: &egui::Ui, width: f32, single: bool) -> f32 {
-        let readout = readout_height(ui);
-        let cell = cell_height(ui);
+    pub fn height(ui: &egui::Ui, width: f32, single: bool, look: &Look) -> f32 {
+        let pad = look.pad();
+        if look.collapsed {
+            return 20.0 + 2.0 * 5.0;
+        }
+        let readout = readout_height(ui, look);
+        let cell = cell_height(ui, look);
         let block = |dial: f32| dial + 5.0 + readout;
         let instruments = if single {
-            2.0 * block(width - 2.0 * PAD - 2.0) + DIAL_GAP
+            2.0 * block(width - 2.0 * pad - 2.0) + look.dial_gap()
         } else {
-            block((width - 2.0 * PAD - DIAL_GAP) / 2.0)
+            block((width - 2.0 * pad - look.dial_gap()) / 2.0)
         };
-        PAD + instruments + 10.0 + 1.0 + 3.0 * cell + 2.0 + 1.0 + 3.0 + PAD
+        let numbers = if look.readouts {
+            look.body_gap() + 1.0 + 3.0 * cell + 2.0 + 1.0 + 3.0
+        } else {
+            0.0
+        };
+        pad + instruments + numbers + pad
     }
 
-    /// Draws the panel with its bottom right corner at `corner`, `width`
-    /// wide (`--hud-w`).
+    /// Draws the panel in `host` (the map): where it was left, or at the
+    /// bottom right `inset` from the edges. `hud_w` is `--hud-w`.
     #[allow(clippy::too_many_arguments)]
     pub fn show(
         &mut self,
         ui: &mut egui::Ui,
-        corner: Pos2,
+        host: Rect,
+        inset: f32,
         state: &Value,
         units: &Units,
         now: f64,
-        width: f32,
+        hud_w: f32,
         single: bool,
     ) {
-        let size = Vec2::new(width, Hud::height(ui, width, single));
-        let rect = Rect::from_min_size(corner - size, size);
+        if !self.visible {
+            return;
+        }
+        let look = self.look();
+        let pinned = self.place.flag("pinned");
+        let width = look.width(hud_w);
+        let size = Vec2::new(width, Hud::height(ui, width, single, &look));
+        let default = mapwindow::corner(host, size, None, Some(inset), None, Some(inset));
+        let rect = self.place.rect(host, size, default);
         let painter = ui.painter().clone();
-        // --hud-corner: a quarter of the dial row, or the radius and 14 px
-        // when the instruments stack
-        let top = if single {
-            (f32::from(style::RADIUS) + 14.0).round() as u8
-        } else {
-            ((width - 26.0) / 4.0 + 8.0).round() as u8
-        };
+        let top = look.top_corner(hud_w, single);
         let radius = CornerRadius {
             nw: top,
             ne: top,
-            sw: style::RADIUS,
-            se: style::RADIUS,
+            sw: if look.collapsed { 9 } else { style::RADIUS },
+            se: if look.collapsed { 9 } else { style::RADIUS },
         };
         style::glass_panel(&painter, "hud", rect, radius, 0.6);
-        // The panel takes the pointer, so the map under it does not pan.
-        ui.interact(rect, ui.scope_id().with("hud"), egui::Sense::click_and_drag());
-
-        let dt = ui.input(|i| i.stable_dt).min(0.1);
-        let ((h, p, r), moving) = self.ease(state, dt);
-        if moving {
+        // The whole panel is the drag handle, and takes the pointer so the map
+        // under it does not pan. Pinned, it only takes the pointer. The
+        // buttons are made after it, so they win where they overlap.
+        if pinned {
+            ui.interact(rect, ui.scope_id().with("hud"), egui::Sense::click_and_drag());
+        } else if self.place.drag(ui, ui.scope_id().with("hud"), rect, rect, host) {
             ui.ctx().request_repaint();
         }
 
+        if !look.collapsed {
+            let dt = ui.input(|i| i.stable_dt).min(0.1);
+            let ((h, p, r), moving) = self.ease(state, dt);
+            if moving {
+                ui.ctx().request_repaint();
+            }
+            self.body(ui, &painter, rect, state, units, now, (h, p, r), single, &look);
+        }
+        self.controls(ui, rect, &look, pinned);
+    }
+
+    /// The two dials, their readouts and the numbers.
+    #[allow(clippy::too_many_arguments)]
+    fn body(
+        &mut self,
+        ui: &egui::Ui,
+        painter: &egui::Painter,
+        rect: Rect,
+        state: &Value,
+        units: &Units,
+        now: f64,
+        (h, p, r): (f32, f32, f32),
+        single: bool,
+        look: &Look,
+    ) {
+        let pad = look.pad();
+        let gap = look.dial_gap();
+        let width = rect.width();
         let dial = if single {
-            width - 2.0 * PAD - 2.0
+            width - 2.0 * pad - 2.0
         } else {
-            (width - 2.0 * PAD - DIAL_GAP) / 2.0
+            (width - 2.0 * pad - gap) / 2.0
         };
-        let left = Rect::from_min_size(rect.min + Vec2::splat(PAD), Vec2::splat(dial));
+        let left = Rect::from_min_size(rect.min + Vec2::splat(pad), Vec2::splat(dial));
         let right = if single {
-            left.translate(Vec2::new(0.0, dial + 5.0 + readout_height(ui) + DIAL_GAP))
+            left.translate(Vec2::new(0.0, dial + 5.0 + readout_height(ui, look) + gap))
         } else {
-            left.translate(Vec2::new(dial + DIAL_GAP, 0.0))
+            left.translate(Vec2::new(dial + gap, 0.0))
         };
         let shown_h = (js_round(f64::from(norm_angle(h))) as i64) % 360;
-        compass(ui, &painter, left, shown_h as f32);
-        attitude(ui, &painter, right, p, r);
+        compass(ui, painter, left, shown_h as f32);
+        attitude(ui, painter, right, p, r);
         let sign = |v: f32| if v >= 0.0 { "+" } else { "" };
         let att = format!(
             "P {}{}\u{00B0}  R {}{}\u{00B0}",
@@ -232,27 +382,29 @@ impl Hud {
             sign(r),
             js_to_fixed(f64::from(r), 1)
         );
-        readout(ui, &painter, left, "HEADING", &format!("{shown_h:03}\u{00B0}"));
-        readout(ui, &painter, right, "ATTITUDE", &att);
-
-        let grid_top = right.bottom() + 5.0 + readout_height(ui) + 10.0;
-        let grid = Rect::from_min_max(
-            Pos2::new(rect.left() + PAD + 3.0, grid_top),
-            Pos2::new(rect.right() - PAD - 3.0, rect.bottom() - PAD - 3.0),
-        );
-        {
-            let r = grid;
-            painter.rect_filled(r, style::RADIUS_BTN, style::border_soft());
-            painter.rect_stroke(
-                r,
-                style::RADIUS_BTN,
-                Stroke::new(1.0, style::border_soft()),
-                egui::StrokeKind::Inside,
-            );
+        readout(ui, painter, left, "HEADING", &format!("{shown_h:03}\u{00B0}"), look);
+        readout(ui, painter, right, "ATTITUDE", &att, look);
+        if !look.readouts {
+            return;
         }
+
+        let grid_top = right.bottom() + 5.0 + readout_height(ui, look) + look.body_gap();
+        let grid = Rect::from_min_max(
+            Pos2::new(rect.left() + pad + 3.0, grid_top),
+            Pos2::new(rect.right() - pad - 3.0, rect.bottom() - pad - 3.0),
+        );
+        painter.rect_filled(grid, style::RADIUS_BTN, style::border_soft());
+        painter.rect_stroke(
+            grid,
+            style::RADIUS_BTN,
+            Stroke::new(1.0, style::border_soft()),
+            egui::StrokeKind::Inside,
+        );
         let inner = grid.shrink(1.0);
         let cw = (inner.width() - 1.0) / 2.0;
-        let ch = cell_height(ui);
+        let ch = cell_height(ui, look);
+        let (label_size, value_size) = look.cell_sizes();
+        let (px, py) = if look.compact { (7.0, 5.0) } else { (9.0, 7.0) };
         for (i, (label, value, color)) in self.cells(state, units, now).into_iter().enumerate() {
             let (col, row) = ((i % 2) as f32, (i / 2) as f32);
             let cell = Rect::from_min_size(
@@ -268,36 +420,139 @@ impl Hud {
                 _ => CornerRadius::ZERO,
             };
             painter.rect_filled(cell, r, style::glass(0.4));
-            let l = style::galley(ui, label, 8.5, Weight::W600, style::text_3(), 0.7);
-            let v = style::galley(ui, &value, 15.0, Weight::W600, color, 0.0);
+            let l = style::galley(ui, label, label_size, Weight::W600, style::text_3(), 0.7);
+            let v = style::galley(ui, &value, value_size, Weight::W600, color, 0.0);
             let lh = l.size().y;
-            painter.galley(Pos2::new(cell.left() + 9.0, cell.top() + 7.0), l, style::text_3());
-            let vy = cell.top() + 7.0 + lh + 2.0 + (15.0 * 1.1 - v.size().y) / 2.0;
-            painter.galley(Pos2::new(cell.left() + 9.0, vy), v, color);
+            painter.galley(Pos2::new(cell.left() + px, cell.top() + py), l, style::text_3());
+            let vy = cell.top() + py + lh + 2.0 + (value_size * 1.1 - v.size().y) / 2.0;
+            painter.galley(Pos2::new(cell.left() + px, vy), v, color);
+        }
+    }
+
+    /// The four buttons: on the top edge, shown while the pointer is over the
+    /// panel; in the pill, always.
+    fn controls(&mut self, ui: &mut egui::Ui, rect: Rect, look: &Look, pinned: bool) {
+        let n = if look.collapsed { 3.0 } else { 4.0 };
+        let bar_w = n * 20.0 + (n - 1.0) + if look.collapsed { 0.0 } else { 2.0 * 2.0 + 2.0 };
+        let bar = if look.collapsed {
+            Rect::from_min_size(rect.min + Vec2::splat(5.0), Vec2::new(bar_w, 20.0))
+        } else {
+            Rect::from_center_size(
+                Pos2::new(rect.center().x, rect.top() - 10.0 + 13.0),
+                Vec2::new(bar_w, 26.0),
+            )
+        };
+        let hovered = ui.rect_contains_pointer(rect.union(bar));
+        let fade = if look.collapsed {
+            1.0
+        } else {
+            ui.ctx()
+                .animate_bool_with_time(ui.scope_id().with("hudbar"), hovered, 0.14)
+        };
+        if fade <= 0.0 {
+            return;
+        }
+        let painter = ui.painter().clone();
+        if !look.collapsed {
+            painter.rect_filled(bar, 7, style::glass(0.55 * fade));
+            painter.rect_stroke(
+                bar,
+                7,
+                Stroke::new(1.0, style::tint(0.06 * fade)),
+                egui::StrokeKind::Inside,
+            );
+        }
+        let origin = if look.collapsed {
+            bar.min
+        } else {
+            bar.min + Vec2::new(1.0 + 2.0, 1.0 + 2.0)
+        };
+        let mut x = origin.x;
+        let mut button = |ui: &mut egui::Ui, icon: &'static str, title: &str, active: bool, id: &'static str| {
+            let r = Rect::from_min_size(Pos2::new(x, origin.y), Vec2::splat(20.0));
+            x += 21.0;
+            crate::ui::kit::icon_btn(ui, r, icon, title, active, ("hudbtn", id))
+        };
+        if button(
+            ui,
+            if pinned { "pin-off" } else { "pin" },
+            if pinned { "Unlock position" } else { "Lock position" },
+            pinned,
+            "pin",
+        ) {
+            self.place.set_flag("pinned", !pinned);
+        }
+        if button(
+            ui,
+            if look.compact { "maximize-2" } else { "minimize-2" },
+            if look.compact { "Full size" } else { "Compact size" },
+            look.compact,
+            "size",
+        ) {
+            self.place.set_flag("compact", !look.compact);
+        }
+        if !look.collapsed
+            && button(
+                ui,
+                if look.readouts {
+                    "chevrons-down-up"
+                } else {
+                    "chevrons-up-down"
+                },
+                if look.readouts {
+                    "Hide the readouts"
+                } else {
+                    "Show the readouts"
+                },
+                !look.readouts,
+                "readouts",
+            )
+        {
+            self.place.set_flag("readouts", !look.readouts);
+        }
+        if button(
+            ui,
+            if look.collapsed { "chevron-up" } else { "chevron-down" },
+            if look.collapsed { "Expand" } else { "Collapse" },
+            false,
+            "collapse",
+        ) {
+            self.place.set_flag("collapsed", !look.collapsed);
         }
     }
 }
 
-fn readout_height(ui: &egui::Ui) -> f32 {
-    let l = style::galley(ui, "HEADING", 8.5, Weight::W600, style::text_3(), 0.9)
+fn readout_height(ui: &egui::Ui, look: &Look) -> f32 {
+    let (label, value) = look.readout_sizes();
+    let l = style::galley(ui, "HEADING", label, Weight::W600, style::text_3(), 0.9)
         .size()
         .y;
-    let v = style::galley(ui, "000", 13.0, Weight::W600, style::text_1(), 0.0)
+    let v = style::galley(ui, "000", value, Weight::W600, style::text_1(), 0.0)
         .size()
         .y;
     l + 1.0 + v
 }
 
-fn cell_height(ui: &egui::Ui) -> f32 {
-    let l = style::galley(ui, "ALT", 8.5, Weight::W600, style::text_3(), 0.7)
+fn cell_height(ui: &egui::Ui, look: &Look) -> f32 {
+    let (label, value) = look.cell_sizes();
+    let l = style::galley(ui, "ALT", label, Weight::W600, style::text_3(), 0.7)
         .size()
         .y;
-    7.0 + l + 2.0 + 15.0 * 1.1 + 7.0
+    let py = if look.compact { 5.0 } else { 7.0 };
+    py + l + 2.0 + value * 1.1 + py
 }
 
-fn readout(ui: &egui::Ui, painter: &egui::Painter, dial: Rect, label: &str, value: &str) {
-    let l = style::galley(ui, label, 8.5, Weight::W600, style::text_3(), 0.9);
-    let v = style::galley(ui, value, 13.0, Weight::W600, style::text_1(), 0.0);
+fn readout(ui: &egui::Ui, painter: &egui::Painter, dial: Rect, label: &str, value: &str, look: &Look) {
+    let (label_size, value_size) = look.readout_sizes();
+    let l = style::galley(
+        ui,
+        label,
+        label_size,
+        Weight::W600,
+        style::text_3(),
+        if look.compact { 0.7 } else { 0.9 },
+    );
+    let v = style::galley(ui, value, value_size, Weight::W600, style::text_1(), 0.0);
     let y = dial.bottom() + 5.0;
     painter.galley(
         Pos2::new(dial.center().x - l.size().x / 2.0, y),
@@ -559,6 +814,62 @@ fn attitude(ui: &egui::Ui, painter: &egui::Painter, rect: Rect, pitch: f32, roll
 
 #[cfg(test)]
 mod tests {
+    use serde_json::Value;
+
+    fn look() -> super::Look {
+        super::Look {
+            compact: false,
+            readouts: true,
+            collapsed: false,
+            square: false,
+        }
+    }
+
+    #[test]
+    fn compact_is_72_percent_with_the_corner_to_match() {
+        let full = look();
+        let compact = super::Look { compact: true, ..full };
+        assert_eq!(full.width(320.0), 320.0);
+        assert!((compact.width(320.0) - 230.4).abs() < 1e-3);
+        // calc((var(--hud-w) - 26px) / 4 + 8px), and the compact 0.72 form.
+        assert_eq!(full.top_corner(320.0, false), 82);
+        assert_eq!(compact.top_corner(320.0, false), 60);
+        assert_eq!(full.top_corner(240.0, true), 22);
+    }
+
+    #[test]
+    fn square_takes_the_radius_and_a_wider_frame_until_collapsed() {
+        let square = super::Look { square: true, ..look() };
+        assert_eq!(square.top_corner(320.0, false), super::style::RADIUS);
+        assert_eq!(square.pad(), 12.0);
+        let pill = super::Look {
+            collapsed: true,
+            ..square
+        };
+        assert_eq!(pill.pad(), 8.0);
+        assert_eq!(pill.top_corner(320.0, false), 9);
+        assert_eq!(pill.width(320.0), 72.0);
+    }
+
+    #[test]
+    fn the_panel_remembers_what_was_folded() {
+        let dir = std::env::temp_dir().join(format!("corvus-hud-{}", std::process::id()));
+        let path = dir.join("hud.json");
+        let mut p = super::Placement::from_path(Some(path.clone()));
+        p.set_flag("compact", true);
+        p.set_flag("readouts", false);
+        let h = super::Hud {
+            place: super::Placement::from_path(Some(path)),
+            ..Default::default()
+        };
+        let l = h.look();
+        assert!(l.compact && !l.readouts && !l.collapsed);
+        // Absent means shown: a panel saved before the control existed.
+        let fresh = super::Hud::default();
+        assert!(fresh.look().readouts);
+        let _ = std::fs::remove_dir_all(dir);
+        let _: Value = Value::Null;
+    }
     use super::*;
     use serde_json::json;
 
