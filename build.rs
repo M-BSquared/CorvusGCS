@@ -147,6 +147,8 @@ const ICONS: &[(&str, &str)] = &[
     ("mouse-pointer-2", "MousePointer2"),
     ("move", "Move"),
     ("navigation", "Navigation"),
+    ("grip-horizontal", "GripHorizontal"),
+    ("arrow-left", "ArrowLeft"),
 ];
 
 fn main() {

@@ -9,6 +9,7 @@
 
 mod analysis;
 mod app;
+mod control;
 mod data;
 mod fleet;
 mod home;

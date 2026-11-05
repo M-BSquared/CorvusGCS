@@ -41,6 +41,7 @@ pub struct Effects {
     pub console_tab: bool,
     pub ssh_tab: bool,
     pub base_layer: String,
+    pub controls: crate::control::model::Config,
 }
 
 impl Effects {
@@ -55,6 +56,7 @@ impl Effects {
             console_tab: model::flag(cfg, "ui", "console_tab", true),
             ssh_tab: model::flag(cfg, "ui", "ssh_tab", true),
             base_layer: model::text(cfg, "map", "base_layer").to_string(),
+            controls: crate::control::model::Config::from_config(cfg),
         }
     }
 }

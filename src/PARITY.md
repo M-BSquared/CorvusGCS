@@ -74,7 +74,8 @@ otherwise; "native file" is in `src/`.
 | HUD window: drag, pin, compact, hide readouts, collapse to a pill, position kept | hud-panel.js | home/hud.rs | missing |
 | Checklist window on the map, arming warning | checklist.js | home/checklist_window.rs | done |
 | Checklist editor | checklist-editor.js | setup/checklist.rs | done |
-| Virtual joystick pad, USB gamepad, arrow keys, WASD, lock and unlock, boost | joystick.js | control/ | missing |
+| Virtual joystick pad, arrow keys, WASD, lock and unlock, boost, key strength, collapse, drag, position kept, 20 Hz and 5 Hz stream | joystick.js | control/mod.rs, control/model.rs, home/mapwindow.rs | done |
+| USB gamepad: the block, the sticks summed into the frame, the arm gesture and the gate after it | joystick.js | control/model.rs, control/mod.rs | partial: the rules are done and tested with fed axes; reading a device needs a crate (gilrs, which needs libudev on the Linux build host), left for the user to decide |
 | MCP "AI client connected" pill with Stop | mcp.js | mcp/ | missing |
 
 ## Multi-vehicle
@@ -158,7 +159,7 @@ otherwise; "native file" is in `src/`.
 
 | Shortcut | Web file | Native file | Status |
 | --- | --- | --- | --- |
-| Arrow keys and W A S D fly the aircraft (locked until unlocked), Shift boosts, Escape locks | joystick.js | control/ | missing |
+| Arrow keys and W A S D fly the aircraft (locked until unlocked), Shift boosts, Escape locks | joystick.js | control/mod.rs | done |
 | Esc closes menus, dialogs, popovers | ui.js | ui/ | done |
 | Esc cancels the distance tool, the plan mode | map-measure.js, map.js | map/measure.rs | partial |
 | Enter and Escape in the takeoff entry | app.js | home/flight.rs | done |

@@ -37,6 +37,7 @@ static LOGO_FOR_DARK: &[u8] = include_bytes!("../../assets/CorvusGCS_logo.png");
 
 struct App {
     server: Server,
+    control: crate::control::Control,
     fleet: crate::fleet::Fleet,
     fleet_dialog: crate::fleet::dialog::Dialog,
     board: Board,
@@ -122,6 +123,7 @@ impl App {
             self.rail.measure = e.measure_tool;
             self.panel.console_tab = e.console_tab;
             self.panel.ssh_tab = e.ssh_tab;
+            self.control.set_config(e.controls);
         }
         if self.settings.take_sources_dirty() {
             if let Ok(sources) = http::get_json(&self.server, "/api/tiles/sources") {
@@ -141,6 +143,10 @@ impl App {
         let state: Value = self.telemetry.state();
         let now = now_ms();
         self.map.update(&state);
+        self.control.update(ui.ctx(), &state, self.page == Page::Home, now);
+        for e in self.control.take_notes() {
+            self.board.add_local("critical", &e, now);
+        }
         let snap = self.fleet.snapshot();
         let dt = ui.input(|i| i.stable_dt).min(0.1);
         if self.map.sync_fleet(&snap, &state, dt) {
@@ -263,6 +269,7 @@ impl App {
                     }
                     let below = self.flight.bar_bottom + 10.0;
                     self.checklist.window(&mut map_ui, ui.ctx(), main, below);
+                    self.control.show(&mut map_ui, main, now);
                 } else if self.page == Page::Mission {
                     self.mission
                         .show(ui, main, &state, &self.units, &mut self.map, &mut self.rail, vw.max1279);
@@ -450,6 +457,7 @@ impl eframe::App for App {
         }
         self.telemetry.stop();
         self.fleet.shut_down();
+        self.control.shut_down();
         self.panel.shut_down();
         self.map.shut_down();
     }
@@ -567,6 +575,10 @@ pub fn run(
             let logo = logo_source();
             Ok(Box::new(App {
                 server: server.clone(),
+                control: crate::control::Control::new(
+                    server.clone(),
+                    crate::control::model::Config::from_config(&config),
+                ),
                 fleet: crate::fleet::Fleet::start(server.clone(), &ctx),
                 fleet_dialog: Default::default(),
                 board: Board::default(),
