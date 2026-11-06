@@ -137,6 +137,11 @@ pub fn first_setup_open() -> bool {
     firstsetup::is_open()
 }
 
+/// The ids of the setup tiles, in the order of the page.
+pub fn tile_ids() -> Vec<&'static str> {
+    TILES.iter().map(|t| t.0).collect()
+}
+
 /// Whether `id` names a sub page (`--page`): a tile, or `safety:SENSOR`.
 pub fn is_page(id: &str) -> bool {
     TILES.iter().any(|t| t.0 == id) || id.starts_with("safety:")
@@ -229,6 +234,7 @@ impl SetupPage {
             View::Radio(p) => p.take_notes(),
             View::Tuning(p) => p.take_notes(),
             View::Firmware(p) => p.take_notes(),
+            View::Safety(p) => p.take_notes(),
             View::FirstSetup(p) => p.take_notes(),
             _ => Vec::new(),
         }

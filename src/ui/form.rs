@@ -6,6 +6,7 @@
 //! is. Every function paints one block at the cursor and moves it down, so a
 //! page reads top to bottom the way its markup does.
 
+use crate::ui::tip::HoverTr;
 use eframe::egui::{self, Color32, Pos2, Rect, Stroke, Vec2};
 
 use crate::ui::card::{self, Look};
@@ -134,7 +135,7 @@ pub fn input(
         out = Some(formfield::input(ui, x, y, w, buf, placeholder, mono, secret, id));
         CONTROL_H
     });
-    out.expect("the field is drawn")
+    out.unwrap_or_else(|| ui.allocate_response(Vec2::ZERO, egui::Sense::hover()))
 }
 
 /// A `.field` holding a path field. Returns what was chosen this frame. A
@@ -252,7 +253,7 @@ pub fn switch_field(
             ui.scope_id().with(("switchtip", s.label)),
             egui::Sense::hover(),
         )
-        .on_hover_text(s.title);
+        .on_hover_tr(s.title);
         pressed = false;
     }
     let mut y = f.y + row_h;

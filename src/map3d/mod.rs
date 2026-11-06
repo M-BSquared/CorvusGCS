@@ -33,7 +33,7 @@ const SPLIT_PX: f64 = 230.0;
 const GRID: usize = 16;
 const MAX_LEAVES: usize = 900;
 const TEXTURES: usize = 400;
-const IMAGE_CACHE: usize = 600;
+const IMAGE_CACHE: usize = 1000;
 /// `HILLSHADE_EXAGGERATION` of the web map, a little stronger as the shade is
 /// painted into vertex colours here and not drawn as a layer.
 const SHADE: f32 = 0.5;
@@ -90,6 +90,8 @@ struct Leaf {
 /// The 3D view's state.
 pub struct Map3d {
     pub cam: Camera,
+    /// Height of the map credit under the elevation pill, set by the map.
+    pub credit_h: f32,
     source: String,
     max_zoom: u8,
     imagery: TileCache<egui::ColorImage>,
@@ -146,6 +148,7 @@ fn tile_mercator(z: u8, x: f64, y: f64) -> (f64, f64) {
 impl Map3d {
     pub fn new(ctx: &egui::Context, server: &Server, source: &str, max_zoom: u8) -> Map3d {
         Map3d {
+            credit_h: 25.0,
             cam: Camera {
                 lng: 0.0,
                 lat: 0.0,
@@ -195,6 +198,24 @@ impl Map3d {
             self.tex_ids.clear();
         }
         self.max_zoom = max_zoom;
+    }
+
+    /// Lets go of everything the view holds for drawing, for when it is left:
+    /// tiles, meshes and (through the GPU's own release) the textures. What
+    /// the operator chose stays.
+    pub fn release(&mut self) {
+        self.imagery.clear();
+        for t in self.terrain.iter().chain(self.fallback.iter()) {
+            t.clear();
+        }
+        if let Some(b) = &self.buildings {
+            b.clear();
+        }
+        self.tex_ids.clear();
+        self.used.clear();
+        self.leaf_meshes.clear();
+        self.cell_meshes.clear();
+        gpu::request_release();
     }
 
     /// The map service of the base layer, which pairs it with a model.
@@ -735,7 +756,7 @@ impl Map3d {
         );
         let w = g.size().x.min(rect.width() - 28.0 - 13.0);
         let pill = Rect::from_min_size(
-            Pos2::new(rect.left() + 14.0, rect.bottom() - 14.0 - 25.0 - 6.0 - 25.0),
+            Pos2::new(rect.left() + 14.0, rect.bottom() - 14.0 - self.credit_h - 6.0 - 25.0),
             Vec2::new(w + 13.0, 25.0),
         );
         let painter = ui.painter_at(rect);

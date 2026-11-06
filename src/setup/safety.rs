@@ -140,7 +140,8 @@ pub fn parse_doc(v: &Value) -> Doc {
                             .map(|a| {
                                 a.iter()
                                     .filter_map(|w| {
-                                        Some((w.get("param")?.as_str()?.to_string(), w.get("value")?.as_f64()?))
+                                        let name = w.get("name").or_else(|| w.get("param"))?.as_str()?;
+                                        Some((name.to_string(), w.get("value")?.as_f64()?))
                                     })
                                     .collect()
                             })
@@ -310,6 +311,10 @@ impl SafetyPage {
         };
         p.load(ctx);
         p
+    }
+
+    pub fn take_notes(&mut self) -> Vec<String> {
+        self.geofence.take_notes()
     }
 
     pub fn take_errors(&mut self) -> Vec<String> {
@@ -1321,5 +1326,30 @@ mod tests {
             enable_writes: vec![],
         };
         assert_eq!(form_weight(&s), 2 + (3 + 2) + 1 + 2);
+    }
+
+    #[test]
+    fn the_geofence_writes_of_both_stacks_are_read() {
+        // ArduPilot: python/corvus/ardupilot_safety.py geofence_enable_writes, {"name", "value"}.
+        let ardu = serde_json::json!({"connected": true, "sections": [{
+            "id": "geofence", "title": "Geofence", "kind": "geofence", "fields": [],
+            "enable_writes": [{"name": "FENCE_TYPE", "value": 7}, {"name": "FENCE_ENABLE", "value": 1}]}]});
+        let doc = parse_doc(&ardu);
+        assert_eq!(
+            doc.sections[0].enable_writes,
+            vec![("FENCE_TYPE".to_string(), 7.0), ("FENCE_ENABLE".to_string(), 1.0)]
+        );
+        // PX4: python/corvus/safety_config.py _geofence_section, "enable_writes": [].
+        let px4 = serde_json::json!({"connected": true, "sections": [{
+            "id": "geofence", "title": "Geofence", "kind": "geofence", "fields": [], "enable_writes": []}]});
+        assert!(parse_doc(&px4).sections[0].enable_writes.is_empty());
+        // a write that names its parameter `param`, as the sensor sections do
+        let other = serde_json::json!({"connected": true, "sections": [{
+            "id": "x", "title": "X", "kind": "fields", "fields": [],
+            "enable_writes": [{"param": "P", "value": 2}, {"value": 3}]}]});
+        assert_eq!(
+            parse_doc(&other).sections[0].enable_writes,
+            vec![("P".to_string(), 2.0)]
+        );
     }
 }

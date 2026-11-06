@@ -143,8 +143,8 @@ pub fn region_meta(r: &Value, source_label: &str) -> String {
     if let Some(d) = r
         .get("created_at")
         .and_then(Value::as_str)
-        .filter(|d| d.len() >= 10)
-        .map(|d| d[..10].to_string())
+        .and_then(|d| d.get(..10))
+        .map(str::to_string)
     {
         parts.push(d);
     }

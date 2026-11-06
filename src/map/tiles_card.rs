@@ -3,6 +3,7 @@
 //! download it with its elevation and buildings, follow the jobs, and manage
 //! the areas already on this laptop (look at, rename, delete).
 
+use crate::ui::tip::HoverTr;
 use std::collections::HashMap;
 
 use eframe::egui::{self, Pos2, Rect, Stroke, Vec2};
@@ -879,7 +880,7 @@ impl TilesCard {
                         continue;
                     }
                     let resp = ui.interact(main, ui.scope_id().with(("tilesmain", i)), egui::Sense::click());
-                    resp.clone().on_hover_text("Show this area on the map");
+                    resp.clone().on_hover_tr("Show this area on the map");
                     let ng = style::galley(ui, &name, 12.0, Weight::W600, style::text_1(), 0.0);
                     let meta = crate::i18n::tr_joined(&model::region_meta(r, &self.label_by_id(&source)));
                     let mc = if running { style::warning() } else { style::text_3() };

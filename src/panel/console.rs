@@ -8,6 +8,7 @@
 //! normalises it, `?` prints the list without a round trip, and the answer
 //! is turned into a line the same way.
 
+use crate::ui::tip::HoverTr;
 use std::sync::{Arc, Mutex};
 
 use eframe::egui::{self, Color32, Pos2, Rect, Stroke, Vec2};
@@ -15,6 +16,7 @@ use serde_json::{json, Value};
 
 use crate::net::bg::Pending;
 use crate::net::http::{self, Server};
+use crate::net::lock::Relock;
 use crate::net::stream::Stream;
 use crate::ui::card::{self, Look};
 use crate::ui::field::{Surface, TextField};
@@ -22,6 +24,10 @@ use crate::ui::icons;
 use crate::ui::kit;
 use crate::ui::style::{self, Weight};
 
+/// Texts only this interface has, so they are in `lang/native` and not in the
+/// web files the key test reads.
+const NEW_LINE: &str = "{a} new line";
+const NEW_LINES: &str = "{a} new lines";
 const MAX_LINES: usize = 2000;
 
 const COMMANDS: &[(&str, &str, &str, bool)] = &[
@@ -150,6 +156,8 @@ struct Buffer {
     interrupted: bool,
     /// The command whose answer is awaited, so the answer can name it.
     last_cmd: Option<String>,
+    /// Lines ever shown, for the "new lines" count of the jump chip.
+    added: u64,
 }
 
 impl Buffer {
@@ -166,6 +174,7 @@ impl Buffer {
             }
             return;
         }
+        self.added += 1;
         self.lines.push(rec);
         if self.lines.len() > MAX_LINES {
             self.lines.remove(0);
@@ -189,7 +198,7 @@ impl ConsoleTab {
     pub fn new(server: Server, ctx: &egui::Context) -> ConsoleTab {
         let buffer = Arc::new(Mutex::new(Buffer::default()));
         {
-            let mut b = buffer.lock().expect("console");
+            let mut b = buffer.relock();
             b.add("", "Corvus GCS MAVLink console.");
             b.add("", "Listening for live MAVLink messages \u{2026}");
             b.add("", "Type \"?\" for the command list, Tab to complete.");
@@ -197,7 +206,7 @@ impl ConsoleTab {
         let sink = buffer.clone();
         let repaint = ctx.clone();
         let stream = Stream::start(server.clone(), "/api/events?topics=console".into(), move |ev| {
-            let mut b = sink.lock().expect("console");
+            let mut b = sink.relock();
             if ev.name == "error" {
                 if !b.interrupted {
                     b.interrupted = true;
@@ -244,13 +253,13 @@ impl ConsoleTab {
 
     /// One line from outside the stream (a plugin's `api.console`).
     pub fn add_line(&self, level: &str, text: &str) {
-        self.buffer.lock().expect("console").add(level, text);
+        self.buffer.relock().add(level, text);
     }
 
     /// Every line of the buffer as a transcript, a filter typed into the tab
     /// notwithstanding (`consoleText({all: true})`).
     pub fn transcript(&self) -> String {
-        let b = self.buffer.lock().expect("console");
+        let b = self.buffer.relock();
         b.lines.iter().map(format_line).collect::<Vec<_>>().join("\n")
     }
 
@@ -262,7 +271,7 @@ impl ConsoleTab {
     }
 
     fn print_commands(&self) {
-        let mut b = self.buffer.lock().expect("console");
+        let mut b = self.buffer.relock();
         b.add("info", "Commands:");
         for (name, args, help, _) in COMMANDS {
             let sig = if args.is_empty() {
@@ -297,7 +306,7 @@ impl ConsoleTab {
         self.sending = Some(Pending::spawn(ctx, move || {
             http::post_json(&server, "/api/console/command", &json!({ "command": cmd }))
         }));
-        self.buffer.lock().expect("console").last_cmd = Some(v);
+        self.buffer.relock().last_cmd = Some(v);
     }
 
     fn take_answer(&mut self) {
@@ -305,7 +314,7 @@ impl ConsoleTab {
             return;
         };
         self.sending = None;
-        let v = self.buffer.lock().expect("console").last_cmd.take().unwrap_or_default();
+        let v = self.buffer.relock().last_cmd.take().unwrap_or_default();
         match r {
             Ok(res) => {
                 if res
@@ -314,24 +323,16 @@ impl ConsoleTab {
                 {
                     self.print_commands();
                 } else if let Some(e) = res.get("error").and_then(Value::as_str).filter(|e| !e.is_empty()) {
-                    self.buffer.lock().expect("console").add("error", e);
+                    self.buffer.relock().add("error", e);
                 } else if res.get("shell").is_some_and(|s| s.as_bool() == Some(true)) {
                     self.buffer
-                        .lock()
-                        .expect("console")
+                        .relock()
                         .add("info", "Shell command sent, output streaming\u{2026}");
                 } else if res.get("ok") == Some(&Value::Bool(true)) {
-                    self.buffer
-                        .lock()
-                        .expect("console")
-                        .add("success", &format!("Command sent: {v}"));
+                    self.buffer.relock().add("success", &format!("Command sent: {v}"));
                 }
             }
-            Err(e) => self
-                .buffer
-                .lock()
-                .expect("console")
-                .add("error", &format!("Command failed: {e}")),
+            Err(e) => self.buffer.relock().add("error", &format!("Command failed: {e}")),
         }
     }
 
@@ -373,7 +374,7 @@ impl ConsoleTab {
             let r = Rect::from_min_size(Pos2::new(tx, bar.center().y - 13.0), Vec2::splat(26.0));
             let resp = ui
                 .interact(r, ui.scope_id().with(("ctool", i)), egui::Sense::click())
-                .on_hover_text(title);
+                .on_hover_tr(title);
             let active = i == 0 && paused;
             let (fill, color) = if active {
                 (style::warning_dark(), style::warning())
@@ -444,7 +445,7 @@ impl ConsoleTab {
         }
         let sresp = ui
             .interact(send, ui.scope_id().with("csend"), egui::Sense::click())
-            .on_hover_text("Send");
+            .on_hover_tr("Send");
         let busy = self.sending.is_some();
         let fill = if sresp.hovered() && !busy {
             style::accent_hover()
@@ -501,7 +502,7 @@ impl ConsoleTab {
 
     /// The footer count: lines (or shown / all under a filter), held, paused.
     pub fn count_text(&self) -> String {
-        let b = self.buffer.lock().expect("console");
+        let b = self.buffer.relock();
         let mut parts = Vec::new();
         if self.filter.is_empty() {
             parts.push(b.lines.len().to_string());
@@ -522,7 +523,7 @@ impl ConsoleTab {
     fn tool(&mut self, i: usize, ctx: &egui::Context) {
         match i {
             0 => {
-                let mut b = self.buffer.lock().expect("console");
+                let mut b = self.buffer.relock();
                 b.paused = !b.paused;
                 if !b.paused {
                     let held = std::mem::take(&mut b.pending);
@@ -547,7 +548,7 @@ impl ConsoleTab {
                 let dir = std::env::var_os("HOME")
                     .map(|h| std::path::PathBuf::from(h).join("Downloads"))
                     .filter(|d| d.is_dir());
-                let mut b = self.buffer.lock().expect("console");
+                let mut b = self.buffer.relock();
                 match dir {
                     Some(d) => {
                         let path = d.join(format!("corvus-console-{}.log", now_ts().replace(':', "")));
@@ -560,7 +561,7 @@ impl ConsoleTab {
                 }
             }
             _ => {
-                let mut b = self.buffer.lock().expect("console");
+                let mut b = self.buffer.relock();
                 b.lines.clear();
                 b.pending.clear();
             }
@@ -575,58 +576,125 @@ impl ConsoleTab {
         let inner = r.shrink2(Vec2::new(12.0, 8.0));
         let lines = self.visible();
         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner));
-        egui::ScrollArea::vertical()
+        let memory = ui.scope_id().with("console-jump");
+        let (mut seen, mut missed, jump): (u64, usize, bool) = ui.data(|d| d.get_temp(memory)).unwrap_or_default();
+        let added = self.buffer.relock().added;
+        let mut area = egui::ScrollArea::vertical()
             .id_salt("constream")
             .stick_to_bottom(true)
-            .auto_shrink([false, false])
-            .show(&mut child, |ui| {
-                let width = inner.width() - 9.0;
-                for l in &lines {
-                    let class = level_class(&l.level);
-                    let (msg, arrow, rail) = match class {
-                        "success" => (style::healthy(), style::terminal_cmd(), Some(style::healthy())),
-                        "warning" => (style::warning(), style::warning(), Some(style::warning())),
-                        "error" => (style::critical(), style::critical(), Some(style::critical())),
-                        "nav" => (style::nav(), style::terminal_cmd(), None),
-                        "cmd" => (
-                            style::terminal_cmd(),
-                            style::terminal_cmd(),
-                            Some(style::terminal_cmd()),
-                        ),
-                        "shell" => (style::nav_bright(), style::terminal_cmd(), Some(style::nav_bright())),
-                        _ => (style::terminal_text(), style::terminal_cmd(), None),
-                    };
-                    let mut job = egui::text::LayoutJob::default();
-                    let fmt = |c: Color32| egui::TextFormat {
-                        font_id: style::mono(12.0),
-                        color: c,
-                        line_height: Some(12.0 * 1.55),
-                        ..Default::default()
-                    };
-                    job.append(&l.ts, 0.0, fmt(style::terminal_muted()));
-                    job.append(" ", 0.0, fmt(msg));
-                    job.append(">>", 0.0, fmt(arrow));
-                    job.append(" ", 0.0, fmt(msg));
-                    job.append(&l.text, 0.0, fmt(msg));
-                    job.wrap.max_width = width;
-                    job.wrap.break_anywhere = true;
-                    let g = ui.painter().layout_job(job);
-                    let (rect, _) =
-                        ui.allocate_exact_size(Vec2::new(inner.width(), g.size().y + 2.0), egui::Sense::hover());
-                    if let Some(c) = rail {
-                        ui.painter()
-                            .vline(rect.left() + 1.0, rect.y_range(), Stroke::new(2.0, c));
-                    }
+            .auto_shrink([false, false]);
+        if jump {
+            area = area.vertical_scroll_offset(f32::INFINITY);
+        }
+        let out = area.show(&mut child, |ui| {
+            let width = inner.width() - 9.0;
+            for l in &lines {
+                let class = level_class(&l.level);
+                let (msg, arrow, rail) = match class {
+                    "success" => (style::healthy(), style::terminal_cmd(), Some(style::healthy())),
+                    "warning" => (style::warning(), style::warning(), Some(style::warning())),
+                    "error" => (style::critical(), style::critical(), Some(style::critical())),
+                    "nav" => (style::nav(), style::terminal_cmd(), None),
+                    "cmd" => (
+                        style::terminal_cmd(),
+                        style::terminal_cmd(),
+                        Some(style::terminal_cmd()),
+                    ),
+                    "shell" => (style::nav_bright(), style::terminal_cmd(), Some(style::nav_bright())),
+                    _ => (style::terminal_text(), style::terminal_cmd(), None),
+                };
+                let mut job = egui::text::LayoutJob::default();
+                let fmt = |c: Color32| egui::TextFormat {
+                    font_id: style::mono(12.0),
+                    color: c,
+                    line_height: Some(12.0 * 1.55),
+                    ..Default::default()
+                };
+                job.append(&l.ts, 0.0, fmt(style::terminal_muted()));
+                job.append(" ", 0.0, fmt(msg));
+                job.append(">>", 0.0, fmt(arrow));
+                job.append(" ", 0.0, fmt(msg));
+                job.append(&l.text, 0.0, fmt(msg));
+                job.wrap.max_width = width;
+                job.wrap.break_anywhere = true;
+                let g = ui.painter().layout_job(job);
+                let (rect, _) =
+                    ui.allocate_exact_size(Vec2::new(inner.width(), g.size().y + 2.0), egui::Sense::hover());
+                if let Some(c) = rail {
                     ui.painter()
-                        .galley(Pos2::new(rect.left() + 9.0, rect.top() + 1.0), g, msg);
+                        .vline(rect.left() + 1.0, rect.y_range(), Stroke::new(2.0, c));
                 }
-            });
+                ui.painter()
+                    .galley(Pos2::new(rect.left() + 9.0, rect.top() + 1.0), g, msg);
+            }
+        });
+        let at_end = jump || out.state.clamped_offset().y + out.inner_rect.height() >= out.content_size.y - 1.0;
+        missed = if at_end {
+            0
+        } else {
+            missed + added.saturating_sub(seen) as usize
+        };
+        seen = added;
+        let pressed = !at_end && self.jump_chip(ui, r, missed);
+        ui.data_mut(|d| d.insert_temp(memory, (seen, missed, pressed)));
+    }
+
+    /// `.console-jump`: appears once the stream is scrolled away from its live
+    /// end and says how much has come since. True when pressed.
+    fn jump_chip(&self, ui: &mut egui::Ui, r: Rect, missed: usize) -> bool {
+        let label = match missed {
+            0 => crate::i18n::tr("Jump to live").into_owned(),
+            1 => crate::i18n::tr_fmt(NEW_LINE, &[("a", "1")]),
+            n => crate::i18n::tr_fmt(NEW_LINES, &[("a", &n.to_string())]),
+        };
+        let g = style::galley(ui, &label, 10.5, Weight::W600, style::text_inverted(), 0.3);
+        let size = Vec2::new(10.0 + 12.0 + 5.0 + g.size().x + 10.0, 4.0 + g.size().y.max(12.0) + 4.0);
+        let rect = Rect::from_min_size(Pos2::new(r.center().x - size.x / 2.0, r.bottom() - 10.0 - size.y), size);
+        let resp = ui
+            .interact(rect, ui.scope_id().with("console-jump-chip"), egui::Sense::click())
+            .on_hover_cursor(egui::CursorIcon::PointingHand);
+        let fill = if resp.hovered() {
+            style::accent_hover()
+        } else {
+            style::accent()
+        };
+        let painter = ui.painter();
+        painter.add(style::shadow_pop().as_shape(rect, 255u8));
+        painter.rect_filled(rect, 255u8, fill);
+        icons::paint(
+            ui,
+            "arrow-down",
+            Rect::from_center_size(Pos2::new(rect.left() + 10.0 + 6.0, rect.center().y), Vec2::splat(12.0)),
+            style::text_inverted(),
+        );
+        painter.galley(
+            Pos2::new(rect.left() + 10.0 + 12.0 + 5.0, rect.center().y - g.size().y / 2.0),
+            g,
+            style::text_inverted(),
+        );
+        resp.clicked()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_console_keeps_the_newest_lines_and_counts_every_one() {
+        let mut b = Buffer::default();
+        for i in 0..(MAX_LINES + 500) {
+            b.add("info", &format!("line {i}"));
+        }
+        assert_eq!(b.lines.len(), MAX_LINES);
+        assert_eq!(b.lines[0].text, "line 500");
+        assert_eq!(b.added, (MAX_LINES + 500) as u64);
+        b.paused = true;
+        for i in 0..(MAX_LINES + 10) {
+            b.add("info", &format!("held {i}"));
+        }
+        assert_eq!(b.pending.len(), MAX_LINES, "a paused stream is bounded too");
+    }
 
     #[test]
     fn a_transcript_line_is_timestamp_level_and_text() {

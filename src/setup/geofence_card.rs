@@ -8,6 +8,7 @@
 //! an edge adds one there. Every finished edit is saved on this station at
 //! once; putting it on the vehicle is its own press.
 
+use crate::ui::tip::HoverTr;
 use eframe::egui::{self, Color32, Mesh, Pos2, Rect, Shape, Stroke, Vec2};
 use serde_json::{json, Value};
 use walkers::{HttpOptions, HttpTiles, MapMemory, Plugin, Projector};
@@ -55,6 +56,7 @@ struct GeoMap {
     tiles: HttpTiles,
     memory: MapMemory,
     attribution: &'static str,
+    credit: crate::map::credit::Credit,
 }
 
 /// What the pointer did on the map this frame.
@@ -222,7 +224,7 @@ impl Plugin for Layers<'_> {
                 }
                 painter.circle_filled(p, 7.0, style::bg());
                 painter.circle_filled(p, 5.0, warning);
-                h.on_hover_text("Drag to move. Right click removes the corner.");
+                h.on_hover_tr("Drag to move. Right click removes the corner.");
             }
             if this.can_add {
                 for i in 0..n {
@@ -243,7 +245,7 @@ impl Plugin for Layers<'_> {
                     if h.clicked() {
                         this.out.mid = Some(i);
                     }
-                    h.on_hover_text("Click to add a corner here");
+                    h.on_hover_tr("Click to add a corner here");
                 }
             }
         }
@@ -295,6 +297,7 @@ pub struct GeofenceCard {
     status: (&'static str, String),
     ops: Vec<Op>,
     errors: Vec<String>,
+    notes: Vec<String>,
     reload: bool,
     want_fit: bool,
 }
@@ -319,6 +322,7 @@ impl GeofenceCard {
             status: ("", String::new()),
             ops: Vec::new(),
             errors: Vec::new(),
+            notes: Vec::new(),
             reload: false,
             want_fit: true,
         }
@@ -326,6 +330,11 @@ impl GeofenceCard {
 
     pub fn take_errors(&mut self) -> Vec<String> {
         std::mem::take(&mut self.errors)
+    }
+
+    /// Notices for the board (`S.notify("success", ...)` of the web card).
+    pub fn take_notes(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.notes)
     }
 
     /// Whether the page should read itself again (the fence was switched on).
@@ -342,7 +351,7 @@ impl GeofenceCard {
             return;
         }
         let (attribution, max_zoom) = describe(&self.env.sources, SOURCE);
-        let attribution: &'static str = Box::leak(attribution.into_boxed_str());
+        let attribution: &'static str = crate::data::intern::intern(&attribution);
         let source = CorvusTiles {
             base: self.server.url(),
             id: SOURCE.into(),
@@ -360,6 +369,7 @@ impl GeofenceCard {
             tiles: HttpTiles::with_options(source, options, ctx.clone()),
             memory,
             attribution,
+            credit: Default::default(),
         });
     }
 
@@ -440,7 +450,11 @@ impl GeofenceCard {
                 }
                 (Kind::Upload(_), Err(e)) => {
                     self.busy = false;
-                    let msg = if e.is_empty() { "Upload failed".to_string() } else { e };
+                    let msg = if e.is_empty() {
+                        "Upload failed".to_string()
+                    } else {
+                        geofence::explain(&e, false)
+                    };
                     self.say("err", msg.clone());
                     self.errors.push(format!("Geofence upload failed: {msg}"));
                 }
@@ -463,7 +477,7 @@ impl GeofenceCard {
                         if e.is_empty() {
                             "Could not remove the fence".to_string()
                         } else {
-                            e
+                            geofence::explain(&e, true)
                         },
                     );
                 }
@@ -481,6 +495,7 @@ impl GeofenceCard {
     fn finish_upload(&mut self, wrote: bool) {
         self.busy = false;
         self.say("ok", "The vehicle holds the area.");
+        self.notes.push("Geofence uploaded to the vehicle".into());
         if wrote {
             self.reload = true;
         }
@@ -726,28 +741,8 @@ impl GeofenceCard {
                 }
             }
         }
-        // the compact credit: a round "i", the text on hover
-        if let Some(m) = &self.map {
-            if !m.attribution.is_empty() {
-                let r = Rect::from_min_size(
-                    Pos2::new(rect.left() + 10.0, rect.bottom() - 10.0 - 24.0),
-                    Vec2::splat(24.0),
-                );
-                let resp = ui
-                    .interact(r, ui.scope_id().with(("geoattr", expanded)), egui::Sense::hover())
-                    .on_hover_text(m.attribution);
-                painter.circle_filled(
-                    r.center(),
-                    12.0,
-                    Color32::from_white_alpha(if resp.hovered() { 200 } else { 128 }),
-                );
-                icons::paint(
-                    ui,
-                    "info",
-                    Rect::from_center_size(r.center(), Vec2::splat(15.0)),
-                    Color32::from_gray(51),
-                );
-            }
+        if let Some(m) = self.map.as_mut() {
+            m.credit.show(ui, rect, m.attribution, 0.0, ("geoattr", expanded));
         }
         if !expanded {
             let b = Button::new("Large map", Variant::Secondary)
@@ -1233,5 +1228,149 @@ mod tests {
     #[test]
     fn fewer_than_three_points_fill_nothing() {
         assert!(triangulate(&[p(0.0, 0.0), p(1.0, 1.0)]).is_empty());
+    }
+
+    fn card_with(poly: &[Corner]) -> GeofenceCard {
+        let env = Env::new(Value::Null);
+        env.adopt(&json!({"polygon": poly, "show_on_map": true}));
+        let mut c = GeofenceCard::new(Server::local(1), env, &egui::Context::default());
+        c.poly = poly.to_vec();
+        c
+    }
+
+    const SQUARE: [Corner; 4] = [[11.60, 48.10], [11.61, 48.10], [11.61, 48.11], [11.60, 48.11]];
+
+    #[test]
+    fn the_summary_says_what_the_web_card_says() {
+        let c = card_with(&[]);
+        assert_eq!(c.summary(true, None), "No area drawn.");
+        let c = card_with(&SQUARE);
+        assert!(c.summary(false, None).starts_with("4 corners, "));
+        assert!(c.summary(true, None).ends_with(" Not uploaded over this link yet."));
+        assert!(c
+            .summary(true, Some([11.7, 48.2]))
+            .ends_with(" Not uploaded over this link yet. The vehicle is outside this area."));
+        c.env.adopt(&json!({"polygon": SQUARE, "on_vehicle": true}));
+        assert!(c.summary(true, None).ends_with(" On the vehicle."));
+        c.env.adopt(&json!({"polygon": SQUARE, "on_vehicle": false}));
+        assert!(c
+            .summary(true, None)
+            .ends_with(" Not on the vehicle in this form, upload it."));
+        let mut d = card_with(&SQUARE);
+        d.drawing = true;
+        d.draft = vec![[1.0, 1.0]];
+        assert_eq!(d.summary(true, None), "Drawing: 1 corner.");
+        d.draft.push([1.0, 2.0]);
+        assert_eq!(d.summary(true, None), "Drawing: 2 corners.");
+    }
+
+    #[test]
+    fn a_corner_cannot_be_removed_below_three_and_a_crossing_drag_goes_back() {
+        let ctx = egui::Context::default();
+        let mut c = card_with(&SQUARE[..3]);
+        c.apply(
+            &ctx,
+            Out {
+                remove: Some(0),
+                ..Default::default()
+            },
+            true,
+            false,
+        );
+        assert_eq!(c.status, ("err", "An area needs at least 3 corners.".to_string()));
+        assert_eq!(c.poly.len(), 3);
+
+        let mut c = card_with(&SQUARE);
+        c.poly.swap(2, 3);
+        c.apply(
+            &ctx,
+            Out {
+                drop: true,
+                ..Default::default()
+            },
+            true,
+            false,
+        );
+        assert_eq!(
+            c.status,
+            (
+                "err",
+                "The edges of the area cross each other. The corner went back.".to_string()
+            )
+        );
+        assert_eq!(c.poly, SQUARE.to_vec(), "the saved area is back");
+        assert!(!c.busy, "nothing was sent");
+    }
+
+    #[test]
+    fn a_removal_or_a_new_corner_is_refused_while_the_vehicle_is_armed() {
+        let ctx = egui::Context::default();
+        let mut c = card_with(&SQUARE);
+        c.apply(
+            &ctx,
+            Out {
+                remove: Some(1),
+                ..Default::default()
+            },
+            true,
+            true,
+        );
+        c.apply(
+            &ctx,
+            Out {
+                mid: Some(1),
+                ..Default::default()
+            },
+            true,
+            true,
+        );
+        assert_eq!(c.poly.len(), 4);
+        assert!(!c.busy);
+        c.apply(
+            &ctx,
+            Out {
+                mid: Some(3),
+                ..Default::default()
+            },
+            true,
+            false,
+        );
+        assert_eq!(c.poly.len(), 5);
+        assert_eq!(c.poly[3], [11.60, 48.11]);
+        assert!(
+            (c.poly[4][0] - 11.60).abs() < 1e-12 && (c.poly[4][1] - 48.105).abs() < 1e-12,
+            "the new corner is the middle of the edge back to the first"
+        );
+        assert!(c.busy, "and it is being kept");
+    }
+
+    #[test]
+    fn drawing_closes_only_with_three_distinct_corners_and_says_why_not() {
+        let ctx = egui::Context::default();
+        let mut c = card_with(&[]);
+        c.start_drawing();
+        c.draft = vec![[11.6, 48.1], [11.6, 48.1], [11.61, 48.1]];
+        c.finish_drawing(&ctx, true);
+        assert!(c.drawing);
+        assert_eq!(
+            c.hint,
+            "An area needs at least 3 corners. Keep clicking, or press Escape to cancel."
+        );
+        c.draft.push([11.61, 48.11]);
+        c.finish_drawing(&ctx, true);
+        assert!(!c.drawing && c.busy);
+        assert_eq!(c.poly.len(), 3);
+    }
+
+    #[test]
+    fn a_finished_upload_says_so_and_asks_the_page_to_read_again_only_after_writes() {
+        let mut c = card_with(&SQUARE);
+        c.busy = true;
+        c.finish_upload(false);
+        assert_eq!(c.status, ("ok", "The vehicle holds the area.".to_string()));
+        assert_eq!(c.take_notes(), vec!["Geofence uploaded to the vehicle".to_string()]);
+        assert!(!c.take_reload());
+        c.finish_upload(true);
+        assert!(c.take_reload());
     }
 }

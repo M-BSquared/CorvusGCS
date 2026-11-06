@@ -1,6 +1,7 @@
 //! The shelf, the companion strip and the editor drawn (`.schw-*` of
 //! `schwalby.css`).
 
+use crate::ui::tip::HoverTr;
 use eframe::egui::{self, Color32, Pos2, Rect, Stroke, Vec2};
 use serde_json::Value;
 
@@ -98,7 +99,7 @@ fn status_line(ui: &egui::Ui, f: &mut Form, text: &str, tone: Tone) {
     ui.painter()
         .galley(Pos2::new(left, rect.center().y - g.size().y / 2.0), g, fg);
     ui.interact(rect, ui.scope_id().with(("schwstatus", text)), egui::Sense::hover())
-        .on_hover_text(text);
+        .on_hover_tr(text);
     f.y = rect.bottom();
 }
 
@@ -241,7 +242,7 @@ fn companion_strip(p: &mut Schwalby, ui: &mut egui::Ui, f: &mut Form, h: &mut Ho
     } else {
         "Set the companion computer to watch".to_string()
     };
-    let resp = resp.on_hover_text(title);
+    let resp = resp.on_hover_tr(title);
     if resp.clicked() {
         p.dialog = Some(CompDialog::new(p.companion.as_ref(), &p.connections));
     }
@@ -262,7 +263,7 @@ fn companion_strip(p: &mut Schwalby, ui: &mut egui::Ui, f: &mut Form, h: &mut Ho
         };
         let r = ui
             .interact(a, ui.scope_id().with("schwcomparrow"), egui::Sense::click())
-            .on_hover_text(title);
+            .on_hover_tr(title);
         if r.hovered() {
             painter.rect_filled(a, style::RADIUS_BTN, style::surface_hover());
         }
@@ -441,7 +442,7 @@ fn shelf(p: &mut Schwalby, ui: &mut egui::Ui, f: &mut Form, h: &mut Host) {
                 // `setActive`: the accent's dark fill and its bright glyph
                 let resp = ui
                     .interact(r, ui.scope_id().with("schw-edit-toggle"), egui::Sense::click())
-                    .on_hover_text(title);
+                    .on_hover_tr(title);
                 ui.painter().rect_filled(r, style::RADIUS_BTN, style::accent_dark());
                 icons::paint(
                     ui,
@@ -543,7 +544,7 @@ fn row(p: &Schwalby, ui: &mut egui::Ui, x: f32, w: f32, top: f32, i: usize, carr
             ui.scope_id().with(("schwgrip", &b.id)),
             egui::Sense::click_and_drag(),
         );
-        let resp = resp.on_hover_text("Drag to move up or down");
+        let resp = resp.on_hover_tr("Drag to move up or down");
         if resp.hovered() || resp.dragged() {
             ui.ctx().set_cursor_icon(if resp.dragged() {
                 egui::CursorIcon::Grabbing
@@ -731,7 +732,7 @@ fn launch_button(p: &Schwalby, ui: &mut egui::Ui, rect: Rect, b: &Button, runnin
     let where_r = Rect::from_min_size(Pos2::new(right - 16.0, rect.center().y - 8.0), Vec2::splat(16.0));
     icons::paint(ui, where_icon, where_r, text.gamma_multiply(0.75 * fade));
     ui.interact(where_r, id.with("where"), egui::Sense::hover())
-        .on_hover_text(where_title);
+        .on_hover_tr(where_title);
     let mut x = rect.left() + 1.0 + 11.0;
     if b.by_mcp {
         let g = style::galley(ui, "AI", 9.0, Weight::W700, text.gamma_multiply(0.85 * fade), 0.4);
@@ -751,7 +752,7 @@ fn launch_button(p: &Schwalby, ui: &mut egui::Ui, rect: Rect, b: &Button, runnin
             text,
         );
         ui.interact(mark, id.with("ai"), egui::Sense::hover())
-            .on_hover_text(if b.pending {
+            .on_hover_tr(if b.pending {
                 "Added by an AI client, waiting for you to allow it"
             } else {
                 "Added by an AI client"
@@ -785,12 +786,12 @@ fn launch_button(p: &Schwalby, ui: &mut egui::Ui, rect: Rect, b: &Button, runnin
     } else {
         preview
     };
-    let resp = resp.on_hover_text(title);
+    let resp = resp.on_hover_tr(title);
     if resp.clicked() && !busy {
         out.hit = Some(Hit::Launch);
     }
     if let Some(a) = arrow_rect {
-        let r = ui.interact(a, id.with("arrow"), sense).on_hover_text(if running {
+        let r = ui.interact(a, id.with("arrow"), sense).on_hover_tr(if running {
             "Open its terminal window to watch it, or press Ctrl-C to stop it"
         } else {
             "Open its terminal and connect. The program starts with the button."
@@ -855,7 +856,7 @@ fn tool(
 ) -> bool {
     let resp = ui
         .interact(r, ui.scope_id().with(id), egui::Sense::click())
-        .on_hover_text(title);
+        .on_hover_tr(title);
     if resp.hovered() {
         ui.painter().rect_filled(r, style::RADIUS_BTN, style::surface_hover());
     }
@@ -1282,7 +1283,7 @@ fn color_strip(ui: &mut egui::Ui, x: f32, y: f32, w: f32, current: &str) -> Opti
         let r = Rect::from_center_size(c, Vec2::splat(s));
         let resp = ui
             .interact(r, ui.scope_id().with(("schw-chip", i)), egui::Sense::click())
-            .on_hover_text(if value.is_empty() {
+            .on_hover_tr(if value.is_empty() {
                 "Default, the theme colour"
             } else {
                 value

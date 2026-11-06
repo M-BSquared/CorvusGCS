@@ -50,11 +50,8 @@ impl Stream {
                     }
                 }
             })
-            .expect("the events thread starts");
-        Stream {
-            stop,
-            thread: Some(thread),
-        }
+            .ok();
+        Stream { stop, thread }
     }
 
     /// Stops the thread and waits for it.
@@ -95,6 +92,9 @@ fn follow(server: &Server, path: &str, stop: &AtomicBool, on_event: &mut dyn FnM
                 continue
             }
             Err(_) => break,
+        }
+        if line.len() > sse::LINE_MAX {
+            break;
         }
         if line.last() != Some(&b'\n') {
             continue;

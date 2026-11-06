@@ -95,13 +95,13 @@ impl SshSession {
         let sender = std::thread::Builder::new()
             .name("ssh-send".into())
             .spawn(move || send_loop(s, n, rx))
-            .expect("the ssh send thread starts");
+            .ok();
         let session = SshSession {
             emu,
             closed,
             stream: Some(stream),
             tx,
-            sender: Some(sender),
+            sender,
             size: (cols, rows),
         };
         let _ = session.tx.send(Msg::Resize(cols, rows));

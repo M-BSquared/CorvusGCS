@@ -10,6 +10,7 @@
 
 pub mod model;
 
+use crate::ui::tip::HoverTr;
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
@@ -18,6 +19,7 @@ use serde_json::{json, Value};
 
 use crate::home::mapwindow::{self, Placement};
 use crate::net::http::{self, Server};
+use crate::net::lock::Relock;
 use crate::ui::icons;
 use crate::ui::style::{self, Weight};
 use model::{ArmGesture, Config, Frame, Held, Inputs, Lock, PadRead, Stick};
@@ -47,7 +49,7 @@ type Link = Arc<(Mutex<Shared>, Condvar)>;
 /// stream that raised a toast per dropped frame would bury every other note.
 fn run_stream(server: Server, link: Link) {
     let (lock, cv) = &*link;
-    let mut guard = lock.lock().expect("manual control state");
+    let mut guard = lock.relock();
     loop {
         if guard.stop {
             return;
@@ -59,7 +61,7 @@ fn run_stream(server: Server, link: Link) {
         };
         let (g, _) = cv
             .wait_timeout(guard, Duration::from_secs_f64(period))
-            .expect("manual control state");
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         guard = g;
         if guard.stop {
             return;
@@ -67,7 +69,7 @@ fn run_stream(server: Server, link: Link) {
         if let (true, true, Some(f)) = (guard.streaming, guard.connected, guard.frame) {
             drop(guard);
             let _ = http::post_json(&server, "/api/mavlink/manual", &f.body());
-            guard = lock.lock().expect("manual control state");
+            guard = lock.relock();
         }
     }
 }
@@ -540,7 +542,7 @@ impl Control {
         );
         let toggle = ui
             .interact(btn, ui.scope_id().with("padcollapse"), egui::Sense::click())
-            .on_hover_text(if collapsed {
+            .on_hover_tr(if collapsed {
                 "Expand the control pad"
             } else {
                 "Collapse the control pad"
@@ -884,7 +886,7 @@ mod tests {
                     }
                 }
                 if let Some(body) = text.split("\r\n\r\n").nth(1) {
-                    seen.lock().expect("seen").push(body.to_string());
+                    seen.relock().push(body.to_string());
                 }
                 let _ = s.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 11\r\nConnection: close\r\n\r\n{\"ok\":true}");
             }
@@ -900,7 +902,7 @@ mod tests {
         c.update(&ctx, &json!({"connected": true}), &Default::default(), true, 0.0);
         std::thread::sleep(Duration::from_millis(500));
         c.shut_down();
-        assert!(got.lock().expect("got").is_empty());
+        assert!(got.relock().is_empty());
     }
 
     #[test]
@@ -915,16 +917,16 @@ mod tests {
         c.update(&ctx, &json!({"connected": true}), &Default::default(), true, 0.0);
         std::thread::sleep(Duration::from_millis(700));
         c.shut_down();
-        let frames = got.lock().expect("got").clone();
+        let frames = got.relock().clone();
         assert!(frames.len() >= 2, "{frames:?}");
         assert!(frames.iter().all(|b| {
             let v: Value = serde_json::from_str(b).expect("json");
             v == json!({"x": 0.0, "y": 0.0, "z": 0.5, "r": 0.0})
         }));
         // Nothing more once it is down.
-        let n = got.lock().expect("got").len();
+        let n = got.relock().len();
         std::thread::sleep(Duration::from_millis(400));
-        assert_eq!(got.lock().expect("got").len(), n);
+        assert_eq!(got.relock().len(), n);
     }
 
     #[test]
@@ -941,7 +943,7 @@ mod tests {
         c.update(&ctx, &json!({"connected": false}), &Default::default(), true, 0.0);
         std::thread::sleep(Duration::from_millis(500));
         c.shut_down();
-        assert!(got.lock().expect("got").is_empty());
+        assert!(got.relock().is_empty());
     }
 
     #[test]
@@ -979,7 +981,7 @@ mod tests {
         assert!(c.gesture.sent && c.stick_mode_after_arm);
         std::thread::sleep(Duration::from_millis(400));
         c.shut_down();
-        let bodies = got.lock().expect("got").clone();
+        let bodies = got.relock().clone();
         assert!(bodies.iter().any(|b| b.contains("\"arm\":true")), "{bodies:?}");
     }
 

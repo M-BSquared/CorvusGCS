@@ -9,6 +9,7 @@
 pub mod console;
 pub mod link;
 
+use crate::ui::tip::HoverTr;
 use eframe::egui::{self, Color32, Pos2, Rect, Stroke, Vec2};
 use serde_json::Value;
 
@@ -204,7 +205,7 @@ impl Panel {
         let handle = Rect::from_min_size(rect.min, Vec2::new(HANDLE, rect.height()));
         let hresp = ui
             .interact(handle, ui.scope_id().with("handle"), egui::Sense::click())
-            .on_hover_text(if self.collapsed {
+            .on_hover_tr(if self.collapsed {
                 "Expand panel"
             } else {
                 "Collapse panel"
@@ -259,7 +260,7 @@ impl Panel {
             );
             let gresp = ui
                 .interact(grip, ui.scope_id().with("grip"), egui::Sense::click_and_drag())
-                .on_hover_text("Drag to resize, double click to reset")
+                .on_hover_tr("Drag to resize, double click to reset")
                 .on_hover_cursor(egui::CursorIcon::ResizeColumn);
             if gresp.dragged() {
                 let now = self.width.unwrap_or(rect.width());
@@ -573,7 +574,7 @@ impl Panel {
             style::text_3().gamma_multiply(0.45),
         );
         ui.interact(add, ui.scope_id().with("sshadd"), egui::Sense::hover())
-            .on_hover_text("Add connection (not in this build yet)");
+            .on_hover_tr("Add connection (not in this build yet)");
         let mut y = header.bottom() + 12.0;
         let x = rect.left() + 12.0;
         let w = rect.width() - 24.0;
@@ -701,7 +702,7 @@ impl Panel {
                 style::text_3().gamma_multiply(0.45),
             );
             ui.interact(er, ui.scope_id().with(("sshedit", i)), egui::Sense::hover())
-                .on_hover_text("Editing a connection is not in this build yet");
+                .on_hover_tr("Editing a connection is not in this build yet");
             if let Some(g) = error {
                 painter.galley(Pos2::new(inner.left(), row_y + bh + 8.0), g, style::critical());
             }

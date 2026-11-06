@@ -1,5 +1,6 @@
 //! `.field-select` with the app's dropdown (`.ui-menu`): the one select.
 
+use crate::ui::tip::HoverTr;
 use eframe::egui::{self, Pos2, Rect, Stroke, Vec2};
 
 use crate::ui::card::{self, Look};
@@ -61,7 +62,7 @@ pub fn select_padded(
     let mut open = ui.ctx().data(|d| d.get_temp::<bool>(open_id).unwrap_or(false));
     let mut resp = ui.interact(rect, id, egui::Sense::click());
     if !title.is_empty() {
-        resp = resp.on_hover_text(title);
+        resp = resp.on_hover_tr(title);
     }
     let painter = ui.painter().clone();
     if open {

@@ -1,5 +1,6 @@
 //! The shelf and the editor drawn (`.sshl-*` of `ssh-launcher.css`).
 
+use crate::ui::tip::HoverTr;
 use eframe::egui::{self, Color32, Pos2, Rect, Stroke, Vec2};
 use serde_json::Value;
 
@@ -335,7 +336,7 @@ fn tool(
 ) -> bool {
     let resp = ui
         .interact(r, ui.scope_id().with(id), egui::Sense::click())
-        .on_hover_text(title);
+        .on_hover_tr(title);
     if resp.hovered() {
         ui.painter().rect_filled(r, style::RADIUS_BTN, style::surface_hover());
     }

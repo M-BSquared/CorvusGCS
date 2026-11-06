@@ -7,6 +7,7 @@
 //! web map's first layer; picking another comes with the map controls.
 
 pub mod cameras;
+pub mod credit;
 pub mod measure;
 pub mod others;
 pub mod rail;
@@ -138,6 +139,7 @@ pub struct Map {
     tiles: Option<HttpTiles>,
     memory: MapMemory,
     attribution: &'static str,
+    credit: credit::Credit,
     pub track: Track,
     first_fix: bool,
     /// Follows the aircraft until the operator drags the map.
@@ -209,6 +211,7 @@ impl Map {
             tiles: None,
             memory,
             attribution: "",
+            credit: credit::Credit::default(),
             track: Track::default(),
             first_fix: true,
             follow: true,
@@ -291,8 +294,8 @@ impl Map {
     /// Shows the source `id`, through the backend's proxy like every other.
     pub fn set_source(&mut self, ctx: &egui::Context, id: &str) {
         let (attribution, max_zoom) = describe(&self.sources, id);
-        // Leaked once per layer picked: walkers wants a 'static credit.
-        let attribution: &'static str = Box::leak(attribution.into_boxed_str());
+        // Kept once per credit: walkers wants a 'static one.
+        let attribution: &'static str = crate::data::intern::intern(&attribution);
         let source = CorvusTiles {
             base: self.server.url(),
             id: id.into(),
@@ -325,10 +328,11 @@ impl Map {
             if let (Some(t), Some((lng, lat, zoom))) = (self.three.as_mut(), self.view) {
                 t.start_at(lng, lat, zoom, 0.0);
             }
-        } else if let Some(t) = &self.three {
+        } else if let Some(t) = self.three.as_mut() {
             self.memory.center_at(walkers::lon_lat(t.cam.lng, t.cam.lat));
             let _ = self.memory.set_zoom(t.cam.zoom);
             self.follow = false;
+            t.release();
         }
     }
 
@@ -365,11 +369,13 @@ impl Map {
         let rect = ui.max_rect();
         let (_, max_zoom) = describe(&self.sources, &self.source);
         self.ensure_three(ui.ctx());
+        let shapes = self.three_shapes();
         let follow = self.follow;
         let Some(t) = self.three.as_mut() else {
             return;
         };
         t.set_source(&self.source, max_zoom);
+        t.credit_h = self.credit.height();
         t.follow_sources(&self.sources);
         if let (true, Some((lng, lat))) = (follow, vehicle) {
             t.cam.lng = lng;
@@ -392,7 +398,7 @@ impl Map {
                 vehicle,
                 heading,
                 height,
-                shapes: self.plugins.shapes(),
+                shapes: &shapes,
                 vehicle_color,
                 track_color,
                 past_colors,
@@ -401,6 +407,7 @@ impl Map {
         );
         if input.dragged {
             self.follow = false;
+            self.credit.fold();
         }
         {
             let (rect_c, t) = (rect, &*t);
@@ -683,8 +690,7 @@ impl Map {
             self.show_3d(ui, state, vehicle, home, heading);
             return;
         }
-        let fence = self.env.get();
-        let outline = (fence.show_on_map && fence.polygon.len() >= 3).then_some(fence.polygon);
+        let outline = fence_outline(&self.env.get());
         let double_click_zoom = !overlay.as_ref().is_some_and(|o| o.takes_double_click());
         let layers = Layers {
             planner: self.planner,
@@ -712,6 +718,15 @@ impl Map {
         .double_click_to_zoom(double_click_zoom);
         map = map.zoom_speed(2.0);
         let response = ui.add(map);
+        if crate::map3d::gpu::release_pending() {
+            ui.painter().add(egui::PaintCallback {
+                rect: response.rect,
+                callback: std::sync::Arc::new(eframe::egui_glow::CallbackFn::new(|_, p| {
+                    // SAFETY: egui_glow calls this on its own context, inside its paint.
+                    unsafe { crate::map3d::gpu::release_if_requested(p.gl()) }
+                })),
+            });
+        }
         {
             let p = Projector::new(response.rect, &self.memory, my_position);
             let c = p.unproject(response.rect.center().to_vec2());
@@ -719,6 +734,7 @@ impl Map {
         }
         if response.dragged() {
             self.follow = false;
+            self.credit.fold();
         }
         if let Some((lng, lat)) = vehicle {
             if self.follow && !self.planner {
@@ -739,9 +755,41 @@ impl Map {
         }
     }
 
-    /// The tile credit, bottom left, in the pill main.css draws it in.
-    fn paint_attribution(&self, ui: &egui::Ui, rect: egui::Rect) {
-        paint_credit(ui, rect, self.attribution, self.bottom_lift);
+    /// What the 3D map draws on the ground besides the track: the geofence
+    /// when the Home map is asked to show it (the web draws the same overlay
+    /// under the tilted camera), then what the plugins draw.
+    fn three_shapes(&self) -> Vec<crate::plugins::shapes::Shape> {
+        let mut out = Vec::new();
+        if let Some(poly) = fence_outline(&self.env.get()) {
+            out.push(crate::plugins::shapes::Shape {
+                owner: "geofence",
+                key: "corvus-geofence".into(),
+                kind: crate::plugins::shapes::Kind::Polygon {
+                    pts: poly,
+                    fill_opacity: 0.06,
+                    outline: 3.0,
+                    dashed: true,
+                },
+                color: style::warning(),
+                width: 3.0,
+                opacity: 1.0,
+                visible: true,
+            });
+        }
+        out.extend(self.plugins.shapes().iter().cloned());
+        out
+    }
+
+    /// The tile credit, bottom left, folded into its disc until clicked. With
+    /// terrain on, the elevation model's credit joins it in one line, as
+    /// MapLibre joins the credits of every source.
+    fn paint_attribution(&mut self, ui: &mut egui::Ui, rect: egui::Rect) {
+        let terrain = self
+            .three_d
+            .then(|| self.three.as_ref().and_then(|t| t.terrain_credit()))
+            .flatten();
+        let text = credit_text(self.attribution, terrain);
+        self.credit.show(ui, rect, &text, self.bottom_lift, "map");
     }
 
     /// Lets go of the tile downloader and joins its thread.
@@ -752,25 +800,19 @@ impl Map {
     }
 }
 
-/// The tile credit as a glass pill, bottom left of `rect`, `lift` above the
-/// usual 14 px.
-pub(crate) fn paint_credit(ui: &egui::Ui, rect: egui::Rect, text: &str, lift: f32) {
-    if text.is_empty() {
-        return;
+/// The geofence corners, when the map is to show them (`drawOnHome`).
+pub(crate) fn fence_outline(fence: &crate::setup::geofence::Fence) -> Option<Vec<[f64; 2]>> {
+    (fence.show_on_map && fence.polygon.len() >= 3).then(|| fence.polygon.clone())
+}
+
+/// The credit line: the imagery's and, when given, the elevation model's.
+pub(crate) fn credit_text(imagery: &str, terrain: Option<&str>) -> String {
+    match (imagery.is_empty(), terrain.filter(|t| !t.is_empty())) {
+        (_, None) => imagery.to_string(),
+        (true, Some(t)) => t.to_string(),
+        (false, Some(t)) if t == imagery => imagery.to_string(),
+        (false, Some(t)) => format!("{imagery} | {t}"),
     }
-    let g = style::galley(ui, text, 10.0, style::Weight::W400, style::text_2(), 0.0);
-    let size = Vec2::new(g.size().x + 4.0 + 9.0, 25.0);
-    let pill = egui::Rect::from_min_size(
-        Pos2::new(rect.left() + 14.0, rect.bottom() - lift - 14.0 - size.y),
-        size,
-    );
-    let painter = ui.painter_at(rect);
-    style::glass_panel(&painter, "attribution", pill, egui::CornerRadius::same(255), 0.38);
-    painter.galley(
-        Pos2::new(pill.left() + 9.0, pill.center().y - g.size().y / 2.0),
-        g,
-        style::text_2(),
-    );
 }
 
 struct Layers<'a, 'o> {
@@ -1319,6 +1361,7 @@ mod tests {
             tiles: None,
             memory: MapMemory::default(),
             attribution: "",
+            credit: credit::Credit::default(),
             track: Track::default(),
             first_fix: true,
             follow: true,
@@ -1356,5 +1399,28 @@ mod tests {
         assert_eq!(m.track.current.len(), 1);
         m.update(&json!({"connected": false, "position": [11.7, 48.2]}));
         assert_eq!(m.track.current.len(), 1, "a disconnected state draws nothing");
+    }
+
+    #[test]
+    fn the_fence_is_drawn_only_when_asked_for_and_closed_enough() {
+        use crate::setup::geofence::Fence;
+        let three = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]];
+        let f = |polygon: &[[f64; 2]], show: bool| Fence {
+            polygon: polygon.to_vec(),
+            show_on_map: show,
+            ..Fence::default()
+        };
+        assert_eq!(fence_outline(&f(&three, true)).map(|p| p.len()), Some(3));
+        assert!(fence_outline(&f(&three, false)).is_none());
+        assert!(fence_outline(&f(&three[..2], true)).is_none());
+    }
+
+    #[test]
+    fn the_credit_line_joins_the_elevation_credit_once() {
+        assert_eq!(credit_text("Esri", None), "Esri");
+        assert_eq!(credit_text("Esri", Some("")), "Esri");
+        assert_eq!(credit_text("Esri", Some("Mapzen")), "Esri | Mapzen");
+        assert_eq!(credit_text("Esri", Some("Esri")), "Esri");
+        assert_eq!(credit_text("", Some("Mapzen")), "Mapzen");
     }
 }

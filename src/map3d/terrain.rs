@@ -216,6 +216,11 @@ impl Terrain {
         Some(tile.sample(u0 + (fx - tx as f64) * size, v0 + (fy - ty as f64) * size) as f64)
     }
 
+    /// Drops every elevation tile held.
+    pub fn clear(&self) {
+        self.cache.clear();
+    }
+
     pub fn trim(&self) {
         self.cache.trim();
     }

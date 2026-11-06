@@ -36,6 +36,7 @@ CORVUS_GUI_CLICK=560,310 cargo run -- --page motors    # press there once, at 6 
 CORVUS_GUI_CLICK="178,472;400,200;enter" cargo run    # several presses, half a second apart; enter is the key, a leading r is a right click ("r600,400")
 CORVUS_GUI_3D=11.5,47.4,13,200,82 cargo run             # open the 3D map, here: lng,lat,zoom[,bearing[,pitch]]; 1 alone keeps the view
 CORVUS_GUI_3D_PANEL=1 CORVUS_GUI_3D=1 cargo run         # with the 3D panel (buildings, elevation models) open
+CORVUS_GUI_SOAK=1 cargo run --release                   # the window drives itself: pages, map, 3D, language (src/app/soak.rs)
 ```
 
 Locally, `serve.py` runs as a child on a free port. Every way out (window
@@ -57,6 +58,11 @@ SIGKILL if it is still there after 8 s. If the window does not close within
 | `src/map/mod.rs` | the map (walkers) on the backend's tile proxy, vehicle and home markers |
 | `src/map/rail.rs` | the rail and the two buttons beside it: zoom, centre, layers, downloaded areas, measure, the clear track disc |
 | `src/map/regions.rs` | the downloaded areas of `/api/tiles/regions`, merged as the web map merges them (`map.js`) |
+| `src/map/credit.rs` | the tile credit as MapLibre's compact attribution draws it: a 25 px glass disc with the info icon, opened by a click into a pill wrapped at `min(46ch, 40vw)`, folded by a click on the icon or a drag of the map; used by the Home map (2D and 3D), the Analysis track map and the geofence card map |
+| `src/crash.rs` | the panic hook, the crash log and the frame guard (see Reliability) |
+| `src/data/intern.rs` | a `'static` text for an API that wants one, kept once and capped |
+| `src/ui/tip.rs` | hover texts through the translation layer: use `on_hover_tr`, never `on_hover_text` |
+| `src/app/soak.rs`, `python/tools/gui_soak.py` | the soak driver and the script that samples memory, threads and descriptors |
 | `src/map/measure.rs` | the distance tool: great circle distance, bearing and the two click rule (`map-measure.js`) |
 | `src/map/search.rs`, `src/map/search_card.rs` | the place search: coordinate notations read offline, area names, `/api/geocode`, the box and its list (`map-search.js`) |
 | `src/map/tiles_model.rs`, `src/map/tiles_card.rs` | the offline map dialog: tile counts and sizes, the download and its jobs, the areas on this laptop (`tiles.js`) |
@@ -482,6 +488,42 @@ blue also the navigation colour). The frost saturates 190 % and brightens
 
 The window title comes from `GET /api/version`; the crate carries no
 version of its own.
+
+## Reliability
+
+The interface is used in the field, so it must not crash, hang or grow.
+
+- **Panics.** `crash::install` writes every panic with a backtrace to
+  `~/.corvus/gui-crash.log` (cut to its newest half past 256 KB, the same panic
+  logged once in 5 s) and shows nothing. A panic while a frame is drawn is
+  caught (`crash::guarded` in `App::ui`): that frame shows "This page stopped
+  working" with a Back to Home button and the next frame tries again. A panic
+  on the main thread outside the guard still takes the backend child down.
+  Locks that a panic elsewhere could poison are taken with
+  `net::lock::Relock`, so one panic does not become a panic every frame.
+- **Bounds.** Nothing that grows with the session is unbounded: the console
+  (2000 lines), the notification board (200 own lines, 100 commands in flight,
+  toast memories forgotten after their repeat window), the translation cache
+  and miss set, tracks (20000 points), the HTTP client (16 KB per head line,
+  200 headers, 256 MB per body, 16 MB per SSE line or event, write timeouts),
+  the 3D map (at most 1000 GPU textures and 4000 meshes, the least recently
+  drawn go first), `data::intern` (256 texts). A test holds each bound.
+- **Soak.** `python/tools/gui_soak.py` starts a sandboxed backend with a
+  simulated PX4 (never the operator's own Corvus), starts the interface with
+  `CORVUS_GUI_SOAK=1` and writes a CSV row every 10 s with the resident memory,
+  threads and open descriptors of the interface and the backend:
+
+  ```bash
+  python3 python/tools/gui_soak.py --binary target/release/corvus-gcs \
+      --python .venv/bin/python --minutes 15 --csv soak.csv
+  ```
+
+  The driver cycles twelve steps of 4 s: the map panned and zoomed, the 3D map
+  opened and moved, every page, one setup tile at a time, a Settings tab, the
+  Mission page, the language switched.
+- **Geofence round trip.** `python/tools/geofence_roundtrip.py` drives the
+  fence endpoints against three sandboxed simulators (one accepting, one
+  refusing, one that stops answering after two corners, `CORVUS_SIM_FENCE`).
 
 ## Toolchain
 

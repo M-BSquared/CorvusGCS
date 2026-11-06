@@ -9,6 +9,7 @@
 //! occurrence of that text it is, so reordering a list keeps the ticks and
 //! rewording an item clears only that item.
 
+use crate::ui::tip::HoverTr;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -343,7 +344,7 @@ pub fn show(ui: &mut egui::Ui, st: &mut WindowState, host: Rect, below: f32, vie
             egui::CursorIcon::Grab
         });
     }
-    let grip = grip.on_hover_text("Drag to move, double-click to reset");
+    let grip = grip.on_hover_tr("Drag to move, double-click to reset");
     let icon_c = if complete { style::healthy() } else { style::text_3() };
     icons::paint(
         ui,
@@ -358,7 +359,7 @@ pub fn show(ui: &mut egui::Ui, st: &mut WindowState, host: Rect, below: f32, vie
         let r = Rect::from_min_size(Pos2::new(bx, bar.top()), Vec2::splat(20.0));
         let resp = ui
             .interact(r, ui.scope_id().with(("clbtn", id)), egui::Sense::click())
-            .on_hover_text(title);
+            .on_hover_tr(title);
         if resp.hovered() {
             painter.rect_filled(r, 5, style::tint(0.04));
         }

@@ -13,6 +13,7 @@
 //! are removed. That confirmation is asked again every time the page opens,
 //! and leaving the page stops any motor that is still turning.
 
+use crate::ui::tip::HoverTr;
 use std::collections::HashMap;
 use std::f32::consts::PI;
 
@@ -1202,7 +1203,7 @@ impl MotorsPage {
             let hit = Rect::from_center_size(q, Vec2::splat(HUB_PX * 2.0 * sc));
             let resp = ui
                 .interact(hit, ui.scope_id().with(("motor", m.number)), egui::Sense::click())
-                .on_hover_text(motor_aria(m));
+                .on_hover_tr(motor_aria(m));
             if resp.clicked() {
                 self.selected = m.number;
             }
@@ -1931,7 +1932,7 @@ impl MotorsPage {
         let sw = Rect::from_min_size(Pos2::new(ix, cy), Vec2::new(36.0, 20.0));
         let resp = ui
             .interact(sw, ui.scope_id().with("props"), egui::Sense::click())
-            .on_hover_text("Propellers are removed");
+            .on_hover_tr("Propellers are removed");
         if resp.clicked() && !armed {
             self.props_off = !self.props_off;
         }

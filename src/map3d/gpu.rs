@@ -23,6 +23,13 @@ use eframe::glow::{self, HasContext};
 pub const FLOATS: usize = 6;
 /// Frames a mesh or a texture may go unused before the GPU lets it go.
 const KEEP_FRAMES: u64 = 240;
+/// What the GPU holds at most. A frame draws no more than a few hundred
+/// textures, but the age rule above frees one only after `KEEP_FRAMES`, and a
+/// view that keeps asking for new tiles (a low pitch over a wide area) made
+/// thousands of them live at once, 3 GB on the machine. Past the budget the
+/// least recently drawn go first, never one drawn in the current frame.
+const MAX_TEXTURES: usize = 1000;
+const MAX_MESHES: usize = 4000;
 /// Textures uploaded in one frame at most, so a pan does not stall on them.
 const UPLOADS_PER_FRAME: usize = 24;
 
@@ -366,7 +373,35 @@ impl Gpu {
             }
             keep
         });
+        for id in over_budget(self.meshes.iter().map(|(k, m)| (*k, m.used)), MAX_MESHES, frame) {
+            if let Some(m) = self.meshes.remove(&id) {
+                gl.delete_vertex_array(m.vao);
+                gl.delete_buffer(m.vbo);
+                gl.delete_buffer(m.ebo);
+            }
+        }
+        for id in over_budget(self.textures.iter().map(|(k, t)| (*k, t.used)), MAX_TEXTURES, frame) {
+            if let Some(t) = self.textures.remove(&id) {
+                gl.delete_texture(t.texture);
+            }
+        }
     }
+}
+
+/// The ids to drop so that at most `max` remain: the least recently used
+/// first, none that was used in `frame`.
+fn over_budget(entries: impl Iterator<Item = (u64, u64)>, max: usize, frame: u64) -> Vec<u64> {
+    let mut all: Vec<(u64, u64)> = entries.collect();
+    if all.len() <= max {
+        return Vec::new();
+    }
+    all.sort_by_key(|(_, used)| *used);
+    let excess = all.len() - max;
+    all.into_iter()
+        .filter(|(_, used)| *used < frame)
+        .take(excess)
+        .map(|(id, _)| id)
+        .collect()
 }
 
 fn as_bytes<T: Copy>(v: &[T]) -> &[u8] {
@@ -442,6 +477,29 @@ pub unsafe fn paint(gl: &glow::Context, scene: &Scene) {
     gpu.forget_unused(gl);
 }
 
+static RELEASE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Asks for every GL object to go at the next paint of the flat map, which is
+/// the first thing that has the context once the 3D view is left.
+pub fn request_release() {
+    RELEASE.store(true, Ordering::Relaxed);
+}
+
+pub fn release_pending() -> bool {
+    RELEASE.load(Ordering::Relaxed)
+}
+
+/// Frees the GL objects when a release was asked for; the next 3D paint makes
+/// them again.
+///
+/// # Safety
+/// Must be called on egui_glow's context, from inside its paint.
+pub unsafe fn release_if_requested(gl: &glow::Context) {
+    if RELEASE.swap(false, Ordering::Relaxed) {
+        destroy(gl);
+    }
+}
+
 /// Frees the GL objects. Called with the context on the way out.
 pub fn destroy(gl: &glow::Context) {
     let mut guard = GPU.lock().unwrap_or_else(|e| e.into_inner());
@@ -465,6 +523,18 @@ pub fn destroy(gl: &glow::Context) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_least_recently_used_go_first_and_the_current_frame_stays() {
+        let entries = [(1, 5), (2, 9), (3, 1), (4, 10), (5, 3)];
+        assert_eq!(over_budget(entries.into_iter(), 5, 10), Vec::<u64>::new());
+        assert_eq!(over_budget(entries.into_iter(), 3, 10), vec![3, 5]);
+        assert_eq!(
+            over_budget(entries.into_iter(), 0, 10),
+            vec![3, 5, 1, 2],
+            "id 4 was drawn this frame"
+        );
+    }
 
     #[test]
     fn ids_are_never_reused() {

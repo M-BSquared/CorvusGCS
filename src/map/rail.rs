@@ -7,6 +7,7 @@
 //! areas, 3D, measuring, place search and the offline map download are
 //! drawn where the web map has them and come with their own steps.
 
+use crate::ui::tip::HoverTr;
 use eframe::egui::{self, Color32, Pos2, Rect, Stroke, Vec2};
 use serde_json::Value;
 
@@ -204,7 +205,7 @@ impl MapRail {
             };
             let resp = ui
                 .interact(r, ui.scope_id().with(("mc", icon)), sense)
-                .on_hover_text(title);
+                .on_hover_tr(title);
             let active = (item == Item::Center && map.follow && !self.planner)
                 || (item == Item::Layers && self.layers_open)
                 || (item == Item::Regions && map.regions_visible)
@@ -299,7 +300,7 @@ impl MapRail {
         glass_box(&painter, ("trigger", 0), download);
         let dresp = ui
             .interact(download, ui.scope_id().with(("trigger", 0)), egui::Sense::click())
-            .on_hover_text("Download offline map");
+            .on_hover_tr("Download offline map");
         let (dfill, dcolor) = if self.tiles.open {
             (style::accent_dark(), style::accent_bright())
         } else if dresp.hovered() {
@@ -366,7 +367,7 @@ pub fn clear_disc(ui: &mut egui::Ui, area: Rect, lift: f32, title: &str) -> bool
         );
         let resp = ui
             .interact(r, ui.scope_id().with("trackclear"), egui::Sense::click())
-            .on_hover_text(title);
+            .on_hover_tr(title);
         let hot = resp.hovered();
         let painter = ui.painter().clone();
         style::glass_panel(&painter, "trackclear", r, 255u8, 0.75);

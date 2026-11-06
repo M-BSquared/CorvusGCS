@@ -8,6 +8,7 @@
 //! off the ground, READY only on the autopilot's own clearance, STANDBY
 //! when the firmware gives none.
 
+use crate::ui::tip::HoverTr;
 use eframe::egui::{self, Color32, Pos2, Rect, Vec2};
 use serde_json::Value;
 
@@ -735,7 +736,7 @@ pub fn show(
             };
             crate::ui::popover::drive(ui.ctx(), id, &response, card, look);
         } else if !b.title.is_empty() {
-            response.on_hover_text(&b.title);
+            response.on_hover_tr(&b.title);
         }
         x += w;
     }

@@ -10,6 +10,7 @@
 mod analysis;
 mod app;
 mod control;
+mod crash;
 mod data;
 mod fleet;
 mod home;
@@ -101,6 +102,7 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     };
+    crash::install();
     install_signal_handler();
 
     let mut local = None;

@@ -63,7 +63,8 @@ otherwise; "native file" is in `src/`.
 | Home and vehicle markers | map.js | map/mod.rs | done |
 | Other vehicles on the map in their own colour, name under, own track, click opens the dialog | map-fleet.js | map/others.rs, fleet/tracks.rs | done (kept over a restart in ~/.corvus/gui-tracks.json) |
 | Plugin overlays on the map: lines, areas, labels, buttons, markers, icons | map-overlays.js, map-icons.js | plugins/ (another session) | not mine |
-| Geofence drawn on the map | geofence.js | setup/geofence.rs | done |
+| Geofence drawn on the map | geofence.js | setup/geofence.rs, map/mod.rs `fence_outline` | done, in 2D and in 3D |
+| Tile credit: a folded glass disc with the info icon at every width, a click opens it, a drag folds it, hover warms it | map.css `.maplibregl-ctrl-attrib`, map.js `ownAttributionToggle` | map/credit.rs | done on the Home map (2D, 3D with the elevation credit joined), the Analysis track map and the geofence map. The web asks for `compact: true`, so there is no 640 px rule to copy |
 
 ## Home page: flight controls and instruments
 
@@ -152,6 +153,28 @@ otherwise; "native file" is in `src/`.
 | Every path of a file or folder on this computer is chosen with the system file dialog, not typed (a deliberate difference: the web page cannot open one); a backend side path is a text box for a remote `--server` | settings-transfer.js, sidenav.js, analysis.js, setup-parameters.js, setup-firmware.js, panel.js | ui/pathfield.rs, ui/filepicker.rs, settings/, analysis/, setup/, plugins/ssh_setup.rs | done: looked at in screenshots, the native dialog itself not clicked (sandbox) |
 | Analysis: logs, Flight Review, Telemetry Review, Live Messages | analysis.js | analysis/ | done |
 | Review ground track over satellite imagery: the Chart / Satellite switch, the layer rule, fit with 36 px padding, the key, the zoom buttons, ctrl + scroll to zoom with its hint | analysis.js | analysis/trackmap.rs, analysis/review.rs | done: seen against the simulator's flight log on the Esri layer; the imagery's square corners poke 2 px past the rounded border |
+
+## Pills, badges and chips
+
+The rows were found by reading the CSS and the scripts, then the native code. Only the rows that say added or changed were touched. One widget draws them: `ui/chip.rs` (`Chip::new`, `Chip::tag`, `Chip::ready`,
+`Chip::offline`, `Chip::paint_tip`), `ui/pills.rs` for the Settings tab pills.
+
+| Web | Where | Native |
+| --- | --- | --- |
+| `.calib-ready-chip` ok and bad | Calibration, PID Tuning | `Chip::ready` (the two copies are gone) |
+| `offlineChip` "Not connected" with the error as its title | every page on `setActionsStatus`: Radio, Battery, Remote ID, Parameters, Motors, Safety, Tuning | `pagekit::head_actions` shows it for a failed read with no link, hover text translated and under the pill; a page with a link chip of its own gets none |
+| `.rc-monitor-state` | Radio Control, channel monitor | `Chip` in `setup/radio.rs` |
+| `.rc-tx-chip`, `.rc-cal-flag`, `.rc-step`, `.fs-step` | Radio Control, First Setup | `Chip` |
+| `.rtk-state-badge` | RTK | `Chip` in `setup/rtk.rs` |
+| `.safety-sensor-pill` | Safety and sensors tiles | `setup/safety.rs` |
+| `.autotune-live` | PID Tuning charts | `setup/tuning.rs` |
+| `.firmware-board-cached` | Firmware | `setup/firmware.rs` |
+| `.tb-warn-pill` | top bar notifications | `notify/overlay.rs` |
+| `.mcp-badge` with Stop | Home map | `mcp/mod.rs` |
+| `.link-quality`, `.link-auto-badge` | Link tab | `panel/link.rs` |
+| `.console-jump` "Jump to live" and the count since | Console | `panel/console.rs` `jump_chip` (added) |
+| `.review-finding-mode`, `.calib-phase`, `.calib-prep-item`, `.calib-log-count`, `.settings-dem-kind`, `.settings-tab` | Analysis, Calibration, Settings | `Chip`, `ui/pills.rs` |
+| `.welcome-step`, `.fleet-chip` | first start, Vehicles dialog | `welcome/`, `fleet/` (found by reading, not compared pixel by pixel) |
 
 ## Right panel
 

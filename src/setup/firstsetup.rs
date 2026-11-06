@@ -180,6 +180,7 @@ impl FirstSetupPage {
             Some(Hosted::Firmware(p)) => n.extend(p.take_notes()),
             Some(Hosted::Calibration(p)) => n.extend(p.take_notes()),
             Some(Hosted::Radio(p)) => n.extend(p.take_notes()),
+            Some(Hosted::Safety(p)) => n.extend(p.take_notes()),
             _ => {}
         }
         n

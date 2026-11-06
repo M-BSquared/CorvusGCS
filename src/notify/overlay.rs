@@ -4,6 +4,7 @@
 //! `.ui-toast`), on the notification anatomy of themes.css: a 9 px gutter,
 //! a 20 px icon threaded by a 3 px severity mark, 14 px to the text.
 
+use crate::ui::tip::HoverTr;
 use eframe::egui::{self, Color32, CornerRadius, Pos2, Rect, Stroke, Vec2};
 
 use crate::notify::{Board, Notification, Summary};
@@ -213,7 +214,7 @@ fn row(
     );
     let dr = ui
         .interact(d, ui.scope_id().with(("dismiss", &id)), egui::Sense::click())
-        .on_hover_text("Dismiss");
+        .on_hover_tr("Dismiss");
     if dr.hovered() {
         listrow::paint(painter, d, style::RADIUS_BTN, Mark::Hover);
     }

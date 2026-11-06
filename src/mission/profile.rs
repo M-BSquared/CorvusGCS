@@ -3,6 +3,7 @@
 //! `mission.css`): the route seen from the side, with the ground under it and
 //! each point's height draggable.
 
+use crate::ui::tip::HoverTr;
 use eframe::egui::{self, Color32, Pos2, Rect, Shape as Paint, Stroke, Vec2};
 
 use crate::mission::geometry::{
@@ -279,7 +280,7 @@ impl MissionPage {
                 let g = style::galley(ui, label, 11.0, Weight::W400, style::text_3(), 0.0);
                 painter.galley(Pos2::new(sel.left() + 8.0, cy - g.size().y / 2.0), g, style::text_3());
                 ui.interact(sel, ui.scope_id().with("maircraftlocked"), egui::Sense::hover())
-                    .on_hover_text("The connected vehicle sets this.");
+                    .on_hover_tr("The connected vehicle sets this.");
             } else if let Some(v) = kit::select(ui, sel, &choices, current, "Not set", false, "", "maircraft") {
                 if self.plan.choose_aircraft(&v) {
                     self.refresh();
@@ -576,7 +577,7 @@ impl MissionPage {
         } else if let Some((_, k)) = best {
             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
             let text = hover_text(self, &marks[k], k, self.ground.as_ref());
-            resp.on_hover_text(text);
+            resp.on_hover_tr(text);
         }
     }
 }

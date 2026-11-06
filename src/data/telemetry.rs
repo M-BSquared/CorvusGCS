@@ -77,13 +77,9 @@ impl Telemetry {
             std::thread::Builder::new()
                 .name("telemetry".into())
                 .spawn(move || run(&server, &shared, &stop, &changed))
-                .expect("the telemetry thread starts")
+                .ok()
         };
-        Telemetry {
-            shared,
-            stop,
-            thread: Some(thread),
-        }
+        Telemetry { shared, stop, thread }
     }
 
     /// The latest state.

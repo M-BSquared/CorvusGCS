@@ -10,6 +10,7 @@
 //! own. Every command is a POST to the same endpoint the web button posts
 //! to, on a thread of its own, and the button is busy until the answer.
 
+use crate::ui::tip::HoverTr;
 use std::sync::{Arc, Mutex};
 
 use eframe::egui::{self, Pos2, Rect, Stroke, Vec2};
@@ -18,6 +19,7 @@ use serde_json::{json, Value};
 use crate::data::units::{js_round, Units};
 use crate::map::tools::{Action, Tools};
 use crate::net::http::{self, Server};
+use crate::net::lock::Relock;
 use crate::ui::fabar;
 use crate::ui::field::TextField;
 use crate::ui::icons;
@@ -298,8 +300,8 @@ impl FlightBar {
         let ctx = ctx.clone();
         std::thread::spawn(move || {
             match http::get_json(&server, "/api/mavlink/modes") {
-                Ok(data) => *modes.lock().expect("modes") = modes_from(&data),
-                Err(e) => outcome.lock().expect("outcome").plain.push(if e.is_empty() {
+                Ok(data) => *modes.relock() = modes_from(&data),
+                Err(e) => outcome.relock().plain.push(if e.is_empty() {
                     "Could not load flight modes".into()
                 } else {
                     e
@@ -327,7 +329,7 @@ impl FlightBar {
         self.next_token += 1;
         let token = self.next_token;
         {
-            let mut o = self.outcome.lock().expect("outcome");
+            let mut o = self.outcome.relock();
             o.busy.push(command);
             o.begun.push((token, actions.to_vec()));
         }
@@ -346,7 +348,7 @@ impl FlightBar {
                         .to_string())
                 }
             });
-            let mut o = outcome.lock().expect("outcome");
+            let mut o = outcome.relock();
             o.busy.retain(|c| *c != command);
             o.settled
                 .push((token, result.map_err(|e| if e.is_empty() { fallback } else { e })));
@@ -360,7 +362,7 @@ impl FlightBar {
     /// failCommand and notifyError on a refusal.
     pub fn settle(&mut self, board: &mut crate::notify::Board, now: f64) {
         let (begun, settled, plain) = {
-            let mut o = self.outcome.lock().expect("outcome");
+            let mut o = self.outcome.relock();
             (
                 std::mem::take(&mut o.begun),
                 std::mem::take(&mut o.settled),
@@ -684,7 +686,7 @@ impl FlightBar {
                         style::text_3()
                     },
                 );
-                if resp.on_hover_text("Close").clicked() {
+                if resp.on_hover_tr("Close").clicked() {
                     closed = true;
                 }
 
@@ -931,7 +933,7 @@ impl FlightBar {
     ) {
         let busy = self.busy(Command::Mode);
         let response = ui.interact(rect, ui.scope_id().with("modesel"), egui::Sense::click());
-        let response = response.on_hover_text(if ground { "Drive Mode" } else { "Flight Mode" });
+        let response = response.on_hover_tr(if ground { "Drive Mode" } else { "Flight Mode" });
         let fill = if response.hovered() && !busy {
             style::tint(0.10)
         } else {

@@ -10,6 +10,7 @@
 //! written while the vehicle is armed. Export, Import and the autopilot
 //! reboot sit in the header, their dialogs in `params_dialogs`.
 
+use crate::ui::tip::HoverTr;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 
@@ -1907,7 +1908,7 @@ impl ParamsPage {
         );
         if !tip.is_empty() {
             ui.interact(field, ui.scope_id().with(("ptip", &name)), egui::Sense::hover())
-                .on_hover_text(tip);
+                .on_hover_tr(tip);
         }
         if !unit.is_empty() {
             let g = style::galley(ui, &unit, 11.0, Weight::W400, style::text_3(), 0.0);

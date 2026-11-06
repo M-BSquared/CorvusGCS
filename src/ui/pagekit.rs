@@ -143,6 +143,26 @@ pub fn text(ui: &egui::Ui, at: Pos2, s: &str, size: f32, w: Weight, color: Color
     h
 }
 
+static LINK_UP: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
+/// Whether the vehicle link is up as far as telemetry knows; unknown is up
+/// (`linkUp` of setup-shared.js). The window sets it every frame.
+pub fn set_link_up(up: bool) {
+    LINK_UP.store(up, std::sync::atomic::Ordering::Relaxed);
+}
+
+pub fn link_up() -> bool {
+    LINK_UP.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Whether a page status is shown as the "Not connected" chip instead of its
+/// text (`setActionsStatus`): a read that failed with no link is a state that
+/// ends when the vehicle appears, not something wrong with what was read. A
+/// page with a live link chip of its own gets no second one.
+pub fn shows_offline_chip(class: &str, has_link_chip: bool, link_up: bool) -> bool {
+    class == "err" && !link_up && !has_link_chip
+}
+
 /// The colour of a status line (`.params-actions-status`, `.ok`, `.err`,
 /// `.pending`).
 pub fn status_color(cls: &str) -> Color32 {
@@ -194,7 +214,9 @@ pub fn head_actions_with(
     let rh = sizes.iter().map(|s| s.1).fold(0.0, f32::max);
     let color = status_color(status.0);
     let sg = style::galley(ui, &status.1, 11.5, Weight::W400, color, 0.0);
-    let status_w = sg.size().x.min(420.0);
+    let offline = shows_offline_chip(status.0, !lead.is_empty(), link_up()).then(crate::ui::chip::Chip::offline);
+    let offline_size = offline.as_ref().map(|c| c.measure(ui));
+    let status_w = offline_size.map_or(sg.size().x.min(420.0), |s| s.x);
     let gap = if status_w > 0.0 { 10.0 } else { 0.0 };
     let buttons_w: f32 = sizes.iter().map(|s| s.0).sum::<f32>() + 10.0 * sizes.len().saturating_sub(1) as f32;
     let chips_w: f32 = if chip_sizes.is_empty() {
@@ -215,7 +237,7 @@ pub fn head_actions_with(
         (x, x + chips_w + 0.0, x + chips_w + status_w + gap)
     } else {
         let first = x + w - buttons_w;
-        let status_x = first - gap - sg.size().x;
+        let status_x = first - gap - offline_size.map_or(sg.size().x, |s| s.x);
         (status_x - chips_w, status_x, first)
     };
     for (c, s) in lead.iter().zip(&chip_sizes) {
@@ -231,8 +253,17 @@ pub fn head_actions_with(
         }
         bx += bw + 10.0;
     }
-    ui.painter()
-        .galley(Pos2::new(status_x, ay + rh / 2.0 - sg.size().y / 2.0), sg, color);
+    if let (Some(chip), Some(size)) = (offline, offline_size) {
+        chip.paint_tip(
+            ui,
+            Pos2::new(status_x, ay + (rh - size.y) / 2.0),
+            (id, "offline"),
+            &status.1,
+        );
+    } else {
+        ui.painter()
+            .galley(Pos2::new(status_x, ay + rh / 2.0 - sg.size().y / 2.0), sg, color);
+    }
     (bottom + 26.0, pressed)
 }
 
@@ -303,4 +334,23 @@ pub fn tabs(
         tx += tw + 2.0;
     }
     (y + h + 14.0, pressed)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_failed_read_with_no_link_is_the_offline_chip_unless_the_page_has_its_own() {
+        assert!(shows_offline_chip("err", false, false));
+        assert!(
+            !shows_offline_chip("err", false, true),
+            "the link is up: the error is the news"
+        );
+        assert!(!shows_offline_chip("ok", false, false));
+        assert!(
+            !shows_offline_chip("err", true, false),
+            "a page with a link chip of its own"
+        );
+    }
 }

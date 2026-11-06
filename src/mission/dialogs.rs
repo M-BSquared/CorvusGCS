@@ -1,6 +1,7 @@
 //! The confirmations and the list of saved plans (`confirmUpload`,
 //! `readFromVehicle`, `confirmClear`, `openPlanDialog` of `mission.js`).
 
+use crate::ui::tip::HoverTr;
 use eframe::egui::{self, Pos2, Rect, Vec2};
 
 use crate::mission::backend::{Job, Saved};
@@ -302,7 +303,7 @@ fn saved_row(
     }
     let tr = ui
         .interact(trash, ui.scope_id().with(("msavedrm", k)), egui::Sense::click())
-        .on_hover_text(title);
+        .on_hover_tr(title);
     let colour = if armed || tr.hovered() {
         style::critical()
     } else {

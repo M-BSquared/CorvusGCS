@@ -64,6 +64,31 @@ impl Chip {
         }
     }
 
+    /// `.calib-ready-chip`: a dot and a word, green when `ok`, red when not.
+    pub fn ready(text: impl Into<String>, ok: bool) -> Chip {
+        if ok {
+            Chip {
+                fg: style::text_1(),
+                dot: Some((style::healthy(), true)),
+                ..Chip::new(text)
+            }
+        } else {
+            Chip {
+                fg: style::critical_bright(),
+                bg: style::critical_dark(),
+                border: style::critical(),
+                dot: Some((style::critical(), true)),
+                ..Chip::new(text)
+            }
+        }
+    }
+
+    /// `offlineChip` of setup-shared.js: what a page shows in place of a read
+    /// that failed because there is no link to the vehicle.
+    pub fn offline() -> Chip {
+        Chip::ready("Not connected", false)
+    }
+
     pub fn radius(mut self, radius: u8) -> Chip {
         self.radius = Some(radius);
         self
@@ -104,6 +129,17 @@ impl Chip {
             2.0 + self.pad.1 + self.pad.3 + self.lead() + g.size().x,
             2.0 + self.pad.0 + self.pad.2 + line,
         )
+    }
+
+    /// Paints it and gives it a hover text, `tip` translated, under the pill
+    /// and never over its own label. An empty `tip` is no hover text.
+    pub fn paint_tip(&self, ui: &egui::Ui, at: Pos2, id: impl std::hash::Hash + std::fmt::Debug, tip: &str) -> Rect {
+        let rect = self.paint(ui, at);
+        if !tip.is_empty() {
+            let resp = ui.interact(rect, ui.scope_id().with(id), egui::Sense::hover());
+            crate::ui::tip::HoverTr::on_hover_tr(resp, tip);
+        }
+        rect
     }
 
     /// Paints it with its top left at `at`; returns its rectangle.
