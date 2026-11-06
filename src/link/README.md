@@ -10,6 +10,26 @@ from corvus_link import mavutil
 where it used to import `pymavlink.mavutil`, and nothing else in Corvus
 changes.
 
+## Plain Rust, without Python
+
+The crate has a `python` cargo feature, on by default (maturin builds it). With
+`--no-default-features` there is no PyO3 and no Python on the build machine, and
+what is left is plain Rust: the dialect tables (`wire/defs.rs`), the transports
+(`link/transport.rs`, `link/websocket.rs`, serial) and `corvus_link::plain`:
+
+| | |
+| --- | --- |
+| `plain::Message`, `Value` | a message as data, one value per declared field of the generated tables |
+| `plain::codec` | `pack_payload` (MAVLink 2 trims trailing zeros) and `unpack_payload` (a short payload reads zero filled) |
+| `plain::frame` | `encode` (v1 and v2, CRC_EXTRA), the stream `Parser` (resyncs on a bad checksum), `Signing` (SHA-256, as pymavlink signs) |
+| `plain::transport`, `plain::websocket` | the links, bytes in and out |
+
+`tests/plain_frames.rs` holds it to pymavlink: 62 frames dumped by
+`python/tools/dump_link_cases.py` are produced byte for byte, read back to their
+values, and a signed one is signed identically. The rest of the crate (the
+pymavlink shaped `Mavlink` object, the connection, the protocols, the bridge, RTK,
+SiK, firmware) still speaks Python and moves onto this layer one piece at a time.
+
 ## Layout
 
 ```
