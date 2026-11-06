@@ -11,6 +11,7 @@ use corvus_link::plain::connection::Connection;
 use corvus_link::plain::Message;
 
 use super::params::{ParamEngine, ParamHost, Status};
+use super::RequestHost;
 use crate::clock;
 
 /// One link, its target vehicle and the state the parameter engine reads.
@@ -100,6 +101,42 @@ impl LinkHost {
     }
 }
 
+impl RequestHost for LinkHost {
+    fn connection_ready(&self) -> bool {
+        !self.conn.is_closed()
+    }
+
+    fn armed(&self) -> bool {
+        self.armed.load(Ordering::SeqCst)
+    }
+
+    fn send(&self, msg: Message) -> Result<bool, String> {
+        if self.conn.is_closed() {
+            return Ok(false);
+        }
+        self.conn.send(&msg).map(|_| true).map_err(|e| e.to_string())
+    }
+
+    fn target(&self) -> (u8, u8) {
+        self.target
+    }
+
+    fn set_error(&self, text: &str) {
+        *self.error.lock().unwrap_or_else(|e| e.into_inner()) = text.to_string();
+    }
+
+    fn last_error(&self) -> String {
+        self.error.lock().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    fn console(&self, source: &str, text: &str, level: &str) {
+        self.console
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push((source.into(), text.into(), level.into()));
+    }
+}
+
 impl ParamHost for LinkHost {
     fn now(&self) -> f64 {
         clock::monotonic()
@@ -116,31 +153,12 @@ impl ParamHost for LinkHost {
         }
     }
 
-    fn connection_ready(&self) -> bool {
-        !self.conn.is_closed()
-    }
-
-    fn armed(&self) -> bool {
-        self.armed.load(Ordering::SeqCst)
-    }
-
     fn running(&self) -> bool {
         !self.stop.load(Ordering::SeqCst)
     }
 
     fn stopping(&self) -> bool {
         self.stop.load(Ordering::SeqCst)
-    }
-
-    fn send(&self, msg: Message) -> Result<bool, String> {
-        if self.conn.is_closed() {
-            return Ok(false);
-        }
-        self.conn.send(&msg).map(|_| true).map_err(|e| e.to_string())
-    }
-
-    fn target(&self) -> (u8, u8) {
-        self.target
     }
 
     fn encoding(&self) -> String {
@@ -151,25 +169,10 @@ impl ParamHost for LinkHost {
         self.slow
     }
 
-    fn set_error(&self, text: &str) {
-        *self.error.lock().unwrap_or_else(|e| e.into_inner()) = text.to_string();
-    }
-
-    fn last_error(&self) -> String {
-        self.error.lock().unwrap_or_else(|e| e.into_inner()).clone()
-    }
-
     fn notify(&self, status: &Status) {
         for f in self.listeners.lock().unwrap_or_else(|e| e.into_inner()).iter() {
             f(status);
         }
-    }
-
-    fn console(&self, source: &str, text: &str, level: &str) {
-        self.console
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .push((source.into(), text.into(), level.into()));
     }
 
     fn start_watchdog(&self) {

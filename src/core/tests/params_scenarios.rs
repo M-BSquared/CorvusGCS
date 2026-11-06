@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex};
 
 use corvus_core::link::plain::{defs::Wire, Message, Value};
 use corvus_core::protocol::params::{Entry, ParamEngine, ParamHost, Status};
+use corvus_core::protocol::RequestHost;
 use serde_json::{json, Value as Json};
 
 #[derive(Clone)]
@@ -155,31 +156,12 @@ fn text_of(v: Option<&Value>) -> String {
     }
 }
 
-impl ParamHost for Fake {
-    fn now(&self) -> f64 {
-        *self.clock.lock().unwrap()
-    }
-    fn sleep(&self, seconds: f64) {
-        *self.clock.lock().unwrap() += seconds;
-    }
-    fn interruptible_sleep(&self, seconds: f64) {
-        let ticks = self.ticks.fetch_add(1, Ordering::SeqCst) + 1;
-        if ticks >= self.sc["max_ticks"].as_u64().unwrap_or(400) as usize {
-            self.running.store(false, Ordering::SeqCst);
-        }
-        self.sleep(seconds);
-    }
+impl RequestHost for Fake {
     fn connection_ready(&self) -> bool {
         self.flag("ready", true)
     }
     fn armed(&self) -> bool {
         self.flag("armed", false)
-    }
-    fn running(&self) -> bool {
-        self.running.load(Ordering::SeqCst)
-    }
-    fn stopping(&self) -> bool {
-        false
     }
     fn send(&self, msg: Message) -> Result<bool, String> {
         let (method, args, name, index, wire_value): (&str, Vec<Json>, String, i64, f64) = match msg.name() {
@@ -219,12 +201,6 @@ impl ParamHost for Fake {
     fn target(&self) -> (u8, u8) {
         (1, 1)
     }
-    fn encoding(&self) -> String {
-        self.encoding_name()
-    }
-    fn slow_link(&self) -> bool {
-        self.flag("slow", false)
-    }
     fn set_error(&self, text: &str) {
         *self.last_error.lock().unwrap() = text.to_string();
         self.errors.lock().unwrap().push(text.to_string());
@@ -232,11 +208,39 @@ impl ParamHost for Fake {
     fn last_error(&self) -> String {
         self.last_error.lock().unwrap().clone()
     }
-    fn notify(&self, status: &Status) {
-        self.statuses.lock().unwrap().push(status.to_json());
-    }
     fn console(&self, source: &str, text: &str, level: &str) {
         self.console.lock().unwrap().push(json!([source, text, level]));
+    }
+}
+
+impl ParamHost for Fake {
+    fn now(&self) -> f64 {
+        *self.clock.lock().unwrap()
+    }
+    fn sleep(&self, seconds: f64) {
+        *self.clock.lock().unwrap() += seconds;
+    }
+    fn interruptible_sleep(&self, seconds: f64) {
+        let ticks = self.ticks.fetch_add(1, Ordering::SeqCst) + 1;
+        if ticks >= self.sc["max_ticks"].as_u64().unwrap_or(400) as usize {
+            self.running.store(false, Ordering::SeqCst);
+        }
+        self.sleep(seconds);
+    }
+    fn running(&self) -> bool {
+        self.running.load(Ordering::SeqCst)
+    }
+    fn stopping(&self) -> bool {
+        false
+    }
+    fn encoding(&self) -> String {
+        self.encoding_name()
+    }
+    fn slow_link(&self) -> bool {
+        self.flag("slow", false)
+    }
+    fn notify(&self, status: &Status) {
+        self.statuses.lock().unwrap().push(status.to_json());
     }
     fn start_watchdog(&self) {
         self.watchdog.fetch_add(1, Ordering::SeqCst);

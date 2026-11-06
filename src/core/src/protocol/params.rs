@@ -21,37 +21,28 @@ pub use corvus_link::plain::param_value::{
     PARAM_RETRANSMIT_GAP_S_UDP, PARAM_RETRANSMIT_MAX_PER_ROUND_SERIAL, PARAM_RETRANSMIT_MAX_PER_ROUND_UDP,
     PARAM_VERIFY_MAX_NAMES, PARAM_VERIFY_REWRITES, PARAM_WATCHDOG_TICK_S,
 };
-use corvus_link::plain::{defs::Wire, Message, Value};
+use corvus_link::plain::{Message, Value};
 use indexmap::IndexMap;
 
+use super::{targeted, RequestHost};
+
 /// What the engine asks of the bridge it runs on.
-pub trait ParamHost: Send + Sync {
+pub trait ParamHost: RequestHost {
     /// Seconds on a clock that only moves forwards.
     fn now(&self) -> f64;
     fn sleep(&self, seconds: f64);
     /// A sleep that ends early when the bridge stops.
     fn interruptible_sleep(&self, seconds: f64);
-    fn connection_ready(&self) -> bool;
-    fn armed(&self) -> bool;
     /// Whether the bridge is running, and whether it is stopping.
     fn running(&self) -> bool;
     fn stopping(&self) -> bool;
-    /// Sends one message on this bridge's link, under its send lock.
-    /// `Ok(false)` is "the link is no longer this bridge's", `Err` a failed write.
-    fn send(&self, msg: Message) -> Result<bool, String>;
-    /// The vehicle's system and component id.
-    fn target(&self) -> (u8, u8);
     /// `bytewise` (PX4) or `c_cast` (ArduPilot).
     fn encoding(&self) -> String;
     fn slow_link(&self) -> bool;
-    fn set_error(&self, text: &str);
-    fn last_error(&self) -> String;
     /// Tells the parameter listeners.
     fn notify(&self, status: &Status);
-    fn console(&self, source: &str, text: &str, level: &str);
     /// Starts the download watchdog thread (only while the bridge runs).
     fn start_watchdog(&self);
-    fn log(&self, _level: &str, _text: &str) {}
 
     /// How long a full download may take before it is called incomplete.
     fn download_budget_s(&self) -> f64 {
@@ -261,26 +252,19 @@ pub fn valid_name(name: &str) -> bool {
     !name.is_empty() && name.is_ascii() && name.len() <= PARAM_ID_MAX_BYTES
 }
 
-fn message(name: &str, target: (u8, u8)) -> Message {
-    let mut m = Message::named(name, Wire::V2).expect("the all dialect has the parameter messages");
-    let _ = m.set("target_system", Value::Int(target.0 as i128));
-    let _ = m.set("target_component", Value::Int(target.1 as i128));
-    m
-}
-
 fn request_list_message(target: (u8, u8)) -> Message {
-    message("PARAM_REQUEST_LIST", target)
+    targeted("PARAM_REQUEST_LIST", target)
 }
 
 fn request_read_message(target: (u8, u8), name: &str, index: i64) -> Message {
-    let mut m = message("PARAM_REQUEST_READ", target);
+    let mut m = targeted("PARAM_REQUEST_READ", target);
     let _ = m.set("param_id", Value::Bytes(name.as_bytes().to_vec()));
     let _ = m.set("param_index", Value::Int(index as i128));
     m
 }
 
 fn param_set_message(target: (u8, u8), name: &str, value: f64, ptype: i64) -> Message {
-    let mut m = message("PARAM_SET", target);
+    let mut m = targeted("PARAM_SET", target);
     let _ = m.set("param_id", Value::Bytes(name.as_bytes().to_vec()));
     let _ = m.set("param_value", Value::Float(value));
     let _ = m.set("param_type", Value::Int(ptype as i128));

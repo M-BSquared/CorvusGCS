@@ -22,7 +22,8 @@ from unittest import mock
 
 from corvus_link import params as P
 
-OUT = pathlib.Path(__file__).resolve().parent.parent.parent / "src" / "core" / "tests" / "data" / "params_cases.json"
+DATA = pathlib.Path(__file__).resolve().parent.parent.parent / "src" / "core" / "tests" / "data"
+OUT = DATA / "params_cases.json"
 
 
 def f32(x: float) -> float:
@@ -361,17 +362,121 @@ def cases() -> list[dict]:
     return out
 
 
+
+
+# ---------------------------------------------------------------- logs ----
+
+class SendLock:
+    def acquire(self):
+        pass
+
+    def release(self):
+        pass
+
+
+class Mav:
+    """``bridge._conn.mav``: records every ``*_send`` call, may raise."""
+
+    def __init__(self, bridge) -> None:
+        self.bridge = bridge
+
+    def __getattr__(self, method):
+        def call(*args):
+            if self.bridge.sc.get("send_fails") == method:
+                raise OSError("boom")
+            self.bridge.sent.append([method, [a for a in args[2:]] if len(args) >= 2 else []])
+        return call
+
+
+class SimpleBridge:
+    """What the small request protocols ask of a bridge."""
+
+    def __init__(self, sc: dict) -> None:
+        self.sc = sc
+        self.sent: list = []
+        self.errors: list = []
+        self.console: list = []
+        self.last_error = ""
+        self._send_lock = SendLock()
+        self._target_system = 1
+        self._target_component = 1
+        self._conn = type("Conn", (), {})()
+        self._conn.mav = Mav(self)
+        self._store = Store(sc.get("armed", False))
+
+    def _connection_ready(self):
+        return self.sc.get("ready", True)
+
+    def _set_command_error(self, text):
+        self.last_error = text
+        self.errors.append(text)
+
+    def get_last_command_error(self):
+        return self.last_error
+
+    def _console_publish(self, name, text, level):
+        self.console.append([name, text, level])
+
+
+def play_simple(sc: dict, engine, ops: dict) -> dict:
+    br = SimpleBridge(sc)
+    results = []
+    for step in sc["steps"]:
+        before = (len(br.sent), len(br.errors), len(br.console))
+        result = ops[step["op"]](engine, br, step)
+        results.append({"result": result, "sent": br.sent[before[0]:], "errors": br.errors[before[1]:],
+                        "console": br.console[before[2]:]})
+    return clean({"steps": results, "final": {"last_error": br.last_error}})
+
+
+def logs_scenarios() -> list[dict]:
+    return [
+        {"name": "list_ok", "steps": [{"op": "list", "start": 0, "end": 65535}, {"op": "list", "start": 3, "end": 9}]},
+        {"name": "list_not_connected", "ready": False, "steps": [{"op": "list", "start": 0, "end": 5}]},
+        {"name": "list_send_fails", "send_fails": "log_request_list_send", "steps": [{"op": "list", "start": 0, "end": 5}]},
+        {"name": "data_ok", "steps": [{"op": "data", "id": 2, "offset": 1000, "count": 90}]},
+        {"name": "data_not_connected", "ready": False, "steps": [{"op": "data", "id": 2, "offset": 0, "count": 90}]},
+        {"name": "data_send_fails", "send_fails": "log_request_data_send",
+         "steps": [{"op": "data", "id": 2, "offset": 0, "count": 90}]},
+        {"name": "erase_ok", "steps": [{"op": "erase"}]},
+        {"name": "erase_armed", "armed": True, "steps": [{"op": "erase"}]},
+        {"name": "erase_not_connected", "ready": False, "steps": [{"op": "erase"}]},
+        {"name": "erase_send_fails", "send_fails": "log_erase_send", "steps": [{"op": "erase"}]},
+        {"name": "end_ok_and_best_effort", "steps": [{"op": "end"}]},
+        {"name": "end_not_connected", "ready": False, "steps": [{"op": "end"}]},
+        {"name": "end_send_fails", "send_fails": "log_request_end_send", "steps": [{"op": "end"}]},
+    ]
+
+
+def logs_cases() -> list[dict]:
+    from corvus_link import logs as L
+
+    ops = {
+        "list": lambda e, b, st: e.request_list(b, st["start"], st["end"]),
+        "data": lambda e, b, st: e.request_data(b, st["id"], st["offset"], st["count"]),
+        "erase": lambda e, b, st: e.erase(b),
+        "end": lambda e, b, st: e.request_end(b),
+    }
+    return [{"scenario": sc, "expected": play_simple(sc, L.LogEngine(), ops)} for sc in logs_scenarios()]
+
+
+COMMANDS = {"params_cases.json": cases, "logs_cases.json": logs_cases}
+
+
 def main(argv: list[str]) -> int:
-    text = json.dumps({"constants": {k: getattr(P, k) for k in dir(P) if k.startswith("PARAM_")}, "cases": cases()},
-                      indent=1, allow_nan=False) + "\n"
-    if "--check" in argv:
-        if not OUT.is_file() or OUT.read_text() != text:
-            print("stale: run tools/dump_protocol_cases.py", file=sys.stderr)
-            return 1
-        return 0
-    OUT.write_text(text)
-    print(f"wrote {OUT}")
-    return 0
+    stale = False
+    for name, build in COMMANDS.items():
+        extra = {"constants": {k: getattr(P, k) for k in dir(P) if k.startswith("PARAM_")}} if name == "params_cases.json" else {}
+        text = json.dumps({**extra, "cases": build()}, indent=1, allow_nan=False) + "\n"
+        path = DATA / name
+        if "--check" in argv:
+            if not path.is_file() or path.read_text() != text:
+                print(f"stale: {name}; run tools/dump_protocol_cases.py", file=sys.stderr)
+                stale = True
+            continue
+        path.write_text(text)
+        print(f"wrote {path}")
+    return 1 if stale else 0
 
 
 if __name__ == "__main__":
