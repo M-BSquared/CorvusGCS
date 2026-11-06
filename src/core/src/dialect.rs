@@ -1163,6 +1163,23 @@ impl Dialect {
         }
     }
 
+    /// The calibrations this stack can actually run, sorted.
+    pub fn available_calibrations(&self) -> Vec<&'static str> {
+        let mut names: Vec<&str> = self
+            .calibrations()
+            .into_iter()
+            .filter(|(_, p)| p.ok())
+            .map(|(n, _)| n)
+            .collect();
+        names.sort_unstable();
+        names
+    }
+
+    /// Does PX4 know a calibration by this name? (The names every page uses.)
+    pub fn px4_calibration_exists(sensor: &str) -> bool {
+        dialect_for_stack(Stack::Px4).calibration(sensor).is_some()
+    }
+
     /// The calibration of a sensor, if this stack has one (a plan that cannot
     /// run carries its reason).
     pub fn calibration(&self, sensor: &str) -> Option<CommandPlan> {

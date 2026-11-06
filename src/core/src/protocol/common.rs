@@ -25,6 +25,11 @@ const RESULT_TEXT: &[(i64, &str)] = &[
     (10, "NOT_IN_CONTROL"),
 ];
 
+/// The words for a MAV_RESULT, if it has any.
+pub fn known_result_text(result: i64) -> Option<&'static str> {
+    RESULT_TEXT.iter().find(|(k, _)| *k == result).map(|(_, v)| *v)
+}
+
 /// The words for a MAV_RESULT (or one of Corvus's own negative codes).
 pub fn result_text(result: i64) -> String {
     RESULT_TEXT
@@ -36,6 +41,36 @@ pub fn result_text(result: i64) -> String {
 /// Python's `f"{value:.{digits}f}"`.
 pub fn fixed(value: f64, digits: usize) -> String {
     format!("{value:.digits$}")
+}
+
+/// Python's `f"{value:g}"`: six significant digits, trailing zeros dropped,
+/// an exponent only below 1e-4 or from 1e6.
+pub fn py_g(value: f64) -> String {
+    if value.is_nan() {
+        return "nan".into();
+    }
+    if value.is_infinite() {
+        return if value > 0.0 { "inf" } else { "-inf" }.into();
+    }
+    if value == 0.0 {
+        return if value.is_sign_negative() { "-0" } else { "0" }.into();
+    }
+    let sci = format!("{value:.5e}");
+    let (mantissa, exp) = sci.split_once('e').expect("exponent form");
+    let exp: i32 = exp.parse().expect("exponent");
+    let strip = |text: &str| -> String {
+        if text.contains('.') {
+            text.trim_end_matches('0').trim_end_matches('.').to_string()
+        } else {
+            text.to_string()
+        }
+    };
+    if !(-4..6).contains(&exp) {
+        let sign = if exp < 0 { '-' } else { '+' };
+        return format!("{}e{sign}{:02}", strip(mantissa), exp.abs());
+    }
+    let decimals = (5 - exp).max(0) as usize;
+    strip(&format!("{value:.decimals$}"))
 }
 
 /// `int(round(degrees * 1e7))`, rounding halves to even as Python does.
@@ -60,6 +95,29 @@ mod tests {
         assert_eq!(fixed(2.5, 0), "2");
         assert_eq!(fixed(512.45, 1), "512.5");
         assert_eq!(fixed(-0.4, 0), "-0");
+    }
+
+    #[test]
+    fn general_format_matches_python() {
+        let cases = [
+            (0.0, "0"),
+            (50.0, "50"),
+            (12.5, "12.5"),
+            (100.0, "100"),
+            (0.5, "0.5"),
+            (3.5, "3.5"),
+            (1234567.0, "1.23457e+06"),
+            (123456.0, "123456"),
+            (0.0001, "0.0001"),
+            (0.00001234, "1.234e-05"),
+            (2.0 / 3.0, "0.666667"),
+            (-7.25, "-7.25"),
+            (1e16, "1e+16"),
+            (99.99999, "100"),
+        ];
+        for (value, want) in cases {
+            assert_eq!(py_g(value), want, "{value}");
+        }
     }
 
     #[test]

@@ -16,6 +16,7 @@ pub mod ftp;
 pub mod link_host;
 pub mod logs;
 pub mod params;
+pub mod setup;
 pub mod shell;
 
 /// What every protocol engine asks of the bridge it runs on. A protocol that

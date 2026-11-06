@@ -1346,8 +1346,252 @@ def flight_cases() -> list[dict]:
     return out
 
 
+# --------------------------------------------------------------- setup ----
+
+class SetupStore:
+    def __init__(self, bridge) -> None:
+        self.bridge = bridge
+
+    def get_snapshot(self) -> dict:
+        return {k: v for k, v in self.bridge.snap.items() if v is not None}
+
+    def update(self, **fields) -> None:
+        self.bridge.log.append(["update", fields])
+        self.bridge.snap.update(fields)
+
+    def merge_warning(self, text, level) -> None:
+        self.bridge.log.append(["merge_warning", text, level])
+
+
+def setup_bridge_class():
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
+    from corvus import autopilot as ap
+    from tests.reference import mavlink_setup_python as ref
+
+    class SetupBridge(ref.VehicleSetupMixin):
+        def __init__(self, sc: dict) -> None:
+            self.sc = sc
+            self.log: list = []
+            self.last_error = ""
+            self._operation_lock = FlightLock()
+            self._mav_type_id = sc.get("mav_type", 2)
+            self._dialect = ap.dialect_for_stack(sc.get("stack", "px4"))
+            self.snap = {"armed": False, "mode": "", "landed_state": None, "autotune_state": None,
+                         **sc.get("snapshot", {})}
+            self._store = SetupStore(self)
+            self._mode_values = {n: (c.base_mode, c.custom_mode, c.custom_sub)
+                                 for n, c in self._dialect.mode_table(self._mav_type_id, (1, 18, 0)).items()}
+            if "mode_values" in sc:
+                self._mode_values = {n: (1, 2, 3) for n in sc["mode_values"]}
+            self.counts: dict = {}
+            self._init_setup_state()
+
+        def _connection_ready(self) -> bool:
+            return self.sc.get("ready", True)
+
+        def _set_command_error(self, text: str) -> None:
+            self.last_error = text
+            self.log.append(["error", text])
+
+        def _console_publish(self, name, text, level) -> None:
+            self.log.append(["console", name, text, level])
+
+        def _command_failure(self, action, result) -> bool:
+            self.log.append(["failure", action, result])
+            return False
+
+        def _send_command_and_wait(self, command, params=None, timeout=3.0, retries=2,
+                                   accept_in_progress=False, interim=frozenset()):
+            self.log.append(["cmd", command, list(params), timeout, retries, accept_in_progress, sorted(interim)])
+            results = self.sc.get("results", {})
+            plan = results.get(str(command), self.sc.get("default_result", 0))
+            if isinstance(plan, list):
+                n = self.counts.get(command, 0)
+                self.counts[command] = n + 1
+                return plan[min(n, len(plan) - 1)]
+            return plan
+
+        def set_mode(self, mode) -> bool:
+            self.log.append(["set_mode", mode])
+            results = self.sc.get("set_mode_results", {})
+            return results.get(mode, self.sc.get("set_mode_ok", True))
+
+        def _reset_parameter_cache(self) -> None:
+            self.log.append(["reset_cache"])
+
+    return SetupBridge
+
+
+def setup_scenarios() -> list[dict]:
+    AP = {"stack": "ardupilot", "mav_type": 2}
+    FLYING = {"armed": True, "landed_state": 2, "mode": "LOITER"}
+    return [
+        {"name": "available_calibrations", "steps": [{"op": "available"}]},
+        {"name": "available_ardupilot", **AP, "steps": [{"op": "available"}]},
+        {"name": "available_generic", "stack": "generic", "steps": [{"op": "available"}]},
+        {"name": "calibrate_every_sensor_px4", "steps": [
+            {"op": "calibrate", "sensor": s} for s in
+            ["gyro", "compass", "baro", "accel", "level", "accel_quick", "airspeed", "motor", "bogus", ""]]},
+        {"name": "calibrate_every_sensor_ardupilot", **AP, "steps": [
+            {"op": "calibrate", "sensor": s} for s in
+            ["gyro", "compass", "baro", "accel", "level", "accel_quick", "airspeed", "motor", "bogus"]]},
+        {"name": "calibrate_every_sensor_generic", "stack": "generic", "steps": [
+            {"op": "calibrate", "sensor": s} for s in ["gyro", "compass", "baro", "accel", "motor", "bogus"]]},
+        {"name": "calibrate_armed", "snapshot": {"armed": True}, "steps": [{"op": "calibrate", "sensor": "gyro"}]},
+        {"name": "calibrate_not_ready", "ready": False, "steps": [{"op": "calibrate", "sensor": "gyro"}]},
+        {"name": "calibrate_refused", "results": {"241": 4}, "steps": [
+            {"op": "calibrate", "sensor": "gyro"}, {"op": "state"}]},
+        {"name": "cancel_px4", "steps": [{"op": "calibrate", "sensor": "gyro"}, {"op": "cancel"}, {"op": "state"}]},
+        {"name": "cancel_ardupilot_compass", **AP, "steps": [
+            {"op": "calibrate", "sensor": "compass"}, {"op": "cancel"}, {"op": "state"}]},
+        {"name": "cancel_ardupilot_other", **AP, "steps": [
+            {"op": "calibrate", "sensor": "gyro"}, {"op": "cancel"}]},
+        {"name": "cancel_nothing_running", "steps": [{"op": "cancel"}]},
+        {"name": "cancel_refused_keeps_calibration", "results": {"241": [0, 4]}, "steps": [
+            {"op": "calibrate", "sensor": "gyro"}, {"op": "cancel"}, {"op": "state"}]},
+        {"name": "cancel_not_ready", "ready": False, "steps": [{"op": "cancel"}]},
+        {"name": "cancel_armed_is_fine", "snapshot": {"armed": True}, "steps": [{"op": "cancel"}]},
+        {"name": "accel_position_px4", "steps": [{"op": "accel_position", "position": "level"}]},
+        {"name": "accel_position_ardupilot", **AP, "steps": [
+            {"op": "accel_position", "position": p} for p in ["level", "LEFT", "nosedown", "noseup", "back", "right", "bogus", ""]]},
+        {"name": "accel_position_not_ready", **AP, "ready": False, "steps": [{"op": "accel_position", "position": "level"}]},
+        {"name": "accel_position_refused", **AP, "results": {"42429": 4}, "steps": [{"op": "accel_position", "position": "level"}]},
+        {"name": "motor_test_px4", "steps": [
+            {"op": "motor_test", "motor": 1, "throttle": 50.0, "duration": 2.0},
+            {"op": "motor_test", "motor": 12, "throttle": 12.5, "duration": 0.5},
+            {"op": "motor_test", "motor": 1, "throttle": 100.0, "duration": 3.5}, {"op": "state"}]},
+        {"name": "motor_test_ardupilot", **AP, "steps": [{"op": "motor_test", "motor": 3, "throttle": 20.0, "duration": 1.0}]},
+        {"name": "motor_test_generic", "stack": "generic", "steps": [{"op": "motor_test", "motor": 3, "throttle": 20.0, "duration": 1.0}]},
+        {"name": "motor_test_checks", "steps": [
+            {"op": "motor_test", "motor": 0, "throttle": 10.0, "duration": 1.0},
+            {"op": "motor_test", "motor": 17, "throttle": 10.0, "duration": 1.0},
+            {"op": "motor_test", "motor": 1, "throttle": 101.0, "duration": 1.0},
+            {"op": "motor_test", "motor": 1, "throttle": -1.0, "duration": 1.0},
+            {"op": "motor_test", "motor": 1, "throttle": "nan", "duration": 1.0}]},
+        {"name": "motor_test_duration_is_bounded", "steps": [
+            {"op": "motor_test", "motor": 1, "throttle": 10.0, "duration": 99.0},
+            {"op": "motor_test", "motor": 2, "throttle": 10.0, "duration": -4.0},
+            {"op": "motor_test", "motor": 3, "throttle": 10.0, "duration": "nan"},
+            {"op": "motor_test", "motor": 4, "throttle": 0.00001234, "duration": 0.0001},
+            {"op": "motor_test", "motor": 5, "throttle": 100.0, "duration": "inf"}]},
+        {"name": "motor_test_armed", "snapshot": {"armed": True}, "steps": [
+            {"op": "motor_test", "motor": 1, "throttle": 10.0, "duration": 1.0}]},
+        {"name": "motor_test_not_ready", "ready": False, "steps": [{"op": "motor_test", "motor": 1, "throttle": 10.0, "duration": 1.0}]},
+        {"name": "motor_test_refused", "results": {"310": 2}, "steps": [
+            {"op": "motor_test", "motor": 1, "throttle": 10.0, "duration": 1.0}, {"op": "state"}]},
+        {"name": "motor_stop_order", "steps": [
+            {"op": "motor_test", "motor": 3, "throttle": 10.0, "duration": 1.0},
+            {"op": "motor_test", "motor": 12, "throttle": 10.0, "duration": 1.0}, {"op": "stop_motor"}]},
+        {"name": "motor_stop_unconfirmed", "results": {"310": [0, 4, 0, 2]}, "steps": [{"op": "stop_motor"}]},
+        {"name": "motor_stop_ardupilot", **AP, "steps": [{"op": "stop_motor"}]},
+        {"name": "motor_stop_not_ready", "ready": False, "steps": [{"op": "stop_motor"}]},
+        {"name": "motor_stop_armed_is_fine", "snapshot": {"armed": True}, "steps": [{"op": "stop_motor"}]},
+        {"name": "autotune_px4_start_stop", "snapshot": FLYING, "results": {"212": [0, 5, 0]}, "steps": [
+            {"op": "autotune", "axis": "all", "enable": True}, {"op": "autotune", "axis": "all", "enable": True},
+            {"op": "autotune", "axis": "all", "enable": False}]},
+        {"name": "autotune_px4_axis", "snapshot": FLYING, "steps": [{"op": "autotune", "axis": "roll", "enable": True}]},
+        {"name": "autotune_px4_preconditions", "steps": [
+            {"op": "autotune", "axis": "all", "enable": True},
+            {"op": "set_snapshot", "snapshot": {"armed": True, "landed_state": 1}},
+            {"op": "autotune", "axis": "all", "enable": True},
+            {"op": "set_snapshot", "snapshot": {"armed": True, "landed_state": 0}},
+            {"op": "autotune", "axis": "all", "enable": True},
+            {"op": "set_snapshot", "snapshot": {"armed": True, "landed_state": None}},
+            {"op": "autotune", "axis": "all", "enable": True}]},
+        {"name": "autotune_px4_stop_needs_nothing", "steps": [{"op": "autotune", "axis": "all", "enable": False}]},
+        {"name": "autotune_px4_refused", "snapshot": FLYING, "results": {"212": 1}, "steps": [
+            {"op": "autotune", "axis": "all", "enable": True}, {"op": "autotune", "axis": "all", "enable": False}]},
+        {"name": "autotune_px4_not_ready", "snapshot": FLYING, "ready": False, "steps": [
+            {"op": "autotune", "axis": "all", "enable": True}]},
+        {"name": "autotune_generic", "stack": "generic", "snapshot": FLYING, "steps": [{"op": "autotune", "axis": "all", "enable": True}]},
+        {"name": "autotune_ardupilot_start_stop", **AP, "snapshot": FLYING, "steps": [
+            {"op": "autotune", "axis": "all", "enable": True}, {"op": "state"},
+            {"op": "autotune", "axis": "all", "enable": False}, {"op": "state"}]},
+        {"name": "autotune_ardupilot_already_in_mode", **AP, "snapshot": {**FLYING, "mode": "AUTOTUNE"}, "steps": [
+            {"op": "autotune", "axis": "all", "enable": True}, {"op": "state"}, {"op": "autotune", "axis": "all", "enable": False}]},
+        {"name": "autotune_ardupilot_no_airframe_mode", "stack": "ardupilot", "mav_type": 10, "snapshot": FLYING, "steps": [
+            {"op": "autotune", "axis": "all", "enable": True}]},
+        {"name": "autotune_ardupilot_plane", "stack": "ardupilot", "mav_type": 1, "snapshot": {**FLYING, "mode": "FBWA"},
+         "steps": [{"op": "autotune", "axis": "all", "enable": True}, {"op": "autotune", "axis": "all", "enable": False}]},
+        {"name": "autotune_ardupilot_preconditions", **AP, "steps": [
+            {"op": "autotune", "axis": "all", "enable": True},
+            {"op": "set_snapshot", "snapshot": {"armed": True, "landed_state": 1}},
+            {"op": "autotune", "axis": "all", "enable": True}]},
+        {"name": "autotune_ardupilot_mode_refused", **AP, "snapshot": FLYING, "set_mode_ok": False, "steps": [
+            {"op": "autotune", "axis": "all", "enable": True}, {"op": "state"}]},
+        {"name": "autotune_ardupilot_stop_without_return_mode", **AP, "snapshot": FLYING, "steps": [
+            {"op": "autotune", "axis": "all", "enable": False}]},
+        {"name": "autotune_ardupilot_stop_nothing_to_return_to", **AP, "snapshot": FLYING, "mode_values": ["AUTOTUNE", "RTL"],
+         "steps": [{"op": "autotune", "axis": "all", "enable": False}]},
+        {"name": "autotune_ardupilot_stop_refused", **AP, "snapshot": FLYING, "set_mode_results": {"LOITER": False},
+         "steps": [{"op": "autotune", "axis": "all", "enable": True}, {"op": "set_snapshot", "snapshot": {"mode": "AUTOTUNE"}},
+                   {"op": "autotune", "axis": "all", "enable": False}, {"op": "state"}]},
+        {"name": "autotune_ack_stream", "steps": [
+            {"op": "ack", "result": 5, "progress": 10}, {"op": "ack", "result": 5, "progress": 250},
+            {"op": "ack", "result": 5, "progress": -4}, {"op": "ack", "result": 5, "progress": 0},
+            {"op": "ack", "result": 0, "progress": 0}, {"op": "ack", "result": 0, "progress": 0}]},
+        {"name": "autotune_ack_accepted_without_a_run", "steps": [{"op": "ack", "result": 0, "progress": 0}]},
+        {"name": "autotune_ack_refusals", "steps": [
+            {"op": "ack", "result": 4, "progress": 0}, {"op": "ack", "result": 1, "progress": 0},
+            {"op": "ack", "result": 77, "progress": 0}, {"op": "ack", "result": -1, "progress": 0}]},
+        {"name": "reboot", "steps": [{"op": "reboot"}, {"op": "bootloader"}]},
+        {"name": "reboot_armed", "snapshot": {"armed": True}, "steps": [{"op": "reboot"}, {"op": "bootloader"}]},
+        {"name": "reboot_not_ready", "ready": False, "steps": [{"op": "reboot"}, {"op": "bootloader"}]},
+        {"name": "reboot_refused", "results": {"246": 2}, "steps": [{"op": "reboot"}, {"op": "bootloader"}]},
+    ]
+
+
+def setup_cases() -> list[dict]:
+    SetupBridge = setup_bridge_class()
+    out = []
+    for sc in setup_scenarios():
+        br = SetupBridge(sc)
+        results = []
+        for step in sc["steps"]:
+            before = len(br.log)
+            op = step["op"]
+            num = lambda v: float(v) if isinstance(v, str) else v
+            if op == "available":
+                result = br.available_calibrations()
+            elif op == "calibrate":
+                result = br.calibrate(step["sensor"])
+            elif op == "cancel":
+                result = br.cancel_calibration()
+            elif op == "accel_position":
+                result = br.accel_calibration_position(step["position"])
+            elif op == "motor_test":
+                result = br.motor_test(step["motor"], num(step["throttle"]), num(step["duration"]))
+            elif op == "stop_motor":
+                result = br.stop_motor_test()
+            elif op == "autotune":
+                result = br.autotune(step["axis"], step["enable"])
+            elif op == "ack":
+                msg = type("Ack", (), {})()
+                msg.result, msg.progress = step["result"], step["progress"]
+                br._handle_autotune_ack(msg)
+                result = None
+            elif op == "reboot":
+                result = br.reboot_autopilot()
+            elif op == "bootloader":
+                result = br.reboot_to_bootloader()
+            elif op == "set_snapshot":
+                br.snap.update(step["snapshot"])
+                result = None
+            elif op == "state":
+                result = {"active": br._active_calibration, "return_mode": br._autotune_return_mode,
+                          "tested": list(getattr(br, "_motors_tested", None) or [])}
+            else:
+                raise SystemExit(op)
+            results.append({"result": result, "events": br.log[before:]})
+        out.append({"scenario": clean(sc), "expected": clean({"steps": results, "final": {
+            "last_error": br.last_error, "active": br._active_calibration, "return_mode": br._autotune_return_mode,
+            "tested": list(getattr(br, "_motors_tested", None) or []), "snapshot": br.snap}})})
+    return out
+
+
 COMMANDS = {"params_cases.json": cases, "logs_cases.json": logs_cases, "shell_cases.json": shell_cases,
-            "ftp_cases.json": ftp_cases, "flight_cases.json": flight_cases}
+            "ftp_cases.json": ftp_cases, "flight_cases.json": flight_cases,
+            "setup_cases.json": setup_cases}
 
 
 def main(argv: list[str]) -> int:
