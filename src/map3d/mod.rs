@@ -33,7 +33,7 @@ const SPLIT_PX: f64 = 230.0;
 const GRID: usize = 16;
 const MAX_LEAVES: usize = 900;
 const TEXTURES: usize = 400;
-const IMAGE_CACHE: usize = 600;
+const IMAGE_CACHE: usize = 1000;
 /// `HILLSHADE_EXAGGERATION` of the web map, a little stronger as the shade is
 /// painted into vertex colours here and not drawn as a layer.
 const SHADE: f32 = 0.5;
