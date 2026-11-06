@@ -33,11 +33,14 @@ struct Inner<T> {
     slots: HashMap<Key, Slot<T>>,
     order: VecDeque<Key>,
     queue: VecDeque<Key>,
+    /// The weight of the tiles held, by `Shared::weigh`.
+    bytes: usize,
 }
 
 type PathOf = Arc<dyn Fn(&Key) -> String + Send + Sync>;
 
 struct Shared<T> {
+    weigh: fn(&T) -> usize,
     path: PathOf,
     retry: Duration,
     inner: Mutex<Inner<T>>,
@@ -49,26 +52,34 @@ struct Shared<T> {
 pub struct TileCache<T: Send + Sync + 'static> {
     shared: Arc<Shared<T>>,
     capacity: usize,
+    max_bytes: usize,
     threads: Vec<JoinHandle<()>>,
 }
 
 impl<T: Send + Sync + 'static> TileCache<T> {
     /// Fetches through `server` and decodes with `decode`; repaints `ctx`
-    /// whenever a tile lands.
-    pub fn new(
+    /// whenever a tile lands. Trimmed to at most `capacity` tiles and
+    /// `max_bytes` of decoded tiles as `weigh` counts them, whatever size the
+    /// tiles come in.
+    pub fn weighed(
         ctx: &egui::Context,
         server: &Server,
         capacity: usize,
+        weigh: fn(&T) -> usize,
+        max_bytes: usize,
         decode: impl Fn(&[u8]) -> Option<T> + Send + Sync + 'static,
     ) -> TileCache<T> {
-        TileCache::with_path(
+        let mut c = TileCache::build(
             ctx,
             server,
             capacity,
+            weigh,
             |k| format!("/api/tiles/{}/{}/{}/{}.png", k.0, k.1, k.2, k.3),
             RETRY_AFTER,
             decode,
-        )
+        );
+        c.max_bytes = max_bytes;
+        c
     }
 
     /// A cache of anything addressed by `(name, z, x, y)`: `path` says where
@@ -82,13 +93,27 @@ impl<T: Send + Sync + 'static> TileCache<T> {
         retry: Duration,
         decode: impl Fn(&[u8]) -> Option<T> + Send + Sync + 'static,
     ) -> TileCache<T> {
+        TileCache::build(ctx, server, capacity, |_| 0, path, retry, decode)
+    }
+
+    fn build(
+        ctx: &egui::Context,
+        server: &Server,
+        capacity: usize,
+        weigh: fn(&T) -> usize,
+        path: impl Fn(&Key) -> String + Send + Sync + 'static,
+        retry: Duration,
+        decode: impl Fn(&[u8]) -> Option<T> + Send + Sync + 'static,
+    ) -> TileCache<T> {
         let shared = Arc::new(Shared {
+            weigh,
             path: Arc::new(path),
             retry,
             inner: Mutex::new(Inner {
                 slots: HashMap::new(),
                 order: VecDeque::new(),
                 queue: VecDeque::new(),
+                bytes: 0,
             }),
             wake: Condvar::new(),
             stop: AtomicBool::new(false),
@@ -106,6 +131,7 @@ impl<T: Send + Sync + 'static> TileCache<T> {
         TileCache {
             shared,
             capacity,
+            max_bytes: usize::MAX,
             threads,
         }
     }
@@ -162,15 +188,29 @@ impl<T: Send + Sync + 'static> TileCache<T> {
             g.slots.clear();
             g.order.clear();
             g.queue.clear();
+            g.bytes = 0;
         }
+    }
+
+    /// What the tiles held weigh, as `weigh` counts them.
+    #[cfg(test)]
+    pub fn bytes(&self) -> usize {
+        self.shared.inner.lock().map_or(0, |g| g.bytes)
+    }
+
+    /// How many decoded tiles are held.
+    #[cfg(test)]
+    pub fn held(&self) -> usize {
+        self.shared.inner.lock().map_or(0, |g| g.order.len())
     }
 
     /// Evicts the oldest tiles past the capacity.
     pub fn trim(&self) {
         if let Ok(mut g) = self.shared.inner.lock() {
-            while g.order.len() > self.capacity {
-                if let Some(old) = g.order.pop_front() {
-                    g.slots.remove(&old);
+            while g.order.len() > self.capacity || (g.bytes > self.max_bytes && g.order.len() > 1) {
+                let Some(old) = g.order.pop_front() else { break };
+                if let Some(Slot::Ready(t)) = g.slots.remove(&old) {
+                    g.bytes = g.bytes.saturating_sub((self.shared.weigh)(&t));
                 }
             }
         }
@@ -212,6 +252,7 @@ fn worker<T: Send + Sync + 'static>(shared: Arc<Shared<T>>, server: Server, ctx:
             if g.slots.contains_key(&key) {
                 match tile {
                     Some(t) => {
+                        g.bytes += (shared.weigh)(&t);
                         g.slots.insert(key.clone(), Slot::Ready(Arc::new(t)));
                         g.order.push_back(key);
                     }
@@ -258,7 +299,7 @@ mod tests {
             }
         });
         let ctx = egui::Context::default();
-        let cache: TileCache<usize> = TileCache::new(&ctx, &server, 10, |b| Some(b.len()));
+        let cache: TileCache<usize> = TileCache::weighed(&ctx, &server, 10, |_| 0, usize::MAX, |b| Some(b.len()));
         let key: Key = ("sat".into(), 3, 1, 2);
         assert!(cache.get(&key).is_none(), "the first ask only queues it");
         let deadline = Instant::now() + Duration::from_secs(3);
@@ -280,5 +321,36 @@ mod tests {
             "a tile the backend does not have stays failed"
         );
         assert_eq!(hits.load(Ordering::SeqCst), 2, "and is not asked for again at once");
+    }
+
+    #[test]
+    fn a_byte_budget_trims_the_oldest_tiles_whatever_their_count() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let server = Server::local(listener.local_addr().unwrap().port());
+        std::thread::spawn(move || {
+            while let Ok((mut s, _)) = listener.accept() {
+                let mut buf = [0u8; 1024];
+                let _ = s.read(&mut buf);
+                let _ = s.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 10\r\nConnection: close\r\n\r\n0123456789");
+            }
+        });
+        let ctx = egui::Context::default();
+        let cache: TileCache<Vec<u8>> = TileCache::weighed(&ctx, &server, 100, |t| t.len(), 25, |b| Some(b.to_vec()));
+        for x in 0..5 {
+            let key: Key = ("sat".into(), 3, x, 0);
+            cache.get(&key);
+            let deadline = Instant::now() + Duration::from_secs(3);
+            while cache.peek(&key).is_none() {
+                assert!(Instant::now() < deadline, "tile {x} did not arrive");
+                std::thread::sleep(Duration::from_millis(5));
+            }
+        }
+        assert_eq!(cache.bytes(), 50);
+        cache.trim();
+        assert_eq!((cache.held(), cache.bytes()), (2, 20));
+        assert!(cache.peek(&("sat".into(), 3, 4, 0)).is_some(), "the newest stays");
+        assert!(cache.peek(&("sat".into(), 3, 0, 0)).is_none(), "the oldest goes");
+        cache.clear();
+        assert_eq!((cache.held(), cache.bytes()), (0, 0));
     }
 }

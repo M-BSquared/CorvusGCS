@@ -537,8 +537,9 @@ The interface is used in the field, so it must not crash, hang or grow.
   toast memories forgotten after their repeat window), the translation cache
   and miss set, tracks (20000 points), the HTTP client (16 KB per head line,
   200 headers, 256 MB per body, 16 MB per SSE line or event, write timeouts),
-  the 3D map (at most 1000 GPU textures and 4000 meshes, the least recently
-  drawn go first), `data::intern` (256 texts). A test holds each bound.
+  the 3D map (at most 480 GPU textures and 2400 meshes, the least recently
+  drawn go first, and 160 MB of decoded imagery and 48 MB of decoded elevation
+  on the CPU side, counted in bytes so a source with larger tiles is held too), `data::intern` (256 texts). A test holds each bound.
 - **Soak.** `python/tools/gui_soak.py` starts a sandboxed backend with a
   simulated PX4 (never the operator's own Corvus), starts the interface with
   `CORVUS_GUI_SOAK=1` and writes a CSV row every 10 s with the resident memory,
@@ -551,7 +552,13 @@ The interface is used in the field, so it must not crash, hang or grow.
 
   The driver cycles twelve steps of 4 s: the map panned and zoomed, the 3D map
   opened and moved, every page, one setup tile at a time, a Settings tab, the
-  Mission page, the language switched.
+  Mission page, the language switched. `--mode 3d` stays in the 3D map and
+  jumps between eight places (Alps, Munich, San Francisco, Everest, Tokyo,
+  Madrid, ...) every step, the worst case for the view's memory; `--max-mb N`
+  makes the script exit with 2 when the interface's footprint passes N. On the
+  development machine a 7 minute 3D run held 0.9 GB (1.2 GB before the byte
+  budgets) with a flat slope; `the_worst_case_the_view_can_hold_stays_under_a_gigabyte`
+  holds the arithmetic.
 - **Geofence round trip.** `python/tools/geofence_roundtrip.py` drives the
   fence endpoints against three sandboxed simulators (one accepting, one
   refusing, one that stops answering after two corners, `CORVUS_SIM_FENCE`).

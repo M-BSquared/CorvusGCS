@@ -98,6 +98,10 @@ def main() -> int:
     ap.add_argument("--every", type=float, default=10)
     ap.add_argument("--step", default="4", help="seconds per driver step (CORVUS_GUI_SOAK_STEP)")
     ap.add_argument("--csv", default="soak.csv")
+    ap.add_argument("--mode", default="1", choices=["1", "3d"],
+                    help="1: the full cycle of pages; 3d: stay in the 3D map and jump between places")
+    ap.add_argument("--max-mb", type=float, default=0,
+                    help="fail (exit 2) when the interface's footprint (resident size off macOS) passes this many MB")
     a = ap.parse_args()
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(1))
 
@@ -117,7 +121,7 @@ def main() -> int:
         else:
             print("the sandboxed backend did not come up", file=sys.stderr)
             return 1
-        env = dict(os.environ, CORVUS_ALLOW_MULTI="1", CORVUS_GUI_SOAK="1", CORVUS_GUI_SOAK_STEP=a.step)
+        env = dict(os.environ, CORVUS_ALLOW_MULTI="1", CORVUS_GUI_SOAK=a.mode, CORVUS_GUI_SOAK_STEP=a.step)
         app = subprocess.Popen([a.binary, "--server", f"http://127.0.0.1:{a.port}"], env=env, cwd=ROOT,
                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         t0 = time.time()
@@ -170,6 +174,10 @@ def main() -> int:
             col = [r[name] for r in rows if r.get(name) is not None]
             if len(col) >= 8:
                 print(f"{label}: first quarter {statistics.median(col[:q]):.0f} MB, last quarter {statistics.median(col[-q:]):.0f} MB, max {max(col):.0f} MB")
+        peak = max((r["appfp"] if r["appfp"] is not None else r["app"]) for r in rows)
+        if a.max_mb and peak > a.max_mb:
+            print(f"FAIL: the interface peaked at {peak:.0f} MB, over the {a.max_mb:.0f} MB bound", file=sys.stderr)
+            return 2
         print(f"app threads {rows[0]['threads']} -> {rows[-1]['threads']} (max {max(r['threads'] for r in rows)}), "
               f"fds {rows[0]['fds']} -> {rows[-1]['fds']} (max {max(r['fds'] for r in rows)})")
     return 0
