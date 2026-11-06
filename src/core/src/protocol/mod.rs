@@ -21,6 +21,7 @@ pub mod receive;
 pub mod remote_id;
 pub mod setup;
 pub mod shell;
+pub mod status;
 pub mod telemetry;
 
 /// What every protocol engine asks of the bridge it runs on. A protocol that

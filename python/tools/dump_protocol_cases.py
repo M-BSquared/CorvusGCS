@@ -3263,13 +3263,247 @@ def receive_cases() -> list[dict]:
     return out
 
 
+# --------------------------------------------------------------- status ----
+
+class StatusStore:
+    def __init__(self, bridge) -> None:
+        self.bridge = bridge
+
+    def update(self, **fields) -> None:
+        self.bridge.log.append(["update", fields])
+        self.bridge.snap.update(fields)
+
+    def get_snapshot(self) -> dict:
+        return dict(self.bridge.snap)
+
+    def resolve_warnings(self, kinds) -> None:
+        self.bridge.log.append(["resolve_warnings", sorted(kinds)])
+
+    def merge_warning(self, text, level, event=None) -> None:
+        self.bridge.log.append(["warning", text, level, event])
+
+
+class StatusMav:
+    def __init__(self, bridge) -> None:
+        self.bridge = bridge
+
+    def command_long_send(self, *args):
+        if self.bridge.sc.get("send_fails"):
+            raise OSError("boom")
+        self.bridge.log.append(["send", "command_long_send", list(args)])
+
+
+def status_bridge_class():
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
+    from corvus import autopilot as ap
+    from tests.reference import mavlink_bridge_status_python as ref
+
+    class StatusBridge(ref.StatusMixin):
+        def __init__(self, sc: dict, clock: Clock) -> None:
+            self.sc = sc
+            self.clock = clock
+            self.log: list = []
+            self.snap = dict(sc.get("snapshot", {}))
+            self._store = StatusStore(self)
+            self._send_lock = FlightSendLock(self)
+            self._conn = None if sc.get("no_connection") else type("Conn", (), {})()
+            if self._conn is not None:
+                self._conn.mav = StatusMav(self)
+            self._target_system = 1
+            self._target_component = 1
+            self._dialect = ap.dialect_for_stack(sc.get("stack", "px4"))
+            self._statustext_chunks = {}
+            self._prearm_reasons = []
+            self._prearm_reason_at = 0.0
+            self._prearm_requested_at = 0.0
+            self._kill_evidence_at = 0.0
+            self._prearm_last = None
+            self._prearm_report_started_at = 0.0
+            self._prearm_report_kill = False
+
+        def _console_publish(self, name, text, level) -> None:
+            self.log.append(["console", name, text, level])
+
+        def _store_update_warning(self, text, level, event=None) -> None:
+            self._store.merge_warning(text, level, event=event)
+
+    return StatusBridge
+
+
+def status_scenarios() -> list[dict]:
+    st = lambda text, sev=6, **kw: {"op": "text", "text": text, "severity": sev, **kw}
+    chunk = lambda text, id, seq, sev=6, **kw: {"op": "text", "text": text, "severity": sev, "id": id, "seq": seq, **kw}
+    AP = {"stack": "ardupilot"}
+    return [
+        {"name": "severities", "steps": [st("hello", n) for n in range(8)]},
+        {"name": "text_is_cut_at_the_nul_and_stripped", "steps": [
+            st("tab ends the event\t"), st("spaces   "), st("nul\x00after"), st(""), st("\x1c\x1dodd end\x1f"), st("café ✓")]},
+        {"name": "events_px4", "steps": [
+            st("Kill engaged", 6), st("Kill disengaged", 6), st("Disarmed by landing", 6), st("Disarmed by failsafe", 4),
+            st("kill-switch engaged", 2), {"op": "state"}]},
+        {"name": "events_ardupilot", **AP, "steps": [
+            st("RC7: MotorEStop HIGH", 6), st("RC7: MotorEStop LOW", 6), st("RC12: MotorEStop HIGH", 2), {"op": "state"}]},
+        {"name": "events_worst_level_wins", "steps": [
+            st("Kill engaged", 2), st("Kill disengaged", 6), st("Disarmed by landing", 2), st("Disarmed by landing", 6)]},
+        {"name": "unkill_clears_the_termination", "snapshot": {"kill_switch": True, "flight_termination": True}, "steps": [
+            st("Kill disengaged"), {"op": "state"}]},
+        {"name": "unkill_without_the_switch", "snapshot": {"flight_termination": True}, "steps": [st("Kill disengaged")]},
+        {"name": "routine_lines_stay_off_the_board", "steps": [
+            st("[logger] Opened full log file", 6), st("[logger] Opened full log file", 4), st("Calibration done", 6)]},
+        {"name": "routine_lines_ardupilot", **AP, "steps": [st("[logger] Opened full log file", 6)]},
+        {"name": "prearm_failures_px4", "steps": [
+            st("Preflight Fail: Compass 0 uncalibrated", 4), st("Preflight Fail: Compass 0 uncalibrated", 4),
+            st("Preflight Fail: Baro 0 missing", 4), st("Preflight Fail: ", 4), {"op": "state"}]},
+        {"name": "prearm_failures_ardupilot", **AP, "steps": [
+            st("PreArm: Compass not calibrated", 4), st("Arm: Throttle not zero", 4), st("PreArm:", 4), {"op": "state"}]},
+        {"name": "prearm_reasons_are_capped", "steps": [
+            *[st(f"Preflight Fail: reason {i}", 4) for i in range(24)], {"op": "state"}]},
+        {"name": "a_new_report_starts_after_a_gap", "steps": [
+            st("Preflight Fail: first", 4), {"op": "advance", "seconds": 1.0}, st("Preflight Fail: second", 4),
+            {"op": "state"}, {"op": "advance", "seconds": 2.5}, st("Preflight Fail: third", 4), {"op": "state"}]},
+        {"name": "kill_named_by_a_failing_check", "steps": [
+            st("Preflight Fail: Kill switch engaged", 4), {"op": "state"}, st("Preflight Fail: Kill switch engaged", 4)]},
+        {"name": "kill_named_by_a_check_when_the_switch_is_known", "snapshot": {"kill_switch": True}, "steps": [
+            st("Preflight Fail: Kill switch engaged", 4), {"op": "state"}]},
+        {"name": "kill_named_by_a_check_ardupilot", **AP, "steps": [st("PreArm: Motors Emergency Stopped", 4), {"op": "state"}]},
+        {"name": "chunks_in_order", "steps": [
+            chunk("A" * 50, 5, 0), chunk("B" * 20, 5, 1), {"op": "state"}]},
+        {"name": "chunks_out_of_order", "steps": [
+            chunk("B" * 20, 6, 1), chunk("A" * 50, 6, 0), {"op": "state"}]},
+        {"name": "chunks_three", "steps": [
+            chunk("A" * 50, 7, 0, 6), chunk("B" * 50, 7, 1, 3), chunk("C" * 5, 7, 2, 5), {"op": "state"}]},
+        {"name": "chunks_missing_one", "steps": [
+            chunk("A" * 50, 8, 0), chunk("C" * 5, 8, 2), {"op": "state"}, chunk("B" * 50, 8, 1), {"op": "state"}]},
+        {"name": "chunks_from_two_senders", "steps": [
+            chunk("A" * 50, 9, 0, system=1, component=1), chunk("X" * 50, 9, 0, system=2, component=1),
+            chunk("B" * 5, 9, 1, system=1, component=1), chunk("Y" * 5, 9, 1, system=2, component=1), {"op": "state"}]},
+        {"name": "chunks_time_out", "steps": [
+            chunk("A" * 50, 10, 0), {"op": "state"}, {"op": "advance", "seconds": 11.0}, chunk("Z" * 5, 11, 0), {"op": "state"},
+            {"op": "cleanup"}, {"op": "state"}]},
+        {"name": "chunks_complete_without_a_terminator", "steps": [
+            chunk("A" * 50, 12, 0), chunk("B" * 50, 12, 1), chunk("C" * 50, 12, 2), {"op": "state"}]},
+        {"name": "chunks_are_capped", "steps": [
+            *[x for i in range(66) for x in (chunk("A" * 50, 100 + i, 0), {"op": "advance", "seconds": 0.01})], {"op": "state"},
+            chunk("B" * 5, 100, 1), chunk("B" * 5, 165, 1), {"op": "state"}]},
+        {"name": "chunk_with_a_known_event", "steps": [chunk("Kill ", 13, 0, 6), chunk("engaged", 13, 1, 6)]},
+        {"name": "prearm_pass_clears_the_reasons", "steps": [
+            st("Preflight Fail: Compass", 4), {"op": "prearm", "value": True}, {"op": "state"}]},
+        {"name": "prearm_pass_releases_the_kill_switch_after_settling", "snapshot": {"kill_switch": True, "flight_termination": True},
+         "steps": [{"op": "kill_evidence", "at": 1000.0}, {"op": "prearm", "value": True}, {"op": "advance", "seconds": 3.0},
+                   {"op": "prearm", "value": True}, {"op": "state"}]},
+        {"name": "prearm_pass_armed_says_nothing_about_the_switch", "snapshot": {"kill_switch": True, "armed": True}, "steps": [
+            {"op": "prearm", "value": True}]},
+        {"name": "prearm_pass_resolves_the_kill_warning", "steps": [{"op": "prearm", "value": True}]},
+        {"name": "prearm_none_is_ignored", "steps": [{"op": "prearm", "value": None}, {"op": "state"}]},
+        {"name": "prearm_refused_asks_for_the_report", "steps": [
+            {"op": "advance", "seconds": 31.0}, {"op": "prearm", "value": False}, {"op": "prearm", "value": False},
+            {"op": "advance", "seconds": 31.0}, {"op": "prearm", "value": False}, {"op": "state"}]},
+        {"name": "prearm_refused_with_reasons_does_not_ask", "steps": [
+            st("Preflight Fail: Compass", 4), {"op": "advance", "seconds": 40.0}, {"op": "prearm", "value": False}]},
+        {"name": "prearm_turning_bad_asks_at_once", "steps": [
+            {"op": "advance", "seconds": 5.0}, {"op": "prearm", "value": True}, {"op": "prearm", "value": False},
+            {"op": "advance", "seconds": 1.0}, {"op": "prearm", "value": True}, {"op": "prearm", "value": False},
+            {"op": "advance", "seconds": 2.5}, {"op": "prearm", "value": True}, {"op": "prearm", "value": False}]},
+        {"name": "prearm_turning_bad_while_armed", "snapshot": {"armed": True}, "steps": [
+            {"op": "advance", "seconds": 5.0}, {"op": "prearm", "value": True}, {"op": "prearm", "value": False}]},
+        {"name": "kill_is_rechecked_on_ardupilot", **AP, "snapshot": {"kill_switch": True}, "steps": [
+            {"op": "kill_evidence", "at": 1000.0}, {"op": "advance", "seconds": 4.0}, {"op": "prearm", "value": False},
+            {"op": "advance", "seconds": 4.5}, {"op": "prearm", "value": False},
+            {"op": "advance", "seconds": 1.5}, {"op": "prearm", "value": False}, {"op": "advance", "seconds": 5.0},
+            {"op": "prearm", "value": False}]},
+        {"name": "kill_is_not_rechecked_on_px4", "snapshot": {"kill_switch": True}, "steps": [
+            {"op": "kill_evidence", "at": 1000.0}, {"op": "advance", "seconds": 6.0}, {"op": "prearm", "value": False}]},
+        {"name": "a_whole_report_without_the_kill_releases_it", **AP, "snapshot": {"kill_switch": True},
+         "steps": [{"op": "kill_evidence", "at": 990.0}, {"op": "advance", "seconds": 10.0}, {"op": "prearm", "value": False},
+                   {"op": "advance", "seconds": 0.5}, st("PreArm: Compass not calibrated", 4), {"op": "advance", "seconds": 3.0},
+                   {"op": "prearm", "value": False}, {"op": "state"}]},
+        {"name": "a_report_naming_the_kill_keeps_it", **AP, "snapshot": {"kill_switch": True},
+         "steps": [{"op": "kill_evidence", "at": 990.0}, {"op": "advance", "seconds": 10.0}, {"op": "prearm", "value": False},
+                   {"op": "advance", "seconds": 0.5}, st("PreArm: Motors Emergency Stopped", 4), {"op": "advance", "seconds": 3.0},
+                   {"op": "prearm", "value": False}, {"op": "state"}]},
+        {"name": "a_report_still_arriving_is_not_judged", **AP, "snapshot": {"kill_switch": True},
+         "steps": [{"op": "kill_evidence", "at": 990.0}, {"op": "advance", "seconds": 10.0}, {"op": "prearm", "value": False},
+                   {"op": "advance", "seconds": 0.5}, st("PreArm: Compass not calibrated", 4), {"op": "advance", "seconds": 1.0},
+                   {"op": "prearm", "value": False}, {"op": "state"}]},
+        {"name": "report_request", "steps": [{"op": "request"}]},
+        {"name": "report_request_without_a_link", "no_connection": True, "steps": [{"op": "request"}]},
+        {"name": "report_request_fails", "send_fails": True, "steps": [{"op": "request"}]},
+        {"name": "clearing_the_reasons", "steps": [st("Preflight Fail: Compass", 4), {"op": "clear"}, {"op": "state"}]},
+    ]
+
+
+def status_cases() -> list[dict]:
+    import logging
+
+    StatusBridge = status_bridge_class()
+    out = []
+    for sc in status_scenarios():
+        clock = Clock()
+        clock.t = 1000.0
+        br = StatusBridge(sc, clock)
+
+        class Capture(logging.Handler):
+            def emit(self, record):
+                br.log.append(["log", record.levelname.lower(), record.getMessage()])
+
+        handler = Capture()
+        logger = logging.getLogger("corvus.mavlink")
+        logger.addHandler(handler)
+        old_level = logger.level
+        logger.setLevel(logging.DEBUG)
+
+        def monotonic(clock=clock):
+            return clock.t
+
+        results = []
+        try:
+            with mock.patch("time.monotonic", monotonic):
+                for step in sc["steps"]:
+                    before = len(br.log)
+                    op = step["op"]
+                    result = None
+                    if op == "text":
+                        fields = {"severity": step["severity"], "text": step["text"].encode("utf-8")}
+                        if "id" in step:
+                            fields["id"], fields["chunk_seq"] = step["id"], step["seq"]
+                        msg = receive_message("STATUSTEXT", fields, step.get("system", 1), step.get("component", 1))
+                        br._handle_statustext(msg)
+                    elif op == "cleanup":
+                        br._cleanup_statustext_chunks()
+                    elif op == "advance":
+                        clock.t += step["seconds"]
+                    elif op == "prearm":
+                        br._note_prearm_state(step["value"])
+                    elif op == "kill_evidence":
+                        br._kill_evidence_at = step["at"]
+                    elif op == "request":
+                        br._request_prearm_report()
+                    elif op == "clear":
+                        br._clear_prearm_reasons()
+                    elif op == "state":
+                        result = {"reasons": list(br._prearm_reasons), "reason_at": br._prearm_reason_at,
+                                  "requested_at": br._prearm_requested_at, "kill_evidence": br._kill_evidence_at,
+                                  "partials": len(br._statustext_chunks), "report_kill": br._prearm_report_kill,
+                                  "report_started": br._prearm_report_started_at, "last": br._prearm_last,
+                                  "snapshot": dict(br.snap)}
+                    else:
+                        raise SystemExit(op)
+                    results.append({"result": result, "events": br.log[before:], "t": round(clock.t - 1000.0, 6)})
+        finally:
+            logger.removeHandler(handler)
+            logger.setLevel(old_level)
+        out.append({"scenario": clean(sc), "expected": clean({"steps": results, "final": {}})})
+    return out
+
+
 COMMANDS = {"params_cases.json": cases, "logs_cases.json": logs_cases, "shell_cases.json": shell_cases,
             "ftp_cases.json": ftp_cases, "flight_cases.json": flight_cases,
             "setup_cases.json": setup_cases,
             "telemetry_cases.json": telemetry_cases,
             "missions_cases.json": mission_cases,
             "remote_id_cases.json": rid_cases,
-            "receive_cases.json": receive_cases}
+            "receive_cases.json": receive_cases,
+            "status_cases.json": status_cases}
 
 
 def main(argv: list[str]) -> int:
