@@ -10,3 +10,6 @@ description = "The Corvus GCS backend as a library: router, state store, setting
 # preserve_order: a settings file keeps the order its keys were written in,
 # as Python's dict does, so the Rust and the Python program can share a folder.
 serde_json = { version = "1", features = ["preserve_order"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

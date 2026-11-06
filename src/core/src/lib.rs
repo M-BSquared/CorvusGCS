@@ -55,21 +55,33 @@
 //! * **Threads.** A module starts its threads in `start` and joins every one in
 //!   `stop` (reverse order, once). A loop that sleeps uses
 //!   `core.wait_stopping(duration)` so shutdown does not wait for it.
+//! * **State and events.** `core.store()` is the [`store::VehicleStateStore`]
+//!   (same keys, rates and event semantics as `state_store.py`); a module that
+//!   produces events registers a [`Topic`] and writes into the sink it is
+//!   handed. `/api/state`, `/api/telemetry` and `/api/events` are the
+//!   foundation's.
 //! * **JSON.** `serde_json::Value` with `preserve_order`; [`json::num`] turns
 //!   NaN and infinity into `0.0` as `_sanitize` does; [`json::error`] is
 //!   `{"error": ...}`. A response equals the Python one as parsed JSON.
 
+pub mod buffer;
+pub mod clock;
 pub mod json;
 pub mod request;
 pub mod response;
+pub mod store;
 
 mod core;
+pub mod events;
 mod foundation;
+mod hub;
 mod module;
 mod router;
 mod unported;
 
 pub use crate::core::{Core, CoreBuilder, Options};
+pub use crate::events::{Binding, Topic};
+pub use crate::hub::StoreHub;
 pub use crate::module::{Guard, Module, Registry};
 pub use crate::request::{Headers, Method, Origin, Query, Request};
 pub use crate::response::{Response, SseEvent, SseNext, SseStream, UNAVAILABLE};

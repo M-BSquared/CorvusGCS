@@ -8,6 +8,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
+use crate::events::Topic;
 use crate::json::{self, Map};
 use crate::module::{Guard, Module, Registry};
 use crate::request::{Method, Origin, Request};
@@ -57,12 +58,14 @@ impl CoreBuilder {
             router,
             guards,
             services,
+            topics,
             ..
         } = reg;
         Ok(Core(Arc::new(Inner {
             options: self.options,
             router,
             guards,
+            topics,
             modules,
             services: RwLock::new(services),
             started: Mutex::new(0),
@@ -82,6 +85,7 @@ struct Inner {
     options: Options,
     router: Router,
     guards: Vec<Guard>,
+    topics: Vec<Topic>,
     modules: Vec<Arc<dyn Module>>,
     services: RwLock<HashMap<TypeId, Arc<dyn Any + Send + Sync>>>,
     started: Mutex<usize>,
@@ -167,6 +171,22 @@ impl Core {
     pub fn insert_service<T: Any + Send + Sync>(&self, value: Arc<T>) -> bool {
         let mut map = self.0.services.write().unwrap_or_else(|e| e.into_inner());
         map.insert(TypeId::of::<T>(), value).is_none()
+    }
+
+    /// The event topic named `name`.
+    pub fn topic(&self, name: &str) -> Option<&Topic> {
+        self.0.topics.iter().find(|t| t.name == name)
+    }
+
+    pub fn topic_names(&self) -> Vec<&'static str> {
+        self.0.topics.iter().map(|t| t.name).collect()
+    }
+
+    /// The state store of the vehicle being flown.
+    pub fn store(&self) -> Arc<crate::store::VehicleStateStore> {
+        self.service::<crate::hub::StoreHub>()
+            .expect("the foundation registers the store hub")
+            .current()
     }
 
     pub fn options(&self) -> &Options {

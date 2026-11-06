@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::core::Core;
+use crate::events::Topic;
 use crate::request::{Method, Request};
 use crate::response::Response;
 use crate::router::{Body, Handler, Route, RouteOptions, Router};
@@ -39,6 +40,7 @@ pub struct Registry {
     pub(crate) router: Router,
     pub(crate) guards: Vec<Guard>,
     pub(crate) services: HashMap<TypeId, Arc<dyn Any + Send + Sync>>,
+    pub(crate) topics: Vec<Topic>,
     pub(crate) errors: Vec<String>,
     module: &'static str,
 }
@@ -49,6 +51,7 @@ impl Registry {
             router: Router::default(),
             guards: Vec::new(),
             services: HashMap::new(),
+            topics: Vec::new(),
             errors: Vec::new(),
             module: "core",
         }
@@ -120,6 +123,16 @@ impl Registry {
         F: Fn(&Core, &Request) -> Option<Response> + Send + Sync + 'static,
     {
         self.guards.push(Arc::new(f));
+    }
+
+    /// An event topic for `/api/events?topics=NAME` (see `events::Topic`).
+    pub fn topic(&mut self, topic: Topic) {
+        if self.topics.iter().any(|t| t.name == topic.name) {
+            self.errors
+                .push(format!("{}: topic {} is registered twice", self.module, topic.name));
+            return;
+        }
+        self.topics.push(topic);
     }
 
     /// Makes `value` reachable from every module as `core.service::<T>()`.
