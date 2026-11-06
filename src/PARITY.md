@@ -149,6 +149,7 @@ otherwise; "native file" is in `src/`.
 | MCP settings, permissions, connect dialog, token | settings-mcp.js | settings/conn_cards.rs | done |
 | Settings export and import | settings-transfer.js | settings/data_cards.rs | done |
 | Logs page | sidenav.js | logs/ | done |
+| Every path of a file or folder on this computer is chosen with the system file dialog, not typed (a deliberate difference: the web page cannot open one); a backend side path is a text box for a remote `--server` | settings-transfer.js, sidenav.js, analysis.js, setup-parameters.js, setup-firmware.js, panel.js | ui/pathfield.rs, ui/filepicker.rs, settings/, analysis/, setup/, plugins/ssh_setup.rs | done: looked at in screenshots, the native dialog itself not clicked (sandbox) |
 | Analysis: logs, Flight Review, Telemetry Review, Live Messages | analysis.js | analysis/ | done |
 | Review ground track over satellite imagery: the Chart / Satellite switch, the layer rule, fit with 36 px padding, the key, the zoom buttons, ctrl + scroll to zoom with its hint | analysis.js | analysis/trackmap.rs, analysis/review.rs | done: seen against the simulator's flight log on the Esri layer; the imagery's square corners poke 2 px past the rounded border |
 
