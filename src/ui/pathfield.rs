@@ -16,8 +16,11 @@ use eframe::egui::{self, Pos2, Rect, Vec2};
 use crate::ui::button::{Button, Variant};
 use crate::ui::card::{self, Look};
 use crate::ui::filepicker::{self, Filter};
-use crate::ui::formfield::{self, CONTROL_H};
+use crate::ui::formfield::CONTROL_H;
 use crate::ui::style;
+
+/// The narrowest a box is left before the buttons move under it.
+const MIN_BOX: f32 = 230.0;
 
 static BACKEND_REMOTE: AtomicBool = AtomicBool::new(false);
 
@@ -44,6 +47,7 @@ pub enum Mode<'a> {
     /// A file or a folder, as the person prefers.
     Either(Option<Filter<'a>>),
     /// A file to write: its suggested name, optionally of a kind.
+    #[allow(dead_code)]
     Save { name: &'a str, filter: Option<Filter<'a>> },
 }
 
@@ -86,6 +90,16 @@ pub enum Picked {
     Cleared,
 }
 
+impl Picked {
+    /// The path as the config stores it: the whole path, empty when cleared.
+    pub fn text(&self) -> String {
+        match self {
+            Picked::Chosen(p) => p.to_string_lossy().into_owned(),
+            Picked::Cleared => String::new(),
+        }
+    }
+}
+
 /// A path field: what it asks for and how it is dressed.
 pub struct PathField<'a> {
     pub mode: Mode<'a>,
@@ -97,6 +111,10 @@ pub struct PathField<'a> {
     pub optional: bool,
     /// The path is read on the backend's machine, not here.
     pub backend: bool,
+    /// Where the dialog opens while nothing is chosen (`~/.ssh` for a key).
+    pub opens_in: &'a str,
+    /// The box's height where a page's field is not 32.5 px.
+    pub height: f32,
 }
 
 impl<'a> PathField<'a> {
@@ -107,7 +125,19 @@ impl<'a> PathField<'a> {
             placeholder: "",
             optional: false,
             backend: false,
+            opens_in: "",
+            height: CONTROL_H,
         }
+    }
+
+    pub fn height(mut self, h: f32) -> Self {
+        self.height = h;
+        self
+    }
+
+    pub fn opens_in(mut self, folder: &'a str) -> Self {
+        self.opens_in = folder;
+        self
     }
 
     pub fn placeholder(mut self, text: &'a str) -> Self {
@@ -130,8 +160,42 @@ impl<'a> PathField<'a> {
         self.backend && backend_remote()
     }
 
-    /// The field `w` wide at `x, y`, [`CONTROL_H`] tall. `value` is the path
-    /// shown; it is replaced by what is chosen, which is also returned.
+    /// The buttons, their widths, the box's width and whether the buttons sit
+    /// on a row of their own because the box would be too narrow to read.
+    #[allow(clippy::type_complexity)]
+    fn plan(&self, ui: &egui::Ui, w: f32) -> (Vec<(Option<Action>, &'static str)>, Vec<f32>, f32, bool) {
+        let mut buttons: Vec<(Option<Action>, &'static str)> =
+            self.mode.actions().into_iter().map(|(a, l)| (Some(a), l)).collect();
+        if self.optional {
+            buttons.push((None, "Clear"));
+        }
+        let widths: Vec<f32> = buttons
+            .iter()
+            .map(|(_, l)| Button::new(l, Variant::Secondary).small().width(ui))
+            .collect();
+        let total: f32 = widths.iter().sum::<f32>() + 6.0 * (buttons.len() as f32 - 1.0);
+        let beside = w - total - 8.0;
+        if beside >= MIN_BOX {
+            (buttons, widths, beside, false)
+        } else {
+            (buttons, widths, w, true)
+        }
+    }
+
+    /// How tall the field is at width `w`: the box, and a row of buttons
+    /// under it when they do not fit beside it.
+    pub fn height_for(&self, ui: &egui::Ui, w: f32) -> f32 {
+        if self.typed() || !self.plan(ui, w).3 {
+            self.height
+        } else {
+            2.0 * self.height + 6.0
+        }
+    }
+
+    /// The field `w` wide at `x, y`, [`PathField::height`] tall. `value` is the path
+    /// shown; it is replaced by what is chosen, which is also returned. As a
+    /// text box the answer comes when the box loses focus, so a caller treats
+    /// both kinds the same.
     pub fn show(
         &self,
         ui: &mut egui::Ui,
@@ -142,22 +206,24 @@ impl<'a> PathField<'a> {
         id: impl std::hash::Hash + std::fmt::Debug,
     ) -> Option<Picked> {
         if self.typed() {
-            formfield::input(ui, x, y, w, value, self.placeholder, true, false, id);
-            return None;
+            let rect = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, self.height));
+            let resp = crate::ui::field::TextField::new(value)
+                .hint(self.placeholder)
+                .mono(true)
+                .pad(11.0, 11.0)
+                .show(ui, rect, id);
+            return resp.lost_focus().then(|| {
+                let typed = value.trim();
+                if typed.is_empty() {
+                    Picked::Cleared
+                } else {
+                    Picked::Chosen(PathBuf::from(typed))
+                }
+            });
         }
         let id = ui.scope_id().with(id);
-        let mut buttons: Vec<(Option<Action>, &str)> =
-            self.mode.actions().into_iter().map(|(a, l)| (Some(a), l)).collect();
-        if self.optional {
-            buttons.push((None, "Clear"));
-        }
-        let widths: Vec<f32> = buttons
-            .iter()
-            .map(|(_, l)| Button::new(l, Variant::Secondary).small().width(ui))
-            .collect();
-        let total: f32 = widths.iter().sum::<f32>() + 6.0 * (buttons.len() as f32 - 1.0);
-        let box_w = (w - total - 8.0).max(60.0);
-        let rect = Rect::from_min_size(Pos2::new(x, y), Vec2::new(box_w, CONTROL_H));
+        let (buttons, widths, box_w, stacked) = self.plan(ui, w);
+        let rect = Rect::from_min_size(Pos2::new(x, y), Vec2::new(box_w, self.height));
         card::paint(
             ui.painter(),
             rect,
@@ -183,9 +249,13 @@ impl<'a> PathField<'a> {
             hovered.on_hover_text(value.as_str());
         }
         let mut out = None;
-        let mut bx = x + box_w + 8.0;
+        let (mut bx, by) = if stacked {
+            (x, y + self.height + 6.0)
+        } else {
+            (x + box_w + 8.0, y)
+        };
         for (i, (action, label)) in buttons.iter().enumerate() {
-            let r = Rect::from_min_size(Pos2::new(bx, y), Vec2::new(widths[i], CONTROL_H));
+            let r = Rect::from_min_size(Pos2::new(bx, by), Vec2::new(widths[i], self.height));
             bx += widths[i] + 6.0;
             if Button::new(label, Variant::Secondary)
                 .small()
@@ -193,7 +263,7 @@ impl<'a> PathField<'a> {
             {
                 match action {
                     Some(a) => {
-                        let start = filepicker::start_folder(value);
+                        let start = filepicker::start_folder(value).or_else(|| filepicker::start_folder(self.opens_in));
                         if let Some(p) = run(*a, &self.mode, self.title, start.as_deref()) {
                             *value = p.to_string_lossy().into_owned();
                             out = Some(Picked::Chosen(p));

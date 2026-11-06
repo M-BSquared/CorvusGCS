@@ -13,7 +13,7 @@ pub struct Filter<'a> {
 }
 
 fn dialog(title: &str, start: Option<&Path>) -> rfd::FileDialog {
-    let mut d = rfd::FileDialog::new().set_title(title);
+    let mut d = rfd::FileDialog::new().set_title(crate::i18n::tr(title).as_ref());
     if let Some(dir) = start {
         d = d.set_directory(dir);
     }
@@ -24,7 +24,7 @@ fn dialog(title: &str, start: Option<&Path>) -> rfd::FileDialog {
 pub fn pick_file(title: &str, filter: Option<Filter<'_>>, start: Option<&Path>) -> Option<PathBuf> {
     let mut d = dialog(title, start);
     if let Some(f) = filter {
-        d = d.add_filter(f.name, f.extensions);
+        d = d.add_filter(crate::i18n::tr(f.name).as_ref(), f.extensions);
     }
     d.pick_file()
 }
@@ -38,7 +38,7 @@ pub fn pick_folder(title: &str, start: Option<&Path>) -> Option<PathBuf> {
 pub fn save_file(title: &str, name: &str, filter: Option<Filter<'_>>, start: Option<&Path>) -> Option<PathBuf> {
     let mut d = dialog(title, start).set_file_name(name);
     if let Some(f) = filter {
-        d = d.add_filter(f.name, f.extensions);
+        d = d.add_filter(crate::i18n::tr(f.name).as_ref(), f.extensions);
     }
     d.save_file()
 }

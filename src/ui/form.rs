@@ -162,8 +162,9 @@ pub fn path(
     };
     let mut out = None;
     self::field(ui, f, label, info, &hint, |ui, x, y, w| {
+        let h = field.height_for(ui, w);
         out = formfield::path(ui, x, y, w, field, value, id);
-        CONTROL_H
+        h
     });
     out
 }
