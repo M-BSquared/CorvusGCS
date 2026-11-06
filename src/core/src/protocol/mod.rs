@@ -10,6 +10,8 @@
 
 use corvus_link::plain::{defs::Wire, Message, Value};
 
+pub mod common;
+pub mod flight;
 pub mod ftp;
 pub mod link_host;
 pub mod logs;

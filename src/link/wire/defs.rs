@@ -220,6 +220,18 @@ pub fn constant_or(name: &str, fallback: i64) -> i64 {
     constant(name).unwrap_or(fallback)
 }
 
+/// The name of the entry of enum *enum_name* that has *value*, as
+/// `mavutil.mavlink.enums[enum_name].get(value).name` answers.
+pub fn enum_entry_name(enum_name: &str, value: i64) -> Option<&'static str> {
+    ENUMS
+        .iter()
+        .find(|e| e.name == enum_name)?
+        .entries
+        .iter()
+        .find(|entry| entry.value == value && !entry.name.ends_with("_ENUM_END"))
+        .map(|entry| entry.name)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

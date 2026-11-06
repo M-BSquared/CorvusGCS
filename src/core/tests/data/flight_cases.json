@@ -1,0 +1,9057 @@
+{
+ "cases": [
+  {
+   "scenario": {
+    "name": "mode_ok",
+    "initial": {},
+    "steps": [
+     {
+      "op": "set_mode",
+      "mode": "LOITER"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        176,
+        [
+         29.0,
+         4.0,
+         3.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1,
+        false
+       ],
+       [
+        "console",
+        "MODE",
+        "Mode accepted: LOITER",
+        "success"
+       ]
+      ],
+      "t": 0.1
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "mode_not_ready",
+    "ready": false,
+    "steps": [
+     {
+      "op": "set_mode",
+      "mode": "LOITER"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "failure",
+        "Mode change",
+        -2
+       ]
+      ],
+      "t": 0.0
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "mode_unknown",
+    "steps": [
+     {
+      "op": "set_mode",
+      "mode": "WARP"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "log",
+        "error",
+        "Unknown or unsupported PX4 mode: WARP"
+       ],
+       [
+        "error",
+        "Unknown or unsupported PX4 mode: WARP"
+       ]
+      ],
+      "t": 0.0
+     }
+    ],
+    "final": {
+     "last_error": "Unknown or unsupported PX4 mode: WARP",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "mode_unsupported_autopilot",
+    "stack": "generic",
+    "modes_unsupported": true,
+    "steps": [
+     {
+      "op": "set_mode",
+      "mode": "LOITER"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "log",
+        "error",
+        "Mode changes are not supported on this autopilot: Corvus does not know how it encodes a mode"
+       ],
+       [
+        "error",
+        "Mode changes are not supported on this autopilot: Corvus does not know how it encodes a mode"
+       ]
+      ],
+      "t": 0.0
+     }
+    ],
+    "final": {
+     "last_error": "Mode changes are not supported on this autopilot: Corvus does not know how it encodes a mode",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "mode_generic_unknown",
+    "stack": "generic",
+    "steps": [
+     {
+      "op": "set_mode",
+      "mode": "LOITER"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "log",
+        "error",
+        "Unknown or unsupported Generic mode: LOITER"
+       ],
+       [
+        "error",
+        "Unknown or unsupported Generic mode: LOITER"
+       ]
+      ],
+      "t": 0.0
+     }
+    ],
+    "final": {
+     "last_error": "Unknown or unsupported Generic mode: LOITER",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "mode_refused",
+    "results": {
+     "176": 4
+    },
+    "steps": [
+     {
+      "op": "set_mode",
+      "mode": "RTL"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        176,
+        [
+         29.0,
+         4.0,
+         5.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1,
+        false
+       ],
+       [
+        "failure",
+        "Mode change",
+        4
+       ]
+      ],
+      "t": 0.1
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "mode_ardupilot",
+    "stack": "ardupilot",
+    "mav_type": 2,
+    "steps": [
+     {
+      "op": "set_mode",
+      "mode": "LOITER"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        176,
+        [
+         1.0,
+         5.0,
+         0.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1,
+        false
+       ],
+       [
+        "console",
+        "MODE",
+        "Mode accepted: LOITER",
+        "success"
+       ]
+      ],
+      "t": 0.1
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "arm_confirmed",
+    "reactions": [
+     {
+      "cmd": 400,
+      "param": [
+       0,
+       1.0
+      ],
+      "set": {
+       "armed": true
+      },
+      "after": 0.5
+     },
+     {
+      "cmd": 400,
+      "param": [
+       0,
+       0.0
+      ],
+      "set": {
+       "armed": false
+      },
+      "after": 0.5
+     }
+    ],
+    "steps": [
+     {
+      "op": "arm",
+      "arm": true
+     },
+     {
+      "op": "arm",
+      "arm": false
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        400,
+        [
+         1.0,
+         0.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        2,
+        false
+       ],
+       [
+        "console",
+        "ARM",
+        "Armed successfully",
+        "success"
+       ]
+      ],
+      "t": 0.65
+     },
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        400,
+        [
+         0.0,
+         0.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        2,
+        false
+       ],
+       [
+        "console",
+        "ARM",
+        "Disarmed successfully",
+        "success"
+       ]
+      ],
+      "t": 1.3
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "arm_never_confirmed",
+    "steps": [
+     {
+      "op": "arm",
+      "arm": true
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        400,
+        [
+         1.0,
+         0.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        2,
+        false
+       ],
+       [
+        "console",
+        "ARM",
+        "Arm accepted by the vehicle, but no telemetry confirmation within 6s. Check the armed indicator",
+        "warning"
+       ],
+       [
+        "warn",
+        "Arm accepted by the vehicle, but no telemetry confirmation within 6s. Check the armed indicator",
+        "warning"
+       ]
+      ],
+      "t": 6.15
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "arm_confirmed_late",
+    "reactions": [
+     {
+      "cmd": 400,
+      "param": [
+       0,
+       1.0
+      ],
+      "set": {
+       "armed": true
+      },
+      "after": 5.0
+     }
+    ],
+    "steps": [
+     {
+      "op": "arm",
+      "arm": true
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        400,
+        [
+         1.0,
+         0.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        2,
+        false
+       ],
+       [
+        "console",
+        "ARM",
+        "Armed successfully",
+        "success"
+       ]
+      ],
+      "t": 5.15
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": true,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "arm_refused",
+    "results": {
+     "400": 2
+    },
+    "steps": [
+     {
+      "op": "arm",
+      "arm": true
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        400,
+        [
+         1.0,
+         0.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        2,
+        false
+       ],
+       [
+        "failure",
+        "Arm",
+        2
+       ]
+      ],
+      "t": 0.1
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "arm_no_ack",
+    "results": {
+     "400": -1
+    },
+    "initial": {
+     "armed": true
+    },
+    "steps": [
+     {
+      "op": "arm",
+      "arm": true
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        400,
+        [
+         1.0,
+         0.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        2,
+        false
+       ],
+       [
+        "failure",
+        "Arm",
+        -1
+       ]
+      ],
+      "t": 0.1
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": true,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "arm_already_armed_failed",
+    "results": {
+     "400": 4
+    },
+    "initial": {
+     "armed": true
+    },
+    "steps": [
+     {
+      "op": "arm",
+      "arm": true
+     },
+     {
+      "op": "arm",
+      "arm": false
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        400,
+        [
+         1.0,
+         0.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        2,
+        false
+       ],
+       [
+        "stale_check",
+        2.0
+       ]
+      ],
+      "t": 0.1
+     },
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        400,
+        [
+         0.0,
+         0.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        2,
+        false
+       ],
+       [
+        "failure",
+        "Disarm",
+        4
+       ]
+      ],
+      "t": 0.2
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": true,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "arm_already_armed_stale",
+    "results": {
+     "400": 4
+    },
+    "initial": {
+     "armed": true
+    },
+    "stale": true,
+    "steps": [
+     {
+      "op": "arm",
+      "arm": true
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        400,
+        [
+         1.0,
+         0.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        2,
+        false
+       ],
+       [
+        "stale_check",
+        2.0
+       ],
+       [
+        "failure",
+        "Arm",
+        4
+       ]
+      ],
+      "t": 0.1
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": true,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "arm_not_ready",
+    "ready": false,
+    "steps": [
+     {
+      "op": "arm",
+      "arm": true
+     },
+     {
+      "op": "arm",
+      "arm": false
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "failure",
+        "Arm",
+        -2
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "failure",
+        "Disarm",
+        -2
+       ]
+      ],
+      "t": 0.0
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "airborne_states",
+    "steps": [
+     {
+      "op": "state_airborne"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": [
+       false,
+       false,
+       true,
+       false,
+       false,
+       true,
+       false,
+       false,
+       false,
+       true,
+       true,
+       true,
+       true,
+       true,
+       true,
+       true,
+       true,
+       true,
+       false,
+       false,
+       true
+      ],
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "airborne_landed_in_air",
+    "initial": {
+     "landed_state": 2
+    },
+    "steps": [
+     {
+      "op": "airborne"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "airborne_landed_on_ground",
+    "initial": {
+     "landed_state": 1,
+     "altitude_agl": 40.0
+    },
+    "steps": [
+     {
+      "op": "airborne"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "airborne_by_height",
+    "initial": {
+     "altitude_agl": 3.0
+    },
+    "steps": [
+     {
+      "op": "airborne"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "airborne_by_low_height",
+    "initial": {
+     "altitude_agl": 1.0
+    },
+    "steps": [
+     {
+      "op": "airborne"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "amsl_and_reference",
+    "home_amsl": 500.0,
+    "steps": [
+     {
+      "op": "amsl",
+      "agl": 12.5
+     },
+     {
+      "op": "await_reference",
+      "agl": 1.0
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": 512.5,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": 501.0,
+      "events": [
+       [
+        "request_home"
+       ]
+      ],
+      "t": 0.0
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "reference_from_position",
+    "position_home_amsl": 400.0,
+    "steps": [
+     {
+      "op": "amsl",
+      "agl": 10.0
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": 410.0,
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "reference_arrives",
+    "home_reply": {
+     "after": 0.4,
+     "value": 480.0
+    },
+    "steps": [
+     {
+      "op": "await_reference",
+      "agl": 10.0
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": 490.0,
+      "events": [
+       [
+        "request_home"
+       ]
+      ],
+      "t": 0.45
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "reference_never_arrives",
+    "steps": [
+     {
+      "op": "await_reference",
+      "agl": 10.0
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "request_home"
+       ]
+      ],
+      "t": 2.05
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "reference_stopped",
+    "stop_at": 1000.0,
+    "steps": [
+     {
+      "op": "await_reference",
+      "agl": 10.0
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "request_home"
+       ]
+      ],
+      "t": 0.0
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "reference_link_lost",
+    "ready_until": 1000.0,
+    "steps": [
+     {
+      "op": "await_reference",
+      "agl": 10.0
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "request_home"
+       ]
+      ],
+      "t": 0.0
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "wait_for_mode",
+    "reactions": [],
+    "initial": {
+     "mode": "LOITER"
+    },
+    "steps": [
+     {
+      "op": "wait_mode",
+      "mode": "LOITER"
+     },
+     {
+      "op": "wait_mode",
+      "mode": "AUTO"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": false,
+      "events": [],
+      "t": 3.05
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": false,
+     "mode": "LOITER",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "wait_for_mode_arrives",
+    "steps": [
+     {
+      "op": "pend",
+      "field": "mode",
+      "value": "AUTO",
+      "after": 0.6
+     },
+     {
+      "op": "wait_mode",
+      "mode": "AUTO"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": true,
+      "events": [],
+      "t": 0.65
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": false,
+     "mode": "AUTO",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "takeoff_px4",
+    "home_amsl": 500.0,
+    "reactions": [
+     {
+      "cmd": 400,
+      "param": [
+       0,
+       1.0
+      ],
+      "set": {
+       "armed": true
+      },
+      "after": 0.5
+     },
+     {
+      "cmd": 400,
+      "param": [
+       0,
+       0.0
+      ],
+      "set": {
+       "armed": false
+      },
+      "after": 0.5
+     }
+    ],
+    "steps": [
+     {
+      "op": "takeoff",
+      "agl": 10.0
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "console",
+        "TAKEOFF",
+        "Requesting 10 m AGL (510.0 m AMSL)",
+        "info"
+       ],
+       [
+        "cmd",
+        22,
+        [
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         510.0
+        ],
+        5.0,
+        1,
+        false
+       ],
+       [
+        "console",
+        "TAKEOFF",
+        "Takeoff target accepted; arming \u2026",
+        "info"
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        400,
+        [
+         1.0,
+         0.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        2,
+        false
+       ],
+       [
+        "console",
+        "ARM",
+        "Armed successfully",
+        "success"
+       ],
+       [
+        "console",
+        "TAKEOFF",
+        "Takeoff accepted and vehicle armed",
+        "success"
+       ]
+      ],
+      "t": 0.75
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": true,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "takeoff_px4_waits_for_reference",
+    "home_reply": {
+     "after": 0.4,
+     "value": 520.0
+    },
+    "reactions": [
+     {
+      "cmd": 400,
+      "param": [
+       0,
+       1.0
+      ],
+      "set": {
+       "armed": true
+      },
+      "after": 0.5
+     },
+     {
+      "cmd": 400,
+      "param": [
+       0,
+       0.0
+      ],
+      "set": {
+       "armed": false
+      },
+      "after": 0.5
+     }
+    ],
+    "steps": [
+     {
+      "op": "takeoff",
+      "agl": 10.0
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "request_home"
+       ],
+       [
+        "console",
+        "TAKEOFF",
+        "Requesting 10 m AGL (530.0 m AMSL)",
+        "info"
+       ],
+       [
+        "cmd",
+        22,
+        [
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         530.0
+        ],
+        5.0,
+        1,
+        false
+       ],
+       [
+        "console",
+        "TAKEOFF",
+        "Takeoff target accepted; arming \u2026",
+        "info"
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        400,
+        [
+         1.0,
+         0.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        2,
+        false
+       ],
+       [
+        "console",
+        "ARM",
+        "Armed successfully",
+        "success"
+       ],
+       [
+        "console",
+        "TAKEOFF",
+        "Takeoff accepted and vehicle armed",
+        "success"
+       ]
+      ],
+      "t": 1.2
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": true,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "takeoff_px4_without_reference",
+    "reactions": [
+     {
+      "cmd": 400,
+      "param": [
+       0,
+       1.0
+      ],
+      "set": {
+       "armed": true
+      },
+      "after": 0.5
+     },
+     {
+      "cmd": 400,
+      "param": [
+       0,
+       0.0
+      ],
+      "set": {
+       "armed": false
+      },
+      "after": 0.5
+     }
+    ],
+    "steps": [
+     {
+      "op": "takeoff",
+      "agl": 25.0
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "request_home"
+       ],
+       [
+        "log",
+        "warning",
+        "No altitude reference yet (no HOME_POSITION or global position), so asking the vehicle to take off to its own configured altitude instead of 25 m"
+       ],
+       [
+        "console",
+        "TAKEOFF",
+        "No altitude reference yet (no HOME_POSITION or global position), so asking the vehicle to take off to its own configured altitude instead of 25 m",
+        "warning"
+       ],
+       [
+        "warn",
+        "No altitude reference yet (no HOME_POSITION or global position), so asking the vehicle to take off to its own configured altitude instead of 25 m",
+        "warning"
+       ],
+       [
+        "cmd",
+        22,
+        [
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        5.0,
+        1,
+        false
+       ],
+       [
+        "console",
+        "TAKEOFF",
+        "Takeoff target accepted; arming \u2026",
+        "info"
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        400,
+        [
+         1.0,
+         0.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        2,
+        false
+       ],
+       [
+        "console",
+        "ARM",
+        "Armed successfully",
+        "success"
+       ],
+       [
+        "console",
+        "TAKEOFF",
+        "Takeoff accepted and vehicle armed",
+        "success"
+       ]
+      ],
+      "t": 2.8
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": true,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "takeoff_px4_refused",
+    "home_amsl": 500.0,
+    "results": {
+     "22": 2
+    },
+    "steps": [
+     {
+      "op": "takeoff",
+      "agl": 10.0
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "console",
+        "TAKEOFF",
+        "Requesting 10 m AGL (510.0 m AMSL)",
+        "info"
+       ],
+       [
+        "cmd",
+        22,
+        [
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         510.0
+        ],
+        5.0,
+        1,
+        false
+       ],
+       [
+        "failure",
+        "Takeoff",
+        2
+       ]
+      ],
+      "t": 0.1
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "takeoff_px4_arm_refused",
+    "home_amsl": 500.0,
+    "results": {
+     "400": 2
+    },
+    "steps": [
+     {
+      "op": "takeoff",
+      "agl": 10.0
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "console",
+        "TAKEOFF",
+        "Requesting 10 m AGL (510.0 m AMSL)",
+        "info"
+       ],
+       [
+        "cmd",
+        22,
+        [
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         510.0
+        ],
+        5.0,
+        1,
+        false
+       ],
+       [
+        "console",
+        "TAKEOFF",
+        "Takeoff target accepted; arming \u2026",
+        "info"
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        400,
+        [
+         1.0,
+         0.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        2,
+        false
+       ],
+       [
+        "failure",
+        "Arm",
+        2
+       ]
+      ],
+      "t": 0.2
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "takeoff_px4_interrupted_after_command",
+    "home_amsl": 500.0,
+    "reactions": [
+     {
+      "cmd": 400,
+      "param": [
+       0,
+       1.0
+      ],
+      "set": {
+       "armed": true
+      },
+      "after": 0.5
+     },
+     {
+      "cmd": 400,
+      "param": [
+       0,
+       0.0
+      ],
+      "set": {
+       "armed": false
+      },
+      "after": 0.5
+     }
+    ],
+    "abort_on_console": [
+     "Takeoff target accepted"
+    ],
+    "steps": [
+     {
+      "op": "takeoff",
+      "agl": 10.0
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "console",
+        "TAKEOFF",
+        "Requesting 10 m AGL (510.0 m AMSL)",
+        "info"
+       ],
+       [
+        "cmd",
+        22,
+        [
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         510.0
+        ],
+        5.0,
+        1,
+        false
+       ],
+       [
+        "console",
+        "TAKEOFF",
+        "Takeoff target accepted; arming \u2026",
+        "info"
+       ],
+       [
+        "error",
+        "Takeoff stopped: another command took over"
+       ],
+       [
+        "console",
+        "TAKEOFF",
+        "Takeoff stopped: another command took over",
+        "warning"
+       ]
+      ],
+      "t": 0.1
+     }
+    ],
+    "final": {
+     "last_error": "Takeoff stopped: another command took over",
+     "armed": false,
+     "mode": "",
+     "aborts": 1
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "takeoff_px4_interrupted_before_command",
+    "home_amsl": 500.0,
+    "reactions": [
+     {
+      "cmd": 400,
+      "param": [
+       0,
+       1.0
+      ],
+      "set": {
+       "armed": true
+      },
+      "after": 0.5
+     },
+     {
+      "cmd": 400,
+      "param": [
+       0,
+       0.0
+      ],
+      "set": {
+       "armed": false
+      },
+      "after": 0.5
+     }
+    ],
+    "abort_on_console": [
+     "Requesting"
+    ],
+    "steps": [
+     {
+      "op": "takeoff",
+      "agl": 10.0
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "console",
+        "TAKEOFF",
+        "Requesting 10 m AGL (510.0 m AMSL)",
+        "info"
+       ],
+       [
+        "cmd",
+        22,
+        [
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         510.0
+        ],
+        5.0,
+        1,
+        false
+       ],
+       [
+        "console",
+        "TAKEOFF",
+        "Takeoff target accepted; arming \u2026",
+        "info"
+       ],
+       [
+        "error",
+        "Takeoff stopped: another command took over"
+       ],
+       [
+        "console",
+        "TAKEOFF",
+        "Takeoff stopped: another command took over",
+        "warning"
+       ]
+      ],
+      "t": 0.1
+     }
+    ],
+    "final": {
+     "last_error": "Takeoff stopped: another command took over",
+     "armed": false,
+     "mode": "",
+     "aborts": 1
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "takeoff_checks",
+    "home_amsl": 500.0,
+    "steps": [
+     {
+      "op": "takeoff",
+      "agl": "nan"
+     },
+     {
+      "op": "takeoff",
+      "agl": "inf"
+     },
+     {
+      "op": "takeoff",
+      "agl": 0.5
+     },
+     {
+      "op": "takeoff",
+      "agl": 500.0
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        "Takeoff altitude must be finite"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        "Takeoff altitude must be finite"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        "Takeoff altitude must be between 1 and 120 m AGL"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        "Takeoff altitude must be between 1 and 120 m AGL"
+       ]
+      ],
+      "t": 0.0
+     }
+    ],
+    "final": {
+     "last_error": "Takeoff altitude must be between 1 and 120 m AGL",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "takeoff_rover",
+    "mav_type": 10,
+    "stack": "ardupilot",
+    "steps": [
+     {
+      "op": "takeoff",
+      "agl": 10.0
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        "Takeoff is not available on a rover. Arm it and drive."
+       ]
+      ],
+      "t": 0.0
+     }
+    ],
+    "final": {
+     "last_error": "Takeoff is not available on a rover. Arm it and drive.",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "takeoff_not_ready",
+    "ready": false,
+    "steps": [
+     {
+      "op": "takeoff",
+      "agl": 10.0
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "failure",
+        "Takeoff",
+        -2
+       ]
+      ],
+      "t": 0.0
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "takeoff_ardupilot",
+    "stack": "ardupilot",
+    "mav_type": 2,
+    "reactions": [
+     {
+      "cmd": 176,
+      "param": [
+       1,
+       4.0
+      ],
+      "set": {
+       "mode": "GUIDED"
+      },
+      "after": 0.3
+     },
+     {
+      "cmd": 400,
+      "param": [
+       0,
+       1.0
+      ],
+      "set": {
+       "armed": true
+      },
+      "after": 0.5
+     },
+     {
+      "cmd": 400,
+      "param": [
+       0,
+       0.0
+      ],
+      "set": {
+       "armed": false
+      },
+      "after": 0.5
+     }
+    ],
+    "steps": [
+     {
+      "op": "takeoff",
+      "agl": 10.0
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        176,
+        [
+         1.0,
+         4.0,
+         0.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1,
+        false
+       ],
+       [
+        "console",
+        "MODE",
+        "Mode accepted: GUIDED",
+        "success"
+       ],
+       [
+        "console",
+        "TAKEOFF",
+        "Requesting 10 m above home",
+        "info"
+       ],
+       [
+        "console",
+        "TAKEOFF",
+        "Arming before takeoff \u2026",
+        "info"
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        400,
+        [
+         1.0,
+         0.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        2,
+        false
+       ],
+       [
+        "console",
+        "ARM",
+        "Armed successfully",
+        "success"
+       ],
+       [
+        "cmd",
+        22,
+        [
+         0.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         10.0
+        ],
+        5.0,
+        1,
+        false
+       ],
+       [
+        "console",
+        "TAKEOFF",
+        "Takeoff accepted and vehicle armed",
+        "success"
+       ]
+      ],
+      "t": 1.2
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": true,
+     "mode": "GUIDED",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "takeoff_ardupilot_already_guided",
+    "stack": "ardupilot",
+    "mav_type": 2,
+    "initial": {
+     "mode": "GUIDED"
+    },
+    "reactions": [
+     {
+      "cmd": 400,
+      "param": [
+       0,
+       1.0
+      ],
+      "set": {
+       "armed": true
+      },
+      "after": 0.5
+     },
+     {
+      "cmd": 400,
+      "param": [
+       0,
+       0.0
+      ],
+      "set": {
+       "armed": false
+      },
+      "after": 0.5
+     }
+    ],
+    "steps": [
+     {
+      "op": "takeoff",
+      "agl": 10.0
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "console",
+        "TAKEOFF",
+        "Requesting 10 m above home",
+        "info"
+       ],
+       [
+        "console",
+        "TAKEOFF",
+        "Arming before takeoff \u2026",
+        "info"
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        400,
+        [
+         1.0,
+         0.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        2,
+        false
+       ],
+       [
+        "console",
+        "ARM",
+        "Armed successfully",
+        "success"
+       ],
+       [
+        "cmd",
+        22,
+        [
+         0.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         10.0
+        ],
+        5.0,
+        1,
+        false
+       ],
+       [
+        "console",
+        "TAKEOFF",
+        "Takeoff accepted and vehicle armed",
+        "success"
+       ]
+      ],
+      "t": 0.75
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": true,
+     "mode": "GUIDED",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "takeoff_ardupilot_mode_late",
+    "stack": "ardupilot",
+    "mav_type": 2,
+    "reactions": [
+     {
+      "cmd": 176,
+      "param": [
+       1,
+       4.0
+      ],
+      "set": {
+       "mode": "GUIDED"
+      },
+      "after": 9.0
+     },
+     {
+      "cmd": 400,
+      "param": [
+       0,
+       1.0
+      ],
+      "set": {
+       "armed": true
+      },
+      "after": 0.5
+     },
+     {
+      "cmd": 400,
+      "param": [
+       0,
+       0.0
+      ],
+      "set": {
+       "armed": false
+      },
+      "after": 0.5
+     }
+    ],
+    "steps": [
+     {
+      "op": "takeoff",
+      "agl": 10.0
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        176,
+        [
+         1.0,
+         4.0,
+         0.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1,
+        false
+       ],
+       [
+        "console",
+        "MODE",
+        "Mode accepted: GUIDED",
+        "success"
+       ],
+       [
+        "console",
+        "MODE",
+        "GUIDED accepted but not yet confirmed in telemetry, continuing with takeoff",
+        "warning"
+       ],
+       [
+        "console",
+        "TAKEOFF",
+        "Requesting 10 m above home",
+        "info"
+       ],
+       [
+        "console",
+        "TAKEOFF",
+        "Arming before takeoff \u2026",
+        "info"
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        400,
+        [
+         1.0,
+         0.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        2,
+        false
+       ],
+       [
+        "console",
+        "ARM",
+        "Armed successfully",
+        "success"
+       ],
+       [
+        "cmd",
+        22,
+        [
+         0.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         10.0
+        ],
+        5.0,
+        1,
+        false
+       ],
+       [
+        "console",
+        "TAKEOFF",
+        "Takeoff accepted and vehicle armed",
+        "success"
+       ]
+      ],
+      "t": 3.9
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": true,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "takeoff_ardupilot_mode_refused",
+    "stack": "ardupilot",
+    "mav_type": 2,
+    "results": {
+     "176": 2
+    },
+    "steps": [
+     {
+      "op": "takeoff",
+      "agl": 10.0
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        176,
+        [
+         1.0,
+         4.0,
+         0.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1,
+        false
+       ],
+       [
+        "failure",
+        "Mode change",
+        2
+       ],
+       [
+        "error",
+        "Takeoff needs GUIDED mode, which the vehicle refused"
+       ]
+      ],
+      "t": 0.1
+     }
+    ],
+    "final": {
+     "last_error": "Takeoff needs GUIDED mode, which the vehicle refused",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "takeoff_ardupilot_arm_refused",
+    "stack": "ardupilot",
+    "mav_type": 2,
+    "reactions": [
+     {
+      "cmd": 176,
+      "param": [
+       1,
+       4.0
+      ],
+      "set": {
+       "mode": "GUIDED"
+      },
+      "after": 0.3
+     }
+    ],
+    "results": {
+     "400": 4
+    },
+    "steps": [
+     {
+      "op": "takeoff",
+      "agl": 10.0
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        176,
+        [
+         1.0,
+         4.0,
+         0.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1,
+        false
+       ],
+       [
+        "console",
+        "MODE",
+        "Mode accepted: GUIDED",
+        "success"
+       ],
+       [
+        "console",
+        "TAKEOFF",
+        "Requesting 10 m above home",
+        "info"
+       ],
+       [
+        "console",
+        "TAKEOFF",
+        "Arming before takeoff \u2026",
+        "info"
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        400,
+        [
+         1.0,
+         0.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        2,
+        false
+       ],
+       [
+        "failure",
+        "Arm",
+        4
+       ]
+      ],
+      "t": 0.55
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": false,
+     "mode": "GUIDED",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "takeoff_ardupilot_refused_disarms",
+    "stack": "ardupilot",
+    "mav_type": 2,
+    "reactions": [
+     {
+      "cmd": 176,
+      "param": [
+       1,
+       4.0
+      ],
+      "set": {
+       "mode": "GUIDED"
+      },
+      "after": 0.3
+     },
+     {
+      "cmd": 400,
+      "param": [
+       0,
+       1.0
+      ],
+      "set": {
+       "armed": true
+      },
+      "after": 0.5
+     },
+     {
+      "cmd": 400,
+      "param": [
+       0,
+       0.0
+      ],
+      "set": {
+       "armed": false
+      },
+      "after": 0.5
+     }
+    ],
+    "results": {
+     "22": 3
+    },
+    "steps": [
+     {
+      "op": "takeoff",
+      "agl": 10.0
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        176,
+        [
+         1.0,
+         4.0,
+         0.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1,
+        false
+       ],
+       [
+        "console",
+        "MODE",
+        "Mode accepted: GUIDED",
+        "success"
+       ],
+       [
+        "console",
+        "TAKEOFF",
+        "Requesting 10 m above home",
+        "info"
+       ],
+       [
+        "console",
+        "TAKEOFF",
+        "Arming before takeoff \u2026",
+        "info"
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        400,
+        [
+         1.0,
+         0.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        2,
+        false
+       ],
+       [
+        "console",
+        "ARM",
+        "Armed successfully",
+        "success"
+       ],
+       [
+        "cmd",
+        22,
+        [
+         0.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         10.0
+        ],
+        5.0,
+        1,
+        false
+       ],
+       [
+        "console",
+        "TAKEOFF",
+        "Takeoff refused after arming, disarming again",
+        "warning"
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        400,
+        [
+         0.0,
+         0.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        2,
+        false
+       ],
+       [
+        "console",
+        "ARM",
+        "Disarmed successfully",
+        "success"
+       ],
+       [
+        "error",
+        "Takeoff failed: UNSUPPORTED"
+       ],
+       [
+        "console",
+        "TAKEOFF",
+        "Takeoff failed: UNSUPPORTED",
+        "error"
+       ],
+       [
+        "warn",
+        "Takeoff failed: UNSUPPORTED",
+        "critical"
+       ]
+      ],
+      "t": 1.85
+     }
+    ],
+    "final": {
+     "last_error": "Takeoff failed: UNSUPPORTED",
+     "armed": false,
+     "mode": "GUIDED",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "takeoff_ardupilot_interrupted_after_arm",
+    "stack": "ardupilot",
+    "mav_type": 2,
+    "reactions": [
+     {
+      "cmd": 176,
+      "param": [
+       1,
+       4.0
+      ],
+      "set": {
+       "mode": "GUIDED"
+      },
+      "after": 0.3
+     },
+     {
+      "cmd": 400,
+      "param": [
+       0,
+       1.0
+      ],
+      "set": {
+       "armed": true
+      },
+      "after": 0.5
+     },
+     {
+      "cmd": 400,
+      "param": [
+       0,
+       0.0
+      ],
+      "set": {
+       "armed": false
+      },
+      "after": 0.5
+     }
+    ],
+    "abort_on_console": [
+     "Armed successfully"
+    ],
+    "steps": [
+     {
+      "op": "takeoff",
+      "agl": 10.0
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        176,
+        [
+         1.0,
+         4.0,
+         0.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1,
+        false
+       ],
+       [
+        "console",
+        "MODE",
+        "Mode accepted: GUIDED",
+        "success"
+       ],
+       [
+        "console",
+        "TAKEOFF",
+        "Requesting 10 m above home",
+        "info"
+       ],
+       [
+        "console",
+        "TAKEOFF",
+        "Arming before takeoff \u2026",
+        "info"
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        400,
+        [
+         1.0,
+         0.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        2,
+        false
+       ],
+       [
+        "console",
+        "ARM",
+        "Armed successfully",
+        "success"
+       ],
+       [
+        "error",
+        "Takeoff stopped: another command took over"
+       ],
+       [
+        "console",
+        "TAKEOFF",
+        "Takeoff stopped: another command took over",
+        "warning"
+       ]
+      ],
+      "t": 1.1
+     }
+    ],
+    "final": {
+     "last_error": "Takeoff stopped: another command took over",
+     "armed": true,
+     "mode": "GUIDED",
+     "aborts": 1
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "land_rtl",
+    "steps": [
+     {
+      "op": "land"
+     },
+     {
+      "op": "rtl"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        21,
+        [
+         0.0,
+         0.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        5.0,
+        1,
+        false
+       ],
+       [
+        "console",
+        "LAND",
+        "Land accepted",
+        "success"
+       ]
+      ],
+      "t": 0.1
+     },
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        20,
+        [
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        5.0,
+        1,
+        false
+       ],
+       [
+        "console",
+        "RTL",
+        "RTL accepted",
+        "success"
+       ]
+      ],
+      "t": 0.2
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "land_rtl_refused",
+    "results": {
+     "21": 4,
+     "20": 2
+    },
+    "steps": [
+     {
+      "op": "land"
+     },
+     {
+      "op": "rtl"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        21,
+        [
+         0.0,
+         0.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        5.0,
+        1,
+        false
+       ],
+       [
+        "failure",
+        "Land",
+        4
+       ]
+      ],
+      "t": 0.1
+     },
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        20,
+        [
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        5.0,
+        1,
+        false
+       ],
+       [
+        "failure",
+        "RTL",
+        2
+       ]
+      ],
+      "t": 0.2
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "land_rover",
+    "mav_type": 10,
+    "stack": "ardupilot",
+    "steps": [
+     {
+      "op": "land"
+     },
+     {
+      "op": "rtl"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        "Land is not available on a rover. Disarm it to stop."
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        20,
+        [
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        5.0,
+        1,
+        false
+       ],
+       [
+        "console",
+        "RTL",
+        "RTL accepted",
+        "success"
+       ]
+      ],
+      "t": 0.1
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "lat_lon",
+    "steps": [
+     {
+      "op": "lat_lon",
+      "lat": 48.1,
+      "lon": 11.5
+     },
+     {
+      "op": "lat_lon",
+      "lat": 91.0,
+      "lon": 11.5
+     },
+     {
+      "op": "lat_lon",
+      "lat": 48.1,
+      "lon": -181.0
+     },
+     {
+      "op": "lat_lon",
+      "lat": "nan",
+      "lon": 0.0
+     },
+     {
+      "op": "lat_lon",
+      "lat": 0.0,
+      "lon": "inf"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": [
+       48.1,
+       11.5
+      ],
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "error",
+        "Check failed: lat out of range"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "error",
+        "Check failed: lon out of range"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "error",
+        "Check failed: lat out of range"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "error",
+        "Check failed: lon out of range"
+       ]
+      ],
+      "t": 0.0
+     }
+    ],
+    "final": {
+     "last_error": "Check failed: lon out of range",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "set_home",
+    "home_amsl": 500.0,
+    "steps": [
+     {
+      "op": "set_home",
+      "lat": 48.1234567,
+      "lon": 11.7654321
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmdint",
+        179,
+        0,
+        [
+         0.0,
+         "nan",
+         "nan",
+         "nan"
+        ],
+        481234567,
+        117654321,
+        500.0,
+        5.0,
+        1
+       ],
+       [
+        "request_home"
+       ],
+       [
+        "console",
+        "SETHOME",
+        "Home set to 48.1234567, 11.7654321",
+        "success"
+       ]
+      ],
+      "t": 0.1
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "set_home_from_reference_wait",
+    "home_reply": {
+     "after": 0.4,
+     "value": 480.0
+    },
+    "steps": [
+     {
+      "op": "set_home",
+      "lat": 48.0,
+      "lon": 11.0
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "request_home"
+       ],
+       [
+        "cmdint",
+        179,
+        0,
+        [
+         0.0,
+         "nan",
+         "nan",
+         "nan"
+        ],
+        480000000,
+        110000000,
+        480.0,
+        5.0,
+        1
+       ],
+       [
+        "request_home"
+       ],
+       [
+        "console",
+        "SETHOME",
+        "Home set to 48.0000000, 11.0000000",
+        "success"
+       ]
+      ],
+      "t": 0.55
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "set_home_no_reference",
+    "steps": [
+     {
+      "op": "set_home",
+      "lat": 48.0,
+      "lon": 11.0
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "request_home"
+       ],
+       [
+        "error",
+        "no home or global altitude reference"
+       ],
+       [
+        "console",
+        "SETHOME",
+        "Set home failed: no home or global altitude reference",
+        "error"
+       ],
+       [
+        "warn",
+        "Set home failed: no home or global altitude reference",
+        "critical"
+       ]
+      ],
+      "t": 2.05
+     }
+    ],
+    "final": {
+     "last_error": "no home or global altitude reference",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "set_home_refused",
+    "home_amsl": 500.0,
+    "results": {
+     "179": 4
+    },
+    "steps": [
+     {
+      "op": "set_home",
+      "lat": 48.0,
+      "lon": 11.0
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmdint",
+        179,
+        0,
+        [
+         0.0,
+         "nan",
+         "nan",
+         "nan"
+        ],
+        480000000,
+        110000000,
+        500.0,
+        5.0,
+        1
+       ],
+       [
+        "failure",
+        "Set home",
+        4
+       ]
+      ],
+      "t": 0.1
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "set_home_bad_coordinates",
+    "home_amsl": 500.0,
+    "steps": [
+     {
+      "op": "set_home",
+      "lat": 99.0,
+      "lon": 11.0
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        "Set home failed: lat out of range"
+       ]
+      ],
+      "t": 0.0
+     }
+    ],
+    "final": {
+     "last_error": "Set home failed: lat out of range",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "hold",
+    "steps": [
+     {
+      "op": "hold"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        176,
+        [
+         29.0,
+         4.0,
+         3.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1,
+        false
+       ],
+       [
+        "console",
+        "MODE",
+        "Mode accepted: LOITER",
+        "success"
+       ]
+      ],
+      "t": 0.1
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "hold_rover",
+    "mav_type": 10,
+    "stack": "ardupilot",
+    "steps": [
+     {
+      "op": "hold"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        176,
+        [
+         1.0,
+         4.0,
+         0.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1,
+        false
+       ],
+       [
+        "console",
+        "MODE",
+        "Mode accepted: HOLD",
+        "success"
+       ]
+      ],
+      "t": 0.1
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "hold_generic",
+    "stack": "generic",
+    "steps": [
+     {
+      "op": "hold"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        "Hold is not available on this vehicle"
+       ]
+      ],
+      "t": 0.0
+     }
+    ],
+    "final": {
+     "last_error": "Hold is not available on this vehicle",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "plugin_plain",
+    "steps": [
+     {
+      "op": "plugin",
+      "command": 178,
+      "params": [
+       1.0,
+       5.0
+      ]
+     },
+     {
+      "op": "plugin",
+      "command": 178
+     },
+     {
+      "op": "plugin",
+      "command": 178,
+      "params": [
+       1,
+       2,
+       3,
+       4,
+       5,
+       6,
+       7,
+       8,
+       9
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        178,
+        [
+         1.0,
+         5.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        5.0,
+        1,
+        true
+       ],
+       [
+        "console",
+        "COMMAND",
+        "DO_CHANGE_SPEED accepted",
+        "success"
+       ]
+      ],
+      "t": 0.1
+     },
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        178,
+        [
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        5.0,
+        1,
+        true
+       ],
+       [
+        "console",
+        "COMMAND",
+        "DO_CHANGE_SPEED accepted",
+        "success"
+       ]
+      ],
+      "t": 0.2
+     },
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        178,
+        [
+         1.0,
+         2.0,
+         3.0,
+         4.0,
+         5.0,
+         6.0,
+         7.0
+        ],
+        5.0,
+        1,
+        true
+       ],
+       [
+        "console",
+        "COMMAND",
+        "DO_CHANGE_SPEED accepted",
+        "success"
+       ]
+      ],
+      "t": 0.3
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "plugin_in_progress_and_failure",
+    "results": {
+     "178": [
+      5,
+      2
+     ]
+    },
+    "steps": [
+     {
+      "op": "plugin",
+      "command": 178,
+      "params": [
+       1.0
+      ]
+     },
+     {
+      "op": "plugin",
+      "command": 178,
+      "params": [
+       1.0
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        178,
+        [
+         1.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        5.0,
+        1,
+        true
+       ],
+       [
+        "console",
+        "COMMAND",
+        "DO_CHANGE_SPEED accepted",
+        "success"
+       ]
+      ],
+      "t": 0.1
+     },
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        178,
+        [
+         1.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        5.0,
+        1,
+        true
+       ],
+       [
+        "failure",
+        "Command DO_CHANGE_SPEED",
+        2
+       ]
+      ],
+      "t": 0.2
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "plugin_not_in_table",
+    "steps": [
+     {
+      "op": "plugin",
+      "command": 400
+     },
+     {
+      "op": "plugin",
+      "command": 99999
+     },
+     {
+      "op": "plugin",
+      "command": 183,
+      "params": [
+       1.0
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        "Command COMPONENT_ARM_DISARM is not available on this autopilot"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        "Command 99999 is not available on this autopilot"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        "Command DO_SET_SERVO is not available on this autopilot"
+       ]
+      ],
+      "t": 0.0
+     }
+    ],
+    "final": {
+     "last_error": "Command DO_SET_SERVO is not available on this autopilot",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "plugin_ardupilot_table",
+    "stack": "ardupilot",
+    "mav_type": 2,
+    "steps": [
+     {
+      "op": "plugin",
+      "command": 183,
+      "params": [
+       1.0,
+       1500.0
+      ]
+     },
+     {
+      "op": "plugin",
+      "command": 5000
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        183,
+        [
+         1.0,
+         1500.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        5.0,
+        1,
+        true
+       ],
+       [
+        "console",
+        "COMMAND",
+        "DO_SET_SERVO accepted",
+        "success"
+       ]
+      ],
+      "t": 0.1
+     },
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        "Command NAV_FENCE_RETURN_POINT is not available on this autopilot"
+       ]
+      ],
+      "t": 0.1
+     }
+    ],
+    "final": {
+     "last_error": "Command NAV_FENCE_RETURN_POINT is not available on this autopilot",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "plugin_position_checks",
+    "home_amsl": 500.0,
+    "steps": [
+     {
+      "op": "plugin",
+      "command": 192
+     },
+     {
+      "op": "plugin",
+      "command": 178,
+      "position": [
+       48.0,
+       11.0,
+       30.0,
+       "amsl"
+      ]
+     },
+     {
+      "op": "plugin",
+      "command": 192,
+      "position": [
+       95.0,
+       11.0,
+       30.0,
+       "amsl"
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        "Command DO_REPOSITION needs lat and lon"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        "Command DO_CHANGE_SPEED takes no position"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        "Command DO_REPOSITION failed: lat out of range"
+       ]
+      ],
+      "t": 0.0
+     }
+    ],
+    "final": {
+     "last_error": "Command DO_REPOSITION failed: lat out of range",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "plugin_position_px4",
+    "home_amsl": 500.0,
+    "steps": [
+     {
+      "op": "plugin",
+      "command": 192,
+      "params": [
+       -1.0,
+       1.0
+      ],
+      "position": [
+       48.1234567,
+       11.5,
+       30.0,
+       "amsl"
+      ]
+     },
+     {
+      "op": "plugin",
+      "command": 192,
+      "params": [
+       -1.0,
+       1.0,
+       3.0,
+       4.0,
+       5.0
+      ],
+      "position": [
+       48.1,
+       11.5,
+       30.0,
+       "relative"
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmdint",
+        192,
+        0,
+        [
+         -1.0,
+         1.0,
+         "nan",
+         "nan"
+        ],
+        481234567,
+        115000000,
+        30.0,
+        5.0,
+        1
+       ],
+       [
+        "console",
+        "COMMAND",
+        "DO_REPOSITION accepted",
+        "success"
+       ]
+      ],
+      "t": 0.1
+     },
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmdint",
+        192,
+        0,
+        [
+         -1.0,
+         1.0,
+         3.0,
+         4.0
+        ],
+        481000000,
+        115000000,
+        530.0,
+        5.0,
+        1
+       ],
+       [
+        "console",
+        "COMMAND",
+        "DO_REPOSITION accepted",
+        "success"
+       ]
+      ],
+      "t": 0.2
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "plugin_position_px4_waits_for_home",
+    "home_reply": {
+     "after": 0.4,
+     "value": 480.0
+    },
+    "steps": [
+     {
+      "op": "plugin",
+      "command": 192,
+      "position": [
+       48.1,
+       11.5,
+       30.0,
+       "relative"
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "request_home"
+       ],
+       [
+        "cmdint",
+        192,
+        0,
+        [
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        481000000,
+        115000000,
+        510.0,
+        5.0,
+        1
+       ],
+       [
+        "console",
+        "COMMAND",
+        "DO_REPOSITION accepted",
+        "success"
+       ]
+      ],
+      "t": 0.55
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "plugin_position_px4_without_home",
+    "steps": [
+     {
+      "op": "plugin",
+      "command": 192,
+      "position": [
+       48.1,
+       11.5,
+       30.0,
+       "relative"
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "request_home"
+       ],
+       [
+        "error",
+        "Command DO_REPOSITION failed: no home altitude to measure the height from"
+       ]
+      ],
+      "t": 2.05
+     }
+    ],
+    "final": {
+     "last_error": "Command DO_REPOSITION failed: no home altitude to measure the height from",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "plugin_position_ardupilot",
+    "stack": "ardupilot",
+    "mav_type": 2,
+    "steps": [
+     {
+      "op": "plugin",
+      "command": 192,
+      "params": [
+       -1.0
+      ],
+      "position": [
+       48.1,
+       11.5,
+       30.0,
+       "relative"
+      ]
+     },
+     {
+      "op": "plugin",
+      "command": 192,
+      "position": [
+       48.1,
+       11.5,
+       30.0,
+       "amsl"
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmdint",
+        192,
+        3,
+        [
+         -1.0,
+         "nan",
+         "nan",
+         "nan"
+        ],
+        481000000,
+        115000000,
+        30.0,
+        5.0,
+        1
+       ],
+       [
+        "console",
+        "COMMAND",
+        "DO_REPOSITION accepted",
+        "success"
+       ]
+      ],
+      "t": 0.1
+     },
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmdint",
+        192,
+        0,
+        [
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        481000000,
+        115000000,
+        30.0,
+        5.0,
+        1
+       ],
+       [
+        "console",
+        "COMMAND",
+        "DO_REPOSITION accepted",
+        "success"
+       ]
+      ],
+      "t": 0.2
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "plugin_position_refused",
+    "home_amsl": 500.0,
+    "results": {
+     "192": 3
+    },
+    "steps": [
+     {
+      "op": "plugin",
+      "command": 192,
+      "position": [
+       48.1,
+       11.5,
+       30.0,
+       "amsl"
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmdint",
+        192,
+        0,
+        [
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        481000000,
+        115000000,
+        30.0,
+        5.0,
+        1
+       ],
+       [
+        "failure",
+        "Command DO_REPOSITION",
+        3
+       ]
+      ],
+      "t": 0.1
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "velocity_px4",
+    "steps": [
+     {
+      "op": "velocity",
+      "vx": 1.0,
+      "vy": -2.0,
+      "vz": 0.5
+     },
+     {
+      "op": "velocity",
+      "vx": 1.0,
+      "vy": 0.0,
+      "vz": 0.0,
+      "yaw": 45.0
+     },
+     {
+      "op": "velocity",
+      "vx": 1.0,
+      "vy": 0.0,
+      "vz": 0.0,
+      "yaw": -10.0,
+      "body": true
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "sent",
+        "set_position_target_local_ned_send",
+        [
+         0,
+         1,
+         1,
+         1,
+         3527,
+         0.0,
+         0.0,
+         0.0,
+         1.0,
+         -2.0,
+         0.5,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0
+        ]
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "sent",
+        "set_position_target_local_ned_send",
+        [
+         0,
+         1,
+         1,
+         1,
+         1479,
+         0.0,
+         0.0,
+         0.0,
+         1.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.7853981633974483
+        ]
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "sent",
+        "set_position_target_local_ned_send",
+        [
+         0,
+         1,
+         1,
+         8,
+         1479,
+         0.0,
+         0.0,
+         0.0,
+         1.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         -0.17453292519943295
+        ]
+       ]
+      ],
+      "t": 0.0
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "velocity_ardupilot",
+    "stack": "ardupilot",
+    "mav_type": 2,
+    "steps": [
+     {
+      "op": "velocity",
+      "vx": 1.0,
+      "vy": 0.0,
+      "vz": 0.0
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "sent",
+        "set_position_target_local_ned_send",
+        [
+         0,
+         1,
+         1,
+         1,
+         3527,
+         0.0,
+         0.0,
+         0.0,
+         1.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0
+        ]
+       ]
+      ],
+      "t": 0.0
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "velocity_plane",
+    "mav_type": 1,
+    "stack": "px4",
+    "steps": [
+     {
+      "op": "velocity",
+      "vx": 1.0,
+      "vy": 0.0,
+      "vz": 0.0
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        "Velocity control is not available on this vehicle"
+       ]
+      ],
+      "t": 0.0
+     }
+    ],
+    "final": {
+     "last_error": "Velocity control is not available on this vehicle",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "velocity_generic",
+    "stack": "generic",
+    "steps": [
+     {
+      "op": "velocity",
+      "vx": 1.0,
+      "vy": 0.0,
+      "vz": 0.0
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        "Velocity control is not available on this vehicle"
+       ]
+      ],
+      "t": 0.0
+     }
+    ],
+    "final": {
+     "last_error": "Velocity control is not available on this vehicle",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "velocity_checks",
+    "steps": [
+     {
+      "op": "velocity",
+      "vx": "nan",
+      "vy": 0.0,
+      "vz": 0.0
+     },
+     {
+      "op": "velocity",
+      "vx": 0.0,
+      "vy": "inf",
+      "vz": 0.0
+     },
+     {
+      "op": "velocity",
+      "vx": 0.0,
+      "vy": 0.0,
+      "vz": 0.0,
+      "yaw": "nan"
+     },
+     {
+      "op": "velocity",
+      "vx": 31.0,
+      "vy": 0.0,
+      "vz": 0.0
+     },
+     {
+      "op": "velocity",
+      "vx": 0.0,
+      "vy": 0.0,
+      "vz": -30.5
+     },
+     {
+      "op": "velocity",
+      "vx": 0.0,
+      "vy": 0.0,
+      "vz": 0.0,
+      "yaw": 181.0
+     },
+     {
+      "op": "velocity",
+      "vx": 30.0,
+      "vy": -30.0,
+      "vz": 0.0,
+      "yaw": 180.0
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        "Velocity control failed: not a finite number"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        "Velocity control failed: not a finite number"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        "Velocity control failed: not a finite number"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        "Velocity control failed: out of range"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        "Velocity control failed: out of range"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        "Velocity control failed: out of range"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "sent",
+        "set_position_target_local_ned_send",
+        [
+         0,
+         1,
+         1,
+         1,
+         1479,
+         0.0,
+         0.0,
+         0.0,
+         30.0,
+         -30.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         3.141592653589793
+        ]
+       ]
+      ],
+      "t": 0.0
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "velocity_not_ready",
+    "ready": false,
+    "steps": [
+     {
+      "op": "velocity",
+      "vx": 1.0,
+      "vy": 0.0,
+      "vz": 0.0
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        "Velocity control failed: DISCONNECTED"
+       ]
+      ],
+      "t": 0.0
+     }
+    ],
+    "final": {
+     "last_error": "Velocity control failed: DISCONNECTED",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "velocity_send_fails",
+    "send_fails": true,
+    "steps": [
+     {
+      "op": "velocity",
+      "vx": 1.0,
+      "vy": 0.0,
+      "vz": 0.0
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "log",
+        "error",
+        "velocity setpoint send failed: boom"
+       ],
+       [
+        "error",
+        "Velocity control send failed: boom"
+       ]
+      ],
+      "t": 0.0
+     }
+    ],
+    "final": {
+     "last_error": "Velocity control send failed: boom",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "velocity_link_lost",
+    "link_lost": true,
+    "steps": [
+     {
+      "op": "velocity",
+      "vx": 1.0,
+      "vy": 0.0,
+      "vz": 0.0
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        "Velocity control failed: DISCONNECTED"
+       ]
+      ],
+      "t": 0.0
+     }
+    ],
+    "final": {
+     "last_error": "Velocity control failed: DISCONNECTED",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "fly_one_point_airborne_px4",
+    "home_amsl": 500.0,
+    "initial": {
+     "landed_state": 2,
+     "altitude_agl": 30.0,
+     "armed": true
+    },
+    "steps": [
+     {
+      "op": "fly",
+      "points": [
+       [
+        48.1,
+        11.5,
+        30.0
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "validate_points",
+        [
+         [
+          48.1,
+          11.5,
+          30.0
+         ]
+        ]
+       ],
+       [
+        "cmdint",
+        192,
+        0,
+        [
+         -1.0,
+         1.0,
+         0.0,
+         "nan"
+        ],
+        481000000,
+        115000000,
+        530.0,
+        5.0,
+        1
+       ],
+       [
+        "console",
+        "GOTOPOINTS",
+        "Flying to point at 30 m AGL",
+        "success"
+       ]
+      ],
+      "t": 0.1
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": true,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "fly_one_point_airborne_px4_no_reference_falls_back_to_mission",
+    "initial": {
+     "landed_state": 2,
+     "altitude_agl": 30.0,
+     "armed": true
+    },
+    "reactions": [
+     {
+      "cmd": 400,
+      "param": [
+       0,
+       1.0
+      ],
+      "set": {
+       "armed": true
+      },
+      "after": 0.5
+     },
+     {
+      "cmd": 400,
+      "param": [
+       0,
+       0.0
+      ],
+      "set": {
+       "armed": false
+      },
+      "after": 0.5
+     }
+    ],
+    "steps": [
+     {
+      "op": "fly",
+      "points": [
+       [
+        48.1,
+        11.5,
+        30.0
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "validate_points",
+        [
+         [
+          48.1,
+          11.5,
+          30.0
+         ]
+        ]
+       ],
+       [
+        "console",
+        "GOTOPOINTS",
+        "Uploading 1 mission item(s) \u2026",
+        "info"
+       ],
+       [
+        "upload",
+        [
+         {
+          "frame": 3,
+          "command": 16,
+          "current": 1,
+          "autocontinue": 1,
+          "param1": 0.0,
+          "param2": "nan",
+          "param3": "nan",
+          "param4": "nan",
+          "x_int": 481000000,
+          "y_int": 115000000,
+          "x_f": 48.1,
+          "y_f": 11.5,
+          "z": 30.0
+         }
+        ]
+       ],
+       [
+        "note_mission",
+        null
+       ],
+       [
+        "console",
+        "GOTOPOINTS",
+        "Mission accepted; starting \u2026",
+        "info"
+       ],
+       [
+        "cmd",
+        300,
+        [
+         0.0,
+         0.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        5.0,
+        1,
+        false
+       ],
+       [
+        "console",
+        "MISSION",
+        "Fly to points: accepted, but the vehicle reports no mode rather than MISSION",
+        "warning"
+       ],
+       [
+        "console",
+        "GOTOPOINTS",
+        "Fly to points started",
+        "success"
+       ]
+      ],
+      "t": 3.25
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": true,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "fly_one_point_unsupported_falls_back_to_mission",
+    "home_amsl": 500.0,
+    "initial": {
+     "landed_state": 2,
+     "altitude_agl": 30.0,
+     "armed": true
+    },
+    "results": {
+     "192": 3
+    },
+    "steps": [
+     {
+      "op": "fly",
+      "points": [
+       [
+        48.1,
+        11.5,
+        30.0
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "validate_points",
+        [
+         [
+          48.1,
+          11.5,
+          30.0
+         ]
+        ]
+       ],
+       [
+        "cmdint",
+        192,
+        0,
+        [
+         -1.0,
+         1.0,
+         0.0,
+         "nan"
+        ],
+        481000000,
+        115000000,
+        530.0,
+        5.0,
+        1
+       ],
+       [
+        "console",
+        "GOTOPOINTS",
+        "Uploading 1 mission item(s) \u2026",
+        "info"
+       ],
+       [
+        "upload",
+        [
+         {
+          "frame": 3,
+          "command": 16,
+          "current": 1,
+          "autocontinue": 1,
+          "param1": 0.0,
+          "param2": "nan",
+          "param3": "nan",
+          "param4": "nan",
+          "x_int": 481000000,
+          "y_int": 115000000,
+          "x_f": 48.1,
+          "y_f": 11.5,
+          "z": 30.0
+         }
+        ]
+       ],
+       [
+        "note_mission",
+        null
+       ],
+       [
+        "console",
+        "GOTOPOINTS",
+        "Mission accepted; starting \u2026",
+        "info"
+       ],
+       [
+        "cmd",
+        300,
+        [
+         0.0,
+         0.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        5.0,
+        1,
+        false
+       ],
+       [
+        "console",
+        "MISSION",
+        "Fly to points: accepted, but the vehicle reports no mode rather than MISSION",
+        "warning"
+       ],
+       [
+        "console",
+        "GOTOPOINTS",
+        "Fly to points started",
+        "success"
+       ]
+      ],
+      "t": 3.35
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": true,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "fly_one_point_refused",
+    "home_amsl": 500.0,
+    "initial": {
+     "landed_state": 2,
+     "altitude_agl": 30.0,
+     "armed": true
+    },
+    "results": {
+     "192": 2
+    },
+    "steps": [
+     {
+      "op": "fly",
+      "points": [
+       [
+        48.1,
+        11.5,
+        30.0
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "validate_points",
+        [
+         [
+          48.1,
+          11.5,
+          30.0
+         ]
+        ]
+       ],
+       [
+        "cmdint",
+        192,
+        0,
+        [
+         -1.0,
+         1.0,
+         0.0,
+         "nan"
+        ],
+        481000000,
+        115000000,
+        530.0,
+        5.0,
+        1
+       ],
+       [
+        "failure",
+        "Fly to point",
+        2
+       ]
+      ],
+      "t": 0.1
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": true,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "fly_one_point_ardupilot_airborne",
+    "stack": "ardupilot",
+    "mav_type": 2,
+    "initial": {
+     "landed_state": 2,
+     "altitude_agl": 30.0,
+     "armed": true,
+     "mode": "LOITER"
+    },
+    "reactions": [
+     {
+      "cmd": 176,
+      "param": [
+       1,
+       4.0
+      ],
+      "set": {
+       "mode": "GUIDED"
+      },
+      "after": 0.3
+     }
+    ],
+    "steps": [
+     {
+      "op": "fly",
+      "points": [
+       [
+        48.1,
+        11.5,
+        30.0
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "validate_points",
+        [
+         [
+          48.1,
+          11.5,
+          30.0
+         ]
+        ]
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        176,
+        [
+         1.0,
+         4.0,
+         0.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1,
+        false
+       ],
+       [
+        "console",
+        "MODE",
+        "Mode accepted: GUIDED",
+        "success"
+       ],
+       [
+        "cmdint",
+        192,
+        3,
+        [
+         -1.0,
+         1.0,
+         0.0,
+         "nan"
+        ],
+        481000000,
+        115000000,
+        30.0,
+        5.0,
+        1
+       ],
+       [
+        "console",
+        "GOTOPOINTS",
+        "Flying to point at 30 m AGL",
+        "success"
+       ]
+      ],
+      "t": 0.55
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": true,
+     "mode": "GUIDED",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "fly_one_point_ardupilot_guided_refused",
+    "stack": "ardupilot",
+    "mav_type": 2,
+    "initial": {
+     "landed_state": 2,
+     "altitude_agl": 30.0,
+     "armed": true
+    },
+    "results": {
+     "176": 2
+    },
+    "steps": [
+     {
+      "op": "fly",
+      "points": [
+       [
+        48.1,
+        11.5,
+        30.0
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "validate_points",
+        [
+         [
+          48.1,
+          11.5,
+          30.0
+         ]
+        ]
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        176,
+        [
+         1.0,
+         4.0,
+         0.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1,
+        false
+       ],
+       [
+        "failure",
+        "Mode change",
+        2
+       ],
+       [
+        "error",
+        "Fly to point needs GUIDED mode, which the vehicle refused"
+       ]
+      ],
+      "t": 0.1
+     }
+    ],
+    "final": {
+     "last_error": "Fly to point needs GUIDED mode, which the vehicle refused",
+     "armed": true,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "fly_two_points_px4_on_ground",
+    "home_amsl": 500.0,
+    "steps": [
+     {
+      "op": "fly",
+      "points": [
+       [
+        48.1,
+        11.5,
+        30.0
+       ],
+       [
+        48.2,
+        11.6,
+        40.0
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "validate_points",
+        [
+         [
+          48.1,
+          11.5,
+          30.0
+         ],
+         [
+          48.2,
+          11.6,
+          40.0
+         ]
+        ]
+       ],
+       [
+        "console",
+        "GOTOPOINTS",
+        "Uploading 3 mission item(s) \u2026",
+        "info"
+       ],
+       [
+        "upload",
+        [
+         {
+          "frame": 3,
+          "command": 22,
+          "current": 1,
+          "autocontinue": 1,
+          "param1": "nan",
+          "param2": "nan",
+          "param3": "nan",
+          "param4": "nan",
+          "x_int": 481000000,
+          "y_int": 115000000,
+          "x_f": 48.1,
+          "y_f": 11.5,
+          "z": 30.0
+         },
+         {
+          "frame": 3,
+          "command": 16,
+          "current": 0,
+          "autocontinue": 1,
+          "param1": 0.0,
+          "param2": "nan",
+          "param3": "nan",
+          "param4": "nan",
+          "x_int": 481000000,
+          "y_int": 115000000,
+          "x_f": 48.1,
+          "y_f": 11.5,
+          "z": 30.0
+         },
+         {
+          "frame": 3,
+          "command": 16,
+          "current": 0,
+          "autocontinue": 1,
+          "param1": 0.0,
+          "param2": "nan",
+          "param3": "nan",
+          "param4": "nan",
+          "x_int": 482000000,
+          "y_int": 116000000,
+          "x_f": 48.2,
+          "y_f": 11.6,
+          "z": 40.0
+         }
+        ]
+       ],
+       [
+        "note_mission",
+        null
+       ],
+       [
+        "console",
+        "GOTOPOINTS",
+        "Mission accepted; starting \u2026",
+        "info"
+       ],
+       [
+        "cmd",
+        300,
+        [
+         0.0,
+         2.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        5.0,
+        1,
+        false
+       ],
+       [
+        "console",
+        "MISSION",
+        "Fly to points: accepted, but the vehicle reports no mode rather than MISSION",
+        "warning"
+       ],
+       [
+        "console",
+        "GOTOPOINTS",
+        "Fly to points started",
+        "success"
+       ]
+      ],
+      "t": 3.25
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "fly_two_points_px4_airborne",
+    "home_amsl": 500.0,
+    "initial": {
+     "landed_state": 2,
+     "altitude_agl": 30.0,
+     "armed": true
+    },
+    "steps": [
+     {
+      "op": "fly",
+      "points": [
+       [
+        48.1,
+        11.5,
+        30.0
+       ],
+       [
+        48.2,
+        11.6,
+        40.0
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "validate_points",
+        [
+         [
+          48.1,
+          11.5,
+          30.0
+         ],
+         [
+          48.2,
+          11.6,
+          40.0
+         ]
+        ]
+       ],
+       [
+        "console",
+        "GOTOPOINTS",
+        "Uploading 2 mission item(s) \u2026",
+        "info"
+       ],
+       [
+        "upload",
+        [
+         {
+          "frame": 3,
+          "command": 16,
+          "current": 1,
+          "autocontinue": 1,
+          "param1": 0.0,
+          "param2": "nan",
+          "param3": "nan",
+          "param4": "nan",
+          "x_int": 481000000,
+          "y_int": 115000000,
+          "x_f": 48.1,
+          "y_f": 11.5,
+          "z": 30.0
+         },
+         {
+          "frame": 3,
+          "command": 16,
+          "current": 0,
+          "autocontinue": 1,
+          "param1": 0.0,
+          "param2": "nan",
+          "param3": "nan",
+          "param4": "nan",
+          "x_int": 482000000,
+          "y_int": 116000000,
+          "x_f": 48.2,
+          "y_f": 11.6,
+          "z": 40.0
+         }
+        ]
+       ],
+       [
+        "note_mission",
+        null
+       ],
+       [
+        "console",
+        "GOTOPOINTS",
+        "Mission accepted; starting \u2026",
+        "info"
+       ],
+       [
+        "cmd",
+        300,
+        [
+         0.0,
+         1.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        5.0,
+        1,
+        false
+       ],
+       [
+        "console",
+        "MISSION",
+        "Fly to points: accepted, but the vehicle reports no mode rather than MISSION",
+        "warning"
+       ],
+       [
+        "console",
+        "GOTOPOINTS",
+        "Fly to points started",
+        "success"
+       ]
+      ],
+      "t": 3.25
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": true,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "fly_points_ardupilot_on_ground",
+    "stack": "ardupilot",
+    "mav_type": 2,
+    "home": [
+     11.0,
+     48.0
+    ],
+    "home_amsl": 520.0,
+    "reactions": [
+     {
+      "cmd": 176,
+      "param": [
+       1,
+       4.0
+      ],
+      "set": {
+       "mode": "GUIDED"
+      },
+      "after": 0.3
+     },
+     {
+      "cmd": 400,
+      "param": [
+       0,
+       1.0
+      ],
+      "set": {
+       "armed": true
+      },
+      "after": 0.5
+     },
+     {
+      "cmd": 400,
+      "param": [
+       0,
+       0.0
+      ],
+      "set": {
+       "armed": false
+      },
+      "after": 0.5
+     }
+    ],
+    "steps": [
+     {
+      "op": "fly",
+      "points": [
+       [
+        48.1,
+        11.5,
+        30.0
+       ],
+       [
+        48.2,
+        11.6,
+        40.0
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "validate_points",
+        [
+         [
+          48.1,
+          11.5,
+          30.0
+         ],
+         [
+          48.2,
+          11.6,
+          40.0
+         ]
+        ]
+       ],
+       [
+        "console",
+        "GOTOPOINTS",
+        "Uploading 3 mission item(s) \u2026",
+        "info"
+       ],
+       [
+        "upload",
+        [
+         {
+          "frame": 0,
+          "command": 16,
+          "current": 1,
+          "autocontinue": 1,
+          "param1": 0.0,
+          "param2": 0.0,
+          "param3": 0.0,
+          "param4": 0.0,
+          "x_int": 480000000,
+          "y_int": 110000000,
+          "x_f": 48.0,
+          "y_f": 11.0,
+          "z": 520.0
+         },
+         {
+          "frame": 3,
+          "command": 22,
+          "current": 0,
+          "autocontinue": 1,
+          "param1": "nan",
+          "param2": "nan",
+          "param3": "nan",
+          "param4": "nan",
+          "x_int": 481000000,
+          "y_int": 115000000,
+          "x_f": 48.1,
+          "y_f": 11.5,
+          "z": 30.0
+         },
+         {
+          "frame": 3,
+          "command": 16,
+          "current": 0,
+          "autocontinue": 1,
+          "param1": 0.0,
+          "param2": "nan",
+          "param3": "nan",
+          "param4": "nan",
+          "x_int": 481000000,
+          "y_int": 115000000,
+          "x_f": 48.1,
+          "y_f": 11.5,
+          "z": 30.0
+         },
+         {
+          "frame": 3,
+          "command": 16,
+          "current": 0,
+          "autocontinue": 1,
+          "param1": 0.0,
+          "param2": "nan",
+          "param3": "nan",
+          "param4": "nan",
+          "x_int": 482000000,
+          "y_int": 116000000,
+          "x_f": 48.2,
+          "y_f": 11.6,
+          "z": 40.0
+         }
+        ]
+       ],
+       [
+        "note_mission",
+        null
+       ],
+       [
+        "console",
+        "GOTOPOINTS",
+        "Mission accepted; starting \u2026",
+        "info"
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        176,
+        [
+         1.0,
+         4.0,
+         0.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1,
+        false
+       ],
+       [
+        "console",
+        "MODE",
+        "Mode accepted: GUIDED",
+        "success"
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        400,
+        [
+         1.0,
+         0.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        2,
+        false
+       ],
+       [
+        "console",
+        "ARM",
+        "Armed successfully",
+        "success"
+       ],
+       [
+        "cmd",
+        300,
+        [
+         0.0,
+         0.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        5.0,
+        1,
+        false
+       ],
+       [
+        "console",
+        "GOTOPOINTS",
+        "Fly to points started",
+        "success"
+       ]
+      ],
+      "t": 1.3
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": true,
+     "mode": "GUIDED",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "fly_points_ardupilot_start_refused_disarms",
+    "stack": "ardupilot",
+    "mav_type": 2,
+    "reactions": [
+     {
+      "cmd": 176,
+      "param": [
+       1,
+       4.0
+      ],
+      "set": {
+       "mode": "GUIDED"
+      },
+      "after": 0.3
+     },
+     {
+      "cmd": 400,
+      "param": [
+       0,
+       1.0
+      ],
+      "set": {
+       "armed": true
+      },
+      "after": 0.5
+     },
+     {
+      "cmd": 400,
+      "param": [
+       0,
+       0.0
+      ],
+      "set": {
+       "armed": false
+      },
+      "after": 0.5
+     }
+    ],
+    "results": {
+     "300": 4
+    },
+    "steps": [
+     {
+      "op": "fly",
+      "points": [
+       [
+        48.1,
+        11.5,
+        30.0
+       ],
+       [
+        48.2,
+        11.6,
+        40.0
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "validate_points",
+        [
+         [
+          48.1,
+          11.5,
+          30.0
+         ],
+         [
+          48.2,
+          11.6,
+          40.0
+         ]
+        ]
+       ],
+       [
+        "console",
+        "GOTOPOINTS",
+        "Uploading 3 mission item(s) \u2026",
+        "info"
+       ],
+       [
+        "upload",
+        [
+         {
+          "frame": 0,
+          "command": 16,
+          "current": 1,
+          "autocontinue": 1,
+          "param1": 0.0,
+          "param2": 0.0,
+          "param3": 0.0,
+          "param4": 0.0,
+          "x_int": 0,
+          "y_int": 0,
+          "x_f": 0.0,
+          "y_f": 0.0,
+          "z": 0.0
+         },
+         {
+          "frame": 3,
+          "command": 22,
+          "current": 0,
+          "autocontinue": 1,
+          "param1": "nan",
+          "param2": "nan",
+          "param3": "nan",
+          "param4": "nan",
+          "x_int": 481000000,
+          "y_int": 115000000,
+          "x_f": 48.1,
+          "y_f": 11.5,
+          "z": 30.0
+         },
+         {
+          "frame": 3,
+          "command": 16,
+          "current": 0,
+          "autocontinue": 1,
+          "param1": 0.0,
+          "param2": "nan",
+          "param3": "nan",
+          "param4": "nan",
+          "x_int": 481000000,
+          "y_int": 115000000,
+          "x_f": 48.1,
+          "y_f": 11.5,
+          "z": 30.0
+         },
+         {
+          "frame": 3,
+          "command": 16,
+          "current": 0,
+          "autocontinue": 1,
+          "param1": 0.0,
+          "param2": "nan",
+          "param3": "nan",
+          "param4": "nan",
+          "x_int": 482000000,
+          "y_int": 116000000,
+          "x_f": 48.2,
+          "y_f": 11.6,
+          "z": 40.0
+         }
+        ]
+       ],
+       [
+        "note_mission",
+        null
+       ],
+       [
+        "console",
+        "GOTOPOINTS",
+        "Mission accepted; starting \u2026",
+        "info"
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        176,
+        [
+         1.0,
+         4.0,
+         0.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1,
+        false
+       ],
+       [
+        "console",
+        "MODE",
+        "Mode accepted: GUIDED",
+        "success"
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        400,
+        [
+         1.0,
+         0.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        2,
+        false
+       ],
+       [
+        "console",
+        "ARM",
+        "Armed successfully",
+        "success"
+       ],
+       [
+        "cmd",
+        300,
+        [
+         0.0,
+         0.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        5.0,
+        1,
+        false
+       ],
+       [
+        "console",
+        "MISSION",
+        "Mission start refused after arming, disarming again",
+        "warning"
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        400,
+        [
+         0.0,
+         0.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        2,
+        false
+       ],
+       [
+        "console",
+        "ARM",
+        "Disarmed successfully",
+        "success"
+       ],
+       [
+        "failure",
+        "Fly to points",
+        4
+       ]
+      ],
+      "t": 1.95
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": false,
+     "mode": "GUIDED",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "fly_points_upload_refused",
+    "upload_ack": 1,
+    "steps": [
+     {
+      "op": "fly",
+      "points": [
+       [
+        48.1,
+        11.5,
+        30.0
+       ],
+       [
+        48.2,
+        11.6,
+        40.0
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "validate_points",
+        [
+         [
+          48.1,
+          11.5,
+          30.0
+         ],
+         [
+          48.2,
+          11.6,
+          40.0
+         ]
+        ]
+       ],
+       [
+        "console",
+        "GOTOPOINTS",
+        "Uploading 3 mission item(s) \u2026",
+        "info"
+       ],
+       [
+        "upload",
+        [
+         {
+          "frame": 3,
+          "command": 22,
+          "current": 1,
+          "autocontinue": 1,
+          "param1": "nan",
+          "param2": "nan",
+          "param3": "nan",
+          "param4": "nan",
+          "x_int": 481000000,
+          "y_int": 115000000,
+          "x_f": 48.1,
+          "y_f": 11.5,
+          "z": 30.0
+         },
+         {
+          "frame": 3,
+          "command": 16,
+          "current": 0,
+          "autocontinue": 1,
+          "param1": 0.0,
+          "param2": "nan",
+          "param3": "nan",
+          "param4": "nan",
+          "x_int": 481000000,
+          "y_int": 115000000,
+          "x_f": 48.1,
+          "y_f": 11.5,
+          "z": 30.0
+         },
+         {
+          "frame": 3,
+          "command": 16,
+          "current": 0,
+          "autocontinue": 1,
+          "param1": 0.0,
+          "param2": "nan",
+          "param3": "nan",
+          "param4": "nan",
+          "x_int": 482000000,
+          "y_int": 116000000,
+          "x_f": 48.2,
+          "y_f": 11.6,
+          "z": 40.0
+         }
+        ]
+       ],
+       [
+        "failure",
+        "Fly to points",
+        4
+       ]
+      ],
+      "t": 0.1
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "fly_points_upload_unsupported",
+    "upload_ack": 3,
+    "steps": [
+     {
+      "op": "fly",
+      "points": [
+       [
+        48.1,
+        11.5,
+        30.0
+       ],
+       [
+        48.2,
+        11.6,
+        40.0
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "validate_points",
+        [
+         [
+          48.1,
+          11.5,
+          30.0
+         ],
+         [
+          48.2,
+          11.6,
+          40.0
+         ]
+        ]
+       ],
+       [
+        "console",
+        "GOTOPOINTS",
+        "Uploading 3 mission item(s) \u2026",
+        "info"
+       ],
+       [
+        "upload",
+        [
+         {
+          "frame": 3,
+          "command": 22,
+          "current": 1,
+          "autocontinue": 1,
+          "param1": "nan",
+          "param2": "nan",
+          "param3": "nan",
+          "param4": "nan",
+          "x_int": 481000000,
+          "y_int": 115000000,
+          "x_f": 48.1,
+          "y_f": 11.5,
+          "z": 30.0
+         },
+         {
+          "frame": 3,
+          "command": 16,
+          "current": 0,
+          "autocontinue": 1,
+          "param1": 0.0,
+          "param2": "nan",
+          "param3": "nan",
+          "param4": "nan",
+          "x_int": 481000000,
+          "y_int": 115000000,
+          "x_f": 48.1,
+          "y_f": 11.5,
+          "z": 30.0
+         },
+         {
+          "frame": 3,
+          "command": 16,
+          "current": 0,
+          "autocontinue": 1,
+          "param1": 0.0,
+          "param2": "nan",
+          "param3": "nan",
+          "param4": "nan",
+          "x_int": 482000000,
+          "y_int": 116000000,
+          "x_f": 48.2,
+          "y_f": 11.6,
+          "z": 40.0
+         }
+        ]
+       ],
+       [
+        "failure",
+        "Fly to points",
+        3
+       ]
+      ],
+      "t": 0.1
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "fly_points_upload_cancelled",
+    "upload_ack": -3,
+    "steps": [
+     {
+      "op": "fly",
+      "points": [
+       [
+        48.1,
+        11.5,
+        30.0
+       ],
+       [
+        48.2,
+        11.6,
+        40.0
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "validate_points",
+        [
+         [
+          48.1,
+          11.5,
+          30.0
+         ],
+         [
+          48.2,
+          11.6,
+          40.0
+         ]
+        ]
+       ],
+       [
+        "console",
+        "GOTOPOINTS",
+        "Uploading 3 mission item(s) \u2026",
+        "info"
+       ],
+       [
+        "upload",
+        [
+         {
+          "frame": 3,
+          "command": 22,
+          "current": 1,
+          "autocontinue": 1,
+          "param1": "nan",
+          "param2": "nan",
+          "param3": "nan",
+          "param4": "nan",
+          "x_int": 481000000,
+          "y_int": 115000000,
+          "x_f": 48.1,
+          "y_f": 11.5,
+          "z": 30.0
+         },
+         {
+          "frame": 3,
+          "command": 16,
+          "current": 0,
+          "autocontinue": 1,
+          "param1": 0.0,
+          "param2": "nan",
+          "param3": "nan",
+          "param4": "nan",
+          "x_int": 481000000,
+          "y_int": 115000000,
+          "x_f": 48.1,
+          "y_f": 11.5,
+          "z": 30.0
+         },
+         {
+          "frame": 3,
+          "command": 16,
+          "current": 0,
+          "autocontinue": 1,
+          "param1": 0.0,
+          "param2": "nan",
+          "param3": "nan",
+          "param4": "nan",
+          "x_int": 482000000,
+          "y_int": 116000000,
+          "x_f": 48.2,
+          "y_f": 11.6,
+          "z": 40.0
+         }
+        ]
+       ],
+       [
+        "failure",
+        "Fly to points",
+        -3
+       ]
+      ],
+      "t": 0.1
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "fly_points_start_refused",
+    "results": {
+     "300": 2
+    },
+    "steps": [
+     {
+      "op": "fly",
+      "points": [
+       [
+        48.1,
+        11.5,
+        30.0
+       ],
+       [
+        48.2,
+        11.6,
+        40.0
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "validate_points",
+        [
+         [
+          48.1,
+          11.5,
+          30.0
+         ],
+         [
+          48.2,
+          11.6,
+          40.0
+         ]
+        ]
+       ],
+       [
+        "console",
+        "GOTOPOINTS",
+        "Uploading 3 mission item(s) \u2026",
+        "info"
+       ],
+       [
+        "upload",
+        [
+         {
+          "frame": 3,
+          "command": 22,
+          "current": 1,
+          "autocontinue": 1,
+          "param1": "nan",
+          "param2": "nan",
+          "param3": "nan",
+          "param4": "nan",
+          "x_int": 481000000,
+          "y_int": 115000000,
+          "x_f": 48.1,
+          "y_f": 11.5,
+          "z": 30.0
+         },
+         {
+          "frame": 3,
+          "command": 16,
+          "current": 0,
+          "autocontinue": 1,
+          "param1": 0.0,
+          "param2": "nan",
+          "param3": "nan",
+          "param4": "nan",
+          "x_int": 481000000,
+          "y_int": 115000000,
+          "x_f": 48.1,
+          "y_f": 11.5,
+          "z": 30.0
+         },
+         {
+          "frame": 3,
+          "command": 16,
+          "current": 0,
+          "autocontinue": 1,
+          "param1": 0.0,
+          "param2": "nan",
+          "param3": "nan",
+          "param4": "nan",
+          "x_int": 482000000,
+          "y_int": 116000000,
+          "x_f": 48.2,
+          "y_f": 11.6,
+          "z": 40.0
+         }
+        ]
+       ],
+       [
+        "note_mission",
+        null
+       ],
+       [
+        "console",
+        "GOTOPOINTS",
+        "Mission accepted; starting \u2026",
+        "info"
+       ],
+       [
+        "cmd",
+        300,
+        [
+         0.0,
+         2.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        5.0,
+        1,
+        false
+       ],
+       [
+        "failure",
+        "Fly to points",
+        2
+       ]
+      ],
+      "t": 0.2
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "fly_points_invalid",
+    "points_error": "points must be a non-empty list",
+    "steps": [
+     {
+      "op": "fly",
+      "points": []
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "validate_points",
+        []
+       ],
+       [
+        "error",
+        "points must be a non-empty list"
+       ]
+      ],
+      "t": 0.0
+     }
+    ],
+    "final": {
+     "last_error": "points must be a non-empty list",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "fly_points_not_ready",
+    "ready": false,
+    "steps": [
+     {
+      "op": "fly",
+      "points": [
+       [
+        48.1,
+        11.5,
+        30.0
+       ],
+       [
+        48.2,
+        11.6,
+        40.0
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "validate_points",
+        [
+         [
+          48.1,
+          11.5,
+          30.0
+         ],
+         [
+          48.2,
+          11.6,
+          40.0
+         ]
+        ]
+       ],
+       [
+        "failure",
+        "Fly to points",
+        -2
+       ]
+      ],
+      "t": 0.0
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "fly_points_px4_mode_confirmed",
+    "reactions": [
+     {
+      "cmd": 300,
+      "set": {
+       "mode": "MISSION",
+       "armed": true
+      },
+      "after": 0.4
+     }
+    ],
+    "steps": [
+     {
+      "op": "fly",
+      "points": [
+       [
+        48.1,
+        11.5,
+        30.0
+       ],
+       [
+        48.2,
+        11.6,
+        40.0
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "validate_points",
+        [
+         [
+          48.1,
+          11.5,
+          30.0
+         ],
+         [
+          48.2,
+          11.6,
+          40.0
+         ]
+        ]
+       ],
+       [
+        "console",
+        "GOTOPOINTS",
+        "Uploading 3 mission item(s) \u2026",
+        "info"
+       ],
+       [
+        "upload",
+        [
+         {
+          "frame": 3,
+          "command": 22,
+          "current": 1,
+          "autocontinue": 1,
+          "param1": "nan",
+          "param2": "nan",
+          "param3": "nan",
+          "param4": "nan",
+          "x_int": 481000000,
+          "y_int": 115000000,
+          "x_f": 48.1,
+          "y_f": 11.5,
+          "z": 30.0
+         },
+         {
+          "frame": 3,
+          "command": 16,
+          "current": 0,
+          "autocontinue": 1,
+          "param1": 0.0,
+          "param2": "nan",
+          "param3": "nan",
+          "param4": "nan",
+          "x_int": 481000000,
+          "y_int": 115000000,
+          "x_f": 48.1,
+          "y_f": 11.5,
+          "z": 30.0
+         },
+         {
+          "frame": 3,
+          "command": 16,
+          "current": 0,
+          "autocontinue": 1,
+          "param1": 0.0,
+          "param2": "nan",
+          "param3": "nan",
+          "param4": "nan",
+          "x_int": 482000000,
+          "y_int": 116000000,
+          "x_f": 48.2,
+          "y_f": 11.6,
+          "z": 40.0
+         }
+        ]
+       ],
+       [
+        "note_mission",
+        null
+       ],
+       [
+        "console",
+        "GOTOPOINTS",
+        "Mission accepted; starting \u2026",
+        "info"
+       ],
+       [
+        "cmd",
+        300,
+        [
+         0.0,
+         2.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        5.0,
+        1,
+        false
+       ],
+       [
+        "console",
+        "GOTOPOINTS",
+        "Fly to points started",
+        "success"
+       ]
+      ],
+      "t": 0.65
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": true,
+     "mode": "MISSION",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "fly_points_px4_mode_mismatch",
+    "initial": {
+     "mode": "LOITER"
+    },
+    "steps": [
+     {
+      "op": "fly",
+      "points": [
+       [
+        48.1,
+        11.5,
+        30.0
+       ],
+       [
+        48.2,
+        11.6,
+        40.0
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "validate_points",
+        [
+         [
+          48.1,
+          11.5,
+          30.0
+         ],
+         [
+          48.2,
+          11.6,
+          40.0
+         ]
+        ]
+       ],
+       [
+        "console",
+        "GOTOPOINTS",
+        "Uploading 3 mission item(s) \u2026",
+        "info"
+       ],
+       [
+        "upload",
+        [
+         {
+          "frame": 3,
+          "command": 22,
+          "current": 1,
+          "autocontinue": 1,
+          "param1": "nan",
+          "param2": "nan",
+          "param3": "nan",
+          "param4": "nan",
+          "x_int": 481000000,
+          "y_int": 115000000,
+          "x_f": 48.1,
+          "y_f": 11.5,
+          "z": 30.0
+         },
+         {
+          "frame": 3,
+          "command": 16,
+          "current": 0,
+          "autocontinue": 1,
+          "param1": 0.0,
+          "param2": "nan",
+          "param3": "nan",
+          "param4": "nan",
+          "x_int": 481000000,
+          "y_int": 115000000,
+          "x_f": 48.1,
+          "y_f": 11.5,
+          "z": 30.0
+         },
+         {
+          "frame": 3,
+          "command": 16,
+          "current": 0,
+          "autocontinue": 1,
+          "param1": 0.0,
+          "param2": "nan",
+          "param3": "nan",
+          "param4": "nan",
+          "x_int": 482000000,
+          "y_int": 116000000,
+          "x_f": 48.2,
+          "y_f": 11.6,
+          "z": 40.0
+         }
+        ]
+       ],
+       [
+        "note_mission",
+        null
+       ],
+       [
+        "console",
+        "GOTOPOINTS",
+        "Mission accepted; starting \u2026",
+        "info"
+       ],
+       [
+        "cmd",
+        300,
+        [
+         0.0,
+         2.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        5.0,
+        1,
+        false
+       ],
+       [
+        "console",
+        "MISSION",
+        "Fly to points: accepted, but the vehicle reports LOITER rather than MISSION",
+        "warning"
+       ],
+       [
+        "console",
+        "GOTOPOINTS",
+        "Fly to points started",
+        "success"
+       ]
+      ],
+      "t": 3.25
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": false,
+     "mode": "LOITER",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "fly_points_px4_no_mode",
+    "steps": [
+     {
+      "op": "fly",
+      "points": [
+       [
+        48.1,
+        11.5,
+        30.0
+       ],
+       [
+        48.2,
+        11.6,
+        40.0
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "validate_points",
+        [
+         [
+          48.1,
+          11.5,
+          30.0
+         ],
+         [
+          48.2,
+          11.6,
+          40.0
+         ]
+        ]
+       ],
+       [
+        "console",
+        "GOTOPOINTS",
+        "Uploading 3 mission item(s) \u2026",
+        "info"
+       ],
+       [
+        "upload",
+        [
+         {
+          "frame": 3,
+          "command": 22,
+          "current": 1,
+          "autocontinue": 1,
+          "param1": "nan",
+          "param2": "nan",
+          "param3": "nan",
+          "param4": "nan",
+          "x_int": 481000000,
+          "y_int": 115000000,
+          "x_f": 48.1,
+          "y_f": 11.5,
+          "z": 30.0
+         },
+         {
+          "frame": 3,
+          "command": 16,
+          "current": 0,
+          "autocontinue": 1,
+          "param1": 0.0,
+          "param2": "nan",
+          "param3": "nan",
+          "param4": "nan",
+          "x_int": 481000000,
+          "y_int": 115000000,
+          "x_f": 48.1,
+          "y_f": 11.5,
+          "z": 30.0
+         },
+         {
+          "frame": 3,
+          "command": 16,
+          "current": 0,
+          "autocontinue": 1,
+          "param1": 0.0,
+          "param2": "nan",
+          "param3": "nan",
+          "param4": "nan",
+          "x_int": 482000000,
+          "y_int": 116000000,
+          "x_f": 48.2,
+          "y_f": 11.6,
+          "z": 40.0
+         }
+        ]
+       ],
+       [
+        "note_mission",
+        null
+       ],
+       [
+        "console",
+        "GOTOPOINTS",
+        "Mission accepted; starting \u2026",
+        "info"
+       ],
+       [
+        "cmd",
+        300,
+        [
+         0.0,
+         2.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        5.0,
+        1,
+        false
+       ],
+       [
+        "console",
+        "MISSION",
+        "Fly to points: accepted, but the vehicle reports no mode rather than MISSION",
+        "warning"
+       ],
+       [
+        "console",
+        "GOTOPOINTS",
+        "Fly to points started",
+        "success"
+       ]
+      ],
+      "t": 3.25
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "fly_points_interrupted_while_uploading",
+    "abort_on_console": [
+     "Mission accepted"
+    ],
+    "steps": [
+     {
+      "op": "fly",
+      "points": [
+       [
+        48.1,
+        11.5,
+        30.0
+       ],
+       [
+        48.2,
+        11.6,
+        40.0
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "validate_points",
+        [
+         [
+          48.1,
+          11.5,
+          30.0
+         ],
+         [
+          48.2,
+          11.6,
+          40.0
+         ]
+        ]
+       ],
+       [
+        "console",
+        "GOTOPOINTS",
+        "Uploading 3 mission item(s) \u2026",
+        "info"
+       ],
+       [
+        "upload",
+        [
+         {
+          "frame": 3,
+          "command": 22,
+          "current": 1,
+          "autocontinue": 1,
+          "param1": "nan",
+          "param2": "nan",
+          "param3": "nan",
+          "param4": "nan",
+          "x_int": 481000000,
+          "y_int": 115000000,
+          "x_f": 48.1,
+          "y_f": 11.5,
+          "z": 30.0
+         },
+         {
+          "frame": 3,
+          "command": 16,
+          "current": 0,
+          "autocontinue": 1,
+          "param1": 0.0,
+          "param2": "nan",
+          "param3": "nan",
+          "param4": "nan",
+          "x_int": 481000000,
+          "y_int": 115000000,
+          "x_f": 48.1,
+          "y_f": 11.5,
+          "z": 30.0
+         },
+         {
+          "frame": 3,
+          "command": 16,
+          "current": 0,
+          "autocontinue": 1,
+          "param1": 0.0,
+          "param2": "nan",
+          "param3": "nan",
+          "param4": "nan",
+          "x_int": 482000000,
+          "y_int": 116000000,
+          "x_f": 48.2,
+          "y_f": 11.6,
+          "z": 40.0
+         }
+        ]
+       ],
+       [
+        "note_mission",
+        null
+       ],
+       [
+        "console",
+        "GOTOPOINTS",
+        "Mission accepted; starting \u2026",
+        "info"
+       ],
+       [
+        "error",
+        "Fly to points stopped: another command took over"
+       ],
+       [
+        "console",
+        "FLY TO POINTS",
+        "Fly to points stopped: another command took over",
+        "warning"
+       ]
+      ],
+      "t": 0.1
+     }
+    ],
+    "final": {
+     "last_error": "Fly to points stopped: another command took over",
+     "armed": false,
+     "mode": "",
+     "aborts": 1
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "drive_points_rover",
+    "mav_type": 10,
+    "stack": "ardupilot",
+    "initial": {
+     "armed": true
+    },
+    "reactions": [
+     {
+      "cmd": 176,
+      "param": [
+       1,
+       4.0
+      ],
+      "set": {
+       "mode": "GUIDED"
+      },
+      "after": 0.3
+     }
+    ],
+    "steps": [
+     {
+      "op": "fly",
+      "points": [
+       [
+        48.1,
+        11.5,
+        0.0
+       ]
+      ]
+     },
+     {
+      "op": "fly",
+      "points": [
+       [
+        48.1,
+        11.5,
+        30.0
+       ],
+       [
+        48.2,
+        11.6,
+        40.0
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "validate_points",
+        [
+         [
+          48.1,
+          11.5,
+          0.0
+         ]
+        ]
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        176,
+        [
+         1.0,
+         15.0,
+         0.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1,
+        false
+       ],
+       [
+        "console",
+        "MODE",
+        "Mode accepted: GUIDED",
+        "success"
+       ],
+       [
+        "console",
+        "MODE",
+        "GUIDED accepted but not yet confirmed in telemetry, continuing with drive to point",
+        "warning"
+       ],
+       [
+        "cmdint",
+        192,
+        3,
+        [
+         -1.0,
+         1.0,
+         0.0,
+         "nan"
+        ],
+        481000000,
+        115000000,
+        0.0,
+        5.0,
+        1
+       ],
+       [
+        "console",
+        "GOTOPOINTS",
+        "Driving to point",
+        "success"
+       ]
+      ],
+      "t": 3.25
+     },
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "validate_points",
+        [
+         [
+          48.1,
+          11.5,
+          30.0
+         ],
+         [
+          48.2,
+          11.6,
+          40.0
+         ]
+        ]
+       ],
+       [
+        "console",
+        "GOTOPOINTS",
+        "Uploading 2 mission item(s) \u2026",
+        "info"
+       ],
+       [
+        "upload",
+        [
+         {
+          "frame": 0,
+          "command": 16,
+          "current": 1,
+          "autocontinue": 1,
+          "param1": 0.0,
+          "param2": 0.0,
+          "param3": 0.0,
+          "param4": 0.0,
+          "x_int": 0,
+          "y_int": 0,
+          "x_f": 0.0,
+          "y_f": 0.0,
+          "z": 0.0
+         },
+         {
+          "frame": 3,
+          "command": 16,
+          "current": 0,
+          "autocontinue": 1,
+          "param1": 0.0,
+          "param2": "nan",
+          "param3": "nan",
+          "param4": "nan",
+          "x_int": 481000000,
+          "y_int": 115000000,
+          "x_f": 48.1,
+          "y_f": 11.5,
+          "z": 30.0
+         },
+         {
+          "frame": 3,
+          "command": 16,
+          "current": 0,
+          "autocontinue": 1,
+          "param1": 0.0,
+          "param2": "nan",
+          "param3": "nan",
+          "param4": "nan",
+          "x_int": 482000000,
+          "y_int": 116000000,
+          "x_f": 48.2,
+          "y_f": 11.6,
+          "z": 40.0
+         }
+        ]
+       ],
+       [
+        "note_mission",
+        null
+       ],
+       [
+        "console",
+        "GOTOPOINTS",
+        "Mission accepted; starting \u2026",
+        "info"
+       ],
+       [
+        "cmd",
+        300,
+        [
+         0.0,
+         0.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        5.0,
+        1,
+        false
+       ],
+       [
+        "console",
+        "GOTOPOINTS",
+        "Drive to points started",
+        "success"
+       ]
+      ],
+      "t": 3.45
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": true,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "drive_points_rover_disarmed",
+    "mav_type": 10,
+    "stack": "ardupilot",
+    "reactions": [
+     {
+      "cmd": 176,
+      "param": [
+       1,
+       4.0
+      ],
+      "set": {
+       "mode": "GUIDED"
+      },
+      "after": 0.3
+     },
+     {
+      "cmd": 400,
+      "param": [
+       0,
+       1.0
+      ],
+      "set": {
+       "armed": true
+      },
+      "after": 0.5
+     },
+     {
+      "cmd": 400,
+      "param": [
+       0,
+       0.0
+      ],
+      "set": {
+       "armed": false
+      },
+      "after": 0.5
+     }
+    ],
+    "steps": [
+     {
+      "op": "fly",
+      "points": [
+       [
+        48.1,
+        11.5,
+        0.0
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "validate_points",
+        [
+         [
+          48.1,
+          11.5,
+          0.0
+         ]
+        ]
+       ],
+       [
+        "console",
+        "GOTOPOINTS",
+        "Uploading 1 mission item(s) \u2026",
+        "info"
+       ],
+       [
+        "upload",
+        [
+         {
+          "frame": 0,
+          "command": 16,
+          "current": 1,
+          "autocontinue": 1,
+          "param1": 0.0,
+          "param2": 0.0,
+          "param3": 0.0,
+          "param4": 0.0,
+          "x_int": 0,
+          "y_int": 0,
+          "x_f": 0.0,
+          "y_f": 0.0,
+          "z": 0.0
+         },
+         {
+          "frame": 3,
+          "command": 16,
+          "current": 0,
+          "autocontinue": 1,
+          "param1": 0.0,
+          "param2": "nan",
+          "param3": "nan",
+          "param4": "nan",
+          "x_int": 481000000,
+          "y_int": 115000000,
+          "x_f": 48.1,
+          "y_f": 11.5,
+          "z": 0.0
+         }
+        ]
+       ],
+       [
+        "note_mission",
+        null
+       ],
+       [
+        "console",
+        "GOTOPOINTS",
+        "Mission accepted; starting \u2026",
+        "info"
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        176,
+        [
+         1.0,
+         15.0,
+         0.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1,
+        false
+       ],
+       [
+        "console",
+        "MODE",
+        "Mode accepted: GUIDED",
+        "success"
+       ],
+       [
+        "console",
+        "MODE",
+        "GUIDED accepted but not yet confirmed in telemetry, continuing with drive to points",
+        "warning"
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        400,
+        [
+         1.0,
+         0.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        2,
+        false
+       ],
+       [
+        "console",
+        "ARM",
+        "Armed successfully",
+        "success"
+       ],
+       [
+        "cmd",
+        300,
+        [
+         0.0,
+         0.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        5.0,
+        1,
+        false
+       ],
+       [
+        "console",
+        "GOTOPOINTS",
+        "Drive to points started",
+        "success"
+       ]
+      ],
+      "t": 4.0
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": true,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "start_mission_px4",
+    "reactions": [
+     {
+      "cmd": 300,
+      "set": {
+       "mode": "MISSION"
+      },
+      "after": 0.2
+     }
+    ],
+    "steps": [
+     {
+      "op": "start",
+      "count": 4
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        300,
+        [
+         0.0,
+         3.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        5.0,
+        1,
+        false
+       ],
+       [
+        "console",
+        "MISSION",
+        "Mission started",
+        "success"
+       ]
+      ],
+      "t": 0.35
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": false,
+     "mode": "MISSION",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "start_mission_checks",
+    "steps": [
+     {
+      "op": "start",
+      "count": 0
+     },
+     {
+      "op": "start",
+      "count": -3
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        "mission item count must be positive"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        "mission item count must be positive"
+       ]
+      ],
+      "t": 0.0
+     }
+    ],
+    "final": {
+     "last_error": "mission item count must be positive",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "start_mission_not_ready",
+    "ready": false,
+    "steps": [
+     {
+      "op": "start",
+      "count": 3
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "failure",
+        "Mission start",
+        -2
+       ]
+      ],
+      "t": 0.0
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "start_mission_ardupilot_copter",
+    "stack": "ardupilot",
+    "mav_type": 2,
+    "reactions": [
+     {
+      "cmd": 176,
+      "param": [
+       1,
+       4.0
+      ],
+      "set": {
+       "mode": "GUIDED"
+      },
+      "after": 0.3
+     },
+     {
+      "cmd": 400,
+      "param": [
+       0,
+       1.0
+      ],
+      "set": {
+       "armed": true
+      },
+      "after": 0.5
+     },
+     {
+      "cmd": 400,
+      "param": [
+       0,
+       0.0
+      ],
+      "set": {
+       "armed": false
+      },
+      "after": 0.5
+     }
+    ],
+    "steps": [
+     {
+      "op": "start",
+      "count": 4
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        176,
+        [
+         1.0,
+         4.0,
+         0.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1,
+        false
+       ],
+       [
+        "console",
+        "MODE",
+        "Mode accepted: GUIDED",
+        "success"
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        400,
+        [
+         1.0,
+         0.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        2,
+        false
+       ],
+       [
+        "console",
+        "ARM",
+        "Armed successfully",
+        "success"
+       ],
+       [
+        "cmd",
+        300,
+        [
+         0.0,
+         0.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        5.0,
+        1,
+        false
+       ],
+       [
+        "console",
+        "MISSION",
+        "Mission started",
+        "success"
+       ]
+      ],
+      "t": 1.2
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": true,
+     "mode": "GUIDED",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "start_mission_ardupilot_plane",
+    "stack": "ardupilot",
+    "mav_type": 1,
+    "reactions": [
+     {
+      "cmd": 176,
+      "param": [
+       1,
+       10.0
+      ],
+      "set": {
+       "mode": "AUTO"
+      },
+      "after": 0.3
+     },
+     {
+      "cmd": 400,
+      "param": [
+       0,
+       1.0
+      ],
+      "set": {
+       "armed": true
+      },
+      "after": 0.5
+     },
+     {
+      "cmd": 400,
+      "param": [
+       0,
+       0.0
+      ],
+      "set": {
+       "armed": false
+      },
+      "after": 0.5
+     }
+    ],
+    "steps": [
+     {
+      "op": "start",
+      "count": 4
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        176,
+        [
+         1.0,
+         10.0,
+         0.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1,
+        false
+       ],
+       [
+        "console",
+        "MODE",
+        "Mode accepted: AUTO",
+        "success"
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        400,
+        [
+         1.0,
+         0.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        2,
+        false
+       ],
+       [
+        "console",
+        "ARM",
+        "Armed successfully",
+        "success"
+       ],
+       [
+        "cmd",
+        300,
+        [
+         0.0,
+         0.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        5.0,
+        1,
+        false
+       ],
+       [
+        "console",
+        "MISSION",
+        "Mission started",
+        "success"
+       ]
+      ],
+      "t": 0.85
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": true,
+     "mode": "AUTO",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "start_mission_ardupilot_already_armed",
+    "stack": "ardupilot",
+    "mav_type": 2,
+    "initial": {
+     "armed": true
+    },
+    "steps": [
+     {
+      "op": "start",
+      "count": 2
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        300,
+        [
+         0.0,
+         0.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        5.0,
+        1,
+        false
+       ],
+       [
+        "console",
+        "MISSION",
+        "Mission started",
+        "success"
+       ]
+      ],
+      "t": 0.1
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": true,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "start_mission_ardupilot_mode_refused",
+    "stack": "ardupilot",
+    "mav_type": 2,
+    "results": {
+     "176": 4
+    },
+    "steps": [
+     {
+      "op": "start",
+      "count": 2
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        176,
+        [
+         1.0,
+         4.0,
+         0.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1,
+        false
+       ],
+       [
+        "failure",
+        "Mode change",
+        4
+       ],
+       [
+        "error",
+        "Mission start needs GUIDED mode, which the vehicle refused"
+       ]
+      ],
+      "t": 0.1
+     }
+    ],
+    "final": {
+     "last_error": "Mission start needs GUIDED mode, which the vehicle refused",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "start_mission_refused",
+    "results": {
+     "300": 2
+    },
+    "steps": [
+     {
+      "op": "start",
+      "count": 2
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        300,
+        [
+         0.0,
+         1.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        5.0,
+        1,
+        false
+       ],
+       [
+        "failure",
+        "Mission start",
+        2
+       ]
+      ],
+      "t": 0.1
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "armed": false,
+     "mode": "",
+     "aborts": 0
+    }
+   }
+  }
+ ]
+}

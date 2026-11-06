@@ -183,6 +183,10 @@ def clean(x):
     """JSON-safe: NaN becomes the text "nan", tuples become lists."""
     if isinstance(x, float) and x != x:
         return "nan"
+    if x == float("inf") and isinstance(x, float):
+        return "inf"
+    if x == float("-inf") and isinstance(x, float):
+        return "-inf"
     if isinstance(x, dict):
         return {k: clean(v) for k, v in x.items()}
     if isinstance(x, (list, tuple)):
@@ -193,6 +197,10 @@ def clean(x):
 def unclean(x):
     if x == "nan":
         return float("nan")
+    if x == "inf":
+        return float("inf")
+    if x == "-inf":
+        return float("-inf")
     if isinstance(x, dict):
         return {k: unclean(v) for k, v in x.items()}
     if isinstance(x, list):
@@ -808,8 +816,538 @@ def ftp_cases() -> list[dict]:
     return out
 
 
+# -------------------------------------------------------------- flight ----
+
+class FlightLock:
+    """The bridge's command lock as the flight code sees it: contexts, a mark
+    and a count of the aborts other threads registered."""
+
+    def __init__(self) -> None:
+        self.aborts = 0
+
+    def priority(self):
+        return self
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def abort_mark(self) -> int:
+        return self.aborts
+
+    def aborted_since(self, mark: int) -> bool:
+        return self.aborts > mark
+
+
+class FlightStop:
+    def __init__(self, bridge) -> None:
+        self.bridge = bridge
+
+    def is_set(self) -> bool:
+        stop_at = self.bridge.sc.get("stop_at")
+        return stop_at is not None and self.bridge.clock.t >= stop_at
+
+
+class FlightStore:
+    def __init__(self, bridge) -> None:
+        self.bridge = bridge
+
+    def get_snapshot(self) -> dict:
+        self.bridge.tick()
+        state = self.bridge.state
+        snap = {"connected": state["connected"], "armed": state["armed"], "mode": state["mode"]}
+        if state["landed_state"] is not None:
+            snap["landed_state"] = state["landed_state"]
+        if state["altitude_agl"] is not None:
+            snap["altitude_agl"] = state["altitude_agl"]
+        return snap
+
+    def is_stale(self, timeout: float = 2.0) -> bool:
+        self.bridge.log.append(["stale_check", timeout])
+        return bool(self.bridge.sc.get("stale", False))
+
+
+class FlightMav:
+    def __init__(self, bridge) -> None:
+        self.bridge = bridge
+
+    def set_position_target_local_ned_send(self, *args):
+        if self.bridge.sc.get("send_fails"):
+            raise OSError("boom")
+        self.bridge.log.append(["sent", "set_position_target_local_ned_send", list(args)])
+
+
+class FlightSendLock:
+    def __init__(self, bridge) -> None:
+        self.bridge = bridge
+
+    def __enter__(self):
+        if self.bridge.sc.get("link_lost"):
+            self.bridge._conn = type("Conn", (), {})()
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+def _flight_spec(seq, command, lat, lon, alt, p1, p2, p3, p4, frame=None):
+    from corvus_link import mavutil
+
+    return {
+        "frame": (mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT if frame is None else int(frame)),
+        "command": command, "current": 1 if seq == 0 else 0, "autocontinue": 1,
+        "param1": float(p1), "param2": float(p2), "param3": float(p3), "param4": float(p4),
+        "x_int": int(round(lat * 1e7)), "y_int": int(round(lon * 1e7)),
+        "x_f": float(lat), "y_f": float(lon), "z": float(alt),
+    }
+
+
+def flight_bridge_class():
+    """The reference flight code (tests/reference) on a scripted bridge."""
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
+    from corvus import autopilot as ap
+    from corvus_link import mavutil
+    from tests.reference import mavlink_flight_python as ref
+
+    class FlightBridge(ref.FlightCommandsMixin, ref.MissionFlightMixin):
+        def __init__(self, sc: dict, clock: Clock) -> None:
+            self.sc = sc
+            self.clock = clock
+            self.log: list = []
+            self.last_error = ""
+            self._operation_lock = FlightLock()
+            self._stop_event = FlightStop(self)
+            self._store = FlightStore(self)
+            self._send_lock = FlightSendLock(self)
+            self._conn = type("Conn", (), {})()
+            self._conn.mav = FlightMav(self)
+            self._target_system = 1
+            self._target_component = 1
+            self._mav_type_id = sc.get("mav_type", 2)
+            self._dialect = ap.dialect_for_stack(sc.get("stack", "px4"))
+            mode = sc.get("modes", "dialect")
+            table = self._dialect.mode_table(self._mav_type_id, (1, 18, 0))
+            self._mode_values = {} if mode == "empty" else {
+                n: (c.base_mode, c.custom_mode, c.custom_sub) for n, c in table.items()}
+            self._modes_unsupported = bool(sc.get("modes_unsupported", False))
+            init = sc.get("initial", {})
+            self.state = {"connected": True, "armed": False, "mode": "", "landed_state": None,
+                          "altitude_agl": 0.0, **init}
+            self._home = sc.get("home_amsl")
+            self._pos_home = sc.get("position_home_amsl")
+            self.pending: list = []
+            self.counts: dict = {}
+            self.aborted_on: set = set()
+
+        def tick(self) -> None:
+            due = [p for p in self.pending if p[0] <= self.clock.t]
+            self.pending = [p for p in self.pending if p[0] > self.clock.t]
+            for _, field, value in sorted(due, key=lambda p: p[0]):
+                if field in ("home_amsl", "position_home_amsl"):
+                    if field == "home_amsl":
+                        self._home = value
+                    else:
+                        self._pos_home = value
+                else:
+                    self.state[field] = value
+
+        @property
+        def _home_alt_amsl(self):
+            self.tick()
+            return self._home
+
+        @property
+        def _position_home_alt_amsl(self):
+            self.tick()
+            return self._pos_home
+
+        def _connection_ready(self) -> bool:
+            until = self.sc.get("ready_until")
+            if until is not None and self.clock.t >= until:
+                return False
+            return self.sc.get("ready", True)
+
+        def _set_command_error(self, text: str) -> None:
+            self.last_error = text
+            self.log.append(["error", text])
+
+        def get_last_command_error(self) -> str:
+            return self.last_error
+
+        def _console_publish(self, name, text, level) -> None:
+            self.log.append(["console", name, text, level])
+            for prefix in self.sc.get("abort_on_console", []):
+                if text.startswith(prefix) and prefix not in self.aborted_on:
+                    self.aborted_on.add(prefix)
+                    self._operation_lock.aborts += 1
+
+        def _store_update_warning(self, text, level) -> None:
+            self.log.append(["warn", text, level])
+
+        def _command_failure(self, action, result) -> bool:
+            self.log.append(["failure", action, result])
+            return False
+
+        def _request_home(self) -> None:
+            self.log.append(["request_home"])
+            reply = self.sc.get("home_reply")
+            if reply:
+                self.pending.append((self.clock.t + reply["after"], "home_amsl", reply["value"]))
+
+        def _result_for(self, command: int, params) -> int:
+            self.clock.t += self.sc.get("cost", 0.1)
+            results = self.sc.get("results", {})
+            plan = results.get(str(command), self.sc.get("default_result", 0))
+            if isinstance(plan, list):
+                n = self.counts.get(command, 0)
+                self.counts[command] = n + 1
+                result = plan[min(n, len(plan) - 1)]
+            else:
+                result = plan
+            if result == 0:
+                for rule in self.sc.get("reactions", []):
+                    if rule["cmd"] != command:
+                        continue
+                    if "param" in rule:
+                        index, value = rule["param"]
+                        if not params[index] == value:
+                            continue
+                    for field, value in rule["set"].items():
+                        self.pending.append((self.clock.t + rule.get("after", 0.0), field, value))
+            return result
+
+        def _send_command_and_wait(self, command, params=None, timeout=3.0, retries=2,
+                                   accept_in_progress=False, interim=frozenset()):
+            self.log.append(["cmd", command, list(params), timeout, retries, accept_in_progress])
+            return self._result_for(command, params)
+
+        def _send_command_int_and_wait(self, command, frame, params=None, x=0, y=0, z=0.0,
+                                       timeout=3.0, retries=2):
+            self.log.append(["cmdint", command, frame, list(params), x, y, z, timeout, retries])
+            return self._result_for(command, params)
+
+        def _validate_fly_to_points(self, points):
+            self.log.append(["validate_points", points])
+            if self.sc.get("points_error"):
+                self._set_command_error(self.sc["points_error"])
+                return None
+            return [tuple(p) for p in points]
+
+        @staticmethod
+        def _fly_to_point_number(value):
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                return None
+            return float(value)
+
+        def _takeoff_item_position(self, first):
+            return first[0], first[1]
+
+        _build_mission_item_spec = staticmethod(_flight_spec)
+
+        def _with_mission_home_slot(self, specs):
+            if not specs or not self._dialect.mission_seq0_is_home:
+                return specs
+            home = self.sc.get("home", [0.0, 0.0])
+            home_alt = self._home or 0.0
+            placeholder = self._build_mission_item_spec(
+                0, mavutil.mavlink.MAV_CMD_NAV_WAYPOINT, home[1], home[0], home_alt, 0.0, 0.0, 0.0, 0.0,
+                frame=mavutil.mavlink.MAV_FRAME_GLOBAL)
+            return [placeholder] + [dict(item, current=0) for item in specs]
+
+        def _upload_mission(self, items):
+            self.log.append(["upload", items])
+            self.clock.t += self.sc.get("cost", 0.1)
+            return self.sc.get("upload_ack", 0)
+
+        @staticmethod
+        def _mission_ack_to_result(ack_type):
+            if ack_type == mavutil.mavlink.MAV_MISSION_ACCEPTED:
+                return mavutil.mavlink.MAV_RESULT_ACCEPTED
+            if ack_type == mavutil.mavlink.MAV_MISSION_DENIED:
+                return mavutil.mavlink.MAV_RESULT_DENIED
+            if ack_type in (2, 3):
+                return mavutil.mavlink.MAV_RESULT_UNSUPPORTED
+            return mavutil.mavlink.MAV_RESULT_FAILED
+
+        def _note_vehicle_mission(self, plan_index) -> None:
+            self.log.append(["note_mission", plan_index])
+
+        def _mission_start_range(self, count):
+            return self._dialect.mission_start_params(count)
+
+    return FlightBridge
+
+
+def flight_scenarios() -> list[dict]:
+    GUIDED = [{"cmd": 176, "param": [1, 4.0], "set": {"mode": "GUIDED"}, "after": 0.3}]
+    ARM = [{"cmd": 400, "param": [0, 1.0], "set": {"armed": True}, "after": 0.5},
+           {"cmd": 400, "param": [0, 0.0], "set": {"armed": False}, "after": 0.5}]
+    AP = {"stack": "ardupilot", "mav_type": 2}
+    air = {"landed_state": 2, "altitude_agl": 30.0, "armed": True}
+    pts = [[48.1, 11.5, 30.0]]
+    two = [[48.1, 11.5, 30.0], [48.2, 11.6, 40.0]]
+    return [
+        {"name": "mode_ok", "initial": {}, "steps": [{"op": "set_mode", "mode": "LOITER"}]},
+        {"name": "mode_not_ready", "ready": False, "steps": [{"op": "set_mode", "mode": "LOITER"}]},
+        {"name": "mode_unknown", "steps": [{"op": "set_mode", "mode": "WARP"}]},
+        {"name": "mode_unsupported_autopilot", "stack": "generic", "modes_unsupported": True,
+         "steps": [{"op": "set_mode", "mode": "LOITER"}]},
+        {"name": "mode_generic_unknown", "stack": "generic", "steps": [{"op": "set_mode", "mode": "LOITER"}]},
+        {"name": "mode_refused", "results": {"176": 4}, "steps": [{"op": "set_mode", "mode": "RTL"}]},
+        {"name": "mode_ardupilot", **AP, "steps": [{"op": "set_mode", "mode": "LOITER"}]},
+        {"name": "arm_confirmed", "reactions": ARM, "steps": [{"op": "arm", "arm": True}, {"op": "arm", "arm": False}]},
+        {"name": "arm_never_confirmed", "steps": [{"op": "arm", "arm": True}]},
+        {"name": "arm_confirmed_late", "reactions": [
+            {"cmd": 400, "param": [0, 1.0], "set": {"armed": True}, "after": 5.0}], "steps": [{"op": "arm", "arm": True}]},
+        {"name": "arm_refused", "results": {"400": 2}, "steps": [{"op": "arm", "arm": True}]},
+        {"name": "arm_no_ack", "results": {"400": -1}, "initial": {"armed": True}, "steps": [{"op": "arm", "arm": True}]},
+        {"name": "arm_already_armed_failed", "results": {"400": 4}, "initial": {"armed": True},
+         "steps": [{"op": "arm", "arm": True}, {"op": "arm", "arm": False}]},
+        {"name": "arm_already_armed_stale", "results": {"400": 4}, "initial": {"armed": True}, "stale": True,
+         "steps": [{"op": "arm", "arm": True}]},
+        {"name": "arm_not_ready", "ready": False, "steps": [{"op": "arm", "arm": True}, {"op": "arm", "arm": False}]},
+        {"name": "airborne_states", "steps": [{"op": "state_airborne"}]},
+        {"name": "airborne_landed_in_air", "initial": {"landed_state": 2}, "steps": [{"op": "airborne"}]},
+        {"name": "airborne_landed_on_ground", "initial": {"landed_state": 1, "altitude_agl": 40.0},
+         "steps": [{"op": "airborne"}]},
+        {"name": "airborne_by_height", "initial": {"altitude_agl": 3.0}, "steps": [{"op": "airborne"}]},
+        {"name": "airborne_by_low_height", "initial": {"altitude_agl": 1.0}, "steps": [{"op": "airborne"}]},
+        {"name": "amsl_and_reference", "home_amsl": 500.0, "steps": [
+            {"op": "amsl", "agl": 12.5}, {"op": "await_reference", "agl": 1.0}]},
+        {"name": "reference_from_position", "position_home_amsl": 400.0, "steps": [{"op": "amsl", "agl": 10.0}]},
+        {"name": "reference_arrives", "home_reply": {"after": 0.4, "value": 480.0},
+         "steps": [{"op": "await_reference", "agl": 10.0}]},
+        {"name": "reference_never_arrives", "steps": [{"op": "await_reference", "agl": 10.0}]},
+        {"name": "reference_stopped", "stop_at": 1000.0, "steps": [{"op": "await_reference", "agl": 10.0}]},
+        {"name": "reference_link_lost", "ready_until": 1000.0, "steps": [{"op": "await_reference", "agl": 10.0}]},
+        {"name": "wait_for_mode", "reactions": [], "initial": {"mode": "LOITER"}, "steps": [
+            {"op": "wait_mode", "mode": "LOITER"}, {"op": "wait_mode", "mode": "AUTO"}]},
+        {"name": "wait_for_mode_arrives", "steps": [{"op": "pend", "field": "mode", "value": "AUTO", "after": 0.6},
+                                                    {"op": "wait_mode", "mode": "AUTO"}]},
+        {"name": "takeoff_px4", "home_amsl": 500.0, "reactions": ARM, "steps": [{"op": "takeoff", "agl": 10.0}]},
+        {"name": "takeoff_px4_waits_for_reference", "home_reply": {"after": 0.4, "value": 520.0}, "reactions": ARM,
+         "steps": [{"op": "takeoff", "agl": 10.0}]},
+        {"name": "takeoff_px4_without_reference", "reactions": ARM, "steps": [{"op": "takeoff", "agl": 25.0}]},
+        {"name": "takeoff_px4_refused", "home_amsl": 500.0, "results": {"22": 2}, "steps": [{"op": "takeoff", "agl": 10.0}]},
+        {"name": "takeoff_px4_arm_refused", "home_amsl": 500.0, "results": {"400": 2},
+         "steps": [{"op": "takeoff", "agl": 10.0}]},
+        {"name": "takeoff_px4_interrupted_after_command", "home_amsl": 500.0, "reactions": ARM,
+         "abort_on_console": ["Takeoff target accepted"], "steps": [{"op": "takeoff", "agl": 10.0}]},
+        {"name": "takeoff_px4_interrupted_before_command", "home_amsl": 500.0, "reactions": ARM,
+         "abort_on_console": ["Requesting"], "steps": [{"op": "takeoff", "agl": 10.0}]},
+        {"name": "takeoff_checks", "home_amsl": 500.0, "steps": [
+            {"op": "takeoff", "agl": float("nan")}, {"op": "takeoff", "agl": float("inf")},
+            {"op": "takeoff", "agl": 0.5}, {"op": "takeoff", "agl": 500.0}]},
+        {"name": "takeoff_rover", "mav_type": 10, "stack": "ardupilot", "steps": [{"op": "takeoff", "agl": 10.0}]},
+        {"name": "takeoff_not_ready", "ready": False, "steps": [{"op": "takeoff", "agl": 10.0}]},
+        {"name": "takeoff_ardupilot", **AP, "reactions": GUIDED + ARM, "steps": [{"op": "takeoff", "agl": 10.0}]},
+        {"name": "takeoff_ardupilot_already_guided", **AP, "initial": {"mode": "GUIDED"}, "reactions": ARM,
+         "steps": [{"op": "takeoff", "agl": 10.0}]},
+        {"name": "takeoff_ardupilot_mode_late", **AP, "reactions": [
+            {"cmd": 176, "param": [1, 4.0], "set": {"mode": "GUIDED"}, "after": 9.0}] + ARM,
+         "steps": [{"op": "takeoff", "agl": 10.0}]},
+        {"name": "takeoff_ardupilot_mode_refused", **AP, "results": {"176": 2}, "steps": [{"op": "takeoff", "agl": 10.0}]},
+        {"name": "takeoff_ardupilot_arm_refused", **AP, "reactions": GUIDED, "results": {"400": 4},
+         "steps": [{"op": "takeoff", "agl": 10.0}]},
+        {"name": "takeoff_ardupilot_refused_disarms", **AP, "reactions": GUIDED + ARM, "results": {"22": 3},
+         "steps": [{"op": "takeoff", "agl": 10.0}]},
+        {"name": "takeoff_ardupilot_interrupted_after_arm", **AP, "reactions": GUIDED + ARM,
+         "abort_on_console": ["Armed successfully"], "steps": [{"op": "takeoff", "agl": 10.0}]},
+        {"name": "land_rtl", "steps": [{"op": "land"}, {"op": "rtl"}]},
+        {"name": "land_rtl_refused", "results": {"21": 4, "20": 2}, "steps": [{"op": "land"}, {"op": "rtl"}]},
+        {"name": "land_rover", "mav_type": 10, "stack": "ardupilot", "steps": [{"op": "land"}, {"op": "rtl"}]},
+        {"name": "lat_lon", "steps": [
+            {"op": "lat_lon", "lat": 48.1, "lon": 11.5}, {"op": "lat_lon", "lat": 91.0, "lon": 11.5},
+            {"op": "lat_lon", "lat": 48.1, "lon": -181.0}, {"op": "lat_lon", "lat": float("nan"), "lon": 0.0},
+            {"op": "lat_lon", "lat": 0.0, "lon": float("inf")}]},
+        {"name": "set_home", "home_amsl": 500.0, "steps": [{"op": "set_home", "lat": 48.1234567, "lon": 11.7654321}]},
+        {"name": "set_home_from_reference_wait", "home_reply": {"after": 0.4, "value": 480.0},
+         "steps": [{"op": "set_home", "lat": 48.0, "lon": 11.0}]},
+        {"name": "set_home_no_reference", "steps": [{"op": "set_home", "lat": 48.0, "lon": 11.0}]},
+        {"name": "set_home_refused", "home_amsl": 500.0, "results": {"179": 4},
+         "steps": [{"op": "set_home", "lat": 48.0, "lon": 11.0}]},
+        {"name": "set_home_bad_coordinates", "home_amsl": 500.0, "steps": [{"op": "set_home", "lat": 99.0, "lon": 11.0}]},
+        {"name": "hold", "steps": [{"op": "hold"}]},
+        {"name": "hold_rover", "mav_type": 10, "stack": "ardupilot", "steps": [{"op": "hold"}]},
+        {"name": "hold_generic", "stack": "generic", "steps": [{"op": "hold"}]},
+        {"name": "plugin_plain", "steps": [
+            {"op": "plugin", "command": 178, "params": [1.0, 5.0]},
+            {"op": "plugin", "command": 178}, {"op": "plugin", "command": 178, "params": [1, 2, 3, 4, 5, 6, 7, 8, 9]}]},
+        {"name": "plugin_in_progress_and_failure", "results": {"178": [5, 2]}, "steps": [
+            {"op": "plugin", "command": 178, "params": [1.0]}, {"op": "plugin", "command": 178, "params": [1.0]}]},
+        {"name": "plugin_not_in_table", "steps": [
+            {"op": "plugin", "command": 400}, {"op": "plugin", "command": 99999},
+            {"op": "plugin", "command": 183, "params": [1.0]}]},
+        {"name": "plugin_ardupilot_table", **AP, "steps": [
+            {"op": "plugin", "command": 183, "params": [1.0, 1500.0]}, {"op": "plugin", "command": 5000}]},
+        {"name": "plugin_position_checks", "home_amsl": 500.0, "steps": [
+            {"op": "plugin", "command": 192}, {"op": "plugin", "command": 178, "position": [48.0, 11.0, 30.0, "amsl"]},
+            {"op": "plugin", "command": 192, "position": [95.0, 11.0, 30.0, "amsl"]}]},
+        {"name": "plugin_position_px4", "home_amsl": 500.0, "steps": [
+            {"op": "plugin", "command": 192, "params": [-1.0, 1.0], "position": [48.1234567, 11.5, 30.0, "amsl"]},
+            {"op": "plugin", "command": 192, "params": [-1.0, 1.0, 3.0, 4.0, 5.0], "position": [48.1, 11.5, 30.0, "relative"]}]},
+        {"name": "plugin_position_px4_waits_for_home", "home_reply": {"after": 0.4, "value": 480.0}, "steps": [
+            {"op": "plugin", "command": 192, "position": [48.1, 11.5, 30.0, "relative"]}]},
+        {"name": "plugin_position_px4_without_home", "steps": [
+            {"op": "plugin", "command": 192, "position": [48.1, 11.5, 30.0, "relative"]}]},
+        {"name": "plugin_position_ardupilot", **AP, "steps": [
+            {"op": "plugin", "command": 192, "params": [-1.0], "position": [48.1, 11.5, 30.0, "relative"]},
+            {"op": "plugin", "command": 192, "position": [48.1, 11.5, 30.0, "amsl"]}]},
+        {"name": "plugin_position_refused", "home_amsl": 500.0, "results": {"192": 3}, "steps": [
+            {"op": "plugin", "command": 192, "position": [48.1, 11.5, 30.0, "amsl"]}]},
+        {"name": "velocity_px4", "steps": [
+            {"op": "velocity", "vx": 1.0, "vy": -2.0, "vz": 0.5}, {"op": "velocity", "vx": 1.0, "vy": 0.0, "vz": 0.0, "yaw": 45.0},
+            {"op": "velocity", "vx": 1.0, "vy": 0.0, "vz": 0.0, "yaw": -10.0, "body": True}]},
+        {"name": "velocity_ardupilot", **AP, "steps": [{"op": "velocity", "vx": 1.0, "vy": 0.0, "vz": 0.0}]},
+        {"name": "velocity_plane", "mav_type": 1, "stack": "px4", "steps": [{"op": "velocity", "vx": 1.0, "vy": 0.0, "vz": 0.0}]},
+        {"name": "velocity_generic", "stack": "generic", "steps": [{"op": "velocity", "vx": 1.0, "vy": 0.0, "vz": 0.0}]},
+        {"name": "velocity_checks", "steps": [
+            {"op": "velocity", "vx": float("nan"), "vy": 0.0, "vz": 0.0}, {"op": "velocity", "vx": 0.0, "vy": float("inf"), "vz": 0.0},
+            {"op": "velocity", "vx": 0.0, "vy": 0.0, "vz": 0.0, "yaw": float("nan")},
+            {"op": "velocity", "vx": 31.0, "vy": 0.0, "vz": 0.0}, {"op": "velocity", "vx": 0.0, "vy": 0.0, "vz": -30.5},
+            {"op": "velocity", "vx": 0.0, "vy": 0.0, "vz": 0.0, "yaw": 181.0}, {"op": "velocity", "vx": 30.0, "vy": -30.0, "vz": 0.0, "yaw": 180.0}]},
+        {"name": "velocity_not_ready", "ready": False, "steps": [{"op": "velocity", "vx": 1.0, "vy": 0.0, "vz": 0.0}]},
+        {"name": "velocity_send_fails", "send_fails": True, "steps": [{"op": "velocity", "vx": 1.0, "vy": 0.0, "vz": 0.0}]},
+        {"name": "velocity_link_lost", "link_lost": True, "steps": [{"op": "velocity", "vx": 1.0, "vy": 0.0, "vz": 0.0}]},
+        {"name": "fly_one_point_airborne_px4", "home_amsl": 500.0, "initial": air, "steps": [{"op": "fly", "points": pts}]},
+        {"name": "fly_one_point_airborne_px4_no_reference_falls_back_to_mission", "initial": air, "reactions": ARM,
+         "steps": [{"op": "fly", "points": pts}]},
+        {"name": "fly_one_point_unsupported_falls_back_to_mission", "home_amsl": 500.0, "initial": air,
+         "results": {"192": 3}, "steps": [{"op": "fly", "points": pts}]},
+        {"name": "fly_one_point_refused", "home_amsl": 500.0, "initial": air, "results": {"192": 2},
+         "steps": [{"op": "fly", "points": pts}]},
+        {"name": "fly_one_point_ardupilot_airborne", **AP, "initial": {**air, "mode": "LOITER"}, "reactions": GUIDED,
+         "steps": [{"op": "fly", "points": pts}]},
+        {"name": "fly_one_point_ardupilot_guided_refused", **AP, "initial": air, "results": {"176": 2},
+         "steps": [{"op": "fly", "points": pts}]},
+        {"name": "fly_two_points_px4_on_ground", "home_amsl": 500.0, "steps": [{"op": "fly", "points": two}]},
+        {"name": "fly_two_points_px4_airborne", "home_amsl": 500.0, "initial": air, "steps": [{"op": "fly", "points": two}]},
+        {"name": "fly_points_ardupilot_on_ground", **AP, "home": [11.0, 48.0], "home_amsl": 520.0,
+         "reactions": GUIDED + ARM, "steps": [{"op": "fly", "points": two}]},
+        {"name": "fly_points_ardupilot_start_refused_disarms", **AP, "reactions": GUIDED + ARM, "results": {"300": 4},
+         "steps": [{"op": "fly", "points": two}]},
+        {"name": "fly_points_upload_refused", "upload_ack": 1, "steps": [{"op": "fly", "points": two}]},
+        {"name": "fly_points_upload_unsupported", "upload_ack": 3, "steps": [{"op": "fly", "points": two}]},
+        {"name": "fly_points_upload_cancelled", "upload_ack": -3, "steps": [{"op": "fly", "points": two}]},
+        {"name": "fly_points_start_refused", "results": {"300": 2}, "steps": [{"op": "fly", "points": two}]},
+        {"name": "fly_points_invalid", "points_error": "points must be a non-empty list", "steps": [{"op": "fly", "points": []}]},
+        {"name": "fly_points_not_ready", "ready": False, "steps": [{"op": "fly", "points": two}]},
+        {"name": "fly_points_px4_mode_confirmed", "reactions": [
+            {"cmd": 300, "set": {"mode": "MISSION", "armed": True}, "after": 0.4}], "steps": [{"op": "fly", "points": two}]},
+        {"name": "fly_points_px4_mode_mismatch", "initial": {"mode": "LOITER"}, "steps": [{"op": "fly", "points": two}]},
+        {"name": "fly_points_px4_no_mode", "steps": [{"op": "fly", "points": two}]},
+        {"name": "fly_points_interrupted_while_uploading", "abort_on_console": ["Mission accepted"],
+         "steps": [{"op": "fly", "points": two}]},
+        {"name": "drive_points_rover", "mav_type": 10, "stack": "ardupilot", "initial": {"armed": True},
+         "reactions": GUIDED, "steps": [{"op": "fly", "points": [[48.1, 11.5, 0.0]]}, {"op": "fly", "points": two}]},
+        {"name": "drive_points_rover_disarmed", "mav_type": 10, "stack": "ardupilot", "reactions": GUIDED + ARM,
+         "steps": [{"op": "fly", "points": [[48.1, 11.5, 0.0]]}]},
+        {"name": "start_mission_px4", "reactions": [{"cmd": 300, "set": {"mode": "MISSION"}, "after": 0.2}],
+         "steps": [{"op": "start", "count": 4}]},
+        {"name": "start_mission_checks", "steps": [{"op": "start", "count": 0}, {"op": "start", "count": -3}]},
+        {"name": "start_mission_not_ready", "ready": False, "steps": [{"op": "start", "count": 3}]},
+        {"name": "start_mission_ardupilot_copter", **AP, "reactions": GUIDED + ARM, "steps": [{"op": "start", "count": 4}]},
+        {"name": "start_mission_ardupilot_plane", "stack": "ardupilot", "mav_type": 1, "reactions": [
+            {"cmd": 176, "param": [1, 10.0], "set": {"mode": "AUTO"}, "after": 0.3}] + ARM,
+         "steps": [{"op": "start", "count": 4}]},
+        {"name": "start_mission_ardupilot_already_armed", **AP, "initial": {"armed": True}, "steps": [{"op": "start", "count": 2}]},
+        {"name": "start_mission_ardupilot_mode_refused", **AP, "results": {"176": 4}, "steps": [{"op": "start", "count": 2}]},
+        {"name": "start_mission_refused", "results": {"300": 2}, "steps": [{"op": "start", "count": 2}]},
+    ]
+
+
+def flight_cases() -> list[dict]:
+    import logging
+
+    FlightBridge = flight_bridge_class()
+    out = []
+    for sc in flight_scenarios():
+        clock = Clock()
+        clock.t = 1000.0
+        br = FlightBridge(sc, clock)
+        records: list = []
+
+        class Capture(logging.Handler):
+            def emit(self, record):
+                br.log.append(["log", record.levelname.lower(), record.getMessage()])
+
+        handler = Capture()
+        logger = logging.getLogger("corvus.mavlink")
+        logger.addHandler(handler)
+        old_level = logger.level
+        logger.setLevel(logging.DEBUG)
+
+        def monotonic(clock=clock):
+            return clock.t
+
+        def sleep(seconds, clock=clock):
+            clock.t += seconds
+
+        results = []
+        try:
+            with mock.patch("time.monotonic", monotonic), mock.patch("time.sleep", sleep):
+                for step in sc["steps"]:
+                    before = len(br.log)
+                    op = step["op"]
+                    if op == "set_mode":
+                        result = br.set_mode(step["mode"])
+                    elif op == "arm":
+                        result = br.arm(step["arm"])
+                    elif op == "airborne":
+                        result = br._is_airborne()
+                    elif op == "state_airborne":
+                        result = []
+                        for landed in (None, 0, 1, 2, 3, 4, 5):
+                            for agl in (0.0, 1.5, 1.6):
+                                br.state["landed_state"], br.state["altitude_agl"] = landed, agl
+                                result.append(br._is_airborne())
+                    elif op == "amsl":
+                        result = br._takeoff_altitude_amsl(step["agl"])
+                    elif op == "await_reference":
+                        result = br._await_takeoff_reference(step["agl"])
+                    elif op == "wait_mode":
+                        result = br._wait_for_mode(step["mode"])
+                    elif op == "pend":
+                        br.pending.append((clock.t + step["after"], step["field"], step["value"]))
+                        result = None
+                    elif op == "takeoff":
+                        result = br.takeoff(step["agl"])
+                    elif op == "land":
+                        result = br.land()
+                    elif op == "rtl":
+                        result = br.rtl()
+                    elif op == "lat_lon":
+                        result = br._validate_lat_lon(step["lat"], step["lon"], "Check")
+                    elif op == "set_home":
+                        result = br.set_home(step["lat"], step["lon"])
+                    elif op == "hold":
+                        result = br.hold()
+                    elif op == "plugin":
+                        position = tuple(step["position"]) if "position" in step else None
+                        result = br.plugin_command(step["command"], step.get("params"), position)
+                    elif op == "velocity":
+                        result = br.velocity_setpoint(step["vx"], step["vy"], step["vz"], step.get("yaw"),
+                                                      step.get("body", False))
+                    elif op == "fly":
+                        result = br.fly_to_points(step["points"])
+                    elif op == "start":
+                        result = br.start_mission(step["count"])
+                    else:
+                        raise SystemExit(op)
+                    results.append({"result": result, "events": br.log[before:], "t": round(clock.t - 1000.0, 6)})
+        finally:
+            logger.removeHandler(handler)
+            logger.setLevel(old_level)
+        out.append({"scenario": clean(sc), "expected": clean({"steps": results, "final": {
+            "last_error": br.last_error, "armed": br.state["armed"], "mode": br.state["mode"],
+            "aborts": br._operation_lock.aborts}})})
+    return out
+
+
 COMMANDS = {"params_cases.json": cases, "logs_cases.json": logs_cases, "shell_cases.json": shell_cases,
-            "ftp_cases.json": ftp_cases}
+            "ftp_cases.json": ftp_cases, "flight_cases.json": flight_cases}
 
 
 def main(argv: list[str]) -> int:
