@@ -73,6 +73,56 @@ pub fn py_g(value: f64) -> String {
     strip(&format!("{value:.decimals$}"))
 }
 
+/// `round(x, digits)`: correctly rounded, exact ties to even, non-finite
+/// values unchanged.
+pub fn py_round(x: f64, digits: usize) -> f64 {
+    if !x.is_finite() {
+        return x;
+    }
+    format!("{x:.digits$}").parse().unwrap_or(x)
+}
+
+/// Python 3.12's `sum()` of floats: the first term added to the int 0, the
+/// rest with Neumaier's compensation.
+pub fn py_sum(values: &[f64]) -> f64 {
+    let Some((first, rest)) = values.split_first() else {
+        return 0.0;
+    };
+    let mut total = 0.0 + first;
+    let mut c = 0.0;
+    for &x in rest {
+        let t = total + x;
+        if total.abs() >= x.abs() {
+            c += (total - t) + x;
+        } else {
+            c += (x - t) + total;
+        }
+        total = t;
+    }
+    if c != 0.0 && c.is_finite() {
+        total += c;
+    }
+    total
+}
+
+/// `min(a, b)`: `a` unless `b` is smaller, so a NaN `b` loses.
+pub fn py_min(a: f64, b: f64) -> f64 {
+    if b < a {
+        b
+    } else {
+        a
+    }
+}
+
+/// `max(a, b)`: `a` unless `b` is larger.
+pub fn py_max(a: f64, b: f64) -> f64 {
+    if b > a {
+        b
+    } else {
+        a
+    }
+}
+
 /// `int(round(degrees * 1e7))`, rounding halves to even as Python does.
 pub fn e7(degrees: f64) -> i64 {
     (degrees * 1e7).round_ties_even() as i64
@@ -118,6 +168,22 @@ mod tests {
         for (value, want) in cases {
             assert_eq!(py_g(value), want, "{value}");
         }
+    }
+
+    #[test]
+    fn round_ties_go_to_even_on_exact_values() {
+        assert_eq!(py_round(0.25, 1), 0.2);
+        assert_eq!(py_round(0.35, 1), 0.3);
+        assert_eq!(py_round(2.675, 2), 2.67);
+        assert_eq!(py_round(-0.04, 1).to_bits(), (-0.0f64).to_bits());
+        assert!(py_round(f64::NAN, 1).is_nan());
+    }
+
+    #[test]
+    fn the_sum_is_compensated() {
+        assert_eq!(py_sum(&[0.1; 10]), 1.0);
+        assert_eq!(py_sum(&[1e100, 1.0, -1e100, 1.0]), 2.0);
+        assert_eq!(py_sum(&[]), 0.0);
     }
 
     #[test]

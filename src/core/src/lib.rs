@@ -75,6 +75,7 @@
 
 pub use corvus_link as link;
 
+pub mod battery;
 pub mod buffer;
 pub mod bundle;
 pub mod clock;

@@ -16,7 +16,7 @@ path = "src/bin/corvus-core.rs"
 corvus_link = { path = "../link", default-features = false }
 # preserve_order: a settings file keeps the order its keys were written in,
 # as Python's dict does, so the Rust and the Python program can share a folder.
-serde_json = { version = "1", features = ["preserve_order"] }
+serde_json = { version = "1", features = ["preserve_order", "float_roundtrip"] }
 base64 = "0.22"
 indexmap = "2"
 # Only the WebSocket handshake needs SHA-1; both are already in the lock file.

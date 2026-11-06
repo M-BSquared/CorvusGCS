@@ -786,7 +786,7 @@ def dialect_cases() -> None:
                          "arduplane", "ardupilot", "x", "", "Generic"]
     stack_ids = [[v, ap.stack_for_autopilot(v)] for v in ids]
     supported: dict[str, bool] = {}
-    for name in list(ap.PX4_MODE_VALUES) + list(ap.PX4_RETIRED_MODES) + ["BOGUS", "ORBIT"]:
+    for name in list(ap.PX4_MODE_VALUES) + sorted(ap.PX4_RETIRED_MODES) + ["BOGUS", "ORBIT"]:
         for fw in DIALECT_FIRMWARES:
             firmware = _fw_parse(fw)
             supported[f"{name}|{fw}"] = ap.px4_mode_supported(name, firmware)
@@ -848,9 +848,100 @@ def dialect_cases() -> None:
     write("dialect_cases.json", out)
 
 
+def battery_cases() -> None:
+    from corvus import battery as B
+
+    raws: list[object] = [
+        None, {}, [], "x", 3, {"estimate": True}, {"estimate": 1}, {"estimate": "yes"}, {"chemistry": " LiFePO4 "},
+        {"chemistry": "nimh"}, {"chemistry": 4}, {"cells": 6}, {"cells": "6"}, {"cells": 6.9}, {"cells": -4},
+        {"cells": 99}, {"cells": True}, {"cells": None}, {"cells": "x"}, {"cells": "1_0"}, {"cells": "1__0"},
+        {"cells": " 5 "}, {"cells": "nan"}, {"cells": "inf"}, {"cells": "0x10"}, {"cells": [1]}, {"cells": 4.0},
+        {"full_cell": 4.35}, {"full_cell": 9}, {"full_cell": -1}, {"full_cell": 4.35, "empty_cell": 3.5},
+        {"empty_cell": 4.5}, {"full_cell": 3.0, "empty_cell": 3.4}, {"full_cell": 4.2349999, "empty_cell": 3.0004},
+        {"resistance": 5}, {"resistance": 5.55555}, {"resistance": 400}, {"resistance": "7.25"}, {"resistance": -3},
+        {"capacity_mah": 5000}, {"capacity_mah": 5000.04}, {"capacity_mah": 5e9}, {"capacity_mah": "1e3"},
+        {"estimate": True, "chemistry": "liion", "cells": 4, "full_cell": 4.1, "empty_cell": 3.3,
+         "resistance": 8, "capacity_mah": 3000, "surprise": 1},
+        {"surprise": 1},
+    ]
+    voltages: list[object] = [0, -1, 1.5, 2.0, 3.0, 3.3, 3.7, 4.0, 4.2, 4.21, 8.4, 11.1, 12.6, 14.8, 16.8, 21.0, 22.2,
+                              25.2, 25.3, 29.4, 50.4, 100.8, 105.0, 200.0, "nan", "inf"]
+    currents = [0, 1.5, 12, 60, 120, -5]
+    settings_set = [None, {"cells": 6}, {"chemistry": "liion"}, {"chemistry": "lifepo4", "cells": 4},
+                    {"resistance": 5}, {"resistance": 12, "cells": 4, "full_cell": 4.35, "empty_cell": 3.4},
+                    {"estimate": True}]
+
+    def value(v):
+        return float(v) if isinstance(v, str) else v
+
+    out: dict[str, object] = {
+        "chemistry": {n: B.chemistry(n)["label"] for n in ["", " LIPO ", "liion", "LiFePO4", "nimh", "none", "lipo"]},
+        "options": B.chemistry_options(),
+    }
+    coerced = []
+    for raw in raws:
+        coerced.append([raw, B.coerce_settings(raw), B.settings(raw)])
+    out["settings"] = coerced
+    estimates = []
+    for raw in settings_set:
+        for v in voltages:
+            for a in currents:
+                est = B.estimate(value(v), a, raw)
+                estimates.append([raw, v, a, est])
+    out["estimates"] = estimates
+    cells = []
+    for raw in settings_set:
+        resolved = B.settings(raw)
+        for v in voltages:
+            cells.append([raw, v, B.resolve_cells(value(v), resolved)])
+    out["cells"] = cells
+    rest = []
+    for raw in settings_set:
+        resolved = B.settings(raw)
+        for v in (0, 12.6, 22.2, 25.2):
+            for a in (0, 10, 80, -2):
+                for n in (0, 3, 6):
+                    rest.append([raw, v, a, n, B.rest_voltage(v, a, n, resolved)])
+    out["rest"] = rest
+    soc = []
+    for raw in settings_set:
+        resolved = B.settings(raw)
+        for cv in (0, -1, 2.5, 2.8, 3.0, 3.2, 3.27, 3.5, 3.61, 3.7, 3.8, 3.84, 3.95, 4.1, 4.2, 4.3):
+            soc.append([raw, cv, B.state_of_charge(cv, resolved)])
+    out["soc"] = soc
+    series = []
+
+    def line(n, start, step, dt, p0, drop):
+        return [[start + i * dt, p0 - i * drop] for i in range(n)]
+
+    for name, samples in {
+        "empty": [], "two": line(2, 0, 1, 30, 90, 1), "short_span": line(5, 0, 1, 5, 90, 1),
+        "flat": line(10, 0, 1, 10, 80, 0), "rising": line(10, 0, 1, 10, 50, -1),
+        "steady": line(12, 0, 1, 10, 80, 0.5), "steep": line(12, 0, 1, 10, 80, 2),
+        "tiny_drop": line(12, 0, 1, 10, 80, 0.05), "window": line(40, 0, 1, 10, 100, 0.4),
+        "to_zero": line(12, 0, 1, 10, 20, 2.1), "with_junk": line(6, 0, 1, 20, 90, 1) + [["x", 5], [10], [float("nan"), 1]],
+        "out_of_range": line(5, 0, 1, 30, 120, 1) + line(6, 200, 1, 20, 90, 1),
+        "noisy": [[0, 90], [20, 91], [40, 88], [60, 89], [80, 86], [100, 87], [120, 84]],
+        "one_time": [[5, 50], [5, 49], [5, 48]],
+    }.items():
+        series.append([name, samples, B.drain_endurance(samples)])
+    out["drain"] = series
+    write("battery_cases.json", clean_nan(out))
+
+
+def clean_nan(x):
+    if isinstance(x, float) and x != x:
+        return "nan"
+    if isinstance(x, dict):
+        return {k: clean_nan(v) for k, v in x.items()}
+    if isinstance(x, (list, tuple)):
+        return [clean_nan(v) for v in x]
+    return x
+
+
 COMMANDS = {"routes": routes, "store": store, "buffers": buffers, "config": config_cases,
             "partial": partial_cases, "bundle": bundle_cases, "languages": languages_cases, "http": http_cases,
-            "dialect": dialect_cases}
+            "dialect": dialect_cases, "battery": battery_cases}
 
 
 def main(argv: list[str]) -> int:
