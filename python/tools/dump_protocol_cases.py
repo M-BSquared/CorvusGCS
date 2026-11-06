@@ -2695,12 +2695,581 @@ def _rid_messages(model, original, step, moment):
         model.system_timestamp = saved
 
 
+# -------------------------------------------------------------- receive ----
+
+class AckSim:
+    """The vehicle answering commands, scripted; waiting on an event runs it."""
+
+    def __init__(self, bridge) -> None:
+        self.bridge = bridge
+        self.queue: list = []
+        self.n = 0
+        self.sends: dict = {}
+
+    def on_command(self, command: int) -> None:
+        sc = self.bridge.sc
+        attempt = self.sends.get(command, 0)
+        self.sends[command] = attempt + 1
+        script = sc.get("acks", {}).get(str(command), [])
+        if attempt < len(script):
+            for ack in script[attempt]:
+                self.n += 1
+                self.queue.append((self.bridge.clock.t + ack["after"], self.n, ack))
+
+    def deliver(self, entry) -> None:
+        ack = entry[2]
+        fields = {"command": ack.get("command", 0), "result": ack["result"], "progress": ack.get("progress", 0),
+                  "target_system": ack.get("target_system", 0), "target_component": ack.get("target_component", 0)}
+        msg = receive_message("COMMAND_ACK", fields, ack.get("system", 1), ack.get("component", 1))
+        self.bridge._dispatch(msg)
+
+    def wait(self, event, timeout) -> bool:
+        clock = self.bridge.clock
+        deadline = clock.t + timeout
+        while True:
+            if event._flag:
+                return True
+            if not self.queue:
+                clock.t = deadline
+                return event._flag
+            nxt = min(self.queue, key=lambda e: (e[0], e[1]))
+            if nxt[0] > deadline:
+                clock.t = deadline
+                return event._flag
+            self.queue.remove(nxt)
+            if nxt[0] > clock.t:
+                clock.t = nxt[0]
+            self.deliver(nxt)
+
+
+class FakeAckPending:
+    def __init__(self, accept_in_progress: bool = False, interim=frozenset()) -> None:
+        self.event = FakeEvent()
+        self.result = None
+        self.accept_in_progress = accept_in_progress
+        self.interim = interim
+        self.interim_result = None
+        self.in_progress = False
+
+
+def receive_message(name: str, fields: dict, system: int = 1, component: int = 1, raw: str | None = None):
+    msg = telemetry_message(name, fields, system)
+    msg.get_srcComponent = lambda component=component: component
+    if raw is not None:
+        data = bytes.fromhex(raw)
+        msg.get_msgbuf = lambda data=data: data
+    return msg
+
+
+def receive_frame(spec: dict):
+    """A scenario frame as the Python dispatcher is handed it."""
+    if spec.get("unknown") is not None:
+        msg = type("Unknown", (), {})()
+        msg.get_type = lambda: f"UNKNOWN_{spec['unknown']}"
+        msg.data = bytes.fromhex(spec.get("data", ""))
+        msg.get_srcSystem = lambda: spec.get("system", 0)
+        msg.get_srcComponent = lambda: spec.get("component", 0)
+        return msg
+    return receive_message(spec["name"], unclean(spec.get("fields", {})), spec.get("system", 1), spec.get("component", 1),
+                           spec.get("raw"))
+
+
+class ReceiveStore:
+    def __init__(self, bridge) -> None:
+        self.bridge = bridge
+
+    def heartbeat(self) -> float:
+        self.bridge.log.append(["store_heartbeat"])
+        return self.bridge.clock.t
+
+    def update(self, **fields) -> None:
+        self.bridge.log.append(["update", fields])
+        self.bridge.snap.update(fields)
+
+    def get_snapshot(self) -> dict:
+        return dict(self.bridge.snap)
+
+    def resolve_warnings(self, kinds) -> None:
+        self.bridge.log.append(["resolve_warnings", sorted(kinds)])
+
+    def is_stale(self, timeout=2.0) -> bool:
+        return self.bridge.sc.get("stale", False)
+
+
+def receive_bridge_class():
+    import collections
+
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
+    from corvus import autopilot as ap
+    from tests.reference import mavlink_bridge_receive_python as rx
+    from tests.reference import mavlink_telemetry_python as tm
+
+    def recorder(name, *argnames):
+        def call(self, *args, **kwargs):
+            shown = []
+            for a in list(args) + list(kwargs.values()):
+                if hasattr(a, "get_type"):
+                    shown.append(a.get_type())
+                else:
+                    shown.append(a)
+            self.log.append(["call", name, shown])
+        return call
+
+    class ReceiveBridge(rx.ReceivePathMixin, tm.TelemetryMixin):
+        _handle_mission_request = recorder("handle_mission_request")
+        _handle_mission_ack = recorder("handle_mission_ack")
+        _handle_mission_count = recorder("handle_mission_count")
+        _handle_mission_item = recorder("handle_mission_item")
+        _handle_mission_current = recorder("handle_mission_current")
+        _handle_mission_item_reached = recorder("handle_mission_item_reached")
+        _handle_serial_control = recorder("handle_serial_control")
+        _handle_remote_id_arm_status = recorder("handle_remote_id_arm_status")
+        _handle_statustext = recorder("handle_statustext")
+        _handle_param_value = recorder("handle_param_value")
+        _handle_ftp_message = recorder("handle_ftp_message")
+        _build_mode_mapping = recorder("build_mode_mapping")
+        _reset_parameter_cache = recorder("reset_parameter_cache")
+        _reset_param_metadata = recorder("reset_param_metadata")
+        _request_streams = recorder("request_streams")
+        _request_version = recorder("request_version")
+        _request_home = recorder("request_home")
+        _schedule_message_intervals = recorder("schedule_message_intervals")
+        _clear_prearm_reasons = recorder("clear_prearm_reasons")
+        _roll_tlog_on_disarm = recorder("roll_tlog_on_disarm")
+        _note_prearm_state = recorder("note_prearm_state")
+
+        def __init__(self, sc: dict, clock: Clock) -> None:
+            self.sc = sc
+            self.clock = clock
+            self.log: list = []
+            self.snap = dict(sc.get("snapshot", {}))
+            self._store = ReceiveStore(self)
+            self._operation_lock = FlightLock()
+            self._send_lock = FlightSendLock(self)
+            self._conn = type("Conn", (), {})()
+            self._conn.source_system = sc.get("source_system", 255)
+            self._conn.source_component = sc.get("source_component", 190)
+            self._conn.mav = ReceiveMav(self)
+            self._target_system = sc.get("target", [1, 1])[0]
+            self._target_component = sc.get("target", [1, 1])[1]
+            self._mav_type_id = sc.get("mav_type", 2)
+            self._dialect = ap.dialect_for_stack(sc.get("stack", "px4"))
+            self._pending_acks = {}
+            self._ack_lock = threading.Lock()
+            self._recent_frames = {}
+            self._recent_frames_swept = 0.0
+            self._duplicate_frames = 0
+            self._ignored_systems = set()
+            self._degraded_warned = sc.get("degraded", False)
+            self._rangefinder_seen = sc.get("rangefinder_seen")
+            self._last_boot_ms = sc.get("last_boot_ms")
+            self._kill_evidence_at = None
+            self._firmware_version = None
+            self._board_vendor_id = 0
+            self._board_product_id = 0
+            self._param_encoding_declared = "unset"
+            self._request_sent = True
+            self._prearm_reasons = ["reason"] if sc.get("prearm_reasons") else []
+            self._log_sink = (lambda msg: self.log.append(["call", "log_sink", [msg.get_type()]])) if sc.get("log_sink") else None
+            if sc.get("log_sink_raises"):
+                def boom(msg):
+                    raise RuntimeError("sink down")
+                self._log_sink = boom
+            self.message_scope = type("Scope", (), {"record": lambda s, m: self.log.append(["call", "scope", [m.get_type()]])})()
+            self.fleet_tracker = type("Fleet", (), {"observe": lambda s, m, vehicle_heartbeat=False: self.log.append(
+                ["call", "fleet", [m.get_type(), vehicle_heartbeat]])})()
+            self._mission_engine = type("Engine", (), {"cancel_upload": lambda s: self.log.append(["call", "cancel_upload", []])})()
+            self.sim = AckSim(self)
+            self._init_telemetry_state()
+
+        def _write_tlog(self, msg) -> None:
+            self.log.append(["call", "tlog", [msg.get_type()]])
+
+        def _note_heartbeat(self, stamp) -> None:
+            self._hb_times.append(stamp)
+
+        def _latch_dialect(self, autopilot_id, mav_type) -> bool:
+            dialect = ap.dialect_for(autopilot_id)
+            changed = dialect is not self._dialect or int(mav_type) != self._mav_type_id
+            if dialect is not self._dialect:
+                self._firmware_version = None
+            self._dialect = dialect
+            self._mav_type_id = int(mav_type)
+            return changed
+
+        def _decode_mode(self, hb) -> str:
+            return self._dialect.decode_mode(getattr(hb, "custom_mode", 0), getattr(hb, "base_mode", 0),
+                                             getattr(hb, "type", self._mav_type_id))
+
+        def _is_serial(self) -> bool:
+            return self.sc.get("serial", False)
+
+        def _warn_timeout(self) -> float:
+            return 5.0
+
+        def _heartbeat_timeout(self) -> float:
+            return 2.0
+
+        def _set_command_error(self, text) -> None:
+            self.log.append(["error", text])
+
+        def _console_publish(self, name, text, level) -> None:
+            self.log.append(["console", name, text, level])
+
+        def _handle_autotune_ack(self, msg) -> None:
+            self.log.append(["call", "autotune_ack", [msg.result, msg.progress]])
+
+        def _link_gen(self):
+            return id(self._conn)
+
+    class ReceiveMav:
+        def __init__(self, bridge) -> None:
+            self.bridge = bridge
+
+        def command_long_send(self, *args):
+            b = self.bridge
+            if b.sc.get("send_fails"):
+                raise OSError("boom")
+            b.log.append(["send", "command_long_send", list(args)])
+            b.sim.on_command(args[2])
+
+        def command_int_send(self, *args):
+            b = self.bridge
+            if b.sc.get("send_fails"):
+                raise OSError("boom")
+            b.log.append(["send", "command_int_send", list(args)])
+            b.sim.on_command(args[3])
+
+    return ReceiveBridge, rx
+
+
+def receive_scenarios() -> list[dict]:
+    hb = lambda **kw: {"name": "HEARTBEAT", "fields": {"type": 2, "autopilot": 12, "base_mode": 81, "custom_mode": 196608,
+                                                     "system_status": 4, "mavlink_version": 3, **kw}}
+    frame = lambda name, **fields: {"name": name, "fields": fields}
+    alive = {"connected": True}
+    ack = lambda after, result, **kw: {"after": after, "result": result, **kw}
+    return [
+        {"name": "plausible_heartbeats", "steps": [{"op": "plausible", "frame": hb(**kw)} for kw in (
+            {}, {"mavlink_version": 2}, {"type": 128}, {"type": 127}, {"autopilot": 64}, {"autopilot": 63},
+            {"system_status": 32}, {"system_status": 31}, {"type": 255})]},
+        {"name": "vehicle_heartbeats", "steps": [{"op": "vehicle_heartbeat", "frame": {**hb(**kw), "component": c}} for kw, c in (
+            ({}, 1), ({}, 0), ({}, 240), ({}, 154), ({}, 68), ({}, 191), ({"type": 18}, 1), ({"type": 6}, 1), ({"type": 30}, 1),
+            ({"type": 41}, 1), ({"autopilot": 8}, 1), ({"autopilot": 0}, 1), ({"mavlink_version": 2}, 1))]},
+        {"name": "sensor_health", "steps": [{"op": "sys_helpers", "fields": f} for f in (
+            {}, {"onboard_control_sensors_present": 32}, {"onboard_control_sensors_present": 32, "onboard_control_sensors_health": 32},
+            {"onboard_control_sensors_enabled": 32, "onboard_control_sensors_health": 1},
+            {"onboard_control_sensors_present": 268435456}, {"onboard_control_sensors_present": 268435456, "onboard_control_sensors_health": 268435456},
+            {"onboard_control_sensors_enabled": 268435456 | 32, "onboard_control_sensors_health": 32})]},
+        {"name": "rangefinder", "steps": [{"op": "range", "fields": f} for f in (
+            {"orientation": 25, "current_distance": 150, "min_distance": 10, "max_distance": 1000},
+            {"orientation": 25, "current_distance": 5, "min_distance": 10, "max_distance": 1000},
+            {"orientation": 25, "current_distance": 1000, "min_distance": 10, "max_distance": 1000},
+            {"orientation": 25, "current_distance": 5000, "min_distance": 10, "max_distance": 0},
+            {"orientation": 25, "current_distance": 123, "min_distance": 0, "max_distance": 0},
+            {"orientation": 0, "current_distance": 150, "min_distance": 10, "max_distance": 1000},
+            {"orientation": 25, "current_distance": 1, "min_distance": 0, "max_distance": 10})]},
+        {"name": "gps_helpers", "steps": [{"op": "gps_helpers", "fields": f} for f in (
+            {"fix_type": 3, "alt": 520123}, {"fix_type": 4, "alt": -5555}, {"fix_type": 2, "alt": 520123}, {"fix_type": 0},
+            {"fix_type": 3, "alt": 0}, {"fix_type": 3, "alt": 520125}, {"fix_type": 3, "alt": 520135},
+            {"fix_type": 3, "h_acc": 1234, "v_acc": 0}, {"fix_type": 3, "h_acc": 1235, "v_acc": 5})]},
+        {"name": "git_hash", "steps": [{"op": "git_hash", "raw": raw} for raw in (
+            [0] * 8, [0, 0, 0, 0xAB, 0xCD, 0xEF, 0x12, 0x34], [ord(c) for c in "4a7b3c9d"], [ord(c) for c in "4A7B3C"],
+            [ord(c) for c in "4a7b3"] + [0, 0, 0], [0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0], [1, 2, 3, 0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0, 0, 0, 7], [ord(c) for c in "zzzzzzzz"], [ord(c) for c in "abcdef"] + [0, 0], [])]},
+        {"name": "who_sent_it", "target": [1, 1], "steps": [{"op": "who", "frame": {"name": "HEARTBEAT", "system": s, "component": c}}
+                                                          for s, c in ((1, 1), (1, 0), (0, 0), (0, 5), (2, 1), (1, 2), (254, 190))]},
+        {"name": "who_is_the_ack_for", "steps": [{"op": "ack_for", "frame": {"name": "COMMAND_ACK", "system": s, "component": c,
+                                                                              "fields": {"target_system": ts, "target_component": tc}}}
+                                                for s, c, ts, tc in ((1, 1, 0, 0), (1, 1, 255, 190), (1, 1, 255, 7), (1, 1, 9, 190), (2, 1, 0, 0),
+                                                                    (1, 3, 0, 0), (0, 0, 255, 0), (0, 0, 0, 190))]},
+        {"name": "no_connection_no_ack", "no_connection": True, "steps": [
+            {"op": "ack_for", "frame": {"name": "COMMAND_ACK", "system": 1, "component": 1}}]},
+        {"name": "heartbeat_updates_the_store", "snapshot": alive, "steps": [
+            {"op": "dispatch", "frame": hb()}, {"op": "dispatch", "frame": hb(base_mode=209, custom_mode=0, system_status=3)},
+            {"op": "dispatch", "frame": hb(type=1, autopilot=3, custom_mode=5, base_mode=1)},
+            {"op": "dispatch", "frame": hb(type=99, autopilot=99)}, {"op": "state"}]},
+        {"name": "heartbeat_stack_switch", "snapshot": alive, "steps": [
+            {"op": "dispatch", "frame": hb()}, {"op": "dispatch", "frame": hb(autopilot=3, type=2)},
+            {"op": "dispatch", "frame": hb(autopilot=3, type=1)}, {"op": "dispatch", "frame": hb(autopilot=3, type=1)}]},
+        {"name": "heartbeat_from_a_component_is_ignored", "steps": [
+            {"op": "dispatch", "frame": {**hb(), "component": 100}}, {"op": "dispatch", "frame": {**hb(), "system": 5}}]},
+        {"name": "ignored_systems_are_told_once", "steps": [
+            {"op": "dispatch", "frame": {**hb(), "system": 5}}, {"op": "dispatch", "frame": {**hb(), "system": 5}},
+            {"op": "dispatch", "frame": {**hb(), "system": 254}}, {"op": "dispatch", "frame": {**hb(mavlink_version=2), "system": 6}},
+            {"op": "dispatch", "frame": {**hb(autopilot=8), "system": 7}}, {"op": "dispatch", "frame": {**hb(), "system": 0}},
+            {"op": "dispatch", "frame": {"name": "ATTITUDE", "system": 8, "fields": {"roll": 0.1}}}, {"op": "state"}]},
+        {"name": "ignored_systems_are_capped", "steps": [
+            *[{"op": "dispatch", "frame": {**hb(), "system": 10 + i}} for i in range(20)], {"op": "state"}]},
+        {"name": "heartbeat_degraded_and_recovered", "degraded": True, "steps": [
+            {"op": "dispatch", "frame": hb()}, {"op": "dispatch", "frame": hb()}, {"op": "state"},
+            {"op": "mark_degraded"}, {"op": "mark_degraded"}, {"op": "state"}]},
+        {"name": "heartbeat_flight_termination", "snapshot": {"kill_switch": True, "flight_termination": False}, "steps": [
+            {"op": "dispatch", "frame": hb(system_status=8)}, {"op": "state"}, {"op": "dispatch", "frame": hb(system_status=4)}, {"op": "state"}]},
+        {"name": "heartbeat_termination_without_the_switch", "steps": [{"op": "dispatch", "frame": hb(system_status=8)},
+                                                                    {"op": "dispatch", "frame": hb(system_status=4)}]},
+        {"name": "armed_clears_the_reasons", "prearm_reasons": True, "steps": [
+            {"op": "dispatch", "frame": hb(base_mode=209)}, {"op": "dispatch", "frame": hb(base_mode=81)}]},
+        {"name": "heartbeat_expires_the_rangefinder", "rangefinder_seen": 990.0, "steps": [
+            {"op": "dispatch", "frame": hb()}, {"op": "state"}]},
+        {"name": "heartbeat_keeps_a_fresh_rangefinder", "rangefinder_seen": 999.0, "steps": [
+            {"op": "dispatch", "frame": hb()}, {"op": "state"}]},
+        {"name": "position", "steps": [
+            {"op": "dispatch", "frame": frame("GLOBAL_POSITION_INT", lat=481234567, lon=117654321, alt=520500, relative_alt=30250,
+                                              hdg=18050, vx=150, vy=-250, vz=5)},
+            {"op": "dispatch", "frame": frame("GLOBAL_POSITION_INT", lat=-1, lon=-2, alt=-100, relative_alt=-100, hdg=65535, vx=1)},
+            {"op": "state"}]},
+        {"name": "distance_sensor", "steps": [
+            {"op": "dispatch", "frame": frame("DISTANCE_SENSOR", orientation=25, current_distance=250, min_distance=10, max_distance=1000)},
+            {"op": "dispatch", "frame": frame("DISTANCE_SENSOR", orientation=25, current_distance=5000, min_distance=10, max_distance=1000)},
+            {"op": "dispatch", "frame": frame("DISTANCE_SENSOR", orientation=0, current_distance=250, min_distance=10, max_distance=1000)},
+            {"op": "state"}]},
+        {"name": "attitude", "steps": [{"op": "dispatch", "frame": frame("ATTITUDE", roll=0.1, pitch=-0.2, yaw=3.0, rollspeed=0.01,
+                                                                           pitchspeed=-0.02, yawspeed=0.5)},
+                                       {"op": "dispatch", "frame": frame("ATTITUDE", roll=3.14159, pitch=1.5707, yaw=-3.14159)}]},
+        {"name": "vfr_hud", "steps": [
+            {"op": "dispatch", "frame": frame("VFR_HUD", groundspeed=12.345, airspeed=11.25, heading=181, climb=-0.45)},
+            {"op": "dispatch", "frame": frame("VFR_HUD", groundspeed=0.0, airspeed="nan", heading=0, climb=0.0)}]},
+        {"name": "gps_raw", "steps": [
+            {"op": "dispatch", "frame": frame("GPS_RAW_INT", fix_type=3, eph=121, epv=250, satellites_visible=14, alt=520500, h_acc=1500, v_acc=2500)},
+            {"op": "dispatch", "frame": frame("GPS_RAW_INT", fix_type=6, eph=65535, epv=65535, satellites_visible=20, alt=1000)},
+            {"op": "dispatch", "frame": frame("GPS_RAW_INT", fix_type=1, eph=0, epv=0, satellites_visible=0)},
+            {"op": "dispatch", "frame": frame("GPS_RAW_INT", fix_type=11, eph=50, epv=60, satellites_visible=3)}]},
+        {"name": "sys_status", "snapshot": {"armed": False}, "steps": [
+            {"op": "dispatch", "frame": frame("SYS_STATUS", voltage_battery=25200, current_battery=1250, battery_remaining=87,
+                                              onboard_control_sensors_present=268435456 | 32, onboard_control_sensors_enabled=268435456 | 32,
+                                              onboard_control_sensors_health=268435456)},
+            {"op": "dispatch", "frame": frame("SYS_STATUS", voltage_battery=65535, current_battery=-1, battery_remaining=-1)},
+            {"op": "dispatch", "frame": frame("SYS_STATUS", voltage_battery=22200, current_battery=100, battery_remaining=-1)},
+            {"op": "state"}]},
+        {"name": "sys_status_with_the_estimate", "snapshot": {"armed": True}, "steps": [
+            {"op": "set_battery", "raw": {"estimate": True}},
+            {"op": "dispatch", "frame": frame("SYS_STATUS", voltage_battery=25200, current_battery=0, battery_remaining=40)},
+            {"op": "dispatch", "frame": frame("SYS_STATUS", voltage_battery=24000, current_battery=0, battery_remaining=-1)}]},
+        {"name": "battery_status_goes_to_telemetry", "steps": [
+            {"op": "dispatch", "frame": frame("BATTERY_STATUS", id=0, voltages=[4100] * 6 + [65535] * 4, current_consumed=500, temperature=2100,
+                                              time_remaining=600)},
+            {"op": "dispatch", "frame": {**frame("BATTERY_STATUS", id=1, voltages=[4100] * 6 + [65535] * 4), "system": 5}}]},
+        {"name": "system_time", "steps": [
+            {"op": "dispatch", "frame": frame("SYSTEM_TIME", time_unix_usec=1_700_000_000_123_456, time_boot_ms=10000)},
+            {"op": "dispatch", "frame": frame("SYSTEM_TIME", time_unix_usec=0, time_boot_ms=11000)},
+            {"op": "dispatch", "frame": frame("SYSTEM_TIME", time_unix_usec=2**62, time_boot_ms=12000)},
+            {"op": "dispatch", "frame": frame("SYSTEM_TIME", time_unix_usec=1_700_000_059_999_999, time_boot_ms=13000)},
+            {"op": "dispatch", "frame": {**frame("SYSTEM_TIME", time_unix_usec=1_700_000_000_000_000, time_boot_ms=1), "component": 100}},
+            {"op": "state"}]},
+        {"name": "reboot_is_noticed", "last_boot_ms": 600000, "serial": True, "steps": [
+            {"op": "dispatch", "frame": frame("SYSTEM_TIME", time_unix_usec=0, time_boot_ms=605000)},
+            {"op": "dispatch", "frame": frame("SYSTEM_TIME", time_unix_usec=0, time_boot_ms=594000)},
+            {"op": "dispatch", "frame": frame("SYSTEM_TIME", time_unix_usec=0, time_boot_ms=2000)},
+            {"op": "dispatch", "frame": frame("SYSTEM_TIME", time_unix_usec=0, time_boot_ms=3000)}, {"op": "state"}]},
+        {"name": "reboot_threshold", "last_boot_ms": 600000, "steps": [
+            *[{"op": "dispatch", "frame": frame("SYSTEM_TIME", time_unix_usec=0, time_boot_ms=ms)}
+              for ms in (600000, 595500, 590500, 590499, 0, 4999, 5000, 3)]]},
+        {"name": "reboot_on_a_udp_link", "last_boot_ms": 600000, "steps": [
+            {"op": "dispatch", "frame": frame("SYSTEM_TIME", time_unix_usec=0, time_boot_ms=2000)}]},
+        {"name": "autopilot_version", "steps": [
+            {"op": "dispatch", "frame": frame("AUTOPILOT_VERSION", flight_sw_version=(1 << 24) | (16 << 16) | (2 << 8), vendor_id=9900,
+                                              product_id=22, capabilities=16, flight_custom_version=[0, 0, 0, 0xAB, 0xCD, 0xEF, 0x12, 0x34])},
+            {"op": "dispatch", "frame": frame("AUTOPILOT_VERSION", flight_sw_version=(1 << 24) | (16 << 16) | (2 << 8), capabilities=131072)},
+            {"op": "dispatch", "frame": frame("AUTOPILOT_VERSION", flight_sw_version=(4 << 24) | (6 << 16), capabilities=0,
+                                              flight_custom_version=[ord(c) for c in "4a7b3c9d"])},
+            {"op": "dispatch", "frame": frame("AUTOPILOT_VERSION", flight_sw_version=0, capabilities=16 | 131072)},
+            {"op": "dispatch", "frame": {**frame("AUTOPILOT_VERSION", flight_sw_version=1 << 24), "component": 100}}, {"op": "state"}]},
+        {"name": "routing", "log_sink": True, "steps": [
+            {"op": "dispatch", "frame": frame(n)} for n in (
+                "STATUSTEXT", "PARAM_VALUE", "FILE_TRANSFER_PROTOCOL", "LOG_ENTRY", "LOG_DATA", "SERIAL_CONTROL",
+                "MISSION_CURRENT", "MISSION_ITEM_REACHED", "MISSION_ACK", "MISSION_COUNT", "MISSION_REQUEST", "MISSION_REQUEST_INT",
+                "MISSION_ITEM", "MISSION_ITEM_INT", "RC_CHANNELS", "RC_CHANNELS_RAW", "ATTITUDE_TARGET", "POSITION_TARGET_LOCAL_NED",
+                "OPEN_DRONE_ID_ARM_STATUS", "RADIO_STATUS", "NAMED_VALUE_FLOAT")]},
+        {"name": "routing_from_another_system", "log_sink": True, "steps": [
+            {"op": "dispatch", "frame": {**frame(n), "system": 5}} for n in (
+                "STATUSTEXT", "PARAM_VALUE", "LOG_ENTRY", "MISSION_CURRENT", "RC_CHANNELS", "OPEN_DRONE_ID_ARM_STATUS", "RADIO_STATUS",
+                "SERIAL_CONTROL", "MISSION_ACK", "HOME_POSITION", "VIBRATION", "EXTENDED_SYS_STATE")]},
+        {"name": "routing_from_a_component", "log_sink": True, "steps": [
+            {"op": "dispatch", "frame": {**frame(n), "component": 100}} for n in (
+                "PARAM_VALUE", "FILE_TRANSFER_PROTOCOL", "LOG_ENTRY", "MISSION_CURRENT", "MISSION_ITEM_REACHED", "HOME_POSITION", "STATUSTEXT",
+                "AUTOPILOT_VERSION", "SYSTEM_TIME")]},
+        {"name": "log_sink_absent_or_broken", "steps": [{"op": "dispatch", "frame": frame("LOG_ENTRY")}]},
+        {"name": "log_sink_raises", "log_sink_raises": True, "steps": [{"op": "dispatch", "frame": frame("LOG_DATA")}]},
+        {"name": "gnss_integrity_routes", "steps": [
+            {"op": "dispatch", "frame": frame("GNSS_INTEGRITY", id=0, jamming_state=2, spoofing_state=1, gnss_signal_quality=6)},
+            {"op": "dispatch", "frame": {"unknown": 441, "data": gnss_frame()}},
+            {"op": "dispatch", "frame": {"unknown": 441, "data": gnss_frame(), "system": 7}},
+            {"op": "dispatch", "frame": {"unknown": 442, "data": "00"}}]},
+        {"name": "vibration_and_landed_state", "steps": [
+            {"op": "dispatch", "frame": frame("VIBRATION", vibration_x=0.123456, vibration_y=1.5, vibration_z=0.00004, clipping_0=1, clipping_1=2, clipping_2=3)},
+            *[{"op": "dispatch", "frame": frame("EXTENDED_SYS_STATE", landed_state=n)} for n in (0, 1, 2, 3, 4, 5)]]},
+        {"name": "home_position", "steps": [
+            {"op": "dispatch", "frame": frame("HOME_POSITION", latitude=481234567, longitude=117654321, altitude=520500)},
+            {"op": "state"}]},
+        {"name": "heartbeat_then_radio_status", "steps": [
+            {"op": "dispatch", "frame": hb()}, {"op": "dispatch", "frame": {**frame("RADIO_STATUS", remrssi=150, txbuf=100), "system": 51}},
+            {"op": "dispatch", "frame": hb()}]},
+        {"name": "frames_filtered_by_the_fleet", "steps": [
+            {"op": "dispatch", "frame": hb()}, {"op": "dispatch", "frame": {**hb(), "component": 240}},
+            {"op": "dispatch", "frame": frame("ATTITUDE", roll=0.0)}, {"op": "dispatch", "frame": {**frame("ATTITUDE", roll=0.0), "system": 3}}]},
+        {"name": "duplicates", "steps": [
+            {"op": "process", "frame": {**hb(), "raw": "aabbcc"}}, {"op": "advance", "seconds": 0.1},
+            {"op": "process", "frame": {**hb(), "raw": "aabbcc"}}, {"op": "process", "frame": {**hb(), "raw": "ddeeff"}},
+            {"op": "advance", "seconds": 0.5}, {"op": "process", "frame": {**hb(), "raw": "aabbcc"}},
+            {"op": "advance", "seconds": 0.2}, {"op": "process", "frame": {**hb(), "raw": "aabbcc"}},
+            {"op": "process", "frame": hb()}, {"op": "process", "frame": hb()}, {"op": "state"}]},
+        {"name": "command_ack_logging", "steps": [
+            {"op": "dispatch", "frame": frame("COMMAND_ACK", command=400, result=0)}, {"op": "dispatch", "frame": frame("COMMAND_ACK", command=22, result=5)},
+            {"op": "dispatch", "frame": frame("COMMAND_ACK", command=22, result=4)}, {"op": "dispatch", "frame": frame("COMMAND_ACK", command=22, result=77)},
+            {"op": "dispatch", "frame": {**frame("COMMAND_ACK", command=400, result=0), "system": 9}},
+            {"op": "dispatch", "frame": frame("COMMAND_ACK", command=212, result=5, progress=40)},
+            {"op": "dispatch", "frame": frame("COMMAND_ACK", command=212, result=0)}]},
+        {"name": "command_ok", "acks": {"400": [[ack(0.2, 0, command=400)]]}, "steps": [{"op": "command", "command": 400, "params": [1.0], "timeout": 3.0, "retries": 2}]},
+        {"name": "command_denied", "acks": {"400": [[ack(0.2, 2, command=400)]]}, "steps": [{"op": "command", "command": 400, "params": [1.0], "timeout": 3.0, "retries": 2}]},
+        {"name": "command_retried", "acks": {"400": [[], [ack(0.4, 0, command=400)]]},
+         "steps": [{"op": "command", "command": 400, "params": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0], "timeout": 1.0, "retries": 2}]},
+        {"name": "command_never_answered", "steps": [{"op": "command", "command": 400, "params": [], "timeout": 1.0, "retries": 2}]},
+        {"name": "command_not_ready", "ready": False, "steps": [{"op": "command", "command": 400, "params": [], "timeout": 1.0, "retries": 1}]},
+        {"name": "command_send_fails", "send_fails": True, "steps": [{"op": "command", "command": 400, "params": [], "timeout": 1.0, "retries": 1}]},
+        {"name": "command_in_progress_then_final", "acks": {"241": [[ack(0.2, 5, command=241), ack(1.5, 0, command=241)]]},
+         "steps": [{"op": "command", "command": 241, "params": [], "timeout": 1.0, "retries": 2}]},
+        {"name": "command_in_progress_never_finishes", "acks": {"241": [[ack(0.2, 5, command=241)]]},
+         "steps": [{"op": "command", "command": 241, "params": [], "timeout": 1.0, "retries": 2}]},
+        {"name": "command_accepts_in_progress", "acks": {"212": [[ack(0.2, 5, command=212)]]},
+         "steps": [{"op": "command", "command": 212, "params": [1.0], "timeout": 1.0, "retries": 0, "accept_in_progress": True}]},
+        {"name": "command_interim_then_final", "acks": {"241": [[ack(0.2, 1, command=241), ack(0.8, 0, command=241)]]},
+         "steps": [{"op": "command", "command": 241, "params": [], "timeout": 2.0, "retries": 0, "interim": [1]}]},
+        {"name": "command_interim_only", "acks": {"241": [[ack(0.2, 1, command=241)]]},
+         "steps": [{"op": "command", "command": 241, "params": [], "timeout": 1.0, "retries": 2, "interim": [1]}]},
+        {"name": "command_ack_for_another_command", "acks": {"400": [[ack(0.2, 0, command=22)]]},
+         "steps": [{"op": "command", "command": 400, "params": [], "timeout": 1.0, "retries": 0}]},
+        {"name": "command_ack_from_another_system", "acks": {"400": [[ack(0.2, 0, command=400, system=9)]]},
+         "steps": [{"op": "command", "command": 400, "params": [], "timeout": 1.0, "retries": 0}]},
+        {"name": "command_ack_for_another_station", "acks": {"400": [[ack(0.2, 0, command=400, target_system=7)]]},
+         "steps": [{"op": "command", "command": 400, "params": [], "timeout": 1.0, "retries": 0}]},
+        {"name": "command_int_ok", "acks": {"192": [[ack(0.3, 0, command=192)]]},
+         "steps": [{"op": "command_int", "command": 192, "frame": 3, "params": [-1.0, 1.0], "x": 481234567, "y": 117654321, "z": 30.5,
+                    "timeout": 1.0, "retries": 1}]},
+        {"name": "command_int_in_progress", "acks": {"192": [[ack(0.3, 5, command=192), ack(1.4, 0, command=192)]]},
+         "steps": [{"op": "command_int", "command": 192, "frame": 3, "params": [], "x": 1, "y": 2, "z": 3.0, "timeout": 1.0, "retries": 1}]},
+        {"name": "command_int_timeout", "steps": [{"op": "command_int", "command": 192, "frame": 0, "params": [], "x": 1, "y": 2, "z": 3.0,
+                                                    "timeout": 0.5, "retries": 1}]},
+        {"name": "command_int_send_fails", "send_fails": True, "steps": [
+            {"op": "command_int", "command": 192, "frame": 0, "params": [], "x": 1, "y": 2, "z": 3.0, "timeout": 0.5, "retries": 1}]},
+        {"name": "command_int_not_ready", "ready": False, "steps": [
+            {"op": "command_int", "command": 192, "frame": 0, "params": [], "x": 1, "y": 2, "z": 3.0, "timeout": 0.5, "retries": 1}]},
+        {"name": "cancel_wakes_the_waiters", "steps": [{"op": "cancel"}]},
+        {"name": "registry_is_empty_after_a_command", "acks": {"400": [[ack(0.2, 0, command=400)]]}, "steps": [
+            {"op": "command", "command": 400, "params": [], "timeout": 1.0, "retries": 0}, {"op": "pending"}]},
+    ]
+
+
+def receive_cases() -> list[dict]:
+    import datetime
+    import logging
+    import types
+
+    ReceiveBridge, rx = receive_bridge_class()
+    out = []
+    for sc in receive_scenarios():
+        clock = Clock()
+        clock.t = 1000.0
+        br = ReceiveBridge(sc, clock)
+        FakeEvent.sim = br.sim
+        if sc.get("no_connection"):
+            br._conn = None
+
+        class Capture(logging.Handler):
+            def emit(self, record):
+                br.log.append(["log", record.levelname.lower(), record.getMessage()])
+
+        handler = Capture()
+        logger = logging.getLogger("corvus.mavlink")
+        logger.addHandler(handler)
+        old_level = logger.level
+        logger.setLevel(logging.DEBUG)
+
+        def monotonic(clock=clock):
+            return clock.t
+
+        def connection_ready(self=br):
+            return bool(self._conn and self.sc.get("ready", True))
+
+        saved = (rx._PendingAck, )
+        rx._PendingAck = FakeAckPending
+        br._connection_ready = connection_ready
+        results = []
+        try:
+            with mock.patch("time.monotonic", monotonic):
+                for step in sc["steps"]:
+                    before = len(br.log)
+                    op = step["op"]
+                    result = None
+                    if op == "plausible":
+                        result = rx._is_plausible_heartbeat(receive_frame(step["frame"]))
+                    elif op == "vehicle_heartbeat":
+                        result = rx._is_vehicle_heartbeat(receive_frame(step["frame"]))
+                    elif op == "sys_helpers":
+                        msg = receive_message("SYS_STATUS", step["fields"])
+                        result = [rx._sensor_health(msg, 32), rx._prearm_ok(msg)]
+                    elif op == "range":
+                        result = rx._rangefinder_distance_m(receive_message("DISTANCE_SENSOR", step["fields"]))
+                    elif op == "gps_helpers":
+                        msg = receive_message("GPS_RAW_INT", step["fields"])
+                        result = [rx._gps_altitude_m(msg), rx._gps_accuracy_m(msg.h_acc), rx._gps_accuracy_m(msg.v_acc)]
+                    elif op == "git_hash":
+                        result = rx.ReceivePathMixin._decode_git_hash(step["raw"])
+                    elif op == "who":
+                        msg = receive_frame(step["frame"])
+                        result = [br._is_from_vehicle(msg), br._is_from_autopilot(msg)]
+                    elif op == "ack_for":
+                        result = br._ack_is_for_us(receive_frame(step["frame"]))
+                    elif op == "dispatch":
+                        br._dispatch(receive_frame(step["frame"]))
+                    elif op == "process":
+                        br._process_frame(receive_frame(step["frame"]))
+                    elif op == "mark_degraded":
+                        br._mark_degraded_once()
+                    elif op == "set_battery":
+                        br.set_battery_settings(step["raw"])
+                    elif op == "advance":
+                        clock.t += step["seconds"]
+                    elif op == "command":
+                        result = br._send_command_and_wait(
+                            step["command"], step["params"], timeout=step["timeout"], retries=step["retries"],
+                            accept_in_progress=step.get("accept_in_progress", False), interim=frozenset(step.get("interim", [])))
+                    elif op == "command_int":
+                        result = br._send_command_int_and_wait(
+                            step["command"], step["frame"], step["params"], x=step["x"], y=step["y"], z=step["z"],
+                            timeout=step["timeout"], retries=step["retries"])
+                    elif op == "cancel":
+                        br._pending_acks[1] = FakeAckPending()
+                        br._cancel_pending_commands()
+                        result = br._pending_acks[1].result
+                    elif op == "pending":
+                        result = len(br._pending_acks)
+                    elif op == "state":
+                        result = {"snapshot": dict(br.snap), "degraded": br._degraded_warned, "ignored": sorted(br._ignored_systems),
+                                  "duplicates": br._duplicate_frames, "rangefinder_seen": br._rangefinder_seen,
+                                  "last_boot_ms": br._last_boot_ms, "kill_evidence": br._kill_evidence_at,
+                                  "firmware": br._firmware_version, "board": [br._board_vendor_id, br._board_product_id],
+                                  "encoding": br._param_encoding_declared, "request_sent": br._request_sent,
+                                  "stack": br._dialect.stack, "mav_type": br._mav_type_id, "hb": list(br._hb_times)}
+                    else:
+                        raise SystemExit(op)
+                    results.append({"result": result, "events": br.log[before:], "t": round(clock.t - 1000.0, 6)})
+        finally:
+            rx._PendingAck = saved[0]
+            logger.removeHandler(handler)
+            logger.setLevel(old_level)
+            FakeEvent.sim = None
+        out.append({"scenario": clean(sc), "expected": clean({"steps": results, "final": {}})})
+    return out
+
+
 COMMANDS = {"params_cases.json": cases, "logs_cases.json": logs_cases, "shell_cases.json": shell_cases,
             "ftp_cases.json": ftp_cases, "flight_cases.json": flight_cases,
             "setup_cases.json": setup_cases,
             "telemetry_cases.json": telemetry_cases,
             "missions_cases.json": mission_cases,
-            "remote_id_cases.json": rid_cases}
+            "remote_id_cases.json": rid_cases,
+            "receive_cases.json": receive_cases}
 
 
 def main(argv: list[str]) -> int:

@@ -1,0 +1,9930 @@
+{
+ "cases": [
+  {
+   "scenario": {
+    "name": "plausible_heartbeats",
+    "steps": [
+     {
+      "op": "plausible",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 12,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       }
+      }
+     },
+     {
+      "op": "plausible",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 12,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 2
+       }
+      }
+     },
+     {
+      "op": "plausible",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 128,
+        "autopilot": 12,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       }
+      }
+     },
+     {
+      "op": "plausible",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 127,
+        "autopilot": 12,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       }
+      }
+     },
+     {
+      "op": "plausible",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 64,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       }
+      }
+     },
+     {
+      "op": "plausible",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 63,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       }
+      }
+     },
+     {
+      "op": "plausible",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 12,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 32,
+        "mavlink_version": 3
+       }
+      }
+     },
+     {
+      "op": "plausible",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 12,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 31,
+        "mavlink_version": 3
+       }
+      }
+     },
+     {
+      "op": "plausible",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 255,
+        "autopilot": 12,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       }
+      }
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": false,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": false,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": true,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": false,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": true,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": false,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": true,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": false,
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "vehicle_heartbeats",
+    "steps": [
+     {
+      "op": "vehicle_heartbeat",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 12,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       },
+       "component": 1
+      }
+     },
+     {
+      "op": "vehicle_heartbeat",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 12,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       },
+       "component": 0
+      }
+     },
+     {
+      "op": "vehicle_heartbeat",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 12,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       },
+       "component": 240
+      }
+     },
+     {
+      "op": "vehicle_heartbeat",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 12,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       },
+       "component": 154
+      }
+     },
+     {
+      "op": "vehicle_heartbeat",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 12,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       },
+       "component": 68
+      }
+     },
+     {
+      "op": "vehicle_heartbeat",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 12,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       },
+       "component": 191
+      }
+     },
+     {
+      "op": "vehicle_heartbeat",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 18,
+        "autopilot": 12,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       },
+       "component": 1
+      }
+     },
+     {
+      "op": "vehicle_heartbeat",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 6,
+        "autopilot": 12,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       },
+       "component": 1
+      }
+     },
+     {
+      "op": "vehicle_heartbeat",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 30,
+        "autopilot": 12,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       },
+       "component": 1
+      }
+     },
+     {
+      "op": "vehicle_heartbeat",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 41,
+        "autopilot": 12,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       },
+       "component": 1
+      }
+     },
+     {
+      "op": "vehicle_heartbeat",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 8,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       },
+       "component": 1
+      }
+     },
+     {
+      "op": "vehicle_heartbeat",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 0,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       },
+       "component": 1
+      }
+     },
+     {
+      "op": "vehicle_heartbeat",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 12,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 2
+       },
+       "component": 1
+      }
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": true,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": false,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": false,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": false,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": false,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": false,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": false,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": false,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": false,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": false,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": true,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": false,
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "sensor_health",
+    "steps": [
+     {
+      "op": "sys_helpers",
+      "fields": {}
+     },
+     {
+      "op": "sys_helpers",
+      "fields": {
+       "onboard_control_sensors_present": 32
+      }
+     },
+     {
+      "op": "sys_helpers",
+      "fields": {
+       "onboard_control_sensors_present": 32,
+       "onboard_control_sensors_health": 32
+      }
+     },
+     {
+      "op": "sys_helpers",
+      "fields": {
+       "onboard_control_sensors_enabled": 32,
+       "onboard_control_sensors_health": 1
+      }
+     },
+     {
+      "op": "sys_helpers",
+      "fields": {
+       "onboard_control_sensors_present": 268435456
+      }
+     },
+     {
+      "op": "sys_helpers",
+      "fields": {
+       "onboard_control_sensors_present": 268435456,
+       "onboard_control_sensors_health": 268435456
+      }
+     },
+     {
+      "op": "sys_helpers",
+      "fields": {
+       "onboard_control_sensors_enabled": 268435488,
+       "onboard_control_sensors_health": 32
+      }
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": [
+       "",
+       null
+      ],
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": [
+       "fault",
+       null
+      ],
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": [
+       "ok",
+       null
+      ],
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": [
+       "fault",
+       null
+      ],
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": [
+       "",
+       false
+      ],
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": [
+       "",
+       true
+      ],
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": [
+       "ok",
+       false
+      ],
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "rangefinder",
+    "steps": [
+     {
+      "op": "range",
+      "fields": {
+       "orientation": 25,
+       "current_distance": 150,
+       "min_distance": 10,
+       "max_distance": 1000
+      }
+     },
+     {
+      "op": "range",
+      "fields": {
+       "orientation": 25,
+       "current_distance": 5,
+       "min_distance": 10,
+       "max_distance": 1000
+      }
+     },
+     {
+      "op": "range",
+      "fields": {
+       "orientation": 25,
+       "current_distance": 1000,
+       "min_distance": 10,
+       "max_distance": 1000
+      }
+     },
+     {
+      "op": "range",
+      "fields": {
+       "orientation": 25,
+       "current_distance": 5000,
+       "min_distance": 10,
+       "max_distance": 0
+      }
+     },
+     {
+      "op": "range",
+      "fields": {
+       "orientation": 25,
+       "current_distance": 123,
+       "min_distance": 0,
+       "max_distance": 0
+      }
+     },
+     {
+      "op": "range",
+      "fields": {
+       "orientation": 0,
+       "current_distance": 150,
+       "min_distance": 10,
+       "max_distance": 1000
+      }
+     },
+     {
+      "op": "range",
+      "fields": {
+       "orientation": 25,
+       "current_distance": 1,
+       "min_distance": 0,
+       "max_distance": 10
+      }
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": 1.5,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": 50.0,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": 1.23,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": 0.01,
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "gps_helpers",
+    "steps": [
+     {
+      "op": "gps_helpers",
+      "fields": {
+       "fix_type": 3,
+       "alt": 520123
+      }
+     },
+     {
+      "op": "gps_helpers",
+      "fields": {
+       "fix_type": 4,
+       "alt": -5555
+      }
+     },
+     {
+      "op": "gps_helpers",
+      "fields": {
+       "fix_type": 2,
+       "alt": 520123
+      }
+     },
+     {
+      "op": "gps_helpers",
+      "fields": {
+       "fix_type": 0
+      }
+     },
+     {
+      "op": "gps_helpers",
+      "fields": {
+       "fix_type": 3,
+       "alt": 0
+      }
+     },
+     {
+      "op": "gps_helpers",
+      "fields": {
+       "fix_type": 3,
+       "alt": 520125
+      }
+     },
+     {
+      "op": "gps_helpers",
+      "fields": {
+       "fix_type": 3,
+       "alt": 520135
+      }
+     },
+     {
+      "op": "gps_helpers",
+      "fields": {
+       "fix_type": 3,
+       "h_acc": 1234,
+       "v_acc": 0
+      }
+     },
+     {
+      "op": "gps_helpers",
+      "fields": {
+       "fix_type": 3,
+       "h_acc": 1235,
+       "v_acc": 5
+      }
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": [
+       520.1,
+       -1.0,
+       -1.0
+      ],
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": [
+       -5.6,
+       -1.0,
+       -1.0
+      ],
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": [
+       null,
+       -1.0,
+       -1.0
+      ],
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": [
+       null,
+       -1.0,
+       -1.0
+      ],
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": [
+       0.0,
+       -1.0,
+       -1.0
+      ],
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": [
+       520.1,
+       -1.0,
+       -1.0
+      ],
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": [
+       520.1,
+       -1.0,
+       -1.0
+      ],
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": [
+       0.0,
+       1.23,
+       -1.0
+      ],
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": [
+       0.0,
+       1.24,
+       0.01
+      ],
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "git_hash",
+    "steps": [
+     {
+      "op": "git_hash",
+      "raw": [
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0
+      ]
+     },
+     {
+      "op": "git_hash",
+      "raw": [
+       0,
+       0,
+       0,
+       171,
+       205,
+       239,
+       18,
+       52
+      ]
+     },
+     {
+      "op": "git_hash",
+      "raw": [
+       52,
+       97,
+       55,
+       98,
+       51,
+       99,
+       57,
+       100
+      ]
+     },
+     {
+      "op": "git_hash",
+      "raw": [
+       52,
+       65,
+       55,
+       66,
+       51,
+       67
+      ]
+     },
+     {
+      "op": "git_hash",
+      "raw": [
+       52,
+       97,
+       55,
+       98,
+       51,
+       0,
+       0,
+       0
+      ]
+     },
+     {
+      "op": "git_hash",
+      "raw": [
+       18,
+       52,
+       86,
+       120,
+       154,
+       188,
+       222,
+       240
+      ]
+     },
+     {
+      "op": "git_hash",
+      "raw": [
+       1,
+       2,
+       3,
+       0,
+       0,
+       0,
+       0,
+       0
+      ]
+     },
+     {
+      "op": "git_hash",
+      "raw": [
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       7
+      ]
+     },
+     {
+      "op": "git_hash",
+      "raw": [
+       122,
+       122,
+       122,
+       122,
+       122,
+       122,
+       122,
+       122
+      ]
+     },
+     {
+      "op": "git_hash",
+      "raw": [
+       97,
+       98,
+       99,
+       100,
+       101,
+       102,
+       0,
+       0
+      ]
+     },
+     {
+      "op": "git_hash",
+      "raw": []
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": "",
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": "3412efcdab",
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": "4a7b3c9d",
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": "4a7b3c",
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": "3461376233",
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": "123456789abcdef0",
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": "010203",
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": "07",
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": "7a7a7a7a7a7a7a7a",
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": "abcdef",
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": "",
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "who_sent_it",
+    "target": [
+     1,
+     1
+    ],
+    "steps": [
+     {
+      "op": "who",
+      "frame": {
+       "name": "HEARTBEAT",
+       "system": 1,
+       "component": 1
+      }
+     },
+     {
+      "op": "who",
+      "frame": {
+       "name": "HEARTBEAT",
+       "system": 1,
+       "component": 0
+      }
+     },
+     {
+      "op": "who",
+      "frame": {
+       "name": "HEARTBEAT",
+       "system": 0,
+       "component": 0
+      }
+     },
+     {
+      "op": "who",
+      "frame": {
+       "name": "HEARTBEAT",
+       "system": 0,
+       "component": 5
+      }
+     },
+     {
+      "op": "who",
+      "frame": {
+       "name": "HEARTBEAT",
+       "system": 2,
+       "component": 1
+      }
+     },
+     {
+      "op": "who",
+      "frame": {
+       "name": "HEARTBEAT",
+       "system": 1,
+       "component": 2
+      }
+     },
+     {
+      "op": "who",
+      "frame": {
+       "name": "HEARTBEAT",
+       "system": 254,
+       "component": 190
+      }
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": [
+       true,
+       true
+      ],
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": [
+       true,
+       true
+      ],
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": [
+       true,
+       true
+      ],
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": [
+       true,
+       false
+      ],
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": [
+       false,
+       false
+      ],
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": [
+       true,
+       false
+      ],
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": [
+       false,
+       false
+      ],
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "who_is_the_ack_for",
+    "steps": [
+     {
+      "op": "ack_for",
+      "frame": {
+       "name": "COMMAND_ACK",
+       "system": 1,
+       "component": 1,
+       "fields": {
+        "target_system": 0,
+        "target_component": 0
+       }
+      }
+     },
+     {
+      "op": "ack_for",
+      "frame": {
+       "name": "COMMAND_ACK",
+       "system": 1,
+       "component": 1,
+       "fields": {
+        "target_system": 255,
+        "target_component": 190
+       }
+      }
+     },
+     {
+      "op": "ack_for",
+      "frame": {
+       "name": "COMMAND_ACK",
+       "system": 1,
+       "component": 1,
+       "fields": {
+        "target_system": 255,
+        "target_component": 7
+       }
+      }
+     },
+     {
+      "op": "ack_for",
+      "frame": {
+       "name": "COMMAND_ACK",
+       "system": 1,
+       "component": 1,
+       "fields": {
+        "target_system": 9,
+        "target_component": 190
+       }
+      }
+     },
+     {
+      "op": "ack_for",
+      "frame": {
+       "name": "COMMAND_ACK",
+       "system": 2,
+       "component": 1,
+       "fields": {
+        "target_system": 0,
+        "target_component": 0
+       }
+      }
+     },
+     {
+      "op": "ack_for",
+      "frame": {
+       "name": "COMMAND_ACK",
+       "system": 1,
+       "component": 3,
+       "fields": {
+        "target_system": 0,
+        "target_component": 0
+       }
+      }
+     },
+     {
+      "op": "ack_for",
+      "frame": {
+       "name": "COMMAND_ACK",
+       "system": 0,
+       "component": 0,
+       "fields": {
+        "target_system": 255,
+        "target_component": 0
+       }
+      }
+     },
+     {
+      "op": "ack_for",
+      "frame": {
+       "name": "COMMAND_ACK",
+       "system": 0,
+       "component": 0,
+       "fields": {
+        "target_system": 0,
+        "target_component": 190
+       }
+      }
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": true,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": false,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": false,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": false,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": false,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": true,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": true,
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "no_connection_no_ack",
+    "no_connection": true,
+    "steps": [
+     {
+      "op": "ack_for",
+      "frame": {
+       "name": "COMMAND_ACK",
+       "system": 1,
+       "component": 1
+      }
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "heartbeat_updates_the_store",
+    "snapshot": {
+     "connected": true
+    },
+    "steps": [
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 12,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       }
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 12,
+        "base_mode": 209,
+        "custom_mode": 0,
+        "system_status": 3,
+        "mavlink_version": 3
+       }
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 1,
+        "autopilot": 3,
+        "base_mode": 1,
+        "custom_mode": 5,
+        "system_status": 4,
+        "mavlink_version": 3
+       }
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 99,
+        "autopilot": 99,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       }
+      }
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "HEARTBEAT",
+         true
+        ]
+       ],
+       [
+        "store_heartbeat"
+       ],
+       [
+        "update",
+        {
+         "heartbeat_jitter_ms": 0.0
+        }
+       ],
+       [
+        "update",
+        {
+         "vehicle_type": "QUADROTOR",
+         "autopilot": "PX4",
+         "armed": false,
+         "mode": "POSCTL",
+         "mode_label": "POSITION",
+         "autopilot_stack": "px4",
+         "flight_termination": false
+        }
+       ],
+       [
+        "call",
+        "roll_tlog_on_disarm",
+        [
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "link_quality": "good"
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "HEARTBEAT",
+         true
+        ]
+       ],
+       [
+        "store_heartbeat"
+       ],
+       [
+        "update",
+        {
+         "heartbeat_jitter_ms": 0.0
+        }
+       ],
+       [
+        "update",
+        {
+         "vehicle_type": "QUADROTOR",
+         "autopilot": "PX4",
+         "armed": true,
+         "mode": "MODE_0",
+         "mode_label": "MODE 0",
+         "autopilot_stack": "px4",
+         "flight_termination": false
+        }
+       ],
+       [
+        "resolve_warnings",
+        [
+         "prearm"
+        ]
+       ],
+       [
+        "call",
+        "roll_tlog_on_disarm",
+        [
+         true
+        ]
+       ],
+       [
+        "update",
+        {
+         "link_quality": "good"
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "HEARTBEAT",
+         true
+        ]
+       ],
+       [
+        "store_heartbeat"
+       ],
+       [
+        "update",
+        {
+         "heartbeat_jitter_ms": 0.0
+        }
+       ],
+       [
+        "call",
+        "build_mode_mapping",
+        []
+       ],
+       [
+        "update",
+        {
+         "vehicle_type": "FIXED_WING",
+         "autopilot": "ARDUPILOTMEGA",
+         "armed": false,
+         "mode": "FBWA",
+         "mode_label": "FBWA",
+         "autopilot_stack": "ardupilot",
+         "flight_termination": false
+        }
+       ],
+       [
+        "call",
+        "roll_tlog_on_disarm",
+        [
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "link_quality": "good"
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "HEARTBEAT",
+         false
+        ]
+       ],
+       [
+        "store_heartbeat"
+       ],
+       [
+        "update",
+        {
+         "heartbeat_jitter_ms": 0.0
+        }
+       ],
+       [
+        "call",
+        "build_mode_mapping",
+        []
+       ],
+       [
+        "update",
+        {
+         "vehicle_type": "TYPE_99",
+         "autopilot": "AP_99",
+         "armed": false,
+         "mode": "MODE_196608",
+         "mode_label": "MODE 196608",
+         "autopilot_stack": "generic",
+         "flight_termination": false
+        }
+       ],
+       [
+        "call",
+        "roll_tlog_on_disarm",
+        [
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "link_quality": "good"
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "snapshot": {
+        "connected": true,
+        "heartbeat_jitter_ms": 0.0,
+        "vehicle_type": "TYPE_99",
+        "autopilot": "AP_99",
+        "armed": false,
+        "mode": "MODE_196608",
+        "mode_label": "MODE 196608",
+        "autopilot_stack": "generic",
+        "flight_termination": false,
+        "link_quality": "good"
+       },
+       "degraded": false,
+       "ignored": [],
+       "duplicates": 0,
+       "rangefinder_seen": null,
+       "last_boot_ms": null,
+       "kill_evidence": null,
+       "firmware": null,
+       "board": [
+        0,
+        0
+       ],
+       "encoding": "unset",
+       "request_sent": true,
+       "stack": "generic",
+       "mav_type": 99,
+       "hb": [
+        1000.0,
+        1000.0,
+        1000.0,
+        1000.0
+       ]
+      },
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "heartbeat_stack_switch",
+    "snapshot": {
+     "connected": true
+    },
+    "steps": [
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 12,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       }
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 3,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       }
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 1,
+        "autopilot": 3,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       }
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 1,
+        "autopilot": 3,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       }
+      }
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "HEARTBEAT",
+         true
+        ]
+       ],
+       [
+        "store_heartbeat"
+       ],
+       [
+        "update",
+        {
+         "heartbeat_jitter_ms": 0.0
+        }
+       ],
+       [
+        "update",
+        {
+         "vehicle_type": "QUADROTOR",
+         "autopilot": "PX4",
+         "armed": false,
+         "mode": "POSCTL",
+         "mode_label": "POSITION",
+         "autopilot_stack": "px4",
+         "flight_termination": false
+        }
+       ],
+       [
+        "call",
+        "roll_tlog_on_disarm",
+        [
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "link_quality": "good"
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "HEARTBEAT",
+         true
+        ]
+       ],
+       [
+        "store_heartbeat"
+       ],
+       [
+        "update",
+        {
+         "heartbeat_jitter_ms": 0.0
+        }
+       ],
+       [
+        "call",
+        "build_mode_mapping",
+        []
+       ],
+       [
+        "update",
+        {
+         "vehicle_type": "QUADROTOR",
+         "autopilot": "ARDUPILOTMEGA",
+         "armed": false,
+         "mode": "MODE_196608",
+         "mode_label": "MODE 196608",
+         "autopilot_stack": "ardupilot",
+         "flight_termination": false
+        }
+       ],
+       [
+        "call",
+        "roll_tlog_on_disarm",
+        [
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "link_quality": "good"
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "HEARTBEAT",
+         true
+        ]
+       ],
+       [
+        "store_heartbeat"
+       ],
+       [
+        "update",
+        {
+         "heartbeat_jitter_ms": 0.0
+        }
+       ],
+       [
+        "call",
+        "build_mode_mapping",
+        []
+       ],
+       [
+        "update",
+        {
+         "vehicle_type": "FIXED_WING",
+         "autopilot": "ARDUPILOTMEGA",
+         "armed": false,
+         "mode": "MODE_196608",
+         "mode_label": "MODE 196608",
+         "autopilot_stack": "ardupilot",
+         "flight_termination": false
+        }
+       ],
+       [
+        "call",
+        "roll_tlog_on_disarm",
+        [
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "link_quality": "good"
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "HEARTBEAT",
+         true
+        ]
+       ],
+       [
+        "store_heartbeat"
+       ],
+       [
+        "update",
+        {
+         "heartbeat_jitter_ms": 0.0
+        }
+       ],
+       [
+        "update",
+        {
+         "vehicle_type": "FIXED_WING",
+         "autopilot": "ARDUPILOTMEGA",
+         "armed": false,
+         "mode": "MODE_196608",
+         "mode_label": "MODE 196608",
+         "autopilot_stack": "ardupilot",
+         "flight_termination": false
+        }
+       ],
+       [
+        "call",
+        "roll_tlog_on_disarm",
+        [
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "link_quality": "good"
+        }
+       ]
+      ],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "heartbeat_from_a_component_is_ignored",
+    "steps": [
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 12,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       },
+       "component": 100
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 12,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       },
+       "system": 5
+      }
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "HEARTBEAT",
+         true
+        ]
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "log",
+        "info",
+        "ignoring autopilot sys=5: this link flies sys=1"
+       ],
+       [
+        "console",
+        "LINK",
+        "Another autopilot (system 5) is on this link and is ignored. This link flies system 1; a second vehicle needs a radio and a link of its own.",
+        "warning"
+       ]
+      ],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "ignored_systems_are_told_once",
+    "steps": [
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 12,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       },
+       "system": 5
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 12,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       },
+       "system": 5
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 12,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       },
+       "system": 254
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 12,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 2
+       },
+       "system": 6
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 8,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       },
+       "system": 7
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 12,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       },
+       "system": 0
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "ATTITUDE",
+       "system": 8,
+       "fields": {
+        "roll": 0.1
+       }
+      }
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "log",
+        "info",
+        "ignoring autopilot sys=5: this link flies sys=1"
+       ],
+       [
+        "console",
+        "LINK",
+        "Another autopilot (system 5) is on this link and is ignored. This link flies system 1; a second vehicle needs a radio and a link of its own.",
+        "warning"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "store_heartbeat"
+       ],
+       [
+        "update",
+        {
+         "heartbeat_jitter_ms": 0.0
+        }
+       ],
+       [
+        "update",
+        {
+         "vehicle_type": "QUADROTOR",
+         "autopilot": "PX4",
+         "armed": false,
+         "mode": "POSCTL",
+         "mode_label": "POSITION",
+         "autopilot_stack": "px4",
+         "flight_termination": false
+        }
+       ],
+       [
+        "call",
+        "roll_tlog_on_disarm",
+        [
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "link_quality": "good"
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "snapshot": {
+        "heartbeat_jitter_ms": 0.0,
+        "vehicle_type": "QUADROTOR",
+        "autopilot": "PX4",
+        "armed": false,
+        "mode": "POSCTL",
+        "mode_label": "POSITION",
+        "autopilot_stack": "px4",
+        "flight_termination": false,
+        "link_quality": "good"
+       },
+       "degraded": false,
+       "ignored": [
+        5
+       ],
+       "duplicates": 0,
+       "rangefinder_seen": null,
+       "last_boot_ms": null,
+       "kill_evidence": null,
+       "firmware": null,
+       "board": [
+        0,
+        0
+       ],
+       "encoding": "unset",
+       "request_sent": true,
+       "stack": "px4",
+       "mav_type": 2,
+       "hb": [
+        1000.0
+       ]
+      },
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "ignored_systems_are_capped",
+    "steps": [
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 12,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       },
+       "system": 10
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 12,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       },
+       "system": 11
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 12,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       },
+       "system": 12
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 12,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       },
+       "system": 13
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 12,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       },
+       "system": 14
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 12,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       },
+       "system": 15
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 12,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       },
+       "system": 16
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 12,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       },
+       "system": 17
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 12,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       },
+       "system": 18
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 12,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       },
+       "system": 19
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 12,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       },
+       "system": 20
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 12,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       },
+       "system": 21
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 12,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       },
+       "system": 22
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 12,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       },
+       "system": 23
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 12,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       },
+       "system": 24
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 12,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       },
+       "system": 25
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 12,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       },
+       "system": 26
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 12,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       },
+       "system": 27
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 12,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       },
+       "system": 28
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 12,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       },
+       "system": 29
+      }
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "log",
+        "info",
+        "ignoring autopilot sys=10: this link flies sys=1"
+       ],
+       [
+        "console",
+        "LINK",
+        "Another autopilot (system 10) is on this link and is ignored. This link flies system 1; a second vehicle needs a radio and a link of its own.",
+        "warning"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "log",
+        "info",
+        "ignoring autopilot sys=11: this link flies sys=1"
+       ],
+       [
+        "console",
+        "LINK",
+        "Another autopilot (system 11) is on this link and is ignored. This link flies system 1; a second vehicle needs a radio and a link of its own.",
+        "warning"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "log",
+        "info",
+        "ignoring autopilot sys=12: this link flies sys=1"
+       ],
+       [
+        "console",
+        "LINK",
+        "Another autopilot (system 12) is on this link and is ignored. This link flies system 1; a second vehicle needs a radio and a link of its own.",
+        "warning"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "log",
+        "info",
+        "ignoring autopilot sys=13: this link flies sys=1"
+       ],
+       [
+        "console",
+        "LINK",
+        "Another autopilot (system 13) is on this link and is ignored. This link flies system 1; a second vehicle needs a radio and a link of its own.",
+        "warning"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "log",
+        "info",
+        "ignoring autopilot sys=14: this link flies sys=1"
+       ],
+       [
+        "console",
+        "LINK",
+        "Another autopilot (system 14) is on this link and is ignored. This link flies system 1; a second vehicle needs a radio and a link of its own.",
+        "warning"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "log",
+        "info",
+        "ignoring autopilot sys=15: this link flies sys=1"
+       ],
+       [
+        "console",
+        "LINK",
+        "Another autopilot (system 15) is on this link and is ignored. This link flies system 1; a second vehicle needs a radio and a link of its own.",
+        "warning"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "log",
+        "info",
+        "ignoring autopilot sys=16: this link flies sys=1"
+       ],
+       [
+        "console",
+        "LINK",
+        "Another autopilot (system 16) is on this link and is ignored. This link flies system 1; a second vehicle needs a radio and a link of its own.",
+        "warning"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "log",
+        "info",
+        "ignoring autopilot sys=17: this link flies sys=1"
+       ],
+       [
+        "console",
+        "LINK",
+        "Another autopilot (system 17) is on this link and is ignored. This link flies system 1; a second vehicle needs a radio and a link of its own.",
+        "warning"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "log",
+        "info",
+        "ignoring autopilot sys=18: this link flies sys=1"
+       ],
+       [
+        "console",
+        "LINK",
+        "Another autopilot (system 18) is on this link and is ignored. This link flies system 1; a second vehicle needs a radio and a link of its own.",
+        "warning"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "log",
+        "info",
+        "ignoring autopilot sys=19: this link flies sys=1"
+       ],
+       [
+        "console",
+        "LINK",
+        "Another autopilot (system 19) is on this link and is ignored. This link flies system 1; a second vehicle needs a radio and a link of its own.",
+        "warning"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "log",
+        "info",
+        "ignoring autopilot sys=20: this link flies sys=1"
+       ],
+       [
+        "console",
+        "LINK",
+        "Another autopilot (system 20) is on this link and is ignored. This link flies system 1; a second vehicle needs a radio and a link of its own.",
+        "warning"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "log",
+        "info",
+        "ignoring autopilot sys=21: this link flies sys=1"
+       ],
+       [
+        "console",
+        "LINK",
+        "Another autopilot (system 21) is on this link and is ignored. This link flies system 1; a second vehicle needs a radio and a link of its own.",
+        "warning"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "log",
+        "info",
+        "ignoring autopilot sys=22: this link flies sys=1"
+       ],
+       [
+        "console",
+        "LINK",
+        "Another autopilot (system 22) is on this link and is ignored. This link flies system 1; a second vehicle needs a radio and a link of its own.",
+        "warning"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "log",
+        "info",
+        "ignoring autopilot sys=23: this link flies sys=1"
+       ],
+       [
+        "console",
+        "LINK",
+        "Another autopilot (system 23) is on this link and is ignored. This link flies system 1; a second vehicle needs a radio and a link of its own.",
+        "warning"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "log",
+        "info",
+        "ignoring autopilot sys=24: this link flies sys=1"
+       ],
+       [
+        "console",
+        "LINK",
+        "Another autopilot (system 24) is on this link and is ignored. This link flies system 1; a second vehicle needs a radio and a link of its own.",
+        "warning"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "log",
+        "info",
+        "ignoring autopilot sys=25: this link flies sys=1"
+       ],
+       [
+        "console",
+        "LINK",
+        "Another autopilot (system 25) is on this link and is ignored. This link flies system 1; a second vehicle needs a radio and a link of its own.",
+        "warning"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "snapshot": {},
+       "degraded": false,
+       "ignored": [
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25
+       ],
+       "duplicates": 0,
+       "rangefinder_seen": null,
+       "last_boot_ms": null,
+       "kill_evidence": null,
+       "firmware": null,
+       "board": [
+        0,
+        0
+       ],
+       "encoding": "unset",
+       "request_sent": true,
+       "stack": "px4",
+       "mav_type": 2,
+       "hb": []
+      },
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "heartbeat_degraded_and_recovered",
+    "degraded": true,
+    "steps": [
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 12,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       }
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 12,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       }
+      }
+     },
+     {
+      "op": "state"
+     },
+     {
+      "op": "mark_degraded"
+     },
+     {
+      "op": "mark_degraded"
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "HEARTBEAT",
+         true
+        ]
+       ],
+       [
+        "store_heartbeat"
+       ],
+       [
+        "update",
+        {
+         "heartbeat_jitter_ms": 0.0
+        }
+       ],
+       [
+        "update",
+        {
+         "link_status": "connected",
+         "link_error": ""
+        }
+       ],
+       [
+        "log",
+        "info",
+        "Link recovered: heartbeat back"
+       ],
+       [
+        "update",
+        {
+         "vehicle_type": "QUADROTOR",
+         "autopilot": "PX4",
+         "armed": false,
+         "mode": "POSCTL",
+         "mode_label": "POSITION",
+         "autopilot_stack": "px4",
+         "flight_termination": false
+        }
+       ],
+       [
+        "call",
+        "roll_tlog_on_disarm",
+        [
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "link_quality": "good"
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "HEARTBEAT",
+         true
+        ]
+       ],
+       [
+        "store_heartbeat"
+       ],
+       [
+        "update",
+        {
+         "heartbeat_jitter_ms": 0.0
+        }
+       ],
+       [
+        "update",
+        {
+         "vehicle_type": "QUADROTOR",
+         "autopilot": "PX4",
+         "armed": false,
+         "mode": "POSCTL",
+         "mode_label": "POSITION",
+         "autopilot_stack": "px4",
+         "flight_termination": false
+        }
+       ],
+       [
+        "call",
+        "roll_tlog_on_disarm",
+        [
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "link_quality": "good"
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "snapshot": {
+        "heartbeat_jitter_ms": 0.0,
+        "link_status": "connected",
+        "link_error": "",
+        "vehicle_type": "QUADROTOR",
+        "autopilot": "PX4",
+        "armed": false,
+        "mode": "POSCTL",
+        "mode_label": "POSITION",
+        "autopilot_stack": "px4",
+        "flight_termination": false,
+        "link_quality": "good"
+       },
+       "degraded": false,
+       "ignored": [],
+       "duplicates": 0,
+       "rangefinder_seen": null,
+       "last_boot_ms": null,
+       "kill_evidence": null,
+       "firmware": null,
+       "board": [
+        0,
+        0
+       ],
+       "encoding": "unset",
+       "request_sent": true,
+       "stack": "px4",
+       "mav_type": 2,
+       "hb": [
+        1000.0,
+        1000.0
+       ]
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "link_status": "degraded",
+         "link_quality": "poor"
+        }
+       ],
+       [
+        "log",
+        "warning",
+        "Link degraded: heartbeat late (>5s)"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "snapshot": {
+        "heartbeat_jitter_ms": 0.0,
+        "link_status": "degraded",
+        "link_error": "",
+        "vehicle_type": "QUADROTOR",
+        "autopilot": "PX4",
+        "armed": false,
+        "mode": "POSCTL",
+        "mode_label": "POSITION",
+        "autopilot_stack": "px4",
+        "flight_termination": false,
+        "link_quality": "poor"
+       },
+       "degraded": true,
+       "ignored": [],
+       "duplicates": 0,
+       "rangefinder_seen": null,
+       "last_boot_ms": null,
+       "kill_evidence": null,
+       "firmware": null,
+       "board": [
+        0,
+        0
+       ],
+       "encoding": "unset",
+       "request_sent": true,
+       "stack": "px4",
+       "mav_type": 2,
+       "hb": [
+        1000.0,
+        1000.0
+       ]
+      },
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "heartbeat_flight_termination",
+    "snapshot": {
+     "kill_switch": true,
+     "flight_termination": false
+    },
+    "steps": [
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 12,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 8,
+        "mavlink_version": 3
+       }
+      }
+     },
+     {
+      "op": "state"
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 12,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       }
+      }
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "HEARTBEAT",
+         true
+        ]
+       ],
+       [
+        "store_heartbeat"
+       ],
+       [
+        "update",
+        {
+         "heartbeat_jitter_ms": 0.0
+        }
+       ],
+       [
+        "update",
+        {
+         "vehicle_type": "QUADROTOR",
+         "autopilot": "PX4",
+         "armed": false,
+         "mode": "POSCTL",
+         "mode_label": "POSITION",
+         "autopilot_stack": "px4",
+         "flight_termination": true
+        }
+       ],
+       [
+        "call",
+        "roll_tlog_on_disarm",
+        [
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "link_quality": "good"
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "snapshot": {
+        "kill_switch": true,
+        "flight_termination": true,
+        "heartbeat_jitter_ms": 0.0,
+        "vehicle_type": "QUADROTOR",
+        "autopilot": "PX4",
+        "armed": false,
+        "mode": "POSCTL",
+        "mode_label": "POSITION",
+        "autopilot_stack": "px4",
+        "link_quality": "good"
+       },
+       "degraded": false,
+       "ignored": [],
+       "duplicates": 0,
+       "rangefinder_seen": null,
+       "last_boot_ms": null,
+       "kill_evidence": 1000.0,
+       "firmware": null,
+       "board": [
+        0,
+        0
+       ],
+       "encoding": "unset",
+       "request_sent": true,
+       "stack": "px4",
+       "mav_type": 2,
+       "hb": [
+        1000.0
+       ]
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "HEARTBEAT",
+         true
+        ]
+       ],
+       [
+        "store_heartbeat"
+       ],
+       [
+        "update",
+        {
+         "heartbeat_jitter_ms": 0.0
+        }
+       ],
+       [
+        "update",
+        {
+         "vehicle_type": "QUADROTOR",
+         "autopilot": "PX4",
+         "armed": false,
+         "mode": "POSCTL",
+         "mode_label": "POSITION",
+         "autopilot_stack": "px4",
+         "flight_termination": false,
+         "kill_switch": false
+        }
+       ],
+       [
+        "resolve_warnings",
+        [
+         "kill"
+        ]
+       ],
+       [
+        "call",
+        "roll_tlog_on_disarm",
+        [
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "link_quality": "good"
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "snapshot": {
+        "kill_switch": false,
+        "flight_termination": false,
+        "heartbeat_jitter_ms": 0.0,
+        "vehicle_type": "QUADROTOR",
+        "autopilot": "PX4",
+        "armed": false,
+        "mode": "POSCTL",
+        "mode_label": "POSITION",
+        "autopilot_stack": "px4",
+        "link_quality": "good"
+       },
+       "degraded": false,
+       "ignored": [],
+       "duplicates": 0,
+       "rangefinder_seen": null,
+       "last_boot_ms": null,
+       "kill_evidence": 1000.0,
+       "firmware": null,
+       "board": [
+        0,
+        0
+       ],
+       "encoding": "unset",
+       "request_sent": true,
+       "stack": "px4",
+       "mav_type": 2,
+       "hb": [
+        1000.0,
+        1000.0
+       ]
+      },
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "heartbeat_termination_without_the_switch",
+    "steps": [
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 12,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 8,
+        "mavlink_version": 3
+       }
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 12,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       }
+      }
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "HEARTBEAT",
+         true
+        ]
+       ],
+       [
+        "store_heartbeat"
+       ],
+       [
+        "update",
+        {
+         "heartbeat_jitter_ms": 0.0
+        }
+       ],
+       [
+        "update",
+        {
+         "vehicle_type": "QUADROTOR",
+         "autopilot": "PX4",
+         "armed": false,
+         "mode": "POSCTL",
+         "mode_label": "POSITION",
+         "autopilot_stack": "px4",
+         "flight_termination": true
+        }
+       ],
+       [
+        "call",
+        "roll_tlog_on_disarm",
+        [
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "link_quality": "good"
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "HEARTBEAT",
+         true
+        ]
+       ],
+       [
+        "store_heartbeat"
+       ],
+       [
+        "update",
+        {
+         "heartbeat_jitter_ms": 0.0
+        }
+       ],
+       [
+        "update",
+        {
+         "vehicle_type": "QUADROTOR",
+         "autopilot": "PX4",
+         "armed": false,
+         "mode": "POSCTL",
+         "mode_label": "POSITION",
+         "autopilot_stack": "px4",
+         "flight_termination": false,
+         "kill_switch": false
+        }
+       ],
+       [
+        "resolve_warnings",
+        [
+         "kill"
+        ]
+       ],
+       [
+        "call",
+        "roll_tlog_on_disarm",
+        [
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "link_quality": "good"
+        }
+       ]
+      ],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "armed_clears_the_reasons",
+    "prearm_reasons": true,
+    "steps": [
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 12,
+        "base_mode": 209,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       }
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 12,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       }
+      }
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "HEARTBEAT",
+         true
+        ]
+       ],
+       [
+        "store_heartbeat"
+       ],
+       [
+        "update",
+        {
+         "heartbeat_jitter_ms": 0.0
+        }
+       ],
+       [
+        "update",
+        {
+         "vehicle_type": "QUADROTOR",
+         "autopilot": "PX4",
+         "armed": true,
+         "mode": "POSCTL",
+         "mode_label": "POSITION",
+         "autopilot_stack": "px4",
+         "flight_termination": false
+        }
+       ],
+       [
+        "call",
+        "clear_prearm_reasons",
+        []
+       ],
+       [
+        "resolve_warnings",
+        [
+         "prearm"
+        ]
+       ],
+       [
+        "call",
+        "roll_tlog_on_disarm",
+        [
+         true
+        ]
+       ],
+       [
+        "update",
+        {
+         "link_quality": "good"
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "HEARTBEAT",
+         true
+        ]
+       ],
+       [
+        "store_heartbeat"
+       ],
+       [
+        "update",
+        {
+         "heartbeat_jitter_ms": 0.0
+        }
+       ],
+       [
+        "update",
+        {
+         "vehicle_type": "QUADROTOR",
+         "autopilot": "PX4",
+         "armed": false,
+         "mode": "POSCTL",
+         "mode_label": "POSITION",
+         "autopilot_stack": "px4",
+         "flight_termination": false
+        }
+       ],
+       [
+        "call",
+        "roll_tlog_on_disarm",
+        [
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "link_quality": "good"
+        }
+       ]
+      ],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "heartbeat_expires_the_rangefinder",
+    "rangefinder_seen": 990.0,
+    "steps": [
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 12,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       }
+      }
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "HEARTBEAT",
+         true
+        ]
+       ],
+       [
+        "store_heartbeat"
+       ],
+       [
+        "update",
+        {
+         "heartbeat_jitter_ms": 0.0
+        }
+       ],
+       [
+        "update",
+        {
+         "rangefinder_distance": null
+        }
+       ],
+       [
+        "update",
+        {
+         "vehicle_type": "QUADROTOR",
+         "autopilot": "PX4",
+         "armed": false,
+         "mode": "POSCTL",
+         "mode_label": "POSITION",
+         "autopilot_stack": "px4",
+         "flight_termination": false
+        }
+       ],
+       [
+        "call",
+        "roll_tlog_on_disarm",
+        [
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "link_quality": "good"
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "snapshot": {
+        "heartbeat_jitter_ms": 0.0,
+        "rangefinder_distance": null,
+        "vehicle_type": "QUADROTOR",
+        "autopilot": "PX4",
+        "armed": false,
+        "mode": "POSCTL",
+        "mode_label": "POSITION",
+        "autopilot_stack": "px4",
+        "flight_termination": false,
+        "link_quality": "good"
+       },
+       "degraded": false,
+       "ignored": [],
+       "duplicates": 0,
+       "rangefinder_seen": null,
+       "last_boot_ms": null,
+       "kill_evidence": null,
+       "firmware": null,
+       "board": [
+        0,
+        0
+       ],
+       "encoding": "unset",
+       "request_sent": true,
+       "stack": "px4",
+       "mav_type": 2,
+       "hb": [
+        1000.0
+       ]
+      },
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "heartbeat_keeps_a_fresh_rangefinder",
+    "rangefinder_seen": 999.0,
+    "steps": [
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 12,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       }
+      }
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "HEARTBEAT",
+         true
+        ]
+       ],
+       [
+        "store_heartbeat"
+       ],
+       [
+        "update",
+        {
+         "heartbeat_jitter_ms": 0.0
+        }
+       ],
+       [
+        "update",
+        {
+         "vehicle_type": "QUADROTOR",
+         "autopilot": "PX4",
+         "armed": false,
+         "mode": "POSCTL",
+         "mode_label": "POSITION",
+         "autopilot_stack": "px4",
+         "flight_termination": false
+        }
+       ],
+       [
+        "call",
+        "roll_tlog_on_disarm",
+        [
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "link_quality": "good"
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "snapshot": {
+        "heartbeat_jitter_ms": 0.0,
+        "vehicle_type": "QUADROTOR",
+        "autopilot": "PX4",
+        "armed": false,
+        "mode": "POSCTL",
+        "mode_label": "POSITION",
+        "autopilot_stack": "px4",
+        "flight_termination": false,
+        "link_quality": "good"
+       },
+       "degraded": false,
+       "ignored": [],
+       "duplicates": 0,
+       "rangefinder_seen": 999.0,
+       "last_boot_ms": null,
+       "kill_evidence": null,
+       "firmware": null,
+       "board": [
+        0,
+        0
+       ],
+       "encoding": "unset",
+       "request_sent": true,
+       "stack": "px4",
+       "mav_type": 2,
+       "hb": [
+        1000.0
+       ]
+      },
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "position",
+    "steps": [
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "GLOBAL_POSITION_INT",
+       "fields": {
+        "lat": 481234567,
+        "lon": 117654321,
+        "alt": 520500,
+        "relative_alt": 30250,
+        "hdg": 18050,
+        "vx": 150,
+        "vy": -250,
+        "vz": 5
+       }
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "GLOBAL_POSITION_INT",
+       "fields": {
+        "lat": -1,
+        "lon": -2,
+        "alt": -100,
+        "relative_alt": -100,
+        "hdg": 65535,
+        "vx": 1
+       }
+      }
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "GLOBAL_POSITION_INT",
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "position": [
+          11.7654321,
+          48.1234567
+         ],
+         "altitude_amsl": 520.5,
+         "altitude_agl": 30.2,
+         "heading": 180.5,
+         "vx": 1.5,
+         "vy": -2.5,
+         "vz": 0.05
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "GLOBAL_POSITION_INT",
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "position": [
+          -2e-07,
+          -1e-07
+         ],
+         "altitude_amsl": -0.1,
+         "altitude_agl": -0.1,
+         "heading": 0,
+         "vx": 0.01,
+         "vy": 0.0,
+         "vz": 0.0
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "snapshot": {
+        "position": [
+         -2e-07,
+         -1e-07
+        ],
+        "altitude_amsl": -0.1,
+        "altitude_agl": -0.1,
+        "heading": 0,
+        "vx": 0.01,
+        "vy": 0.0,
+        "vz": 0.0
+       },
+       "degraded": false,
+       "ignored": [],
+       "duplicates": 0,
+       "rangefinder_seen": null,
+       "last_boot_ms": null,
+       "kill_evidence": null,
+       "firmware": null,
+       "board": [
+        0,
+        0
+       ],
+       "encoding": "unset",
+       "request_sent": true,
+       "stack": "px4",
+       "mav_type": 2,
+       "hb": []
+      },
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "distance_sensor",
+    "steps": [
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "DISTANCE_SENSOR",
+       "fields": {
+        "orientation": 25,
+        "current_distance": 250,
+        "min_distance": 10,
+        "max_distance": 1000
+       }
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "DISTANCE_SENSOR",
+       "fields": {
+        "orientation": 25,
+        "current_distance": 5000,
+        "min_distance": 10,
+        "max_distance": 1000
+       }
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "DISTANCE_SENSOR",
+       "fields": {
+        "orientation": 0,
+        "current_distance": 250,
+        "min_distance": 10,
+        "max_distance": 1000
+       }
+      }
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "DISTANCE_SENSOR",
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "rangefinder_distance": 2.5
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "DISTANCE_SENSOR",
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "rangefinder_distance": null
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "DISTANCE_SENSOR",
+         false
+        ]
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "snapshot": {
+        "rangefinder_distance": null
+       },
+       "degraded": false,
+       "ignored": [],
+       "duplicates": 0,
+       "rangefinder_seen": 1000.0,
+       "last_boot_ms": null,
+       "kill_evidence": null,
+       "firmware": null,
+       "board": [
+        0,
+        0
+       ],
+       "encoding": "unset",
+       "request_sent": true,
+       "stack": "px4",
+       "mav_type": 2,
+       "hb": []
+      },
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "attitude",
+    "steps": [
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "ATTITUDE",
+       "fields": {
+        "roll": 0.1,
+        "pitch": -0.2,
+        "yaw": 3.0,
+        "rollspeed": 0.01,
+        "pitchspeed": -0.02,
+        "yawspeed": 0.5
+       }
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "ATTITUDE",
+       "fields": {
+        "roll": 3.14159,
+        "pitch": 1.5707,
+        "yaw": -3.14159
+       }
+      }
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "ATTITUDE",
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "roll": 5.7,
+         "pitch": -11.5,
+         "yaw": 171.9,
+         "rollspeed": 0.6,
+         "pitchspeed": -1.1,
+         "yawspeed": 28.6
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "ATTITUDE",
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "roll": 180.0,
+         "pitch": 90.0,
+         "yaw": -180.0,
+         "rollspeed": 0.0,
+         "pitchspeed": 0.0,
+         "yawspeed": 0.0
+        }
+       ]
+      ],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "vfr_hud",
+    "steps": [
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "VFR_HUD",
+       "fields": {
+        "groundspeed": 12.345,
+        "airspeed": 11.25,
+        "heading": 181,
+        "climb": -0.45
+       }
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "VFR_HUD",
+       "fields": {
+        "groundspeed": 0.0,
+        "airspeed": "nan",
+        "heading": 0,
+        "climb": 0.0
+       }
+      }
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "VFR_HUD",
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "groundspeed": 12.3,
+         "airspeed": 11.2,
+         "heading": 181,
+         "vspeed": -0.5
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "VFR_HUD",
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "groundspeed": 0.0,
+         "airspeed": 0,
+         "heading": 0,
+         "vspeed": 0.0
+        }
+       ]
+      ],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "gps_raw",
+    "steps": [
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "GPS_RAW_INT",
+       "fields": {
+        "fix_type": 3,
+        "eph": 121,
+        "epv": 250,
+        "satellites_visible": 14,
+        "alt": 520500,
+        "h_acc": 1500,
+        "v_acc": 2500
+       }
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "GPS_RAW_INT",
+       "fields": {
+        "fix_type": 6,
+        "eph": 65535,
+        "epv": 65535,
+        "satellites_visible": 20,
+        "alt": 1000
+       }
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "GPS_RAW_INT",
+       "fields": {
+        "fix_type": 1,
+        "eph": 0,
+        "epv": 0,
+        "satellites_visible": 0
+       }
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "GPS_RAW_INT",
+       "fields": {
+        "fix_type": 11,
+        "eph": 50,
+        "epv": 60,
+        "satellites_visible": 3
+       }
+      }
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "GPS_RAW_INT",
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "gps_fix": "3D_FIX",
+         "gps_satellites": 14,
+         "gps_hdop": 1.2,
+         "gps_vdop": 2.5,
+         "gps_h_acc": 1.5,
+         "gps_v_acc": 2.5,
+         "gps_altitude": 520.5
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "GPS_RAW_INT",
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "gps_fix": "RTK_FIXED",
+         "gps_satellites": 20,
+         "gps_hdop": 99.0,
+         "gps_vdop": 99.0,
+         "gps_h_acc": -1.0,
+         "gps_v_acc": -1.0,
+         "gps_altitude": 1.0
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "GPS_RAW_INT",
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "gps_fix": "NO_FIX",
+         "gps_satellites": 0,
+         "gps_hdop": 99.0,
+         "gps_vdop": 99.0,
+         "gps_h_acc": -1.0,
+         "gps_v_acc": -1.0,
+         "gps_altitude": null
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "GPS_RAW_INT",
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "gps_fix": "FIX_11",
+         "gps_satellites": 3,
+         "gps_hdop": 0.5,
+         "gps_vdop": 0.6,
+         "gps_h_acc": -1.0,
+         "gps_v_acc": -1.0,
+         "gps_altitude": 0.0
+        }
+       ]
+      ],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "sys_status",
+    "snapshot": {
+     "armed": false
+    },
+    "steps": [
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "SYS_STATUS",
+       "fields": {
+        "voltage_battery": 25200,
+        "current_battery": 1250,
+        "battery_remaining": 87,
+        "onboard_control_sensors_present": 268435488,
+        "onboard_control_sensors_enabled": 268435488,
+        "onboard_control_sensors_health": 268435456
+       }
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "SYS_STATUS",
+       "fields": {
+        "voltage_battery": 65535,
+        "current_battery": -1,
+        "battery_remaining": -1
+       }
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "SYS_STATUS",
+       "fields": {
+        "voltage_battery": 22200,
+        "current_battery": 100,
+        "battery_remaining": -1
+       }
+      }
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "SYS_STATUS",
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "prearm_ok": true,
+         "gps_health": "fault",
+         "battery_voltage": 25.2,
+         "battery_current": 12.5,
+         "battery_percent": 87,
+         "battery_percent_fc": 87,
+         "battery_percent_est": 100.0,
+         "battery_source": "autopilot",
+         "battery_cells": 6,
+         "battery_cell_voltage": 4.2,
+         "battery_endurance_est": -1
+        }
+       ],
+       [
+        "call",
+        "note_prearm_state",
+        [
+         true
+        ]
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "SYS_STATUS",
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "prearm_ok": null,
+         "gps_health": "",
+         "battery_voltage": 0,
+         "battery_current": 0,
+         "battery_percent": 0,
+         "battery_percent_fc": -1,
+         "battery_percent_est": -1.0,
+         "battery_source": "autopilot",
+         "battery_cells": 6,
+         "battery_cell_voltage": 0.0,
+         "battery_endurance_est": -1
+        }
+       ],
+       [
+        "call",
+        "note_prearm_state",
+        [
+         null
+        ]
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "SYS_STATUS",
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "prearm_ok": null,
+         "gps_health": "",
+         "battery_voltage": 22.2,
+         "battery_current": 1.0,
+         "battery_percent": 0,
+         "battery_percent_fc": -1,
+         "battery_percent_est": 8.0,
+         "battery_source": "autopilot",
+         "battery_cells": 6,
+         "battery_cell_voltage": 3.7,
+         "battery_endurance_est": -1
+        }
+       ],
+       [
+        "call",
+        "note_prearm_state",
+        [
+         null
+        ]
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "snapshot": {
+        "armed": false,
+        "prearm_ok": null,
+        "gps_health": "",
+        "battery_voltage": 22.2,
+        "battery_current": 1.0,
+        "battery_percent": 0,
+        "battery_percent_fc": -1,
+        "battery_percent_est": 8.0,
+        "battery_source": "autopilot",
+        "battery_cells": 6,
+        "battery_cell_voltage": 3.7,
+        "battery_endurance_est": -1
+       },
+       "degraded": false,
+       "ignored": [],
+       "duplicates": 0,
+       "rangefinder_seen": null,
+       "last_boot_ms": null,
+       "kill_evidence": null,
+       "firmware": null,
+       "board": [
+        0,
+        0
+       ],
+       "encoding": "unset",
+       "request_sent": true,
+       "stack": "px4",
+       "mav_type": 2,
+       "hb": []
+      },
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "sys_status_with_the_estimate",
+    "snapshot": {
+     "armed": true
+    },
+    "steps": [
+     {
+      "op": "set_battery",
+      "raw": {
+       "estimate": true
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "SYS_STATUS",
+       "fields": {
+        "voltage_battery": 25200,
+        "current_battery": 0,
+        "battery_remaining": 40
+       }
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "SYS_STATUS",
+       "fields": {
+        "voltage_battery": 24000,
+        "current_battery": 0,
+        "battery_remaining": -1
+       }
+      }
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "SYS_STATUS",
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "prearm_ok": null,
+         "gps_health": "",
+         "battery_voltage": 25.2,
+         "battery_current": 0.0,
+         "battery_percent": 100,
+         "battery_percent_fc": 40,
+         "battery_percent_est": 100.0,
+         "battery_source": "estimate",
+         "battery_cells": 6,
+         "battery_cell_voltage": 4.2,
+         "battery_endurance_est": -1
+        }
+       ],
+       [
+        "call",
+        "note_prearm_state",
+        [
+         null
+        ]
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "SYS_STATUS",
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "prearm_ok": null,
+         "gps_health": "",
+         "battery_voltage": 24.0,
+         "battery_current": 0.0,
+         "battery_percent": 76,
+         "battery_percent_fc": -1,
+         "battery_percent_est": 76.4,
+         "battery_source": "estimate",
+         "battery_cells": 6,
+         "battery_cell_voltage": 4.0,
+         "battery_endurance_est": -1
+        }
+       ],
+       [
+        "call",
+        "note_prearm_state",
+        [
+         null
+        ]
+       ]
+      ],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "battery_status_goes_to_telemetry",
+    "steps": [
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "BATTERY_STATUS",
+       "fields": {
+        "id": 0,
+        "voltages": [
+         4100,
+         4100,
+         4100,
+         4100,
+         4100,
+         4100,
+         65535,
+         65535,
+         65535,
+         65535
+        ],
+        "current_consumed": 500,
+        "temperature": 2100,
+        "time_remaining": 600
+       }
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "BATTERY_STATUS",
+       "fields": {
+        "id": 1,
+        "voltages": [
+         4100,
+         4100,
+         4100,
+         4100,
+         4100,
+         4100,
+         65535,
+         65535,
+         65535,
+         65535
+        ]
+       },
+       "system": 5
+      }
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "BATTERY_STATUS",
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "battery_cell_voltages": [
+          4.1,
+          4.1,
+          4.1,
+          4.1,
+          4.1,
+          4.1
+         ],
+         "battery_consumed_mah": 500.0,
+         "battery_temperature": 21.0,
+         "battery_time_remaining": 600
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "system_time",
+    "steps": [
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "SYSTEM_TIME",
+       "fields": {
+        "time_unix_usec": 1700000000123456,
+        "time_boot_ms": 10000
+       }
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "SYSTEM_TIME",
+       "fields": {
+        "time_unix_usec": 0,
+        "time_boot_ms": 11000
+       }
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "SYSTEM_TIME",
+       "fields": {
+        "time_unix_usec": 4611686018427387904,
+        "time_boot_ms": 12000
+       }
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "SYSTEM_TIME",
+       "fields": {
+        "time_unix_usec": 1700000059999999,
+        "time_boot_ms": 13000
+       }
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "SYSTEM_TIME",
+       "fields": {
+        "time_unix_usec": 1700000000000000,
+        "time_boot_ms": 1
+       },
+       "component": 100
+      }
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "SYSTEM_TIME",
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "time": "22:13:20 UTC"
+        }
+       ],
+       [
+        "update",
+        {
+         "boot_ms": 10000
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "SYSTEM_TIME",
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "boot_ms": 11000
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "SYSTEM_TIME",
+         false
+        ]
+       ],
+       [
+        "log",
+        "debug",
+        "SYSTEM_TIME out of range: 4611686018427387904"
+       ],
+       [
+        "update",
+        {
+         "boot_ms": 12000
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "SYSTEM_TIME",
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "time": "22:14:19 UTC"
+        }
+       ],
+       [
+        "update",
+        {
+         "boot_ms": 13000
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "SYSTEM_TIME",
+         false
+        ]
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "snapshot": {
+        "time": "22:14:19 UTC",
+        "boot_ms": 13000
+       },
+       "degraded": false,
+       "ignored": [],
+       "duplicates": 0,
+       "rangefinder_seen": null,
+       "last_boot_ms": 13000,
+       "kill_evidence": null,
+       "firmware": null,
+       "board": [
+        0,
+        0
+       ],
+       "encoding": "unset",
+       "request_sent": true,
+       "stack": "px4",
+       "mav_type": 2,
+       "hb": []
+      },
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "reboot_is_noticed",
+    "last_boot_ms": 600000,
+    "serial": true,
+    "steps": [
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "SYSTEM_TIME",
+       "fields": {
+        "time_unix_usec": 0,
+        "time_boot_ms": 605000
+       }
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "SYSTEM_TIME",
+       "fields": {
+        "time_unix_usec": 0,
+        "time_boot_ms": 594000
+       }
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "SYSTEM_TIME",
+       "fields": {
+        "time_unix_usec": 0,
+        "time_boot_ms": 2000
+       }
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "SYSTEM_TIME",
+       "fields": {
+        "time_unix_usec": 0,
+        "time_boot_ms": 3000
+       }
+      }
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "SYSTEM_TIME",
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "boot_ms": 605000
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "SYSTEM_TIME",
+         false
+        ]
+       ],
+       [
+        "log",
+        "info",
+        "The vehicle rebooted. Parameters are read again when next needed (uptime 594000 ms after 605000 ms)"
+       ],
+       [
+        "console",
+        "LINK",
+        "The vehicle rebooted. Parameters are read again when next needed",
+        "info"
+       ],
+       [
+        "call",
+        "reset_parameter_cache",
+        []
+       ],
+       [
+        "call",
+        "reset_param_metadata",
+        []
+       ],
+       [
+        "call",
+        "request_streams",
+        []
+       ],
+       [
+        "call",
+        "request_version",
+        []
+       ],
+       [
+        "call",
+        "request_home",
+        []
+       ],
+       [
+        "call",
+        "schedule_message_intervals",
+        []
+       ],
+       [
+        "update",
+        {
+         "boot_ms": 594000
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "SYSTEM_TIME",
+         false
+        ]
+       ],
+       [
+        "log",
+        "info",
+        "The vehicle rebooted. Parameters are read again when next needed (uptime 2000 ms after 594000 ms)"
+       ],
+       [
+        "console",
+        "LINK",
+        "The vehicle rebooted. Parameters are read again when next needed",
+        "info"
+       ],
+       [
+        "call",
+        "reset_parameter_cache",
+        []
+       ],
+       [
+        "call",
+        "reset_param_metadata",
+        []
+       ],
+       [
+        "call",
+        "request_streams",
+        []
+       ],
+       [
+        "call",
+        "request_version",
+        []
+       ],
+       [
+        "call",
+        "request_home",
+        []
+       ],
+       [
+        "call",
+        "schedule_message_intervals",
+        []
+       ],
+       [
+        "update",
+        {
+         "boot_ms": 2000
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "SYSTEM_TIME",
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "boot_ms": 3000
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "snapshot": {
+        "boot_ms": 3000
+       },
+       "degraded": false,
+       "ignored": [],
+       "duplicates": 0,
+       "rangefinder_seen": null,
+       "last_boot_ms": 3000,
+       "kill_evidence": null,
+       "firmware": null,
+       "board": [
+        0,
+        0
+       ],
+       "encoding": "",
+       "request_sent": false,
+       "stack": "px4",
+       "mav_type": 2,
+       "hb": []
+      },
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "reboot_threshold",
+    "last_boot_ms": 600000,
+    "steps": [
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "SYSTEM_TIME",
+       "fields": {
+        "time_unix_usec": 0,
+        "time_boot_ms": 600000
+       }
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "SYSTEM_TIME",
+       "fields": {
+        "time_unix_usec": 0,
+        "time_boot_ms": 595500
+       }
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "SYSTEM_TIME",
+       "fields": {
+        "time_unix_usec": 0,
+        "time_boot_ms": 590500
+       }
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "SYSTEM_TIME",
+       "fields": {
+        "time_unix_usec": 0,
+        "time_boot_ms": 590499
+       }
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "SYSTEM_TIME",
+       "fields": {
+        "time_unix_usec": 0,
+        "time_boot_ms": 0
+       }
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "SYSTEM_TIME",
+       "fields": {
+        "time_unix_usec": 0,
+        "time_boot_ms": 4999
+       }
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "SYSTEM_TIME",
+       "fields": {
+        "time_unix_usec": 0,
+        "time_boot_ms": 5000
+       }
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "SYSTEM_TIME",
+       "fields": {
+        "time_unix_usec": 0,
+        "time_boot_ms": 3
+       }
+      }
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "SYSTEM_TIME",
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "boot_ms": 600000
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "SYSTEM_TIME",
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "boot_ms": 595500
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "SYSTEM_TIME",
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "boot_ms": 590500
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "SYSTEM_TIME",
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "boot_ms": 590499
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "SYSTEM_TIME",
+         false
+        ]
+       ],
+       [
+        "log",
+        "info",
+        "The vehicle rebooted. Parameters are read again when next needed (uptime 0 ms after 590499 ms)"
+       ],
+       [
+        "console",
+        "LINK",
+        "The vehicle rebooted. Parameters are read again when next needed",
+        "info"
+       ],
+       [
+        "call",
+        "reset_parameter_cache",
+        []
+       ],
+       [
+        "call",
+        "reset_param_metadata",
+        []
+       ],
+       [
+        "call",
+        "request_version",
+        []
+       ],
+       [
+        "call",
+        "request_home",
+        []
+       ],
+       [
+        "call",
+        "schedule_message_intervals",
+        []
+       ],
+       [
+        "update",
+        {
+         "boot_ms": 0
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "SYSTEM_TIME",
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "boot_ms": 4999
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "SYSTEM_TIME",
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "boot_ms": 5000
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "SYSTEM_TIME",
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "boot_ms": 3
+        }
+       ]
+      ],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "reboot_on_a_udp_link",
+    "last_boot_ms": 600000,
+    "steps": [
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "SYSTEM_TIME",
+       "fields": {
+        "time_unix_usec": 0,
+        "time_boot_ms": 2000
+       }
+      }
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "SYSTEM_TIME",
+         false
+        ]
+       ],
+       [
+        "log",
+        "info",
+        "The vehicle rebooted. Parameters are read again when next needed (uptime 2000 ms after 600000 ms)"
+       ],
+       [
+        "console",
+        "LINK",
+        "The vehicle rebooted. Parameters are read again when next needed",
+        "info"
+       ],
+       [
+        "call",
+        "reset_parameter_cache",
+        []
+       ],
+       [
+        "call",
+        "reset_param_metadata",
+        []
+       ],
+       [
+        "call",
+        "request_version",
+        []
+       ],
+       [
+        "call",
+        "request_home",
+        []
+       ],
+       [
+        "call",
+        "schedule_message_intervals",
+        []
+       ],
+       [
+        "update",
+        {
+         "boot_ms": 2000
+        }
+       ]
+      ],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "autopilot_version",
+    "steps": [
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "AUTOPILOT_VERSION",
+       "fields": {
+        "flight_sw_version": 17826304,
+        "vendor_id": 9900,
+        "product_id": 22,
+        "capabilities": 16,
+        "flight_custom_version": [
+         0,
+         0,
+         0,
+         171,
+         205,
+         239,
+         18,
+         52
+        ]
+       }
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "AUTOPILOT_VERSION",
+       "fields": {
+        "flight_sw_version": 17826304,
+        "capabilities": 131072
+       }
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "AUTOPILOT_VERSION",
+       "fields": {
+        "flight_sw_version": 67502080,
+        "capabilities": 0,
+        "flight_custom_version": [
+         52,
+         97,
+         55,
+         98,
+         51,
+         99,
+         57,
+         100
+        ]
+       }
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "AUTOPILOT_VERSION",
+       "fields": {
+        "flight_sw_version": 0,
+        "capabilities": 131088
+       }
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "AUTOPILOT_VERSION",
+       "fields": {
+        "flight_sw_version": 16777216
+       },
+       "component": 100
+      }
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "AUTOPILOT_VERSION",
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "px4_version": "v1.16.2",
+         "px4_version_detail": "3412efcdab"
+        }
+       ],
+       [
+        "call",
+        "build_mode_mapping",
+        []
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "AUTOPILOT_VERSION",
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "px4_version": "v1.16.2",
+         "px4_version_detail": ""
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "AUTOPILOT_VERSION",
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "px4_version": "v4.6.0",
+         "px4_version_detail": "4a7b3c9d"
+        }
+       ],
+       [
+        "call",
+        "build_mode_mapping",
+        []
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "AUTOPILOT_VERSION",
+         false
+        ]
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "AUTOPILOT_VERSION",
+         false
+        ]
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "snapshot": {
+        "px4_version": "v4.6.0",
+        "px4_version_detail": "4a7b3c9d"
+       },
+       "degraded": false,
+       "ignored": [],
+       "duplicates": 0,
+       "rangefinder_seen": null,
+       "last_boot_ms": null,
+       "kill_evidence": null,
+       "firmware": [
+        4,
+        6,
+        0
+       ],
+       "board": [
+        0,
+        0
+       ],
+       "encoding": "bytewise",
+       "request_sent": true,
+       "stack": "px4",
+       "mav_type": 2,
+       "hb": []
+      },
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "routing",
+    "log_sink": true,
+    "steps": [
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "STATUSTEXT",
+       "fields": {}
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "PARAM_VALUE",
+       "fields": {}
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "FILE_TRANSFER_PROTOCOL",
+       "fields": {}
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "LOG_ENTRY",
+       "fields": {}
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "LOG_DATA",
+       "fields": {}
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "SERIAL_CONTROL",
+       "fields": {}
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "MISSION_CURRENT",
+       "fields": {}
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "MISSION_ITEM_REACHED",
+       "fields": {}
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "MISSION_ACK",
+       "fields": {}
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "MISSION_COUNT",
+       "fields": {}
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "MISSION_REQUEST",
+       "fields": {}
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "MISSION_REQUEST_INT",
+       "fields": {}
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "MISSION_ITEM",
+       "fields": {}
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "MISSION_ITEM_INT",
+       "fields": {}
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "RC_CHANNELS",
+       "fields": {}
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "RC_CHANNELS_RAW",
+       "fields": {}
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "ATTITUDE_TARGET",
+       "fields": {}
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "POSITION_TARGET_LOCAL_NED",
+       "fields": {}
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "OPEN_DRONE_ID_ARM_STATUS",
+       "fields": {}
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "RADIO_STATUS",
+       "fields": {}
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "NAMED_VALUE_FLOAT",
+       "fields": {}
+      }
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "STATUSTEXT",
+         false
+        ]
+       ],
+       [
+        "call",
+        "handle_statustext",
+        [
+         "STATUSTEXT"
+        ]
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "PARAM_VALUE",
+         false
+        ]
+       ],
+       [
+        "call",
+        "handle_param_value",
+        [
+         "PARAM_VALUE"
+        ]
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "FILE_TRANSFER_PROTOCOL",
+         false
+        ]
+       ],
+       [
+        "call",
+        "handle_ftp_message",
+        [
+         "FILE_TRANSFER_PROTOCOL"
+        ]
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "LOG_ENTRY",
+         false
+        ]
+       ],
+       [
+        "call",
+        "log_sink",
+        [
+         "LOG_ENTRY"
+        ]
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "LOG_DATA",
+         false
+        ]
+       ],
+       [
+        "call",
+        "log_sink",
+        [
+         "LOG_DATA"
+        ]
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "SERIAL_CONTROL",
+         false
+        ]
+       ],
+       [
+        "call",
+        "handle_serial_control",
+        [
+         "SERIAL_CONTROL"
+        ]
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "MISSION_CURRENT",
+         false
+        ]
+       ],
+       [
+        "call",
+        "handle_mission_current",
+        [
+         "MISSION_CURRENT"
+        ]
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "MISSION_ITEM_REACHED",
+         false
+        ]
+       ],
+       [
+        "call",
+        "handle_mission_item_reached",
+        [
+         "MISSION_ITEM_REACHED"
+        ]
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "MISSION_ACK",
+         false
+        ]
+       ],
+       [
+        "call",
+        "handle_mission_ack",
+        [
+         "MISSION_ACK"
+        ]
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "MISSION_COUNT",
+         false
+        ]
+       ],
+       [
+        "call",
+        "handle_mission_count",
+        [
+         "MISSION_COUNT"
+        ]
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "MISSION_REQUEST",
+         false
+        ]
+       ],
+       [
+        "call",
+        "handle_mission_request",
+        [
+         "MISSION_REQUEST",
+         false
+        ]
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "MISSION_REQUEST_INT",
+         false
+        ]
+       ],
+       [
+        "call",
+        "handle_mission_request",
+        [
+         "MISSION_REQUEST_INT",
+         true
+        ]
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "MISSION_ITEM",
+         false
+        ]
+       ],
+       [
+        "call",
+        "handle_mission_item",
+        [
+         "MISSION_ITEM",
+         false
+        ]
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "MISSION_ITEM_INT",
+         false
+        ]
+       ],
+       [
+        "call",
+        "handle_mission_item",
+        [
+         "MISSION_ITEM_INT",
+         true
+        ]
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "RC_CHANNELS",
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "rc_channels": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+         ],
+         "rc_channel_count": 18,
+         "rc_rssi": 0,
+         "rc_live": true
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "RC_CHANNELS_RAW",
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "rc_channels": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+         ],
+         "rc_channel_count": 18,
+         "rc_rssi": 0,
+         "rc_live": true
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "ATTITUDE_TARGET",
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "rollspeed_sp": 0.0,
+         "pitchspeed_sp": 0.0,
+         "yawspeed_sp": 0.0,
+         "setpoints_live": true,
+         "roll_sp": 0.0,
+         "pitch_sp": 0.0,
+         "yaw_sp": 0.0
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "POSITION_TARGET_LOCAL_NED",
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "vx_sp": 0.0,
+         "vy_sp": 0.0,
+         "vz_sp": 0.0,
+         "setpoints_live": true
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "OPEN_DRONE_ID_ARM_STATUS",
+         false
+        ]
+       ],
+       [
+        "call",
+        "handle_remote_id_arm_status",
+        [
+         "OPEN_DRONE_ID_ARM_STATUS"
+        ]
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "RADIO_STATUS",
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "uplink": 0,
+         "uplink_rssi": 0.0,
+         "uplink_rxerrors": 0,
+         "uplink_fixed": 0
+        }
+       ],
+       [
+        "update",
+        {
+         "link_quality": "poor"
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "NAMED_VALUE_FLOAT",
+         false
+        ]
+       ]
+      ],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "routing_from_another_system",
+    "log_sink": true,
+    "steps": [
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "STATUSTEXT",
+       "fields": {},
+       "system": 5
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "PARAM_VALUE",
+       "fields": {},
+       "system": 5
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "LOG_ENTRY",
+       "fields": {},
+       "system": 5
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "MISSION_CURRENT",
+       "fields": {},
+       "system": 5
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "RC_CHANNELS",
+       "fields": {},
+       "system": 5
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "OPEN_DRONE_ID_ARM_STATUS",
+       "fields": {},
+       "system": 5
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "RADIO_STATUS",
+       "fields": {},
+       "system": 5
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "SERIAL_CONTROL",
+       "fields": {},
+       "system": 5
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "MISSION_ACK",
+       "fields": {},
+       "system": 5
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "HOME_POSITION",
+       "fields": {},
+       "system": 5
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "VIBRATION",
+       "fields": {},
+       "system": 5
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "EXTENDED_SYS_STATE",
+       "fields": {},
+       "system": 5
+      }
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "uplink": 0,
+         "uplink_rssi": 0.0,
+         "uplink_rxerrors": 0,
+         "uplink_fixed": 0
+        }
+       ],
+       [
+        "update",
+        {
+         "link_quality": "poor"
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "handle_serial_control",
+        [
+         "SERIAL_CONTROL"
+        ]
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "handle_mission_ack",
+        [
+         "MISSION_ACK"
+        ]
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "routing_from_a_component",
+    "log_sink": true,
+    "steps": [
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "PARAM_VALUE",
+       "fields": {},
+       "component": 100
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "FILE_TRANSFER_PROTOCOL",
+       "fields": {},
+       "component": 100
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "LOG_ENTRY",
+       "fields": {},
+       "component": 100
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "MISSION_CURRENT",
+       "fields": {},
+       "component": 100
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "MISSION_ITEM_REACHED",
+       "fields": {},
+       "component": 100
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "HOME_POSITION",
+       "fields": {},
+       "component": 100
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "STATUSTEXT",
+       "fields": {},
+       "component": 100
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "AUTOPILOT_VERSION",
+       "fields": {},
+       "component": 100
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "SYSTEM_TIME",
+       "fields": {},
+       "component": 100
+      }
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "PARAM_VALUE",
+         false
+        ]
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "FILE_TRANSFER_PROTOCOL",
+         false
+        ]
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "LOG_ENTRY",
+         false
+        ]
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "MISSION_CURRENT",
+         false
+        ]
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "MISSION_ITEM_REACHED",
+         false
+        ]
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "HOME_POSITION",
+         false
+        ]
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "STATUSTEXT",
+         false
+        ]
+       ],
+       [
+        "call",
+        "handle_statustext",
+        [
+         "STATUSTEXT"
+        ]
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "AUTOPILOT_VERSION",
+         false
+        ]
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "SYSTEM_TIME",
+         false
+        ]
+       ]
+      ],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "log_sink_absent_or_broken",
+    "steps": [
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "LOG_ENTRY",
+       "fields": {}
+      }
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "LOG_ENTRY",
+         false
+        ]
+       ]
+      ],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "log_sink_raises",
+    "log_sink_raises": true,
+    "steps": [
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "LOG_DATA",
+       "fields": {}
+      }
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "LOG_DATA",
+         false
+        ]
+       ],
+       [
+        "log",
+        "debug",
+        "log sink raised"
+       ]
+      ],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "gnss_integrity_routes",
+    "steps": [
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "GNSS_INTEGRITY",
+       "fields": {
+        "id": 0,
+        "jamming_state": 2,
+        "spoofing_state": 1,
+        "gnss_signal_quality": 6
+       }
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "unknown": 441,
+       "data": "fd100000070101b901000000000000000000000001010000000583c4"
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "unknown": 441,
+       "data": "fd100000070101b901000000000000000000000001010000000583c4",
+       "system": 7
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "unknown": 442,
+       "data": "00"
+      }
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "GNSS_INTEGRITY",
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "gps_jamming": "mitigated",
+         "gps_spoofing": "ok",
+         "gps_signal_quality": 6
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "gps_jamming": "ok",
+         "gps_spoofing": "ok",
+         "gps_signal_quality": 5
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "gps_jamming": "ok",
+         "gps_spoofing": "ok",
+         "gps_signal_quality": 5
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "vibration_and_landed_state",
+    "steps": [
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "VIBRATION",
+       "fields": {
+        "vibration_x": 0.123456,
+        "vibration_y": 1.5,
+        "vibration_z": 4e-05,
+        "clipping_0": 1,
+        "clipping_1": 2,
+        "clipping_2": 3
+       }
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "EXTENDED_SYS_STATE",
+       "fields": {
+        "landed_state": 0
+       }
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "EXTENDED_SYS_STATE",
+       "fields": {
+        "landed_state": 1
+       }
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "EXTENDED_SYS_STATE",
+       "fields": {
+        "landed_state": 2
+       }
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "EXTENDED_SYS_STATE",
+       "fields": {
+        "landed_state": 3
+       }
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "EXTENDED_SYS_STATE",
+       "fields": {
+        "landed_state": 4
+       }
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "EXTENDED_SYS_STATE",
+       "fields": {
+        "landed_state": 5
+       }
+      }
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "VIBRATION",
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "vibration_x": 0.1235,
+         "vibration_y": 1.5,
+         "vibration_z": 0.0,
+         "clipping_0": 1,
+         "clipping_1": 2,
+         "clipping_2": 3
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "EXTENDED_SYS_STATE",
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "landed_state": 0
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "EXTENDED_SYS_STATE",
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "landed_state": 1
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "EXTENDED_SYS_STATE",
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "landed_state": 2
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "EXTENDED_SYS_STATE",
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "landed_state": 3
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "EXTENDED_SYS_STATE",
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "landed_state": 4
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "EXTENDED_SYS_STATE",
+         false
+        ]
+       ]
+      ],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "home_position",
+    "steps": [
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "HOME_POSITION",
+       "fields": {
+        "latitude": 481234567,
+        "longitude": 117654321,
+        "altitude": 520500
+       }
+      }
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "HOME_POSITION",
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "home": [
+          11.7654321,
+          48.1234567
+         ]
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "snapshot": {
+        "home": [
+         11.7654321,
+         48.1234567
+        ]
+       },
+       "degraded": false,
+       "ignored": [],
+       "duplicates": 0,
+       "rangefinder_seen": null,
+       "last_boot_ms": null,
+       "kill_evidence": null,
+       "firmware": null,
+       "board": [
+        0,
+        0
+       ],
+       "encoding": "unset",
+       "request_sent": true,
+       "stack": "px4",
+       "mav_type": 2,
+       "hb": []
+      },
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "heartbeat_then_radio_status",
+    "steps": [
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 12,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       }
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "RADIO_STATUS",
+       "fields": {
+        "remrssi": 150,
+        "txbuf": 100
+       },
+       "system": 51
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 12,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       }
+      }
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "HEARTBEAT",
+         true
+        ]
+       ],
+       [
+        "store_heartbeat"
+       ],
+       [
+        "update",
+        {
+         "heartbeat_jitter_ms": 0.0
+        }
+       ],
+       [
+        "update",
+        {
+         "vehicle_type": "QUADROTOR",
+         "autopilot": "PX4",
+         "armed": false,
+         "mode": "POSCTL",
+         "mode_label": "POSITION",
+         "autopilot_stack": "px4",
+         "flight_termination": false
+        }
+       ],
+       [
+        "call",
+        "roll_tlog_on_disarm",
+        [
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "link_quality": "good"
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "uplink": 100,
+         "uplink_rssi": 150.0,
+         "uplink_rxerrors": 0,
+         "uplink_fixed": 0
+        }
+       ],
+       [
+        "update",
+        {
+         "link_quality": "good"
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "HEARTBEAT",
+         true
+        ]
+       ],
+       [
+        "store_heartbeat"
+       ],
+       [
+        "update",
+        {
+         "heartbeat_jitter_ms": 0.0
+        }
+       ],
+       [
+        "update",
+        {
+         "vehicle_type": "QUADROTOR",
+         "autopilot": "PX4",
+         "armed": false,
+         "mode": "POSCTL",
+         "mode_label": "POSITION",
+         "autopilot_stack": "px4",
+         "flight_termination": false
+        }
+       ],
+       [
+        "call",
+        "roll_tlog_on_disarm",
+        [
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "link_quality": "good"
+        }
+       ]
+      ],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "frames_filtered_by_the_fleet",
+    "steps": [
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 12,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       }
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 12,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       },
+       "component": 240
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "ATTITUDE",
+       "fields": {
+        "roll": 0.0
+       }
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "ATTITUDE",
+       "fields": {
+        "roll": 0.0
+       },
+       "system": 3
+      }
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "HEARTBEAT",
+         true
+        ]
+       ],
+       [
+        "store_heartbeat"
+       ],
+       [
+        "update",
+        {
+         "heartbeat_jitter_ms": 0.0
+        }
+       ],
+       [
+        "update",
+        {
+         "vehicle_type": "QUADROTOR",
+         "autopilot": "PX4",
+         "armed": false,
+         "mode": "POSCTL",
+         "mode_label": "POSITION",
+         "autopilot_stack": "px4",
+         "flight_termination": false
+        }
+       ],
+       [
+        "call",
+        "roll_tlog_on_disarm",
+        [
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "link_quality": "good"
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "HEARTBEAT",
+         false
+        ]
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "ATTITUDE",
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "roll": 0.0,
+         "pitch": 0.0,
+         "yaw": 0.0,
+         "rollspeed": 0.0,
+         "pitchspeed": 0.0,
+         "yawspeed": 0.0
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "duplicates",
+    "steps": [
+     {
+      "op": "process",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 12,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       },
+       "raw": "aabbcc"
+      }
+     },
+     {
+      "op": "advance",
+      "seconds": 0.1
+     },
+     {
+      "op": "process",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 12,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       },
+       "raw": "aabbcc"
+      }
+     },
+     {
+      "op": "process",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 12,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       },
+       "raw": "ddeeff"
+      }
+     },
+     {
+      "op": "advance",
+      "seconds": 0.5
+     },
+     {
+      "op": "process",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 12,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       },
+       "raw": "aabbcc"
+      }
+     },
+     {
+      "op": "advance",
+      "seconds": 0.2
+     },
+     {
+      "op": "process",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 12,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       },
+       "raw": "aabbcc"
+      }
+     },
+     {
+      "op": "process",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 12,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       }
+      }
+     },
+     {
+      "op": "process",
+      "frame": {
+       "name": "HEARTBEAT",
+       "fields": {
+        "type": 2,
+        "autopilot": 12,
+        "base_mode": 81,
+        "custom_mode": 196608,
+        "system_status": 4,
+        "mavlink_version": 3
+       }
+      }
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "tlog",
+        [
+         "HEARTBEAT"
+        ]
+       ],
+       [
+        "call",
+        "scope",
+        [
+         "HEARTBEAT"
+        ]
+       ],
+       [
+        "call",
+        "fleet",
+        [
+         "HEARTBEAT",
+         true
+        ]
+       ],
+       [
+        "store_heartbeat"
+       ],
+       [
+        "update",
+        {
+         "heartbeat_jitter_ms": 0.0
+        }
+       ],
+       [
+        "update",
+        {
+         "vehicle_type": "QUADROTOR",
+         "autopilot": "PX4",
+         "armed": false,
+         "mode": "POSCTL",
+         "mode_label": "POSITION",
+         "autopilot_stack": "px4",
+         "flight_termination": false
+        }
+       ],
+       [
+        "call",
+        "roll_tlog_on_disarm",
+        [
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "link_quality": "good"
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.1
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.1
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "tlog",
+        [
+         "HEARTBEAT"
+        ]
+       ],
+       [
+        "call",
+        "scope",
+        [
+         "HEARTBEAT"
+        ]
+       ],
+       [
+        "call",
+        "fleet",
+        [
+         "HEARTBEAT",
+         true
+        ]
+       ],
+       [
+        "store_heartbeat"
+       ],
+       [
+        "update",
+        {
+         "heartbeat_jitter_ms": 0.0
+        }
+       ],
+       [
+        "update",
+        {
+         "vehicle_type": "QUADROTOR",
+         "autopilot": "PX4",
+         "armed": false,
+         "mode": "POSCTL",
+         "mode_label": "POSITION",
+         "autopilot_stack": "px4",
+         "flight_termination": false
+        }
+       ],
+       [
+        "call",
+        "roll_tlog_on_disarm",
+        [
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "link_quality": "good"
+        }
+       ]
+      ],
+      "t": 0.1
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.6
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "tlog",
+        [
+         "HEARTBEAT"
+        ]
+       ],
+       [
+        "call",
+        "scope",
+        [
+         "HEARTBEAT"
+        ]
+       ],
+       [
+        "call",
+        "fleet",
+        [
+         "HEARTBEAT",
+         true
+        ]
+       ],
+       [
+        "store_heartbeat"
+       ],
+       [
+        "update",
+        {
+         "heartbeat_jitter_ms": 200.0
+        }
+       ],
+       [
+        "update",
+        {
+         "vehicle_type": "QUADROTOR",
+         "autopilot": "PX4",
+         "armed": false,
+         "mode": "POSCTL",
+         "mode_label": "POSITION",
+         "autopilot_stack": "px4",
+         "flight_termination": false
+        }
+       ],
+       [
+        "call",
+        "roll_tlog_on_disarm",
+        [
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "link_quality": "good"
+        }
+       ]
+      ],
+      "t": 0.6
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.8
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.8
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "tlog",
+        [
+         "HEARTBEAT"
+        ]
+       ],
+       [
+        "call",
+        "scope",
+        [
+         "HEARTBEAT"
+        ]
+       ],
+       [
+        "call",
+        "fleet",
+        [
+         "HEARTBEAT",
+         true
+        ]
+       ],
+       [
+        "store_heartbeat"
+       ],
+       [
+        "update",
+        {
+         "heartbeat_jitter_ms": 170.0
+        }
+       ],
+       [
+        "update",
+        {
+         "vehicle_type": "QUADROTOR",
+         "autopilot": "PX4",
+         "armed": false,
+         "mode": "POSCTL",
+         "mode_label": "POSITION",
+         "autopilot_stack": "px4",
+         "flight_termination": false
+        }
+       ],
+       [
+        "call",
+        "roll_tlog_on_disarm",
+        [
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "link_quality": "good"
+        }
+       ]
+      ],
+      "t": 0.8
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "tlog",
+        [
+         "HEARTBEAT"
+        ]
+       ],
+       [
+        "call",
+        "scope",
+        [
+         "HEARTBEAT"
+        ]
+       ],
+       [
+        "call",
+        "fleet",
+        [
+         "HEARTBEAT",
+         true
+        ]
+       ],
+       [
+        "store_heartbeat"
+       ],
+       [
+        "update",
+        {
+         "heartbeat_jitter_ms": 187.1
+        }
+       ],
+       [
+        "update",
+        {
+         "vehicle_type": "QUADROTOR",
+         "autopilot": "PX4",
+         "armed": false,
+         "mode": "POSCTL",
+         "mode_label": "POSITION",
+         "autopilot_stack": "px4",
+         "flight_termination": false
+        }
+       ],
+       [
+        "call",
+        "roll_tlog_on_disarm",
+        [
+         false
+        ]
+       ],
+       [
+        "update",
+        {
+         "link_quality": "good"
+        }
+       ]
+      ],
+      "t": 0.8
+     },
+     {
+      "result": {
+       "snapshot": {
+        "heartbeat_jitter_ms": 187.1,
+        "vehicle_type": "QUADROTOR",
+        "autopilot": "PX4",
+        "armed": false,
+        "mode": "POSCTL",
+        "mode_label": "POSITION",
+        "autopilot_stack": "px4",
+        "flight_termination": false,
+        "link_quality": "good"
+       },
+       "degraded": false,
+       "ignored": [],
+       "duplicates": 2,
+       "rangefinder_seen": null,
+       "last_boot_ms": null,
+       "kill_evidence": null,
+       "firmware": null,
+       "board": [
+        0,
+        0
+       ],
+       "encoding": "unset",
+       "request_sent": true,
+       "stack": "px4",
+       "mav_type": 2,
+       "hb": [
+        1000.0,
+        1000.1,
+        1000.6,
+        1000.8000000000001,
+        1000.8000000000001
+       ]
+      },
+      "events": [],
+      "t": 0.8
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "command_ack_logging",
+    "steps": [
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "COMMAND_ACK",
+       "fields": {
+        "command": 400,
+        "result": 0
+       }
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "COMMAND_ACK",
+       "fields": {
+        "command": 22,
+        "result": 5
+       }
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "COMMAND_ACK",
+       "fields": {
+        "command": 22,
+        "result": 4
+       }
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "COMMAND_ACK",
+       "fields": {
+        "command": 22,
+        "result": 77
+       }
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "COMMAND_ACK",
+       "fields": {
+        "command": 400,
+        "result": 0
+       },
+       "system": 9
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "COMMAND_ACK",
+       "fields": {
+        "command": 212,
+        "result": 5,
+        "progress": 40
+       }
+      }
+     },
+     {
+      "op": "dispatch",
+      "frame": {
+       "name": "COMMAND_ACK",
+       "fields": {
+        "command": 212,
+        "result": 0
+       }
+      }
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "COMMAND_ACK",
+         false
+        ]
+       ],
+       [
+        "console",
+        "COMMAND_ACK",
+        "COMMAND_ACK: cmd=400 ACCEPTED",
+        "success"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "COMMAND_ACK",
+         false
+        ]
+       ],
+       [
+        "console",
+        "COMMAND_ACK",
+        "COMMAND_ACK: cmd=22 IN_PROGRESS",
+        "info"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "COMMAND_ACK",
+         false
+        ]
+       ],
+       [
+        "console",
+        "COMMAND_ACK",
+        "COMMAND_ACK: cmd=22 FAILED",
+        "error"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "COMMAND_ACK",
+         false
+        ]
+       ],
+       [
+        "console",
+        "COMMAND_ACK",
+        "COMMAND_ACK: cmd=22 result=77",
+        "error"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "COMMAND_ACK",
+         false
+        ]
+       ],
+       [
+        "console",
+        "COMMAND_ACK",
+        "COMMAND_ACK: cmd=212 IN_PROGRESS",
+        "info"
+       ],
+       [
+        "call",
+        "autotune_ack",
+        [
+         5,
+         40
+        ]
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "fleet",
+        [
+         "COMMAND_ACK",
+         false
+        ]
+       ],
+       [
+        "console",
+        "COMMAND_ACK",
+        "COMMAND_ACK: cmd=212 ACCEPTED",
+        "success"
+       ],
+       [
+        "call",
+        "autotune_ack",
+        [
+         0,
+         0
+        ]
+       ]
+      ],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "command_ok",
+    "acks": {
+     "400": [
+      [
+       {
+        "after": 0.2,
+        "result": 0,
+        "command": 400
+       }
+      ]
+     ]
+    },
+    "steps": [
+     {
+      "op": "command",
+      "command": 400,
+      "params": [
+       1.0
+      ],
+      "timeout": 3.0,
+      "retries": 2
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": 0,
+      "events": [
+       [
+        "send",
+        "command_long_send",
+        [
+         1,
+         1,
+         400,
+         0,
+         1.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ]
+       ],
+       [
+        "call",
+        "fleet",
+        [
+         "COMMAND_ACK",
+         false
+        ]
+       ],
+       [
+        "console",
+        "COMMAND_ACK",
+        "COMMAND_ACK: cmd=400 ACCEPTED",
+        "success"
+       ]
+      ],
+      "t": 0.2
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "command_denied",
+    "acks": {
+     "400": [
+      [
+       {
+        "after": 0.2,
+        "result": 2,
+        "command": 400
+       }
+      ]
+     ]
+    },
+    "steps": [
+     {
+      "op": "command",
+      "command": 400,
+      "params": [
+       1.0
+      ],
+      "timeout": 3.0,
+      "retries": 2
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": 2,
+      "events": [
+       [
+        "send",
+        "command_long_send",
+        [
+         1,
+         1,
+         400,
+         0,
+         1.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ]
+       ],
+       [
+        "call",
+        "fleet",
+        [
+         "COMMAND_ACK",
+         false
+        ]
+       ],
+       [
+        "console",
+        "COMMAND_ACK",
+        "COMMAND_ACK: cmd=400 DENIED",
+        "error"
+       ]
+      ],
+      "t": 0.2
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "command_retried",
+    "acks": {
+     "400": [
+      [],
+      [
+       {
+        "after": 0.4,
+        "result": 0,
+        "command": 400
+       }
+      ]
+     ]
+    },
+    "steps": [
+     {
+      "op": "command",
+      "command": 400,
+      "params": [
+       1.0,
+       2.0,
+       3.0,
+       4.0,
+       5.0,
+       6.0,
+       7.0,
+       8.0
+      ],
+      "timeout": 1.0,
+      "retries": 2
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": 0,
+      "events": [
+       [
+        "send",
+        "command_long_send",
+        [
+         1,
+         1,
+         400,
+         0,
+         1.0,
+         2.0,
+         3.0,
+         4.0,
+         5.0,
+         6.0,
+         7.0
+        ]
+       ],
+       [
+        "log",
+        "warning",
+        "Command 400 ACK timeout (attempt 1)"
+       ],
+       [
+        "send",
+        "command_long_send",
+        [
+         1,
+         1,
+         400,
+         1,
+         1.0,
+         2.0,
+         3.0,
+         4.0,
+         5.0,
+         6.0,
+         7.0
+        ]
+       ],
+       [
+        "call",
+        "fleet",
+        [
+         "COMMAND_ACK",
+         false
+        ]
+       ],
+       [
+        "console",
+        "COMMAND_ACK",
+        "COMMAND_ACK: cmd=400 ACCEPTED",
+        "success"
+       ]
+      ],
+      "t": 1.4
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "command_never_answered",
+    "steps": [
+     {
+      "op": "command",
+      "command": 400,
+      "params": [],
+      "timeout": 1.0,
+      "retries": 2
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": -1,
+      "events": [
+       [
+        "send",
+        "command_long_send",
+        [
+         1,
+         1,
+         400,
+         0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ]
+       ],
+       [
+        "log",
+        "warning",
+        "Command 400 ACK timeout (attempt 1)"
+       ],
+       [
+        "send",
+        "command_long_send",
+        [
+         1,
+         1,
+         400,
+         1,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ]
+       ],
+       [
+        "log",
+        "warning",
+        "Command 400 ACK timeout (attempt 2)"
+       ],
+       [
+        "send",
+        "command_long_send",
+        [
+         1,
+         1,
+         400,
+         1,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ]
+       ],
+       [
+        "log",
+        "warning",
+        "Command 400 ACK timeout (attempt 3)"
+       ]
+      ],
+      "t": 3.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "command_not_ready",
+    "ready": false,
+    "steps": [
+     {
+      "op": "command",
+      "command": 400,
+      "params": [],
+      "timeout": 1.0,
+      "retries": 1
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": -2,
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "command_send_fails",
+    "send_fails": true,
+    "steps": [
+     {
+      "op": "command",
+      "command": 400,
+      "params": [],
+      "timeout": 1.0,
+      "retries": 1
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": -2,
+      "events": [
+       [
+        "log",
+        "error",
+        "send command 400 failed: boom"
+       ]
+      ],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "command_in_progress_then_final",
+    "acks": {
+     "241": [
+      [
+       {
+        "after": 0.2,
+        "result": 5,
+        "command": 241
+       },
+       {
+        "after": 1.5,
+        "result": 0,
+        "command": 241
+       }
+      ]
+     ]
+    },
+    "steps": [
+     {
+      "op": "command",
+      "command": 241,
+      "params": [],
+      "timeout": 1.0,
+      "retries": 2
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": 0,
+      "events": [
+       [
+        "send",
+        "command_long_send",
+        [
+         1,
+         1,
+         241,
+         0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ]
+       ],
+       [
+        "call",
+        "fleet",
+        [
+         "COMMAND_ACK",
+         false
+        ]
+       ],
+       [
+        "console",
+        "COMMAND_ACK",
+        "COMMAND_ACK: cmd=241 IN_PROGRESS",
+        "info"
+       ],
+       [
+        "call",
+        "fleet",
+        [
+         "COMMAND_ACK",
+         false
+        ]
+       ],
+       [
+        "console",
+        "COMMAND_ACK",
+        "COMMAND_ACK: cmd=241 ACCEPTED",
+        "success"
+       ]
+      ],
+      "t": 1.5
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "command_in_progress_never_finishes",
+    "acks": {
+     "241": [
+      [
+       {
+        "after": 0.2,
+        "result": 5,
+        "command": 241
+       }
+      ]
+     ]
+    },
+    "steps": [
+     {
+      "op": "command",
+      "command": 241,
+      "params": [],
+      "timeout": 1.0,
+      "retries": 2
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": 5,
+      "events": [
+       [
+        "send",
+        "command_long_send",
+        [
+         1,
+         1,
+         241,
+         0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ]
+       ],
+       [
+        "call",
+        "fleet",
+        [
+         "COMMAND_ACK",
+         false
+        ]
+       ],
+       [
+        "console",
+        "COMMAND_ACK",
+        "COMMAND_ACK: cmd=241 IN_PROGRESS",
+        "info"
+       ]
+      ],
+      "t": 2.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "command_accepts_in_progress",
+    "acks": {
+     "212": [
+      [
+       {
+        "after": 0.2,
+        "result": 5,
+        "command": 212
+       }
+      ]
+     ]
+    },
+    "steps": [
+     {
+      "op": "command",
+      "command": 212,
+      "params": [
+       1.0
+      ],
+      "timeout": 1.0,
+      "retries": 0,
+      "accept_in_progress": true
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": 5,
+      "events": [
+       [
+        "send",
+        "command_long_send",
+        [
+         1,
+         1,
+         212,
+         0,
+         1.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ]
+       ],
+       [
+        "call",
+        "fleet",
+        [
+         "COMMAND_ACK",
+         false
+        ]
+       ],
+       [
+        "console",
+        "COMMAND_ACK",
+        "COMMAND_ACK: cmd=212 IN_PROGRESS",
+        "info"
+       ],
+       [
+        "call",
+        "autotune_ack",
+        [
+         5,
+         0
+        ]
+       ]
+      ],
+      "t": 0.2
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "command_interim_then_final",
+    "acks": {
+     "241": [
+      [
+       {
+        "after": 0.2,
+        "result": 1,
+        "command": 241
+       },
+       {
+        "after": 0.8,
+        "result": 0,
+        "command": 241
+       }
+      ]
+     ]
+    },
+    "steps": [
+     {
+      "op": "command",
+      "command": 241,
+      "params": [],
+      "timeout": 2.0,
+      "retries": 0,
+      "interim": [
+       1
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": 0,
+      "events": [
+       [
+        "send",
+        "command_long_send",
+        [
+         1,
+         1,
+         241,
+         0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ]
+       ],
+       [
+        "call",
+        "fleet",
+        [
+         "COMMAND_ACK",
+         false
+        ]
+       ],
+       [
+        "console",
+        "COMMAND_ACK",
+        "COMMAND_ACK: cmd=241 TEMPORARILY_REJECTED",
+        "error"
+       ],
+       [
+        "call",
+        "fleet",
+        [
+         "COMMAND_ACK",
+         false
+        ]
+       ],
+       [
+        "console",
+        "COMMAND_ACK",
+        "COMMAND_ACK: cmd=241 ACCEPTED",
+        "success"
+       ]
+      ],
+      "t": 0.8
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "command_interim_only",
+    "acks": {
+     "241": [
+      [
+       {
+        "after": 0.2,
+        "result": 1,
+        "command": 241
+       }
+      ]
+     ]
+    },
+    "steps": [
+     {
+      "op": "command",
+      "command": 241,
+      "params": [],
+      "timeout": 1.0,
+      "retries": 2,
+      "interim": [
+       1
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": 1,
+      "events": [
+       [
+        "send",
+        "command_long_send",
+        [
+         1,
+         1,
+         241,
+         0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ]
+       ],
+       [
+        "call",
+        "fleet",
+        [
+         "COMMAND_ACK",
+         false
+        ]
+       ],
+       [
+        "console",
+        "COMMAND_ACK",
+        "COMMAND_ACK: cmd=241 TEMPORARILY_REJECTED",
+        "error"
+       ]
+      ],
+      "t": 1.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "command_ack_for_another_command",
+    "acks": {
+     "400": [
+      [
+       {
+        "after": 0.2,
+        "result": 0,
+        "command": 22
+       }
+      ]
+     ]
+    },
+    "steps": [
+     {
+      "op": "command",
+      "command": 400,
+      "params": [],
+      "timeout": 1.0,
+      "retries": 0
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": -1,
+      "events": [
+       [
+        "send",
+        "command_long_send",
+        [
+         1,
+         1,
+         400,
+         0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ]
+       ],
+       [
+        "call",
+        "fleet",
+        [
+         "COMMAND_ACK",
+         false
+        ]
+       ],
+       [
+        "console",
+        "COMMAND_ACK",
+        "COMMAND_ACK: cmd=22 ACCEPTED",
+        "success"
+       ],
+       [
+        "log",
+        "warning",
+        "Command 400 ACK timeout (attempt 1)"
+       ]
+      ],
+      "t": 1.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "command_ack_from_another_system",
+    "acks": {
+     "400": [
+      [
+       {
+        "after": 0.2,
+        "result": 0,
+        "command": 400,
+        "system": 9
+       }
+      ]
+     ]
+    },
+    "steps": [
+     {
+      "op": "command",
+      "command": 400,
+      "params": [],
+      "timeout": 1.0,
+      "retries": 0
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": -1,
+      "events": [
+       [
+        "send",
+        "command_long_send",
+        [
+         1,
+         1,
+         400,
+         0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ]
+       ],
+       [
+        "log",
+        "warning",
+        "Command 400 ACK timeout (attempt 1)"
+       ]
+      ],
+      "t": 1.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "command_ack_for_another_station",
+    "acks": {
+     "400": [
+      [
+       {
+        "after": 0.2,
+        "result": 0,
+        "command": 400,
+        "target_system": 7
+       }
+      ]
+     ]
+    },
+    "steps": [
+     {
+      "op": "command",
+      "command": 400,
+      "params": [],
+      "timeout": 1.0,
+      "retries": 0
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": -1,
+      "events": [
+       [
+        "send",
+        "command_long_send",
+        [
+         1,
+         1,
+         400,
+         0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ]
+       ],
+       [
+        "call",
+        "fleet",
+        [
+         "COMMAND_ACK",
+         false
+        ]
+       ],
+       [
+        "console",
+        "COMMAND_ACK",
+        "COMMAND_ACK: cmd=400 ACCEPTED",
+        "success"
+       ],
+       [
+        "log",
+        "warning",
+        "Command 400 ACK timeout (attempt 1)"
+       ]
+      ],
+      "t": 1.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "command_int_ok",
+    "acks": {
+     "192": [
+      [
+       {
+        "after": 0.3,
+        "result": 0,
+        "command": 192
+       }
+      ]
+     ]
+    },
+    "steps": [
+     {
+      "op": "command_int",
+      "command": 192,
+      "frame": 3,
+      "params": [
+       -1.0,
+       1.0
+      ],
+      "x": 481234567,
+      "y": 117654321,
+      "z": 30.5,
+      "timeout": 1.0,
+      "retries": 1
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": 0,
+      "events": [
+       [
+        "send",
+        "command_int_send",
+        [
+         1,
+         1,
+         3,
+         192,
+         0,
+         0,
+         -1.0,
+         1.0,
+         "nan",
+         "nan",
+         481234567,
+         117654321,
+         30.5
+        ]
+       ],
+       [
+        "call",
+        "fleet",
+        [
+         "COMMAND_ACK",
+         false
+        ]
+       ],
+       [
+        "console",
+        "COMMAND_ACK",
+        "COMMAND_ACK: cmd=192 ACCEPTED",
+        "success"
+       ]
+      ],
+      "t": 0.3
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "command_int_in_progress",
+    "acks": {
+     "192": [
+      [
+       {
+        "after": 0.3,
+        "result": 5,
+        "command": 192
+       },
+       {
+        "after": 1.4,
+        "result": 0,
+        "command": 192
+       }
+      ]
+     ]
+    },
+    "steps": [
+     {
+      "op": "command_int",
+      "command": 192,
+      "frame": 3,
+      "params": [],
+      "x": 1,
+      "y": 2,
+      "z": 3.0,
+      "timeout": 1.0,
+      "retries": 1
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": 0,
+      "events": [
+       [
+        "send",
+        "command_int_send",
+        [
+         1,
+         1,
+         3,
+         192,
+         0,
+         0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         1,
+         2,
+         3.0
+        ]
+       ],
+       [
+        "call",
+        "fleet",
+        [
+         "COMMAND_ACK",
+         false
+        ]
+       ],
+       [
+        "console",
+        "COMMAND_ACK",
+        "COMMAND_ACK: cmd=192 IN_PROGRESS",
+        "info"
+       ],
+       [
+        "call",
+        "fleet",
+        [
+         "COMMAND_ACK",
+         false
+        ]
+       ],
+       [
+        "console",
+        "COMMAND_ACK",
+        "COMMAND_ACK: cmd=192 ACCEPTED",
+        "success"
+       ]
+      ],
+      "t": 1.4
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "command_int_timeout",
+    "steps": [
+     {
+      "op": "command_int",
+      "command": 192,
+      "frame": 0,
+      "params": [],
+      "x": 1,
+      "y": 2,
+      "z": 3.0,
+      "timeout": 0.5,
+      "retries": 1
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": -1,
+      "events": [
+       [
+        "send",
+        "command_int_send",
+        [
+         1,
+         1,
+         0,
+         192,
+         0,
+         0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         1,
+         2,
+         3.0
+        ]
+       ],
+       [
+        "log",
+        "warning",
+        "Command 192 ACK timeout (attempt 1)"
+       ],
+       [
+        "send",
+        "command_int_send",
+        [
+         1,
+         1,
+         0,
+         192,
+         0,
+         0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         1,
+         2,
+         3.0
+        ]
+       ],
+       [
+        "log",
+        "warning",
+        "Command 192 ACK timeout (attempt 2)"
+       ]
+      ],
+      "t": 1.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "command_int_send_fails",
+    "send_fails": true,
+    "steps": [
+     {
+      "op": "command_int",
+      "command": 192,
+      "frame": 0,
+      "params": [],
+      "x": 1,
+      "y": 2,
+      "z": 3.0,
+      "timeout": 0.5,
+      "retries": 1
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": -2,
+      "events": [
+       [
+        "log",
+        "error",
+        "send command_int 192 failed: boom"
+       ]
+      ],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "command_int_not_ready",
+    "ready": false,
+    "steps": [
+     {
+      "op": "command_int",
+      "command": 192,
+      "frame": 0,
+      "params": [],
+      "x": 1,
+      "y": 2,
+      "z": 3.0,
+      "timeout": 0.5,
+      "retries": 1
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": -2,
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "cancel_wakes_the_waiters",
+    "steps": [
+     {
+      "op": "cancel"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": -2,
+      "events": [
+       [
+        "call",
+        "cancel_upload",
+        []
+       ]
+      ],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "registry_is_empty_after_a_command",
+    "acks": {
+     "400": [
+      [
+       {
+        "after": 0.2,
+        "result": 0,
+        "command": 400
+       }
+      ]
+     ]
+    },
+    "steps": [
+     {
+      "op": "command",
+      "command": 400,
+      "params": [],
+      "timeout": 1.0,
+      "retries": 0
+     },
+     {
+      "op": "pending"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": 0,
+      "events": [
+       [
+        "send",
+        "command_long_send",
+        [
+         1,
+         1,
+         400,
+         0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ]
+       ],
+       [
+        "call",
+        "fleet",
+        [
+         "COMMAND_ACK",
+         false
+        ]
+       ],
+       [
+        "console",
+        "COMMAND_ACK",
+        "COMMAND_ACK: cmd=400 ACCEPTED",
+        "success"
+       ]
+      ],
+      "t": 0.2
+     },
+     {
+      "result": 0,
+      "events": [],
+      "t": 0.2
+     }
+    ],
+    "final": {}
+   }
+  }
+ ]
+}
