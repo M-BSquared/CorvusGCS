@@ -6,7 +6,6 @@
 use eframe::egui;
 use serde_json::{json, Value};
 
-use super::ssh_launcher::model::{parse_int, SshNeed};
 use super::Reply;
 use crate::net::http::{self, Server};
 use crate::ui::form::{self, Form};
@@ -14,6 +13,7 @@ use crate::ui::kit::{Button, Variant};
 use crate::ui::message::Tone;
 use crate::ui::modal;
 use crate::ui::pathfield::{Mode, PathField};
+use corvus_api::plugin::ssh::{parse_int, SshNeed};
 
 /// Who asked, and what for, so the answer finds its way back.
 #[derive(Debug, Clone, PartialEq)]

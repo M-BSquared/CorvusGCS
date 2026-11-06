@@ -4,6 +4,8 @@
 //! language switched). Nothing is sent to the vehicle; it only changes what is
 //! shown. `python/tools/gui_soak.py` starts it and samples the memory.
 //! `CORVUS_GUI_SOAK_STEP=2.5` sets the seconds a step lasts (4 by default).
+//! `CORVUS_GUI_SOAK=3d` stays in the 3D map and jumps between mountains, cities
+//! and zoom levels at every step, to hold the view's memory at its worst.
 
 use eframe::egui;
 
@@ -32,6 +34,18 @@ pub struct Soak {
     done: Option<u64>,
 }
 
+/// Places for the 3D soak: longitude, latitude, zoom, bearing, pitch.
+const SPOTS: [(f64, f64, f64, f64, f64); 8] = [
+    (11.5, 47.4, 14.0, 40.0, 60.0),
+    (7.66, 45.98, 12.0, 200.0, 60.0),
+    (11.58, 48.14, 16.0, 0.0, 55.0),
+    (-122.4, 37.77, 13.0, 90.0, 60.0),
+    (86.92, 27.99, 11.0, 310.0, 60.0),
+    (139.7, 35.68, 15.0, 120.0, 45.0),
+    (11.3, 47.2, 10.0, 0.0, 60.0),
+    (-3.7, 40.4, 17.0, 250.0, 60.0),
+];
+
 /// The step number at `now`, `None` before the start.
 pub fn step_at(now: f64, step_s: f64) -> Option<u64> {
     (now >= START_S && step_s > 0.0).then(|| ((now - START_S) / step_s) as u64)
@@ -52,6 +66,17 @@ impl App {
             return;
         }
         self.soak.done = Some(k);
+        if std::env::var("CORVUS_GUI_SOAK").is_ok_and(|v| v == "3d") {
+            self.page = Page::Home;
+            self.map.set_three_d(true);
+            let (lng, lat, zoom, bearing, pitch) = SPOTS[(k as usize) % SPOTS.len()];
+            let lap = k / SPOTS.len() as u64;
+            let wobble = (lap % 24) as f64 * 0.04 * if lap.is_multiple_of(2) { 1.0 } else { -1.0 };
+            let (t, _) = self.map.three_settings(ctx);
+            t.start_at(lng + wobble, lat + wobble, zoom, bearing);
+            t.cam.pitch = pitch;
+            return;
+        }
         let lap = k / LAP;
         let wobble = (lap % 7) as f64 * 0.01;
         match k % LAP {

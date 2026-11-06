@@ -152,6 +152,11 @@ impl DemTile {
         Some(DemTile { size: w, heights })
     }
 
+    /// What the tile holds in memory.
+    pub fn bytes(&self) -> usize {
+        self.heights.len() * std::mem::size_of::<f32>()
+    }
+
     /// The height at `(u, v)` over the tile, each in 0 to 1, bilinear.
     pub fn sample(&self, u: f64, v: f64) -> f32 {
         let max = (self.size - 1) as f64;
@@ -182,6 +187,9 @@ pub fn leaf_part(z: u8, x: u32, y: u32) -> ((u8, u32, u32), (f64, f64, f64)) {
     )
 }
 
+/// Decoded elevation held at most, in bytes (a 256 pixel tile is a quarter megabyte).
+pub const DEM_BYTES: usize = 48 << 20;
+
 /// The elevation model in use and its tiles.
 pub struct Terrain {
     pub spec: Spec,
@@ -192,7 +200,9 @@ impl Terrain {
     pub fn new(ctx: &egui::Context, server: &Server, spec: Spec) -> Terrain {
         let enc = spec.encoding;
         Terrain {
-            cache: TileCache::new(ctx, server, 300, move |b| DemTile::decode(b, enc)),
+            cache: TileCache::weighed(ctx, server, 300, DemTile::bytes, DEM_BYTES, move |b| {
+                DemTile::decode(b, enc)
+            }),
             spec,
         }
     }

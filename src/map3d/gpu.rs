@@ -33,7 +33,7 @@ const MESH_UPLOADS_PER_FRAME: usize = 64;
 /// What the GPU holds at most. Past it the longest unused go first, so a long
 /// session over the whole world stays bounded whatever the camera did.
 pub const MAX_MESHES: usize = 2400;
-pub const MAX_TEXTURES: usize = 700;
+pub const MAX_TEXTURES: usize = 480;
 /// `CORVUS_GUI_3D_FAIL=reason` makes the renderer report that reason as if the
 /// OpenGL had refused it, to look at the fallback without a broken driver.
 const FAIL_ENV: &str = "CORVUS_GUI_3D_FAIL";

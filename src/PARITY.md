@@ -64,7 +64,7 @@ otherwise; "native file" is in `src/`.
 | Fly-to-points plan (PLAN button, click to add, slider AGL, FLY, CLEAR) | map.js, app.js | map/tools.rs, home/flight.rs | done |
 | Home and vehicle markers | map.js | map/mod.rs | done |
 | Other vehicles on the map in their own colour, name under, own track, click opens the dialog | map-fleet.js | map/others.rs, fleet/tracks.rs | done (kept over a restart in ~/.corvus/gui-tracks.json) |
-| Plugin overlays on the map: lines, areas, labels, buttons, markers, icons | map-overlays.js, map-icons.js | plugins/ (another session) | not mine |
+| Plugin overlays on the map: lines, areas, labels, buttons, markers, icons | map-overlays.js, map-icons.js | corvus_api `plugin/shapes.rs`, plugins/layer.rs, map3d/overlays.rs | done: on the flat map as before; in 3D lines, outlines and areas are terrain draped meshes (a point every 30 m, areas cut into triangles of at most 80 m) drawn with the depth test, so a hill in front hides them as it hides the track (seen with a radar zone and a gate in the Alps); text, markers and buttons stay screen elements tested by the terrain ray |
 | Geofence drawn on the map | geofence.js | setup/geofence.rs, map/mod.rs `fence_outline` | done, in 2D and in 3D |
 | Tile credit: a folded glass disc with the info icon at every width, a click opens it, a drag folds it, hover warms it | map.css `.maplibregl-ctrl-attrib`, map.js `ownAttributionToggle` | map/credit.rs | done on the Home map (2D, 3D with the elevation credit joined), the Analysis track map and the geofence map. The web asks for `compact: true`, so there is no 640 px rule to copy |
 
@@ -187,7 +187,7 @@ The rows were found by reading the CSS and the scripts, then the native code. On
 | Console: filter, pause, copy, save, clear, input with history, jump to latest | panel.js | panel/console.rs | done |
 | SSH tab and saved connections, terminal | panel.js, ssh-term.js | panel/mod.rs, term/ | done |
 | Fullscreen console (Shift+Escape) | panel.js | panel/ | check |
-| PLUGINS tab | plugins.js | plugins/ (another session) | not mine |
+| PLUGINS tab | plugins.js | plugins/ (registry and view) | done: the cards, the gear dialog and Own tab as before; the plugins are crates (`src/plugins/<id>/`), listed by `build.rs` |
 
 ## Keyboard
 

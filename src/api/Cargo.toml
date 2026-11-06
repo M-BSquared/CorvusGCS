@@ -1,0 +1,22 @@
+[package]
+name = "corvus_api"
+version = "0.0.0"
+edition = "2021"
+rust-version = "1.99"
+publish = false
+description = "What a Corvus GCS plugin builds on: the interface widgets, the translations, the backend client"
+build = "build.rs"
+
+[dependencies]
+eframe = { version = "0.37", features = ["glow"] }
+egui_extras = { version = "0.37", features = ["svg", "image"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
+serde_json = "1"
+regex = "1"
+rfd = "0.17"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[build-dependencies]
+wuff = "0.2"

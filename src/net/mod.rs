@@ -1,6 +1,5 @@
 pub mod backend;
-pub mod bg;
-pub mod http;
+pub use corvus_api::net::{bg, http};
 pub mod lock;
 pub mod sse;
 pub mod stream;

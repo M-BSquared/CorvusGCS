@@ -1,0 +1,12 @@
+[package]
+name = "corvus_plugin_vibration"
+version = "0.0.0"
+edition = "2021"
+rust-version = "1.99"
+publish = false
+description = "The vibration plugin of Corvus GCS"
+
+[dependencies]
+corvus_api = { path = "../../api" }
+eframe = { version = "0.37", features = ["glow"] }
+serde_json = "1"

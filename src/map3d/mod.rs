@@ -6,6 +6,7 @@
 pub mod buildings;
 pub mod camera;
 pub mod gpu;
+mod overlays;
 pub mod panel;
 pub mod ribbon;
 pub mod terrain;
@@ -45,6 +46,9 @@ const FENCE_PIECE_M: f64 = 40.0;
 const KEEP_ABOVE_GROUND: f64 = 8.0;
 const TEXTURES: usize = 400;
 const IMAGE_CACHE: usize = 1000;
+/// Decoded imagery held at most, in bytes: tiles are 256 pixels at four bytes,
+/// but a source may serve larger ones, and a count alone would not hold then.
+const IMAGE_BYTES: usize = 160 << 20;
 /// `HILLSHADE_EXAGGERATION` of the web map, a little stronger as the shade is
 /// painted into vertex colours here and not drawn as a layer.
 const SHADE: f32 = 0.5;
@@ -109,6 +113,11 @@ fn decode_image(bytes: &[u8]) -> Option<egui::ColorImage> {
     let img = image::load_from_memory(bytes).ok()?.to_rgba8();
     let size = [img.width() as usize, img.height() as usize];
     Some(egui::ColorImage::from_rgba_unmultiplied(size, img.as_raw()))
+}
+
+/// What a decoded tile image holds in memory.
+fn image_bytes(image: &egui::ColorImage) -> usize {
+    image.pixels.len() * std::mem::size_of::<egui::Color32>()
 }
 
 /// One tile of the ground to draw.
@@ -204,7 +213,7 @@ impl Map3d {
             },
             source: source.to_string(),
             max_zoom,
-            imagery: TileCache::new(ctx, server, IMAGE_CACHE, decode_image),
+            imagery: TileCache::weighed(ctx, server, IMAGE_CACHE, image_bytes, IMAGE_BYTES, decode_image),
             server: server.clone(),
             ctx: ctx.clone(),
             terrain: None,
@@ -1023,7 +1032,8 @@ impl Map3d {
         line_blocked(&self.cam, target, &|lng, lat| self.ground_at(lng, lat))
     }
 
-    /// The flown track as ribbons the depth test can hide behind a hill: a
+    /// What lies on or above the ground as geometry the depth test can hide
+    /// behind a hill: what plugins draw, then the flown track as ribbons, a
     /// dark casing and the colour on top, earlier flights quieter.
     fn line_items(&self, layers: &Layers3d<'_>) -> Vec<gpu::Item> {
         let rgb = |c: Color32| {
@@ -1034,7 +1044,7 @@ impl Map3d {
             ]
         };
         let centre = crate::map3d::camera::mercator(self.cam.lng, self.cam.lat);
-        let mut items = Vec::new();
+        let mut items = self.shape_items(layers.shapes);
         let mut add = |pts: &[Point], color: Color32, past: bool, air: bool| {
             let local: Vec<V3> = track::smooth(pts)
                 .iter()
@@ -1079,8 +1089,6 @@ impl Map3d {
 
     fn paint_layers(&self, ui: &egui::Ui, painter: &egui::Painter, origin: Pos2, layers: &Layers3d<'_>) {
         let cam = &self.cam;
-        let project = |p: [f64; 2]| self.screen_of(origin, cam.local_of(p[0], p[1], self.ground_at(p[0], p[1])));
-        crate::plugins::shapes::paint_areas(painter, &project, layers.shapes);
         if let Some((lng, lat)) = layers.home {
             let at = cam.local_of(lng, lat, self.ground_at(lng, lat));
             if let (false, Some(p)) = (self.hidden(at), self.screen_of(origin, at)) {
@@ -1527,5 +1535,25 @@ mod tests {
         assert!((x + half).abs() < 1e-6 && (y - half).abs() < 1e-6);
         let (x, y) = tile_mercator(1, 1.0, 1.0);
         assert!(x.abs() < 1e-6 && y.abs() < 1e-6);
+    }
+
+    #[test]
+    fn the_worst_case_the_view_can_hold_stays_under_a_gigabyte() {
+        let mib = 1usize << 20;
+        let texture = 256 * 256 * 4 * 4 / 3;
+        let (mesh_verts, mesh_indices) = (17 * 17 + 4 * 17 * 2, GRID * GRID * 6 + GRID * 24);
+        let mesh = mesh_verts * gpu::FLOATS * 4 + mesh_indices * 4;
+        let cpu = IMAGE_BYTES
+            + terrain::DEM_BYTES
+            + TEXTURES.max(MAX_LEAVES * 2) * std::mem::size_of::<usize>()
+            + MAX_LEAVES * 3 * mesh;
+        let gpu = gpu::MAX_TEXTURES * texture * 2 + gpu::MAX_MESHES * mesh * 2;
+        assert!(
+            cpu / mib < 400,
+            "{} MiB of decoded tiles and meshes on the CPU side",
+            cpu / mib
+        );
+        assert!(gpu / mib < 600, "{} MiB of textures and meshes for the GPU", gpu / mib);
+        assert!((cpu + gpu) / mib < 900, "{} MiB in all", (cpu + gpu) / mib);
     }
 }

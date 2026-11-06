@@ -10,13 +10,13 @@ Android app as well. `src/link/` is the MAVLink crate (PyO3, its own
 ```
 src/main.rs            entry point, arguments, signals
 src/app/               the window: layout, rail, page switching, responsive widths
-src/net/ data/         the HTTP/SSE client, the backend child, telemetry, units, track
-src/ui/                the shared widgets and the design tokens (kit, card, menu, field, ...)
+src/net/ data/         the backend child, SSE, telemetry, track (the HTTP client and units are in src/api)
+src/api/               the crate plugins build on: ui, i18n, net::http, plugin (trait, options, shapes)
 src/home/ map/ map3d/  the Home page: flight bar, HUD, top bar, the 2D and the 3D map
 src/mission/ setup/    the Mission planner and the Setup pages
-src/i18n/ lang/        the interface language: the translation layer and the language files
+src/lang/              the interface language files (the translation layer is in src/api/src/i18n)
 src/settings/ logs/ analysis/ notify/ panel/ term/
-src/plugins/           the plugin system and the bundled plugins, one folder each
+src/plugins/           the registry and one crate per bundled plugin (src/plugins/<id>/)
 src/link/              the MAVLink crate for the Python backend
 ```
 
@@ -49,7 +49,7 @@ SIGKILL if it is still there after 8 s. If the window does not close within
 | | |
 | --- | --- |
 | `src/net/backend.rs` | starts and stops `serve.py` |
-| `src/net/http.rs` | a small HTTP/1.1 client, with a read timeout per read so a stream reader can stop |
+| `src/api/src/net/http.rs` | a small HTTP/1.1 client, with a read timeout per read so a stream reader can stop |
 | `src/net/sse.rs` | server-sent events |
 | `src/data/telemetry.rs` | the `/api/telemetry` reader thread and the latest state |
 | `src/data/units.rs` | display units from the config's `ui.units`, rounded the way the web interface rounds |
@@ -61,7 +61,7 @@ SIGKILL if it is still there after 8 s. If the window does not close within
 | `src/map/credit.rs` | the tile credit as MapLibre's compact attribution draws it: a 25 px glass disc with the info icon, opened by a click into a pill wrapped at `min(46ch, 40vw)`, folded by a click on the icon or a drag of the map; used by the Home map (2D and 3D), the Analysis track map and the geofence card map |
 | `src/crash.rs` | the panic hook, the crash log and the frame guard (see Reliability) |
 | `src/data/intern.rs` | a `'static` text for an API that wants one, kept once and capped |
-| `src/ui/tip.rs` | hover texts through the translation layer: use `on_hover_tr`, never `on_hover_text` |
+| `src/api/src/ui/tip.rs` | hover texts through the translation layer: use `on_hover_tr`, never `on_hover_text` |
 | `src/app/soak.rs`, `python/tools/gui_soak.py` | the soak driver and the script that samples memory, threads and descriptors |
 | `src/map/measure.rs` | the distance tool: great circle distance, bearing and the two click rule (`map-measure.js`) |
 | `src/map/search.rs`, `src/map/search_card.rs` | the place search: coordinate notations read offline, area names, `/api/geocode`, the box and its list (`map-search.js`) |
@@ -70,11 +70,11 @@ SIGKILL if it is still there after 8 s. If the window does not close within
 | `src/data/track.rs` | the flown track, recorded and smoothed as `python/src/js/map.js` does |
 | `src/home/hud.rs` | compass, attitude indicator and readouts (`python/src/js/instruments.js`) |
 | `src/home/flight.rs` | the flight bar, takeoff card and mode picker (`python/src/js/app.js`) |
-| `src/ui/style.rs` | the design tokens of the six themes (light, light-orange, green, blue, pink, orange) and the type |
+| `src/api/src/ui/style.rs` | the design tokens of the six themes (light, light-orange, green, blue, pink, orange) and the type |
 | `src/setup/mod.rs` | the Setup page: head, vehicle card, the tile grid and the sub-pages (`python/src/js/setup.js`) |
 | `src/setup/params.rs` | the Parameters page: header actions, download, search, filter, defaults, edit and apply, rows that stack under 721 px (`python/src/js/setup-parameters.js`) |
 | `src/setup/params_dialogs.rs`, `src/setup/params_files.rs` | Export, Import and the reboot confirmation, and the three file formats with the import preview; Import asks for a file path because a native window has no picker without a dependency |
-| `src/ui/modal.rs` | `.modal`: the one dialog (scrim, title, close, body, `actions`); every dialog of every page, the checklist's included, goes through `modal::show` |
+| `src/api/src/ui/modal.rs` | `.modal`: the one dialog (scrim, title, close, body, `actions`); every dialog of every page, the checklist's included, goes through `modal::show` |
 | `src/term/emu.rs`, `src/term/view.rs` | the terminal: a VT parser (the `vte` crate) feeding a cell grid with colours, scroll regions, the alternate screen and 5000 lines of scrollback, drawn with keyboard, wheel, selection and paste (`python/src/js/ssh-term.js`) |
 | `src/term/session.rs`, `src/term/window.rs` | one SSH session over `/api/ssh/stream` with ordered keystrokes, and the floating terminal window (`python/src/js/term-window.js`); the SSH tab holds the same terminal |
 | `src/setup/motors.rs` | the Motors page: the airframe drawing, the motor table with output assignment, the motor test, frame size, protocol forms (`python/src/js/setup-motors.js`) |
@@ -84,14 +84,14 @@ SIGKILL if it is still there after 8 s. If the window does not close within
 | `src/setup/calibration.rs` | the Calibration page: readiness chips, the flight controller rotation, the seven calibration cards, and the wizard (stage, phase, cue, progress, position strip, the autopilot's messages, the motor warning) (`python/src/js/setup-calibration.js`) |
 | `src/setup/calib_protocol.rs` | the calibration protocol as a state machine: STATUSTEXT lines to events, events to what the wizard shows; held to `calib_protocol_cases.json`, what `calib-protocol.js` answered for 182 lines and 7 transcripts |
 | `src/setup/calib_figure.rs` | the raven in the attitude asked for: pose matrices, slerp between poses, projection, painter sort and shading, the ground, the compass ring (`python/src/js/calib-figures.js`); the mesh is `calib_raven.json`, the web figure's own, and `calib_figure_cases.json` is what the web figure drew |
-| `src/ui/chip.rs` | `Chip`: a pill with an icon or status dot (`.calib-ready-chip`, `.calib-phase`), and `Chip::tag`, the small outlined label (`IN FOLDER`, a mode name, link quality) |
+| `src/api/src/ui/chip.rs` | `Chip`: a pill with an icon or status dot (`.calib-ready-chip`, `.calib-phase`), and `Chip::tag`, the small outlined label (`IN FOLDER`, a mode name, link quality) |
 | `src/setup/radio.rs` | the Radio Control page: the transmitter and the live channel bars, the two tabs of configuration (Detect beside every channel picker, the flight mode strip, the per channel calibration table), and the calibration wizard in five steps (`python/src/js/setup-control.js`) |
 | `src/setup/radio_model.rs` | its rules: the tab of a section, PX4's and ArduPilot's mode slot arithmetic, double booked channels, and the wizard's measurement (sweep, stick detection, the rows written and the request) |
 | `src/setup/rc_transmitter.rs` | the drawn transmitter's model: the layout (`rc_transmitter.json`, the web `LAYOUT` dumped by running it), the four stick modes, pulse to position, the eased reading between samples, and the controls this station learned, kept in `~/.corvus/gui-rc-transmitter.json` |
 | `src/setup/rc_drawing.rs` | the handset drawn and moved by RC_CHANNELS, its callouts, Learn, and the inspector that assigns a channel a function (`python/src/js/rc-transmitter.js`) |
 | `src/setup/tuning.rs` | the PID Tuning page: the readiness chips, the run strip, the autotune card, one block per loop (live graphs, gains, its tune button) and the autotune settings (`python/src/js/setup-tuning.js`) |
 | `src/setup/tuning_model.rs` | its rules: when an autotune can start and what stands in its way, the reboot the module waits for, the bar, the graph buffers of 600 samples |
-| `src/ui/chart.rs` | a line chart in the look of the web's Plotly graphs: auto ranged axes, a dotted setpoint beside the response; its `tick_step`, `ticks` and `tick_label` are the one nice tick rule, the Analysis plots use them too |
+| `src/api/src/ui/chart.rs` | a line chart in the look of the web's Plotly graphs: auto ranged axes, a dotted setpoint beside the response; its `tick_step`, `ticks` and `tick_label` are the one nice tick rule, the Analysis plots use them too |
 | `src/setup/rtk.rs` | the RTK GPS page: the route the corrections take (base, this station, the aircraft's receiver) polled once a second, the survey bar and its sentence, and the settings (survey or known mark, NTRIP caster) (`python/src/js/setup-rtk.js`) |
 | `src/setup/rtk_model.rs` | its words and rules: states, the survey sentence, the rows, the request body; checked against `rtk_cases.json`, what the web helpers answered |
 | `src/setup/firmware.rs` | the Firmware page: the link and gate cards, the picker (flight stack, release, manufacturer, board, developer builds, what the board was detected as), a local file by path, Flash and Cancel, the bar and the flash log fed by the `firmware` event topic (`python/src/js/setup-firmware.js`) |
@@ -102,7 +102,7 @@ SIGKILL if it is still there after 8 s. If the window does not close within
 | `src/setup/firstsetup_model.rs` | its rules: which step shows as done, where the wizard opens, the aircraft and finish wording, the session's memory, the reboot follower, and the detector's timers and the list of controllers not to ask about again (`python/src/js/first-setup.js`); held to `firstsetup_cases.json`, what the web helpers answered |
 | `src/setup/firstsetup_watch.rs` | the detector's glue: reads `/api/first-setup` and `/api/firmware/status` when a link or a bootloader port appears and draws the "New controller detected" dialog |
 | `src/setup/firstsetup_flow.rs` | tests: the page against a stand-in backend (the step it opens on, the preset it writes, a refusal, Finish, the reboot) |
-| `src/ui/optioncards.rs` | `Corvus.ui.optionCards`: the one grid of selectable cards (`Card`: label, quiet description, optional icon or three colour swatch) |
+| `src/api/src/ui/optioncards.rs` | `Corvus.ui.optionCards`: the one grid of selectable cards (`Card`: label, quiet description, optional icon or three colour swatch) |
 | `src/setup/remoteid.rs` | the Remote ID page: the broadcast switch (off by default), what is going out right now, the advisory list of what the rules still ask for, the identity cards (aircraft, operator, flight, position, EU class) saved to the config as they are left, and the vehicle's own parameters through the shared schema form (`python/src/js/setup-remoteid.js`) |
 | `src/setup/remoteid_model.rs` | its rules: the nested patch a row saves, the serial number check as the operator types, the "not known" altitude, the suggested aircraft type, the three status rows |
 | `src/setup/sik.rs` | the Telemetry Radio page: the port card, then after Load the link report, the settings the two radios disagree on, both radios side by side with their staged edits, and Save, Reset and the advanced toggle; every session is a long POST (`python/src/js/setup-sik.js`) |
@@ -110,8 +110,8 @@ SIGKILL if it is still there after 8 s. If the window does not close within
 | `src/setup/video.rs` | the Video page: the camera list with each camera's state, the editor of one camera (draft, Save, Delete with a confirmation) and the decoder card with the ffmpeg path (`python/src/js/setup-video.js`) |
 | `src/setup/video_model.rs` | its words and rules: state text, the detail line, the draft and what blocks a save, the request bodies |
 | `src/setup/video_window.rs` | the floating camera windows (`python/src/js/video-window.js`): a frame loop on `GET /api/video/frame`, a window with the terminal windows' frame; a WebRTC camera says that the native interface cannot play it |
-| `src/ui/message.rs` | `Tone` (`Plain`, `Ok`, `Err`, `Warn`) and its two painters: `show`, the tinted line of feedback (`Corvus.ui.message`), and `boxed`, the notice box (`.params-desc`, `.params-banner`) |
-| `src/ui/formfield.rs` | `Corvus.ui.field`: the one painter of a caption (with its optional info icon), a 32.5 px box or select, and the hint under it; `Form` and the Setup form pages both draw through it |
+| `src/api/src/ui/message.rs` | `Tone` (`Plain`, `Ok`, `Err`, `Warn`) and its two painters: `show`, the tinted line of feedback (`Corvus.ui.message`), and `boxed`, the notice box (`.params-desc`, `.params-banner`) |
+| `src/api/src/ui/formfield.rs` | `Corvus.ui.field`: the one painter of a caption (with its optional info icon), a 32.5 px box or select, and the hint under it; `Form` and the Setup form pages both draw through it |
 | `src/setup/sensors.rs` | the sensor model and its rules: the write chain of a switch, the presets, the extra parameters kept in `~/.corvus/safety-extra.json` |
 | `src/setup/sensor_view.rs` | a sensor page drawn: Status card, Hardware card with the write table, the parameters you add by name |
 | `src/setup/check.rs` | Check values: read back, write again what did not stick, the result card (`python/src/js/setup-shared.js`) |
@@ -128,25 +128,25 @@ SIGKILL if it is still there after 8 s. If the window does not close within
 | `src/mission/side.rs` | the sidebar (beside the map, or stacked under it below 960 px at its natural height): name, summary, vehicle line, warnings, the item list with row dragging, the editor, the status line and the upload, save, open, read and new buttons |
 | `src/mission/profile.rs`, `src/mission/terrain.rs` | the altitude profile with draggable heights, and the elevation model sampled along the route |
 | `src/mission/dialogs.rs` | the upload, read and clear confirmations and the list of saved plans |
-| `src/ui/fabar.rs` | `.fa-btn`: an icon over a caption on a glass bar, with the active, armed, busy, blocked, disabled and next looks; the flight bar and the planner's tool bar |
+| `src/api/src/ui/fabar.rs` | `.fa-btn`: an icon over a caption on a glass bar, with the active, armed, busy, blocked, disabled and next looks; the flight bar and the planner's tool bar |
 | `src/app/responsive.rs` | the width classes of the web (`data-vw`): what folds, shrinks or stacks at 1279, 959, 900, 720 and 600 px (`python/src/css/responsive.css`) |
-| `src/ui/popover.rs` | the hint icon and the sheet it opens, the cards of the top bar: hover intent, pinning, one at a time, placement (`Corvus.ui.popover`, `infoHint`) |
+| `src/api/src/ui/popover.rs` | the hint icon and the sheet it opens, the cards of the top bar: hover intent, pinning, one at a time, placement (`Corvus.ui.popover`, `infoHint`) |
 | `src/home/topbar_cards.rs` | the cards behind GPS, Battery, Altitude, Groundspeed and Vertical speed (`python/src/js/topbar.js`) |
 | `src/home/checklist_window.rs` | the checklist's window on the Home map: ticks kept by item text, drag and fold, the warning on arming with items open (`python/src/js/checklist.js`) |
 | `src/setup/checklist.rs` | the preflight checklists: config block, Setup card and the dialog the lists are written in (`python/src/js/checklist-editor.js`) |
 | `src/setup/schema_form.rs` | the schema-driven form the backend describes (enum, number, sign, bitmask), shared by the Safety and Motors pages (`python/src/js/setup-shared.js`) |
-| `src/ui/pagekit.rs` | page furniture: header, header with its Reload and Check buttons and status, section title, tabs, tile, back button, the armed notice |
-| `src/ui/kit.rs` | the facade of the controls, so `kit::Button` and the rest stay valid; each lives in its own file below |
-| `src/ui/button.rs`, `src/ui/select.rs`, `src/ui/toggle.rs`, `src/ui/text.rs` | `Button`, `Variant`, `icon_btn` (`.btn`, `.icon-btn`); `Choice` and `select` (`.field-select`); `checkbox`, `check_box`, `switch`; `wrapped`, `wrapped_weight`, `dot` |
-| `src/ui/field.rs` | `TextField`: the one text box, on a well, glass or floating surface, with an optional icon; `committed`, a well that keeps what is typed until Enter or blur; `outline`, the red or changed outline over a field |
-| `src/ui/filepicker.rs` | the system file dialog (`rfd`): pick a file (with an extension filter), pick a folder, save a file; the start folder is taken from the value held |
-| `src/ui/pathfield.rs` | the path field (`form::path`): read only box in mono with Choose, Choose file, Choose folder and Clear buttons; modes file, folder, either and save; a backend field turns into a text box for a remote `--server` |
-| `src/ui/progress.rs` | `Bar`: the track and fill of every progress bar, determinate or sweeping, with the optional border |
-| `src/ui/listrow.rs` | `Mark` and `paint`: the hover and selected background of a list row |
-| `src/ui/slider.rs`, `src/ui/pills.rs` | the stepped slider (`.ui-slider`) and the icon pills of the Settings page (`.settings-tab`) |
-| `src/ui/menu.rs` | `Menu`: every list and popup menu (select choices, flight modes, the layers and camera lists, the context menu, the power menu, the search answers, elevation models), after `.ui-menu`, `.option-item` and `Corvus.ui.menu`; `Look` says which kind, `Anchor` where it opens, `Item` what is in it |
-| `src/ui/card.rs` | every bordered box: `card::paint` / `reserve` / `fill` with a `Look` (Panel, Page, Inset, Note, Raised, Quiet, Well, Console, Chosen, Tone, Custom), and `card::window`, the surface of a floating window |
-| `src/ui/segmented.rs` | the segmented switch (`.params-filter`, `.link-kinds`) |
+| `src/api/src/ui/pagekit.rs` | page furniture: header, header with its Reload and Check buttons and status, section title, tabs, tile, back button, the armed notice |
+| `src/api/src/ui/kit.rs` | the facade of the controls, so `kit::Button` and the rest stay valid; each lives in its own file below |
+| `src/api/src/ui/button.rs`, `src/api/src/ui/select.rs`, `src/api/src/ui/toggle.rs`, `src/api/src/ui/text.rs` | `Button`, `Variant`, `icon_btn` (`.btn`, `.icon-btn`); `Choice` and `select` (`.field-select`); `checkbox`, `check_box`, `switch`; `wrapped`, `wrapped_weight`, `dot` |
+| `src/api/src/ui/field.rs` | `TextField`: the one text box, on a well, glass or floating surface, with an optional icon; `committed`, a well that keeps what is typed until Enter or blur; `outline`, the red or changed outline over a field |
+| `src/api/src/ui/filepicker.rs` | the system file dialog (`rfd`): pick a file (with an extension filter), pick a folder, save a file; the start folder is taken from the value held |
+| `src/api/src/ui/pathfield.rs` | the path field (`form::path`): read only box in mono with Choose, Choose file, Choose folder and Clear buttons; modes file, folder, either and save; a backend field turns into a text box for a remote `--server` |
+| `src/api/src/ui/progress.rs` | `Bar`: the track and fill of every progress bar, determinate or sweeping, with the optional border |
+| `src/api/src/ui/listrow.rs` | `Mark` and `paint`: the hover and selected background of a list row |
+| `src/api/src/ui/slider.rs`, `src/api/src/ui/pills.rs` | the stepped slider (`.ui-slider`) and the icon pills of the Settings page (`.settings-tab`) |
+| `src/api/src/ui/menu.rs` | `Menu`: every list and popup menu (select choices, flight modes, the layers and camera lists, the context menu, the power menu, the search answers, elevation models), after `.ui-menu`, `.option-item` and `Corvus.ui.menu`; `Look` says which kind, `Anchor` where it opens, `Item` what is in it |
+| `src/api/src/ui/card.rs` | every bordered box: `card::paint` / `reserve` / `fill` with a `Look` (Panel, Page, Inset, Note, Raised, Quiet, Well, Console, Chosen, Tone, Custom), and `card::window`, the surface of a floating window |
+| `src/api/src/ui/segmented.rs` | the segmented switch (`.params-filter`, `.link-kinds`) |
 | `src/settings/mod.rs`, `src/settings/model.rs` | the Settings page: the pills, writes through `POST /api/config` that are in force at once and taken back when the backend refuses (`strict`), the `Effects` the window reads back (theme, size, units, Mission entry, distance tool, side panel tabs, base layer), and the rules of every picker with the web's expected text in tests (`renderSettingsPage` of `python/src/js/sidenav.js`) |
 | `src/settings/tabs.rs` | the Interface, Layout, Flight view and Controls pills: language, theme, size, units and the switch cards, with the web's hint texts |
 | `src/settings/map_cards.rs` | the Map pill: map service and layer, the API keys dialog, the operator's elevation models (import by file or folder path, rename, remove), track, tools and animation |
@@ -160,22 +160,24 @@ SIGKILL if it is still there after 8 s. If the window does not close within
 | `src/analysis/trackmap.rs` | the ground track over imagery: the inverse of the backend's projection, which layer opens, the fit, the map on the backend's tile proxy with the track as casing and core, the key, the zoom buttons and the ctrl + scroll hint (`trackMapView` of `python/src/js/analysis.js`); held to values the web code answered |
 | `src/analysis/plot.rs` | the plotting module that stands in for Plotly: linear axes with nice ticks, lines, markers and steps, flight mode bands, threshold line, legend, hover read out, drag to zoom and double click to reset, long traces reduced per pixel column |
 | `src/data/clock.rs` | calendar dates from Unix times, UTC and local |
-| `src/ui/form.rs` | the form vocabulary of a page that is a column of cards: the `Form` cursor over `formfield`, `message`, `optioncards`, `slider` and `pills`, with section, card, switch field, rows, actions |
-| `src/plugins/mod.rs` | the `Plugin` trait, the `Host` a plugin talks through, the `Registry` (starts the plugins once `GET /api/plugins` has answered, ticks them every frame, keeps their options and what they ask of the window) (`python/src/js/plugins.js`, `python/corvus/plugin_registry.py`) |
-| `src/plugins/options.rs` | the options a plugin declares (toggle, select, text, number), cleaned, coerced and saved under `_options` as the web does |
-| `src/plugins/shapes.rs`, `src/plugins/layer.rs` | `api.map`: lines, areas, circles, text, buttons and icon markers in longitude and latitude, painted on the flat map (with the pointer on markers and buttons, and `pick_point`) and on the 3D map (`map-overlays.js`, `map-icons.js`, `.map-overlay-*` of `map.css`) |
+| `src/api/src/ui/form.rs` | the form vocabulary of a page that is a column of cards: the `Form` cursor over `formfield`, `message`, `optioncards`, `slider` and `pills`, with section, card, switch field, rows, actions |
+| `src/api/src/plugin/mod.rs` | the `Plugin` trait, the `Host` a plugin talks through, `Info`, `MapEvent`, `McpTool` and the `Outbox`: the stable surface a plugin crate may use (`python/src/js/plugins.js`) |
+| `src/plugins/mod.rs`, `src/plugins/ssh_setup.rs` | the `Registry` (starts the plugins once `GET /api/plugins` has answered, ticks them every frame, keeps their options and what they ask of the window; `python/corvus/plugin_registry.py`) and `sshSetup`, the login dialog for a saved SSH connection this computer lacks (`askSSHConnection` of `python/src/js/panel.js`) |
+| `build.rs` | makes `plugin_list.rs`, the list the registry is built from, out of the folders of `src/plugins`; a folder without its dependency line in `Cargo.toml` fails the build |
+| `src/api/src/plugin/options.rs` | the options a plugin declares (toggle, select, text, number), cleaned, coerced and saved under `_options` as the web does |
+| `src/api/src/plugin/shapes.rs`, `src/plugins/layer.rs`, `src/map3d/overlays.rs` | `api.map`: lines, areas, circles, text, buttons and icon markers in longitude and latitude, painted on the flat map (with the pointer on markers and buttons, and `pick_point`); on the 3D map lines, outlines and areas are meshes draped on the terrain and depth tested, text, markers and buttons screen elements hidden by a terrain ray (`map-overlays.js`, `map-icons.js`, `.map-overlay-*` of `map.css`) |
+| `src/api/src/plugin/ssh.rs` | what both SSH plugins share: `Mode`, the new connection form, `ssh_needs`, `reply_of` |
 | `src/plugins/view.rs` | the cards under PLUGINS, the opened plugin, a plugin's own tab and the options dialog of its gear in Settings (`.plugin-*` of `panel.css`) |
-| `src/plugins/ssh_setup.rs` | `sshSetup`: the login dialog for a saved SSH connection this computer lacks (`askSSHConnection` of `python/src/js/panel.js`) |
-| `src/plugins/vibration/` | Vibration Monitor: PX4's vibration metrics on a live chart, the 10 Hz stream while it is open, the one-shot warning (`python/plugins/vibration`) |
-| `src/plugins/ssh_launcher/` | SSH Launcher: the shelf, the editor, terminal and background runs, restart, stop, the live dot (`python/plugins/ssh-launcher`); `model.rs` holds its rules, held to the web helpers |
+| `src/plugins/vibration/` (crate `corvus_plugin_vibration`) | Vibration Monitor: PX4's vibration metrics on a live chart, the 10 Hz stream while it is open, the one-shot warning (`python/plugins/vibration`) |
+| `src/plugins/ssh-launcher/` | SSH Launcher: the shelf, the editor, terminal and background runs, restart, stop, the live dot (`python/plugins/ssh-launcher`); `model.rs` holds its rules, held to `model_cases.json` |
 | `src/plugins/schwalby/` | Schwalby: the shelf of one-press buttons that run here (`/api/local/*`) or over SSH, with edit mode and drag reordering, colours, the companion computer's ping strip with its popup and power menu, and the AI client's half over MCP (`python/plugins/schwalby`); `model.rs` holds the rules, held to `model_cases.json`, what the web functions answered; `companion.rs` the ping loop, the popup's state and the power calls; `mcp.rs` the tools; `view.rs` everything drawn; its language files are in `lang/` |
-| `src/plugins/map_entities/` | Map Entities: gates, trees and symbols with an area on the Home map, and the watch over the aircraft's track (`python/plugins/map-entities`); `model.rs` holds the geometry and the rules, held to values dumped from the web code |
+| `src/plugins/map-entities/` | Map Entities: gates, trees and symbols with an area on the Home map, and the watch over the aircraft's track (`python/plugins/map-entities`); `model.rs` holds the geometry and the rules, held to `model_cases.json`, what the web functions answered (`src/plugins/dump_cases.js` writes it for this, SSH Launcher and Vibration Monitor; `--check` fails when it is stale) |
 | `src/notify/mod.rs` | the notification board, its read and dismiss rules, the command dedupe and the toasts (`python/src/js/topbar.js`) |
 | `src/notify/overlay.rs` | the NOTIFICATIONS pill, the board and the toast stack |
-| `src/i18n/mod.rs`, `src/i18n/table.rs`, `src/i18n/files.rs` | the interface language (see "Languages" below): `tr`, `tr_fmt`, the table with `{name}` patterns, the language files compiled in and the operator's folder |
+| `src/api/src/i18n/mod.rs`, `src/api/src/i18n/table.rs`, `src/api/src/i18n/files.rs` | the interface language (see "Languages" below): `tr`, `tr_fmt`, the table with `{name}` patterns, the language files compiled in and the operator's folder |
 | `src/lang/*.json` | the four languages (en, de, fr, dl), the web interface's own files; `src/lang/native/` holds the few texts only this interface builds (a count of areas, the board's header and a few vehicle messages), merged under the language like a plugin's file, so the web's files stay as they are; the Map Entities and Schwalby plugins' files sit in their own `lang/` folders |
-| `src/ui/frost.rs` | the frosted glass under every `.glass` surface |
-| `src/ui/fonts.rs`, `src/ui/icons.rs`, `build.rs` | Inter, JetBrains Mono and the Lucide icons, from the web's own files |
+| `src/api/src/ui/frost.rs` | the frosted glass under every `.glass` surface |
+| `src/api/src/ui/fonts.rs`, `src/api/src/ui/icons.rs`, `src/api/build.rs` | Inter, JetBrains Mono and the Lucide icons, from the web's own files |
 
 ## Languages
 
@@ -227,9 +229,13 @@ file.
 
 ## Plugins
 
-A plugin is a Rust type behind the `Plugin` trait (`src/plugins/mod.rs`),
-compiled into the program and listed in `plugins::builtin()`. There is no
-loader and no JavaScript: a plugin works the same on every platform the program
+A plugin is a crate of its own (`src/plugins/<id>/`, the folder named as the
+web plugin's) with a Rust type behind the `Plugin` trait of `corvus_api`. It
+depends on `corvus_api` and on nothing inside the program, so it cannot reach
+into `app`, `map` or `panel`; what it may use is the API: the widgets of
+`corvus_api::ui`, `i18n`, `net`, `data` and `plugin` (the trait, `Host`,
+options, shapes). The crates are compiled into the program and listed by
+`build.rs`. There is no loader and no JavaScript: a plugin works the same on every platform the program
 is built for, Android included. Third party JavaScript plugins that the web
 interface loads from `~/.corvus/plugins` do not run here; Settings lists them
 as "installed, not loaded".
@@ -271,10 +277,18 @@ impl Plugin for Hello {
 }
 ```
 
-Then add `pub mod hello;` and `Box::new(hello::Hello::default())` to
-`plugins::builtin()`. The id is the folder name of the plugin's settings, so it
-must be a safe name (`[A-Za-z0-9][A-Za-z0-9_.-]*`); `order` places the card
-(lower is earlier, ties by name). What the trait offers, all optional but
+That type goes in `src/plugins/hello/src/lib.rs` of a crate whose
+`Cargo.toml` depends on `corvus_api` (copy one of the four), with a
+`pub fn plugin() -> Box<dyn Plugin>` that makes one and a `pub const LANG:
+&[(&str, &str)]` of its `lang/<code>.json` files (`include_str!`). Add the crate
+to `members` and `default-members` of the root `Cargo.toml` and one dependency
+line `corvus_plugin_hello = { path = "src/plugins/hello" }` to its
+`[dependencies]`: `build.rs` finds the folder, checks the line, and the
+registry registers the language files and makes the plugin. The id is the
+folder name of the plugin's settings, so it must be a safe name
+(`[A-Za-z0-9][A-Za-z0-9_.-]*`); `order` places the card (lower is earlier, ties
+by name). Test its `Info` against `python/plugins/<id>/plugin.json` as the four
+do. What the trait offers, all optional but
 `info` and `show`:
 
 | | |
@@ -298,7 +312,7 @@ thread of their own and picked up by polling the returned `Reply`, `h.notify`
 `h.console`, `h.terminal` (a terminal window on a saved SSH session),
 `h.fit` (frame points on the Home map) and `h.pick_point`.
 
-UI is built from `src/ui/` like any page: `form::Form` is a cursor and
+UI is built from `src/api/src/ui/` like any page: `form::Form` is a cursor and
 `form::field`, `form::switch_field`, `kit::select`, `kit::Button` and
 `field::committed` paint one block each. A plugin does not paint a box or a list
 of its own. Shapes are painted on both maps; only the flat map answers the
@@ -332,8 +346,8 @@ share one config. Differences that follow from a native window:
 - **Plugins.** The Plugins pill lists the compiled-in plugins with a gear for their options (see Plugins below).
 - **Files.** Nobody types a path. Every file or folder on this computer is
   chosen with the system file dialog (`rfd`: Cocoa, Windows, and the desktop
-  portal on Linux, so no GTK is linked); `src/ui/filepicker.rs` wraps it and
-  `src/ui/pathfield.rs` is the field that offers it (`form::path`): a read
+  portal on Linux, so no GTK is linked); `src/api/src/ui/filepicker.rs` wraps it and
+  `src/api/src/ui/pathfield.rs` is the field that offers it (`form::path`): a read
   only box in the style of a text field showing the path in mono, cut in the
   middle when long, with Choose (and Clear where the setting is optional), or
   Choose file and Choose folder where either is valid. The dialog opens in the
@@ -459,10 +473,10 @@ on the CPU and stay on the GPU; a frame is uniforms and draw calls.
 
 ## The UI base
 
-Everything a page draws that is not its own picture comes from `src/ui/`, so
+Everything a page draws that is not its own picture comes from `src/api/src/ui/`, so
 one change reaches every page. A page does not call `rect_filled` or
 `rect_stroke` for a card, a list row, a field, a message, a bar or a switch;
-if the control it needs is missing, it is added to `src/ui/` first, in the
+if the control it needs is missing, it is added to `src/api/src/ui/` first, in the
 file that names it. Drawings (the airframe, the plots, the map, the handset)
 are the pages' own.
 
@@ -508,7 +522,7 @@ The glass panels are frosted as the CSS frosts them (`backdrop-filter:
 blur(24px) saturate(180%)`, then 60 % white, 55 % on the map rail): a paint
 callback on the OpenGL renderer copies what is already drawn under the
 panel, blurs and saturates it inside the panel's rounded corners
-(`src/ui/frost.rs`), and the fill paints over it. The copy is taken before the
+(`src/api/src/ui/frost.rs`), and the fill paints over it. The copy is taken before the
 panel's shadow, because a browser draws a box shadow outside the box only.
 
 The theme is the config's `theme.name`, as in the web interface, and is read
@@ -537,8 +551,9 @@ The interface is used in the field, so it must not crash, hang or grow.
   toast memories forgotten after their repeat window), the translation cache
   and miss set, tracks (20000 points), the HTTP client (16 KB per head line,
   200 headers, 256 MB per body, 16 MB per SSE line or event, write timeouts),
-  the 3D map (at most 1000 GPU textures and 4000 meshes, the least recently
-  drawn go first), `data::intern` (256 texts). A test holds each bound.
+  the 3D map (at most 480 GPU textures and 2400 meshes, the least recently
+  drawn go first, and 160 MB of decoded imagery and 48 MB of decoded elevation
+  on the CPU side, counted in bytes so a source with larger tiles is held too), `data::intern` (256 texts). A test holds each bound.
 - **Soak.** `python/tools/gui_soak.py` starts a sandboxed backend with a
   simulated PX4 (never the operator's own Corvus), starts the interface with
   `CORVUS_GUI_SOAK=1` and writes a CSV row every 10 s with the resident memory,
@@ -551,7 +566,13 @@ The interface is used in the field, so it must not crash, hang or grow.
 
   The driver cycles twelve steps of 4 s: the map panned and zoomed, the 3D map
   opened and moved, every page, one setup tile at a time, a Settings tab, the
-  Mission page, the language switched.
+  Mission page, the language switched. `--mode 3d` stays in the 3D map and
+  jumps between eight places (Alps, Munich, San Francisco, Everest, Tokyo,
+  Madrid, ...) every step, the worst case for the view's memory; `--max-mb N`
+  makes the script exit with 2 when the interface's footprint passes N. On the
+  development machine a 7 minute 3D run held 0.9 GB (1.2 GB before the byte
+  budgets) with a flat slope; `the_worst_case_the_view_can_hold_stays_under_a_gigabyte`
+  holds the arithmetic.
 - **Geofence round trip.** `python/tools/geofence_roundtrip.py` drives the
   fence endpoints against three sandboxed simulators (one accepting, one
   refusing, one that stops answering after two corners, `CORVUS_SIM_FENCE`).
@@ -565,10 +586,16 @@ keeps the default. rustup installs what is pinned on first use.
 ## Checks
 
 ```bash
-cargo fmt --check
+cargo fmt --all --check
 cargo clippy --all-targets -- -D warnings
 cargo test
 ```
+
+The root `Cargo.toml` is also a cargo workspace over `src/api` and the plugin
+crates (`default-members` lists them all, so the three commands above cover
+every crate, with one lock file and one target folder). `src/link` is left out
+on purpose: it has its own toolchain file (stable), its own lock and the
+maturin build, so the two pinned toolchains never meet.
 
 Every rule a block of the bar follows has a test with the web interface's
 expected text, including `toFixed` and `Math.round` rounding.
