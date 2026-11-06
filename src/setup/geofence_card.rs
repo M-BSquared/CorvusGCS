@@ -450,7 +450,11 @@ impl GeofenceCard {
                 }
                 (Kind::Upload(_), Err(e)) => {
                     self.busy = false;
-                    let msg = if e.is_empty() { "Upload failed".to_string() } else { e };
+                    let msg = if e.is_empty() {
+                        "Upload failed".to_string()
+                    } else {
+                        geofence::explain(&e, false)
+                    };
                     self.say("err", msg.clone());
                     self.errors.push(format!("Geofence upload failed: {msg}"));
                 }
@@ -473,7 +477,7 @@ impl GeofenceCard {
                         if e.is_empty() {
                             "Could not remove the fence".to_string()
                         } else {
-                            e
+                            geofence::explain(&e, true)
                         },
                     );
                 }

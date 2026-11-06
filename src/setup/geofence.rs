@@ -215,6 +215,38 @@ pub fn problem_of(polygon: &[Corner], max_vertices: usize) -> String {
     String::new()
 }
 
+/// The backend answers a failed transfer with the bare result of the
+/// protocol ("Geofence upload failed: ACK_TIMEOUT"). This says what happened
+/// to the operator's fence and what to do, in words a translation can carry.
+/// Anything it does not know comes back as it was.
+pub fn explain(message: &str, clearing: bool) -> String {
+    let has = |w: &str| message.contains(w);
+    if has("DISCONNECTED") {
+        "There is no link to the vehicle. Nothing was changed on it.".into()
+    } else if has("ACK_TIMEOUT") {
+        if clearing {
+            "The vehicle stopped answering, so its fence was not removed. Check the link and try again.".into()
+        } else {
+            "The vehicle stopped answering, so its fence was not changed. Check the link and upload again.".into()
+        }
+    } else if has("INTERRUPTED") || has("CANCELLED") {
+        "The transfer was interrupted. The vehicle's fence was not changed. Try again.".into()
+    } else if [
+        "DENIED",
+        "FAILED",
+        "UNSUPPORTED",
+        "TEMPORARILY_REJECTED",
+        "NOT_IN_CONTROL",
+    ]
+    .iter()
+    .any(|w| has(w))
+    {
+        "The vehicle refused the area. Its fence was not changed.".into()
+    } else {
+        message.to_string()
+    }
+}
+
 /// `formatArea`.
 pub fn format_area(m2: f64) -> String {
     if m2 >= 1e6 {
@@ -313,6 +345,17 @@ mod tests {
         let bow = [[0.0, 0.0], [1.0, 1.0], [1.0, 0.0], [0.0, 1.0]];
         assert_eq!(problem_of(&bow, 64), "The edges of the area cross each other.");
         assert_eq!(problem_of(&SQUARE, 64), "");
+    }
+
+    #[test]
+    fn a_failed_transfer_is_said_in_words_and_an_unknown_answer_is_kept() {
+        // what the backend answers: python/corvus/mavlink_common.py MAV_RESULT_TEXT
+        assert!(explain("Geofence upload failed: ACK_TIMEOUT", false).starts_with("The vehicle stopped answering"));
+        assert!(explain("Geofence clear failed: ACK_TIMEOUT", true).contains("not removed"));
+        assert!(explain("Geofence upload failed: DISCONNECTED", false).starts_with("There is no link"));
+        assert!(explain("Geofence upload failed: FAILED", false).starts_with("The vehicle refused"));
+        assert!(explain("Geofence upload failed: INTERRUPTED", false).starts_with("The transfer was interrupted"));
+        assert_eq!(explain("no area has been drawn", false), "no area has been drawn");
     }
 
     #[test]

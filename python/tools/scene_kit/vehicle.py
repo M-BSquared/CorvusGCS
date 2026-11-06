@@ -250,6 +250,7 @@ class SimVehicle:
         self._upload_type = 0
         # The geofence the GCS uploaded, as (lon, lat) corners.
         self.fence: list[tuple[float, float]] = []
+        self._fence_pending: list[tuple[float, float]] = []
         # Every uploaded item as it arrived, so a download gives it back
         # unchanged, and the item number of each point the flown path visits.
         self._mission_items: list[tuple[Any, ...]] = []
@@ -854,9 +855,21 @@ class SimVehicle:
         # every request and the ACK say so, as PX4 and ArduPilot do.
         self._upload_type = int(getattr(msg, "mission_type", 0) or 0)
         if self._upload_type:
-            self.fence = []
+            # What the GCS gets is the real thing: the old fence stays until a
+            # transfer is accepted whole. CORVUS_SIM_FENCE=refuse answers the
+            # transfer with a refusal, CORVUS_SIM_FENCE=stall:N stops answering
+            # after N corners, as a dropped link does.
+            mode = os.environ.get("CORVUS_SIM_FENCE", "")
+            self._fence_pending = []
+            if mode == "refuse":
+                self._send(self._conn.mav.mission_ack_send,
+                           msg.get_srcSystem(), msg.get_srcComponent(),
+                           mavlink2.MAV_MISSION_NO_SPACE, self._upload_type)
+                self._on_event("fence refused")
+                return
             self._mission_expect = int(msg.count)
             if self._mission_expect <= 0:
+                self.fence = []
                 self._send(self._conn.mav.mission_ack_send,
                            msg.get_srcSystem(), msg.get_srcComponent(),
                            mavlink2.MAV_MISSION_ACCEPTED, self._upload_type)
@@ -881,7 +894,11 @@ class SimVehicle:
         seq = int(msg.seq)
         kind = int(getattr(msg, "mission_type", 0) or 0)
         if kind:
-            self.fence.append((msg.y / 1e7, msg.x / 1e7))
+            self._fence_pending.append((msg.y / 1e7, msg.x / 1e7))
+            mode = os.environ.get("CORVUS_SIM_FENCE", "")
+            if mode.startswith("stall:") and len(self._fence_pending) >= int(mode.split(":", 1)[1]):
+                self._on_event(f"fence transfer stalled after {len(self._fence_pending)} corners")
+                return
             if seq + 1 < self._mission_expect:
                 self._send(self._conn.mav.mission_request_int_send,
                            msg.get_srcSystem(), msg.get_srcComponent(), seq + 1, kind)
@@ -889,6 +906,7 @@ class SimVehicle:
             self._send(self._conn.mav.mission_ack_send,
                        msg.get_srcSystem(), msg.get_srcComponent(),
                        mavlink2.MAV_MISSION_ACCEPTED, kind)
+            self.fence = self._fence_pending
             self._on_event(f"fence uploaded ({len(self.fence)} corners)")
             return
         self._mission.append((msg.x / 1e7, msg.y / 1e7, float(msg.z)))

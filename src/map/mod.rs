@@ -368,6 +368,7 @@ impl Map {
         let rect = ui.max_rect();
         let (_, max_zoom) = describe(&self.sources, &self.source);
         self.ensure_three(ui.ctx());
+        let shapes = self.three_shapes();
         let follow = self.follow;
         let Some(t) = self.three.as_mut() else {
             return;
@@ -396,7 +397,7 @@ impl Map {
                 vehicle,
                 heading,
                 height,
-                shapes: self.plugins.shapes(),
+                shapes: &shapes,
                 vehicle_color,
                 track_color,
                 past_colors,
@@ -688,8 +689,7 @@ impl Map {
             self.show_3d(ui, state, vehicle, home, heading);
             return;
         }
-        let fence = self.env.get();
-        let outline = (fence.show_on_map && fence.polygon.len() >= 3).then_some(fence.polygon);
+        let outline = fence_outline(&self.env.get());
         let double_click_zoom = !overlay.as_ref().is_some_and(|o| o.takes_double_click());
         let layers = Layers {
             planner: self.planner,
@@ -745,6 +745,31 @@ impl Map {
         }
     }
 
+    /// What the 3D map draws on the ground besides the track: the geofence
+    /// when the Home map is asked to show it (the web draws the same overlay
+    /// under the tilted camera), then what the plugins draw.
+    fn three_shapes(&self) -> Vec<crate::plugins::shapes::Shape> {
+        let mut out = Vec::new();
+        if let Some(poly) = fence_outline(&self.env.get()) {
+            out.push(crate::plugins::shapes::Shape {
+                owner: "geofence",
+                key: "corvus-geofence".into(),
+                kind: crate::plugins::shapes::Kind::Polygon {
+                    pts: poly,
+                    fill_opacity: 0.06,
+                    outline: 3.0,
+                    dashed: true,
+                },
+                color: style::warning(),
+                width: 3.0,
+                opacity: 1.0,
+                visible: true,
+            });
+        }
+        out.extend(self.plugins.shapes().iter().cloned());
+        out
+    }
+
     /// The tile credit, bottom left, folded into its disc until clicked. With
     /// terrain on, the elevation model's credit joins it in one line, as
     /// MapLibre joins the credits of every source.
@@ -763,6 +788,11 @@ impl Map {
         self.save_tracks();
         self.tiles = None;
     }
+}
+
+/// The geofence corners, when the map is to show them (`drawOnHome`).
+pub(crate) fn fence_outline(fence: &crate::setup::geofence::Fence) -> Option<Vec<[f64; 2]>> {
+    (fence.show_on_map && fence.polygon.len() >= 3).then(|| fence.polygon.clone())
 }
 
 /// The credit line: the imagery's and, when given, the elevation model's.
@@ -1359,5 +1389,28 @@ mod tests {
         assert_eq!(m.track.current.len(), 1);
         m.update(&json!({"connected": false, "position": [11.7, 48.2]}));
         assert_eq!(m.track.current.len(), 1, "a disconnected state draws nothing");
+    }
+
+    #[test]
+    fn the_fence_is_drawn_only_when_asked_for_and_closed_enough() {
+        use crate::setup::geofence::Fence;
+        let three = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]];
+        let f = |polygon: &[[f64; 2]], show: bool| Fence {
+            polygon: polygon.to_vec(),
+            show_on_map: show,
+            ..Fence::default()
+        };
+        assert_eq!(fence_outline(&f(&three, true)).map(|p| p.len()), Some(3));
+        assert!(fence_outline(&f(&three, false)).is_none());
+        assert!(fence_outline(&f(&three[..2], true)).is_none());
+    }
+
+    #[test]
+    fn the_credit_line_joins_the_elevation_credit_once() {
+        assert_eq!(credit_text("Esri", None), "Esri");
+        assert_eq!(credit_text("Esri", Some("")), "Esri");
+        assert_eq!(credit_text("Esri", Some("Mapzen")), "Esri | Mapzen");
+        assert_eq!(credit_text("Esri", Some("Esri")), "Esri");
+        assert_eq!(credit_text("", Some("Mapzen")), "Mapzen");
     }
 }
