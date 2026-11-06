@@ -4,6 +4,7 @@
     "Datalink regained": "Datnverbindung wieder do",
     "Preflight checks passed": "Vorflugprüfunge bestandn",
     "RTK base link degraded, float fix": "RTK-Basisverbindung schlechter, Float-Lösung",
+    "No map saved for this area. It is not available offline.": "Koa Kartn für des Gebiet gspeichert. Offline is des ned do.",
     "Takeoff altitude reached": "Abhebehöhe erreicht",
     "Takeoff detected, mode {a}": "Abheben erkannt, Modus {a}",
     "The 3D map cannot draw on this OpenGL: {a}": "De 3D-Kartn konn mit dem OpenGL ned zeichnen: {a}",

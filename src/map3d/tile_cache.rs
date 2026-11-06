@@ -145,6 +145,17 @@ impl<T: Send + Sync + 'static> TileCache<T> {
         }
     }
 
+    /// How many tiles the backend could not give, within the retry time.
+    pub fn failures(&self) -> usize {
+        let Ok(g) = self.shared.inner.lock() else {
+            return 0;
+        };
+        g.slots
+            .values()
+            .filter(|s| matches!(s, Slot::Failed(at) if at.elapsed() < self.shared.retry))
+            .count()
+    }
+
     /// Drops every tile, for a changed source.
     pub fn clear(&self) {
         if let Ok(mut g) = self.shared.inner.lock() {

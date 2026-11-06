@@ -18,6 +18,13 @@ pub const THREE_D_PITCH: f64 = 60.0;
 pub const MAX_PITCH: f64 = 60.0;
 /// The lowest zoom the view goes out to (the web map's whole world view).
 pub const MIN_ZOOM: f64 = 3.0;
+/// Web mercator ends here; the poles are not on the map.
+pub const MAX_LAT: f64 = 85.0511;
+
+/// A longitude brought into -180 to 180.
+pub fn wrap_lng(lng: f64) -> f64 {
+    (lng + 180.0).rem_euclid(360.0) - 180.0
+}
 
 pub type V3 = [f64; 3];
 
@@ -153,7 +160,11 @@ impl Camera {
         let (cx, cy) = mercator(self.lng, self.lat);
         let (x, y) = mercator(lng, lat);
         let k = self.scale();
-        [(x - cx) * k, (y - cy) * k, height - self.ground]
+        // The short way round: a place just across the antimeridian is near.
+        let world = 2.0 * std::f64::consts::PI * R;
+        let dx = x - cx;
+        let dx = dx - (dx / world).round() * world;
+        [dx * k, (y - cy) * k, height - self.ground]
     }
 
     /// Longitude and latitude of metres east and north of the centre.
@@ -182,11 +193,8 @@ impl Camera {
         if c.iter().all(|p| p[2] < near) {
             return false;
         }
-        // A box that reaches behind the camera has no honest side test: it
-        // may cross the view between a corner in front and one behind.
-        if c.iter().any(|p| p[2] < near) {
-            return true;
-        }
+        // Each side of the view is a half space, so the test holds for corners
+        // behind the camera too.
         !(c.iter().all(|p| p[0] < -p[2] * hw)
             || c.iter().all(|p| p[0] > p[2] * hw)
             || c.iter().all(|p| p[1] < -p[2] * hh)
@@ -233,10 +241,14 @@ impl Camera {
     /// pixel `to`: a drag on the map.
     pub fn pan(&mut self, from: (f64, f64), to: (f64, f64)) {
         if let (Some(a), Some(b)) = (self.ground_at(from.0, from.1, 0.0), self.ground_at(to.0, to.1, 0.0)) {
-            let (lng, lat) = self.geo_of(a.0 - b.0, a.1 - b.1);
-            self.lng = lng;
-            self.lat = lat;
+            self.set_centre(self.geo_of(a.0 - b.0, a.1 - b.1));
         }
+    }
+
+    /// Moves the centre, wrapping the longitude and keeping to the map.
+    pub fn set_centre(&mut self, (lng, lat): (f64, f64)) {
+        self.lng = wrap_lng(lng);
+        self.lat = lat.clamp(-MAX_LAT, MAX_LAT);
     }
 
     /// Sets the zoom so the ground under pixel `(x, y)` stays under it: the
@@ -245,9 +257,7 @@ impl Camera {
         let before = self.ground_at(x, y, 0.0);
         self.zoom = zoom;
         if let (Some(a), Some(b)) = (before, self.ground_at(x, y, 0.0)) {
-            let (lng, lat) = self.geo_of(a.0 - b.0, a.1 - b.1);
-            self.lng = lng;
-            self.lat = lat;
+            self.set_centre(self.geo_of(a.0 - b.0, a.1 - b.1));
         }
     }
 
@@ -406,6 +416,33 @@ mod tests {
         assert!(!c.sees(&around(0.0, 1e6, 100.0)), "far beyond the top of the view");
         let down = cam(0.0, 0.0);
         assert!(!down.sees(&around(1e5, 0.0, 100.0)));
+    }
+
+    #[test]
+    fn a_drag_across_the_antimeridian_wraps_the_longitude() {
+        let mut c = cam(0.0, 0.0);
+        c.lng = 179.99;
+        c.zoom = 8.0;
+        c.pan((600.0, 300.0), (200.0, 300.0));
+        assert!(c.lng < 0.0 && c.lng > -180.0, "wrapped to the west side: {}", c.lng);
+        assert_eq!(wrap_lng(190.0), -170.0);
+        assert_eq!(wrap_lng(-190.0), 170.0);
+        assert_eq!(wrap_lng(180.0), -180.0);
+        let near = c.local_of(179.995, c.lat, 0.0);
+        assert!(
+            near[0].abs() < 400_000.0,
+            "the place across the line is close: {}",
+            near[0]
+        );
+    }
+
+    #[test]
+    fn the_centre_stays_on_the_map() {
+        let mut c = cam(0.0, 0.0);
+        c.set_centre((10.0, 89.9));
+        assert_eq!(c.lat, MAX_LAT);
+        c.set_centre((10.0, -120.0));
+        assert_eq!(c.lat, -MAX_LAT);
     }
 
     #[test]

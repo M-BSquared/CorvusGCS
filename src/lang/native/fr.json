@@ -4,6 +4,7 @@
     "Datalink regained": "Liaison de données rétablie",
     "Preflight checks passed": "Contrôles prévol réussis",
     "RTK base link degraded, float fix": "Liaison de la base RTK dégradée, solution flottante",
+    "No map saved for this area. It is not available offline.": "Aucune carte enregistrée pour cette zone. Elle n'est pas disponible hors ligne.",
     "Takeoff altitude reached": "Altitude de décollage atteinte",
     "Takeoff detected, mode {a}": "Décollage détecté, mode {a}",
     "The 3D map cannot draw on this OpenGL: {a}": "La carte 3D ne peut pas s'afficher avec cet OpenGL : {a}",

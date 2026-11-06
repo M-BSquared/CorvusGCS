@@ -86,6 +86,17 @@ pub fn failure_text(why: &str) -> String {
     crate::i18n::tr_fmt(FAILURE_TEXT, &[("a", why)])
 }
 
+impl Leaf {
+    /// The column, counted from the main copy of the world's west edge.
+    fn x_world(&self) -> f64 {
+        f64::from(self.x) + f64::from(self.wrap) * 2f64.powi(i32::from(self.z))
+    }
+}
+
+/// How long the ground waits for imagery before the map says it has none.
+const OFFLINE_AFTER_MS: u64 = 2500;
+/// A native only text (`lang/native`).
+const OFFLINE_TEXT: &str = "No map saved for this area. It is not available offline.";
 /// A native only text (`lang/native`).
 const FAILURE_TEXT: &str = "The 3D map cannot draw on this OpenGL: {a}";
 
@@ -102,6 +113,9 @@ struct Leaf {
     z: u8,
     x: u32,
     y: u32,
+    /// Which copy of the world it is in: -1 west of the antimeridian's far
+    /// side, 0 the main one, 1 east of it.
+    wrap: i32,
 }
 
 /// The 3D view's state.
@@ -134,6 +148,9 @@ pub struct Map3d {
     /// The numbers of the last frame over the map (F3, or `CORVUS_GUI_3D_DEBUG`).
     debug: bool,
     logged: std::time::Instant,
+    /// Since when most of the ground has had no image and the backend has
+    /// failed to give some: the map has nothing saved here.
+    blank_since: Option<std::time::Instant>,
 }
 
 /// An elevation tile and the part `(u0, v0, size)` of it a leaf covers.
@@ -200,13 +217,13 @@ impl Map3d {
             frame: 0,
             debug: std::env::var_os("CORVUS_GUI_3D_DEBUG").is_some(),
             logged: std::time::Instant::now(),
+            blank_since: None,
         }
     }
 
     /// Takes the view of the flat map.
     pub fn start_at(&mut self, lng: f64, lat: f64, zoom: f64, bearing: f64) {
-        self.cam.lng = lng;
-        self.cam.lat = lat;
+        self.cam.set_centre((lng, lat));
         self.cam.zoom = zoom;
         self.cam.bearing = bearing;
         self.cam.pitch = crate::map3d::camera::THREE_D_PITCH;
@@ -370,11 +387,24 @@ impl Map3d {
         };
         let (x0, y1) = to_tile(cx + min.0 / k, cy + min.1 / k);
         let (x1, y0) = to_tile(cx + max.0 / k, cy + max.1 / k);
-        let clampi = |v: f64| (v.floor().max(0.0) as u32).min(n_tiles as u32 - 1);
+        let clampy = |v: f64| (v.floor().max(0.0) as u32).min(n_tiles as u32 - 1);
+        // Columns run past the edges of the world: the map repeats there.
+        let columns = |lo: f64, hi: f64| {
+            (lo.floor() as i64)..=(hi.floor() as i64).min(lo.floor() as i64 + 2 * n_tiles as i64 + 2)
+        };
         let mut out = Vec::new();
-        for ty in clampi(y0)..=clampi(y1) {
-            for tx in clampi(x0)..=clampi(x1) {
-                self.split(Leaf { z: z0, x: tx, y: ty }, &mut out);
+        for ty in clampy(y0)..=clampy(y1) {
+            for tx in columns(x0, x1) {
+                let n = n_tiles as i64;
+                self.split(
+                    Leaf {
+                        z: z0,
+                        x: tx.rem_euclid(n) as u32,
+                        y: ty,
+                        wrap: tx.div_euclid(n) as i32,
+                    },
+                    &mut out,
+                );
             }
         }
         out
@@ -385,7 +415,7 @@ impl Map3d {
         let k = c.lat.to_radians().cos();
         let (cx, cy) = crate::map3d::camera::mercator(c.lng, c.lat);
         let at = |dx: f64, dy: f64| {
-            let (mx, my) = tile_mercator(l.z, l.x as f64 + dx, l.y as f64 + dy);
+            let (mx, my) = tile_mercator(l.z, l.x_world() + dx, l.y as f64 + dy);
             [(mx - cx) * k, (my - cy) * k, -c.ground]
         };
         [at(0.0, 0.0), at(1.0, 0.0), at(1.0, 1.0), at(0.0, 1.0)]
@@ -419,6 +449,7 @@ impl Map3d {
                         z: l.z + 1,
                         x: l.x * 2 + dx,
                         y: l.y * 2 + dy,
+                        wrap: l.wrap,
                     },
                     out,
                 );
@@ -520,17 +551,18 @@ impl Map3d {
     /// The items of the ground in view, and how many meshes were built for
     /// them. Leaves nearest the view centre come first, so what is built late
     /// is what is far away.
-    fn ground_items(&mut self, leaves: &[Leaf]) -> (Vec<gpu::Item>, usize) {
+    fn ground_items(&mut self, leaves: &[Leaf]) -> (Vec<gpu::Item>, usize, usize) {
         self.used.clear();
         let mut items = Vec::with_capacity(leaves.len());
         let mut builds = 0;
+        let mut blank = 0;
         let (cx, cy) = crate::map3d::camera::mercator(self.cam.lng, self.cam.lat);
         let world = 2.0 * std::f64::consts::PI * crate::map3d::camera::R;
         let mut order: Vec<(f64, Leaf)> = leaves
             .iter()
             .map(|l| {
                 let side = world / 2f64.powi(i32::from(l.z));
-                let (mx, my) = tile_mercator(l.z, f64::from(l.x) + 0.5, f64::from(l.y) + 0.5);
+                let (mx, my) = tile_mercator(l.z, l.x_world() + 0.5, f64::from(l.y) + 0.5);
                 ((mx - cx).hypot(my - cy) / side, *l)
             })
             .collect();
@@ -538,19 +570,20 @@ impl Map3d {
         // The tile cache serves the last asked first, so the tiles are asked
         // for from the far leaves to the near ones: what is under the eye
         // arrives first.
-        let mut wanted: HashMap<(u8, u32, u32), Wanted> = HashMap::new();
+        let mut wanted: HashMap<(u8, u32, u32, i32), Wanted> = HashMap::new();
         for (_, l) in order.iter().rev() {
             let imagery = self.imagery_for(*l);
-            wanted.insert((l.z, l.x, l.y), (imagery, self.dem_for(*l)));
+            wanted.insert((l.z, l.x, l.y, l.wrap), (imagery, self.dem_for(*l)));
         }
         for (_, l) in order {
-            let Some(([first, second], dem)) = wanted.remove(&(l.z, l.x, l.y)) else {
+            let Some(([first, second], dem)) = wanted.remove(&(l.z, l.x, l.y, l.wrap)) else {
                 continue;
             };
+            blank += usize::from(first.is_none() && second.is_none());
             let Some((mesh, flat)) = self.leaf_mesh(l, dem, &mut builds) else {
                 continue;
             };
-            let (mx, my) = tile_mercator(l.z, f64::from(l.x), f64::from(l.y));
+            let (mx, my) = tile_mercator(l.z, l.x_world(), f64::from(l.y));
             let rect_uv = |r: &Rect| [r.min.x, r.min.y, r.width(), r.height()];
             let (texture, uv) = match &first {
                 Some((t, r)) => (Some(t.clone()), rect_uv(r)),
@@ -581,7 +614,7 @@ impl Map3d {
             let frame = self.frame;
             self.leaf_meshes.retain(|_, m| m.used + 30 >= frame);
         }
-        (items, builds)
+        (items, builds, blank)
     }
 
     /// Draws the view into `rect`.
@@ -656,7 +689,8 @@ impl Map3d {
         );
         let horizon = self.paint_sky(&painter, rect);
         let leaves = self.leaves();
-        let (ground_items, built) = self.ground_items(&leaves);
+        let (ground_items, built, blank) = self.ground_items(&leaves);
+        self.watch_blank(ui, rect, leaves.len(), blank);
         let building_items = self.building_items();
         self.imagery.trim();
         for t in self.terrain.iter().chain(self.fallback.iter()) {
@@ -708,6 +742,41 @@ impl Map3d {
             .map(|g| (g, secondary));
         let press = resp.clicked().then(|| resp.interact_pointer_pos()).flatten();
         Input { dragged, click, press }
+    }
+
+    /// Says so when the ground has stayed without imagery and the backend
+    /// has had none to give: offline with nothing saved for this place.
+    fn watch_blank(&mut self, ui: &egui::Ui, rect: Rect, leaves: usize, blank: usize) {
+        let empty = blank * 2 > leaves && self.imagery.failures() > 0;
+        if !empty {
+            self.blank_since = None;
+            return;
+        }
+        let since = *self.blank_since.get_or_insert_with(std::time::Instant::now);
+        if since.elapsed() < std::time::Duration::from_millis(OFFLINE_AFTER_MS) {
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(OFFLINE_AFTER_MS));
+            return;
+        }
+        let painter = ui.painter_at(rect);
+        let g = crate::ui::style::galley(
+            ui,
+            OFFLINE_TEXT,
+            13.0,
+            crate::ui::style::Weight::W500,
+            crate::ui::style::text_2(),
+            0.0,
+        );
+        let pill = Rect::from_center_size(
+            Pos2::new(rect.center().x, rect.center().y + rect.height() * 0.18),
+            g.size() + Vec2::new(32.0, 18.0),
+        );
+        crate::ui::style::glass_panel(&painter, "offline-3d", pill, egui::CornerRadius::same(255), 0.5);
+        painter.galley(
+            Pos2::new(pill.center().x - g.size().x / 2.0, pill.center().y - g.size().y / 2.0),
+            g,
+            crate::ui::style::text_2(),
+        );
     }
 
     /// The counters of the last frame in a corner, and on stderr every 5 s.
@@ -1135,7 +1204,12 @@ mod tests {
         // A ramp rising to the east: 0 m at the west edge, 700 m at the east.
         let heights: Vec<f32> = (0..size * size).map(|i| (i % size) as f32 * 100.0).collect();
         let dem: Dem = (Arc::new(DemTile::from_heights(size, heights)), (0.0, 0.0, 1.0));
-        let leaf = Leaf { z: 10, x: 540, y: 355 };
+        let leaf = Leaf {
+            z: 10,
+            x: 540,
+            y: 355,
+            wrap: 0,
+        };
         let m = build_leaf(leaf, Some(&dem), 0.67);
         let n = GRID + 1;
         let verts = m.verts.len() / FLOATS;
@@ -1174,6 +1248,7 @@ mod tests {
                     z: 12,
                     x: 2184,
                     y: 1420,
+                    wrap: 0,
                 },
                 Some(&west),
                 0.68,
@@ -1183,6 +1258,7 @@ mod tests {
                     z: 12,
                     x: 2185,
                     y: 1420,
+                    wrap: 0,
                 },
                 Some(&east),
                 0.68,
@@ -1198,13 +1274,80 @@ mod tests {
         }
     }
 
+    fn view_at(lng: f64, lat: f64, zoom: f64, pitch: f64) -> Map3d {
+        let ctx = egui::Context::default();
+        let mut m = Map3d::new(&ctx, &Server::local(9), "satellite", 19);
+        m.cam.set_centre((lng, lat));
+        m.cam.zoom = zoom;
+        m.cam.pitch = pitch;
+        m
+    }
+
+    #[test]
+    fn the_ground_continues_across_the_antimeridian() {
+        let m = view_at(179.95, 10.0, 8.0, 0.0);
+        let leaves = m.leaves();
+        let n = |z: u8| 1u32 << z;
+        assert!(leaves.iter().any(|l| l.wrap == 0), "the east edge of the main world");
+        assert!(leaves.iter().any(|l| l.wrap == 1), "its far side, the same tiles again");
+        assert!(leaves.iter().all(|l| l.x < n(l.z) && l.y < n(l.z)));
+        let east = leaves.iter().find(|l| l.wrap == 1).unwrap();
+        let west = leaves
+            .iter()
+            .find(|l| l.wrap == 0 && l.z == east.z && l.x == n(east.z) - 1);
+        assert!(west.is_some(), "the copy sits next to the last column");
+        assert!(east.x_world() >= f64::from(n(east.z)), "and is counted past it");
+    }
+
+    #[test]
+    fn the_view_holds_near_the_poles() {
+        for pitch in [0.0, 60.0] {
+            let m = view_at(10.0, 89.0, 6.0, pitch);
+            let leaves = m.leaves();
+            assert!(!leaves.is_empty());
+            assert!(leaves.iter().all(|l| l.y < (1 << l.z)), "rows stay on the map");
+            assert!(m.cam.lat <= crate::map3d::camera::MAX_LAT);
+        }
+    }
+
+    #[test]
+    fn a_sea_level_flat_view_needs_a_handful_of_leaves() {
+        let m = view_at(11.62, 48.1, 14.0, 60.0);
+        let n = m.leaves().len();
+        assert!((4..=300).contains(&n), "{n} leaves for one screen");
+    }
+
     #[test]
     fn a_leaf_covers_its_part_of_an_ancestor() {
-        let whole = uv_of(Leaf { z: 5, x: 3, y: 4 }, 5);
+        let whole = uv_of(
+            Leaf {
+                z: 5,
+                x: 3,
+                y: 4,
+                wrap: 0,
+            },
+            5,
+        );
         assert_eq!((whole.min, whole.size()), (Pos2::ZERO, Vec2::splat(1.0)));
-        let quarter = uv_of(Leaf { z: 6, x: 7, y: 8 }, 5);
+        let quarter = uv_of(
+            Leaf {
+                z: 6,
+                x: 7,
+                y: 8,
+                wrap: 0,
+            },
+            5,
+        );
         assert_eq!((quarter.min, quarter.size()), (Pos2::new(0.5, 0.0), Vec2::splat(0.5)));
-        let sixteenth = uv_of(Leaf { z: 7, x: 13, y: 14 }, 5);
+        let sixteenth = uv_of(
+            Leaf {
+                z: 7,
+                x: 13,
+                y: 14,
+                wrap: 0,
+            },
+            5,
+        );
         assert_eq!(
             (sixteenth.min, sixteenth.size()),
             (Pos2::new(0.25, 0.5), Vec2::splat(0.25))
