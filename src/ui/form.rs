@@ -14,6 +14,7 @@ use crate::ui::kit;
 use crate::ui::message::{self, Tone};
 use crate::ui::optioncards::{self, Card};
 use crate::ui::pagekit;
+use crate::ui::pathfield::{PathField, Picked, REMOTE_HINT};
 use crate::ui::pills;
 use crate::ui::popover;
 use crate::ui::slider;
@@ -134,6 +135,37 @@ pub fn input(
         CONTROL_H
     });
     out.expect("the field is drawn")
+}
+
+/// A `.field` holding a path field. Returns what was chosen this frame. A
+/// field of the backend's machine reads as a text box when the backend runs
+/// elsewhere, and its hint says so.
+#[allow(clippy::too_many_arguments)]
+pub fn path(
+    ui: &mut egui::Ui,
+    f: &mut Form,
+    label: &str,
+    info: &str,
+    hint: &str,
+    field: &PathField<'_>,
+    value: &mut String,
+    id: &str,
+) -> Option<Picked> {
+    let hint = if field.typed() {
+        if hint.is_empty() {
+            REMOTE_HINT.to_string()
+        } else {
+            format!("{} {}", crate::i18n::tr(hint), crate::i18n::tr(REMOTE_HINT))
+        }
+    } else {
+        hint.to_string()
+    };
+    let mut out = None;
+    self::field(ui, f, label, info, &hint, |ui, x, y, w| {
+        out = formfield::path(ui, x, y, w, field, value, id);
+        CONTROL_H
+    });
+    out
 }
 
 /// What a switch row says and shows.

@@ -113,7 +113,7 @@ impl SettingsPage {
                 name: "PNG",
                 extensions: &["png"],
             };
-            if let Some(path) = crate::ui::filepicker::pick_file("Company logo", Some(filter)) {
+            if let Some(path) = crate::ui::filepicker::pick_file("Company logo", Some(filter), None) {
                 self.upload_logo(ui.ctx(), &path);
             }
         }

@@ -757,6 +757,7 @@ pub fn run(
     page: Option<&str>,
     scroll: Option<f32>,
 ) -> ExitCode {
+    crate::ui::pathfield::set_backend_remote(!server.is_loopback());
     let config = http::get_json(&server, "/api/config")
         .map(|c| unwrap_config(&c))
         .unwrap_or(Value::Null);
