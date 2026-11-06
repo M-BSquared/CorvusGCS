@@ -15,7 +15,8 @@ use crate::net::http;
 use crate::ui::field::{Surface, TextField};
 use crate::ui::icons;
 use crate::ui::listrow::{self, Mark};
-use crate::ui::style::{self, Weight};
+use crate::ui::menu;
+use crate::ui::style;
 
 const DEBOUNCE: f64 = 0.35;
 const GAP: f32 = 8.0;
@@ -34,6 +35,7 @@ pub struct SearchCard {
     lookup: Option<Pending<Result<Value, String>>>,
     local: Vec<Row>,
     fresh: bool,
+    list_at: Option<Rect>,
 }
 
 impl SearchCard {
@@ -280,140 +282,69 @@ impl SearchCard {
                         return;
                     }
                 }
-                self.list(ui, field, area, map, units);
+                self.list(&ctx, field, area, map, units);
             });
         let outside = ui.input(|i| i.pointer.any_pressed())
-            && ui
-                .input(|i| i.pointer.interact_pos())
-                .is_some_and(|p| !field.contains(p) && !trigger.contains(p) && !self.list_rect(field).contains(p));
+            && ui.input(|i| i.pointer.interact_pos()).is_some_and(|p| {
+                !field.contains(p) && !trigger.contains(p) && !self.list_at.unwrap_or(Rect::NOTHING).contains(p)
+            });
         if outside {
             self.close();
         }
     }
 
-    fn list_height(&self) -> f32 {
-        if self.rows.is_empty() && self.note.is_empty() {
-            return 0.0;
-        }
-        if self.rows.is_empty() {
-            return 8.0 * 2.0 + 11.5 * 1.21 + 8.0;
-        }
-        8.0 + self.rows.len() as f32 * Self::row_height()
-    }
-
-    fn row_height() -> f32 {
-        7.0 * 2.0 + 12.0 * 1.21 + 1.0 + 10.5 * 1.21
-    }
-
-    fn list_rect(&self, field: Rect) -> Rect {
-        let h = self.list_height();
-        if h == 0.0 {
-            return Rect::NOTHING;
-        }
-        Rect::from_min_size(
-            Pos2::new(field.left(), field.bottom() + GAP),
-            Vec2::new(field.width(), h),
-        )
-    }
-
     /// `.map-search-results`: one row per answer, or the note.
-    fn list(&mut self, ui: &mut egui::Ui, field: Rect, area: Rect, map: &mut Map, units: &Units) {
-        let r = self.list_rect(field);
-        if r == Rect::NOTHING {
-            return;
-        }
-        let painter = ui.painter().clone();
-        style::glass_panel(&painter, "searchlist", r, style::RADIUS, 0.86);
-        let alpha = if self.busy { 0.55 } else { 1.0 };
-        if self.rows.is_empty() {
-            let g = crate::ui::kit::wrapped_weight(
-                ui,
-                &self.note,
-                11.5,
-                Weight::W400,
-                style::text_2(),
-                r.width() - 18.0,
-                1.21,
-            );
-            painter.galley(Pos2::new(r.left() + 9.0, r.top() + 12.0), g, style::text_2());
-            return;
-        }
+    fn list(&mut self, ctx: &egui::Context, field: Rect, area: Rect, map: &mut Map, units: &Units) {
         let from = map.camera().map(|c| [c.0, c.1]);
-        let rh = Self::row_height();
-        let mut clicked = None;
-        for (i, row) in self.rows.iter().enumerate() {
-            let rr = Rect::from_min_size(
-                Pos2::new(r.left() + 4.0, r.top() + 4.0 + i as f32 * rh),
-                Vec2::new(r.width() - 8.0, rh),
-            );
-            let resp = ui.interact(rr, ui.scope_id().with(("searchrow", i)), egui::Sense::click());
-            let active = self.index == Some(i);
-            if active || resp.hovered() {
-                listrow::paint(&painter, rr, style::RADIUS_BTN, Mark::Hover);
-            }
-            let icon = match row.kind.as_str() {
-                "coordinates" => "crosshair",
-                "downloaded area" => "frame",
-                _ => "map-pin",
-            };
-            icons::paint(
-                ui,
-                icon,
-                Rect::from_center_size(Pos2::new(rr.left() + 9.0 + 8.0, rr.center().y), Vec2::splat(15.0)),
-                if active {
-                    style::accent_bright()
-                } else {
-                    style::text_3()
-                }
-                .gamma_multiply(alpha),
-            );
-            let (name, context) = if row.local {
-                (row.label.clone(), String::new())
+        let items: Vec<menu::Item> = if self.rows.is_empty() {
+            if self.note.is_empty() {
+                Vec::new()
             } else {
-                search::split_label(&row.label)
-            };
-            let detail = [context, row.kind.clone()]
-                .into_iter()
-                .filter(|s| !s.is_empty())
-                .collect::<Vec<_>>()
-                .join(" \u{b7} ");
-            let dist = from
-                .map(|f| units.format_distance_coarse(measure::distance_m(f, [row.lon, row.lat])))
-                .unwrap_or_default();
-            let dg = style::galley(
-                ui,
-                &dist,
-                10.5,
-                Weight::W400,
-                if active { style::text_2() } else { style::text_3() },
-                0.0,
-            );
-            let text_left = rr.left() + 9.0 + 16.0 + 9.0;
-            let text_right = rr.right() - 9.0 - if dist.is_empty() { 0.0 } else { dg.size().x + 9.0 };
-            let clip = ui.painter_at(Rect::from_min_max(
-                Pos2::new(text_left, rr.top()),
-                Pos2::new(text_right, rr.bottom()),
-            ));
-            let ng = style::galley(ui, &name, 12.0, Weight::W400, style::text_1(), 0.0);
-            let h = ng.size().y + if detail.is_empty() { 0.0 } else { 1.0 + 10.5 * 1.21 };
-            let top = rr.center().y - h / 2.0;
-            clip.galley(Pos2::new(text_left, top), ng.clone(), style::text_1());
-            if !detail.is_empty() {
-                let sg = style::galley(ui, &detail, 10.5, Weight::W400, style::text_3(), 0.0);
-                clip.galley(Pos2::new(text_left, top + ng.size().y + 1.0), sg, style::text_3());
+                vec![menu::Item::Note(self.note.clone())]
             }
-            if !dist.is_empty() {
-                painter.galley(
-                    Pos2::new(rr.right() - 9.0 - dg.size().x, rr.center().y - dg.size().y / 2.0),
-                    dg,
-                    style::text_3(),
-                );
-            }
-            if resp.clicked() {
-                clicked = Some(i);
-            }
+        } else {
+            self.rows
+                .iter()
+                .enumerate()
+                .map(|(i, row)| {
+                    let icon = match row.kind.as_str() {
+                        "coordinates" => "crosshair",
+                        "downloaded area" => "frame",
+                        _ => "map-pin",
+                    };
+                    let (name, context) = if row.local {
+                        (row.label.clone(), String::new())
+                    } else {
+                        search::split_label(&row.label)
+                    };
+                    let detail = [context, row.kind.clone()]
+                        .into_iter()
+                        .filter(|s| !s.is_empty())
+                        .collect::<Vec<_>>()
+                        .join(" \u{b7} ");
+                    let dist = from
+                        .map(|f| units.format_distance_coarse(measure::distance_m(f, [row.lon, row.lat])))
+                        .unwrap_or_default();
+                    menu::Row::new(i.to_string(), name)
+                        .icon(icon)
+                        .note(detail)
+                        .trail(dist)
+                        .into()
+                })
+                .collect()
+        };
+        if items.is_empty() {
+            self.list_at = None;
+            return;
         }
-        if let Some(i) = clicked {
+        let selected = self.index.map(|i| i.to_string()).unwrap_or_default();
+        let id = egui::Id::NULL.with("searchlist");
+        let out = menu::Menu::new(id, menu::Anchor::below_by(field, GAP), &menu::Look::SEARCH, &items)
+            .selected(&selected)
+            .opacity(if self.busy { 0.55 } else { 1.0 })
+            .show(ctx);
+        self.list_at = out.rect;
+        if let Some(i) = out.picked.and_then(|v| v.parse::<usize>().ok()) {
             self.go(i, map, area);
         }
     }

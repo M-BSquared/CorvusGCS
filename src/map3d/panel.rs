@@ -87,7 +87,7 @@ pub fn show(ui: &mut egui::Ui, anchor: Rect, t: &mut Map3d, sources: &Value) -> 
                 for (id, label) in &rows {
                     let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(WIDTH - 10.0, row_h));
                     let active = *id == t.choice || (t.choice.is_empty() && id == "auto");
-                    if menu::row(ui, r, ("elev", id.as_str()), label, active, true, &menu::Look::PANEL) {
+                    if menu::row(ui, r, ("elev", id.as_str()), label, active, true, &menu::Look::SELECT) {
                         picked = Some(id.clone());
                     }
                     y += row_h;

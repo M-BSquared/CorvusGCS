@@ -13,7 +13,8 @@ use serde_json::Value;
 use crate::map::Map;
 use crate::ui::card::{self, Look};
 use crate::ui::icons;
-use crate::ui::style::{self, Weight};
+use crate::ui::menu;
+use crate::ui::style;
 
 /// `--map-rail-inset`, `--map-rail-gap`, and a button's side.
 const INSET: f32 = 14.0;
@@ -399,72 +400,39 @@ impl MapRail {
     /// The layer list, opened to the left of its button: a head per map
     /// service and a row per layer (`.ui-menu`, `.option-item`).
     fn layers_menu(&mut self, ui: &mut egui::Ui, anchor: Rect, map: &mut Map) {
-        let layers = map.layers();
-        let row_h = 7.0 * 2.0 + 12.0 * 1.21;
-        let head_h = 4.0 + 10.0 * 1.21 + 6.0;
-        let mut providers: Vec<String> = Vec::new();
-        for (_, _, p) in &layers {
-            if !providers.contains(p) {
-                providers.push(p.clone());
-            }
-        }
-        let h = 10.0 + providers.len() as f32 * head_h + layers.len() as f32 * row_h;
-        let w = 220.0;
-        let menu = Rect::from_min_size(
-            Pos2::new(anchor.left() - 7.0 - 8.0 - w, anchor.top() - 7.0),
-            Vec2::new(w, h),
-        );
-        let ctx = ui.ctx().clone();
-        let mut picked = None;
-        let mut close = false;
-        egui::Area::new(ui.scope_id().with("layers"))
-            .order(egui::Order::Foreground)
-            .fixed_pos(menu.min)
-            .show(&ctx, |ui| {
-                let painter = ui.painter().clone();
-                style::glass_panel(&painter, "layers", menu, style::RADIUS, 0.6);
-                ui.allocate_rect(menu, egui::Sense::hover());
-                let mut y = menu.top() + 5.0;
-                for prov in &providers {
-                    let g = style::galley(ui, &prov.to_uppercase(), 10.0, Weight::W600, style::text_3(), 0.8);
-                    painter.galley(Pos2::new(menu.left() + 5.0 + 6.0, y + 4.0), g, style::text_3());
-                    y += head_h;
-                    for (id, label, p) in layers.iter().filter(|(_, _, p)| p == prov) {
-                        let _ = p;
-                        let r = Rect::from_min_size(Pos2::new(menu.left() + 5.0, y), Vec2::new(w - 10.0, row_h));
-                        let resp = ui.interact(r, ui.scope_id().with(("layer", id.as_str())), egui::Sense::click());
-                        let active = *id == map.source;
-                        if active {
-                            painter.rect_filled(r, style::RADIUS_BTN, style::accent_dark());
-                        } else if resp.hovered() {
-                            painter.rect_filled(r, style::RADIUS_BTN, style::tint(0.06));
-                        }
-                        let color = if active || resp.hovered() {
-                            style::text_1()
-                        } else {
-                            style::text_2()
-                        };
-                        let g = style::galley(ui, label, 12.0, Weight::W400, color, 0.0);
-                        painter.galley(Pos2::new(r.left() + 8.0, r.center().y - g.size().y / 2.0), g, color);
-                        if resp.clicked() {
-                            picked = Some(id.clone());
-                        }
-                        y += row_h;
-                    }
-                }
-                let outside = ui.input(|i| i.pointer.any_pressed())
-                    && !ui
-                        .input(|i| i.pointer.interact_pos())
-                        .is_some_and(|p| menu.contains(p) || anchor.contains(p));
-                close = outside || ui.input(|i| i.key_pressed(egui::Key::Escape));
-            });
-        if let Some(id) = picked {
-            map.set_source(&ctx, &id);
+        let items = layer_items(&map.layers());
+        let id = ui.scope_id().with("layers");
+        let out = menu::Menu::new(id, menu::Anchor::beside_rail(anchor), &menu::Look::LAYERS, &items)
+            .selected(&map.source)
+            .show(ui.ctx());
+        if let Some(id) = out.picked {
+            map.set_source(ui.ctx(), &id);
             self.layers_open = false;
-        } else if close {
+        } else if out.dismissed {
             self.layers_open = false;
         }
     }
+}
+
+/// `renderLayerRows`: the caption, and a heading above each service's layers
+/// when there is more than one service.
+fn layer_items(layers: &[(String, String, String)]) -> Vec<menu::Item> {
+    let mut providers: Vec<&str> = Vec::new();
+    for (_, _, p) in layers {
+        if !providers.contains(&p.as_str()) {
+            providers.push(p);
+        }
+    }
+    let mut items = vec![menu::Item::Head("Map layers".into())];
+    for prov in &providers {
+        if providers.len() > 1 {
+            items.push(menu::Item::Section((*prov).to_string()));
+        }
+        for (id, label, _) in layers.iter().filter(|(_, _, p)| p == prov) {
+            items.push(menu::Row::new(id.clone(), label.clone()).into());
+        }
+    }
+    items
 }
 
 #[cfg(test)]
@@ -490,5 +458,22 @@ mod tests {
             "the planner's rail (mission.js MAP_CONTROLS)"
         );
         assert!(Item::Layers.works() && Item::Regions.works() && Item::Measure.works() && Item::ThreeD.works());
+    }
+
+    #[test]
+    fn the_layer_list_has_a_caption_and_headings_only_with_several_services() {
+        let l = |id: &str, p: &str| (id.to_string(), id.to_uppercase(), p.to_string());
+        let one = layer_items(&[l("a", "Esri"), l("b", "Esri")]);
+        assert_eq!(one.len(), 3);
+        assert_eq!(one[0], menu::Item::Head("Map layers".into()));
+        let two = layer_items(&[l("a", "Esri"), l("c", "Google"), l("b", "Esri")]);
+        assert_eq!(two.len(), 1 + 2 + 3);
+        assert_eq!(two[1], menu::Item::Section("Esri".into()));
+        assert!(matches!(&two[2], menu::Item::Row(r) if r.value == "a"));
+        assert!(
+            matches!(&two[3], menu::Item::Row(r) if r.value == "b"),
+            "grouped by service"
+        );
+        assert_eq!(two[4], menu::Item::Section("Google".into()));
     }
 }

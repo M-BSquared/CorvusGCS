@@ -11,15 +11,12 @@
 
 use std::path::PathBuf;
 
-use eframe::egui::{self, Pos2, Rect, Vec2};
+use eframe::egui::{self, Rect};
 use serde_json::Value;
 
 use crate::net::bg::Pending;
 use crate::net::http::{self, Server};
-use crate::ui::icons;
-use crate::ui::kit;
 use crate::ui::menu;
-use crate::ui::style::{self, Weight};
 
 /// Seconds between reads of the camera list.
 const REFRESH: f64 = 5.0;
@@ -220,140 +217,52 @@ impl Cameras {
         if !self.list_open || self.list.len() < 2 {
             return None;
         }
-        let head = style::galley(ui, "CAMERAS", 10.0, Weight::W600, style::text_3(), 0.8);
-        let any = !open_ids.is_empty();
-        let rows: Vec<(String, String, bool)> = self
-            .list
-            .iter()
-            .map(|c| {
-                let note = if !c.name.is_empty() && !c.address.is_empty() {
-                    c.address.clone()
+        let items = camera_items(&self.list, open_ids);
+        let id = ui.scope_id().with("camera-list");
+        let out = menu::Menu::new(id, menu::Anchor::beside_rail(anchor), &menu::Look::CAMERAS, &items).show(ui.ctx());
+        if let Some(value) = out.picked {
+            if value == ALL {
+                self.cmds.push(if open_ids.is_empty() {
+                    Cmd::OpenAll
                 } else {
-                    String::new()
-                };
-                (label(c), note, open_ids.contains(&c.id))
-            })
-            .collect();
-        let galleys: Vec<_> = rows
-            .iter()
-            .map(|(l, n, _)| {
-                (
-                    style::galley(ui, l, 12.0, Weight::W500, style::text_1(), 0.0),
-                    style::galley(ui, n, 10.5, Weight::W400, style::text_3(), 0.0),
-                )
-            })
-            .collect();
-        let all_label = if any { "Close all" } else { "Open all" };
-        let all_g = style::galley(ui, all_label, 12.0, Weight::W500, style::text_1(), 0.0);
-        let widest = galleys
-            .iter()
-            .map(|(l, n)| l.size().x.max(n.size().x))
-            .fold(all_g.size().x + 22.0, f32::max);
-        let width = (menu::PAD * 2.0 + 8.0 + 15.0 + widest + 8.0).clamp(150.0, 260.0);
-        let row_h = |note: &str, l: &egui::Galley, n: &egui::Galley| {
-            7.0 * 2.0 + l.size().y + if note.is_empty() { 0.0 } else { n.size().y + 1.0 }
-        };
-        let heights: Vec<f32> = rows
-            .iter()
-            .zip(&galleys)
-            .map(|((_, note, _), (l, n))| row_h(note, l, n))
-            .collect();
-        let all_h = 7.0 * 2.0 + all_g.size().y;
-        let height =
-            menu::PAD * 2.0 + head.size().y + 10.0 + heights.iter().sum::<f32>() + 2.0 * heights.len() as f32 + all_h;
-        let rect = Rect::from_min_size(
-            Pos2::new(anchor.left() - 14.0 - width, anchor.center().y - height / 2.0),
-            Vec2::new(width, height),
-        );
-        let screen = ui.ctx().content_rect();
-        let rect = rect.translate(Vec2::new(0.0, (screen.top() + 8.0 - rect.top()).max(0.0)));
-        let mut picked: Option<Cmd> = None;
-        let mut remember: Option<String> = None;
-        egui::Area::new(ui.scope_id().with("camera-list"))
-            .order(egui::Order::Foreground)
-            .fixed_pos(rect.min)
-            .show(ui.ctx(), |ui| {
-                let painter = ui.painter().clone();
-                style::glass_panel(&painter, "cameras", rect, style::RADIUS, 0.6);
-                ui.allocate_rect(rect, egui::Sense::hover());
-                let inner = rect.shrink(menu::PAD);
-                painter.galley(
-                    Pos2::new(inner.left() + 6.0, inner.top() + 4.0),
-                    head.clone(),
-                    style::text_3(),
-                );
-                let mut y = inner.top() + head.size().y + 10.0;
-                for (i, ((label, _, on), (l, n))) in rows.iter().zip(&galleys).enumerate() {
-                    let r = Rect::from_min_size(Pos2::new(inner.left(), y), Vec2::new(inner.width(), heights[i]));
-                    let resp = ui.interact(r, ui.scope_id().with(("cam", i)), egui::Sense::click());
-                    if *on {
-                        painter.rect_filled(r, style::RADIUS_BTN, style::accent_dark());
-                    } else if resp.hovered() {
-                        painter.rect_filled(r, style::RADIUS_BTN, style::tint(0.06));
-                    }
-                    let dot = if *on { style::accent() } else { style::text_3() };
-                    kit::dot(&painter, Pos2::new(r.left() + 8.0 + 3.5, r.center().y), dot, *on);
-                    let tx = r.left() + 8.0 + 7.0 + 8.0;
-                    let block = l.size().y + if rows[i].1.is_empty() { 0.0 } else { n.size().y + 1.0 };
-                    let top = r.center().y - block / 2.0;
-                    let color = if *on || resp.hovered() {
-                        style::text_1()
-                    } else {
-                        style::text_2()
-                    };
-                    let clip = painter.with_clip_rect(Rect::from_min_max(
-                        Pos2::new(tx, r.top()),
-                        Pos2::new(r.right() - 8.0, r.bottom()),
-                    ));
-                    clip.galley(Pos2::new(tx, top), l.clone(), color);
-                    if !rows[i].1.is_empty() {
-                        clip.galley(Pos2::new(tx, top + l.size().y + 1.0), n.clone(), style::text_3());
-                    }
-                    let _ = label;
-                    if resp.clicked() {
-                        remember = Some(self.list[i].id.clone());
-                        if let Some(raw) = self.raw_of(&self.list[i].id) {
-                            picked = Some(Cmd::Toggle(raw));
-                        }
-                    }
-                    y += heights[i] + 2.0;
-                }
-                let r = Rect::from_min_size(Pos2::new(inner.left(), y), Vec2::new(inner.width(), all_h));
-                let resp = ui.interact(r, ui.scope_id().with("camall"), egui::Sense::click());
-                if resp.hovered() {
-                    painter.rect_filled(r, style::RADIUS_BTN, style::tint(0.06));
-                }
-                icons::paint(
-                    ui,
-                    if any { "x" } else { "layout-grid" },
-                    Rect::from_center_size(Pos2::new(r.left() + 8.0 + 7.0, r.center().y), Vec2::splat(14.0)),
-                    if resp.hovered() {
-                        style::accent()
-                    } else {
-                        style::text_2()
-                    },
-                );
-                painter.galley(
-                    Pos2::new(r.left() + 8.0 + 14.0 + 8.0, r.center().y - all_g.size().y / 2.0),
-                    all_g.clone(),
-                    if resp.hovered() {
-                        style::text_1()
-                    } else {
-                        style::text_2()
-                    },
-                );
-                if resp.clicked() {
-                    picked = Some(if any { Cmd::CloseAll } else { Cmd::OpenAll });
-                }
-            });
-        if let Some(id) = remember {
-            self.remember(&id);
+                    Cmd::CloseAll
+                });
+            } else if let Some(raw) = self.raw_of(&value) {
+                self.remember(&value);
+                self.cmds.push(Cmd::Toggle(raw));
+            }
         }
-        if let Some(c) = picked {
-            self.cmds.push(c);
-        }
-        Some(rect)
+        out.rect
     }
+}
+
+/// The value of the Open all or Close all row.
+const ALL: &str = "\u{0}all";
+
+/// `renderCameraRows`: the caption, a dot row per camera (lit while its
+/// window is open, the address under a name), then Open all or Close all.
+fn camera_items(list: &[Camera], open_ids: &[String]) -> Vec<menu::Item> {
+    let mut items = vec![menu::Item::Head("Cameras".into())];
+    for c in list {
+        let note = if !c.name.is_empty() && !c.address.is_empty() {
+            c.address.clone()
+        } else {
+            String::new()
+        };
+        items.push(
+            menu::Row::new(c.id.clone(), label(c))
+                .note(note)
+                .on(open_ids.contains(&c.id))
+                .into(),
+        );
+    }
+    let any = !open_ids.is_empty();
+    items.push(
+        menu::Row::new(ALL, if any { "Close all" } else { "Open all" })
+            .icon(if any { "x" } else { "layout-grid" })
+            .into(),
+    );
+    items
 }
 
 #[cfg(test)]
@@ -438,5 +347,21 @@ mod tests {
         c.hover(true, false, 5.0, &ctx);
         c.hover(true, false, 5.5, &ctx);
         assert!(!c.list_open);
+    }
+
+    #[test]
+    fn the_camera_list_is_a_caption_dot_rows_and_open_or_close_all() {
+        let l = list();
+        let none = camera_items(&l, &[]);
+        assert_eq!(none[0], menu::Item::Head("Cameras".into()));
+        assert!(matches!(&none[1], menu::Item::Row(r) if r.note == "rtsp://10.0.0.2/live" && !r.on));
+        assert!(
+            matches!(&none[2], menu::Item::Row(r) if r.note.is_empty()),
+            "an address is not its own note"
+        );
+        assert!(matches!(&none[3], menu::Item::Row(r) if r.label == "Open all" && r.icon == Some("layout-grid")));
+        let some = camera_items(&l, &["b".to_string()]);
+        assert!(matches!(&some[2], menu::Item::Row(r) if r.on));
+        assert!(matches!(&some[3], menu::Item::Row(r) if r.label == "Close all" && r.icon == Some("x")));
     }
 }

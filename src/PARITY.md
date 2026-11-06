@@ -169,6 +169,8 @@ otherwise; "native file" is in `src/`.
 | --- | --- | --- | --- |
 | Arrow keys and W A S D fly the aircraft (locked until unlocked), Shift boosts, Escape locks | joystick.js | control/mod.rs | done |
 | Esc closes menus, dialogs, popovers | ui.js | ui/ | done |
+| Arrows, Home, End, Enter in an open list (the first row, or the one in use, has the ring); Tab closes it; the arrows and W A S D close the map's context menu and fly | ui.js `menu`, map.js `isFlightKey` | ui/menu.rs | done, type-ahead not ported |
+| One dropdown surface and row for every list: select, flight modes, layers (headings per service), cameras, context menu, power menu, search answers (a panel of its own at 0.86, as `.map-search-results`) | components.css `.ui-menu`, `.option-item`, `.layer-group`, `.ui-menu-head` | ui/menu.rs | done |
 | Esc cancels the distance tool, the plan mode | map-measure.js, map.js | map/measure.rs | partial |
 | Enter and Escape in the takeoff entry | app.js | home/flight.rs | done |
 

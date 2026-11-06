@@ -994,7 +994,7 @@ impl FlightBar {
                 }
             })
             .collect();
-        let out = menu::dropdown(ui, "modemenu", rect, &items, current, &menu::Look::PLAIN);
+        let out = menu::dropdown(ui, "modemenu", rect, &items, current, &menu::Look::SELECT);
         if out.dismissed {
             self.mode_open = false;
         }

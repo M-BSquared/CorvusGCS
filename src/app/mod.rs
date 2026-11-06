@@ -634,7 +634,8 @@ impl eframe::App for App {
         if self.touch.waiting() {
             ctx.request_repaint_after(std::time::Duration::from_millis(100));
         }
-        // CORVUS_GUI_CLICK="x,y;x,y;enter" presses at each point in turn, the
+        // CORVUS_GUI_CLICK="x,y;rx,y;enter" presses at each point in turn (a leading r
+        // is a right click), the
         // first at 6 s and one more every half second, for a menu or a drawn
         // shape to look at; `enter` presses the Enter key.
         // CORVUS_GUI_TEXT="..." types that text once the clicks are done.
@@ -651,6 +652,10 @@ impl eframe::App for App {
             let t = raw_input.time.unwrap_or(0.0);
             let k = (self.click_stage / 2) as usize;
             if let Some(step) = steps.get(k) {
+                let (button, step) = match step.strip_prefix('r') {
+                    Some(rest) => (egui::PointerButton::Secondary, rest),
+                    None => (egui::PointerButton::Primary, *step),
+                };
                 let point = step
                     .split_once(',')
                     .and_then(|(x, y)| Some(egui::pos2(x.trim().parse().ok()?, y.trim().parse().ok()?)));
@@ -663,7 +668,7 @@ impl eframe::App for App {
                     match point {
                         Some(p) => raw_input.events.push(egui::Event::PointerButton {
                             pos: p,
-                            button: egui::PointerButton::Primary,
+                            button,
                             pressed: true,
                             modifiers: Default::default(),
                         }),
@@ -680,7 +685,7 @@ impl eframe::App for App {
                     match point {
                         Some(p) => raw_input.events.push(egui::Event::PointerButton {
                             pos: p,
-                            button: egui::PointerButton::Primary,
+                            button,
                             pressed: false,
                             modifiers: Default::default(),
                         }),

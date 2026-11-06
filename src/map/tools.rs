@@ -286,165 +286,86 @@ impl Tools {
 
         let head_g = style::galley_mono(ui, &coords, 11.0, style::text_1());
         let head_w = 8.0 + 14.0 + 8.0 + head_g.size().x + 8.0 + 22.0 + 3.0;
-        let label_gs: Vec<_> = specs
+        let items: Vec<menu::Item> = specs
             .iter()
-            .map(|r| style::galley(ui, &r.label, 12.0, Weight::W500, style::text_1(), 0.0))
+            .map(|r| {
+                menu::Row::new(r.id, r.label.clone())
+                    .icon(r.icon)
+                    .note(r.note.clone())
+                    .enabled(r.enabled)
+                    .into()
+            })
             .collect();
-        let note_gs: Vec<_> = specs
-            .iter()
-            .map(|r| style::galley(ui, &r.note, 10.5, Weight::W400, style::text_2(), 0.0))
-            .collect();
-        let rows_w = label_gs
-            .iter()
-            .zip(&note_gs)
-            .map(|(l, n)| l.size().x.max(n.size().x))
-            .fold(0.0, f32::max)
-            + 8.0
-            + 14.0
-            + 8.0
-            + 8.0;
-        let inner_w = head_w.max(rows_w);
-        let width = (inner_w + menu::PAD * 2.0).clamp(120.0, 220.0);
-        let head_h = 2.0 + 22.0 + 6.0 + 1.0 + 3.0;
-        let row_hs: Vec<f32> = specs
-            .iter()
-            .zip(&label_gs)
-            .zip(&note_gs)
-            .map(|((r, l), n)| 7.0 * 2.0 + l.size().y + if r.note.is_empty() { 0.0 } else { n.size().y + 1.0 })
-            .collect();
-        let height = menu::PAD * 2.0 + head_h + row_hs.iter().sum::<f32>() + 2.0 * (specs.len() as f32 - 1.0);
-
-        // Opens toward the room: right and below the pin unless that runs
-        // off the map.
-        let gap = 12.0;
-        let mut x = anchor.x + gap;
-        let mut y = anchor.y + gap;
-        if x + width > bounds.right() - 4.0 {
-            x = anchor.x - gap - width;
+        let copied = self.copied_at.is_some_and(|t| now - t < 1.8);
+        let mut copy_now = false;
+        let id = ui.scope_id().with("map-context-menu");
+        let out = menu::Menu::new(id, menu::Anchor::point(anchor, bounds), &menu::Look::CONTEXT, &items)
+            .head(HEAD_H, head_w, |ui, rect| {
+                copy_now = head(ui, rect, &coords, &head_g, copied);
+            })
+            .show(ui.ctx());
+        if copy_now {
+            self.copied_at = Some(now);
         }
-        if y + height > bounds.bottom() - 4.0 {
-            y = anchor.y - gap - height;
+        if copied {
+            ui.ctx().request_repaint_after(std::time::Duration::from_millis(250));
         }
-        let menu_rect = Rect::from_min_size(
-            Pos2::new(x.max(bounds.left() + 4.0), y.max(bounds.top() + 4.0)),
-            Vec2::new(width, height),
-        );
-
-        let mut chosen = None;
-        let mut close = false;
-        egui::Area::new(ui.scope_id().with("map-context-menu"))
-            .order(egui::Order::Foreground)
-            .fixed_pos(menu_rect.min)
-            .show(ui.ctx(), |ui| {
-                let painter = ui.painter().clone();
-                style::glass_panel(&painter, "context", menu_rect, style::RADIUS, 0.9);
-                ui.allocate_rect(menu_rect, egui::Sense::hover());
-                let inner = menu_rect.shrink(menu::PAD);
-                // The head: the pin, the coordinates, the copy button.
-                let head = Rect::from_min_size(inner.min, Vec2::new(inner.width(), head_h - 3.0));
-                let line_y = head.center().y - 0.5;
-                icons::paint(
-                    ui,
-                    "map-pin",
-                    Rect::from_center_size(Pos2::new(head.left() + 8.0 + 7.0, line_y - 1.5), Vec2::splat(14.0)),
-                    style::accent(),
-                );
-                painter.galley(
-                    Pos2::new(head.left() + 8.0 + 14.0 + 8.0, line_y - 1.5 - head_g.size().y / 2.0),
-                    head_g.clone(),
-                    style::text_1(),
-                );
-                painter.hline(head.x_range(), head.bottom() - 0.5, Stroke::new(1.0, style::tint(0.1)));
-                let copy =
-                    Rect::from_center_size(Pos2::new(head.right() - 3.0 - 11.0, line_y - 1.5), Vec2::splat(22.0));
-                let copy_resp = ui.interact(copy, ui.scope_id().with("ctx-copy"), egui::Sense::click());
-                let copied = self.copied_at.is_some_and(|t| now - t < 1.8);
-                if copy_resp.hovered() {
-                    painter.rect_filled(copy, 4, style::surface_hover());
-                }
-                icons::paint(
-                    ui,
-                    if copied { "check" } else { "copy" },
-                    copy.shrink(4.5),
-                    if copied {
-                        style::accent_bright()
-                    } else if copy_resp.hovered() {
-                        style::text_1()
-                    } else {
-                        style::text_3()
-                    },
-                );
-                if copy_resp
-                    .on_hover_text(if copied { "Copied" } else { "Copy coordinates" })
-                    .clicked()
-                {
-                    ui.ctx().copy_text(coords.clone());
-                    self.copied_at = Some(now);
-                }
-                if copied {
-                    ui.ctx().request_repaint_after(std::time::Duration::from_millis(250));
-                }
-
-                let mut y = inner.top() + head_h;
-                for (i, spec) in specs.iter().enumerate() {
-                    let r = Rect::from_min_size(Pos2::new(inner.left(), y), Vec2::new(inner.width(), row_hs[i]));
-                    let resp = ui.interact(
-                        r,
-                        ui.scope_id().with(("ctx-row", spec.id)),
-                        if spec.enabled {
-                            egui::Sense::click()
-                        } else {
-                            egui::Sense::hover()
-                        },
-                    );
-                    if resp.hovered() && spec.enabled {
-                        painter.rect_filled(r, style::RADIUS_BTN, style::tint(0.06));
-                    }
-                    let (label_c, note_c, icon_c) = if spec.enabled {
-                        (
-                            style::text_1(),
-                            style::text_2(),
-                            if resp.hovered() {
-                                style::accent()
-                            } else {
-                                style::text_2()
-                            },
-                        )
-                    } else {
-                        (style::text_3(), style::text_3(), style::text_disabled())
-                    };
-                    icons::paint(
-                        ui,
-                        spec.icon,
-                        Rect::from_center_size(Pos2::new(r.left() + 8.0 + 7.0, r.center().y), Vec2::splat(14.0)),
-                        icon_c,
-                    );
-                    let text_x = r.left() + 8.0 + 14.0 + 8.0;
-                    let l = &label_gs[i];
-                    let n = &note_gs[i];
-                    let block = l.size().y + if spec.note.is_empty() { 0.0 } else { n.size().y + 1.0 };
-                    let top = r.center().y - block / 2.0;
-                    painter.galley(Pos2::new(text_x, top), l.clone(), label_c);
-                    if !spec.note.is_empty() {
-                        painter.galley(Pos2::new(text_x, top + l.size().y + 1.0), n.clone(), note_c);
-                    }
-                    if resp.clicked() && spec.enabled {
-                        chosen = Some(match spec.id {
-                            "goto" => Action::Goto(point),
-                            _ => Action::SetHome(point),
-                        });
-                    }
-                    y += row_hs[i] + 2.0;
-                }
-                if menu::dismissed(ui, &[menu_rect]) {
-                    close = true;
-                }
-            });
-        if chosen.is_some() || close {
+        let chosen = out.picked.map(|id| match id.as_str() {
+            "goto" => Action::Goto(point),
+            _ => Action::SetHome(point),
+        });
+        if chosen.is_some() || out.dismissed {
             self.close_menu();
         }
         chosen
     }
+}
+
+/// `.map-context-head`: 2 above, the 22 px line, 6 below, the rule, 3 under it.
+const HEAD_H: f32 = 2.0 + 22.0 + 6.0 + 1.0 + 3.0;
+
+/// The head of the context menu: the pin, the coordinates, the copy button.
+/// True when the button was pressed.
+fn head(ui: &mut egui::Ui, rect: Rect, coords: &str, galley: &std::sync::Arc<egui::Galley>, copied: bool) -> bool {
+    let painter = ui.painter().clone();
+    let head = Rect::from_min_size(rect.min, Vec2::new(rect.width(), HEAD_H - 3.0));
+    let line_y = head.center().y - 0.5;
+    icons::paint(
+        ui,
+        "map-pin",
+        Rect::from_center_size(Pos2::new(head.left() + 8.0 + 7.0, line_y - 1.5), Vec2::splat(14.0)),
+        style::accent(),
+    );
+    painter.galley(
+        Pos2::new(head.left() + 8.0 + 14.0 + 8.0, line_y - 1.5 - galley.size().y / 2.0),
+        galley.clone(),
+        style::text_1(),
+    );
+    painter.hline(head.x_range(), head.bottom() - 0.5, Stroke::new(1.0, style::tint(0.1)));
+    let copy = Rect::from_center_size(Pos2::new(head.right() - 3.0 - 11.0, line_y - 1.5), Vec2::splat(22.0));
+    let copy_resp = ui.interact(copy, ui.scope_id().with("ctx-copy"), egui::Sense::click());
+    if copy_resp.hovered() {
+        painter.rect_filled(copy, 4, style::surface_hover());
+    }
+    icons::paint(
+        ui,
+        if copied { "check" } else { "copy" },
+        copy.shrink(4.5),
+        if copied {
+            style::accent_bright()
+        } else if copy_resp.hovered() {
+            style::text_1()
+        } else {
+            style::text_3()
+        },
+    );
+    let pressed = copy_resp
+        .on_hover_text(if copied { "Copied" } else { "Copy coordinates" })
+        .clicked();
+    if pressed {
+        ui.ctx().copy_text(coords.to_string());
+    }
+    pressed
 }
 
 #[cfg(test)]
