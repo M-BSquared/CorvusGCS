@@ -193,3 +193,57 @@ mod tests {
         assert_eq!(result_text(99), "RESULT_99");
     }
 }
+
+/// A latch a thread can wait on with a timeout (`threading.Event`).
+#[derive(Debug, Default)]
+pub struct Event {
+    flag: std::sync::Mutex<bool>,
+    changed: std::sync::Condvar,
+}
+
+impl Event {
+    pub fn new() -> Event {
+        Event::default()
+    }
+
+    fn flag(&self) -> std::sync::MutexGuard<'_, bool> {
+        self.flag.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    pub fn set(&self) {
+        *self.flag() = true;
+        self.changed.notify_all();
+    }
+
+    pub fn clear(&self) {
+        *self.flag() = false;
+    }
+
+    pub fn is_set(&self) -> bool {
+        *self.flag()
+    }
+
+    /// Waits up to `timeout` seconds for the latch; true when it is set.
+    pub fn wait(&self, timeout: f64) -> bool {
+        let mut flag = self.flag();
+        if *flag {
+            return true;
+        }
+        let limit = std::time::Duration::try_from_secs_f64(timeout.max(0.0)).unwrap_or(std::time::Duration::MAX);
+        let (guard, _) = self
+            .changed
+            .wait_timeout_while(flag, limit, |set| !*set)
+            .unwrap_or_else(|e| e.into_inner());
+        flag = guard;
+        *flag
+    }
+}
+
+/// Python's `str.capitalize()`: the first character upper case, the rest lower.
+pub fn py_capitalize(text: &str) -> String {
+    let mut chars = text.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().collect::<String>() + &chars.as_str().to_lowercase(),
+        None => String::new(),
+    }
+}

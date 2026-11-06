@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import pathlib
 import struct
+import threading
 import sys
 import time
 from unittest import mock
@@ -1918,10 +1919,591 @@ def telemetry_cases() -> list[dict]:
     return out
 
 
+# ------------------------------------------------------------- missions ----
+
+class FakeEvent:
+    """threading.Event on the fake clock: waiting runs the scripted vehicle."""
+
+    sim = None
+
+    def __init__(self) -> None:
+        self._flag = False
+
+    def set(self) -> None:
+        self._flag = True
+
+    def clear(self) -> None:
+        self._flag = False
+
+    def is_set(self) -> bool:
+        return self._flag
+
+    def wait(self, timeout=None) -> bool:
+        return FakeEvent.sim.wait(self, timeout)
+
+
+class FakePendingAck:
+    def __init__(self) -> None:
+        self.event = FakeEvent()
+        self.result = None
+        self.accept_in_progress = False
+
+
+class MissionLock(FlightLock):
+    def __init__(self, bridge) -> None:
+        super().__init__()
+        self.bridge = bridge
+
+    def abort_waiting(self) -> bool:
+        at = self.bridge.sc.get("abort_at")
+        return at is not None and self.bridge.clock.t >= at
+
+
+class MissionMav:
+    def __init__(self, bridge) -> None:
+        self.bridge = bridge
+
+    def __getattr__(self, method):
+        def call(*args):
+            bridge = self.bridge
+            if bridge.sc.get("send_fails") == method:
+                raise OSError("boom")
+            bridge.log.append(["send", method, list(args)])
+            bridge.sim.on_send(method, list(args))
+        return call
+
+
+class MissionSendLock:
+    def __init__(self, bridge) -> None:
+        self.bridge = bridge
+        self.swapped = False
+
+    def __enter__(self):
+        at = self.bridge.sc.get("link_lost_at")
+        if at is not None and not self.swapped and self.bridge.clock.t >= at:
+            self.swapped = True
+            self.bridge._conn = type("Conn", (), {})()
+            self.bridge._conn.mav = MissionMav(self.bridge)
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+class MissionSim:
+    """The vehicle's side of the mission protocol, scripted by the scenario."""
+
+    def __init__(self, bridge) -> None:
+        self.bridge = bridge
+        self.v = bridge.sc.get("vehicle", {})
+        self.queue: list = []
+        self.n = 0
+        self.upload: dict = {}
+        self.count_sends = 0
+        self.list_requests = 0
+        self.item_requests: dict = {}
+
+    def schedule(self, delay: float, kind: str, payload) -> None:
+        self.n += 1
+        self.queue.append((self.bridge.clock.t + delay, self.n, kind, payload))
+
+    def on_send(self, name: str, args: list) -> None:
+        v = self.v
+        if name == "mission_count_send":
+            self.count_sends += 1
+            if self.count_sends <= v.get("drop_counts", 0):
+                return
+            count = args[2]
+            self.upload = {"count": count, "type": args[3] if len(args) > 3 else 0}
+            if count == 0:
+                self.schedule(v.get("ack_delay", 0.05), "ack", self.upload["type"])
+            else:
+                self.schedule(v.get("req_delay", 0.05), "request", 0)
+        elif name in ("mission_item_int_send", "mission_item_send"):
+            seq = args[2]
+            nxt = seq + 1
+            if nxt >= self.upload.get("count", 0):
+                self.schedule(v.get("ack_delay", 0.05), "ack", self.upload.get("type", 0))
+            elif v.get("stall_after") is not None and seq >= v["stall_after"]:
+                pass
+            else:
+                self.schedule(v.get("item_delay", 0.05), "request", nxt)
+        elif name == "mission_request_list_send":
+            self.list_requests += 1
+            if self.list_requests <= v.get("drop_lists", 0):
+                return
+            count = len(v.get("mission", [])) + (1 if v.get("count_changes") and self.list_requests >= 2 else 0)
+            self.schedule(v.get("count_delay", 0.05), "count", v.get("count_override", count))
+        elif name == "mission_request_int_send":
+            seq = args[2]
+            self.item_requests[seq] = self.item_requests.get(seq, 0) + 1
+            if self.item_requests[seq] <= v.get("drop_items", {}).get(str(seq), 0):
+                if v.get("unexpected"):
+                    self.schedule(0.01, "console", {"name": "STATUSTEXT", "text": "Req. WP was unexpected", "level": "warning"})
+                return
+            self.schedule(v.get("item_delay", 0.05), "item", seq)
+
+    def deliver(self, entry) -> None:
+        _, _, kind, payload = entry
+        b = self.bridge
+        v = self.v
+        as_int = v.get("request_as_int", True)
+        if kind == "request":
+            name = "MISSION_REQUEST_INT" if as_int else "MISSION_REQUEST"
+            b._handle_mission_request(telemetry_message(name, {"seq": payload, "mission_type": self.upload.get("type", 0)}), as_int)
+        elif kind == "ack":
+            b._handle_mission_ack(telemetry_message("MISSION_ACK", {"type": v.get("ack_type", 0), "mission_type": payload}))
+            current = v.get("current_after_ack")
+            if current:
+                self.schedule(current["delay"], "current", current["fields"])
+            for line in v.get("status_after_ack", []):
+                self.schedule(line["delay"], "console", {"name": "STATUSTEXT", "text": line["text"], "level": line["level"]})
+        elif kind == "count":
+            b._handle_mission_count(telemetry_message("MISSION_COUNT", {"count": payload, "mission_type": 0}))
+        elif kind == "item":
+            item = v["mission"][payload]
+            fields = {"seq": payload, "frame": item["frame"], "command": item["command"], "current": 0,
+                      "autocontinue": item.get("autocontinue", 1), "z": item.get("z", 0.0), "mission_type": 0}
+            for n, value in enumerate(item.get("params", [0.0] * 4), start=1):
+                fields[f"param{n}"] = unclean(value)
+            if as_int:
+                fields["x"], fields["y"] = item["x"], item["y"]
+                b._handle_mission_item(telemetry_message("MISSION_ITEM_INT", fields), True)
+            else:
+                fields["x"], fields["y"] = item["x"] / 1e7, item["y"] / 1e7
+                b._handle_mission_item(telemetry_message("MISSION_ITEM", fields), False)
+        elif kind == "current":
+            b._handle_mission_current(telemetry_message("MISSION_CURRENT", unclean(payload)))
+        elif kind == "console":
+            b.publish_to_subs(payload)
+
+    def wait(self, event, timeout) -> bool:
+        clock = self.bridge.clock
+        deadline = clock.t + timeout
+        while True:
+            if event._flag:
+                return True
+            if not self.queue:
+                clock.t = deadline
+                return event._flag
+            nxt = min(self.queue, key=lambda e: (e[0], e[1]))
+            if nxt[0] > deadline:
+                clock.t = deadline
+                return event._flag
+            self.queue.remove(nxt)
+            if nxt[0] > clock.t:
+                clock.t = nxt[0]
+            self.deliver(nxt)
+
+
+class MissionStore:
+    def __init__(self, bridge) -> None:
+        self.bridge = bridge
+
+    def update(self, **fields) -> None:
+        self.bridge.log.append(["update", fields])
+
+    def get_snapshot(self) -> dict:
+        sc = self.bridge.sc
+        snap = {}
+        if "home" in sc:
+            snap["home"] = sc["home"]
+        if "position" in sc:
+            snap["position"] = sc["position"]
+        return snap
+
+
+def mission_bridge_class():
+    import types
+
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
+    from corvus import autopilot as ap
+    from tests.reference import mavlink_missions_python as ref
+
+    class MissionBridge(ref.MissionProtocolMixin):
+        def __init__(self, sc: dict, clock: Clock) -> None:
+            self.sc = sc
+            self.clock = clock
+            self.log: list = []
+            self.last_error = ""
+            self.subs: list = []
+            self.sim = MissionSim(self)
+            self._operation_lock = MissionLock(self)
+            self._stop_event = FlightStop(self)
+            self._store = MissionStore(self)
+            self._send_lock = MissionSendLock(self)
+            self._conn = type("Conn", (), {})()
+            self._conn.mav = MissionMav(self)
+            self._target_system = 1
+            self._target_component = 1
+            self._mav_type_id = sc.get("mav_type", 2)
+            self._dialect = ap.dialect_for_stack(sc.get("stack", "px4"))
+            self._home_alt_amsl = sc.get("home_amsl")
+            self._init_mission_state()
+
+        def _connection_ready(self) -> bool:
+            until = self.sc.get("ready_until")
+            if until is not None and self.clock.t >= until:
+                return False
+            return self.sc.get("ready", True)
+
+        def _ack_is_for_us(self, msg) -> bool:
+            return self.sc.get("ours", True)
+
+        def _is_slow_link(self) -> bool:
+            return self.sc.get("slow_link", False)
+
+        def _set_command_error(self, text: str) -> None:
+            self.last_error = text
+            self.log.append(["error", text])
+
+        def _console_publish(self, name, text, level) -> None:
+            self.log.append(["console", name, text, level])
+            self.publish_to_subs({"name": name, "text": text, "level": level})
+
+        def publish_to_subs(self, entry) -> None:
+            for fn in list(self.subs):
+                fn(entry)
+
+        def add_console_sub(self, fn) -> None:
+            self.subs.append(fn)
+
+        def remove_console_sub(self, fn) -> None:
+            if fn in self.subs:
+                self.subs.remove(fn)
+
+        def _command_failure(self, action, result) -> bool:
+            self.log.append(["failure", action, result])
+            return False
+
+    return MissionBridge, ref
+
+
+def mission_spec(raw: dict) -> dict:
+    spec = unclean(raw)
+    return spec
+
+
+def mission_scenarios() -> list[dict]:
+    def spec(seq, lat=48.1, lon=11.5, alt=30.0, command=16, p=(0.0, 0.0, 0.0, 0.0), frame=3):
+        return {"frame": frame, "command": command, "current": 1 if seq == 0 else 0, "autocontinue": 1,
+                "param1": p[0], "param2": p[1], "param3": p[2], "param4": p[3],
+                "x_int": round(lat * 1e7), "y_int": round(lon * 1e7), "x_f": lat, "y_f": lon, "z": alt}
+
+    three = [spec(0), spec(1, 48.2, 11.6, 40.0), spec(2, 48.3, 11.7, 50.0, p=(1.0, "nan", 0.0, "nan"))]
+    plan = [{"command": 22, "lat": 48.1, "lon": 11.5, "alt": 20.0, "params": [0.0, 0.0, 0.0, "nan"], "item": 0},
+            {"command": 16, "lat": 48.2, "lon": 11.6, "alt": 30.0, "params": [0.0, 0.0, 0.0, "nan"], "item": 1},
+            {"command": 178, "lat": 0.0, "lon": 0.0, "alt": 0.0, "params": [1.0, 5.0, -1.0, 0.0], "item": 2},
+            {"command": 20, "lat": 0.0, "lon": 0.0, "alt": 0.0, "params": [], "item": 3}]
+    stored = [
+        {"command": 16, "frame": 3, "x": 481000000, "y": 115000000, "z": 30.0, "params": [0.0, 0.0, 0.0, "nan"]},
+        {"command": 22, "frame": 3, "x": 481100000, "y": 115100000, "z": 0.0, "params": [15.0, 0.0, 0.0, 90.0]},
+        {"command": 21, "frame": 0, "x": 0, "y": 0, "z": 120.5, "params": [0.0, 0.0, 0.0, 0.0], "autocontinue": 0},
+    ]
+    polygon = [[11.0, 48.0], [11.1, 48.0], [11.1, 48.1], [11.0, 48.1]]
+    AP = {"stack": "ardupilot", "mav_type": 2}
+    cur = lambda **kw: {"op": "current", "fields": kw}
+    return [
+        {"name": "capabilities", "steps": [{"op": "capabilities"}]},
+        {"name": "capabilities_rover", "stack": "ardupilot", "mav_type": 10, "steps": [{"op": "capabilities"}]},
+        {"name": "upload_ok", "steps": [{"op": "upload", "items": three}]},
+        {"name": "upload_int_and_plain_requests", "vehicle": {"request_as_int": False}, "steps": [{"op": "upload", "items": three}]},
+        {"name": "upload_rejected", "vehicle": {"ack_type": 14}, "steps": [{"op": "upload", "items": three}]},
+        {"name": "upload_unsupported_frame", "vehicle": {"ack_type": 2}, "steps": [{"op": "upload", "items": three}]},
+        {"name": "upload_count_lost_then_retried", "vehicle": {"drop_counts": 2}, "steps": [{"op": "upload", "items": three}]},
+        {"name": "upload_count_never_answered", "vehicle": {"drop_counts": 9}, "steps": [{"op": "upload", "items": three}]},
+        {"name": "upload_count_never_answered_slow_link", "slow_link": True, "vehicle": {"drop_counts": 9},
+         "steps": [{"op": "upload", "items": three}]},
+        {"name": "upload_stalls", "vehicle": {"stall_after": 0}, "steps": [{"op": "upload", "items": three}]},
+        {"name": "upload_slow_vehicle", "vehicle": {"req_delay": 1.0, "item_delay": 0.8, "ack_delay": 0.9},
+         "steps": [{"op": "upload", "items": three}]},
+        {"name": "upload_send_fails", "send_fails": "mission_count_send", "steps": [{"op": "upload", "items": three}]},
+        {"name": "upload_link_lost", "link_lost_at": 0.0, "steps": [{"op": "upload", "items": three}]},
+        {"name": "upload_item_send_fails", "send_fails": "mission_item_int_send", "vehicle": {"stall_after": 5},
+         "steps": [{"op": "upload", "items": three}]},
+        {"name": "upload_aborted", "abort_at": 1000.3, "vehicle": {"req_delay": 1.0}, "steps": [{"op": "upload", "items": three}]},
+        {"name": "upload_fence", "steps": [{"op": "upload", "items": three, "type": 1}]},
+        {"name": "upload_clear", "steps": [{"op": "upload", "items": []}, {"op": "upload", "items": [], "type": 1}]},
+        {"name": "upload_not_ours", "ours": False, "steps": [{"op": "upload", "items": three}]},
+        {"name": "clear_mission", "steps": [{"op": "clear"}, {"op": "state"}]},
+        {"name": "clear_mission_refused", "vehicle": {"ack_type": 5}, "steps": [{"op": "clear"}]},
+        {"name": "clear_mission_timeout", "vehicle": {"drop_counts": 9}, "steps": [{"op": "clear"}]},
+        {"name": "clear_mission_not_ready", "ready": False, "steps": [{"op": "clear"}]},
+        {"name": "plan_upload_px4", "steps": [{"op": "upload_plan", "items": plan}, {"op": "state"}]},
+        {"name": "plan_upload_ardupilot", **AP, "home": [11.5, 48.1], "home_amsl": 520.0,
+         "steps": [{"op": "upload_plan", "items": plan[:3]}, {"op": "state"}]},
+        {"name": "plan_lowers_circles_on_px4", "steps": [{"op": "upload_plan", "items": [
+            {"command": 18, "lat": 48.0, "lon": 11.0, "alt": 40.0, "params": [2.0, 0.0, 50.0, 0.0], "item": 0},
+            {"command": 16, "lat": 48.1, "lon": 11.1, "alt": 40.0, "params": [0.0, 0.0, 0.0, 0.0], "item": 1}]}]},
+        {"name": "plan_keeps_circles_on_ardupilot", **AP, "steps": [{"op": "upload_plan", "items": [
+            {"command": 18, "lat": 48.0, "lon": 11.0, "alt": 40.0, "params": [2.0, 0.0, 50.0, 0.0], "item": 0}]}]},
+        {"name": "plan_without_item_numbers", "steps": [{"op": "upload_plan", "items": [
+            {"command": 16, "lat": 48.0, "lon": 11.0, "alt": 40.0, "params": [0.0, 0.0, 0.0, 0.0]}]}, {"op": "state"}]},
+        {"name": "plan_empty", "steps": [{"op": "upload_plan", "items": []}]},
+        {"name": "plan_too_many", "steps": [{"op": "upload_plan", "items": [
+            {"command": 16, "lat": 48.0, "lon": 11.0, "alt": 40.0, "params": [0.0] * 4, "item": i} for i in range(256)]}]},
+        {"name": "plan_too_many_after_lowering", "steps": [{"op": "upload_plan", "items": [
+            {"command": 18, "lat": 48.0, "lon": 11.0, "alt": 40.0, "params": [1.0] * 4, "item": i} for i in range(130)]}]},
+        {"name": "plan_not_ready", "ready": False, "steps": [{"op": "upload_plan", "items": plan}]},
+        {"name": "plan_refused_for_a_rover", "stack": "ardupilot", "mav_type": 10, "steps": [{"op": "upload_plan", "items": plan}]},
+        {"name": "plan_refused_without_item_numbers", "stack": "ardupilot", "mav_type": 10, "steps": [{"op": "upload_plan", "items": [
+            {"command": 16, "lat": 48.0, "lon": 11.0, "alt": 0.0, "params": [0.0] * 4},
+            {"command": 21, "lat": 48.0, "lon": 11.0, "alt": 0.0, "params": [0.0] * 4}]}]},
+        {"name": "plan_upload_rejected", "vehicle": {"ack_type": 3}, "steps": [{"op": "upload_plan", "items": plan}, {"op": "state"}]},
+        {"name": "plan_verdict_no_mission_with_reason", "vehicle": {
+            "current_after_ack": {"delay": 0.5, "fields": {"seq": 0, "total": 4, "mission_state": 1}},
+            "status_after_ack": [{"delay": 0.2, "text": "Mission rejected: Takeoff required", "level": "critical"},
+                                 {"delay": 0.25, "text": "Other critical thing", "level": "critical"}]},
+         "home": [11.5, 48.1], "steps": [{"op": "upload_plan", "items": plan}]},
+        {"name": "plan_verdict_no_mission_other_reason", "vehicle": {
+            "current_after_ack": {"delay": 0.5, "fields": {"seq": 0, "total": 4, "mission_state": 1}},
+            "status_after_ack": [{"delay": 0.2, "text": "Landing too steep", "level": "critical"}]},
+         "steps": [{"op": "upload_plan", "items": plan}]},
+        {"name": "plan_verdict_no_home", "vehicle": {
+            "current_after_ack": {"delay": 0.5, "fields": {"seq": 0, "total": 4, "mission_state": 1}}},
+         "steps": [{"op": "upload_plan", "items": plan}]},
+        {"name": "plan_verdict_no_home_zero_home", "home": [0.0, 0.0], "vehicle": {
+            "current_after_ack": {"delay": 0.5, "fields": {"seq": 0, "total": 4, "mission_state": 1}}},
+         "steps": [{"op": "upload_plan", "items": plan}]},
+        {"name": "plan_verdict_with_home_gives_the_hint", "home": [11.5, 48.1], "vehicle": {
+            "current_after_ack": {"delay": 0.5, "fields": {"seq": 0, "total": 4, "mission_state": 1}}},
+         "steps": [{"op": "upload_plan", "items": plan}]},
+        {"name": "plan_verdict_accepted_states", "vehicle": {
+            "current_after_ack": {"delay": 0.5, "fields": {"seq": 0, "total": 4, "mission_state": 2}}},
+         "steps": [{"op": "upload_plan", "items": plan}]},
+        {"name": "plan_verdict_too_early", "vehicle": {
+            "current_after_ack": {"delay": 0.1, "fields": {"seq": 0, "total": 4, "mission_state": 1}}},
+         "steps": [{"op": "upload_plan", "items": plan}]},
+        {"name": "plan_verdict_for_another_mission", "vehicle": {
+            "current_after_ack": {"delay": 0.5, "fields": {"seq": 0, "total": 9, "mission_state": 1}}},
+         "steps": [{"op": "upload_plan", "items": plan}]},
+        {"name": "plan_verdict_never_comes", "steps": [{"op": "upload_plan", "items": plan}]},
+        {"name": "plan_verdict_interrupted", "abort_at": 1000.0, "steps": [{"op": "upload_plan", "items": plan}]},
+        {"name": "plan_verdict_not_used_on_ardupilot", **AP, "vehicle": {
+            "current_after_ack": {"delay": 0.5, "fields": {"seq": 0, "total": 4, "mission_state": 1}}},
+         "steps": [{"op": "upload_plan", "items": plan[:2]}]},
+        {"name": "fence_upload_and_clear", "steps": [{"op": "fence", "polygon": polygon}, {"op": "state"},
+                                                    {"op": "clear_fence"}, {"op": "state"}]},
+        {"name": "fence_checks", "steps": [{"op": "fence", "polygon": polygon[:2]}]},
+        {"name": "fence_not_ready", "ready": False, "steps": [{"op": "fence", "polygon": polygon}, {"op": "clear_fence"}]},
+        {"name": "fence_rejected", "vehicle": {"ack_type": 4}, "steps": [{"op": "fence", "polygon": polygon}, {"op": "clear_fence"},
+                                                                         {"op": "state"}]},
+        {"name": "download_ok", "vehicle": {"mission": stored}, "home": [11.5, 48.1], "home_amsl": 510.0,
+         "steps": [{"op": "download"}, {"op": "state"}]},
+        {"name": "download_plain_item_replies", "vehicle": {"mission": stored, "request_as_int": False}, "steps": [{"op": "download"}]},
+        {"name": "download_ardupilot_skips_home_slot", **AP, "vehicle": {"mission": stored}, "steps": [{"op": "download"}]},
+        {"name": "download_empty", "vehicle": {"mission": []}, "steps": [{"op": "download"}, {"op": "state"}]},
+        {"name": "download_count_lost_then_answered", "vehicle": {"mission": stored, "drop_lists": 2}, "steps": [{"op": "download"}]},
+        {"name": "download_count_never_answered", "vehicle": {"mission": stored, "drop_lists": 99}, "steps": [{"op": "download"}]},
+        {"name": "download_item_lost_then_restarted", "vehicle": {"mission": stored, "drop_items": {"1": 1}}, "steps": [{"op": "download"}]},
+        {"name": "download_item_never_arrives", "vehicle": {"mission": stored, "drop_items": {"1": 99}}, "steps": [{"op": "download"}]},
+        {"name": "download_item_unexpected_request", "vehicle": {"mission": stored, "drop_items": {"2": 99}, "unexpected": True},
+         "steps": [{"op": "download"}]},
+        {"name": "download_count_changes_on_restart", "vehicle": {"mission": stored, "drop_items": {"1": 1}, "count_changes": True},
+         "steps": [{"op": "download"}]},
+        {"name": "download_too_long", "vehicle": {"mission": stored, "count_override": 400}, "steps": [{"op": "download"}]},
+        {"name": "download_interrupted_by_abort", "abort_at": 1000.2, "vehicle": {"mission": stored, "count_delay": 1.0},
+         "steps": [{"op": "download"}]},
+        {"name": "download_not_ready", "ready": False, "steps": [{"op": "download"}]},
+        {"name": "download_link_lost", "link_lost_at": 0.0, "vehicle": {"mission": stored}, "steps": [{"op": "download"}]},
+        {"name": "download_send_fails", "send_fails": "mission_request_list_send", "vehicle": {"mission": stored},
+         "steps": [{"op": "download"}]},
+        {"name": "download_stopped", "stop_at": 1000.0, "vehicle": {"mission": stored}, "steps": [{"op": "download"}]},
+        {"name": "download_slow_link", "slow_link": True, "vehicle": {"mission": stored, "count_delay": 2.0}, "steps": [{"op": "download"}]},
+        {"name": "download_items_with_nan_and_junk", "vehicle": {"mission": [
+            {"command": 16, "frame": 3, "x": 1, "y": -1, "z": "nan", "params": ["nan", 1.0, "nan", 0.0]}]}, "steps": [{"op": "download"}]},
+        {"name": "mission_current_follows_the_plan", "steps": [
+            {"op": "note", "index": [0, 1, None, 2]},
+            cur(seq=1, total=4, mission_state=3), cur(seq=2, total=4), cur(seq=9, total=4), cur(seq=0, total=65535, mission_state=5),
+            cur(seq=3, total=0, mission_state=9), {"op": "reached", "fields": {"seq": 3}}, {"op": "reached", "fields": {"seq": 1}},
+            {"op": "state"}]},
+        {"name": "mission_current_ardupilot_offset", **AP, "steps": [
+            {"op": "note", "index": [0, 1]}, cur(seq=0, total=3, mission_state=3), cur(seq=1, total=3), cur(seq=2, total=3),
+            {"op": "reached", "fields": {"seq": 0}}, {"op": "reached", "fields": {"seq": 2}}]},
+        {"name": "mission_current_without_a_plan", "steps": [cur(seq=2, total=4, mission_state=3), {"op": "state"}]},
+        {"name": "mission_changed_by_count_after_grace", "steps": [
+            {"op": "note", "index": [0, 1, 2]}, cur(seq=0, total=7), {"op": "advance", "seconds": 6.0}, cur(seq=0, total=7), {"op": "state"}]},
+        {"name": "mission_count_confirmed_then_changed", "steps": [
+            {"op": "note", "index": [0, 1, 2]}, cur(seq=0, total=3), cur(seq=0, total=3), cur(seq=0, total=5), {"op": "state"}]},
+        {"name": "mission_changed_by_id", "steps": [
+            {"op": "note", "index": [0, 1, 2]}, cur(seq=0, total=3, mission_id=77), cur(seq=1, total=3, mission_id=77),
+            cur(seq=1, total=3, mission_id=78), cur(seq=1, total=3, mission_id=78), {"op": "state"}]},
+        {"name": "mission_id_adopted_after_a_transfer", "steps": [
+            cur(seq=0, total=3, mission_id=5), {"op": "note", "index": [0, 1, 2]}, cur(seq=0, total=3, mission_id=9),
+            cur(seq=0, total=3, mission_id=9), {"op": "state"}]},
+        {"name": "forget_and_note", "steps": [
+            {"op": "note", "index": [0, 1]}, {"op": "forget", "reason": "the link restarted"}, {"op": "forget", "reason": "again"},
+            {"op": "forget", "reason": ""}, {"op": "note", "index": None}, {"op": "state"}]},
+        {"name": "request_served_directly", "steps": [
+            {"op": "serve", "items": three, "seq": 1, "as_int": True}, {"op": "serve", "items": three, "seq": 2, "as_int": False},
+            {"op": "serve", "items": three, "seq": 3, "as_int": True}, {"op": "serve", "items": three, "seq": -1, "as_int": True},
+            {"op": "serve", "items": three, "seq": 1, "as_int": True, "mission_type": 1}]},
+        {"name": "request_for_a_fence_upload", "steps": [
+            {"op": "serve", "items": three, "seq": 1, "as_int": True, "type": 1, "mission_type": 1}]},
+        {"name": "request_not_ours", "ours": False, "steps": [{"op": "serve", "items": three, "seq": 1, "as_int": True}]},
+        {"name": "request_send_fails", "send_fails": "mission_item_int_send", "steps": [
+            {"op": "serve", "items": three, "seq": 1, "as_int": True}]},
+        {"name": "request_link_lost", "link_lost_at": 0.0, "steps": [{"op": "serve", "items": three, "seq": 1, "as_int": True}]},
+        {"name": "stray_messages", "steps": [
+            {"op": "stray_count", "count": 3}, {"op": "stray_item", "seq": 0}, {"op": "stray_ack", "type": 0}, {"op": "stray_ack", "type": 14}]},
+        {"name": "helper_specs", "steps": [{"op": "spec", "args": [0, 22, 48.1234567, 11.7654321, 30.0, "nan", "nan", "nan", "nan"]},
+                                          {"op": "spec", "args": [3, 16, -0.00000005, 0.00000015, -5.5, 1.0, 2.0, 3.0, 4.0], "frame": 0}]},
+        {"name": "helper_home_slot", "steps": [{"op": "home_slot", "items": [spec(0), spec(1)]}, {"op": "home_slot", "items": []}]},
+        {"name": "helper_home_slot_ardupilot", **AP, "home": [11.5, 48.1], "home_amsl": 500.0,
+         "steps": [{"op": "home_slot", "items": [spec(0), spec(1)]}, {"op": "home_slot", "items": []}]},
+        {"name": "helper_home_slot_ardupilot_no_home", **AP, "steps": [{"op": "home_slot", "items": [spec(0)]}]},
+        {"name": "helper_takeoff_position", "steps": [
+            {"op": "takeoff_pos", "first": [48.0, 11.0, 30.0]}]},
+        {"name": "helper_takeoff_position_from_the_vehicle", "position": [11.9, 48.9], "home": [11.5, 48.1],
+         "steps": [{"op": "takeoff_pos", "first": [48.0, 11.0, 30.0]}]},
+        {"name": "helper_takeoff_position_from_home", "position": [0.0, 0.0], "home": [11.5, 48.1],
+         "steps": [{"op": "takeoff_pos", "first": [48.0, 11.0, 30.0]}]},
+        {"name": "helper_takeoff_position_junk", "position": [200.0, 48.9], "home": [11.5, 95.0],
+         "steps": [{"op": "takeoff_pos", "first": [48.0, 11.0, 30.0]}]},
+        {"name": "helper_acks", "steps": [{"op": "ack_result", "ack": n} for n in range(-3, 17)]},
+        {"name": "helper_validate_points", "steps": [
+            {"op": "validate", "points": [{"lat": 48.1, "lon": 11.5, "alt_agl": 30}]},
+            {"op": "validate", "points": []}, {"op": "validate", "points": "x"}, {"op": "validate", "points": None},
+            {"op": "validate", "points": [1]}, {"op": "validate", "points": [{"lon": 11.5, "alt_agl": 30}]},
+            {"op": "validate", "points": [{"lat": True, "lon": 11.5, "alt_agl": 30}]},
+            {"op": "validate", "points": [{"lat": 91, "lon": 11.5, "alt_agl": 30}]},
+            {"op": "validate", "points": [{"lat": 48, "lon": "x", "alt_agl": 30}]},
+            {"op": "validate", "points": [{"lat": 48, "lon": 181, "alt_agl": 30}]},
+            {"op": "validate", "points": [{"lat": 48, "lon": 11}]},
+            {"op": "validate", "points": [{"lat": 48, "lon": 11, "alt_agl": "30"}]},
+            {"op": "validate", "points": [{"lat": 48, "lon": 11, "alt_agl": 0.5}]},
+            {"op": "validate", "points": [{"lat": 48, "lon": 11, "alt_agl": 120}]},
+            {"op": "validate", "points": [{"lat": 48, "lon": 11, "alt_agl": 121}]},
+            {"op": "validate", "points": [{"lat": 48, "lon": 11, "alt_agl": 30}] * 255},
+            {"op": "validate", "points": [{"lat": 48, "lon": 11, "alt_agl": 30}] * 256},
+            {"op": "validate", "points": [{"lat": 48, "lon": 11, "alt_agl": 30}, {"lat": 49, "lon": 12, "alt_agl": 99.5}]}]},
+        {"name": "helper_validate_points_rover", "stack": "ardupilot", "mav_type": 10, "steps": [
+            {"op": "validate", "points": [{"lat": 48, "lon": 11}]}, {"op": "validate", "points": [{"lat": 48, "lon": 11, "alt_agl": 500}]},
+            {"op": "validate", "points": [{"lat": 48, "lon": 11, "alt_agl": None}]}, {"op": "validate", "points": [{"lat": 48, "lon": 11, "alt_agl": "x"}]}]},
+    ]
+
+
+def mission_cases() -> list[dict]:
+    import logging
+    import types
+
+    MissionBridge, ref = mission_bridge_class()
+    out = []
+    for sc in mission_scenarios():
+        clock = Clock()
+        clock.t = 1000.0
+        br = MissionBridge(sc, clock)
+        FakeEvent.sim = br.sim
+        records: list = []
+
+        class Capture(logging.Handler):
+            def emit(self, record):
+                br.log.append(["log", record.levelname.lower(), record.getMessage()])
+
+        handler = Capture()
+        logger = logging.getLogger("corvus.mavlink")
+        logger.addHandler(handler)
+        old_level = logger.level
+        logger.setLevel(logging.DEBUG)
+
+        def monotonic(clock=clock):
+            return clock.t
+
+        def lower_circles(items):
+            out_items = []
+            for item in items:
+                if int(item.get("command", 0)) == 18:
+                    for _ in range(2):
+                        out_items.append(dict(item, command=16))
+                else:
+                    out_items.append(item)
+            return out_items
+
+        def items_to_plan(items, home=None, home_alt_amsl=None):
+            return {"plan_index": list(range(len(items))), "home": home, "home_alt": home_alt_amsl}
+
+        saved = (ref.mission_plan.lower_circles, ref.mission_plan.items_to_plan, ref._PendingAck, ref.threading)
+        ref.mission_plan.lower_circles = lower_circles
+        ref.mission_plan.items_to_plan = items_to_plan
+        ref._PendingAck = FakePendingAck
+        ref.threading = types.SimpleNamespace(Event=FakeEvent, Lock=threading.Lock)
+        results = []
+        try:
+            with mock.patch("time.monotonic", monotonic):
+                for step in sc["steps"]:
+                    before = len(br.log)
+                    op = step["op"]
+                    result = None
+                    if op == "capabilities":
+                        result = br.mission_capabilities()
+                    elif op == "upload":
+                        result = br._upload_mission([mission_spec(i) for i in step["items"]], step.get("type", 0))
+                    elif op == "clear":
+                        result = br.clear_mission()
+                    elif op == "upload_plan":
+                        result = br.upload_mission_plan([unclean(i) for i in step["items"]])
+                    elif op == "fence":
+                        result = br.upload_fence([list(p) for p in step["polygon"]])
+                    elif op == "clear_fence":
+                        result = br.clear_fence()
+                    elif op == "download":
+                        result = br.download_mission()
+                    elif op == "current":
+                        br._handle_mission_current(telemetry_message("MISSION_CURRENT", step["fields"]))
+                    elif op == "reached":
+                        br._handle_mission_item_reached(telemetry_message("MISSION_ITEM_REACHED", step["fields"]))
+                    elif op == "note":
+                        br._note_vehicle_mission(step["index"])
+                    elif op == "forget":
+                        br._forget_vehicle_mission(step["reason"])
+                    elif op == "advance":
+                        clock.t += step["seconds"]
+                    elif op == "serve":
+                        br._mission_items = [mission_spec(i) for i in step["items"]]
+                        br._mission_upload_type = step.get("type", 0)
+                        name = "MISSION_REQUEST_INT" if step["as_int"] else "MISSION_REQUEST"
+                        br._handle_mission_request(telemetry_message(
+                            name, {"seq": step["seq"], "mission_type": step.get("mission_type", 0)}), step["as_int"])
+                        result = br._mission_last_request
+                    elif op == "stray_count":
+                        br._handle_mission_count(telemetry_message("MISSION_COUNT", {"count": step["count"]}))
+                    elif op == "stray_item":
+                        br._handle_mission_item(telemetry_message("MISSION_ITEM_INT", {"seq": step["seq"]}), True)
+                    elif op == "stray_ack":
+                        br._handle_mission_ack(telemetry_message("MISSION_ACK", {"type": step["type"]}))
+                    elif op == "spec":
+                        args = [unclean(a) for a in step["args"]]
+                        result = br._build_mission_item_spec(*args, frame=step.get("frame"))
+                    elif op == "home_slot":
+                        result = br._with_mission_home_slot([mission_spec(i) for i in step["items"]])
+                    elif op == "takeoff_pos":
+                        result = br._takeoff_item_position(tuple(step["first"]))
+                    elif op == "ack_result":
+                        result = br._mission_ack_to_result(step["ack"])
+                    elif op == "validate":
+                        result = br._validate_fly_to_points(step["points"])
+                    elif op == "state":
+                        result = {"revision": br._mission_revision, "index": br._vehicle_mission_index,
+                                  "id": br._vehicle_mission_id, "confirmed": br._vehicle_mission_confirmed,
+                                  "fence": br.vehicle_fence()}
+                    else:
+                        raise SystemExit(op)
+                    results.append({"result": result, "events": br.log[before:], "t": round(clock.t - 1000.0, 6)})
+        finally:
+            ref.mission_plan.lower_circles, ref.mission_plan.items_to_plan, ref._PendingAck, ref.threading = saved
+            logger.removeHandler(handler)
+            logger.setLevel(old_level)
+            FakeEvent.sim = None
+        out.append({"scenario": clean(sc), "expected": clean({"steps": results, "final": {
+            "last_error": br.last_error, "subs": len(br.subs)}})})
+    return out
+
+
 COMMANDS = {"params_cases.json": cases, "logs_cases.json": logs_cases, "shell_cases.json": shell_cases,
             "ftp_cases.json": ftp_cases, "flight_cases.json": flight_cases,
             "setup_cases.json": setup_cases,
-            "telemetry_cases.json": telemetry_cases}
+            "telemetry_cases.json": telemetry_cases,
+            "missions_cases.json": mission_cases}
 
 
 def main(argv: list[str]) -> int:

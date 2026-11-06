@@ -18,6 +18,7 @@ use serde_json::Value as Json;
 use super::common::{
     e7, fixed, result_text, TAKEOFF_ALTITUDE_MAX_M, TAKEOFF_ALTITUDE_MIN_M, VELOCITY_MAX_MS, YAW_RATE_MAX_DEG_S,
 };
+use super::missions::MissionItem;
 use super::targeted;
 use crate::dialect::{is_ground_vehicle, plugin_position_commands, Dialect, ModeCommand};
 use crate::priority_lock::PriorityLock;
@@ -117,11 +118,11 @@ pub trait FlightHost: Send + Sync {
         p2: f64,
         p3: f64,
         p4: f64,
-    ) -> Json;
+    ) -> MissionItem;
     /// Reserves ArduPilot's home slot at sequence 0; PX4's items pass through.
-    fn with_mission_home_slot(&self, items: Vec<Json>) -> Vec<Json>;
+    fn with_mission_home_slot(&self, items: Vec<MissionItem>) -> Vec<MissionItem>;
     /// Uploads a mission; the MAV_MISSION_RESULT, or a negative code.
-    fn upload_mission(&self, items: &[Json]) -> i64;
+    fn upload_mission(&self, items: &[MissionItem]) -> i64;
     fn mission_ack_to_result(&self, ack: i64) -> i64;
     /// What is on the vehicle is no longer the Mission page's plan.
     fn note_vehicle_mission_cleared(&self);
@@ -900,7 +901,7 @@ impl FlightEngine {
             }
         }
         let nan = f64::NAN;
-        let mut items: Vec<Json> = Vec::new();
+        let mut items: Vec<MissionItem> = Vec::new();
         let mut seq = 0;
         if on_ground {
             let first: Point = cleaned[0];

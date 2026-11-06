@@ -15,6 +15,7 @@ pub mod flight;
 pub mod ftp;
 pub mod link_host;
 pub mod logs;
+pub mod missions;
 pub mod params;
 pub mod setup;
 pub mod shell;

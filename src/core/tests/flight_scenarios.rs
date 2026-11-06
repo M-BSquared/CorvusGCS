@@ -7,9 +7,10 @@ use std::collections::HashSet;
 use std::sync::Mutex;
 
 use corvus_core::dialect::{dialect_for_stack, Dialect, ModeCommand, Stack};
-use corvus_core::link::plain::{defs::constant_or, Message, Value};
+use corvus_core::link::plain::{Message, Value};
 use corvus_core::priority_lock::PriorityLock;
 use corvus_core::protocol::flight::{FlightEngine, FlightHost, FlightSnapshot, MODE_CONFIRM_S};
+use corvus_core::protocol::missions::{build_mission_item_spec, with_mission_home_slot, MissionItem};
 use serde_json::{json, Value as Json};
 
 fn f(x: f64) -> Json {
@@ -158,20 +159,20 @@ impl Fake {
         }
         result
     }
+}
 
-    #[allow(clippy::too_many_arguments)]
-    fn spec(&self, seq: i64, command: i64, lat: f64, lon: f64, alt: f64, p: [f64; 4], frame: Option<i64>) -> Json {
-        json!({
-            "frame": frame.unwrap_or_else(|| constant_or("MAV_FRAME_GLOBAL_RELATIVE_ALT", 3)),
-            "command": command,
-            "current": if seq == 0 { 1 } else { 0 },
-            "autocontinue": 1,
-            "param1": f(p[0]), "param2": f(p[1]), "param3": f(p[2]), "param4": f(p[3]),
-            "x_int": (lat * 1e7).round_ties_even() as i64,
-            "y_int": (lon * 1e7).round_ties_even() as i64,
-            "x_f": f(lat), "y_f": f(lon), "z": f(alt),
-        })
-    }
+fn item_json(item: &MissionItem) -> Json {
+    json!({
+        "frame": item.frame,
+        "command": item.command,
+        "current": item.current,
+        "autocontinue": item.autocontinue,
+        "param1": f(item.params[0]), "param2": f(item.params[1]),
+        "param3": f(item.params[2]), "param4": f(item.params[3]),
+        "x_int": item.x_int,
+        "y_int": item.y_int,
+        "x_f": f(item.x_f), "y_f": f(item.y_f), "z": f(item.z),
+    })
 }
 
 impl FlightHost for Fake {
@@ -391,50 +392,26 @@ impl FlightHost for Fake {
         p2: f64,
         p3: f64,
         p4: f64,
-    ) -> Json {
-        self.spec(seq, command, lat, lon, alt, [p1, p2, p3, p4], None)
+    ) -> MissionItem {
+        build_mission_item_spec(seq, command, lat, lon, alt, p1, p2, p3, p4, None)
     }
-    fn with_mission_home_slot(&self, items: Vec<Json>) -> Vec<Json> {
-        if items.is_empty() || !self.stack().mission_seq0_is_home() {
-            return items;
-        }
-        let home = self.sc["home"]
+    fn with_mission_home_slot(&self, items: Vec<MissionItem>) -> Vec<MissionItem> {
+        let home: Vec<f64> = self.sc["home"]
             .as_array()
-            .cloned()
-            .unwrap_or_else(|| vec![json!(0.0), json!(0.0)]);
-        let home_alt = self.st().home.unwrap_or(0.0);
-        let placeholder = self.spec(
-            0,
-            constant_or("MAV_CMD_NAV_WAYPOINT", 16),
-            home[1].as_f64().unwrap(),
-            home[0].as_f64().unwrap(),
-            home_alt,
-            [0.0; 4],
-            Some(constant_or("MAV_FRAME_GLOBAL", 0)),
-        );
-        let mut out = vec![placeholder];
-        for mut item in items {
-            item["current"] = json!(0);
-            out.push(item);
-        }
-        out
+            .map(|h| h.iter().map(|v| v.as_f64().unwrap()).collect())
+            .unwrap_or_else(|| vec![0.0, 0.0]);
+        let home_alt = self.st().home;
+        with_mission_home_slot(items, &self.stack(), &home, home_alt)
     }
-    fn upload_mission(&self, items: &[Json]) -> i64 {
+    fn upload_mission(&self, items: &[MissionItem]) -> i64 {
         let mut s = self.st();
-        s.log.push(json!(["upload", items]));
+        s.log
+            .push(json!(["upload", items.iter().map(item_json).collect::<Vec<_>>()]));
         s.t += self.cost();
         self.sc["upload_ack"].as_i64().unwrap_or(0)
     }
     fn mission_ack_to_result(&self, ack: i64) -> i64 {
-        if ack == constant_or("MAV_MISSION_ACCEPTED", 0) {
-            constant_or("MAV_RESULT_ACCEPTED", 0)
-        } else if ack == constant_or("MAV_MISSION_DENIED", 14) {
-            constant_or("MAV_RESULT_DENIED", 2)
-        } else if ack == 2 || ack == 3 {
-            constant_or("MAV_RESULT_UNSUPPORTED", 3)
-        } else {
-            constant_or("MAV_RESULT_FAILED", 4)
-        }
+        corvus_core::protocol::missions::mission_ack_to_result(ack)
     }
     fn note_vehicle_mission_cleared(&self) {
         self.st().log.push(json!(["note_mission", Json::Null]));
