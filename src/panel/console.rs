@@ -681,6 +681,22 @@ mod tests {
     use super::*;
 
     #[test]
+    fn the_console_keeps_the_newest_lines_and_counts_every_one() {
+        let mut b = Buffer::default();
+        for i in 0..(MAX_LINES + 500) {
+            b.add("info", &format!("line {i}"));
+        }
+        assert_eq!(b.lines.len(), MAX_LINES);
+        assert_eq!(b.lines[0].text, "line 500");
+        assert_eq!(b.added, (MAX_LINES + 500) as u64);
+        b.paused = true;
+        for i in 0..(MAX_LINES + 10) {
+            b.add("info", &format!("held {i}"));
+        }
+        assert_eq!(b.pending.len(), MAX_LINES, "a paused stream is bounded too");
+    }
+
+    #[test]
     fn a_transcript_line_is_timestamp_level_and_text() {
         let l = |level: &str| Line {
             ts: "12:00:01".into(),

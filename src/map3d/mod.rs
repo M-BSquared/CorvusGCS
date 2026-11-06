@@ -200,6 +200,24 @@ impl Map3d {
         self.max_zoom = max_zoom;
     }
 
+    /// Lets go of everything the view holds for drawing, for when it is left:
+    /// tiles, meshes and (through the GPU's own release) the textures. What
+    /// the operator chose stays.
+    pub fn release(&mut self) {
+        self.imagery.clear();
+        for t in self.terrain.iter().chain(self.fallback.iter()) {
+            t.clear();
+        }
+        if let Some(b) = &self.buildings {
+            b.clear();
+        }
+        self.tex_ids.clear();
+        self.used.clear();
+        self.leaf_meshes.clear();
+        self.cell_meshes.clear();
+        gpu::request_release();
+    }
+
     /// The map service of the base layer, which pairs it with a model.
     fn provider(&self, sources: &serde_json::Value) -> String {
         sources

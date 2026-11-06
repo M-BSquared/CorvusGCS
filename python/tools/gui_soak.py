@@ -13,6 +13,8 @@ scene process. Only processes this script started are measured or stopped.
 
 The summary at the end gives the median memory of the first and the last
 quarter and the slope after a warm up of two minutes, in MB per minute.
+On macOS the footprint columns hold the physical footprint (the resident
+size drops when the system compresses memory and hides what a program holds).
 Needs the repository's virtualenv for `scene.py` (`--python`).
 """
 
@@ -53,6 +55,22 @@ def sample(pid: int) -> tuple[float, int, int] | None:
         return int(rss) / 1024.0, threads, fds
     except (ValueError, OSError):
         return None
+
+
+def footprint(pid: int) -> float | None:
+    """macOS physical footprint in MB, which counts what the system has
+    compressed or swapped out; the resident size drops when it does and so
+    hides a program that holds gigabytes. None elsewhere."""
+    if sys.platform != "darwin":
+        return None
+    out = subprocess.run(["footprint", "-p", str(pid)], capture_output=True, text=True).stdout
+    for line in out.splitlines():
+        if line.strip().startswith("phys_footprint:") and "peak" not in line:
+            try:
+                return float(line.split(":")[1].split()[0])
+            except (ValueError, IndexError):
+                return None
+    return None
 
 
 def listener(port: int) -> int | None:
@@ -105,7 +123,7 @@ def main() -> int:
         t0 = time.time()
         with open(a.csv, "w", newline="") as fh:
             w = csv.writer(fh)
-            w.writerow(["t_s", "app_mb", "app_threads", "app_fds", "backend_mb", "backend_threads", "backend_fds"])
+            w.writerow(["t_s", "app_mb", "app_threads", "app_fds", "backend_mb", "backend_threads", "backend_fds", "app_footprint_mb", "backend_footprint_mb"])
             while time.time() - t0 < a.minutes * 60:
                 if scene.poll() is not None:
                     print(f"the sandboxed backend stopped after {time.time() - t0:.0f} s (not by this script)", file=sys.stderr)
@@ -116,10 +134,15 @@ def main() -> int:
                 be = listener(a.port)
                 s_app, s_be = sample(app.pid), (sample(be) if be else None)
                 if s_app:
-                    row = [round(time.time() - t0), *map(lambda v: round(v, 1), s_app), *(map(lambda v: round(v, 1), s_be) if s_be else ("", "", ""))]
+                    fp_app = footprint(app.pid)
+                    fp_be = footprint(be) if be else None
+                    row = [round(time.time() - t0), *map(lambda v: round(v, 1), s_app),
+                           *(map(lambda v: round(v, 1), s_be) if s_be else ("", "", "")),
+                           "" if fp_app is None else round(fp_app), "" if fp_be is None else round(fp_be)]
                     w.writerow(row)
                     fh.flush()
-                    rows.append({"t": row[0], "app": s_app[0], "be": s_be[0] if s_be else None, "threads": s_app[1], "fds": s_app[2]})
+                    rows.append({"t": row[0], "app": s_app[0], "be": s_be[0] if s_be else None, "threads": s_app[1], "fds": s_app[2],
+                                 "appfp": fp_app, "befp": fp_be})
                     print(*row, flush=True)
                 time.sleep(a.every)
     finally:
@@ -143,6 +166,10 @@ def main() -> int:
                 tail = [(r["t"] / 60, r[name]) for r in rows if r[name] is not None and r["t"] >= 120]
                 print(f"{name}: first quarter {statistics.median(col[:q]):.0f} MB, last quarter {statistics.median(col[-q:]):.0f} MB, "
                       f"max {max(col):.0f} MB, slope after 2 min {slope(tail):+.2f} MB/min")
+        for name, label in (("appfp", "app footprint"), ("befp", "backend footprint")):
+            col = [r[name] for r in rows if r.get(name) is not None]
+            if len(col) >= 8:
+                print(f"{label}: first quarter {statistics.median(col[:q]):.0f} MB, last quarter {statistics.median(col[-q:]):.0f} MB, max {max(col):.0f} MB")
         print(f"app threads {rows[0]['threads']} -> {rows[-1]['threads']} (max {max(r['threads'] for r in rows)}), "
               f"fds {rows[0]['fds']} -> {rows[-1]['fds']} (max {max(r['fds'] for r in rows)})")
     return 0

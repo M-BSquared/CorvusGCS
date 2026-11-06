@@ -477,6 +477,29 @@ pub unsafe fn paint(gl: &glow::Context, scene: &Scene) {
     gpu.forget_unused(gl);
 }
 
+static RELEASE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Asks for every GL object to go at the next paint of the flat map, which is
+/// the first thing that has the context once the 3D view is left.
+pub fn request_release() {
+    RELEASE.store(true, Ordering::Relaxed);
+}
+
+pub fn release_pending() -> bool {
+    RELEASE.load(Ordering::Relaxed)
+}
+
+/// Frees the GL objects when a release was asked for; the next 3D paint makes
+/// them again.
+///
+/// # Safety
+/// Must be called on egui_glow's context, from inside its paint.
+pub unsafe fn release_if_requested(gl: &glow::Context) {
+    if RELEASE.swap(false, Ordering::Relaxed) {
+        destroy(gl);
+    }
+}
+
 /// Frees the GL objects. Called with the context on the way out.
 pub fn destroy(gl: &glow::Context) {
     let mut guard = GPU.lock().unwrap_or_else(|e| e.into_inner());

@@ -328,10 +328,11 @@ impl Map {
             if let (Some(t), Some((lng, lat, zoom))) = (self.three.as_mut(), self.view) {
                 t.start_at(lng, lat, zoom, 0.0);
             }
-        } else if let Some(t) = &self.three {
+        } else if let Some(t) = self.three.as_mut() {
             self.memory.center_at(walkers::lon_lat(t.cam.lng, t.cam.lat));
             let _ = self.memory.set_zoom(t.cam.zoom);
             self.follow = false;
+            t.release();
         }
     }
 
@@ -717,6 +718,15 @@ impl Map {
         .double_click_to_zoom(double_click_zoom);
         map = map.zoom_speed(2.0);
         let response = ui.add(map);
+        if crate::map3d::gpu::release_pending() {
+            ui.painter().add(egui::PaintCallback {
+                rect: response.rect,
+                callback: std::sync::Arc::new(eframe::egui_glow::CallbackFn::new(|_, p| {
+                    // SAFETY: egui_glow calls this on its own context, inside its paint.
+                    unsafe { crate::map3d::gpu::release_if_requested(p.gl()) }
+                })),
+            });
+        }
         {
             let p = Projector::new(response.rect, &self.memory, my_position);
             let c = p.unproject(response.rect.center().to_vec2());
