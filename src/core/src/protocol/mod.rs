@@ -18,6 +18,7 @@ pub mod logs;
 pub mod params;
 pub mod setup;
 pub mod shell;
+pub mod telemetry;
 
 /// What every protocol engine asks of the bridge it runs on. A protocol that
 /// needs more (a clock, listeners) extends it with its own host trait.

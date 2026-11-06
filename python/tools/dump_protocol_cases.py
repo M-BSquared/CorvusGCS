@@ -1589,9 +1589,339 @@ def setup_cases() -> list[dict]:
     return out
 
 
+# ----------------------------------------------------------- telemetry ----
+
+def telemetry_message(name: str, fields: dict, system: int = 1):
+    """A message with every field of the MAVLink 2 view, as a decoded one has."""
+    import corvus_link
+    from types import SimpleNamespace
+
+    cls = getattr(corvus_link.dialect_v2, f"MAVLink_{name.lower()}_message")
+    ns = SimpleNamespace()
+    lengths = dict(zip(cls.ordered_fieldnames, cls.array_lengths))
+    for fname, ftype in zip(cls.fieldnames, cls.fieldtypes):
+        zero = 0.0 if ftype in ("float", "double") else 0
+        length = lengths[fname]
+        setattr(ns, fname, [zero] * length if length else zero)
+    for key, value in fields.items():
+        setattr(ns, key, list(value) if isinstance(value, list) else value)
+    ns.get_type = lambda name=name: name
+    ns.get_srcSystem = lambda system=system: system
+    return ns
+
+
+def gnss_frame(system: int = 1, receiver: int = 0, jamming: int = 1, spoofing: int = 1, signal: int = 5,
+               mode: str = "ok", length: int | None = None) -> str:
+    from corvus_link import x25crc
+
+    payload = struct.pack("<IHHBBBBBBBBB", 0, 0, 0, receiver, 0, jamming, spoofing, 0, 0, 0, signal, 0)
+    payload = payload.rstrip(b"\0") or b"\0"
+    if length is not None:
+        payload = (payload + b"\0" * 40)[:length]
+    magic = 0xFE if mode == "mav1" else 0xFD
+    msgid = 440 if mode == "other_id" else 441
+    header = bytes([magic, len(payload), 0, 0, 7, system, 1, msgid & 0xFF, (msgid >> 8) & 0xFF, 0])
+    body = header + payload
+    crc = x25crc(body[1:])
+    crc.accumulate(bytes([169]))
+    value = crc.crc ^ 1 if mode == "bad_crc" else crc.crc
+    frame = body + value.to_bytes(2, "little")
+    if mode == "short":
+        frame = frame[:-3]
+    return frame.hex()
+
+
+class TelemetryStore:
+    def __init__(self, bridge) -> None:
+        self.bridge = bridge
+
+    def update(self, **fields) -> None:
+        self.bridge.log.append(["update", fields])
+        if "rc_channels" in fields:
+            self.bridge.rc = list(fields["rc_channels"])
+
+    def get_snapshot(self) -> dict:
+        return {"rc_channels": list(self.bridge.rc)} if self.bridge.rc else {}
+
+
+def telemetry_bridge_class():
+    import collections
+
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
+    from tests.reference import mavlink_telemetry_python as ref
+
+    class TelemetryBridge(ref.TelemetryMixin):
+        def __init__(self, sc: dict) -> None:
+            self.sc = sc
+            self.log: list = []
+            self.rc: list = list(sc.get("rc", []))
+            self.last_error = ""
+            self._operation_lock = FlightLock()
+            self._store = TelemetryStore(self)
+            self._target_system = sc.get("target_system", 1)
+            self._init_telemetry_state()
+
+        @property
+        def _rangefinder_seen(self):
+            return None
+
+        @_rangefinder_seen.setter
+        def _rangefinder_seen(self, value) -> None:
+            self.log.append(["forget_rangefinder", value])
+
+        def _connection_ready(self) -> bool:
+            return self.sc.get("ready", True)
+
+        def _set_command_error(self, text: str) -> None:
+            self.last_error = text
+            self.log.append(["error", text])
+
+        def _is_slow_link(self) -> bool:
+            return self.sc.get("slow_link", False)
+
+        def _message_intervals(self) -> dict:
+            return {int(k): v for k, v in self.sc.get("intervals", {}).items()}
+
+        def set_message_interval(self, msg_id, interval_us) -> bool:
+            self.log.append(["interval", msg_id, interval_us])
+            return self.sc.get("interval_results", {}).get(str(msg_id), True)
+
+    return TelemetryBridge
+
+
+def telemetry_scenarios() -> list[dict]:
+    RC = {f"chan{i}_raw": 1000 + i * 10 for i in range(1, 19)}
+    bs = lambda **kw: {"op": "battery_status", "fields": kw}
+    return [
+        {"name": "battery_settings", "steps": [
+            {"op": "battery"}, {"op": "set_battery", "raw": {"estimate": True, "cells": 6}}, {"op": "battery"},
+            {"op": "set_battery", "raw": {"chemistry": "liion", "resistance": "9"}}, {"op": "set_battery", "raw": None},
+            {"op": "set_battery", "raw": 7}, {"op": "state"}]},
+        {"name": "battery_fields_autopilot", "steps": [
+            {"op": "fields", "v": 25.2, "a": 3.0, "reported": 80}, {"op": "fields", "v": 24.0, "a": 30.0, "reported": -1},
+            {"op": "fields", "v": 0.0, "a": 0.0, "reported": 100}, {"op": "fields", "v": 3.0, "a": 0.0, "reported": 0},
+            {"op": "state"}]},
+        {"name": "battery_cells_are_latched", "steps": [
+            {"op": "fields", "v": 25.2, "a": 3.0, "reported": 80}, {"op": "fields", "v": 21.5, "a": 3.0, "reported": 80},
+            {"op": "state"}, {"op": "forget_cells"}, {"op": "fields", "v": 21.5, "a": 3.0, "reported": 80}, {"op": "state"}]},
+        {"name": "battery_cells_configured", "steps": [
+            {"op": "set_battery", "raw": {"cells": 4}}, {"op": "fields", "v": 16.0, "a": 0.0, "reported": 50},
+            {"op": "state"}]},
+        {"name": "battery_estimate_shown", "steps": [
+            {"op": "set_battery", "raw": {"estimate": True}}, {"op": "fields", "v": 25.2, "a": 0.0, "reported": 40},
+            {"op": "fields", "v": 22.2, "a": 20.0, "reported": 40}, {"op": "fields", "v": 0.0, "a": 0.0, "reported": 40},
+            {"op": "fields", "v": 22.2, "a": 20.0, "reported": -1}]},
+        {"name": "battery_settings_reset_the_latch", "steps": [
+            {"op": "fields", "v": 25.2, "a": 3.0, "reported": 80}, {"op": "set_battery", "raw": {"estimate": True}},
+            {"op": "state"}]},
+        {"name": "battery_endurance", "steps": [
+            {"op": "endurance", "percent": 80.0, "source": "autopilot", "armed": False, "now": 0.0},
+            *[{"op": "endurance", "percent": 80.0 - i * 0.5, "source": "autopilot", "armed": True, "now": 10.0 * i}
+              for i in range(14)],
+            {"op": "state"},
+            {"op": "endurance", "percent": 60.0, "source": "estimate", "armed": True, "now": 200.0}, {"op": "state"},
+            {"op": "endurance", "percent": None, "source": "estimate", "armed": True, "now": 210.0},
+            {"op": "endurance", "percent": 59.0, "source": "estimate", "armed": False, "now": 220.0}, {"op": "state"}]},
+        {"name": "battery_endurance_window", "steps": [
+            *[{"op": "endurance", "percent": 100.0 - i * 0.1, "source": "autopilot", "armed": True, "now": 1.0 * i}
+              for i in range(450)], {"op": "state_len"}]},
+        {"name": "battery_status_cells", "steps": [
+            bs(id=0, voltages=[4100, 4120, 4110, 4090, 65535, 65535, 65535, 65535, 65535, 65535], current_consumed=1200,
+               temperature=2550, time_remaining=900),
+            bs(id=0, voltages=[0] * 10, current_consumed=0, temperature=32767, time_remaining=-5),
+            bs(id=0, voltages=[16800] + [65535] * 9, current_consumed=-1, temperature=0, time_remaining=0),
+            bs(id=0, voltages=[65534] + [65535] * 9, voltages_ext=[5000, 65535, 65535, 65535], current_consumed=10),
+            bs(id=0, voltages=[65534, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535],
+               voltages_ext=[5000, 6000, 65535, 65535]),
+            bs(id=0, voltages=[3700] * 10, voltages_ext=[3700, 3700, 0, 65535], temperature=-1234),
+            bs(id=1, voltages=[3700] * 10), bs(id=0, voltages=[3701, 3702, 3703, 0, 0, 0, 0, 0, 0, 0])]},
+        {"name": "gnss_integrity_decoded", "target_system": 1, "steps": [
+            {"op": "gnss", "fields": {"id": 0, "jamming_state": 1, "spoofing_state": 3, "gnss_signal_quality": 7}, "system": 1},
+            {"op": "gnss", "fields": {"id": 0, "jamming_state": 2, "spoofing_state": 2, "gnss_signal_quality": 11}, "system": 1},
+            {"op": "gnss", "fields": {"id": 0, "jamming_state": 9, "spoofing_state": 0, "gnss_signal_quality": 255}, "system": 0},
+            {"op": "gnss", "fields": {"id": 0, "jamming_state": 3, "spoofing_state": 1, "gnss_signal_quality": 0}, "system": 5},
+            {"op": "gnss", "fields": {"id": 1, "jamming_state": 3, "spoofing_state": 1, "gnss_signal_quality": 4}, "system": 1},
+            {"op": "forget_gnss"}]},
+        {"name": "gnss_integrity_unknown_target", "target_system": 0, "steps": [
+            {"op": "gnss", "fields": {"id": 0, "jamming_state": 3, "spoofing_state": 3, "gnss_signal_quality": 10}, "system": 9}]},
+        {"name": "gnss_integrity_frames", "target_system": 1, "steps": [
+            {"op": "gnss_frame", "frame": gnss_frame()},
+            {"op": "gnss_frame", "frame": gnss_frame(jamming=3, spoofing=2, signal=0)},
+            {"op": "gnss_frame", "frame": gnss_frame(jamming=0, spoofing=0, signal=0)},
+            {"op": "gnss_frame", "frame": gnss_frame(system=4)},
+            {"op": "gnss_frame", "frame": gnss_frame(receiver=2)},
+            {"op": "gnss_frame", "frame": gnss_frame(mode="bad_crc")},
+            {"op": "gnss_frame", "frame": gnss_frame(mode="mav1")},
+            {"op": "gnss_frame", "frame": gnss_frame(mode="short")},
+            {"op": "gnss_frame", "frame": gnss_frame(mode="other_id")},
+            {"op": "gnss_frame", "frame": gnss_frame(length=18)},
+            {"op": "gnss_frame", "frame": ""}, {"op": "gnss_frame", "frame": "fd0100"}]},
+        {"name": "attitude_target", "steps": [
+            {"op": "att", "fields": {"q": [1.0, 0.0, 0.0, 0.0], "body_roll_rate": 0.1, "body_pitch_rate": -0.2, "body_yaw_rate": 0.0}},
+            {"op": "att", "fields": {"q": [0.9238795, 0.0, 0.3826834, 0.0], "body_roll_rate": 1.5, "body_pitch_rate": 0.0, "body_yaw_rate": -3.0}},
+            {"op": "att", "fields": {"q": [0.7071068, 0.7071068, 0.0, 0.0]}},
+            {"op": "att", "fields": {"q": [0.5, 0.5, 0.5, 0.5]}},
+            {"op": "att", "fields": {"q": [1.2, 0.0, 0.9, 0.0]}},
+            {"op": "att", "fields": {"q": [0.0, 0.0, 0.0, 0.0], "body_yaw_rate": 0.05}},
+            {"op": "att", "fields": {"q": [0.7, 0.0, 0.7, 0.1], "body_roll_rate": 0.123456}}]},
+        {"name": "position_target", "steps": [
+            {"op": "pos", "fields": {"vx": 1.234, "vy": -2.5, "vz": 0.005}},
+            {"op": "pos", "fields": {"vx": 0.0, "vy": 0.0, "vz": 0.0}},
+            {"op": "pos", "fields": {"vx": 10.125, "vy": 0.015, "vz": -0.025}}]},
+        {"name": "rc_channels_full", "steps": [
+            {"op": "rc", "fields": {**RC, "chancount": 8, "rssi": 90}},
+            {"op": "rc", "fields": {**RC, "chancount": 18, "rssi": 254}},
+            {"op": "rc", "fields": {**RC, "chancount": 0, "rssi": 255}},
+            {"op": "rc", "fields": {**RC, "chancount": 40, "rssi": 101}},
+            {"op": "rc", "fields": {**RC, "chancount": 3, "rssi": 100, "chan1_raw": 65535, "chan2_raw": 0, "chan3_raw": 65534}},
+            *[{"op": "rc", "fields": {**RC, "chancount": 4, "rssi": r}} for r in (0, 50, 100, 101, 127, 128, 200, 253, 254, 255)]]},
+        {"name": "rc_channels_raw_banks", "steps": [
+            {"op": "rc_raw", "fields": {"port": 0, **{f"chan{i}_raw": 1100 + i for i in range(1, 9)}, "rssi": 80}},
+            {"op": "rc_raw", "fields": {"port": 1, **{f"chan{i}_raw": 1200 + i for i in range(1, 9)}, "rssi": 80}},
+            {"op": "rc_raw", "fields": {"port": 2, **{f"chan{i}_raw": 1300 + i for i in range(1, 9)}, "rssi": 255}},
+            {"op": "rc_raw", "fields": {"port": 3, **{f"chan{i}_raw": 1400 + i for i in range(1, 9)}, "rssi": 80}},
+            {"op": "rc_raw", "fields": {"port": 0, "chan1_raw": 65535, "chan2_raw": 2000}},
+            {"op": "rc", "fields": {**RC, "chancount": 18, "rssi": 20}},
+            {"op": "rc_raw", "fields": {"port": 1, **{f"chan{i}_raw": 1500 + i for i in range(1, 9)}}}]},
+        {"name": "radio_status_and_link_quality", "steps": [
+            {"op": "link_quality"},
+            *[{"op": "hb", "t": 100.0 + i * 1.0} for i in range(5)], {"op": "jitter"}, {"op": "link_quality"},
+            {"op": "radio", "fields": {"remrssi": 150, "txbuf": 100, "rxerrors": 3, "fixed": 1}},
+            {"op": "radio", "fields": {"remrssi": 255, "txbuf": 100, "rxerrors": 4, "fixed": 2}},
+            {"op": "radio", "fields": {"remrssi": 0, "txbuf": 0}},
+            {"op": "radio", "fields": {"remrssi": 90, "txbuf": 40}},
+            {"op": "radio", "fields": {"remrssi": 60, "txbuf": 10}},
+            {"op": "radio", "fields": {"remrssi": 41, "txbuf": 0}},
+            {"op": "radio", "fields": {"remrssi": 200, "txbuf": 200}},
+            {"op": "state"}]},
+        {"name": "link_quality_with_jitter", "steps": [
+            {"op": "hb", "t": 0.0}, {"op": "hb", "t": 1.0}, {"op": "hb", "t": 3.5}, {"op": "hb", "t": 4.0}, {"op": "hb", "t": 7.0},
+            {"op": "jitter"}, {"op": "current_jitter"},
+            {"op": "radio", "fields": {"remrssi": 150, "txbuf": 100}}, {"op": "radio", "fields": {"remrssi": 120, "txbuf": 60}},
+            {"op": "state"}]},
+        {"name": "heartbeat_window", "steps": [
+            *[{"op": "hb", "t": float(i) * 0.9973} for i in range(40)], {"op": "jitter"}, {"op": "state"},
+            {"op": "forget_link"}, {"op": "state"}, {"op": "jitter"}]},
+        {"name": "vibration_stream", "steps": [
+            {"op": "vibration", "enabled": True, "rate": 10}, {"op": "vibration", "enabled": True, "rate": 1},
+            {"op": "vibration", "enabled": True, "rate": 50}, {"op": "vibration", "enabled": True, "rate": 7},
+            {"op": "vibration", "enabled": True, "rate": 0}, {"op": "vibration", "enabled": True, "rate": 51},
+            {"op": "vibration", "enabled": False, "rate": 10}]},
+        {"name": "vibration_stream_refused", "interval_results": {"241": False}, "steps": [
+            {"op": "vibration", "enabled": True, "rate": 10}]},
+        {"name": "rangefinder_stream", "intervals": {"132": 250000}, "steps": [
+            {"op": "rangefinder", "enabled": True}, {"op": "rangefinder", "enabled": False}]},
+        {"name": "rangefinder_stream_slow", "slow_link": True, "steps": [
+            {"op": "rangefinder", "enabled": True}, {"op": "rangefinder", "enabled": False}]},
+        {"name": "rangefinder_stream_not_ready", "ready": False, "steps": [
+            {"op": "rangefinder", "enabled": True}, {"op": "rangefinder", "enabled": False}]},
+        {"name": "rangefinder_stream_refused", "interval_results": {"132": False}, "steps": [
+            {"op": "rangefinder", "enabled": False}]},
+        {"name": "rc_stream", "intervals": {"65": 200000}, "steps": [
+            {"op": "rc_stream", "enabled": True, "rate": 20}, {"op": "rc_stream", "enabled": True, "rate": 2},
+            {"op": "rc_stream", "enabled": True, "rate": 0}, {"op": "rc_stream", "enabled": True, "rate": 99},
+            {"op": "rc_stream", "enabled": False, "rate": 20}]},
+        {"name": "rc_stream_without_baseline", "steps": [
+            {"op": "rc_stream", "enabled": True, "rate": 20}, {"op": "rc_stream", "enabled": False, "rate": 20}]},
+        {"name": "rc_stream_not_ready", "ready": False, "steps": [
+            {"op": "rc_stream", "enabled": True, "rate": 20}, {"op": "rc_stream", "enabled": False, "rate": 20}]},
+        {"name": "rc_stream_refused", "interval_results": {"65": False}, "steps": [
+            {"op": "rc_stream", "enabled": True, "rate": 20}, {"op": "rc_stream", "enabled": False, "rate": 20}]},
+        {"name": "tuning_stream", "intervals": {"30": 20000, "83": 0}, "steps": [
+            {"op": "tuning", "enabled": True, "rate": 20}, {"op": "tuning", "enabled": True, "rate": 80},
+            {"op": "tuning", "enabled": True, "rate": 0}, {"op": "tuning", "enabled": False, "rate": 20}]},
+        {"name": "tuning_stream_partial", "interval_results": {"83": False}, "steps": [
+            {"op": "tuning", "enabled": True, "rate": 10}, {"op": "tuning", "enabled": False, "rate": 10}]},
+        {"name": "tuning_stream_not_ready", "ready": False, "steps": [
+            {"op": "tuning", "enabled": True, "rate": 10}, {"op": "tuning", "enabled": False, "rate": 10}]},
+        {"name": "stream_intervals", "intervals": {"30": 20000, "65": 200000}, "steps": [
+            {"op": "interval", "id": 30, "requested": 10000}, {"op": "interval", "id": 30, "requested": 50000},
+            {"op": "interval", "id": 30, "requested": None}, {"op": "interval", "id": 83, "requested": 40000},
+            {"op": "interval", "id": 83, "requested": None}]},
+    ]
+
+
+def telemetry_cases() -> list[dict]:
+    TelemetryBridge = telemetry_bridge_class()
+    out = []
+    for sc in telemetry_scenarios():
+        br = TelemetryBridge(sc)
+        results = []
+        for step in sc["steps"]:
+            before = len(br.log)
+            op = step["op"]
+            result = None
+            if op == "battery":
+                result = br.battery_settings()
+            elif op == "set_battery":
+                result = br.set_battery_settings(step["raw"])
+            elif op == "forget_cells":
+                br._forget_battery_cells()
+            elif op == "fields":
+                result = br._battery_fields(step["v"], step["a"], step["reported"])
+            elif op == "endurance":
+                result = br._battery_endurance_fields(step["percent"], step["source"], step["armed"], step["now"])
+            elif op == "battery_status":
+                br._handle_battery_status(telemetry_message("BATTERY_STATUS", step["fields"]))
+            elif op == "gnss":
+                br._handle_gnss_integrity(telemetry_message("GNSS_INTEGRITY", step["fields"], step["system"]))
+            elif op == "gnss_frame":
+                msg = type("Unknown", (), {})()
+                msg.get_type = lambda: "UNKNOWN_441"
+                msg.data = bytes.fromhex(step["frame"])
+                br._handle_gnss_integrity(msg)
+            elif op == "forget_gnss":
+                br._forget_gnss_integrity()
+            elif op == "att":
+                br._handle_attitude_target(telemetry_message("ATTITUDE_TARGET", step["fields"]))
+            elif op == "pos":
+                br._handle_position_target(telemetry_message("POSITION_TARGET_LOCAL_NED", step["fields"]))
+            elif op == "rc":
+                br._handle_rc_channels(telemetry_message("RC_CHANNELS", step["fields"]))
+            elif op == "rc_raw":
+                br._handle_rc_channels(telemetry_message("RC_CHANNELS_RAW", step["fields"]), raw=True)
+            elif op == "radio":
+                br._handle_radio_status(telemetry_message("RADIO_STATUS", step["fields"]))
+            elif op == "hb":
+                br._hb_times.append(step["t"])
+            elif op == "forget_link":
+                br._hb_times.clear()
+                br._radio_status_seen = False
+                br._uplink_score = 0
+            elif op == "jitter":
+                br._publish_heartbeat_jitter()
+            elif op == "current_jitter":
+                result = br._current_jitter_ms()
+            elif op == "link_quality":
+                br._publish_link_quality()
+            elif op == "vibration":
+                result = br.set_vibration_stream(step["enabled"], step["rate"])
+            elif op == "rangefinder":
+                result = br.set_rangefinder_stream(step["enabled"])
+            elif op == "rc_stream":
+                result = br.set_rc_stream(step["enabled"], step["rate"])
+            elif op == "tuning":
+                result = br.set_tuning_stream(step["enabled"], step["rate"])
+            elif op == "interval":
+                result = br._stream_interval_us(step["id"], step["requested"])
+            elif op == "state":
+                result = {"hb": list(br._hb_times), "radio_seen": br._radio_status_seen, "uplink": br._uplink_score,
+                          "cells": br._battery_cells, "drain": [list(x) for x in br._drain_samples],
+                          "source": br._drain_source}
+            elif op == "state_len":
+                result = len(br._drain_samples)
+            else:
+                raise SystemExit(op)
+            results.append({"result": result, "events": br.log[before:]})
+        out.append({"scenario": clean(sc), "expected": clean({"steps": results, "final": {
+            "last_error": br.last_error, "rc": br.rc}})})
+    return out
+
+
 COMMANDS = {"params_cases.json": cases, "logs_cases.json": logs_cases, "shell_cases.json": shell_cases,
             "ftp_cases.json": ftp_cases, "flight_cases.json": flight_cases,
-            "setup_cases.json": setup_cases}
+            "setup_cases.json": setup_cases,
+            "telemetry_cases.json": telemetry_cases}
 
 
 def main(argv: list[str]) -> int:
