@@ -84,6 +84,7 @@ pub mod languages;
 pub mod lock;
 pub mod paths;
 pub mod priority_lock;
+pub mod protocol;
 pub mod request;
 pub mod response;
 pub mod store;

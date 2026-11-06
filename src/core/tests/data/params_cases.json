@@ -1,0 +1,5687 @@
+{
+ "constants": {
+  "PARAM_ABSENT_AFTER_MISSES": 2,
+  "PARAM_CACHE_MAX_ENTRIES": 10000,
+  "PARAM_DOWNLOAD_INACTIVITY_S": 1.0,
+  "PARAM_DOWNLOAD_MAX_ROUNDS": 3,
+  "PARAM_DOWNLOAD_TIMEOUT_S": 30.0,
+  "PARAM_DOWNLOAD_TIMEOUT_S_SERIAL": 180.0,
+  "PARAM_ENCODING_BYTEWISE": "bytewise",
+  "PARAM_ENCODING_C_CAST": "c_cast",
+  "PARAM_HASH_CHECK": "_HASH_CHECK",
+  "PARAM_ID_MAX_BYTES": 16,
+  "PARAM_INDEX_NONE": 65535,
+  "PARAM_RETRANSMIT_GAP_S_SERIAL": 0.02,
+  "PARAM_RETRANSMIT_GAP_S_UDP": 0.002,
+  "PARAM_RETRANSMIT_MAX_PER_ROUND_SERIAL": 120,
+  "PARAM_RETRANSMIT_MAX_PER_ROUND_UDP": 250,
+  "PARAM_VERIFY_MAX_NAMES": 200,
+  "PARAM_VERIFY_REWRITES": 2,
+  "PARAM_WATCHDOG_TICK_S": 0.5
+ },
+ "cases": [
+  {
+   "scenario": {
+    "name": "download_complete",
+    "vehicle": {
+     "params": [
+      {
+       "name": "A",
+       "value": 1.5,
+       "type": 9
+      },
+      {
+       "name": "B",
+       "value": 2.5,
+       "type": 9
+      },
+      {
+       "name": "C",
+       "value": 3.5,
+       "type": 9
+      },
+      {
+       "name": "D",
+       "value": 4.5,
+       "type": 9
+      },
+      {
+       "name": "E",
+       "value": 5.5,
+       "type": 9
+      },
+      {
+       "name": "F",
+       "value": 6.5,
+       "type": 9
+      }
+     ]
+    },
+    "steps": [
+     {
+      "op": "request_list"
+     },
+     {
+      "op": "request_list"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "sent": [
+       [
+        "param_request_list_send",
+        []
+       ]
+      ],
+      "statuses": [
+       {
+        "state": "downloading",
+        "count": 6,
+        "received": 1,
+        "name": "A",
+        "value": 1.5,
+        "type": 9
+       },
+       {
+        "state": "downloading",
+        "count": 6,
+        "received": 2,
+        "name": "B",
+        "value": 2.5,
+        "type": 9
+       },
+       {
+        "state": "downloading",
+        "count": 6,
+        "received": 3,
+        "name": "C",
+        "value": 3.5,
+        "type": 9
+       },
+       {
+        "state": "downloading",
+        "count": 6,
+        "received": 4,
+        "name": "D",
+        "value": 4.5,
+        "type": 9
+       },
+       {
+        "state": "downloading",
+        "count": 6,
+        "received": 5,
+        "name": "E",
+        "value": 5.5,
+        "type": 9
+       },
+       {
+        "state": "complete",
+        "count": 6,
+        "received": 6,
+        "name": "F",
+        "value": 6.5,
+        "type": 9
+       }
+      ],
+      "errors": [],
+      "console": [],
+      "elapsed": 0.0
+     },
+     {
+      "result": true,
+      "sent": [
+       [
+        "param_request_list_send",
+        []
+       ]
+      ],
+      "statuses": [
+       {
+        "state": "downloading",
+        "count": 6,
+        "received": 1,
+        "name": "A",
+        "value": 1.5,
+        "type": 9
+       },
+       {
+        "state": "downloading",
+        "count": 6,
+        "received": 2,
+        "name": "B",
+        "value": 2.5,
+        "type": 9
+       },
+       {
+        "state": "downloading",
+        "count": 6,
+        "received": 3,
+        "name": "C",
+        "value": 3.5,
+        "type": 9
+       },
+       {
+        "state": "downloading",
+        "count": 6,
+        "received": 4,
+        "name": "D",
+        "value": 4.5,
+        "type": 9
+       },
+       {
+        "state": "downloading",
+        "count": 6,
+        "received": 5,
+        "name": "E",
+        "value": 5.5,
+        "type": 9
+       },
+       {
+        "state": "complete",
+        "count": 6,
+        "received": 6,
+        "name": "F",
+        "value": 6.5,
+        "type": 9
+       }
+      ],
+      "errors": [],
+      "console": [],
+      "elapsed": 0.0
+     }
+    ],
+    "final": {
+     "state": "complete",
+     "count": 6,
+     "received": 6,
+     "status": {
+      "state": "complete",
+      "count": 6,
+      "received": 6
+     },
+     "params": [
+      {
+       "name": "A",
+       "value": 1.5,
+       "type": 9
+      },
+      {
+       "name": "B",
+       "value": 2.5,
+       "type": 9
+      },
+      {
+       "name": "C",
+       "value": 3.5,
+       "type": 9
+      },
+      {
+       "name": "D",
+       "value": 4.5,
+       "type": 9
+      },
+      {
+       "name": "E",
+       "value": 5.5,
+       "type": 9
+      },
+      {
+       "name": "F",
+       "value": 6.5,
+       "type": 9
+      }
+     ],
+     "watchdog_started": 2,
+     "last_error": "",
+     "cache": {
+      "A": {
+       "name": "A",
+       "value": 1.5,
+       "type": 9,
+       "index": 0,
+       "count": 6
+      },
+      "B": {
+       "name": "B",
+       "value": 2.5,
+       "type": 9,
+       "index": 1,
+       "count": 6
+      },
+      "C": {
+       "name": "C",
+       "value": 3.5,
+       "type": 9,
+       "index": 2,
+       "count": 6
+      },
+      "D": {
+       "name": "D",
+       "value": 4.5,
+       "type": 9,
+       "index": 3,
+       "count": 6
+      },
+      "E": {
+       "name": "E",
+       "value": 5.5,
+       "type": 9,
+       "index": 4,
+       "count": 6
+      },
+      "F": {
+       "name": "F",
+       "value": 6.5,
+       "type": 9,
+       "index": 5,
+       "count": 6
+      }
+     },
+     "vehicle": [
+      {
+       "name": "A",
+       "value": 1.5,
+       "type": 9
+      },
+      {
+       "name": "B",
+       "value": 2.5,
+       "type": 9
+      },
+      {
+       "name": "C",
+       "value": 3.5,
+       "type": 9
+      },
+      {
+       "name": "D",
+       "value": 4.5,
+       "type": 9
+      },
+      {
+       "name": "E",
+       "value": 5.5,
+       "type": 9
+      },
+      {
+       "name": "F",
+       "value": 6.5,
+       "type": 9
+      }
+     ]
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "download_not_connected",
+    "ready": false,
+    "vehicle": {
+     "params": [
+      {
+       "name": "A",
+       "value": 1.5,
+       "type": 9
+      },
+      {
+       "name": "B",
+       "value": 2.5,
+       "type": 9
+      },
+      {
+       "name": "C",
+       "value": 3.5,
+       "type": 9
+      },
+      {
+       "name": "D",
+       "value": 4.5,
+       "type": 9
+      },
+      {
+       "name": "E",
+       "value": 5.5,
+       "type": 9
+      },
+      {
+       "name": "F",
+       "value": 6.5,
+       "type": 9
+      }
+     ]
+    },
+    "steps": [
+     {
+      "op": "request_list"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "sent": [],
+      "statuses": [],
+      "errors": [
+       "not connected"
+      ],
+      "console": [],
+      "elapsed": 0.0
+     }
+    ],
+    "final": {
+     "state": "idle",
+     "count": -1,
+     "received": 0,
+     "status": {
+      "state": "idle",
+      "count": -1,
+      "received": 0
+     },
+     "params": [],
+     "watchdog_started": 0,
+     "last_error": "not connected",
+     "cache": {},
+     "vehicle": [
+      {
+       "name": "A",
+       "value": 1.5,
+       "type": 9
+      },
+      {
+       "name": "B",
+       "value": 2.5,
+       "type": 9
+      },
+      {
+       "name": "C",
+       "value": 3.5,
+       "type": 9
+      },
+      {
+       "name": "D",
+       "value": 4.5,
+       "type": 9
+      },
+      {
+       "name": "E",
+       "value": 5.5,
+       "type": 9
+      },
+      {
+       "name": "F",
+       "value": 6.5,
+       "type": 9
+      }
+     ]
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "download_send_fails",
+    "send_fails": "param_request_list_send",
+    "vehicle": {
+     "params": [
+      {
+       "name": "A",
+       "value": 1.5,
+       "type": 9
+      },
+      {
+       "name": "B",
+       "value": 2.5,
+       "type": 9
+      },
+      {
+       "name": "C",
+       "value": 3.5,
+       "type": 9
+      },
+      {
+       "name": "D",
+       "value": 4.5,
+       "type": 9
+      },
+      {
+       "name": "E",
+       "value": 5.5,
+       "type": 9
+      },
+      {
+       "name": "F",
+       "value": 6.5,
+       "type": 9
+      }
+     ]
+    },
+    "steps": [
+     {
+      "op": "request_list"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "sent": [],
+      "statuses": [],
+      "errors": [
+       "parameter list request failed: write failed"
+      ],
+      "console": [],
+      "elapsed": 0.0
+     }
+    ],
+    "final": {
+     "state": "idle",
+     "count": -1,
+     "received": 0,
+     "status": {
+      "state": "idle",
+      "count": -1,
+      "received": 0
+     },
+     "params": [],
+     "watchdog_started": 0,
+     "last_error": "parameter list request failed: write failed",
+     "cache": {},
+     "vehicle": [
+      {
+       "name": "A",
+       "value": 1.5,
+       "type": 9
+      },
+      {
+       "name": "B",
+       "value": 2.5,
+       "type": 9
+      },
+      {
+       "name": "C",
+       "value": 3.5,
+       "type": 9
+      },
+      {
+       "name": "D",
+       "value": 4.5,
+       "type": 9
+      },
+      {
+       "name": "E",
+       "value": 5.5,
+       "type": 9
+      },
+      {
+       "name": "F",
+       "value": 6.5,
+       "type": 9
+      }
+     ]
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "download_with_loss_recovered",
+    "vehicle": {
+     "params": [
+      {
+       "name": "A",
+       "value": 1.5,
+       "type": 9
+      },
+      {
+       "name": "B",
+       "value": 2.5,
+       "type": 9
+      },
+      {
+       "name": "C",
+       "value": 3.5,
+       "type": 9
+      },
+      {
+       "name": "D",
+       "value": 4.5,
+       "type": 9
+      },
+      {
+       "name": "E",
+       "value": 5.5,
+       "type": 9
+      },
+      {
+       "name": "F",
+       "value": 6.5,
+       "type": 9
+      }
+     ],
+     "drop": [
+      1,
+      4
+     ]
+    },
+    "steps": [
+     {
+      "op": "request_list"
+     },
+     {
+      "op": "watchdog"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "sent": [
+       [
+        "param_request_list_send",
+        []
+       ]
+      ],
+      "statuses": [
+       {
+        "state": "downloading",
+        "count": 6,
+        "received": 1,
+        "name": "A",
+        "value": 1.5,
+        "type": 9
+       },
+       {
+        "state": "downloading",
+        "count": 6,
+        "received": 2,
+        "name": "C",
+        "value": 3.5,
+        "type": 9
+       },
+       {
+        "state": "downloading",
+        "count": 6,
+        "received": 3,
+        "name": "D",
+        "value": 4.5,
+        "type": 9
+       },
+       {
+        "state": "downloading",
+        "count": 6,
+        "received": 4,
+        "name": "F",
+        "value": 6.5,
+        "type": 9
+       }
+      ],
+      "errors": [],
+      "console": [],
+      "elapsed": 0.0
+     },
+     {
+      "result": null,
+      "sent": [
+       [
+        "param_request_read_send",
+        [
+         "",
+         1
+        ]
+       ],
+       [
+        "param_request_read_send",
+        [
+         "",
+         4
+        ]
+       ]
+      ],
+      "statuses": [
+       {
+        "state": "downloading",
+        "count": 6,
+        "received": 5,
+        "name": "B",
+        "value": 2.5,
+        "type": 9
+       },
+       {
+        "state": "complete",
+        "count": 6,
+        "received": 6,
+        "name": "E",
+        "value": 5.5,
+        "type": 9
+       }
+      ],
+      "errors": [],
+      "console": [],
+      "elapsed": 1.504
+     }
+    ],
+    "final": {
+     "state": "complete",
+     "count": 6,
+     "received": 6,
+     "status": {
+      "state": "complete",
+      "count": 6,
+      "received": 6
+     },
+     "params": [
+      {
+       "name": "A",
+       "value": 1.5,
+       "type": 9
+      },
+      {
+       "name": "B",
+       "value": 2.5,
+       "type": 9
+      },
+      {
+       "name": "C",
+       "value": 3.5,
+       "type": 9
+      },
+      {
+       "name": "D",
+       "value": 4.5,
+       "type": 9
+      },
+      {
+       "name": "E",
+       "value": 5.5,
+       "type": 9
+      },
+      {
+       "name": "F",
+       "value": 6.5,
+       "type": 9
+      }
+     ],
+     "watchdog_started": 1,
+     "last_error": "",
+     "cache": {
+      "A": {
+       "name": "A",
+       "value": 1.5,
+       "type": 9,
+       "index": 0,
+       "count": 6
+      },
+      "C": {
+       "name": "C",
+       "value": 3.5,
+       "type": 9,
+       "index": 2,
+       "count": 6
+      },
+      "D": {
+       "name": "D",
+       "value": 4.5,
+       "type": 9,
+       "index": 3,
+       "count": 6
+      },
+      "F": {
+       "name": "F",
+       "value": 6.5,
+       "type": 9,
+       "index": 5,
+       "count": 6
+      },
+      "B": {
+       "name": "B",
+       "value": 2.5,
+       "type": 9,
+       "index": 1,
+       "count": 6
+      },
+      "E": {
+       "name": "E",
+       "value": 5.5,
+       "type": 9,
+       "index": 4,
+       "count": 6
+      }
+     },
+     "vehicle": [
+      {
+       "name": "A",
+       "value": 1.5,
+       "type": 9
+      },
+      {
+       "name": "B",
+       "value": 2.5,
+       "type": 9
+      },
+      {
+       "name": "C",
+       "value": 3.5,
+       "type": 9
+      },
+      {
+       "name": "D",
+       "value": 4.5,
+       "type": 9
+      },
+      {
+       "name": "E",
+       "value": 5.5,
+       "type": 9
+      },
+      {
+       "name": "F",
+       "value": 6.5,
+       "type": 9
+      }
+     ]
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "download_with_loss_recovered_slow_link",
+    "slow": true,
+    "vehicle": {
+     "params": [
+      {
+       "name": "A",
+       "value": 1.5,
+       "type": 9
+      },
+      {
+       "name": "B",
+       "value": 2.5,
+       "type": 9
+      },
+      {
+       "name": "C",
+       "value": 3.5,
+       "type": 9
+      },
+      {
+       "name": "D",
+       "value": 4.5,
+       "type": 9
+      },
+      {
+       "name": "E",
+       "value": 5.5,
+       "type": 9
+      },
+      {
+       "name": "F",
+       "value": 6.5,
+       "type": 9
+      }
+     ],
+     "drop": [
+      2
+     ]
+    },
+    "steps": [
+     {
+      "op": "request_list"
+     },
+     {
+      "op": "watchdog"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "sent": [
+       [
+        "param_request_list_send",
+        []
+       ]
+      ],
+      "statuses": [
+       {
+        "state": "downloading",
+        "count": 6,
+        "received": 1,
+        "name": "A",
+        "value": 1.5,
+        "type": 9
+       },
+       {
+        "state": "downloading",
+        "count": 6,
+        "received": 2,
+        "name": "B",
+        "value": 2.5,
+        "type": 9
+       },
+       {
+        "state": "downloading",
+        "count": 6,
+        "received": 3,
+        "name": "D",
+        "value": 4.5,
+        "type": 9
+       },
+       {
+        "state": "downloading",
+        "count": 6,
+        "received": 4,
+        "name": "E",
+        "value": 5.5,
+        "type": 9
+       },
+       {
+        "state": "downloading",
+        "count": 6,
+        "received": 5,
+        "name": "F",
+        "value": 6.5,
+        "type": 9
+       }
+      ],
+      "errors": [],
+      "console": [],
+      "elapsed": 0.0
+     },
+     {
+      "result": null,
+      "sent": [
+       [
+        "param_request_read_send",
+        [
+         "",
+         2
+        ]
+       ]
+      ],
+      "statuses": [
+       {
+        "state": "complete",
+        "count": 6,
+        "received": 6,
+        "name": "C",
+        "value": 3.5,
+        "type": 9
+       }
+      ],
+      "errors": [],
+      "console": [],
+      "elapsed": 1.52
+     }
+    ],
+    "final": {
+     "state": "complete",
+     "count": 6,
+     "received": 6,
+     "status": {
+      "state": "complete",
+      "count": 6,
+      "received": 6
+     },
+     "params": [
+      {
+       "name": "A",
+       "value": 1.5,
+       "type": 9
+      },
+      {
+       "name": "B",
+       "value": 2.5,
+       "type": 9
+      },
+      {
+       "name": "C",
+       "value": 3.5,
+       "type": 9
+      },
+      {
+       "name": "D",
+       "value": 4.5,
+       "type": 9
+      },
+      {
+       "name": "E",
+       "value": 5.5,
+       "type": 9
+      },
+      {
+       "name": "F",
+       "value": 6.5,
+       "type": 9
+      }
+     ],
+     "watchdog_started": 1,
+     "last_error": "",
+     "cache": {
+      "A": {
+       "name": "A",
+       "value": 1.5,
+       "type": 9,
+       "index": 0,
+       "count": 6
+      },
+      "B": {
+       "name": "B",
+       "value": 2.5,
+       "type": 9,
+       "index": 1,
+       "count": 6
+      },
+      "D": {
+       "name": "D",
+       "value": 4.5,
+       "type": 9,
+       "index": 3,
+       "count": 6
+      },
+      "E": {
+       "name": "E",
+       "value": 5.5,
+       "type": 9,
+       "index": 4,
+       "count": 6
+      },
+      "F": {
+       "name": "F",
+       "value": 6.5,
+       "type": 9,
+       "index": 5,
+       "count": 6
+      },
+      "C": {
+       "name": "C",
+       "value": 3.5,
+       "type": 9,
+       "index": 2,
+       "count": 6
+      }
+     },
+     "vehicle": [
+      {
+       "name": "A",
+       "value": 1.5,
+       "type": 9
+      },
+      {
+       "name": "B",
+       "value": 2.5,
+       "type": 9
+      },
+      {
+       "name": "C",
+       "value": 3.5,
+       "type": 9
+      },
+      {
+       "name": "D",
+       "value": 4.5,
+       "type": 9
+      },
+      {
+       "name": "E",
+       "value": 5.5,
+       "type": 9
+      },
+      {
+       "name": "F",
+       "value": 6.5,
+       "type": 9
+      }
+     ]
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "download_gives_up_incomplete",
+    "vehicle": {
+     "params": [
+      {
+       "name": "A",
+       "value": 1.5,
+       "type": 9
+      },
+      {
+       "name": "B",
+       "value": 2.5,
+       "type": 9
+      },
+      {
+       "name": "C",
+       "value": 3.5,
+       "type": 9
+      },
+      {
+       "name": "D",
+       "value": 4.5,
+       "type": 9
+      },
+      {
+       "name": "E",
+       "value": 5.5,
+       "type": 9
+      },
+      {
+       "name": "F",
+       "value": 6.5,
+       "type": 9
+      }
+     ],
+     "drop": [
+      0,
+      5
+     ],
+     "answer_reads": false
+    },
+    "steps": [
+     {
+      "op": "request_list"
+     },
+     {
+      "op": "watchdog"
+     },
+     {
+      "op": "request_list"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "sent": [
+       [
+        "param_request_list_send",
+        []
+       ]
+      ],
+      "statuses": [
+       {
+        "state": "downloading",
+        "count": 6,
+        "received": 1,
+        "name": "B",
+        "value": 2.5,
+        "type": 9
+       },
+       {
+        "state": "downloading",
+        "count": 6,
+        "received": 2,
+        "name": "C",
+        "value": 3.5,
+        "type": 9
+       },
+       {
+        "state": "downloading",
+        "count": 6,
+        "received": 3,
+        "name": "D",
+        "value": 4.5,
+        "type": 9
+       },
+       {
+        "state": "downloading",
+        "count": 6,
+        "received": 4,
+        "name": "E",
+        "value": 5.5,
+        "type": 9
+       }
+      ],
+      "errors": [],
+      "console": [],
+      "elapsed": 0.0
+     },
+     {
+      "result": null,
+      "sent": [
+       [
+        "param_request_read_send",
+        [
+         "",
+         0
+        ]
+       ],
+       [
+        "param_request_read_send",
+        [
+         "",
+         5
+        ]
+       ],
+       [
+        "param_request_read_send",
+        [
+         "",
+         0
+        ]
+       ],
+       [
+        "param_request_read_send",
+        [
+         "",
+         5
+        ]
+       ],
+       [
+        "param_request_read_send",
+        [
+         "",
+         0
+        ]
+       ],
+       [
+        "param_request_read_send",
+        [
+         "",
+         5
+        ]
+       ]
+      ],
+      "statuses": [
+       {
+        "state": "incomplete",
+        "count": 6,
+        "received": 4
+       }
+      ],
+      "errors": [],
+      "console": [],
+      "elapsed": 2.512
+     },
+     {
+      "result": true,
+      "sent": [
+       [
+        "param_request_list_send",
+        []
+       ]
+      ],
+      "statuses": [
+       {
+        "state": "downloading",
+        "count": 6,
+        "received": 1,
+        "name": "B",
+        "value": 2.5,
+        "type": 9
+       },
+       {
+        "state": "downloading",
+        "count": 6,
+        "received": 2,
+        "name": "C",
+        "value": 3.5,
+        "type": 9
+       },
+       {
+        "state": "downloading",
+        "count": 6,
+        "received": 3,
+        "name": "D",
+        "value": 4.5,
+        "type": 9
+       },
+       {
+        "state": "downloading",
+        "count": 6,
+        "received": 4,
+        "name": "E",
+        "value": 5.5,
+        "type": 9
+       }
+      ],
+      "errors": [],
+      "console": [],
+      "elapsed": 0.0
+     }
+    ],
+    "final": {
+     "state": "downloading",
+     "count": 6,
+     "received": 4,
+     "status": {
+      "state": "downloading",
+      "count": 6,
+      "received": 4
+     },
+     "params": [
+      {
+       "name": "B",
+       "value": 2.5,
+       "type": 9
+      },
+      {
+       "name": "C",
+       "value": 3.5,
+       "type": 9
+      },
+      {
+       "name": "D",
+       "value": 4.5,
+       "type": 9
+      },
+      {
+       "name": "E",
+       "value": 5.5,
+       "type": 9
+      }
+     ],
+     "watchdog_started": 2,
+     "last_error": "",
+     "cache": {
+      "B": {
+       "name": "B",
+       "value": 2.5,
+       "type": 9,
+       "index": 1,
+       "count": 6
+      },
+      "C": {
+       "name": "C",
+       "value": 3.5,
+       "type": 9,
+       "index": 2,
+       "count": 6
+      },
+      "D": {
+       "name": "D",
+       "value": 4.5,
+       "type": 9,
+       "index": 3,
+       "count": 6
+      },
+      "E": {
+       "name": "E",
+       "value": 5.5,
+       "type": 9,
+       "index": 4,
+       "count": 6
+      }
+     },
+     "vehicle": [
+      {
+       "name": "A",
+       "value": 1.5,
+       "type": 9
+      },
+      {
+       "name": "B",
+       "value": 2.5,
+       "type": 9
+      },
+      {
+       "name": "C",
+       "value": 3.5,
+       "type": 9
+      },
+      {
+       "name": "D",
+       "value": 4.5,
+       "type": 9
+      },
+      {
+       "name": "E",
+       "value": 5.5,
+       "type": 9
+      },
+      {
+       "name": "F",
+       "value": 6.5,
+       "type": 9
+      }
+     ]
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "download_quiet_vehicle_times_out",
+    "max_ticks": 70,
+    "vehicle": {
+     "params": [],
+     "count": 4
+    },
+    "steps": [
+     {
+      "op": "request_list"
+     },
+     {
+      "op": "watchdog"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "sent": [
+       [
+        "param_request_list_send",
+        []
+       ]
+      ],
+      "statuses": [],
+      "errors": [],
+      "console": [],
+      "elapsed": 0.0
+     },
+     {
+      "result": null,
+      "sent": [],
+      "statuses": [],
+      "errors": [],
+      "console": [],
+      "elapsed": 35.0
+     }
+    ],
+    "final": {
+     "state": "downloading",
+     "count": -1,
+     "received": 0,
+     "status": {
+      "state": "downloading",
+      "count": -1,
+      "received": 0
+     },
+     "params": [],
+     "watchdog_started": 1,
+     "last_error": "",
+     "cache": {},
+     "vehicle": []
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "values_are_validated",
+    "vehicle": {
+     "params": []
+    },
+    "steps": [
+     {
+      "op": "deliver",
+      "param": {
+       "name": "",
+       "value": 1.0,
+       "type": 9,
+       "index": 0,
+       "count": 3
+      }
+     },
+     {
+      "op": "deliver",
+      "param": {
+       "name": "BAD_TYPE",
+       "value": 1.0,
+       "type": 0,
+       "index": 0,
+       "count": 3
+      }
+     },
+     {
+      "op": "deliver",
+      "param": {
+       "name": "BAD_TYPE2",
+       "value": 1.0,
+       "type": 11,
+       "index": 0,
+       "count": 3
+      }
+     },
+     {
+      "op": "deliver",
+      "param": {
+       "name": "BAD_INDEX",
+       "value": 1.0,
+       "type": 9,
+       "index": 5,
+       "count": 3
+      }
+     },
+     {
+      "op": "deliver",
+      "param": {
+       "name": "BAD_COUNT",
+       "value": 1.0,
+       "type": 9,
+       "index": 0,
+       "count": 20000
+      }
+     },
+     {
+      "op": "deliver",
+      "param": {
+       "name": "NAN",
+       "value": "nan",
+       "type": 9,
+       "index": 0,
+       "count": 3
+      }
+     },
+     {
+      "op": "deliver",
+      "param": {
+       "name": "_HASH_CHECK",
+       "value": 1.0,
+       "type": 6,
+       "index": 65535,
+       "count": 3
+      }
+     },
+     {
+      "op": "deliver",
+      "param": {
+       "name": "OK_NO_INDEX",
+       "value": 2.5,
+       "type": 9,
+       "index": 65535,
+       "count": 0
+      }
+     },
+     {
+      "op": "deliver",
+      "param": {
+       "name": "OK_1",
+       "value": 2.5,
+       "type": 9,
+       "index": 0,
+       "count": 2
+      }
+     },
+     {
+      "op": "deliver",
+      "param": {
+       "name": "OK_1",
+       "value": 3.5,
+       "type": 9,
+       "index": 0,
+       "count": 2
+      }
+     },
+     {
+      "op": "deliver",
+      "param": {
+       "name": "OK_2",
+       "value": 4.5,
+       "type": 9,
+       "index": 1,
+       "count": 2
+      }
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "sent": [],
+      "statuses": [],
+      "errors": [],
+      "console": [],
+      "elapsed": 0.0
+     },
+     {
+      "result": null,
+      "sent": [],
+      "statuses": [],
+      "errors": [],
+      "console": [],
+      "elapsed": 0.0
+     },
+     {
+      "result": null,
+      "sent": [],
+      "statuses": [],
+      "errors": [],
+      "console": [],
+      "elapsed": 0.0
+     },
+     {
+      "result": null,
+      "sent": [],
+      "statuses": [],
+      "errors": [],
+      "console": [],
+      "elapsed": 0.0
+     },
+     {
+      "result": null,
+      "sent": [],
+      "statuses": [],
+      "errors": [],
+      "console": [],
+      "elapsed": 0.0
+     },
+     {
+      "result": null,
+      "sent": [],
+      "statuses": [],
+      "errors": [],
+      "console": [],
+      "elapsed": 0.0
+     },
+     {
+      "result": null,
+      "sent": [],
+      "statuses": [],
+      "errors": [],
+      "console": [],
+      "elapsed": 0.0
+     },
+     {
+      "result": null,
+      "sent": [],
+      "statuses": [
+       {
+        "state": "idle",
+        "count": -1,
+        "received": 1,
+        "name": "OK_NO_INDEX",
+        "value": 2.5,
+        "type": 9
+       }
+      ],
+      "errors": [],
+      "console": [],
+      "elapsed": 0.0
+     },
+     {
+      "result": null,
+      "sent": [],
+      "statuses": [
+       {
+        "state": "complete",
+        "count": 2,
+        "received": 2,
+        "name": "OK_1",
+        "value": 2.5,
+        "type": 9
+       }
+      ],
+      "errors": [],
+      "console": [],
+      "elapsed": 0.0
+     },
+     {
+      "result": null,
+      "sent": [],
+      "statuses": [
+       {
+        "state": "complete",
+        "count": 2,
+        "received": 2,
+        "name": "OK_1",
+        "value": 3.5,
+        "type": 9
+       }
+      ],
+      "errors": [],
+      "console": [],
+      "elapsed": 0.0
+     },
+     {
+      "result": null,
+      "sent": [],
+      "statuses": [
+       {
+        "state": "complete",
+        "count": 2,
+        "received": 3,
+        "name": "OK_2",
+        "value": 4.5,
+        "type": 9
+       }
+      ],
+      "errors": [],
+      "console": [],
+      "elapsed": 0.0
+     }
+    ],
+    "final": {
+     "state": "complete",
+     "count": 2,
+     "received": 3,
+     "status": {
+      "state": "complete",
+      "count": 2,
+      "received": 3
+     },
+     "params": [
+      {
+       "name": "OK_1",
+       "value": 3.5,
+       "type": 9
+      },
+      {
+       "name": "OK_2",
+       "value": 4.5,
+       "type": 9
+      },
+      {
+       "name": "OK_NO_INDEX",
+       "value": 2.5,
+       "type": 9
+      }
+     ],
+     "watchdog_started": 0,
+     "last_error": "",
+     "cache": {
+      "OK_NO_INDEX": {
+       "name": "OK_NO_INDEX",
+       "value": 2.5,
+       "type": 9,
+       "index": -1,
+       "count": 0
+      },
+      "OK_1": {
+       "name": "OK_1",
+       "value": 3.5,
+       "type": 9,
+       "index": 0,
+       "count": 2
+      },
+      "OK_2": {
+       "name": "OK_2",
+       "value": 4.5,
+       "type": 9,
+       "index": 1,
+       "count": 2
+      }
+     },
+     "vehicle": []
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "px4_integers_arrive_as_their_bytes",
+    "encoding": "bytewise",
+    "vehicle": {
+     "params": [
+      {
+       "name": "MC_ROLL_P",
+       "value": 6.5,
+       "type": 9
+      },
+      {
+       "name": "SYS_AUTOSTART",
+       "value": 0.0,
+       "type": 6,
+       "bits": 4001
+      },
+      {
+       "name": "SDLOG_MODE",
+       "value": 0.0,
+       "type": 6,
+       "bits": 4294967295
+      },
+      {
+       "name": "SENS_FLAGS",
+       "value": 0.0,
+       "type": 2,
+       "bits": 254
+      },
+      {
+       "name": "COM_RC_LOSS_T",
+       "value": 0.5,
+       "type": 9
+      }
+     ]
+    },
+    "steps": [
+     {
+      "op": "request_list"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "sent": [
+       [
+        "param_request_list_send",
+        []
+       ]
+      ],
+      "statuses": [
+       {
+        "state": "downloading",
+        "count": 5,
+        "received": 1,
+        "name": "MC_ROLL_P",
+        "value": 6.5,
+        "type": 9
+       },
+       {
+        "state": "downloading",
+        "count": 5,
+        "received": 2,
+        "name": "SYS_AUTOSTART",
+        "value": 4001.0,
+        "type": 6
+       },
+       {
+        "state": "downloading",
+        "count": 5,
+        "received": 3,
+        "name": "SDLOG_MODE",
+        "value": -1.0,
+        "type": 6
+       },
+       {
+        "state": "downloading",
+        "count": 5,
+        "received": 4,
+        "name": "SENS_FLAGS",
+        "value": -2.0,
+        "type": 2
+       },
+       {
+        "state": "complete",
+        "count": 5,
+        "received": 5,
+        "name": "COM_RC_LOSS_T",
+        "value": 0.5,
+        "type": 9
+       }
+      ],
+      "errors": [],
+      "console": [],
+      "elapsed": 0.0
+     }
+    ],
+    "final": {
+     "state": "complete",
+     "count": 5,
+     "received": 5,
+     "status": {
+      "state": "complete",
+      "count": 5,
+      "received": 5
+     },
+     "params": [
+      {
+       "name": "COM_RC_LOSS_T",
+       "value": 0.5,
+       "type": 9
+      },
+      {
+       "name": "MC_ROLL_P",
+       "value": 6.5,
+       "type": 9
+      },
+      {
+       "name": "SDLOG_MODE",
+       "value": -1.0,
+       "type": 6
+      },
+      {
+       "name": "SENS_FLAGS",
+       "value": -2.0,
+       "type": 2
+      },
+      {
+       "name": "SYS_AUTOSTART",
+       "value": 4001.0,
+       "type": 6
+      }
+     ],
+     "watchdog_started": 1,
+     "last_error": "",
+     "cache": {
+      "MC_ROLL_P": {
+       "name": "MC_ROLL_P",
+       "value": 6.5,
+       "type": 9,
+       "index": 0,
+       "count": 5
+      },
+      "SYS_AUTOSTART": {
+       "name": "SYS_AUTOSTART",
+       "value": 4001.0,
+       "type": 6,
+       "index": 1,
+       "count": 5
+      },
+      "SDLOG_MODE": {
+       "name": "SDLOG_MODE",
+       "value": -1.0,
+       "type": 6,
+       "index": 2,
+       "count": 5
+      },
+      "SENS_FLAGS": {
+       "name": "SENS_FLAGS",
+       "value": -2.0,
+       "type": 2,
+       "index": 3,
+       "count": 5
+      },
+      "COM_RC_LOSS_T": {
+       "name": "COM_RC_LOSS_T",
+       "value": 0.5,
+       "type": 9,
+       "index": 4,
+       "count": 5
+      }
+     },
+     "vehicle": [
+      {
+       "name": "MC_ROLL_P",
+       "value": 6.5,
+       "type": 9
+      },
+      {
+       "name": "SYS_AUTOSTART",
+       "value": 0.0,
+       "type": 6,
+       "bits": 4001
+      },
+      {
+       "name": "SDLOG_MODE",
+       "value": 0.0,
+       "type": 6,
+       "bits": 4294967295
+      },
+      {
+       "name": "SENS_FLAGS",
+       "value": 0.0,
+       "type": 2,
+       "bits": 254
+      },
+      {
+       "name": "COM_RC_LOSS_T",
+       "value": 0.5,
+       "type": 9
+      }
+     ]
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "ardupilot_integers_arrive_as_numbers",
+    "encoding": "c_cast",
+    "vehicle": {
+     "params": [
+      {
+       "name": "SERIAL1_BAUD",
+       "value": 57.0,
+       "type": 4
+      },
+      {
+       "name": "BATT_CAPACITY",
+       "value": 5000.0,
+       "type": 6
+      },
+      {
+       "name": "ANGLE_MAX",
+       "value": 3000.0,
+       "type": 4
+      }
+     ]
+    },
+    "steps": [
+     {
+      "op": "request_list"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "sent": [
+       [
+        "param_request_list_send",
+        []
+       ]
+      ],
+      "statuses": [
+       {
+        "state": "downloading",
+        "count": 3,
+        "received": 1,
+        "name": "SERIAL1_BAUD",
+        "value": 57.0,
+        "type": 4
+       },
+       {
+        "state": "downloading",
+        "count": 3,
+        "received": 2,
+        "name": "BATT_CAPACITY",
+        "value": 5000.0,
+        "type": 6
+       },
+       {
+        "state": "complete",
+        "count": 3,
+        "received": 3,
+        "name": "ANGLE_MAX",
+        "value": 3000.0,
+        "type": 4
+       }
+      ],
+      "errors": [],
+      "console": [],
+      "elapsed": 0.0
+     }
+    ],
+    "final": {
+     "state": "complete",
+     "count": 3,
+     "received": 3,
+     "status": {
+      "state": "complete",
+      "count": 3,
+      "received": 3
+     },
+     "params": [
+      {
+       "name": "ANGLE_MAX",
+       "value": 3000.0,
+       "type": 4
+      },
+      {
+       "name": "BATT_CAPACITY",
+       "value": 5000.0,
+       "type": 6
+      },
+      {
+       "name": "SERIAL1_BAUD",
+       "value": 57.0,
+       "type": 4
+      }
+     ],
+     "watchdog_started": 1,
+     "last_error": "",
+     "cache": {
+      "SERIAL1_BAUD": {
+       "name": "SERIAL1_BAUD",
+       "value": 57.0,
+       "type": 4,
+       "index": 0,
+       "count": 3
+      },
+      "BATT_CAPACITY": {
+       "name": "BATT_CAPACITY",
+       "value": 5000.0,
+       "type": 6,
+       "index": 1,
+       "count": 3
+      },
+      "ANGLE_MAX": {
+       "name": "ANGLE_MAX",
+       "value": 3000.0,
+       "type": 4,
+       "index": 2,
+       "count": 3
+      }
+     },
+     "vehicle": [
+      {
+       "name": "SERIAL1_BAUD",
+       "value": 57.0,
+       "type": 4
+      },
+      {
+       "name": "BATT_CAPACITY",
+       "value": 5000.0,
+       "type": 6
+      },
+      {
+       "name": "ANGLE_MAX",
+       "value": 3000.0,
+       "type": 4
+      }
+     ]
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "named_read_and_wait",
+    "vehicle": {
+     "params": [
+      {
+       "name": "A",
+       "value": 1.5,
+       "type": 9
+      },
+      {
+       "name": "B",
+       "value": 2.5,
+       "type": 9
+      },
+      {
+       "name": "C",
+       "value": 3.5,
+       "type": 9
+      },
+      {
+       "name": "D",
+       "value": 4.5,
+       "type": 9
+      },
+      {
+       "name": "E",
+       "value": 5.5,
+       "type": 9
+      },
+      {
+       "name": "F",
+       "value": 6.5,
+       "type": 9
+      }
+     ]
+    },
+    "steps": [
+     {
+      "op": "request",
+      "name": "C"
+     },
+     {
+      "op": "wait_for",
+      "name": "C"
+     },
+     {
+      "op": "wait_for",
+      "name": "ZZ",
+      "timeout": 0.1
+     },
+     {
+      "op": "request",
+      "name": "xxxxxxxxxxxxxxxxx"
+     },
+     {
+      "op": "request",
+      "name": ""
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "sent": [
+       [
+        "param_request_read_send",
+        [
+         "C",
+         -1
+        ]
+       ]
+      ],
+      "statuses": [
+       {
+        "state": "idle",
+        "count": 6,
+        "received": 1,
+        "name": "C",
+        "value": 3.5,
+        "type": 9
+       }
+      ],
+      "errors": [],
+      "console": [],
+      "elapsed": 0.0
+     },
+     {
+      "result": {
+       "name": "C",
+       "value": 3.5,
+       "type": 9,
+       "index": 2,
+       "count": 6
+      },
+      "sent": [],
+      "statuses": [],
+      "errors": [],
+      "console": [],
+      "elapsed": 0.0
+     },
+     {
+      "result": null,
+      "sent": [],
+      "statuses": [],
+      "errors": [],
+      "console": [],
+      "elapsed": 0.12
+     },
+     {
+      "result": false,
+      "sent": [],
+      "statuses": [],
+      "errors": [
+       "invalid parameter name"
+      ],
+      "console": [],
+      "elapsed": 0.0
+     },
+     {
+      "result": false,
+      "sent": [],
+      "statuses": [],
+      "errors": [
+       "invalid parameter name"
+      ],
+      "console": [],
+      "elapsed": 0.0
+     }
+    ],
+    "final": {
+     "state": "idle",
+     "count": 6,
+     "received": 1,
+     "status": {
+      "state": "idle",
+      "count": 6,
+      "received": 1
+     },
+     "params": [
+      {
+       "name": "C",
+       "value": 3.5,
+       "type": 9
+      }
+     ],
+     "watchdog_started": 0,
+     "last_error": "invalid parameter name",
+     "cache": {
+      "C": {
+       "name": "C",
+       "value": 3.5,
+       "type": 9,
+       "index": 2,
+       "count": 6
+      }
+     },
+     "vehicle": [
+      {
+       "name": "A",
+       "value": 1.5,
+       "type": 9
+      },
+      {
+       "name": "B",
+       "value": 2.5,
+       "type": 9
+      },
+      {
+       "name": "C",
+       "value": 3.5,
+       "type": 9
+      },
+      {
+       "name": "D",
+       "value": 4.5,
+       "type": 9
+      },
+      {
+       "name": "E",
+       "value": 5.5,
+       "type": 9
+      },
+      {
+       "name": "F",
+       "value": 6.5,
+       "type": 9
+      }
+     ]
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "set_confirmed",
+    "vehicle": {
+     "params": [
+      {
+       "name": "A",
+       "value": 1.5,
+       "type": 9
+      },
+      {
+       "name": "B",
+       "value": 2.5,
+       "type": 9
+      },
+      {
+       "name": "C",
+       "value": 3.5,
+       "type": 9
+      },
+      {
+       "name": "D",
+       "value": 4.5,
+       "type": 9
+      },
+      {
+       "name": "E",
+       "value": 5.5,
+       "type": 9
+      },
+      {
+       "name": "F",
+       "value": 6.5,
+       "type": 9
+      }
+     ]
+    },
+    "steps": [
+     {
+      "op": "request_list"
+     },
+     {
+      "op": "set",
+      "name": "B",
+      "value": 9.25
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "sent": [
+       [
+        "param_request_list_send",
+        []
+       ]
+      ],
+      "statuses": [
+       {
+        "state": "downloading",
+        "count": 6,
+        "received": 1,
+        "name": "A",
+        "value": 1.5,
+        "type": 9
+       },
+       {
+        "state": "downloading",
+        "count": 6,
+        "received": 2,
+        "name": "B",
+        "value": 2.5,
+        "type": 9
+       },
+       {
+        "state": "downloading",
+        "count": 6,
+        "received": 3,
+        "name": "C",
+        "value": 3.5,
+        "type": 9
+       },
+       {
+        "state": "downloading",
+        "count": 6,
+        "received": 4,
+        "name": "D",
+        "value": 4.5,
+        "type": 9
+       },
+       {
+        "state": "downloading",
+        "count": 6,
+        "received": 5,
+        "name": "E",
+        "value": 5.5,
+        "type": 9
+       },
+       {
+        "state": "complete",
+        "count": 6,
+        "received": 6,
+        "name": "F",
+        "value": 6.5,
+        "type": 9
+       }
+      ],
+      "errors": [],
+      "console": [],
+      "elapsed": 0.0
+     },
+     {
+      "result": true,
+      "sent": [
+       [
+        "param_set_send",
+        [
+         "B",
+         9.25,
+         9
+        ]
+       ]
+      ],
+      "statuses": [
+       {
+        "state": "complete",
+        "count": 6,
+        "received": 6,
+        "name": "B",
+        "value": 9.25,
+        "type": 9
+       }
+      ],
+      "errors": [
+       ""
+      ],
+      "console": [
+       [
+        "PARAM",
+        "B set to 9.25",
+        "success"
+       ]
+      ],
+      "elapsed": 0.0
+     }
+    ],
+    "final": {
+     "state": "complete",
+     "count": 6,
+     "received": 6,
+     "status": {
+      "state": "complete",
+      "count": 6,
+      "received": 6
+     },
+     "params": [
+      {
+       "name": "A",
+       "value": 1.5,
+       "type": 9
+      },
+      {
+       "name": "B",
+       "value": 9.25,
+       "type": 9
+      },
+      {
+       "name": "C",
+       "value": 3.5,
+       "type": 9
+      },
+      {
+       "name": "D",
+       "value": 4.5,
+       "type": 9
+      },
+      {
+       "name": "E",
+       "value": 5.5,
+       "type": 9
+      },
+      {
+       "name": "F",
+       "value": 6.5,
+       "type": 9
+      }
+     ],
+     "watchdog_started": 1,
+     "last_error": "",
+     "cache": {
+      "A": {
+       "name": "A",
+       "value": 1.5,
+       "type": 9,
+       "index": 0,
+       "count": 6
+      },
+      "B": {
+       "name": "B",
+       "value": 9.25,
+       "type": 9,
+       "index": 1,
+       "count": 6
+      },
+      "C": {
+       "name": "C",
+       "value": 3.5,
+       "type": 9,
+       "index": 2,
+       "count": 6
+      },
+      "D": {
+       "name": "D",
+       "value": 4.5,
+       "type": 9,
+       "index": 3,
+       "count": 6
+      },
+      "E": {
+       "name": "E",
+       "value": 5.5,
+       "type": 9,
+       "index": 4,
+       "count": 6
+      },
+      "F": {
+       "name": "F",
+       "value": 6.5,
+       "type": 9,
+       "index": 5,
+       "count": 6
+      }
+     },
+     "vehicle": [
+      {
+       "name": "A",
+       "value": 1.5,
+       "type": 9
+      },
+      {
+       "name": "B",
+       "value": 9.25,
+       "type": 9
+      },
+      {
+       "name": "C",
+       "value": 3.5,
+       "type": 9
+      },
+      {
+       "name": "D",
+       "value": 4.5,
+       "type": 9
+      },
+      {
+       "name": "E",
+       "value": 5.5,
+       "type": 9
+      },
+      {
+       "name": "F",
+       "value": 6.5,
+       "type": 9
+      }
+     ]
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "set_integer_px4",
+    "encoding": "bytewise",
+    "vehicle": {
+     "params": [
+      {
+       "name": "MC_ROLL_P",
+       "value": 6.5,
+       "type": 9
+      },
+      {
+       "name": "SYS_AUTOSTART",
+       "value": 0.0,
+       "type": 6,
+       "bits": 4001
+      },
+      {
+       "name": "SDLOG_MODE",
+       "value": 0.0,
+       "type": 6,
+       "bits": 4294967295
+      },
+      {
+       "name": "SENS_FLAGS",
+       "value": 0.0,
+       "type": 2,
+       "bits": 254
+      },
+      {
+       "name": "COM_RC_LOSS_T",
+       "value": 0.5,
+       "type": 9
+      }
+     ]
+    },
+    "steps": [
+     {
+      "op": "request_list"
+     },
+     {
+      "op": "set",
+      "name": "SYS_AUTOSTART",
+      "value": 4002.0
+     },
+     {
+      "op": "set",
+      "name": "SDLOG_MODE",
+      "value": -1.0
+     },
+     {
+      "op": "set",
+      "name": "SYS_AUTOSTART",
+      "value": 4002.5
+     },
+     {
+      "op": "set",
+      "name": "SENS_FLAGS",
+      "value": 300.0
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "sent": [
+       [
+        "param_request_list_send",
+        []
+       ]
+      ],
+      "statuses": [
+       {
+        "state": "downloading",
+        "count": 5,
+        "received": 1,
+        "name": "MC_ROLL_P",
+        "value": 6.5,
+        "type": 9
+       },
+       {
+        "state": "downloading",
+        "count": 5,
+        "received": 2,
+        "name": "SYS_AUTOSTART",
+        "value": 4001.0,
+        "type": 6
+       },
+       {
+        "state": "downloading",
+        "count": 5,
+        "received": 3,
+        "name": "SDLOG_MODE",
+        "value": -1.0,
+        "type": 6
+       },
+       {
+        "state": "downloading",
+        "count": 5,
+        "received": 4,
+        "name": "SENS_FLAGS",
+        "value": -2.0,
+        "type": 2
+       },
+       {
+        "state": "complete",
+        "count": 5,
+        "received": 5,
+        "name": "COM_RC_LOSS_T",
+        "value": 0.5,
+        "type": 9
+       }
+      ],
+      "errors": [],
+      "console": [],
+      "elapsed": 0.0
+     },
+     {
+      "result": true,
+      "sent": [
+       [
+        "param_set_send",
+        [
+         "SYS_AUTOSTART",
+         5.607996454227918e-42,
+         6
+        ]
+       ]
+      ],
+      "statuses": [
+       {
+        "state": "complete",
+        "count": 5,
+        "received": 5,
+        "name": "SYS_AUTOSTART",
+        "value": 4002.0,
+        "type": 6
+       }
+      ],
+      "errors": [
+       ""
+      ],
+      "console": [
+       [
+        "PARAM",
+        "SYS_AUTOSTART set to 4002.0",
+        "success"
+       ]
+      ],
+      "elapsed": 0.0
+     },
+     {
+      "result": true,
+      "sent": [
+       [
+        "param_set_send",
+        [
+         "SDLOG_MODE",
+         "nan",
+         6
+        ]
+       ]
+      ],
+      "statuses": [
+       {
+        "state": "complete",
+        "count": 5,
+        "received": 5,
+        "name": "SDLOG_MODE",
+        "value": -1.0,
+        "type": 6
+       }
+      ],
+      "errors": [
+       ""
+      ],
+      "console": [
+       [
+        "PARAM",
+        "SDLOG_MODE set to -1.0",
+        "success"
+       ]
+      ],
+      "elapsed": 0.0
+     },
+     {
+      "result": false,
+      "sent": [],
+      "statuses": [],
+      "errors": [
+       "",
+       "SYS_AUTOSTART: this parameter takes whole numbers only"
+      ],
+      "console": [],
+      "elapsed": 0.0
+     },
+     {
+      "result": false,
+      "sent": [],
+      "statuses": [],
+      "errors": [
+       "",
+       "SENS_FLAGS: this parameter takes values from -128 to 127"
+      ],
+      "console": [],
+      "elapsed": 0.0
+     }
+    ],
+    "final": {
+     "state": "complete",
+     "count": 5,
+     "received": 5,
+     "status": {
+      "state": "complete",
+      "count": 5,
+      "received": 5
+     },
+     "params": [
+      {
+       "name": "COM_RC_LOSS_T",
+       "value": 0.5,
+       "type": 9
+      },
+      {
+       "name": "MC_ROLL_P",
+       "value": 6.5,
+       "type": 9
+      },
+      {
+       "name": "SDLOG_MODE",
+       "value": -1.0,
+       "type": 6
+      },
+      {
+       "name": "SENS_FLAGS",
+       "value": -2.0,
+       "type": 2
+      },
+      {
+       "name": "SYS_AUTOSTART",
+       "value": 4002.0,
+       "type": 6
+      }
+     ],
+     "watchdog_started": 1,
+     "last_error": "SENS_FLAGS: this parameter takes values from -128 to 127",
+     "cache": {
+      "MC_ROLL_P": {
+       "name": "MC_ROLL_P",
+       "value": 6.5,
+       "type": 9,
+       "index": 0,
+       "count": 5
+      },
+      "SYS_AUTOSTART": {
+       "name": "SYS_AUTOSTART",
+       "value": 4002.0,
+       "type": 6,
+       "index": 1,
+       "count": 5
+      },
+      "SDLOG_MODE": {
+       "name": "SDLOG_MODE",
+       "value": -1.0,
+       "type": 6,
+       "index": 2,
+       "count": 5
+      },
+      "SENS_FLAGS": {
+       "name": "SENS_FLAGS",
+       "value": -2.0,
+       "type": 2,
+       "index": 3,
+       "count": 5
+      },
+      "COM_RC_LOSS_T": {
+       "name": "COM_RC_LOSS_T",
+       "value": 0.5,
+       "type": 9,
+       "index": 4,
+       "count": 5
+      }
+     },
+     "vehicle": [
+      {
+       "name": "MC_ROLL_P",
+       "value": 6.5,
+       "type": 9
+      },
+      {
+       "name": "SYS_AUTOSTART",
+       "value": 0.0,
+       "type": 6,
+       "bits": 4002
+      },
+      {
+       "name": "SDLOG_MODE",
+       "value": 0.0,
+       "type": 6,
+       "bits": 4294967295
+      },
+      {
+       "name": "SENS_FLAGS",
+       "value": 0.0,
+       "type": 2,
+       "bits": 254
+      },
+      {
+       "name": "COM_RC_LOSS_T",
+       "value": 0.5,
+       "type": 9
+      }
+     ]
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "set_refusals",
+    "vehicle": {
+     "params": [
+      {
+       "name": "A",
+       "value": 1.5,
+       "type": 9
+      },
+      {
+       "name": "B",
+       "value": 2.5,
+       "type": 9
+      },
+      {
+       "name": "C",
+       "value": 3.5,
+       "type": 9
+      },
+      {
+       "name": "D",
+       "value": 4.5,
+       "type": 9
+      },
+      {
+       "name": "E",
+       "value": 5.5,
+       "type": 9
+      },
+      {
+       "name": "F",
+       "value": 6.5,
+       "type": 9
+      }
+     ]
+    },
+    "steps": [
+     {
+      "op": "set",
+      "name": "A",
+      "value": "nan"
+     },
+     {
+      "op": "set",
+      "name": "yyyyyyyyyyyyyyyyyyyy",
+      "value": 1.0
+     },
+     {
+      "op": "set",
+      "name": "NOPE",
+      "value": 1.0
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "sent": [],
+      "statuses": [],
+      "errors": [
+       "",
+       "parameter value must be finite"
+      ],
+      "console": [],
+      "elapsed": 0.0
+     },
+     {
+      "result": false,
+      "sent": [],
+      "statuses": [],
+      "errors": [
+       "",
+       "invalid parameter name"
+      ],
+      "console": [],
+      "elapsed": 0.0
+     },
+     {
+      "result": false,
+      "sent": [
+       [
+        "param_request_read_send",
+        [
+         "NOPE",
+         -1
+        ]
+       ]
+      ],
+      "statuses": [],
+      "errors": [
+       "",
+       "parameter not found on vehicle"
+      ],
+      "console": [],
+      "elapsed": 2.02
+     }
+    ],
+    "final": {
+     "state": "idle",
+     "count": -1,
+     "received": 0,
+     "status": {
+      "state": "idle",
+      "count": -1,
+      "received": 0
+     },
+     "params": [],
+     "watchdog_started": 0,
+     "last_error": "parameter not found on vehicle",
+     "cache": {},
+     "vehicle": [
+      {
+       "name": "A",
+       "value": 1.5,
+       "type": 9
+      },
+      {
+       "name": "B",
+       "value": 2.5,
+       "type": 9
+      },
+      {
+       "name": "C",
+       "value": 3.5,
+       "type": 9
+      },
+      {
+       "name": "D",
+       "value": 4.5,
+       "type": 9
+      },
+      {
+       "name": "E",
+       "value": 5.5,
+       "type": 9
+      },
+      {
+       "name": "F",
+       "value": 6.5,
+       "type": 9
+      }
+     ]
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "set_while_armed",
+    "armed": true,
+    "vehicle": {
+     "params": [
+      {
+       "name": "A",
+       "value": 1.5,
+       "type": 9
+      },
+      {
+       "name": "B",
+       "value": 2.5,
+       "type": 9
+      },
+      {
+       "name": "C",
+       "value": 3.5,
+       "type": 9
+      },
+      {
+       "name": "D",
+       "value": 4.5,
+       "type": 9
+      },
+      {
+       "name": "E",
+       "value": 5.5,
+       "type": 9
+      },
+      {
+       "name": "F",
+       "value": 6.5,
+       "type": 9
+      }
+     ]
+    },
+    "steps": [
+     {
+      "op": "set",
+      "name": "A",
+      "value": 1.0
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "sent": [],
+      "statuses": [],
+      "errors": [
+       "",
+       "cannot set parameter while armed"
+      ],
+      "console": [],
+      "elapsed": 0.0
+     }
+    ],
+    "final": {
+     "state": "idle",
+     "count": -1,
+     "received": 0,
+     "status": {
+      "state": "idle",
+      "count": -1,
+      "received": 0
+     },
+     "params": [],
+     "watchdog_started": 0,
+     "last_error": "cannot set parameter while armed",
+     "cache": {},
+     "vehicle": [
+      {
+       "name": "A",
+       "value": 1.5,
+       "type": 9
+      },
+      {
+       "name": "B",
+       "value": 2.5,
+       "type": 9
+      },
+      {
+       "name": "C",
+       "value": 3.5,
+       "type": 9
+      },
+      {
+       "name": "D",
+       "value": 4.5,
+       "type": 9
+      },
+      {
+       "name": "E",
+       "value": 5.5,
+       "type": 9
+      },
+      {
+       "name": "F",
+       "value": 6.5,
+       "type": 9
+      }
+     ]
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "set_not_connected",
+    "ready": false,
+    "vehicle": {
+     "params": [
+      {
+       "name": "A",
+       "value": 1.5,
+       "type": 9
+      },
+      {
+       "name": "B",
+       "value": 2.5,
+       "type": 9
+      },
+      {
+       "name": "C",
+       "value": 3.5,
+       "type": 9
+      },
+      {
+       "name": "D",
+       "value": 4.5,
+       "type": 9
+      },
+      {
+       "name": "E",
+       "value": 5.5,
+       "type": 9
+      },
+      {
+       "name": "F",
+       "value": 6.5,
+       "type": 9
+      }
+     ]
+    },
+    "steps": [
+     {
+      "op": "set",
+      "name": "A",
+      "value": 1.0
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "sent": [],
+      "statuses": [],
+      "errors": [
+       "",
+       "not connected"
+      ],
+      "console": [],
+      "elapsed": 0.0
+     }
+    ],
+    "final": {
+     "state": "idle",
+     "count": -1,
+     "received": 0,
+     "status": {
+      "state": "idle",
+      "count": -1,
+      "received": 0
+     },
+     "params": [],
+     "watchdog_started": 0,
+     "last_error": "not connected",
+     "cache": {},
+     "vehicle": [
+      {
+       "name": "A",
+       "value": 1.5,
+       "type": 9
+      },
+      {
+       "name": "B",
+       "value": 2.5,
+       "type": 9
+      },
+      {
+       "name": "C",
+       "value": 3.5,
+       "type": 9
+      },
+      {
+       "name": "D",
+       "value": 4.5,
+       "type": 9
+      },
+      {
+       "name": "E",
+       "value": 5.5,
+       "type": 9
+      },
+      {
+       "name": "F",
+       "value": 6.5,
+       "type": 9
+      }
+     ]
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "set_echo_differs",
+    "vehicle": {
+     "params": [
+      {
+       "name": "A",
+       "value": 1.5,
+       "type": 9
+      },
+      {
+       "name": "B",
+       "value": 2.5,
+       "type": 9
+      },
+      {
+       "name": "C",
+       "value": 3.5,
+       "type": 9
+      },
+      {
+       "name": "D",
+       "value": 4.5,
+       "type": 9
+      },
+      {
+       "name": "E",
+       "value": 5.5,
+       "type": 9
+      },
+      {
+       "name": "F",
+       "value": 6.5,
+       "type": 9
+      }
+     ],
+     "echo": "wrong"
+    },
+    "steps": [
+     {
+      "op": "request_list"
+     },
+     {
+      "op": "set",
+      "name": "A",
+      "value": 3.0
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "sent": [
+       [
+        "param_request_list_send",
+        []
+       ]
+      ],
+      "statuses": [
+       {
+        "state": "downloading",
+        "count": 6,
+        "received": 1,
+        "name": "A",
+        "value": 1.5,
+        "type": 9
+       },
+       {
+        "state": "downloading",
+        "count": 6,
+        "received": 2,
+        "name": "B",
+        "value": 2.5,
+        "type": 9
+       },
+       {
+        "state": "downloading",
+        "count": 6,
+        "received": 3,
+        "name": "C",
+        "value": 3.5,
+        "type": 9
+       },
+       {
+        "state": "downloading",
+        "count": 6,
+        "received": 4,
+        "name": "D",
+        "value": 4.5,
+        "type": 9
+       },
+       {
+        "state": "downloading",
+        "count": 6,
+        "received": 5,
+        "name": "E",
+        "value": 5.5,
+        "type": 9
+       },
+       {
+        "state": "complete",
+        "count": 6,
+        "received": 6,
+        "name": "F",
+        "value": 6.5,
+        "type": 9
+       }
+      ],
+      "errors": [],
+      "console": [],
+      "elapsed": 0.0
+     },
+     {
+      "result": false,
+      "sent": [
+       [
+        "param_set_send",
+        [
+         "A",
+         3.0,
+         9
+        ]
+       ]
+      ],
+      "statuses": [
+       {
+        "state": "complete",
+        "count": 6,
+        "received": 6,
+        "name": "A",
+        "value": 1.5,
+        "type": 9
+       }
+      ],
+      "errors": [
+       "",
+       "parameter write not confirmed (got 1.5 expected 3.0)"
+      ],
+      "console": [],
+      "elapsed": 0.0
+     }
+    ],
+    "final": {
+     "state": "complete",
+     "count": 6,
+     "received": 6,
+     "status": {
+      "state": "complete",
+      "count": 6,
+      "received": 6
+     },
+     "params": [
+      {
+       "name": "A",
+       "value": 1.5,
+       "type": 9
+      },
+      {
+       "name": "B",
+       "value": 2.5,
+       "type": 9
+      },
+      {
+       "name": "C",
+       "value": 3.5,
+       "type": 9
+      },
+      {
+       "name": "D",
+       "value": 4.5,
+       "type": 9
+      },
+      {
+       "name": "E",
+       "value": 5.5,
+       "type": 9
+      },
+      {
+       "name": "F",
+       "value": 6.5,
+       "type": 9
+      }
+     ],
+     "watchdog_started": 1,
+     "last_error": "parameter write not confirmed (got 1.5 expected 3.0)",
+     "cache": {
+      "A": {
+       "name": "A",
+       "value": 1.5,
+       "type": 9,
+       "index": 0,
+       "count": 6
+      },
+      "B": {
+       "name": "B",
+       "value": 2.5,
+       "type": 9,
+       "index": 1,
+       "count": 6
+      },
+      "C": {
+       "name": "C",
+       "value": 3.5,
+       "type": 9,
+       "index": 2,
+       "count": 6
+      },
+      "D": {
+       "name": "D",
+       "value": 4.5,
+       "type": 9,
+       "index": 3,
+       "count": 6
+      },
+      "E": {
+       "name": "E",
+       "value": 5.5,
+       "type": 9,
+       "index": 4,
+       "count": 6
+      },
+      "F": {
+       "name": "F",
+       "value": 6.5,
+       "type": 9,
+       "index": 5,
+       "count": 6
+      }
+     },
+     "vehicle": [
+      {
+       "name": "A",
+       "value": 1.5,
+       "type": 9
+      },
+      {
+       "name": "B",
+       "value": 2.5,
+       "type": 9
+      },
+      {
+       "name": "C",
+       "value": 3.5,
+       "type": 9
+      },
+      {
+       "name": "D",
+       "value": 4.5,
+       "type": 9
+      },
+      {
+       "name": "E",
+       "value": 5.5,
+       "type": 9
+      },
+      {
+       "name": "F",
+       "value": 6.5,
+       "type": 9
+      }
+     ]
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "set_unknown_parameter_is_requested_first",
+    "vehicle": {
+     "params": [
+      {
+       "name": "A",
+       "value": 1.5,
+       "type": 9
+      },
+      {
+       "name": "B",
+       "value": 2.5,
+       "type": 9
+      },
+      {
+       "name": "C",
+       "value": 3.5,
+       "type": 9
+      },
+      {
+       "name": "D",
+       "value": 4.5,
+       "type": 9
+      },
+      {
+       "name": "E",
+       "value": 5.5,
+       "type": 9
+      },
+      {
+       "name": "F",
+       "value": 6.5,
+       "type": 9
+      }
+     ]
+    },
+    "steps": [
+     {
+      "op": "set",
+      "name": "D",
+      "value": 7.5
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "sent": [
+       [
+        "param_request_read_send",
+        [
+         "D",
+         -1
+        ]
+       ],
+       [
+        "param_set_send",
+        [
+         "D",
+         7.5,
+         9
+        ]
+       ]
+      ],
+      "statuses": [
+       {
+        "state": "idle",
+        "count": 6,
+        "received": 1,
+        "name": "D",
+        "value": 4.5,
+        "type": 9
+       },
+       {
+        "state": "idle",
+        "count": 6,
+        "received": 1,
+        "name": "D",
+        "value": 7.5,
+        "type": 9
+       }
+      ],
+      "errors": [
+       ""
+      ],
+      "console": [
+       [
+        "PARAM",
+        "D set to 7.5",
+        "success"
+       ]
+      ],
+      "elapsed": 0.0
+     }
+    ],
+    "final": {
+     "state": "idle",
+     "count": 6,
+     "received": 1,
+     "status": {
+      "state": "idle",
+      "count": 6,
+      "received": 1
+     },
+     "params": [
+      {
+       "name": "D",
+       "value": 7.5,
+       "type": 9
+      }
+     ],
+     "watchdog_started": 0,
+     "last_error": "",
+     "cache": {
+      "D": {
+       "name": "D",
+       "value": 7.5,
+       "type": 9,
+       "index": 3,
+       "count": 6
+      }
+     },
+     "vehicle": [
+      {
+       "name": "A",
+       "value": 1.5,
+       "type": 9
+      },
+      {
+       "name": "B",
+       "value": 2.5,
+       "type": 9
+      },
+      {
+       "name": "C",
+       "value": 3.5,
+       "type": 9
+      },
+      {
+       "name": "D",
+       "value": 7.5,
+       "type": 9
+      },
+      {
+       "name": "E",
+       "value": 5.5,
+       "type": 9
+      },
+      {
+       "name": "F",
+       "value": 6.5,
+       "type": 9
+      }
+     ]
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "fetch_a_few",
+    "vehicle": {
+     "params": [
+      {
+       "name": "A",
+       "value": 1.5,
+       "type": 9
+      },
+      {
+       "name": "B",
+       "value": 2.5,
+       "type": 9
+      },
+      {
+       "name": "C",
+       "value": 3.5,
+       "type": 9
+      },
+      {
+       "name": "D",
+       "value": 4.5,
+       "type": 9
+      },
+      {
+       "name": "E",
+       "value": 5.5,
+       "type": 9
+      },
+      {
+       "name": "F",
+       "value": 6.5,
+       "type": 9
+      }
+     ]
+    },
+    "steps": [
+     {
+      "op": "request_list"
+     },
+     {
+      "op": "fetch",
+      "names": [
+       "A",
+       "C"
+      ]
+     },
+     {
+      "op": "fetch",
+      "names": [
+       "A",
+       "ZZ"
+      ],
+      "fresh": true
+     },
+     {
+      "op": "fetch",
+      "names": []
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "sent": [
+       [
+        "param_request_list_send",
+        []
+       ]
+      ],
+      "statuses": [
+       {
+        "state": "downloading",
+        "count": 6,
+        "received": 1,
+        "name": "A",
+        "value": 1.5,
+        "type": 9
+       },
+       {
+        "state": "downloading",
+        "count": 6,
+        "received": 2,
+        "name": "B",
+        "value": 2.5,
+        "type": 9
+       },
+       {
+        "state": "downloading",
+        "count": 6,
+        "received": 3,
+        "name": "C",
+        "value": 3.5,
+        "type": 9
+       },
+       {
+        "state": "downloading",
+        "count": 6,
+        "received": 4,
+        "name": "D",
+        "value": 4.5,
+        "type": 9
+       },
+       {
+        "state": "downloading",
+        "count": 6,
+        "received": 5,
+        "name": "E",
+        "value": 5.5,
+        "type": 9
+       },
+       {
+        "state": "complete",
+        "count": 6,
+        "received": 6,
+        "name": "F",
+        "value": 6.5,
+        "type": 9
+       }
+      ],
+      "errors": [],
+      "console": [],
+      "elapsed": 0.0
+     },
+     {
+      "result": {
+       "A": 1.5,
+       "C": 3.5
+      },
+      "sent": [],
+      "statuses": [],
+      "errors": [],
+      "console": [],
+      "elapsed": 0.0
+     },
+     {
+      "result": {
+       "A": 1.5
+      },
+      "sent": [
+       [
+        "param_request_read_send",
+        [
+         "A",
+         -1
+        ]
+       ]
+      ],
+      "statuses": [
+       {
+        "state": "complete",
+        "count": 6,
+        "received": 6,
+        "name": "A",
+        "value": 1.5,
+        "type": 9
+       }
+      ],
+      "errors": [],
+      "console": [],
+      "elapsed": 0.0
+     },
+     {
+      "result": {},
+      "sent": [],
+      "statuses": [],
+      "errors": [],
+      "console": [],
+      "elapsed": 0.0
+     }
+    ],
+    "final": {
+     "state": "complete",
+     "count": 6,
+     "received": 6,
+     "status": {
+      "state": "complete",
+      "count": 6,
+      "received": 6
+     },
+     "params": [
+      {
+       "name": "A",
+       "value": 1.5,
+       "type": 9
+      },
+      {
+       "name": "B",
+       "value": 2.5,
+       "type": 9
+      },
+      {
+       "name": "C",
+       "value": 3.5,
+       "type": 9
+      },
+      {
+       "name": "D",
+       "value": 4.5,
+       "type": 9
+      },
+      {
+       "name": "E",
+       "value": 5.5,
+       "type": 9
+      },
+      {
+       "name": "F",
+       "value": 6.5,
+       "type": 9
+      }
+     ],
+     "watchdog_started": 1,
+     "last_error": "",
+     "cache": {
+      "A": {
+       "name": "A",
+       "value": 1.5,
+       "type": 9,
+       "index": 0,
+       "count": 6
+      },
+      "B": {
+       "name": "B",
+       "value": 2.5,
+       "type": 9,
+       "index": 1,
+       "count": 6
+      },
+      "C": {
+       "name": "C",
+       "value": 3.5,
+       "type": 9,
+       "index": 2,
+       "count": 6
+      },
+      "D": {
+       "name": "D",
+       "value": 4.5,
+       "type": 9,
+       "index": 3,
+       "count": 6
+      },
+      "E": {
+       "name": "E",
+       "value": 5.5,
+       "type": 9,
+       "index": 4,
+       "count": 6
+      },
+      "F": {
+       "name": "F",
+       "value": 6.5,
+       "type": 9,
+       "index": 5,
+       "count": 6
+      }
+     },
+     "vehicle": [
+      {
+       "name": "A",
+       "value": 1.5,
+       "type": 9
+      },
+      {
+       "name": "B",
+       "value": 2.5,
+       "type": 9
+      },
+      {
+       "name": "C",
+       "value": 3.5,
+       "type": 9
+      },
+      {
+       "name": "D",
+       "value": 4.5,
+       "type": 9
+      },
+      {
+       "name": "E",
+       "value": 5.5,
+       "type": 9
+      },
+      {
+       "name": "F",
+       "value": 6.5,
+       "type": 9
+      }
+     ]
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "fetch_without_a_download",
+    "vehicle": {
+     "params": [
+      {
+       "name": "A",
+       "value": 1.5,
+       "type": 9
+      },
+      {
+       "name": "B",
+       "value": 2.5,
+       "type": 9
+      },
+      {
+       "name": "C",
+       "value": 3.5,
+       "type": 9
+      },
+      {
+       "name": "D",
+       "value": 4.5,
+       "type": 9
+      },
+      {
+       "name": "E",
+       "value": 5.5,
+       "type": 9
+      },
+      {
+       "name": "F",
+       "value": 6.5,
+       "type": 9
+      }
+     ],
+     "never": [
+      2
+     ]
+    },
+    "steps": [
+     {
+      "op": "fetch",
+      "names": [
+       "B",
+       "C",
+       "E"
+      ],
+      "timeout": 1.0
+     },
+     {
+      "op": "fetch",
+      "names": [
+       "B",
+       "C",
+       "E"
+      ],
+      "timeout": 1.0,
+      "fresh": true
+     },
+     {
+      "op": "fetch",
+      "names": [
+       "C"
+      ],
+      "timeout": 1.0
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": {
+       "B": 2.5,
+       "E": 5.5
+      },
+      "sent": [
+       [
+        "param_request_read_send",
+        [
+         "B",
+         -1
+        ]
+       ],
+       [
+        "param_request_read_send",
+        [
+         "C",
+         -1
+        ]
+       ],
+       [
+        "param_request_read_send",
+        [
+         "E",
+         -1
+        ]
+       ],
+       [
+        "param_request_read_send",
+        [
+         "B",
+         -1
+        ]
+       ],
+       [
+        "param_request_read_send",
+        [
+         "C",
+         -1
+        ]
+       ],
+       [
+        "param_request_read_send",
+        [
+         "B",
+         -1
+        ]
+       ]
+      ],
+      "statuses": [
+       {
+        "state": "idle",
+        "count": 6,
+        "received": 1,
+        "name": "B",
+        "value": 2.5,
+        "type": 9
+       },
+       {
+        "state": "idle",
+        "count": 6,
+        "received": 2,
+        "name": "E",
+        "value": 5.5,
+        "type": 9
+       },
+       {
+        "state": "idle",
+        "count": 6,
+        "received": 2,
+        "name": "B",
+        "value": 2.5,
+        "type": 9
+       },
+       {
+        "state": "idle",
+        "count": 6,
+        "received": 2,
+        "name": "B",
+        "value": 2.5,
+        "type": 9
+       }
+      ],
+      "errors": [],
+      "console": [],
+      "elapsed": 0.0
+     },
+     {
+      "result": {
+       "B": 2.5,
+       "E": 5.5
+      },
+      "sent": [
+       [
+        "param_request_read_send",
+        [
+         "B",
+         -1
+        ]
+       ],
+       [
+        "param_request_read_send",
+        [
+         "C",
+         -1
+        ]
+       ],
+       [
+        "param_request_read_send",
+        [
+         "E",
+         -1
+        ]
+       ],
+       [
+        "param_request_read_send",
+        [
+         "B",
+         -1
+        ]
+       ],
+       [
+        "param_request_read_send",
+        [
+         "C",
+         -1
+        ]
+       ],
+       [
+        "param_request_read_send",
+        [
+         "B",
+         -1
+        ]
+       ]
+      ],
+      "statuses": [
+       {
+        "state": "idle",
+        "count": 6,
+        "received": 2,
+        "name": "B",
+        "value": 2.5,
+        "type": 9
+       },
+       {
+        "state": "idle",
+        "count": 6,
+        "received": 2,
+        "name": "E",
+        "value": 5.5,
+        "type": 9
+       },
+       {
+        "state": "idle",
+        "count": 6,
+        "received": 2,
+        "name": "B",
+        "value": 2.5,
+        "type": 9
+       },
+       {
+        "state": "idle",
+        "count": 6,
+        "received": 2,
+        "name": "B",
+        "value": 2.5,
+        "type": 9
+       }
+      ],
+      "errors": [],
+      "console": [],
+      "elapsed": 0.0
+     },
+     {
+      "result": {},
+      "sent": [],
+      "statuses": [],
+      "errors": [],
+      "console": [],
+      "elapsed": 0.0
+     }
+    ],
+    "final": {
+     "state": "idle",
+     "count": 6,
+     "received": 2,
+     "status": {
+      "state": "idle",
+      "count": 6,
+      "received": 2
+     },
+     "params": [
+      {
+       "name": "B",
+       "value": 2.5,
+       "type": 9
+      },
+      {
+       "name": "E",
+       "value": 5.5,
+       "type": 9
+      }
+     ],
+     "watchdog_started": 0,
+     "last_error": "",
+     "cache": {
+      "B": {
+       "name": "B",
+       "value": 2.5,
+       "type": 9,
+       "index": 1,
+       "count": 6
+      },
+      "E": {
+       "name": "E",
+       "value": 5.5,
+       "type": 9,
+       "index": 4,
+       "count": 6
+      }
+     },
+     "vehicle": [
+      {
+       "name": "A",
+       "value": 1.5,
+       "type": 9
+      },
+      {
+       "name": "B",
+       "value": 2.5,
+       "type": 9
+      },
+      {
+       "name": "C",
+       "value": 3.5,
+       "type": 9
+      },
+      {
+       "name": "D",
+       "value": 4.5,
+       "type": 9
+      },
+      {
+       "name": "E",
+       "value": 5.5,
+       "type": 9
+      },
+      {
+       "name": "F",
+       "value": 6.5,
+       "type": 9
+      }
+     ]
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "verify_rewrites_what_differs",
+    "vehicle": {
+     "params": [
+      {
+       "name": "A",
+       "value": 1.5,
+       "type": 9
+      },
+      {
+       "name": "B",
+       "value": 2.5,
+       "type": 9
+      },
+      {
+       "name": "C",
+       "value": 3.5,
+       "type": 9
+      },
+      {
+       "name": "D",
+       "value": 4.5,
+       "type": 9
+      },
+      {
+       "name": "E",
+       "value": 5.5,
+       "type": 9
+      },
+      {
+       "name": "F",
+       "value": 6.5,
+       "type": 9
+      }
+     ]
+    },
+    "steps": [
+     {
+      "op": "request_list"
+     },
+     {
+      "op": "verify",
+      "targets": [
+       {
+        "name": "A",
+        "value": 1.5
+       },
+       {
+        "name": "B",
+        "value": 8.0
+       }
+      ],
+      "names": [
+       "C"
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "sent": [
+       [
+        "param_request_list_send",
+        []
+       ]
+      ],
+      "statuses": [
+       {
+        "state": "downloading",
+        "count": 6,
+        "received": 1,
+        "name": "A",
+        "value": 1.5,
+        "type": 9
+       },
+       {
+        "state": "downloading",
+        "count": 6,
+        "received": 2,
+        "name": "B",
+        "value": 2.5,
+        "type": 9
+       },
+       {
+        "state": "downloading",
+        "count": 6,
+        "received": 3,
+        "name": "C",
+        "value": 3.5,
+        "type": 9
+       },
+       {
+        "state": "downloading",
+        "count": 6,
+        "received": 4,
+        "name": "D",
+        "value": 4.5,
+        "type": 9
+       },
+       {
+        "state": "downloading",
+        "count": 6,
+        "received": 5,
+        "name": "E",
+        "value": 5.5,
+        "type": 9
+       },
+       {
+        "state": "complete",
+        "count": 6,
+        "received": 6,
+        "name": "F",
+        "value": 6.5,
+        "type": 9
+       }
+      ],
+      "errors": [],
+      "console": [],
+      "elapsed": 0.0
+     },
+     {
+      "result": {
+       "results": [
+        {
+         "name": "A",
+         "wanted": 1.5,
+         "before": 1.5,
+         "after": 1.5,
+         "rewritten": false,
+         "ok": true,
+         "error": ""
+        },
+        {
+         "name": "B",
+         "wanted": 8.0,
+         "before": 2.5,
+         "after": 8.0,
+         "rewritten": true,
+         "ok": true,
+         "error": ""
+        }
+       ],
+       "values": {
+        "A": 1.5,
+        "B": 8.0,
+        "C": 3.5
+       },
+       "missing": [],
+       "confirmed": 2,
+       "failed": 0,
+       "all_confirmed": true
+      },
+      "sent": [
+       [
+        "param_request_read_send",
+        [
+         "A",
+         -1
+        ]
+       ],
+       [
+        "param_request_read_send",
+        [
+         "B",
+         -1
+        ]
+       ],
+       [
+        "param_request_read_send",
+        [
+         "C",
+         -1
+        ]
+       ],
+       [
+        "param_set_send",
+        [
+         "B",
+         8.0,
+         9
+        ]
+       ],
+       [
+        "param_request_read_send",
+        [
+         "B",
+         -1
+        ]
+       ]
+      ],
+      "statuses": [
+       {
+        "state": "complete",
+        "count": 6,
+        "received": 6,
+        "name": "A",
+        "value": 1.5,
+        "type": 9
+       },
+       {
+        "state": "complete",
+        "count": 6,
+        "received": 6,
+        "name": "B",
+        "value": 2.5,
+        "type": 9
+       },
+       {
+        "state": "complete",
+        "count": 6,
+        "received": 6,
+        "name": "C",
+        "value": 3.5,
+        "type": 9
+       },
+       {
+        "state": "complete",
+        "count": 6,
+        "received": 6,
+        "name": "B",
+        "value": 8.0,
+        "type": 9
+       },
+       {
+        "state": "complete",
+        "count": 6,
+        "received": 6,
+        "name": "B",
+        "value": 8.0,
+        "type": 9
+       }
+      ],
+      "errors": [
+       "",
+       "",
+       ""
+      ],
+      "console": [
+       [
+        "PARAM",
+        "B set to 8.0",
+        "success"
+       ]
+      ],
+      "elapsed": 0.0
+     }
+    ],
+    "final": {
+     "state": "complete",
+     "count": 6,
+     "received": 6,
+     "status": {
+      "state": "complete",
+      "count": 6,
+      "received": 6
+     },
+     "params": [
+      {
+       "name": "A",
+       "value": 1.5,
+       "type": 9
+      },
+      {
+       "name": "B",
+       "value": 8.0,
+       "type": 9
+      },
+      {
+       "name": "C",
+       "value": 3.5,
+       "type": 9
+      },
+      {
+       "name": "D",
+       "value": 4.5,
+       "type": 9
+      },
+      {
+       "name": "E",
+       "value": 5.5,
+       "type": 9
+      },
+      {
+       "name": "F",
+       "value": 6.5,
+       "type": 9
+      }
+     ],
+     "watchdog_started": 1,
+     "last_error": "",
+     "cache": {
+      "A": {
+       "name": "A",
+       "value": 1.5,
+       "type": 9,
+       "index": 0,
+       "count": 6
+      },
+      "B": {
+       "name": "B",
+       "value": 8.0,
+       "type": 9,
+       "index": 1,
+       "count": 6
+      },
+      "C": {
+       "name": "C",
+       "value": 3.5,
+       "type": 9,
+       "index": 2,
+       "count": 6
+      },
+      "D": {
+       "name": "D",
+       "value": 4.5,
+       "type": 9,
+       "index": 3,
+       "count": 6
+      },
+      "E": {
+       "name": "E",
+       "value": 5.5,
+       "type": 9,
+       "index": 4,
+       "count": 6
+      },
+      "F": {
+       "name": "F",
+       "value": 6.5,
+       "type": 9,
+       "index": 5,
+       "count": 6
+      }
+     },
+     "vehicle": [
+      {
+       "name": "A",
+       "value": 1.5,
+       "type": 9
+      },
+      {
+       "name": "B",
+       "value": 8.0,
+       "type": 9
+      },
+      {
+       "name": "C",
+       "value": 3.5,
+       "type": 9
+      },
+      {
+       "name": "D",
+       "value": 4.5,
+       "type": 9
+      },
+      {
+       "name": "E",
+       "value": 5.5,
+       "type": 9
+      },
+      {
+       "name": "F",
+       "value": 6.5,
+       "type": 9
+      }
+     ]
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "verify_refusals",
+    "vehicle": {
+     "params": [
+      {
+       "name": "A",
+       "value": 1.5,
+       "type": 9
+      },
+      {
+       "name": "B",
+       "value": 2.5,
+       "type": 9
+      },
+      {
+       "name": "C",
+       "value": 3.5,
+       "type": 9
+      },
+      {
+       "name": "D",
+       "value": 4.5,
+       "type": 9
+      },
+      {
+       "name": "E",
+       "value": 5.5,
+       "type": 9
+      },
+      {
+       "name": "F",
+       "value": 6.5,
+       "type": 9
+      }
+     ]
+    },
+    "steps": [
+     {
+      "op": "verify",
+      "targets": [],
+      "names": []
+     },
+     {
+      "op": "verify",
+      "targets": [
+       {
+        "name": "A",
+        "value": 1.0
+       }
+      ],
+      "rewrite": false
+     },
+     {
+      "op": "verify",
+      "targets": [
+       {
+        "name": "ZZ",
+        "value": 1.0
+       }
+      ],
+      "rewrite": false,
+      "timeout": 1.0
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "sent": [],
+      "statuses": [],
+      "errors": [
+       "",
+       "nothing to check"
+      ],
+      "console": [],
+      "elapsed": 0.0
+     },
+     {
+      "result": {
+       "results": [
+        {
+         "name": "A",
+         "wanted": 1.0,
+         "before": 1.5,
+         "after": 1.5,
+         "rewritten": false,
+         "ok": false,
+         "error": "the vehicle holds a different value"
+        }
+       ],
+       "values": {
+        "A": 1.5
+       },
+       "missing": [],
+       "confirmed": 0,
+       "failed": 1,
+       "all_confirmed": false
+      },
+      "sent": [
+       [
+        "param_request_read_send",
+        [
+         "A",
+         -1
+        ]
+       ]
+      ],
+      "statuses": [
+       {
+        "state": "idle",
+        "count": 6,
+        "received": 1,
+        "name": "A",
+        "value": 1.5,
+        "type": 9
+       }
+      ],
+      "errors": [
+       "",
+       ""
+      ],
+      "console": [],
+      "elapsed": 0.0
+     },
+     {
+      "result": {
+       "results": [
+        {
+         "name": "ZZ",
+         "wanted": 1.0,
+         "before": null,
+         "after": null,
+         "rewritten": false,
+         "ok": false,
+         "error": "the vehicle did not answer for this parameter"
+        }
+       ],
+       "values": {},
+       "missing": [
+        "ZZ"
+       ],
+       "confirmed": 0,
+       "failed": 1,
+       "all_confirmed": false
+      },
+      "sent": [
+       [
+        "param_request_read_send",
+        [
+         "ZZ",
+         -1
+        ]
+       ],
+       [
+        "param_request_read_send",
+        [
+         "A",
+         -1
+        ]
+       ],
+       [
+        "param_request_read_send",
+        [
+         "ZZ",
+         -1
+        ]
+       ],
+       [
+        "param_request_read_send",
+        [
+         "A",
+         -1
+        ]
+       ]
+      ],
+      "statuses": [
+       {
+        "state": "idle",
+        "count": 6,
+        "received": 1,
+        "name": "A",
+        "value": 1.5,
+        "type": 9
+       },
+       {
+        "state": "idle",
+        "count": 6,
+        "received": 1,
+        "name": "A",
+        "value": 1.5,
+        "type": 9
+       }
+      ],
+      "errors": [
+       "",
+       ""
+      ],
+      "console": [],
+      "elapsed": 0.0
+     }
+    ],
+    "final": {
+     "state": "idle",
+     "count": 6,
+     "received": 1,
+     "status": {
+      "state": "idle",
+      "count": 6,
+      "received": 1
+     },
+     "params": [
+      {
+       "name": "A",
+       "value": 1.5,
+       "type": 9
+      }
+     ],
+     "watchdog_started": 0,
+     "last_error": "",
+     "cache": {
+      "A": {
+       "name": "A",
+       "value": 1.5,
+       "type": 9,
+       "index": 0,
+       "count": 6
+      }
+     },
+     "vehicle": [
+      {
+       "name": "A",
+       "value": 1.5,
+       "type": 9
+      },
+      {
+       "name": "B",
+       "value": 2.5,
+       "type": 9
+      },
+      {
+       "name": "C",
+       "value": 3.5,
+       "type": 9
+      },
+      {
+       "name": "D",
+       "value": 4.5,
+       "type": 9
+      },
+      {
+       "name": "E",
+       "value": 5.5,
+       "type": 9
+      },
+      {
+       "name": "F",
+       "value": 6.5,
+       "type": 9
+      }
+     ]
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "verify_armed_is_not_rewritten",
+    "armed": true,
+    "vehicle": {
+     "params": [
+      {
+       "name": "A",
+       "value": 1.5,
+       "type": 9
+      },
+      {
+       "name": "B",
+       "value": 2.5,
+       "type": 9
+      },
+      {
+       "name": "C",
+       "value": 3.5,
+       "type": 9
+      },
+      {
+       "name": "D",
+       "value": 4.5,
+       "type": 9
+      },
+      {
+       "name": "E",
+       "value": 5.5,
+       "type": 9
+      },
+      {
+       "name": "F",
+       "value": 6.5,
+       "type": 9
+      }
+     ]
+    },
+    "steps": [
+     {
+      "op": "verify",
+      "targets": [
+       {
+        "name": "A",
+        "value": 99.0
+       }
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": {
+       "results": [
+        {
+         "name": "A",
+         "wanted": 99.0,
+         "before": 1.5,
+         "after": 1.5,
+         "rewritten": false,
+         "ok": false,
+         "error": "not written again: the vehicle is armed"
+        }
+       ],
+       "values": {
+        "A": 1.5
+       },
+       "missing": [],
+       "confirmed": 0,
+       "failed": 1,
+       "all_confirmed": false
+      },
+      "sent": [
+       [
+        "param_request_read_send",
+        [
+         "A",
+         -1
+        ]
+       ]
+      ],
+      "statuses": [
+       {
+        "state": "idle",
+        "count": 6,
+        "received": 1,
+        "name": "A",
+        "value": 1.5,
+        "type": 9
+       }
+      ],
+      "errors": [
+       "",
+       ""
+      ],
+      "console": [],
+      "elapsed": 0.0
+     }
+    ],
+    "final": {
+     "state": "idle",
+     "count": 6,
+     "received": 1,
+     "status": {
+      "state": "idle",
+      "count": 6,
+      "received": 1
+     },
+     "params": [
+      {
+       "name": "A",
+       "value": 1.5,
+       "type": 9
+      }
+     ],
+     "watchdog_started": 0,
+     "last_error": "",
+     "cache": {
+      "A": {
+       "name": "A",
+       "value": 1.5,
+       "type": 9,
+       "index": 0,
+       "count": 6
+      }
+     },
+     "vehicle": [
+      {
+       "name": "A",
+       "value": 1.5,
+       "type": 9
+      },
+      {
+       "name": "B",
+       "value": 2.5,
+       "type": 9
+      },
+      {
+       "name": "C",
+       "value": 3.5,
+       "type": 9
+      },
+      {
+       "name": "D",
+       "value": 4.5,
+       "type": 9
+      },
+      {
+       "name": "E",
+       "value": 5.5,
+       "type": 9
+      },
+      {
+       "name": "F",
+       "value": 6.5,
+       "type": 9
+      }
+     ]
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "upload_all_confirmed",
+    "vehicle": {
+     "params": [
+      {
+       "name": "A",
+       "value": 1.5,
+       "type": 9
+      },
+      {
+       "name": "B",
+       "value": 2.5,
+       "type": 9
+      },
+      {
+       "name": "C",
+       "value": 3.5,
+       "type": 9
+      },
+      {
+       "name": "D",
+       "value": 4.5,
+       "type": 9
+      },
+      {
+       "name": "E",
+       "value": 5.5,
+       "type": 9
+      },
+      {
+       "name": "F",
+       "value": 6.5,
+       "type": 9
+      }
+     ]
+    },
+    "steps": [
+     {
+      "op": "request_list"
+     },
+     {
+      "op": "upload",
+      "params": [
+       {
+        "name": "A",
+        "value": 10.0
+       },
+       {
+        "name": "B",
+        "value": 20.0
+       }
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "sent": [
+       [
+        "param_request_list_send",
+        []
+       ]
+      ],
+      "statuses": [
+       {
+        "state": "downloading",
+        "count": 6,
+        "received": 1,
+        "name": "A",
+        "value": 1.5,
+        "type": 9
+       },
+       {
+        "state": "downloading",
+        "count": 6,
+        "received": 2,
+        "name": "B",
+        "value": 2.5,
+        "type": 9
+       },
+       {
+        "state": "downloading",
+        "count": 6,
+        "received": 3,
+        "name": "C",
+        "value": 3.5,
+        "type": 9
+       },
+       {
+        "state": "downloading",
+        "count": 6,
+        "received": 4,
+        "name": "D",
+        "value": 4.5,
+        "type": 9
+       },
+       {
+        "state": "downloading",
+        "count": 6,
+        "received": 5,
+        "name": "E",
+        "value": 5.5,
+        "type": 9
+       },
+       {
+        "state": "complete",
+        "count": 6,
+        "received": 6,
+        "name": "F",
+        "value": 6.5,
+        "type": 9
+       }
+      ],
+      "errors": [],
+      "console": [],
+      "elapsed": 0.0
+     },
+     {
+      "result": {
+       "begun": true,
+       "result": {
+        "state": "upload_complete",
+        "written": 2,
+        "failed": 0,
+        "errors": []
+       }
+      },
+      "sent": [
+       [
+        "param_set_send",
+        [
+         "A",
+         10.0,
+         9
+        ]
+       ],
+       [
+        "param_set_send",
+        [
+         "B",
+         20.0,
+         9
+        ]
+       ]
+      ],
+      "statuses": [
+       {
+        "state": "uploading",
+        "count": 2,
+        "received": 0,
+        "name": "A",
+        "value": 10.0,
+        "type": 9
+       },
+       {
+        "state": "uploading",
+        "count": 2,
+        "received": 1,
+        "name": "A",
+        "value": 10.0
+       },
+       {
+        "state": "uploading",
+        "count": 2,
+        "received": 1,
+        "name": "B",
+        "value": 20.0,
+        "type": 9
+       },
+       {
+        "state": "uploading",
+        "count": 2,
+        "received": 2,
+        "name": "B",
+        "value": 20.0
+       },
+       {
+        "state": "upload_complete",
+        "count": 2,
+        "received": 2
+       }
+      ],
+      "errors": [
+       "",
+       ""
+      ],
+      "console": [
+       [
+        "PARAM",
+        "A set to 10.0",
+        "success"
+       ],
+       [
+        "PARAM",
+        "B set to 20.0",
+        "success"
+       ]
+      ],
+      "elapsed": 0.0
+     }
+    ],
+    "final": {
+     "state": "complete",
+     "count": 6,
+     "received": 6,
+     "status": {
+      "state": "complete",
+      "count": 6,
+      "received": 6
+     },
+     "params": [
+      {
+       "name": "A",
+       "value": 10.0,
+       "type": 9
+      },
+      {
+       "name": "B",
+       "value": 20.0,
+       "type": 9
+      },
+      {
+       "name": "C",
+       "value": 3.5,
+       "type": 9
+      },
+      {
+       "name": "D",
+       "value": 4.5,
+       "type": 9
+      },
+      {
+       "name": "E",
+       "value": 5.5,
+       "type": 9
+      },
+      {
+       "name": "F",
+       "value": 6.5,
+       "type": 9
+      }
+     ],
+     "watchdog_started": 1,
+     "last_error": "",
+     "cache": {
+      "A": {
+       "name": "A",
+       "value": 10.0,
+       "type": 9,
+       "index": 0,
+       "count": 6
+      },
+      "B": {
+       "name": "B",
+       "value": 20.0,
+       "type": 9,
+       "index": 1,
+       "count": 6
+      },
+      "C": {
+       "name": "C",
+       "value": 3.5,
+       "type": 9,
+       "index": 2,
+       "count": 6
+      },
+      "D": {
+       "name": "D",
+       "value": 4.5,
+       "type": 9,
+       "index": 3,
+       "count": 6
+      },
+      "E": {
+       "name": "E",
+       "value": 5.5,
+       "type": 9,
+       "index": 4,
+       "count": 6
+      },
+      "F": {
+       "name": "F",
+       "value": 6.5,
+       "type": 9,
+       "index": 5,
+       "count": 6
+      }
+     },
+     "vehicle": [
+      {
+       "name": "A",
+       "value": 10.0,
+       "type": 9
+      },
+      {
+       "name": "B",
+       "value": 20.0,
+       "type": 9
+      },
+      {
+       "name": "C",
+       "value": 3.5,
+       "type": 9
+      },
+      {
+       "name": "D",
+       "value": 4.5,
+       "type": 9
+      },
+      {
+       "name": "E",
+       "value": 5.5,
+       "type": 9
+      },
+      {
+       "name": "F",
+       "value": 6.5,
+       "type": 9
+      }
+     ]
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "upload_refusals",
+    "vehicle": {
+     "params": [
+      {
+       "name": "A",
+       "value": 1.5,
+       "type": 9
+      },
+      {
+       "name": "B",
+       "value": 2.5,
+       "type": 9
+      },
+      {
+       "name": "C",
+       "value": 3.5,
+       "type": 9
+      },
+      {
+       "name": "D",
+       "value": 4.5,
+       "type": 9
+      },
+      {
+       "name": "E",
+       "value": 5.5,
+       "type": 9
+      },
+      {
+       "name": "F",
+       "value": 6.5,
+       "type": 9
+      }
+     ]
+    },
+    "steps": [
+     {
+      "op": "upload",
+      "params": []
+     },
+     {
+      "op": "set_state",
+      "state": "downloading"
+     },
+     {
+      "op": "upload",
+      "params": [
+       {
+        "name": "A",
+        "value": 1.0
+       }
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": {
+       "begun": false
+      },
+      "sent": [],
+      "statuses": [],
+      "errors": [
+       "invalid parameter list"
+      ],
+      "console": [],
+      "elapsed": 0.0
+     },
+     {
+      "result": null,
+      "sent": [],
+      "statuses": [],
+      "errors": [],
+      "console": [],
+      "elapsed": 0.0
+     },
+     {
+      "result": {
+       "begun": false
+      },
+      "sent": [],
+      "statuses": [],
+      "errors": [
+       "another parameter operation in progress"
+      ],
+      "console": [],
+      "elapsed": 0.0
+     }
+    ],
+    "final": {
+     "state": "downloading",
+     "count": -1,
+     "received": 0,
+     "status": {
+      "state": "downloading",
+      "count": -1,
+      "received": 0
+     },
+     "params": [],
+     "watchdog_started": 0,
+     "last_error": "another parameter operation in progress",
+     "cache": {},
+     "vehicle": [
+      {
+       "name": "A",
+       "value": 1.5,
+       "type": 9
+      },
+      {
+       "name": "B",
+       "value": 2.5,
+       "type": 9
+      },
+      {
+       "name": "C",
+       "value": 3.5,
+       "type": 9
+      },
+      {
+       "name": "D",
+       "value": 4.5,
+       "type": 9
+      },
+      {
+       "name": "E",
+       "value": 5.5,
+       "type": 9
+      },
+      {
+       "name": "F",
+       "value": 6.5,
+       "type": 9
+      }
+     ]
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "abort_and_reset",
+    "vehicle": {
+     "params": [
+      {
+       "name": "A",
+       "value": 1.5,
+       "type": 9
+      },
+      {
+       "name": "B",
+       "value": 2.5,
+       "type": 9
+      },
+      {
+       "name": "C",
+       "value": 3.5,
+       "type": 9
+      },
+      {
+       "name": "D",
+       "value": 4.5,
+       "type": 9
+      },
+      {
+       "name": "E",
+       "value": 5.5,
+       "type": 9
+      },
+      {
+       "name": "F",
+       "value": 6.5,
+       "type": 9
+      }
+     ]
+    },
+    "steps": [
+     {
+      "op": "request_list"
+     },
+     {
+      "op": "abort"
+     },
+     {
+      "op": "reset"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "sent": [
+       [
+        "param_request_list_send",
+        []
+       ]
+      ],
+      "statuses": [
+       {
+        "state": "downloading",
+        "count": 6,
+        "received": 1,
+        "name": "A",
+        "value": 1.5,
+        "type": 9
+       },
+       {
+        "state": "downloading",
+        "count": 6,
+        "received": 2,
+        "name": "B",
+        "value": 2.5,
+        "type": 9
+       },
+       {
+        "state": "downloading",
+        "count": 6,
+        "received": 3,
+        "name": "C",
+        "value": 3.5,
+        "type": 9
+       },
+       {
+        "state": "downloading",
+        "count": 6,
+        "received": 4,
+        "name": "D",
+        "value": 4.5,
+        "type": 9
+       },
+       {
+        "state": "downloading",
+        "count": 6,
+        "received": 5,
+        "name": "E",
+        "value": 5.5,
+        "type": 9
+       },
+       {
+        "state": "complete",
+        "count": 6,
+        "received": 6,
+        "name": "F",
+        "value": 6.5,
+        "type": 9
+       }
+      ],
+      "errors": [],
+      "console": [],
+      "elapsed": 0.0
+     },
+     {
+      "result": null,
+      "sent": [],
+      "statuses": [],
+      "errors": [],
+      "console": [],
+      "elapsed": 0.0
+     },
+     {
+      "result": null,
+      "sent": [],
+      "statuses": [],
+      "errors": [],
+      "console": [],
+      "elapsed": 0.0
+     }
+    ],
+    "final": {
+     "state": "idle",
+     "count": -1,
+     "received": 0,
+     "status": {
+      "state": "idle",
+      "count": -1,
+      "received": 0
+     },
+     "params": [],
+     "watchdog_started": 1,
+     "last_error": "",
+     "cache": {},
+     "vehicle": [
+      {
+       "name": "A",
+       "value": 1.5,
+       "type": 9
+      },
+      {
+       "name": "B",
+       "value": 2.5,
+       "type": 9
+      },
+      {
+       "name": "C",
+       "value": 3.5,
+       "type": 9
+      },
+      {
+       "name": "D",
+       "value": 4.5,
+       "type": 9
+      },
+      {
+       "name": "E",
+       "value": 5.5,
+       "type": 9
+      },
+      {
+       "name": "F",
+       "value": 6.5,
+       "type": 9
+      }
+     ]
+    }
+   }
+  }
+ ]
+}

@@ -872,6 +872,7 @@ dependencies = [
  "corvus_link",
  "ctrlc",
  "getrandom 0.3.4",
+ "indexmap",
  "libc",
  "serde_json",
  "sha1 0.10.7",
