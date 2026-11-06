@@ -6,6 +6,10 @@ rust-version = "1.99"
 publish = false
 description = "The Corvus GCS backend as a library: router, state store, settings and the optional HTTP server"
 
+[[bin]]
+name = "corvus-core"
+path = "src/bin/corvus-core.rs"
+
 [dependencies]
 # preserve_order: a settings file keeps the order its keys were written in,
 # as Python's dict does, so the Rust and the Python program can share a folder.
@@ -15,6 +19,8 @@ base64 = "0.22"
 sha1 = "0.10"
 # The MCP access token is 32 random bytes.
 getrandom = "0.3"
+# corvus-core, the headless binary, stops cleanly on SIGINT and SIGTERM.
+ctrlc = { version = "3", features = ["termination"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

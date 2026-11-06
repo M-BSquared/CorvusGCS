@@ -156,9 +156,7 @@ def _store_scenarios() -> list[dict]:
     out = []
     for name, history_len, steps in scenarios:
         clock = {"now": 0.0}
-        calls: list[dict] = []
-        results: list[object] = []
-        with mock.patch.object(state_store.time, "monotonic", lambda: clock["now"]), \
+        with mock.patch.object(state_store.time, "monotonic", lambda clock=clock: clock["now"]), \
                 mock.patch.object(state_store.time, "strftime", lambda fmt: "12:00:00"):
             store = state_store.VehicleStateStore(history_len=history_len)
             recorded: list[dict] = []
