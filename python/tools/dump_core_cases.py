@@ -637,8 +637,65 @@ def languages_cases() -> None:
     write("languages_cases.json", out)
 
 
+def http_cases() -> None:
+    import os
+    from email.utils import formatdate
+
+    from corvus import server
+    from corvus import websocket
+
+    origins = ["", "null", "http://localhost:8000", "http://127.0.0.1", "https://[::1]:9", "http://LOCALHOST/",
+               "ftp://localhost", "http://evil.example", "http://localhost.evil.example", "http://u@localhost",
+               "http://localhost/path", "http://localhost?x=1", "http://localhost:99999", "http://localhost:abc",
+               "localhost", "http://localhost/" + "a" * 300, "https://gcs.lan", "http://localhost;x"]
+    hosts = [None, "", "localhost:8000", "127.0.0.1", "[::1]:8000", "LocalHost", "evil.example",
+             "evil.example:8000", "localhost:junk", ":80", "127.0.0.1.evil.example", "a" * 300, "gcs.lan:8000",
+             "other.lan", "localhost:99999", "[::1]", "user@localhost"]
+    cases: dict = {"cors": {}, "host": {}}
+    for configured in ("", "https://gcs.lan"):
+        for bind in ("", "0.0.0.0"):
+            os.environ["CORVUS_ALLOWED_ORIGIN"] = configured
+            os.environ["CORVUS_BIND"] = bind
+            key = f"{configured}|{bind}"
+            cases["cors"][key] = {o: server._cors_allowed_origin(o) for o in origins}
+            cases["host"][key] = {("<none>" if h is None else h): server._host_header_allowed(h) for h in hosts}
+    os.environ.pop("CORVUS_ALLOWED_ORIGIN", None)
+    os.environ.pop("CORVUS_BIND", None)
+
+    handler = object.__new__(server.CorvusHandler)
+    unchanged = []
+    for inm, ims, etag, mtime in [
+        ('"a"', None, '"a"', 100.0), ('W/"a", "b"', None, '"a"', 100.0), ("*", None, '"a"', 100.0),
+        ('"x"', formatdate(1000, usegmt=True), '"a"', 100.0), (None, formatdate(100, usegmt=True), '"a"', 100.4),
+        (None, formatdate(99, usegmt=True), '"a"', 100.0), (None, "junk", '"a"', 100.0), (None, None, '"a"', 100.0),
+        ("", formatdate(100, usegmt=True), '"a"', 100.0),
+    ]:
+        hdrs = {}
+        if inm is not None:
+            hdrs["If-None-Match"] = inm
+        if ims is not None:
+            hdrs["If-Modified-Since"] = ims
+        handler.headers = hdrs
+        unchanged.append({"if_none_match": inm, "if_modified_since": ims, "etag": etag, "mtime": mtime,
+                          "result": handler._static_is_unchanged(etag, mtime)})
+    exts = ["a.html", "a.JS", "a.mjs", "a.css", "a.json", "a.map", "a.svg", "a.png", "a.jpg", "a.jpeg", "a.gif",
+            "a.webp", "a.ico", "a.woff", "a.woff2", "a.ttf", "a.otf", "a.wasm", "a.txt", "a.md", "a.csv", "a.bin",
+            "a.xml", "noext", "a.pdf", "a.mp4"]
+    write("http_cases.json", {
+        "csp": server.CONTENT_SECURITY_POLICY,
+        "security_headers": [list(h) for h in server.SECURITY_HEADERS],
+        "cors": cases["cors"], "host": cases["host"],
+        "unchanged": unchanged,
+        "content_types": {e: server.content_type(e) for e in exts},
+        "http_date": {str(t): formatdate(t, usegmt=True) for t in (0, 1700000000, 951782400, 1793980800)},
+        "accept_key": websocket.accept_key("dGhlIHNhbXBsZSBub25jZQ=="),
+        "mask": websocket.mask_frame(1, b"hello", b"\x01\x02\x03\x04").hex(),
+        "encode": [websocket.encode_frame(1, b"x" * n).hex()[:12] for n in (0, 125, 126, 70000)],
+    })
+
+
 COMMANDS = {"routes": routes, "store": store, "buffers": buffers, "config": config_cases,
-            "partial": partial_cases, "bundle": bundle_cases, "languages": languages_cases}
+            "partial": partial_cases, "bundle": bundle_cases, "languages": languages_cases, "http": http_cases}
 
 
 def main(argv: list[str]) -> int:

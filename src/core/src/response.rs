@@ -72,10 +72,18 @@ pub trait SseStream: Send {
     }
 }
 
+/// A WebSocket the connection becomes after the handshake: `run` owns the
+/// socket until it returns, on the connection's thread.
+pub struct Upgrade {
+    pub key: String,
+    pub run: Box<dyn FnOnce(crate::ws::WebSocket) + Send>,
+}
+
 pub enum Body {
     Empty,
     Bytes(Vec<u8>),
     Sse(Box<dyn SseStream>),
+    Upgrade(Upgrade),
 }
 
 pub struct Response {
@@ -131,6 +139,27 @@ impl Response {
                 ("Connection".into(), "keep-alive".into()),
             ],
             body: Body::Sse(stream),
+        }
+    }
+
+    /// Answers a WebSocket opening handshake: 400 `{"ok": false, "error":
+    /// ...}` when `req` is not one, else the upgrade, with `run` taking over
+    /// the socket. Over an in-process call there is no socket, so the core
+    /// answers 400 there.
+    pub fn upgrade<F>(req: &crate::request::Request, run: F) -> Response
+    where
+        F: FnOnce(crate::ws::WebSocket) + Send + 'static,
+    {
+        if let Some(problem) = crate::ws::handshake_problem(&req.headers) {
+            return Response::not_ok(400, problem);
+        }
+        Response {
+            status: 101,
+            headers: Vec::new(),
+            body: Body::Upgrade(Upgrade {
+                key: req.headers.get("Sec-WebSocket-Key").unwrap_or("").to_string(),
+                run: Box::new(run),
+            }),
         }
     }
 

@@ -327,6 +327,7 @@ impl Core {
                 stream.close();
                 (400, json::not_ok("a stream cannot be read in process"))
             }
+            ResponseBody::Upgrade(_) => (400, json::not_ok("a WebSocket cannot be opened in process")),
             ResponseBody::Empty => (500, json::not_ok("the endpoint gave no answer")),
         }
     }

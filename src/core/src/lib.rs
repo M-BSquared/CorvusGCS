@@ -64,6 +64,11 @@
 //!   with `settings.update(core, |cfg| ...)` (never write the file yourself),
 //!   register `reg.config_block(key, coercer)` for the block that is yours and
 //!   `reg.on_config(f)` to hear a change. `core.paths()` is the state folder.
+//! * **Streams.** An event stream is `Response::sse(stream)` (the server
+//!   writes `open()`, then `next(wait)` in slices, a ping after 15 s of
+//!   silence, and calls `close()` once); a WebSocket is `Response::upgrade`.
+//!   Both run on the connection's thread and both must end when
+//!   `core.is_stopping()`, because `Core::stop` joins that thread.
 //! * **JSON.** `serde_json::Value` with `preserve_order`; [`json::num`] turns
 //!   NaN and infinity into `0.0` as `_sanitize` does; [`json::error`] is
 //!   `{"error": ...}`. A response equals the Python one as parsed JSON.
@@ -81,10 +86,12 @@ pub mod request;
 pub mod response;
 pub mod store;
 pub mod version;
+pub mod ws;
 
 mod core;
 pub mod events;
 mod foundation;
+pub mod http;
 mod hub;
 mod module;
 mod router;
@@ -93,6 +100,8 @@ mod unported;
 
 pub use crate::core::{Core, CoreBuilder, Options};
 pub use crate::events::{Binding, Topic};
+pub use crate::http::mcp::{McpEndpoint, McpHandle, TokenStore};
+pub use crate::http::{Http, HttpInfo, HttpOptions};
 pub use crate::hub::StoreHub;
 pub use crate::module::{Guard, LanguageRoots, Module, Registry};
 pub use crate::request::{Headers, Method, Origin, Query, Request};
