@@ -865,6 +865,7 @@ name = "corvus_gui"
 version = "0.0.0"
 dependencies = [
  "corvus_api",
+ "corvus_core",
  "corvus_plugin_map_entities",
  "corvus_plugin_schwalby",
  "corvus_plugin_ssh_launcher",

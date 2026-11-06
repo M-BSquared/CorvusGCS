@@ -22,6 +22,8 @@ path = "src/main.rs"
 
 [dependencies]
 corvus_api = { path = "src/api" }
+# The backend, in this process.
+corvus_core = { path = "src/core" }
 # One line for each folder of src/plugins (build.rs checks this and makes the list).
 corvus_plugin_vibration = { path = "src/plugins/vibration" }
 corvus_plugin_ssh_launcher = { path = "src/plugins/ssh-launcher" }

@@ -25,9 +25,9 @@ It is a client of the backend's HTTP/SSE API, the same one the web interface
 uses, so the backend does not change for it:
 
 ```bash
-cargo run --release                                   # start serve.py here and show it
+cargo run --release                                   # run the backend (corvus_core) in this process and show it
 cargo run --release -- --server http://10.0.0.5:8080  # a backend elsewhere
-cargo run --release -- --root DIR --python PATH       # where serve.py is, what runs it
+cargo run --release -- --root DIR --python PATH       # run the Python backend (serve.py) as a child instead, the reference
 cargo run --release -- --page motors --scroll 560     # open on a page (setup, any tile such as battery or motors, safety:SENSOR, mission, mission:NAME, settings, logs, analysis), scrolled
 # looking at it without a hand on the mouse
 CORVUS_GUI_SHOT=out.png cargo run -- --page motors     # save the window's own pixels after 9 s and quit
@@ -40,10 +40,16 @@ CORVUS_GUI_3D_PANEL=1 CORVUS_GUI_3D=1 cargo run         # with the 3D panel (bui
 CORVUS_GUI_SOAK=1 cargo run --release                   # the window drives itself: pages, map, 3D, language (src/app/soak.rs)
 ```
 
-Locally, `serve.py` runs as a child on a free port. Every way out (window
-closed, SIGINT, SIGTERM) sends it SIGTERM, which runs its own teardown, and
-SIGKILL if it is still there after 8 s. If the window does not close within
-10 s of a signal, the child is killed and the process exits.
+Locally the backend is `corvus_core` in this process, with its HTTP server on a
+free loopback port that the interface's client reads (a second Corvus on this
+computer is refused unless `CORVUS_ALLOW_MULTI=1`). Every way out (window
+closed, SIGINT, SIGTERM) stops the core, which joins every thread it started. A
+route of an area that is not ported yet answers `501 Not available in this
+build`, which a page shows as its error text. With `--root` or `--python` the
+Python backend runs as a child instead: every way out sends it SIGTERM, which
+runs its own teardown, and SIGKILL if it is still there after 8 s. If the window
+does not close within 10 s of a signal, the child is killed and the process
+exits.
 
 ## The core (`src/core`, crate `corvus_core`)
 
@@ -76,7 +82,7 @@ by tests whose expected values are dumped from the Python
 
 | | |
 | --- | --- |
-| `src/net/backend.rs` | starts and stops `serve.py` |
+| `src/net/backend.rs` | starts the core in this process (or `serve.py` as a child with `--root`/`--python`) and stops it |
 | `src/api/src/net/http.rs` | a small HTTP/1.1 client, with a read timeout per read so a stream reader can stop |
 | `src/net/sse.rs` | server-sent events |
 | `src/data/telemetry.rs` | the `/api/telemetry` reader thread and the latest state |

@@ -1,11 +1,11 @@
 //! Corvus GCS, the native desktop interface.
 //!
-//!     corvus-gcs                         start the backend here and show it
+//!     corvus-gcs                         run the backend in this process and show it
 //!     corvus-gcs --server http://h:8080  connect to a backend elsewhere
-//!     corvus-gcs --root DIR --python PY  where serve.py is, what runs it
+//!     corvus-gcs --root DIR --python PY  run the Python backend (serve.py) as a child instead
 //!
-//! Locally the backend (`serve.py`) is a child of this process and is taken
-//! down on every way out; see `net::backend`.
+//! The backend is `corvus_core`, started in this process and stopped on every
+//! way out; see `net::backend`.
 
 mod analysis;
 mod app;
@@ -66,7 +66,7 @@ fn parse_args() -> Result<Args, String> {
             "--page" => args.page = Some(value("--page")?),
             "--scroll" => args.scroll = value("--scroll")?.parse().ok(),
             "-h" | "--help" => {
-                println!("usage: corvus-gcs [--server http://host:port] [--root DIR] [--python PATH] [--page setup|TILE|safety:SENSOR|mission|mission:NAME|settings|logs|analysis] [--scroll PX]");
+                println!("usage: corvus-gcs [--server http://host:port] [--root DIR] [--python PATH] (the last two run the Python backend) [--page setup|TILE|safety:SENSOR|mission|mission:NAME|settings|logs|analysis] [--scroll PX]");
                 std::process::exit(0);
             }
             other => return Err(format!("unknown argument {other}")),
@@ -114,6 +114,17 @@ fn main() -> ExitCode {
                 return ExitCode::from(2);
             }
         },
+        None if args.root.is_none() && args.python.is_none() => match net::backend::Backend::start_core() {
+            Ok(b) => {
+                let s = b.server().clone();
+                local = Some(b);
+                s
+            }
+            Err(e) => {
+                eprintln!("corvus-gcs: {e}");
+                return ExitCode::FAILURE;
+            }
+        },
         None => {
             let start = args.root.clone().unwrap_or_else(|| {
                 std::env::current_exe()
@@ -121,16 +132,7 @@ fn main() -> ExitCode {
                     .and_then(|p| p.parent().map(PathBuf::from))
                     .unwrap_or_else(|| PathBuf::from("."))
             });
-            // A bundle carries its backend: frozen beside the executable on
-            // Windows. A checkout, or flags that say where it is, use serve.py.
-            let bundled = (args.root.is_none() && args.python.is_none())
-                .then(|| net::backend::Launch::bundled(&start))
-                .flatten();
-            let found = match bundled {
-                Some(launch) => Ok(launch),
-                None => net::backend::Launch::find(&start, args.python.clone()),
-            };
-            let started = found.and_then(|launch| {
+            let started = net::backend::Launch::find(&start, args.python.clone()).and_then(|launch| {
                 let port = net::backend::free_port().map_err(|e| format!("no free port: {e}"))?;
                 net::backend::Backend::start(&launch, port)
             });
@@ -150,7 +152,8 @@ fn main() -> ExitCode {
 
     let code = app::run(server, &CONTEXT, args.page.as_deref(), args.scroll);
     // The interface (and with it the telemetry thread) is gone; now the
-    // backend, SIGTERM first.
+    // backend: the core is stopped and its threads joined, a Python child
+    // gets SIGTERM first.
     drop(local);
     code
 }
