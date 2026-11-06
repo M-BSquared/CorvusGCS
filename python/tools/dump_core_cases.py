@@ -291,7 +291,354 @@ def buffers() -> None:
     })
 
 
-COMMANDS = {"routes": routes, "store": store, "buffers": buffers}
+def _config_inputs() -> list[tuple[str, object]]:
+    """Config files, good and bad, as raw JSON values (or raw text)."""
+    return [
+        ("empty_object", {}),
+        ("scalars", {
+            "mavlink_connection": "  udp:127.0.0.1:14551 ", "http_port": "8123",
+            "tile_cache_dir": "/t", "tlog_dir": 3, "params_dir": "", "firmware_dir": "/f",
+            "log_download_dir": "/l", "missions_dir": "/m",
+        }),
+        ("scalars_bad", {
+            "mavlink_connection": "   ", "http_port": 70000, "tile_cache_dir": None, "missions_dir": ["x"],
+        }),
+        ("port_forms", {"http_port": 22.7}),
+        ("port_bool", {"http_port": True}),
+        ("port_negative", {"http_port": -1}),
+        ("port_underscore", {"http_port": "1_0"}),
+        ("port_zero", {"http_port": 0}),
+        ("dicts", {"tile_sources": {"a": {"url": "x"}}, "stream_rates": {"ATTITUDE": 10}}),
+        ("dicts_bad", {"tile_sources": [], "stream_rates": "x"}),
+        ("ssh", {"ssh_connections": [
+            {"name": "a", "host": "h", "port": "2222", "username": "u", "key_path": "/k", "password": "p"},
+            {"name": "b", "port": 0, "extra": 1},
+            {"name": "", "host": "x"}, 5, {"host": "nameless"},
+            {"name": "a", "host": "later", "port": 22.0},
+            {"name": "c", "host": 3, "username": None, "key_path": 4, "password": False},
+        ]}),
+        ("ssh_not_a_list", {"ssh_connections": {"a": 1}}),
+        ("theme", {"theme": {"name": "green", "accent": "#fff", "other": "x"}}),
+        ("theme_empty", {"theme": {"name": 3}}),
+        ("language", {"language": "pt-BR"}),
+        ("language_bad", {"language": "Deutsch"}),
+        ("language_three_parts", {"language": "zh-Hant-TW"}),
+        ("language_too_long", {"language": "de-abcdefghi"}),
+        ("map", {"map": {"base_layer": "esri", "provider": "esri", "three_d": "full", "three_d_detail": "simple",
+                         "terrain_source": "auto", "junk": "x", "zoom": 3}}),
+        ("map_tokens", {"map_tokens": {
+            "mapbox": "  pk.abc-DEF_1~2 ", "bing": "has space", "esri": "", "google": 5, "": "k",
+            "long": "a" * 513, "maxlen": "b" * 512, "uni": "kéy"}}),
+        ("branding", {"branding": {"logo": "unibw.png", "x": "y"}}),
+        ("controls", {"controls": {"virtual_joystick": True, "gamepad": "true", "arrow_keys": False,
+                                   "wasd_keys": 1, "key_gain": 0.5}}),
+        ("controls_gain_clamped", {"controls": {"key_gain": 5}}),
+        ("controls_gain_low", {"controls": {"key_gain": 0}}),
+        ("controls_gain_bool", {"controls": {"key_gain": True}}),
+        ("controls_empty", {"controls": {"gamepad": "yes"}}),
+        ("forwarding", {"forwarding": {
+            "enabled": True, "allow_commands": "true", "host": " 10.0.0.2 ", "listen_host": "  ",
+            "port": 14551, "listen_port": 0, "endpoints": [" udp:1.2.3.4:5 ", "", 7, "tcp:x:1"]}}),
+        ("forwarding_ports", {"forwarding": {"port": 0, "listen_port": 70000}}),
+        ("forwarding_float_port", {"forwarding": {"port": 14551.0, "enabled": False}}),
+        ("autoconnect", {"autoconnect": {"enabled": False, "usb": "no", "sik": True, "udp_fallback": None}}),
+        ("autoconnect_empty", {"autoconnect": {"usb": 1}}),
+        ("ui", {"ui": {
+            "scale": 1, "units": {"length": "ft", "distance": "mi", "speed": "x", "temperature": "f", "other": "m"},
+            "topbar_altitude": "relative", "map_animation_rate": 30.0, "inverted_app_icon": True,
+            "app_icon_backplate": "no", "mission_page": True, "measure_tool": False, "ssh_tab": False,
+            "plugin_tabs": True, "flight_hud": False, "track_in_air": True, "hud_square": True,
+            "topbar_show_rangefinder": True, "takeoff_land_split": True, "windows_in_app": True}}),
+        ("ui_scale_clamped", {"ui": {"scale": 99}}),
+        ("ui_scale_low", {"ui": {"scale": 0.1}}),
+        ("ui_scale_bool", {"ui": {"scale": True, "map_animation_rate": True}}),
+        ("ui_rate_bad", {"ui": {"map_animation_rate": 45}}),
+        ("ui_bad_units", {"ui": {"units": {"length": "furlong"}, "topbar_altitude": "agl"}}),
+        ("updates", {"updates": {"check": False, "skipped": "v2026.09.27"}}),
+        ("updates_bad", {"updates": {"check": "no", "skipped": "nightly"}}),
+        ("updates_spaces", {"updates": {"skipped": " 2026.09 "}}),
+        ("plugins", {"plugins": {"a": {"x": 1}, "b": 3, "": {"y": 1}}}),
+        ("parameters", {"parameters": {"cache_defaults": True, "x": 1}}),
+        ("parameters_bad", {"parameters": {"cache_defaults": "yes"}}),
+        ("review", {"review": {"sensitivity": " STRICT "}}),
+        ("review_bad", {"review": {"sensitivity": "wild"}}),
+        ("area_blocks_canonical", {
+            "mcp": {"enabled": True, "permissions": {"control": False}},
+            "fleet": {"links": [{"id": "link-2", "connection": "serial:/dev/ttyUSB1:57600"}]},
+        }),
+        ("secrets", {
+            "ssh_connections": [{"name": "a", "host": "h", "password": "pw"}],
+            "map_tokens": {"mapbox": "tok"},
+        }),
+        ("unknown_keys", {"nope": 1, "http_port": 9000}),
+        ("order", {"ui": {"scale": 2}, "http_port": 1, "mavlink_connection": "udp:a:1"}),
+        ("not_an_object", [1, 2]),
+        ("text_malformed", "{"),
+        ("text_nan", '{"http_port": NaN}'),
+        ("text_empty", ""),
+    ]
+
+
+def config_cases() -> None:
+    import tempfile
+
+    from corvus import config as cfgmod
+
+    cases = []
+    with tempfile.TemporaryDirectory() as tmp:
+        for name, raw in _config_inputs():
+            path = pathlib.Path(tmp) / f"{name}.json"
+            text = raw if isinstance(raw, str) else json.dumps(raw)
+            path.write_text(text, encoding="utf-8")
+            cfg = cfgmod.load_config(str(path))
+            out = pathlib.Path(tmp) / f"{name}.out.json"
+            cfgmod.save_config(cfg, str(out))
+            cases.append({
+                "name": name,
+                "text": text,
+                "loaded": _clean(cfgmod._config_to_dict(cfg)),
+                "public": _clean(cfgmod.to_public_dict(cfg)),
+                "saved": out.read_text(encoding="utf-8"),
+            })
+        missing = cfgmod.load_config(str(pathlib.Path(tmp) / "missing.json"))
+        defaults = _clean(cfgmod._config_to_dict(missing))
+        too_big = pathlib.Path(tmp) / "big.json"
+        too_big.write_text('{"http_port": 1}' + " " * (cfgmod.MAX_CONFIG_FILE_BYTES + 1), encoding="utf-8")
+        big = _clean(cfgmod._config_to_dict(cfgmod.load_config(str(too_big))))
+    write("config_cases.json", {
+        "default_path_tail": [".corvus", "config.json"],
+        "max_bytes": cfgmod.MAX_CONFIG_FILE_BYTES,
+        "defaults": defaults,
+        "too_big": big,
+        "field_order": list(cfgmod._CONFIG_FIELD_ORDER),
+        "cases": cases,
+    })
+
+
+def partial_cases() -> None:
+    """POST /api/config: a partial update over a loaded config, as the handler applies it."""
+    import tempfile
+
+    from corvus import config as cfgmod
+    from corvus import server
+
+    base = {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "ssh_connections": [{"name": "a", "host": "h", "port": 22, "username": "u", "key_path": "", "password": "pw"}],
+        "theme": {"name": "green"},
+        "map": {"base_layer": "esri", "three_d": "off"},
+        "map_tokens": {"mapbox": "tok"},
+        "controls": {"virtual_joystick": True, "gamepad": True},
+        "ui": {"scale": 1.25, "units": {"length": "m"}},
+        "updates": {"check": True},
+        "autoconnect": {"enabled": True},
+        "parameters": {"cache_defaults": True},
+        "review": {"sensitivity": "strict"},
+        "forwarding": {"enabled": True, "port": 14551},
+        "mcp": {"enabled": True},
+    }
+    partials = [
+        ("scalar_strings", {"tile_cache_dir": "/x", "tlog_dir": "", "missions_dir": "/m"}),
+        ("port", {"http_port": "8001"}),
+        ("port_range", {"http_port": 70000}),
+        ("port_bool", {"http_port": True}),
+        ("port_text", {"http_port": "abc"}),
+        ("connection_empty", {"mavlink_connection": ""}),
+        ("connection", {"mavlink_connection": "tcp:1.2.3.4:5760"}),
+        ("merge_controls", {"controls": {"arrow_keys": True}}),
+        ("merge_ui", {"ui": {"scale": 2, "units": {"speed": "kn"}}}),
+        ("merge_map", {"map": {"three_d": "full"}}),
+        ("merge_updates", {"updates": {"skipped": "2026.10.01"}}),
+        ("merge_autoconnect", {"autoconnect": {"usb": False}}),
+        ("merge_parameters", {"parameters": {"cache_defaults": False}}),
+        ("merge_review", {"review": {"sensitivity": "relaxed"}}),
+        ("replace_theme", {"theme": {"name": "pink"}}),
+        ("theme_not_object", {"theme": "pink"}),
+        ("branding", {"branding": {"logo": "a.png"}}),
+        ("language", {"language": "de"}),
+        ("language_clear", {"language": ""}),
+        ("language_bad", {"language": "xx_yy"}),
+        ("ssh_replace", {"ssh_connections": [{"name": "z", "host": "q"}]}),
+        ("ssh_not_list", {"ssh_connections": {}}),
+        ("tile_sources", {"tile_sources": {"a": {}}}),
+        ("tile_sources_bad", {"tile_sources": []}),
+        ("stream_rates", {"stream_rates": {"X": 1}}),
+        ("owned_elsewhere", {"forwarding": {"enabled": False}, "map_tokens": {"x": "y"}, "mcp": {"enabled": False},
+                              "plugins": {"a": {}}, "fleet": {}}),
+        ("unknown", {"surprise": 1}),
+        ("empty", {}),
+        ("first_error_wins", {"http_port": 1, "theme": 5}),
+    ]
+    cases = []
+    with tempfile.TemporaryDirectory() as tmp:
+        for name, partial in partials:
+            path = pathlib.Path(tmp) / f"{name}.json"
+            path.write_text(json.dumps(base), encoding="utf-8")
+            handler = object.__new__(server.CorvusHandler)
+            handler.config = cfgmod.load_config(str(path))
+            handler.config_path = str(path)
+            handler.autoconnect_session = None
+            handler.mavlink = None
+            handler.store = None
+            public, error = handler._apply_config_partial(dict(partial))
+            cases.append({
+                "name": name,
+                "partial": partial,
+                "public": _clean(public) if public is not None else None,
+                "error": error,
+                "saved": path.read_text(encoding="utf-8"),
+            })
+    write("config_partial_cases.json", {"base": base, "cases": cases})
+
+
+def bundle_cases() -> None:
+    from corvus import settings_bundle as sb
+
+    config = {
+        "theme": {"name": "green"}, "language": "de", "ui": {"scale": 1.5},
+        "map": {"provider": "esri"}, "map_tokens": {"mapbox": "tok"},
+        "mavlink_connection": "udp:0.0.0.0:14550", "http_port": 8000,
+        "ssh_connections": [{"name": "a", "host": "h", "username": "u", "password": "pw"},
+                            {"name": "b", "host": "h2", "username": "u"}],
+        "rtk": {"ntrip": {"host": "c", "port": 2101, "username": "n", "password": "secret"}, "enabled": True},
+        "video": {"streams": [{"url": "rtsp://x", "username": "v", "password": "cam"}], "ffmpeg": ""},
+        "plugins": {"legacy": {"a": 1}}, "fleet": {"links": []},
+        "battery": {"estimate": True},
+    }
+    redacted = sb.redact(config)
+    built = {}
+    for name, kwargs in {
+        "all": {},
+        "interface_only": {"sections": ["interface"]},
+        "with_secrets": {"include_secrets": True},
+        "no_sections": {"sections": []},
+        "plugins_section": {"sections": ["plugins", "layout"], "plugins": {"p": {"k": 1}, "bad": 3},
+                            "plugin_files": {"p": {"a.js": b"x"}}, "browser": {"corvus.a": "1", "other": "2", "corvus.b": 3}},
+    }.items():
+        bundle = sb.build(config, **kwargs)
+        bundle["exported_at"] = "<time>"
+        bundle["version"] = "<version>"
+        built[name] = _clean(bundle)
+    current = {"theme": {"name": "blue"}, "http_port": 9000, "map_tokens": {"mapbox": "old", "bing": "b"},
+               "ssh_connections": [{"name": "a", "host": "h", "username": "u", "password": "pw"}],
+               "rtk": {"ntrip": {"host": "c", "port": 2101, "username": "n", "password": "secret"}},
+               "video": {"streams": [{"url": "rtsp://x", "username": "v", "password": "cam"}]}}
+    imported = {"theme": {"name": "pink"}, "map_tokens": {"mapbox": "new"},
+                "ssh_connections": [{"name": "a", "host": "h", "username": "u"}, {"name": "c", "host": "z"}],
+                "rtk": {"ntrip": {"host": "c", "port": 2101, "username": "n", "password": ""}},
+                "video": {"streams": [{"url": "rtsp://x", "username": "v"}, {"url": "rtsp://y", "username": "v"}]}}
+    merges = {}
+    for name, (sections, secrets) in {
+        "interface": (["interface"], False), "all_no_secrets": (list(sb.SECTIONS), False),
+        "all_secrets": (list(sb.SECTIONS), True), "map_only": (["map"], False),
+    }.items():
+        merges[name] = _clean(sb.merge(current, imported, sections, secrets=secrets))
+    parses = {}
+    for name, data in {
+        "good_v2": {"kind": "corvus-settings", "format": 2, "sections": ["interface", "map"],
+                    "config": {"theme": {"name": "x"}, "http_port": 1, "map": {}, "plugins": {}, "fleet": {}},
+                    "version": "1", "secrets": True, "browser": {"corvus.x": "1"}},
+        "v1_all_sections": {"kind": "corvus-settings", "format": 1, "config": {"theme": {"name": "x"}, "http_port": 1}},
+        "wrong_kind": {"kind": "other", "format": 1, "config": {}},
+        "not_a_dict": [],
+        "bad_format": {"kind": "corvus-settings", "format": True, "config": {}},
+        "newer": {"kind": "corvus-settings", "format": 3, "config": {}},
+        "no_config": {"kind": "corvus-settings", "format": 2, "sections": []},
+        "no_sections": {"kind": "corvus-settings", "format": 2, "config": {}},
+        "bad_logo": {"kind": "corvus-settings", "format": 2, "sections": ["interface"], "config": {}, "logo": "!!!"},
+        "logo_not_png": {"kind": "corvus-settings", "format": 2, "sections": ["interface"], "config": {},
+                         "logo": "aGVsbG8="},
+        "logo_png": {"kind": "corvus-settings", "format": 2, "sections": ["interface"], "config": {},
+                     "logo": "iVBORw0KGgoAAAA="},
+    }.items():
+        try:
+            result = sb.parse(data)
+            parses[name] = {"ok": True, "value": _clean({k: (v.hex() if isinstance(v, bytes) else v)
+                                                          for k, v in result.items()})}
+        except ValueError as exc:
+            parses[name] = {"ok": False, "error": str(exc)}
+    write("settings_bundle_cases.json", {
+        "sections": {k: list(v) for k, v in sb.SECTIONS.items()},
+        "excluded": sorted(sb.EXCLUDED_KEYS),
+        "redacted": _clean(redacted), "built": built, "merges": merges, "parses": parses,
+        "section_of": {k: sb.section_of(k) for k in ("theme", "http_port", "plugins", "fleet", "nope", "mcp")},
+        "normalize": {
+            "none": sorted(sb.normalize_sections(None)),
+            "list": sorted(sb.normalize_sections(["map", "x", 3])),
+        },
+        "ids": {"all": sorted(sb.normalize_ids(None, ["a", "b"], "ids")),
+                "some": sorted(sb.normalize_ids(["a", "z", 3], ["a", "b"], "ids"))},
+    })
+
+
+LANGUAGE_FILES = {
+    "bundled": {
+        "en.json": {"meta": {"name": "English", "native_name": "English"}},
+        "de.json": {"meta": {"name": "German", "native_name": "Deutsch"},
+                    "strings": {"Settings": "Einstellungen", "Settings of {name}": "Einstellungen von {name}",
+                                "": "x", "Empty": "", "Blank": "  ", 3: "n", "Long": "v" * 1201}},
+        "fr.json": {"meta": {"name": "French"}, "strings": {"Settings": "Parametres"}},
+        "dl.json": {"meta": {"name": "Joke", "native_name": "Dl", "last": True}, "strings": {"Settings": "S"}},
+        "bad.json": "{",
+        "Xx.json": {"meta": {"name": "Bad code"}},
+        "list.json": [1, 2],
+        "notes.txt": "x",
+        "nometa.json": {"strings": {"A": "B"}},
+    },
+    "user": {
+        "de.json": {"meta": {"name": "German", "native_name": "Deutsch (local)"}, "strings": {"Settings": "Optionen"}},
+        "es.json": {"meta": {"name": "Spanish", "native_name": "Espanol"}, "strings": {"Settings": "Ajustes"}},
+        "pt-BR.json": {"meta": {"name": "Portuguese"}, "strings": {}},
+        "README.md": "x",
+    },
+    "plugins_a": {
+        "alpha/lang/de.json": {"strings": {"Plugin text": "Plugin Text", "Settings": "Plugin wins?"}},
+        "beta/lang/de.json": "{",
+        "gamma/lang/fr.json": {"strings": {"Plugin text": "Texte"}},
+    },
+    "plugins_b": {
+        "alpha/lang/de.json": {"strings": {"Plugin text": "Plugin Text B"}},
+    },
+}
+
+
+def languages_cases() -> None:
+    import tempfile
+
+    from corvus import languages as lang
+
+    out: dict = {"files": {}}
+    for group, files in LANGUAGE_FILES.items():
+        out["files"][group] = {
+            name: (data if isinstance(data, str) else json.dumps(data)) for name, data in files.items()
+        }
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+        for group, files in out["files"].items():
+            for name, text in files.items():
+                path = root / group / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(text, encoding="utf-8")
+        big = root / "bundled" / "big.json"
+        big.write_text('{"meta": {"name": "Big"}}' + " " * (lang.MAX_FILE_BYTES + 1), encoding="utf-8")
+        user, bundled = str(root / "user"), str(root / "bundled")
+        plugin_dirs = [str(root / "plugins_a"), str(root / "plugins_b"), str(root / "missing")]
+        out["discover_both"] = _clean(lang.discover(user, bundled))
+        out["discover_bundled"] = _clean(lang.discover(str(root / "none"), bundled))
+        out["discover_nothing"] = _clean(lang.discover(str(root / "none"), str(root / "none")))
+        out["loads"] = {}
+        for code in ("en", "de", "fr", "dl", "es", "pt-BR", "xx", "Xx", "nometa", "../etc", ""):
+            for with_plugins in (False, True):
+                entry = lang.load(code, user, bundled, plugin_dirs if with_plugins else ())
+                out["loads"][f"{code}|{int(with_plugins)}"] = _clean(entry) if entry is not None else None
+        out["valid_codes"] = {c: lang.is_valid_code(c) for c in
+                              ("de", "pt-BR", "zh-Hant-TW", "de-abcdefghi", "d", "DE", "de_DE", "abcd", "de-", "")}
+        out["readme"] = lang._README
+    write("languages_cases.json", out)
+
+
+COMMANDS = {"routes": routes, "store": store, "buffers": buffers, "config": config_cases,
+            "partial": partial_cases, "bundle": bundle_cases, "languages": languages_cases}
 
 
 def main(argv: list[str]) -> int:

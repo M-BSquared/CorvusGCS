@@ -17,8 +17,41 @@ use crate::router::{self, Body, Router};
 use crate::unported;
 
 /// How a core is built.
-#[derive(Debug, Clone, Default)]
-pub struct Options {}
+#[derive(Debug, Clone)]
+pub struct Options {
+    /// The state folder (`~/.corvus`).
+    pub paths: crate::paths::Paths,
+    /// The config file; `config.json` in the state folder when `None`.
+    pub config_path: Option<std::path::PathBuf>,
+    /// Where languages are read from; the compiled-in ones and
+    /// `~/.corvus/languages` when `None`.
+    pub languages: Option<crate::languages::Sources>,
+    /// The folder the static files of the web interface are served from, if any.
+    pub web_root: Option<std::path::PathBuf>,
+}
+
+impl Default for Options {
+    fn default() -> Self {
+        Options {
+            paths: crate::paths::Paths::system(),
+            config_path: None,
+            languages: None,
+            web_root: None,
+        }
+    }
+}
+
+impl Options {
+    /// Everything under `dir`, for tests and a second instance.
+    pub fn in_dir(dir: impl Into<std::path::PathBuf>) -> Options {
+        Options {
+            paths: crate::paths::Paths::at(dir),
+            config_path: None,
+            languages: None,
+            web_root: None,
+        }
+    }
+}
 
 /// Collects the modules, then builds the core.
 pub struct CoreBuilder {
@@ -44,7 +77,8 @@ impl CoreBuilder {
     /// the same route or service.
     pub fn build(self) -> Result<Core, String> {
         let mut reg = Registry::new();
-        let mut modules: Vec<Arc<dyn Module>> = vec![Arc::new(crate::foundation::Foundation)];
+        let mut modules: Vec<Arc<dyn Module>> =
+            vec![Arc::new(crate::foundation::Foundation::new(self.options.clone()))];
         modules.extend(self.modules);
         for m in &modules {
             reg.enter(m.name());
@@ -59,9 +93,12 @@ impl CoreBuilder {
             guards,
             services,
             topics,
+            coercers,
+            config_listeners,
+            language_roots,
             ..
         } = reg;
-        Ok(Core(Arc::new(Inner {
+        let core = Core(Arc::new(Inner {
             options: self.options,
             router,
             guards,
@@ -70,7 +107,12 @@ impl CoreBuilder {
             services: RwLock::new(services),
             started: Mutex::new(0),
             stop: Stop::default(),
-        })))
+            language_roots,
+        }));
+        let settings = core.settings();
+        settings.set_coercers(coercers);
+        settings.set_listeners(config_listeners);
+        Ok(core)
     }
 }
 
@@ -90,6 +132,7 @@ struct Inner {
     services: RwLock<HashMap<TypeId, Arc<dyn Any + Send + Sync>>>,
     started: Mutex<usize>,
     stop: Stop,
+    language_roots: Vec<crate::module::LanguageRoots>,
 }
 
 /// The backend. Cheap to clone; every clone is the same core.
@@ -187,6 +230,21 @@ impl Core {
         self.service::<crate::hub::StoreHub>()
             .expect("the foundation registers the store hub")
             .current()
+    }
+
+    /// The configuration in force and the one place that changes it.
+    pub fn settings(&self) -> Arc<crate::settings::Settings> {
+        self.service::<crate::settings::Settings>()
+            .expect("the foundation registers the settings")
+    }
+
+    pub fn paths(&self) -> &crate::paths::Paths {
+        &self.0.options.paths
+    }
+
+    /// The plugin folders whose `lang/` files are merged into a language.
+    pub fn language_roots(&self) -> Vec<std::path::PathBuf> {
+        self.0.language_roots.iter().flat_map(|f| f(self)).collect()
     }
 
     pub fn options(&self) -> &Options {
@@ -305,7 +363,10 @@ mod tests {
     }
 
     fn core() -> Core {
-        CoreBuilder::new(Options::default()).module(Echo).build().unwrap()
+        CoreBuilder::new(Options::in_dir(std::env::temp_dir().join("corvus-core-test-state")))
+            .module(Echo)
+            .build()
+            .unwrap()
     }
 
     #[test]
@@ -407,7 +468,7 @@ mod tests {
                 reg.get("/api/echo", |_, _| Response::empty(200));
             }
         }
-        let err = CoreBuilder::new(Options::default())
+        let err = CoreBuilder::new(Options::in_dir(std::env::temp_dir().join("corvus-core-test-state")))
             .module(Echo)
             .module(Twin)
             .build()
@@ -438,7 +499,7 @@ mod tests {
     #[test]
     fn modules_start_in_order_and_stop_in_reverse() {
         let log = Arc::new(Mutex::new(Vec::new()));
-        let c = CoreBuilder::new(Options::default())
+        let c = CoreBuilder::new(Options::in_dir(std::env::temp_dir().join("corvus-core-test-state")))
             .module(Order("a", log.clone(), false))
             .module(Order("b", log.clone(), false))
             .build()
@@ -454,7 +515,7 @@ mod tests {
     #[test]
     fn a_failed_start_unwinds_the_ones_before_it() {
         let log = Arc::new(Mutex::new(Vec::new()));
-        let c = CoreBuilder::new(Options::default())
+        let c = CoreBuilder::new(Options::in_dir(std::env::temp_dir().join("corvus-core-test-state")))
             .module(Order("a", log.clone(), false))
             .module(Order("b", log.clone(), true))
             .build()

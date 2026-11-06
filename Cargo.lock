@@ -853,6 +853,7 @@ dependencies = [
 name = "corvus_core"
 version = "0.0.0"
 dependencies = [
+ "base64 0.22.1",
  "libc",
  "serde_json",
 ]

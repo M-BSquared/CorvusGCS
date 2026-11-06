@@ -1,0 +1,262 @@
+{
+  "files": {
+    "bundled": {
+      "en.json": "{\"meta\": {\"name\": \"English\", \"native_name\": \"English\"}}",
+      "de.json": "{\"meta\": {\"name\": \"German\", \"native_name\": \"Deutsch\"}, \"strings\": {\"Settings\": \"Einstellungen\", \"Settings of {name}\": \"Einstellungen von {name}\", \"\": \"x\", \"Empty\": \"\", \"Blank\": \"  \", \"3\": \"n\", \"Long\": \"vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\"}}",
+      "fr.json": "{\"meta\": {\"name\": \"French\"}, \"strings\": {\"Settings\": \"Parametres\"}}",
+      "dl.json": "{\"meta\": {\"name\": \"Joke\", \"native_name\": \"Dl\", \"last\": true}, \"strings\": {\"Settings\": \"S\"}}",
+      "bad.json": "{",
+      "Xx.json": "{\"meta\": {\"name\": \"Bad code\"}}",
+      "list.json": "[1, 2]",
+      "notes.txt": "x",
+      "nometa.json": "{\"strings\": {\"A\": \"B\"}}"
+    },
+    "user": {
+      "de.json": "{\"meta\": {\"name\": \"German\", \"native_name\": \"Deutsch (local)\"}, \"strings\": {\"Settings\": \"Optionen\"}}",
+      "es.json": "{\"meta\": {\"name\": \"Spanish\", \"native_name\": \"Espanol\"}, \"strings\": {\"Settings\": \"Ajustes\"}}",
+      "pt-BR.json": "{\"meta\": {\"name\": \"Portuguese\"}, \"strings\": {}}",
+      "README.md": "x"
+    },
+    "plugins_a": {
+      "alpha/lang/de.json": "{\"strings\": {\"Plugin text\": \"Plugin Text\", \"Settings\": \"Plugin wins?\"}}",
+      "beta/lang/de.json": "{",
+      "gamma/lang/fr.json": "{\"strings\": {\"Plugin text\": \"Texte\"}}"
+    },
+    "plugins_b": {
+      "alpha/lang/de.json": "{\"strings\": {\"Plugin text\": \"Plugin Text B\"}}"
+    }
+  },
+  "discover_both": [
+    {
+      "code": "en",
+      "name": "English",
+      "native_name": "English",
+      "source": "bundled",
+      "last": false,
+      "count": 0
+    },
+    {
+      "code": "fr",
+      "name": "French",
+      "native_name": "French",
+      "source": "bundled",
+      "last": false,
+      "count": 1
+    },
+    {
+      "code": "de",
+      "name": "German",
+      "native_name": "Deutsch (local)",
+      "source": "user",
+      "last": false,
+      "count": 1
+    },
+    {
+      "code": "pt-BR",
+      "name": "Portuguese",
+      "native_name": "Portuguese",
+      "source": "user",
+      "last": false,
+      "count": 0
+    },
+    {
+      "code": "es",
+      "name": "Spanish",
+      "native_name": "Espanol",
+      "source": "user",
+      "last": false,
+      "count": 1
+    },
+    {
+      "code": "dl",
+      "name": "Joke",
+      "native_name": "Dl",
+      "source": "bundled",
+      "last": true,
+      "count": 1
+    }
+  ],
+  "discover_bundled": [
+    {
+      "code": "en",
+      "name": "English",
+      "native_name": "English",
+      "source": "bundled",
+      "last": false,
+      "count": 0
+    },
+    {
+      "code": "fr",
+      "name": "French",
+      "native_name": "French",
+      "source": "bundled",
+      "last": false,
+      "count": 1
+    },
+    {
+      "code": "de",
+      "name": "German",
+      "native_name": "Deutsch",
+      "source": "bundled",
+      "last": false,
+      "count": 3
+    },
+    {
+      "code": "dl",
+      "name": "Joke",
+      "native_name": "Dl",
+      "source": "bundled",
+      "last": true,
+      "count": 1
+    }
+  ],
+  "discover_nothing": [
+    {
+      "code": "en",
+      "name": "English",
+      "native_name": "English",
+      "last": false,
+      "source": "builtin",
+      "count": 0
+    }
+  ],
+  "loads": {
+    "en|0": {
+      "code": "en",
+      "name": "English",
+      "native_name": "English",
+      "source": "bundled",
+      "last": false,
+      "strings": {}
+    },
+    "en|1": {
+      "code": "en",
+      "name": "English",
+      "native_name": "English",
+      "source": "bundled",
+      "last": false,
+      "strings": {}
+    },
+    "de|0": {
+      "code": "de",
+      "name": "German",
+      "native_name": "Deutsch (local)",
+      "source": "user",
+      "last": false,
+      "strings": {
+        "Settings": "Optionen"
+      }
+    },
+    "de|1": {
+      "code": "de",
+      "name": "German",
+      "native_name": "Deutsch (local)",
+      "source": "user",
+      "last": false,
+      "strings": {
+        "Plugin text": "Plugin Text B",
+        "Settings": "Optionen"
+      }
+    },
+    "fr|0": {
+      "code": "fr",
+      "name": "French",
+      "native_name": "French",
+      "source": "bundled",
+      "last": false,
+      "strings": {
+        "Settings": "Parametres"
+      }
+    },
+    "fr|1": {
+      "code": "fr",
+      "name": "French",
+      "native_name": "French",
+      "source": "bundled",
+      "last": false,
+      "strings": {
+        "Plugin text": "Texte",
+        "Settings": "Parametres"
+      }
+    },
+    "dl|0": {
+      "code": "dl",
+      "name": "Joke",
+      "native_name": "Dl",
+      "source": "bundled",
+      "last": true,
+      "strings": {
+        "Settings": "S"
+      }
+    },
+    "dl|1": {
+      "code": "dl",
+      "name": "Joke",
+      "native_name": "Dl",
+      "source": "bundled",
+      "last": true,
+      "strings": {
+        "Settings": "S"
+      }
+    },
+    "es|0": {
+      "code": "es",
+      "name": "Spanish",
+      "native_name": "Espanol",
+      "source": "user",
+      "last": false,
+      "strings": {
+        "Settings": "Ajustes"
+      }
+    },
+    "es|1": {
+      "code": "es",
+      "name": "Spanish",
+      "native_name": "Espanol",
+      "source": "user",
+      "last": false,
+      "strings": {
+        "Settings": "Ajustes"
+      }
+    },
+    "pt-BR|0": {
+      "code": "pt-BR",
+      "name": "Portuguese",
+      "native_name": "Portuguese",
+      "source": "user",
+      "last": false,
+      "strings": {}
+    },
+    "pt-BR|1": {
+      "code": "pt-BR",
+      "name": "Portuguese",
+      "native_name": "Portuguese",
+      "source": "user",
+      "last": false,
+      "strings": {}
+    },
+    "xx|0": null,
+    "xx|1": null,
+    "Xx|0": null,
+    "Xx|1": null,
+    "nometa|0": null,
+    "nometa|1": null,
+    "../etc|0": null,
+    "../etc|1": null,
+    "|0": null,
+    "|1": null
+  },
+  "valid_codes": {
+    "de": true,
+    "pt-BR": true,
+    "zh-Hant-TW": true,
+    "de-abcdefghi": false,
+    "d": false,
+    "DE": false,
+    "de_DE": false,
+    "abcd": false,
+    "de-": false,
+    "": false
+  },
+  "readme": "# Corvus GCS languages\n\nDrop one file per language into this directory, then press Reload languages in\nSettings > Appearance > Language (or restart Corvus).\n\n    languages/\n      es.json\n      pt-BR.json\n\nThe file name is the language code. `meta` names the language and `strings`\nmaps the English text of the interface to its translation:\n\n    {\n      \"meta\": {\"name\": \"Spanish\", \"native_name\": \"Espa\\u00f1ol\"},\n      \"strings\": {\n        \"Settings\": \"Ajustes\",\n        \"Settings of {name}\": \"Ajustes de {name}\"\n      }\n    }\n\nThe English text is the key, copied exactly, so an English text that is not\nlisted stays English. A key with `{name}` in it matches any text in that place;\nthe same `{name}` in the value puts the matched text back.\n\nA file here with the code of a language that ships with Corvus replaces it.\n\n`python3 tools/i18n.py new <code> <name> <native name>` in a Corvus checkout\nwrites a file with every known text in it, ready to translate.\n"
+}

@@ -60,16 +60,27 @@
 //!   produces events registers a [`Topic`] and writes into the sink it is
 //!   handed. `/api/state`, `/api/telemetry` and `/api/events` are the
 //!   foundation's.
+//! * **Settings.** `core.settings()` holds `~/.corvus/config.json`; change it
+//!   with `settings.update(core, |cfg| ...)` (never write the file yourself),
+//!   register `reg.config_block(key, coercer)` for the block that is yours and
+//!   `reg.on_config(f)` to hear a change. `core.paths()` is the state folder.
 //! * **JSON.** `serde_json::Value` with `preserve_order`; [`json::num`] turns
 //!   NaN and infinity into `0.0` as `_sanitize` does; [`json::error`] is
 //!   `{"error": ...}`. A response equals the Python one as parsed JSON.
 
 pub mod buffer;
+pub mod bundle;
 pub mod clock;
+pub mod config;
 pub mod json;
+pub mod languages;
+pub mod lock;
+pub mod paths;
+pub mod priority_lock;
 pub mod request;
 pub mod response;
 pub mod store;
+pub mod version;
 
 mod core;
 pub mod events;
@@ -77,12 +88,14 @@ mod foundation;
 mod hub;
 mod module;
 mod router;
+pub mod settings;
 mod unported;
 
 pub use crate::core::{Core, CoreBuilder, Options};
 pub use crate::events::{Binding, Topic};
 pub use crate::hub::StoreHub;
-pub use crate::module::{Guard, Module, Registry};
+pub use crate::module::{Guard, LanguageRoots, Module, Registry};
 pub use crate::request::{Headers, Method, Origin, Query, Request};
 pub use crate::response::{Response, SseEvent, SseNext, SseStream, UNAVAILABLE};
 pub use crate::router::{Body, Handler, Pattern, Route, RouteOptions, Router, MAX_JSON_BODY, MAX_SETTINGS_BODY};
+pub use crate::settings::{ConfigListener, Settings};

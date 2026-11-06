@@ -4,14 +4,19 @@ use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use crate::config::{Coercer, Coercers};
 use crate::core::Core;
 use crate::events::Topic;
 use crate::request::{Method, Request};
 use crate::response::Response;
 use crate::router::{Body, Handler, Route, RouteOptions, Router};
+use crate::settings::ConfigListener;
 
 /// A refusal before a handler runs, for both HTTP and in-process calls
 /// (`_fleet_refuses` in Python): `Some(response)` stops the request.
+/// The plugin folders whose `lang/` files are merged into a language.
+pub type LanguageRoots = Arc<dyn Fn(&Core) -> Vec<std::path::PathBuf> + Send + Sync>;
+
 pub type Guard = Arc<dyn Fn(&Core, &Request) -> Option<Response> + Send + Sync>;
 
 /// An area of the backend: the vehicle, the map data, the logs, the
@@ -41,6 +46,9 @@ pub struct Registry {
     pub(crate) guards: Vec<Guard>,
     pub(crate) services: HashMap<TypeId, Arc<dyn Any + Send + Sync>>,
     pub(crate) topics: Vec<Topic>,
+    pub(crate) coercers: Coercers,
+    pub(crate) config_listeners: Vec<ConfigListener>,
+    pub(crate) language_roots: Vec<LanguageRoots>,
     pub(crate) errors: Vec<String>,
     module: &'static str,
 }
@@ -52,6 +60,9 @@ impl Registry {
             guards: Vec::new(),
             services: HashMap::new(),
             topics: Vec::new(),
+            coercers: Coercers::default(),
+            config_listeners: Vec::new(),
+            language_roots: Vec::new(),
             errors: Vec::new(),
             module: "core",
         }
@@ -133,6 +144,38 @@ impl Registry {
             return;
         }
         self.topics.push(topic);
+    }
+
+    /// The coercer of a block of the config file that belongs to this area
+    /// (`battery`, `remote_id`, `rtk`, `video`, `checklists`, `fleet`,
+    /// `mcp`): what `_coerce_battery` and its kin do. Until one is
+    /// registered the block passes through as an object.
+    pub fn config_block<F>(&mut self, key: &str, f: F)
+    where
+        F: Fn(&serde_json::Value) -> Option<crate::json::Map> + Send + Sync + 'static,
+    {
+        let c: Coercer = Arc::new(f);
+        if !self.coercers.insert(key, c) {
+            self.errors
+                .push(format!("{}: config block {key} is registered twice", self.module));
+        }
+    }
+
+    /// Called with the config after every change (see `Settings::update`).
+    pub fn on_config<F>(&mut self, f: F)
+    where
+        F: Fn(&Core, &crate::config::CorvusConfig) + Send + Sync + 'static,
+    {
+        self.config_listeners.push(Arc::new(f));
+    }
+
+    /// Plugin folders whose `lang/<code>.json` files join a language, asked
+    /// on each request.
+    pub fn language_roots<F>(&mut self, f: F)
+    where
+        F: Fn(&Core) -> Vec<std::path::PathBuf> + Send + Sync + 'static,
+    {
+        self.language_roots.push(Arc::new(f));
     }
 
     /// Makes `value` reachable from every module as `core.service::<T>()`.
