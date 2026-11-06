@@ -163,6 +163,36 @@ impl Camera {
         unmercator(cx + east / k, cy + north / k)
     }
 
+    /// A local point in the camera's frame, scaled to pixels: `(x, y, depth)`
+    /// with `x` right and `y` up from the view centre at depth 1. Unlike
+    /// `project` it answers for points behind the camera too.
+    pub fn clip(&self, p: V3) -> V3 {
+        let (pos, r, u, f) = self.basis();
+        let v = sub(p, pos);
+        let focal = self.focal();
+        [dot(v, r) * focal, dot(v, u) * focal, dot(v, f)]
+    }
+
+    /// Whether a box of local points (its corners) can be seen: false only
+    /// when every corner is outside the same side of the view, or behind it.
+    pub fn sees(&self, corners: &[V3]) -> bool {
+        let near = self.distance() * 0.02;
+        let (hw, hh) = (self.size.0 / 2.0, self.size.1 / 2.0);
+        let c: Vec<V3> = corners.iter().map(|p| self.clip(*p)).collect();
+        if c.iter().all(|p| p[2] < near) {
+            return false;
+        }
+        // A box that reaches behind the camera has no honest side test: it
+        // may cross the view between a corner in front and one behind.
+        if c.iter().any(|p| p[2] < near) {
+            return true;
+        }
+        !(c.iter().all(|p| p[0] < -p[2] * hw)
+            || c.iter().all(|p| p[0] > p[2] * hw)
+            || c.iter().all(|p| p[1] < -p[2] * hh)
+            || c.iter().all(|p| p[1] > p[2] * hh))
+    }
+
     /// The pixel of a local point, `None` behind the camera.
     pub fn project(&self, p: V3) -> Option<Screen> {
         let (pos, r, u, f) = self.basis();
@@ -355,6 +385,27 @@ mod tests {
         let (e, n) = c.ground_at(450.0, 380.0, 0.0).unwrap();
         let after = c.geo_of(e, n);
         assert!((before.0 - after.0).abs() < 1e-7 && (before.1 - after.1).abs() < 1e-7);
+    }
+
+    #[test]
+    fn a_box_is_seen_unless_it_is_all_on_one_side() {
+        let c = cam(60.0, 0.0);
+        let around = |e: f64, n: f64, half: f64| {
+            [
+                [e - half, n - half, 0.0],
+                [e + half, n - half, 0.0],
+                [e + half, n + half, 0.0],
+                [e - half, n + half, 0.0],
+            ]
+        };
+        assert!(c.sees(&around(0.0, 0.0, 50.0)), "the centre");
+        assert!(c.sees(&around(0.0, 0.0, 1e6)), "a box with the whole view inside it");
+        assert!(!c.sees(&around(0.0, -1e5, 100.0)), "far behind the camera");
+        assert!(!c.sees(&around(1e5, 0.0, 100.0)), "far to the right");
+        assert!(!c.sees(&around(-1e5, 0.0, 100.0)), "far to the left");
+        assert!(!c.sees(&around(0.0, 1e6, 100.0)), "far beyond the top of the view");
+        let down = cam(0.0, 0.0);
+        assert!(!down.sees(&around(1e5, 0.0, 100.0)));
     }
 
     #[test]

@@ -34,6 +34,11 @@ const GRID: usize = 16;
 const MAX_LEAVES: usize = 900;
 /// Leaf meshes built in one frame at most; the rest wait for the next, nearest first.
 const MESH_BUILDS_PER_FRAME: usize = 40;
+/// The highest ground a leaf may have, in metres above sea level, for knowing
+/// whether it is in view before its elevation is here.
+const HIGHEST_GROUND: f64 = 5000.0;
+/// Heights over the view centre's ground, in metres, the ground box also reaches to.
+const RELIEF: [f64; 2] = [-600.0, 2500.0];
 /// How far above the ground under it the camera is kept, in metres.
 const KEEP_ABOVE_GROUND: f64 = 8.0;
 const TEXTURES: usize = 400;
@@ -133,6 +138,9 @@ pub struct Map3d {
 
 /// An elevation tile and the part `(u0, v0, size)` of it a leaf covers.
 type Dem = (Arc<DemTile>, (f64, f64, f64));
+
+/// A leaf's images (its own, then its fallback) and its elevation.
+type Wanted = ([Option<(gpu::Texture, Rect)>; 2], Option<Dem>);
 
 /// The mesh of one leaf, and the elevation it was made from.
 struct LeafMesh {
@@ -328,13 +336,19 @@ impl Map3d {
         let mut max = (f64::MIN, f64::MIN);
         let (w, h) = c.size;
         for (sx, sy) in [(0.0, 0.0), (w, 0.0), (0.0, h), (w, h), (w / 2.0, 0.0), (w / 2.0, h)] {
-            let (e, n) = c.ground_at(sx, sy, 0.0).unwrap_or_else(|| {
+            let flat = c.ground_at(sx, sy, 0.0).unwrap_or_else(|| {
                 let b = c.bearing.to_radians();
                 (b.sin() * reach, b.cos() * reach)
             });
-            let (e, n) = (e.clamp(-reach, reach), n.clamp(-reach, reach));
-            min = (min.0.min(e), min.1.min(n));
-            max = (max.0.max(e), max.1.max(n));
+            // The ground is not a plane: a ridge near the bottom of the view
+            // meets the ray sooner than the plane does, a valley later.
+            let mut hits = vec![flat];
+            hits.extend(RELIEF.iter().filter_map(|up| c.ground_at(sx, sy, *up)));
+            for (e, n) in hits {
+                let (e, n) = (e.clamp(-reach, reach), n.clamp(-reach, reach));
+                min = (min.0.min(e), min.1.min(n));
+                max = (max.0.max(e), max.1.max(n));
+            }
         }
         (min, max)
     }
@@ -377,30 +391,27 @@ impl Map3d {
         [at(0.0, 0.0), at(1.0, 0.0), at(1.0, 1.0), at(0.0, 1.0)]
     }
 
-    fn visible(&self, l: Leaf) -> bool {
-        let pts = self.corners(l);
-        let proj: Vec<_> = pts.iter().map(|p| self.cam.project(*p)).collect();
-        if proj.iter().any(Option::is_none) {
-            return true;
-        }
-        let (w, h) = self.cam.size;
-        let s: Vec<_> = proj.into_iter().flatten().collect();
-        !(s.iter().all(|p| p.x < 0.0)
-            || s.iter().all(|p| p.x > w)
-            || s.iter().all(|p| p.y < 0.0)
-            || s.iter().all(|p| p.y > h))
-    }
-
     fn split(&self, l: Leaf, out: &mut Vec<Leaf>) {
-        if !self.visible(l) {
+        let pts = self.corners(l);
+        // The tile is on the sea level plane here, the ground over it up to
+        // the highest mountains: it is in view if any of that is.
+        let mut slab = pts.to_vec();
+        slab.extend(pts.iter().map(|p| [p[0], p[1], p[2] + HIGHEST_GROUND]));
+        if !self.cam.sees(&slab) {
             return;
         }
         let c = &self.cam;
         let k = c.lat.to_radians().cos();
         let metres = 2.0 * std::f64::consts::PI * crate::map3d::camera::R * k / 2f64.powi(l.z as i32);
-        let pts = self.corners(l);
-        let mid = [(pts[0][0] + pts[2][0]) / 2.0, (pts[0][1] + pts[2][1]) / 2.0, pts[0][2]];
-        let px = c.project(mid).map_or(f64::MAX, |s| metres / s.depth * c.focal());
+        // How far along the view the tile is, nearest corner, but never
+        // nearer than a third of the camera's distance: a tile under the
+        // camera is split as far as one just in front of it, not endlessly.
+        let depth = pts
+            .iter()
+            .map(|p| c.clip(*p)[2])
+            .fold(f64::MAX, f64::min)
+            .max(c.distance() * 0.3);
+        let px = metres / depth * c.focal();
         if px > SPLIT_PX && l.z < self.max_zoom && out.len() < MAX_LEAVES {
             for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
                 self.split(
@@ -470,14 +481,13 @@ impl Map3d {
     fn dem_for(&self, l: Leaf) -> Option<Dem> {
         self.terrain
             .as_ref()
-            .and_then(|t| t.tile_for(l.z, l.x, l.y))
-            .or_else(|| self.fallback.as_ref().and_then(|t| t.tile_for(l.z, l.x, l.y)))
+            .and_then(|t| t.tile_for_leaf(l.z, l.x, l.y))
+            .or_else(|| self.fallback.as_ref().and_then(|t| t.tile_for_leaf(l.z, l.x, l.y)))
     }
 
     /// The mesh of a leaf: made once, again only when its elevation changes.
     /// Past this frame's build budget a leaf keeps the mesh it had, or waits.
-    fn leaf_mesh(&mut self, l: Leaf, builds: &mut usize) -> Option<(Arc<MeshData>, bool)> {
-        let dem = self.dem_for(l);
+    fn leaf_mesh(&mut self, l: Leaf, dem: Option<Dem>, builds: &mut usize) -> Option<(Arc<MeshData>, bool)> {
         let key = (l.z, l.x, l.y);
         if let Some(m) = self.leaf_meshes.get_mut(&key) {
             let same = match (&m.dem, &dem) {
@@ -525,9 +535,19 @@ impl Map3d {
             })
             .collect();
         order.sort_by(|a, b| a.0.total_cmp(&b.0));
+        // The tile cache serves the last asked first, so the tiles are asked
+        // for from the far leaves to the near ones: what is under the eye
+        // arrives first.
+        let mut wanted: HashMap<(u8, u32, u32), Wanted> = HashMap::new();
+        for (_, l) in order.iter().rev() {
+            let imagery = self.imagery_for(*l);
+            wanted.insert((l.z, l.x, l.y), (imagery, self.dem_for(*l)));
+        }
         for (_, l) in order {
-            let [first, second] = self.imagery_for(l);
-            let Some((mesh, flat)) = self.leaf_mesh(l, &mut builds) else {
+            let Some(([first, second], dem)) = wanted.remove(&(l.z, l.x, l.y)) else {
+                continue;
+            };
+            let Some((mesh, flat)) = self.leaf_mesh(l, dem, &mut builds) else {
                 continue;
             };
             let (mx, my) = tile_mercator(l.z, f64::from(l.x), f64::from(l.y));
@@ -695,12 +715,13 @@ impl Map3d {
         let s = gpu::stats();
         let dt = ui.input(|i| i.unstable_dt) * 1000.0;
         let text = format!(
-            "frame {dt:.1} ms  plan {:.1} ms  gl {:.1} ms\nleaves {}  built {}  draws {}\nmeshes +{} live {}  textures +{} live {}\nribbons {}  deferred {}\nzoom {:.2}  pitch {:.0}  bearing {:.0}",
+            "frame {dt:.1} ms  plan {:.1} ms  gl {:.1} ms\nleaves {}  built {}  draws {} ({} imaged)\nmeshes +{} live {}  textures +{} live {}\nribbons {}  deferred {}\nzoom {:.2}  pitch {:.0}  bearing {:.0}",
             s.plan_ms,
             s.submit_ms,
             s.leaves,
             s.built,
             s.draws,
+            s.textured,
             s.meshes_uploaded,
             s.live_meshes,
             s.textures_uploaded,
@@ -1023,26 +1044,29 @@ fn haze(painter: &egui::Painter, rect: Rect, horizon: f32) {
 /// run 0 to 1 over the leaf; the shade bakes the hillshade in.
 fn build_leaf(l: Leaf, dem: Option<&Dem>, k: f64) -> MeshData {
     let n = GRID + 1;
-    let mut heights = vec![0f32; n * n];
+    // One more row and column of heights all round, so the shade of an edge
+    // vertex is read across the edge and matches the leaf next to it.
+    let m = n + 2;
+    let mut padded = vec![0f32; m * m];
     if let Some((tile, (u0, v0, size))) = dem {
-        for j in 0..n {
-            for i in 0..n {
-                let (u, v) = (i as f64 / GRID as f64, j as f64 / GRID as f64);
-                heights[j * n + i] = tile.sample(u0 + u * size, v0 + v * size);
+        for j in 0..m {
+            for i in 0..m {
+                let (u, v) = ((i as f64 - 1.0) / GRID as f64, (j as f64 - 1.0) / GRID as f64);
+                padded[j * m + i] = tile.sample(u0 + u * size, v0 + v * size);
             }
         }
     }
+    let heights: Vec<f32> = (0..n * n).map(|q| padded[(q / n + 1) * m + q % n + 1]).collect();
     let side = 2.0 * std::f64::consts::PI * crate::map3d::camera::R / 2f64.powi(i32::from(l.z));
     let step = side * k / GRID as f64;
     let shade_at = |i: usize, j: usize| -> f32 {
         if dem.is_none() {
             return 1.0;
         }
-        let h = |i: usize, j: usize| f64::from(heights[j * n + i]);
-        let (i0, i1) = (i.saturating_sub(1), (i + 1).min(GRID));
-        let (j0, j1) = (j.saturating_sub(1), (j + 1).min(GRID));
-        let dzde = (h(i1, j) - h(i0, j)) / ((i1 - i0) as f64 * step);
-        let dzdn = -(h(i, j1) - h(i, j0)) / ((j1 - j0) as f64 * step);
+        let h = |i: usize, j: usize| f64::from(padded[j * m + i]);
+        let (pi, pj) = (i + 1, j + 1);
+        let dzde = (h(pi + 1, pj) - h(pi - 1, pj)) / (2.0 * step);
+        let dzdn = -(h(pi, pj + 1) - h(pi, pj - 1)) / (2.0 * step);
         let len = (dzde * dzde + dzdn * dzdn + 1.0).sqrt();
         let lit = (-dzde * LIGHT[0] - dzdn * LIGHT[1] + LIGHT[2]) / len;
         1.0 - SHADE * ((LIGHT[2] - lit) / LIGHT[2]).clamp(0.0, 1.0) as f32
@@ -1130,6 +1154,48 @@ mod tests {
             (0..n * n).all(|i| flat.verts[i * FLOATS + 5] == 1.0),
             "no elevation, no shading"
         );
+    }
+
+    #[test]
+    fn neighbouring_leaves_shade_their_shared_edge_alike() {
+        let size = 64;
+        let heights: Vec<f32> = (0..size * size)
+            .map(|i| {
+                let (x, y) = ((i % size) as f32, (i / size) as f32);
+                300.0 * (x * 0.21).sin() + 200.0 * (y * 0.17).cos()
+            })
+            .collect();
+        let tile = Arc::new(DemTile::from_heights(size, heights));
+        let west: Dem = (tile.clone(), (0.0, 0.25, 0.5));
+        let east: Dem = (tile, (0.5, 0.25, 0.5));
+        let (a, b) = (
+            build_leaf(
+                Leaf {
+                    z: 12,
+                    x: 2184,
+                    y: 1420,
+                },
+                Some(&west),
+                0.68,
+            ),
+            build_leaf(
+                Leaf {
+                    z: 12,
+                    x: 2185,
+                    y: 1420,
+                },
+                Some(&east),
+                0.68,
+            ),
+        );
+        let n = GRID + 1;
+        for j in 0..n {
+            let (right_of_west, left_of_east) = (a.verts[(j * n + GRID) * FLOATS + 5], b.verts[(j * n) * FLOATS + 5]);
+            assert!(
+                (right_of_west - left_of_east).abs() < 1e-5,
+                "row {j}: {right_of_west} against {left_of_east}"
+            );
+        }
     }
 
     #[test]

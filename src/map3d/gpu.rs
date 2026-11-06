@@ -24,7 +24,10 @@ pub const FLOATS: usize = 6;
 /// Frames a mesh or a texture may go unused before the GPU lets it go.
 const KEEP_FRAMES: u64 = 240;
 /// Textures uploaded in one frame at most, so a pan does not stall on them.
-const UPLOADS_PER_FRAME: usize = 24;
+const UPLOADS_PER_FRAME: usize = 16;
+/// ...and none are started once the frame has spent this long on uploads, so
+/// a pan stays smooth where a texture is slow to make (milliseconds).
+const UPLOAD_MS: f32 = 5.0;
 /// Meshes uploaded in one frame at most, for the same reason.
 const MESH_UPLOADS_PER_FRAME: usize = 64;
 /// What the GPU holds at most. Past it the longest unused go first, so a long
@@ -114,6 +117,8 @@ pub struct Stats {
     pub leaves: usize,
     pub built: usize,
     pub draws: u32,
+    /// Draws that wore an image of the map, the rest the plain ground colour.
+    pub textured: u32,
     pub meshes_uploaded: u32,
     pub textures_uploaded: u32,
     pub transient: u32,
@@ -130,6 +135,7 @@ static STATS: Mutex<Stats> = Mutex::new(Stats {
     leaves: 0,
     built: 0,
     draws: 0,
+    textured: 0,
     meshes_uploaded: 0,
     textures_uploaded: 0,
     transient: 0,
@@ -263,10 +269,12 @@ struct Gpu {
 /// What a frame may still upload, and what it did.
 #[derive(Default)]
 struct Budget {
+    started: Option<std::time::Instant>,
     textures: usize,
     meshes: usize,
     transient: u32,
     draws: u32,
+    textured: u32,
     deferred: bool,
 }
 
@@ -484,7 +492,7 @@ impl Gpu {
         let texture = gl.create_texture().ok()?;
         gl.active_texture(glow::TEXTURE0);
         gl.bind_texture(glow::TEXTURE_2D, Some(texture));
-        let bytes: Vec<u8> = t.image.pixels.iter().flat_map(|c| c.to_array()).collect();
+        let bytes = as_bytes(&t.image.pixels);
         gl.pixel_store_i32(glow::UNPACK_ALIGNMENT, 1);
         gl.tex_image_2d(
             glow::TEXTURE_2D,
@@ -495,7 +503,7 @@ impl Gpu {
             0,
             glow::RGBA,
             glow::UNSIGNED_BYTE,
-            glow::PixelUnpackData::Slice(Some(&bytes)),
+            glow::PixelUnpackData::Slice(Some(bytes)),
         );
         gl.generate_mipmap(glow::TEXTURE_2D);
         gl.tex_parameter_i32(
@@ -522,7 +530,8 @@ impl Gpu {
             if self.textures.contains(t.id) {
                 return Some((t.id, uv));
             }
-            if b.textures < UPLOADS_PER_FRAME {
+            let spent = b.started.map_or(0.0, |t| t.elapsed().as_secs_f32() * 1000.0);
+            if b.textures < UPLOADS_PER_FRAME && (b.textures == 0 || spent < UPLOAD_MS) {
                 if self.upload_texture(gl, t).is_some() {
                     b.textures += 1;
                     return Some((t.id, uv));
@@ -583,6 +592,9 @@ impl Gpu {
         gl.bind_vertex_array(Some(vao));
         gl.draw_elements(glow::TRIANGLES, count, glow::UNSIGNED_INT, 0);
         b.draws += 1;
+        if picked.is_some() {
+            b.textured += 1;
+        }
     }
 
     unsafe fn forget_unused(&mut self, gl: &glow::Context) {
@@ -641,7 +653,10 @@ pub unsafe fn paint(gl: &glow::Context, scene: &Scene) {
     gl.uniform_1_i32(gpu.uniforms.tex.as_ref(), 0);
     gl.active_texture(glow::TEXTURE0);
 
-    let mut budget = Budget::default();
+    let mut budget = Budget {
+        started: Some(started),
+        ..Budget::default()
+    };
     gl.disable(glow::BLEND);
     for item in &scene.ground_items {
         gpu.draw(gl, scene, item, &mut budget);
@@ -671,6 +686,7 @@ pub unsafe fn paint(gl: &glow::Context, scene: &Scene) {
     DEFERRED.store(budget.deferred, Ordering::Relaxed);
     let mut s = STATS.lock().unwrap_or_else(|e| e.into_inner());
     s.draws = budget.draws;
+    s.textured = budget.textured;
     s.meshes_uploaded = budget.meshes as u32;
     s.textures_uploaded = budget.textures as u32;
     s.transient = budget.transient;
