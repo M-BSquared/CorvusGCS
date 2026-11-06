@@ -10,6 +10,7 @@ use crate::data::units::Units;
 use crate::ui::icons;
 use crate::ui::menu;
 use crate::ui::style::{self, Weight};
+use crate::ui::tip::HoverTr;
 
 /// The slider of the plan panel: `min="1" max="50" step="1" value="10"`.
 pub const ALT_MIN_M: f64 = 1.0;
@@ -360,7 +361,7 @@ fn head(ui: &mut egui::Ui, rect: Rect, coords: &str, galley: &std::sync::Arc<egu
         },
     );
     let pressed = copy_resp
-        .on_hover_text(if copied { "Copied" } else { "Copy coordinates" })
+        .on_hover_tr(if copied { "Copied" } else { "Copy coordinates" })
         .clicked();
     if pressed {
         ui.ctx().copy_text(coords.to_string());
