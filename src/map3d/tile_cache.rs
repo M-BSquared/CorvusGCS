@@ -18,7 +18,7 @@ use crate::net::http::{self, Server};
 pub type Key = (String, u8, u32, u32);
 
 const WORKERS: usize = 6;
-const QUEUE_MAX: usize = 200;
+const QUEUE_MAX: usize = 640;
 const RETRY_AFTER: Duration = Duration::from_secs(20);
 
 type Decoder<T> = Arc<dyn Fn(&[u8]) -> Option<T> + Send + Sync>;
@@ -143,6 +143,17 @@ impl<T: Send + Sync + 'static> TileCache<T> {
             Some(Slot::Ready(t)) => Some(t.clone()),
             _ => None,
         }
+    }
+
+    /// How many tiles the backend could not give, within the retry time.
+    pub fn failures(&self) -> usize {
+        let Ok(g) = self.shared.inner.lock() else {
+            return 0;
+        };
+        g.slots
+            .values()
+            .filter(|s| matches!(s, Slot::Failed(at) if at.elapsed() < self.shared.retry))
+            .count()
     }
 
     /// Drops every tile, for a changed source.

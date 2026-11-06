@@ -385,11 +385,16 @@ on the CPU and stay on the GPU; a frame is uniforms and draw calls.
   at the same zoom, tilted by `THREE_D_PITCH` (60 degrees), at the map's
   bearing, with MapLibre's 36.87 degree field of view.
 - **Ground.** A quadtree of web mercator tiles, split while a tile would
-  cover more than about 380 px, so the near ground is fine and the horizon
-  coarse. Each leaf is a 16 by 16 grid of quads. Heights come from the
-  elevation tiles (`terrain.rs`, terrarium or mapbox packing, PNG or WebP,
-  256 or 512 px) through `/api/tiles/<dem>/z/x/y.png`, the proxy the web map
-  reads, so its cache serves offline. The imagery is the base layer's own
+  cover more than about 230 px, so the near ground is fine and the horizon
+  coarse. A leaf is dropped when it is outside the real view frustum (taken
+  over the sea level plane up to 5000 m, the ground not being known yet), and
+  the copy of the world a leaf is in is counted, so the map continues over
+  longitude 180; the centre stops at the mercator limit. Each leaf is a 16 by
+  16 grid of quads. Heights come from the elevation tiles (`terrain.rs`,
+  terrarium or mapbox packing, PNG or WebP, 256 or 512 px) through
+  `/api/tiles/<dem>/z/x/y.png`, the proxy the web map reads, so its cache
+  serves offline. A leaf reads the tile four zooms up (`terrain::leaf_part`),
+  which gives it one pixel a cell and 16 times fewer tiles than one per leaf. The imagery is the base layer's own
   tiles from the same proxy, draped by texture coordinates. A tile whose
   data has not come yet is drawn from its nearest ancestor, never left out.
 - **Depth.** The depth buffer settles what hides what: a ridge hides the
@@ -408,6 +413,32 @@ on the CPU and stay on the GPU; a frame is uniforms and draw calls.
   tiles, so they need no reader here.
 - **Cracks.** Neighbouring leaves can come from different levels or models,
   so their edges do not meet. Each leaf hangs a skirt below its edges.
+- **Budgets.** Per frame at most 40 leaf meshes are built (nearest first), 64
+  meshes and 16 textures (5 ms) uploaded; what does not fit waits for the next
+  frame and the view asks for it. A leaf whose own image is not on the GPU yet
+  draws its nearest ancestor's (`Item::fallback`), so a tile arriving does not
+  blink. Tiles are asked for from the far leaves to the near ones because the
+  cache serves the last asked first. The GPU holds at most 2400 meshes and 700
+  textures (`gpu::Pool`, longest unused go first); the track ribbons follow the
+  camera and are made, drawn and freed in one paint (`Item::transient`).
+- **Failure.** `gpu::check_caps` reads the context (GLSL with `in` and `out`,
+  depth bits, texture size) before the first draw, a shader that does not
+  compile or link is reported with its log, and `gpu::failure()` then makes the
+  map fall back to the flat one while the 3D panel says why.
+  `CORVUS_GUI_3D_FAIL=reason` forces it for a look. With most ground without
+  an image for 2.5 s and tiles the backend could not give, a pill says no map
+  is saved for the area and it is not available offline.
+- **Looking at what it costs.** F3 over the 3D map, or `CORVUS_GUI_3D_DEBUG=1`,
+  shows leaves, meshes built, draws, imaged draws, uploads, live GPU objects
+  and the milliseconds of planning and submitting, and logs them every 5 s.
+- **Pictures.** `src/map3d/shots/run.py` renders five fixed views and compares
+  them with `ref/*.jpg` (see its README for how to refresh them).
+- **Camera.** The wheel zooms to the pointer, tilt stops at 60 degrees as
+  MapLibre's does, the camera is kept 8 m above the ground under it by lowering
+  the tilt, and two fingers pinch, twist and tilt.
+- **Hills and markers.** Ground and track are depth tested. Screen markers
+  (home, vehicle, other vehicles, plugin markers and text) and the pieces of the
+  geofence outline are hidden by a ray test against the elevation (`line_blocked`).
 - **Slices.** Done: the camera, the ground with imagery and heights, hillshade,
   the vehicle, home and track in 3D, drag to pan, ctrl or right drag to turn
   and tilt, wheel to zoom, the elevation model list with the operator's own
@@ -417,7 +448,7 @@ on the CPU and stay on the GPU; a frame is uniforms and draw calls.
   imagery has not come, and the buildings.
 - **Buildings.** The full 3D (the panel's switch, kept as `three_d_detail`)
   reads the cells of `/api/buildings/15/x/y.json` for the ground in view,
-  nearest first, 36 at most, from zoom 14. Each cell becomes one mesh once the
+  nearest first, 36 at most, from zoom 14. A dense city centre (a few hundred buildings a cell) was looked at in the running app against the backend's own cell cache. Each cell becomes one mesh once the
   terrain under it is loaded. A cell the backend has not got yet
   (`pending`, or `unavailable` offline) is asked for again every 3 s. Walls
   and roofs of a cell go into one mesh, 4000 buildings at most, in the web's slate at 85 percent opacity with each wall

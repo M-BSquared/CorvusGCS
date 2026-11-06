@@ -36,8 +36,21 @@ pub fn show(ui: &mut egui::Ui, anchor: Rect, t: &mut Map3d, sources: &Value) -> 
         .y;
     let row_h = 7.0 * 2.0 + 12.0 * 1.21;
     let head_h = 4.0 + 10.0 * 1.21 + 6.0;
+    let failed = crate::map3d::gpu::failure().map(|why| {
+        kit::wrapped_weight(
+            ui,
+            &crate::map3d::failure_text(&why),
+            10.5,
+            Weight::W500,
+            style::critical(),
+            WIDTH - 22.0,
+            1.4,
+        )
+    });
+    let failed_h = failed.as_ref().map_or(0.0, |g| g.size().y + 6.0);
     let field_h = 2.0 + 22.0 + 6.0 + 6.0 + hint_h;
     let h = 5.0
+        + failed_h
         + head_h
         + field_h
         + if rows.is_empty() {
@@ -62,7 +75,12 @@ pub fn show(ui: &mut egui::Ui, anchor: Rect, t: &mut Map3d, sources: &Value) -> 
             style::glass_panel(&painter, "threed", menu, style::RADIUS, 0.6);
             ui.allocate_rect(menu, egui::Sense::hover());
             let x = menu.left() + 5.0;
-            let mut y = head(ui, x, menu.top() + 5.0, "3D mode");
+            let mut y = menu.top() + 5.0;
+            if let Some(g) = &failed {
+                painter.galley(Pos2::new(x + 6.0, y + 4.0), g.clone(), style::critical());
+                y += g.size().y + 6.0;
+            }
+            let mut y = head(ui, x, y, "3D mode");
             let lg = style::galley(ui, "Buildings", 12.0, Weight::W600, style::text_1(), 0.0);
             painter.galley(
                 Pos2::new(x + 6.0, y + 2.0 + (22.0 - lg.size().y) / 2.0),

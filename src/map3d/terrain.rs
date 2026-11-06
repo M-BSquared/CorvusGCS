@@ -166,6 +166,22 @@ impl DemTile {
     }
 }
 
+/// Zooms between a leaf of the ground mesh and the elevation tile it reads:
+/// 256 pixels over 16 cells is `2^4` leaves a side.
+pub const LEAF_LEVELS: u8 = 4;
+
+/// The tile a leaf `(z, x, y)` reads, `(z, x, y)` of it, and the part of that
+/// tile the leaf covers: `(fx, fy, size)` in 0 to 1.
+pub fn leaf_part(z: u8, x: u32, y: u32) -> ((u8, u32, u32), (f64, f64, f64)) {
+    let d = LEAF_LEVELS.min(z);
+    let n = f64::from(1u32 << d);
+    let mask = (1u32 << d) - 1;
+    (
+        (z - d, x >> d, y >> d),
+        (f64::from(x & mask) / n, f64::from(y & mask) / n, 1.0 / n),
+    )
+}
+
 /// The elevation model in use and its tiles.
 pub struct Terrain {
     pub spec: Spec,
@@ -202,6 +218,16 @@ impl Terrain {
             }
         }
         None
+    }
+
+    /// The elevation for a leaf of the ground mesh at zoom `z`, as
+    /// `(tile, (u0, v0, size))`: the part of the tile the leaf covers. A leaf
+    /// has `GRID` cells a side, and a tile 256 pixels, so a tile
+    /// `LEAF_LEVELS` zooms up gives one pixel a cell and is the one asked for.
+    pub fn tile_for_leaf(&self, z: u8, x: u32, y: u32) -> Option<(Arc<DemTile>, (f64, f64, f64))> {
+        let ((zz, tx, ty), (fx, fy, s)) = leaf_part(z, x, y);
+        let (tile, (u0, v0, size)) = self.tile_for(zz, tx, ty)?;
+        Some((tile, (u0 + fx * size, v0 + fy * size, s * size)))
     }
 
     /// The ground height at a position, from what is loaded at about `zoom`.
@@ -289,6 +315,19 @@ mod tests {
         let only = json!({"default_terrain": "terrain", "terrain": [{"id": "terrain", "provider": "terrain"}]});
         assert_eq!(choose(&only, "esri", None).unwrap().id, "terrain");
         assert!(choose(&json!({}), "esri", None).is_none());
+    }
+
+    #[test]
+    fn a_leaf_reads_the_tile_that_gives_it_a_pixel_a_cell() {
+        assert_eq!(
+            leaf_part(12, 2185, 1420),
+            ((8, 136, 88), (9.0 / 16.0, 12.0 / 16.0, 1.0 / 16.0))
+        );
+        let (tile, (fx, fy, s)) = leaf_part(2, 3, 1);
+        assert_eq!(tile, (0, 0, 0), "near the top of the pyramid it is the world tile");
+        assert_eq!((fx, fy, s), (0.75, 0.25, 0.25));
+        let ((z, ..), (.., s)) = leaf_part(0, 0, 0);
+        assert_eq!((z, s), (0, 1.0));
     }
 
     #[test]

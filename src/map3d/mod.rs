@@ -14,7 +14,7 @@ pub mod tile_cache;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use eframe::egui::{self, Color32, Mesh, Pos2, Rect, Stroke, Vec2};
+use eframe::egui::{self, Color32, Mesh, Pos2, Rect, Shape, Stroke, Vec2};
 use eframe::egui_glow;
 
 use crate::data::track::{self, Point, Track};
@@ -32,6 +32,17 @@ const SPLIT_PX: f64 = 230.0;
 /// Quads per side of a leaf.
 const GRID: usize = 16;
 const MAX_LEAVES: usize = 900;
+/// Leaf meshes built in one frame at most; the rest wait for the next, nearest first.
+const MESH_BUILDS_PER_FRAME: usize = 40;
+/// The highest ground a leaf may have, in metres above sea level, for knowing
+/// whether it is in view before its elevation is here.
+const HIGHEST_GROUND: f64 = 5000.0;
+/// Heights over the view centre's ground, in metres, the ground box also reaches to.
+const RELIEF: [f64; 2] = [-600.0, 2500.0];
+/// A side of the geofence is cut into pieces about this long (metres) to test them for hills.
+const FENCE_PIECE_M: f64 = 40.0;
+/// How far above the ground under it the camera is kept, in metres.
+const KEEP_ABOVE_GROUND: f64 = 8.0;
 const TEXTURES: usize = 400;
 const IMAGE_CACHE: usize = 1000;
 /// `HILLSHADE_EXAGGERATION` of the web map, a little stronger as the shade is
@@ -60,6 +71,8 @@ pub struct Layers3d<'a> {
     pub past_colors: Vec<Color32>,
     /// A thin line at the height flown, above the track on the ground.
     pub in_air: bool,
+    /// The geofence area when the Home map is asked to show it.
+    pub fence: Option<&'a [[f64; 2]]>,
 }
 
 /// What the pointer did to the camera this frame.
@@ -71,6 +84,25 @@ pub struct Input {
     /// Where a left press-and-release landed on the screen.
     pub press: Option<Pos2>,
 }
+
+/// What the 3D map says when this OpenGL cannot draw it.
+pub fn failure_text(why: &str) -> String {
+    crate::i18n::tr_fmt(FAILURE_TEXT, &[("a", why)])
+}
+
+impl Leaf {
+    /// The column, counted from the main copy of the world's west edge.
+    fn x_world(&self) -> f64 {
+        f64::from(self.x) + f64::from(self.wrap) * 2f64.powi(i32::from(self.z))
+    }
+}
+
+/// How long the ground waits for imagery before the map says it has none.
+const OFFLINE_AFTER_MS: u64 = 2500;
+/// A native only text (`lang/native`).
+const OFFLINE_TEXT: &str = "No map saved for this area. It is not available offline.";
+/// A native only text (`lang/native`).
+const FAILURE_TEXT: &str = "The 3D map cannot draw on this OpenGL: {a}";
 
 /// The base layer's tiles as a decoded image.
 fn decode_image(bytes: &[u8]) -> Option<egui::ColorImage> {
@@ -85,6 +117,9 @@ struct Leaf {
     z: u8,
     x: u32,
     y: u32,
+    /// Which copy of the world it is in: -1 west of the antimeridian's far
+    /// side, 0 the main one, 1 east of it.
+    wrap: i32,
 }
 
 /// The 3D view's state.
@@ -116,10 +151,19 @@ pub struct Map3d {
     leaf_meshes: HashMap<(u8, u32, u32), LeafMesh>,
     cell_meshes: HashMap<(u32, u32), CellMesh>,
     frame: u64,
+    /// The numbers of the last frame over the map (F3, or `CORVUS_GUI_3D_DEBUG`).
+    debug: bool,
+    logged: std::time::Instant,
+    /// Since when most of the ground has had no image and the backend has
+    /// failed to give some: the map has nothing saved here.
+    blank_since: Option<std::time::Instant>,
 }
 
 /// An elevation tile and the part `(u0, v0, size)` of it a leaf covers.
 type Dem = (Arc<DemTile>, (f64, f64, f64));
+
+/// A leaf's images (its own, then its fallback) and its elevation.
+type Wanted = ([Option<(gpu::Texture, Rect)>; 2], Option<Dem>);
 
 /// The mesh of one leaf, and the elevation it was made from.
 struct LeafMesh {
@@ -178,13 +222,15 @@ impl Map3d {
             leaf_meshes: HashMap::new(),
             cell_meshes: HashMap::new(),
             frame: 0,
+            debug: std::env::var_os("CORVUS_GUI_3D_DEBUG").is_some(),
+            logged: std::time::Instant::now(),
+            blank_since: None,
         }
     }
 
     /// Takes the view of the flat map.
     pub fn start_at(&mut self, lng: f64, lat: f64, zoom: f64, bearing: f64) {
-        self.cam.lng = lng;
-        self.cam.lat = lat;
+        self.cam.set_centre((lng, lat));
         self.cam.zoom = zoom;
         self.cam.bearing = bearing;
         self.cam.pitch = crate::map3d::camera::THREE_D_PITCH;
@@ -332,13 +378,19 @@ impl Map3d {
         let mut max = (f64::MIN, f64::MIN);
         let (w, h) = c.size;
         for (sx, sy) in [(0.0, 0.0), (w, 0.0), (0.0, h), (w, h), (w / 2.0, 0.0), (w / 2.0, h)] {
-            let (e, n) = c.ground_at(sx, sy, 0.0).unwrap_or_else(|| {
+            let flat = c.ground_at(sx, sy, 0.0).unwrap_or_else(|| {
                 let b = c.bearing.to_radians();
                 (b.sin() * reach, b.cos() * reach)
             });
-            let (e, n) = (e.clamp(-reach, reach), n.clamp(-reach, reach));
-            min = (min.0.min(e), min.1.min(n));
-            max = (max.0.max(e), max.1.max(n));
+            // The ground is not a plane: a ridge near the bottom of the view
+            // meets the ray sooner than the plane does, a valley later.
+            let mut hits = vec![flat];
+            hits.extend(RELIEF.iter().filter_map(|up| c.ground_at(sx, sy, *up)));
+            for (e, n) in hits {
+                let (e, n) = (e.clamp(-reach, reach), n.clamp(-reach, reach));
+                min = (min.0.min(e), min.1.min(n));
+                max = (max.0.max(e), max.1.max(n));
+            }
         }
         (min, max)
     }
@@ -360,11 +412,24 @@ impl Map3d {
         };
         let (x0, y1) = to_tile(cx + min.0 / k, cy + min.1 / k);
         let (x1, y0) = to_tile(cx + max.0 / k, cy + max.1 / k);
-        let clampi = |v: f64| (v.floor().max(0.0) as u32).min(n_tiles as u32 - 1);
+        let clampy = |v: f64| (v.floor().max(0.0) as u32).min(n_tiles as u32 - 1);
+        // Columns run past the edges of the world: the map repeats there.
+        let columns = |lo: f64, hi: f64| {
+            (lo.floor() as i64)..=(hi.floor() as i64).min(lo.floor() as i64 + 2 * n_tiles as i64 + 2)
+        };
         let mut out = Vec::new();
-        for ty in clampi(y0)..=clampi(y1) {
-            for tx in clampi(x0)..=clampi(x1) {
-                self.split(Leaf { z: z0, x: tx, y: ty }, &mut out);
+        for ty in clampy(y0)..=clampy(y1) {
+            for tx in columns(x0, x1) {
+                let n = n_tiles as i64;
+                self.split(
+                    Leaf {
+                        z: z0,
+                        x: tx.rem_euclid(n) as u32,
+                        y: ty,
+                        wrap: tx.div_euclid(n) as i32,
+                    },
+                    &mut out,
+                );
             }
         }
         out
@@ -375,36 +440,33 @@ impl Map3d {
         let k = c.lat.to_radians().cos();
         let (cx, cy) = crate::map3d::camera::mercator(c.lng, c.lat);
         let at = |dx: f64, dy: f64| {
-            let (mx, my) = tile_mercator(l.z, l.x as f64 + dx, l.y as f64 + dy);
+            let (mx, my) = tile_mercator(l.z, l.x_world() + dx, l.y as f64 + dy);
             [(mx - cx) * k, (my - cy) * k, -c.ground]
         };
         [at(0.0, 0.0), at(1.0, 0.0), at(1.0, 1.0), at(0.0, 1.0)]
     }
 
-    fn visible(&self, l: Leaf) -> bool {
-        let pts = self.corners(l);
-        let proj: Vec<_> = pts.iter().map(|p| self.cam.project(*p)).collect();
-        if proj.iter().any(Option::is_none) {
-            return true;
-        }
-        let (w, h) = self.cam.size;
-        let s: Vec<_> = proj.into_iter().flatten().collect();
-        !(s.iter().all(|p| p.x < 0.0)
-            || s.iter().all(|p| p.x > w)
-            || s.iter().all(|p| p.y < 0.0)
-            || s.iter().all(|p| p.y > h))
-    }
-
     fn split(&self, l: Leaf, out: &mut Vec<Leaf>) {
-        if !self.visible(l) {
+        let pts = self.corners(l);
+        // The tile is on the sea level plane here, the ground over it up to
+        // the highest mountains: it is in view if any of that is.
+        let mut slab = pts.to_vec();
+        slab.extend(pts.iter().map(|p| [p[0], p[1], p[2] + HIGHEST_GROUND]));
+        if !self.cam.sees(&slab) {
             return;
         }
         let c = &self.cam;
         let k = c.lat.to_radians().cos();
         let metres = 2.0 * std::f64::consts::PI * crate::map3d::camera::R * k / 2f64.powi(l.z as i32);
-        let pts = self.corners(l);
-        let mid = [(pts[0][0] + pts[2][0]) / 2.0, (pts[0][1] + pts[2][1]) / 2.0, pts[0][2]];
-        let px = c.project(mid).map_or(f64::MAX, |s| metres / s.depth * c.focal());
+        // How far along the view the tile is, nearest corner, but never
+        // nearer than a third of the camera's distance: a tile under the
+        // camera is split as far as one just in front of it, not endlessly.
+        let depth = pts
+            .iter()
+            .map(|p| c.clip(*p)[2])
+            .fold(f64::MAX, f64::min)
+            .max(c.distance() * 0.3);
+        let px = metres / depth * c.focal();
         if px > SPLIT_PX && l.z < self.max_zoom && out.len() < MAX_LEAVES {
             for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
                 self.split(
@@ -412,6 +474,7 @@ impl Map3d {
                         z: l.z + 1,
                         x: l.x * 2 + dx,
                         y: l.y * 2 + dy,
+                        wrap: l.wrap,
                     },
                     out,
                 );
@@ -421,53 +484,66 @@ impl Map3d {
         }
     }
 
+    /// The id the GPU knows a tile's image by.
+    fn texture_of(&mut self, key: &Key, image: Arc<egui::ColorImage>) -> gpu::Texture {
+        let id = match self.tex_ids.get(key) {
+            Some((held, id)) if Arc::ptr_eq(held, &image) => *id,
+            _ => {
+                let id = gpu::next_id();
+                self.tex_ids.insert(key.clone(), (image.clone(), id));
+                id
+            }
+        };
+        self.used.push(key.clone());
+        gpu::Texture { id, image }
+    }
+
     /// The imagery of a leaf or its nearest ancestor that is here, and the
-    /// part of it the leaf covers.
-    fn imagery_for(&mut self, l: Leaf) -> Option<(gpu::Texture, Rect)> {
+    /// part of it the leaf covers; then the next ancestor that is here, which
+    /// the GPU draws until the first is uploaded.
+    fn imagery_for(&mut self, l: Leaf) -> [Option<(gpu::Texture, Rect)>; 2] {
         let top = l.z.min(self.max_zoom);
         let mut want = true;
         // A coarse ancestor is asked for too, so there is always something to
         // draw while the fine tile is on its way.
         let coarse = top.min(3);
+        let mut found: [Option<(gpu::Texture, Rect)>; 2] = [None, None];
+        let mut n = 0;
         for d in 0..=top.min(12) {
             if d == coarse && d > 0 {
                 want = true;
             }
             let (z, x, y) = (top - d, l.x >> d, l.y >> d);
             let key: Key = (self.source.clone(), z, x, y);
-            let found = if want {
+            let image = if want {
                 self.imagery.get(&key)
             } else {
                 self.imagery.peek(&key)
             };
             want = false;
-            if let Some(image) = found {
-                let id = match self.tex_ids.get(&key) {
-                    Some((held, id)) if Arc::ptr_eq(held, &image) => *id,
-                    _ => {
-                        let id = gpu::next_id();
-                        self.tex_ids.insert(key.clone(), (image.clone(), id));
-                        id
-                    }
-                };
-                self.used.push(key);
-                return Some((gpu::Texture { id, image }, uv_of(l, z)));
+            if let Some(image) = image {
+                let t = self.texture_of(&key, image);
+                found[n] = Some((t, uv_of(l, z)));
+                n += 1;
+                if n == 2 {
+                    break;
+                }
             }
         }
-        None
+        found
     }
 
     /// The elevation for a leaf from the model in use, else the default.
     fn dem_for(&self, l: Leaf) -> Option<Dem> {
         self.terrain
             .as_ref()
-            .and_then(|t| t.tile_for(l.z, l.x, l.y))
-            .or_else(|| self.fallback.as_ref().and_then(|t| t.tile_for(l.z, l.x, l.y)))
+            .and_then(|t| t.tile_for_leaf(l.z, l.x, l.y))
+            .or_else(|| self.fallback.as_ref().and_then(|t| t.tile_for_leaf(l.z, l.x, l.y)))
     }
 
     /// The mesh of a leaf: made once, again only when its elevation changes.
-    fn leaf_mesh(&mut self, l: Leaf) -> (Arc<MeshData>, bool) {
-        let dem = self.dem_for(l);
+    /// Past this frame's build budget a leaf keeps the mesh it had, or waits.
+    fn leaf_mesh(&mut self, l: Leaf, dem: Option<Dem>, builds: &mut usize) -> Option<(Arc<MeshData>, bool)> {
         let key = (l.z, l.x, l.y);
         if let Some(m) = self.leaf_meshes.get_mut(&key) {
             let same = match (&m.dem, &dem) {
@@ -475,11 +551,15 @@ impl Map3d {
                 (Some((a, ra)), Some((b, rb))) => Arc::ptr_eq(a, b) && ra == rb,
                 _ => false,
             };
-            if same {
-                m.used = self.frame;
-                return (m.mesh.clone(), dem.is_none());
+            m.used = self.frame;
+            if same || *builds >= MESH_BUILDS_PER_FRAME {
+                return Some((m.mesh.clone(), m.dem.is_none()));
             }
         }
+        if *builds >= MESH_BUILDS_PER_FRAME {
+            return None;
+        }
+        *builds += 1;
         let k = self.cam.lat.to_radians().cos();
         let mesh = Arc::new(build_leaf(l, dem.as_ref(), k));
         self.leaf_meshes.insert(
@@ -490,26 +570,57 @@ impl Map3d {
                 used: self.frame,
             },
         );
-        (mesh, dem.is_none())
+        Some((mesh, dem.is_none()))
     }
 
-    /// The items of the ground in view.
-    fn ground_items(&mut self, leaves: &[Leaf]) -> Vec<gpu::Item> {
+    /// The items of the ground in view, and how many meshes were built for
+    /// them. Leaves nearest the view centre come first, so what is built late
+    /// is what is far away.
+    fn ground_items(&mut self, leaves: &[Leaf]) -> (Vec<gpu::Item>, usize, usize) {
         self.used.clear();
         let mut items = Vec::with_capacity(leaves.len());
-        for l in leaves {
+        let mut builds = 0;
+        let mut blank = 0;
+        let (cx, cy) = crate::map3d::camera::mercator(self.cam.lng, self.cam.lat);
+        let world = 2.0 * std::f64::consts::PI * crate::map3d::camera::R;
+        let mut order: Vec<(f64, Leaf)> = leaves
+            .iter()
+            .map(|l| {
+                let side = world / 2f64.powi(i32::from(l.z));
+                let (mx, my) = tile_mercator(l.z, l.x_world() + 0.5, f64::from(l.y) + 0.5);
+                ((mx - cx).hypot(my - cy) / side, *l)
+            })
+            .collect();
+        order.sort_by(|a, b| a.0.total_cmp(&b.0));
+        // The tile cache serves the last asked first, so the tiles are asked
+        // for from the far leaves to the near ones: what is under the eye
+        // arrives first.
+        let mut wanted: HashMap<(u8, u32, u32, i32), Wanted> = HashMap::new();
+        for (_, l) in order.iter().rev() {
             let imagery = self.imagery_for(*l);
-            let (mesh, flat) = self.leaf_mesh(*l);
-            let (mx, my) = tile_mercator(l.z, f64::from(l.x), f64::from(l.y));
-            let (texture, uv) = match imagery {
-                Some((t, uv)) => (Some(t), [uv.min.x, uv.min.y, uv.width(), uv.height()]),
+            wanted.insert((l.z, l.x, l.y, l.wrap), (imagery, self.dem_for(*l)));
+        }
+        for (_, l) in order {
+            let Some(([first, second], dem)) = wanted.remove(&(l.z, l.x, l.y, l.wrap)) else {
+                continue;
+            };
+            blank += usize::from(first.is_none() && second.is_none());
+            let Some((mesh, flat)) = self.leaf_mesh(l, dem, &mut builds) else {
+                continue;
+            };
+            let (mx, my) = tile_mercator(l.z, l.x_world(), f64::from(l.y));
+            let rect_uv = |r: &Rect| [r.min.x, r.min.y, r.width(), r.height()];
+            let (texture, uv) = match &first {
+                Some((t, r)) => (Some(t.clone()), rect_uv(r)),
                 None => (None, [0.0, 0.0, 1.0, 1.0]),
             };
+            let fallback = second.map(|(t, r)| (t, rect_uv(&r)));
             items.push(gpu::Item {
                 mesh,
                 origin: (mx, my),
                 texture,
                 uv,
+                fallback,
                 flat,
                 color: [
                     f32::from(GROUND_COLOR[0]) / 255.0,
@@ -517,6 +628,7 @@ impl Map3d {
                     f32::from(GROUND_COLOR[2]) / 255.0,
                 ],
                 alpha: 1.0,
+                transient: false,
             });
         }
         if self.tex_ids.len() > TEXTURES {
@@ -527,17 +639,34 @@ impl Map3d {
             let frame = self.frame;
             self.leaf_meshes.retain(|_, m| m.used + 30 >= frame);
         }
-        items
+        (items, builds, blank)
     }
 
     /// Draws the view into `rect`.
     pub fn show(&mut self, ui: &mut egui::Ui, rect: Rect, layers: &Layers3d<'_>) -> Input {
         self.cam.size = (rect.width() as f64, rect.height() as f64);
         let resp = ui.interact(rect, ui.scope_id().with("map3d"), egui::Sense::click_and_drag());
+        if resp.hovered() && ui.input(|i| i.key_pressed(egui::Key::F3)) {
+            self.debug = !self.debug;
+        }
         let origin = rect.min;
         let local = |p: Pos2| ((p.x - origin.x) as f64, (p.y - origin.y) as f64);
         let mut dragged = false;
-        if resp.dragged_by(egui::PointerButton::Primary) {
+        let touch = ui.input(|i| i.multi_touch());
+        if let Some(t) = touch {
+            // Two fingers (tablet mode): pinch zooms to the fingers, twisting
+            // turns the bearing, sliding up and down tilts.
+            let at = local(t.center_pos);
+            if (t.zoom_delta - 1.0).abs() > 1e-4 {
+                let zoom = (self.cam.zoom + f64::from(t.zoom_delta).log2())
+                    .clamp(crate::map3d::camera::MIN_ZOOM, self.max_zoom as f64 + 2.0);
+                self.cam.zoom_at(at.0, at.1, zoom);
+            }
+            self.cam.bearing = (self.cam.bearing - f64::from(t.rotation_delta).to_degrees()).rem_euclid(360.0);
+            self.cam.turn(0.0, f64::from(t.translation_delta.y) * 0.5);
+            dragged = true;
+        }
+        if touch.is_none() && resp.dragged_by(egui::PointerButton::Primary) {
             if let Some(p) = resp.interact_pointer_pos() {
                 let d = resp.drag_delta();
                 let now = local(p);
@@ -557,8 +686,11 @@ impl Map3d {
         }
         if resp.hovered() {
             let scroll = ui.input(|i| i.smooth_scroll_delta.y);
-            if scroll != 0.0 {
-                self.cam.zoom = (self.cam.zoom + scroll as f64 * 0.004).clamp(3.0, self.max_zoom as f64 + 2.0);
+            if let (true, Some(p)) = (scroll != 0.0, ui.input(|i| i.pointer.hover_pos())) {
+                let at = local(p);
+                let zoom = (self.cam.zoom + scroll as f64 * 0.004)
+                    .clamp(crate::map3d::camera::MIN_ZOOM, self.max_zoom as f64 + 2.0);
+                self.cam.zoom_at(at.0, at.1, zoom);
             }
         }
 
@@ -574,6 +706,19 @@ impl Map3d {
         {
             self.cam.ground = h;
         }
+        let planning = std::time::Instant::now();
+        {
+            let (terrain, fallback) = (&self.terrain, &self.fallback);
+            self.cam.keep_above(
+                |lng, lat| {
+                    terrain
+                        .iter()
+                        .chain(fallback.iter())
+                        .find_map(|t| t.height_at(lng, lat, 13.0))
+                },
+                KEEP_ABOVE_GROUND,
+            );
+        }
         self.frame += 1;
         let painter = ui.painter_at(rect);
         painter.rect_filled(
@@ -583,11 +728,17 @@ impl Map3d {
         );
         let horizon = self.paint_sky(&painter, rect);
         let leaves = self.leaves();
-        let ground_items = self.ground_items(&leaves);
+        let (ground_items, built, blank) = self.ground_items(&leaves);
+        self.watch_blank(ui, rect, leaves.len(), blank);
         let building_items = self.building_items();
         self.imagery.trim();
         for t in self.terrain.iter().chain(self.fallback.iter()) {
             t.trim();
+        }
+        let line_items = self.line_items(layers);
+        gpu::note_plan(leaves.len(), built, planning.elapsed().as_secs_f32() * 1000.0);
+        if built >= MESH_BUILDS_PER_FRAME || gpu::deferred() {
+            ui.ctx().request_repaint();
         }
         let scene = Scene {
             mvp: self.cam.view_projection(),
@@ -596,7 +747,7 @@ impl Map3d {
             ground: self.cam.ground,
             ground_items,
             building_items,
-            line_items: self.line_items(layers),
+            line_items,
         };
         painter.add(egui::PaintCallback {
             rect,
@@ -609,17 +760,19 @@ impl Map3d {
             haze(&painter, rect, y);
         }
         if let Some(why) = gpu::failure() {
-            let text = format!("The 3D map cannot draw on this OpenGL: {why}");
             painter.text(
                 rect.center(),
                 egui::Align2::CENTER_CENTER,
-                crate::i18n::tr(&text),
+                failure_text(&why),
                 egui::FontId::proportional(13.0),
                 crate::ui::style::text_2(),
             );
         }
         self.paint_layers(ui, &painter, rect.min, layers);
         self.paint_credit(ui, rect);
+        if self.debug {
+            self.paint_debug(ui, &painter, rect);
+        }
         let secondary = resp.secondary_clicked();
         let click = (resp.clicked() || secondary)
             .then(|| resp.interact_pointer_pos())
@@ -628,6 +781,74 @@ impl Map3d {
             .map(|g| (g, secondary));
         let press = resp.clicked().then(|| resp.interact_pointer_pos()).flatten();
         Input { dragged, click, press }
+    }
+
+    /// Says so when the ground has stayed without imagery and the backend
+    /// has had none to give: offline with nothing saved for this place.
+    fn watch_blank(&mut self, ui: &egui::Ui, rect: Rect, leaves: usize, blank: usize) {
+        let empty = blank * 2 > leaves && self.imagery.failures() > 0;
+        if !empty {
+            self.blank_since = None;
+            return;
+        }
+        let since = *self.blank_since.get_or_insert_with(std::time::Instant::now);
+        if since.elapsed() < std::time::Duration::from_millis(OFFLINE_AFTER_MS) {
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(OFFLINE_AFTER_MS));
+            return;
+        }
+        let painter = ui.painter_at(rect);
+        let g = crate::ui::style::galley(
+            ui,
+            OFFLINE_TEXT,
+            13.0,
+            crate::ui::style::Weight::W500,
+            crate::ui::style::text_2(),
+            0.0,
+        );
+        let pill = Rect::from_center_size(
+            Pos2::new(rect.center().x, rect.center().y + rect.height() * 0.18),
+            g.size() + Vec2::new(32.0, 18.0),
+        );
+        crate::ui::style::glass_panel(&painter, "offline-3d", pill, egui::CornerRadius::same(255), 0.5);
+        painter.galley(
+            Pos2::new(pill.center().x - g.size().x / 2.0, pill.center().y - g.size().y / 2.0),
+            g,
+            crate::ui::style::text_2(),
+        );
+    }
+
+    /// The counters of the last frame in a corner, and on stderr every 5 s.
+    fn paint_debug(&mut self, ui: &egui::Ui, painter: &egui::Painter, rect: Rect) {
+        let s = gpu::stats();
+        let dt = ui.input(|i| i.unstable_dt) * 1000.0;
+        let text = format!(
+            "frame {dt:.1} ms  plan {:.1} ms  gl {:.1} ms\nleaves {}  built {}  draws {} ({} imaged)\nmeshes +{} live {}  textures +{} live {}\nribbons {}  deferred {}\nzoom {:.2}  pitch {:.0}  bearing {:.0}",
+            s.plan_ms,
+            s.submit_ms,
+            s.leaves,
+            s.built,
+            s.draws,
+            s.textured,
+            s.meshes_uploaded,
+            s.live_meshes,
+            s.textures_uploaded,
+            s.live_textures,
+            s.transient,
+            s.deferred,
+            self.cam.zoom,
+            self.cam.pitch,
+            self.cam.bearing,
+        );
+        if self.logged.elapsed().as_secs() >= 5 {
+            self.logged = std::time::Instant::now();
+            eprintln!("corvus-gcs 3d: {}", text.replace('\n', " | "));
+        }
+        let galley = painter.layout(text, egui::FontId::monospace(11.0), Color32::WHITE, rect.width() - 28.0);
+        let at = Rect::from_min_size(Pos2::new(rect.left() + 14.0, rect.top() + 70.0), galley.size());
+        painter.rect_filled(at.expand(6.0), 6, Color32::from_black_alpha(160));
+        painter.galley(at.min, galley, Color32::WHITE);
+        ui.ctx().request_repaint();
     }
 
     /// `setSky`: the sky over the horizon in the theme's own greys. At 60
@@ -718,9 +939,11 @@ impl Map3d {
                     origin: tile_mercator(buildings::CELL_Z, f64::from(x), f64::from(y)),
                     texture: None,
                     uv: [0.0, 0.0, 1.0, 1.0],
+                    fallback: None,
                     flat: false,
                     color: buildings::color(),
                     alpha: buildings::opacity(),
+                    transient: false,
                 });
             }
         }
@@ -787,31 +1010,17 @@ impl Map3d {
     /// Where a place on the ground is on screen, when the camera sees it.
     pub fn place_on_screen(&self, rect: Rect, p: [f64; 2]) -> Option<Pos2> {
         let h = self.ground_at(p[0], p[1]);
-        self.screen_of(rect.min, self.cam.local_of(p[0], p[1], h))
+        let at = self.cam.local_of(p[0], p[1], h);
+        if self.hidden(at) {
+            return None;
+        }
+        self.screen_of(rect.min, at)
     }
 
     /// Whether the ground between the camera and `target` (local metres) is
     /// higher than the line of sight: a hill in front of it.
     fn hidden(&self, target: V3) -> bool {
-        let view = self.cam.view();
-        const STEPS: usize = 48;
-        for i in 1..STEPS {
-            let t = i as f64 / STEPS as f64;
-            if t > 0.97 {
-                break;
-            }
-            let p = [
-                view.pos[0] + (target[0] - view.pos[0]) * t,
-                view.pos[1] + (target[1] - view.pos[1]) * t,
-                view.pos[2] + (target[2] - view.pos[2]) * t,
-            ];
-            let (lng, lat) = self.cam.geo_of(p[0], p[1]);
-            let terrain = self.ground_at(lng, lat) - self.cam.ground;
-            if terrain > p[2] + 1.0 {
-                return true;
-            }
-        }
-        false
+        line_blocked(&self.cam, target, &|lng, lat| self.ground_at(lng, lat))
     }
 
     /// The flown track as ribbons the depth test can hide behind a hill: a
@@ -846,9 +1055,11 @@ impl Map3d {
                         origin: centre,
                         texture: None,
                         uv: [0.0, 0.0, 1.0, 1.0],
+                        fallback: None,
                         flat: false,
                         color,
                         alpha,
+                        transient: true,
                     });
                 }
             }
@@ -898,8 +1109,98 @@ impl Map3d {
                 );
             }
         }
-        crate::plugins::shapes::paint_marks(ui, painter, &project, layers.shapes, None);
+        if let Some(fence) = layers.fence.filter(|f| f.len() >= 3) {
+            self.paint_fence(painter, origin, fence);
+        }
+        let project_mark = |p: [f64; 2]| {
+            let at = cam.local_of(p[0], p[1], self.ground_at(p[0], p[1]));
+            if self.hidden(at) {
+                None
+            } else {
+                self.screen_of(origin, at)
+            }
+        };
+        crate::plugins::shapes::paint_marks(ui, painter, &project_mark, layers.shapes, None);
     }
+
+    /// The geofence on the ground (`setPolygonOverlay`: warning colour, 3 px,
+    /// dashed 2 to 1.5, a 6 percent wash): each side is cut into short pieces
+    /// and the ones behind a hill are left out, as the track is.
+    fn paint_fence(&self, painter: &egui::Painter, origin: Pos2, fence: &[[f64; 2]]) {
+        let warning = crate::ui::style::warning();
+        let mut runs: Vec<Vec<Pos2>> = vec![Vec::new()];
+        let mut seen = 0usize;
+        let mut total = 0usize;
+        for i in 0..fence.len() {
+            let (a, b) = (fence[i], fence[(i + 1) % fence.len()]);
+            let local = |t: f64| {
+                let (lng, lat) = (a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t);
+                self.cam.local_of(lng, lat, self.ground_at(lng, lat) + 1.0)
+            };
+            let (pa, pb) = (local(0.0), local(1.0));
+            let metres = (pb[0] - pa[0]).hypot(pb[1] - pa[1]);
+            let pieces = ((metres / FENCE_PIECE_M).ceil() as usize).clamp(1, 64);
+            for k in 0..=pieces {
+                let p = local(k as f64 / pieces as f64);
+                total += 1;
+                match self.screen_of(origin, p).filter(|_| !self.hidden(p)) {
+                    Some(s) => {
+                        seen += 1;
+                        runs.last_mut().expect("a run is open").push(s);
+                    }
+                    None => {
+                        if !runs.last().is_some_and(Vec::is_empty) {
+                            runs.push(Vec::new());
+                        }
+                    }
+                }
+            }
+        }
+        for run in runs.iter().filter(|r| r.len() >= 2) {
+            painter.extend(Shape::dashed_line(run, Stroke::new(3.0, warning), 6.0, 4.5));
+        }
+        if seen * 2 > total {
+            let pts: Vec<Pos2> = fence
+                .iter()
+                .filter_map(|c| self.screen_of(origin, self.cam.local_of(c[0], c[1], self.ground_at(c[0], c[1]))))
+                .collect();
+            if pts.len() == fence.len() {
+                let mut mesh = Mesh::default();
+                for p in &pts {
+                    mesh.colored_vertex(*p, warning.gamma_multiply(0.06));
+                }
+                for t in crate::setup::geofence_card::triangulate(&pts) {
+                    mesh.add_triangle(t[0] as u32, t[1] as u32, t[2] as u32);
+                }
+                painter.add(mesh);
+            }
+        }
+    }
+}
+
+/// Whether the ground, as `ground` gives its height above sea level at a
+/// longitude and latitude, rises above the straight line from the camera to
+/// `target` (local metres). The last 3 percent of the line is not tested, so
+/// the ground a marker stands on does not hide it.
+fn line_blocked(cam: &Camera, target: V3, ground: &dyn Fn(f64, f64) -> f64) -> bool {
+    let view = cam.view();
+    const STEPS: usize = 48;
+    for i in 1..STEPS {
+        let t = i as f64 / STEPS as f64;
+        if t > 0.97 {
+            break;
+        }
+        let p = [
+            view.pos[0] + (target[0] - view.pos[0]) * t,
+            view.pos[1] + (target[1] - view.pos[1]) * t,
+            view.pos[2] + (target[2] - view.pos[2]) * t,
+        ];
+        let (lng, lat) = cam.geo_of(p[0], p[1]);
+        if ground(lng, lat) - cam.ground > p[2] + 1.0 {
+            return true;
+        }
+    }
+    false
 }
 
 /// The fog over the far ground at the horizon (`fog-ground-blend`): a band
@@ -927,26 +1228,29 @@ fn haze(painter: &egui::Painter, rect: Rect, horizon: f32) {
 /// run 0 to 1 over the leaf; the shade bakes the hillshade in.
 fn build_leaf(l: Leaf, dem: Option<&Dem>, k: f64) -> MeshData {
     let n = GRID + 1;
-    let mut heights = vec![0f32; n * n];
+    // One more row and column of heights all round, so the shade of an edge
+    // vertex is read across the edge and matches the leaf next to it.
+    let m = n + 2;
+    let mut padded = vec![0f32; m * m];
     if let Some((tile, (u0, v0, size))) = dem {
-        for j in 0..n {
-            for i in 0..n {
-                let (u, v) = (i as f64 / GRID as f64, j as f64 / GRID as f64);
-                heights[j * n + i] = tile.sample(u0 + u * size, v0 + v * size);
+        for j in 0..m {
+            for i in 0..m {
+                let (u, v) = ((i as f64 - 1.0) / GRID as f64, (j as f64 - 1.0) / GRID as f64);
+                padded[j * m + i] = tile.sample(u0 + u * size, v0 + v * size);
             }
         }
     }
+    let heights: Vec<f32> = (0..n * n).map(|q| padded[(q / n + 1) * m + q % n + 1]).collect();
     let side = 2.0 * std::f64::consts::PI * crate::map3d::camera::R / 2f64.powi(i32::from(l.z));
     let step = side * k / GRID as f64;
     let shade_at = |i: usize, j: usize| -> f32 {
         if dem.is_none() {
             return 1.0;
         }
-        let h = |i: usize, j: usize| f64::from(heights[j * n + i]);
-        let (i0, i1) = (i.saturating_sub(1), (i + 1).min(GRID));
-        let (j0, j1) = (j.saturating_sub(1), (j + 1).min(GRID));
-        let dzde = (h(i1, j) - h(i0, j)) / ((i1 - i0) as f64 * step);
-        let dzdn = -(h(i, j1) - h(i, j0)) / ((j1 - j0) as f64 * step);
+        let h = |i: usize, j: usize| f64::from(padded[j * m + i]);
+        let (pi, pj) = (i + 1, j + 1);
+        let dzde = (h(pi + 1, pj) - h(pi - 1, pj)) / (2.0 * step);
+        let dzdn = -(h(pi, pj + 1) - h(pi, pj - 1)) / (2.0 * step);
         let len = (dzde * dzde + dzdn * dzdn + 1.0).sqrt();
         let lit = (-dzde * LIGHT[0] - dzdn * LIGHT[1] + LIGHT[2]) / len;
         1.0 - SHADE * ((LIGHT[2] - lit) / LIGHT[2]).clamp(0.0, 1.0) as f32
@@ -1015,7 +1319,12 @@ mod tests {
         // A ramp rising to the east: 0 m at the west edge, 700 m at the east.
         let heights: Vec<f32> = (0..size * size).map(|i| (i % size) as f32 * 100.0).collect();
         let dem: Dem = (Arc::new(DemTile::from_heights(size, heights)), (0.0, 0.0, 1.0));
-        let leaf = Leaf { z: 10, x: 540, y: 355 };
+        let leaf = Leaf {
+            z: 10,
+            x: 540,
+            y: 355,
+            wrap: 0,
+        };
         let m = build_leaf(leaf, Some(&dem), 0.67);
         let n = GRID + 1;
         let verts = m.verts.len() / FLOATS;
@@ -1037,12 +1346,174 @@ mod tests {
     }
 
     #[test]
+    fn neighbouring_leaves_shade_their_shared_edge_alike() {
+        let size = 64;
+        let heights: Vec<f32> = (0..size * size)
+            .map(|i| {
+                let (x, y) = ((i % size) as f32, (i / size) as f32);
+                300.0 * (x * 0.21).sin() + 200.0 * (y * 0.17).cos()
+            })
+            .collect();
+        let tile = Arc::new(DemTile::from_heights(size, heights));
+        let west: Dem = (tile.clone(), (0.0, 0.25, 0.5));
+        let east: Dem = (tile, (0.5, 0.25, 0.5));
+        let (a, b) = (
+            build_leaf(
+                Leaf {
+                    z: 12,
+                    x: 2184,
+                    y: 1420,
+                    wrap: 0,
+                },
+                Some(&west),
+                0.68,
+            ),
+            build_leaf(
+                Leaf {
+                    z: 12,
+                    x: 2185,
+                    y: 1420,
+                    wrap: 0,
+                },
+                Some(&east),
+                0.68,
+            ),
+        );
+        let n = GRID + 1;
+        for j in 0..n {
+            let (right_of_west, left_of_east) = (a.verts[(j * n + GRID) * FLOATS + 5], b.verts[(j * n) * FLOATS + 5]);
+            assert!(
+                (right_of_west - left_of_east).abs() < 1e-5,
+                "row {j}: {right_of_west} against {left_of_east}"
+            );
+        }
+    }
+
+    fn view_at(lng: f64, lat: f64, zoom: f64, pitch: f64) -> Map3d {
+        let ctx = egui::Context::default();
+        let mut m = Map3d::new(&ctx, &Server::local(9), "satellite", 19);
+        m.cam.set_centre((lng, lat));
+        m.cam.zoom = zoom;
+        m.cam.pitch = pitch;
+        m
+    }
+
+    #[test]
+    fn the_ground_continues_across_the_antimeridian() {
+        let m = view_at(179.95, 10.0, 8.0, 0.0);
+        let leaves = m.leaves();
+        let n = |z: u8| 1u32 << z;
+        assert!(leaves.iter().any(|l| l.wrap == 0), "the east edge of the main world");
+        assert!(leaves.iter().any(|l| l.wrap == 1), "its far side, the same tiles again");
+        assert!(leaves.iter().all(|l| l.x < n(l.z) && l.y < n(l.z)));
+        let east = leaves.iter().find(|l| l.wrap == 1).unwrap();
+        let west = leaves
+            .iter()
+            .find(|l| l.wrap == 0 && l.z == east.z && l.x == n(east.z) - 1);
+        assert!(west.is_some(), "the copy sits next to the last column");
+        assert!(east.x_world() >= f64::from(n(east.z)), "and is counted past it");
+    }
+
+    #[test]
+    fn the_view_holds_near_the_poles() {
+        for pitch in [0.0, 60.0] {
+            let m = view_at(10.0, 89.0, 6.0, pitch);
+            let leaves = m.leaves();
+            assert!(!leaves.is_empty());
+            assert!(leaves.iter().all(|l| l.y < (1 << l.z)), "rows stay on the map");
+            assert!(m.cam.lat <= crate::map3d::camera::MAX_LAT);
+        }
+    }
+
+    #[test]
+    fn two_hundred_camera_jumps_leave_the_caches_bounded() {
+        let mut m = view_at(0.0, 0.0, 12.0, 60.0);
+        let mut seed = 0x9E37_79B9_7F4A_7C15u64;
+        let mut next = move || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            (seed >> 11) as f64 / (1u64 << 53) as f64
+        };
+        let (mut most_meshes, mut most_textures) = (0, 0);
+        for _ in 0..200 {
+            m.cam.set_centre((next() * 360.0 - 180.0, next() * 140.0 - 70.0));
+            m.cam.zoom = 3.0 + next() * 14.0;
+            m.cam.bearing = next() * 360.0;
+            m.cam.pitch = next() * 60.0;
+            m.frame += 40;
+            let leaves = m.leaves();
+            assert!(leaves.len() <= MAX_LEAVES + 8, "{} leaves", leaves.len());
+            let (items, built, _) = m.ground_items(&leaves);
+            assert!(built <= MESH_BUILDS_PER_FRAME);
+            assert!(items.len() <= leaves.len());
+            m.imagery.trim();
+            most_meshes = most_meshes.max(m.leaf_meshes.len());
+            most_textures = most_textures.max(m.tex_ids.len());
+        }
+        assert!(most_meshes <= MAX_LEAVES * 4, "{most_meshes} leaf meshes held");
+        assert!(
+            most_textures <= TEXTURES + MAX_LEAVES * 2,
+            "{most_textures} texture ids held"
+        );
+    }
+
+    #[test]
+    fn a_ridge_hides_what_lies_behind_it_and_not_what_is_above_it() {
+        let m = view_at(11.0, 47.0, 14.0, 60.0);
+        let cam = m.cam;
+        let wall_at = cam.geo_of(0.0, 150.0).1;
+        let ridge = move |_: f64, lat: f64| if (lat - wall_at).abs() < 0.0003 { 400.0 } else { 0.0 };
+        let behind = cam.local_of(11.0, cam.geo_of(0.0, 600.0).1, 0.0);
+        assert!(
+            line_blocked(&cam, behind, &ridge),
+            "a marker on the ground behind the ridge"
+        );
+        let high = cam.local_of(11.0, cam.geo_of(0.0, 600.0).1, 900.0);
+        assert!(!line_blocked(&cam, high, &ridge), "an aircraft above the ridge line");
+        let before = cam.local_of(11.0, cam.geo_of(0.0, -300.0).1, 0.0);
+        assert!(!line_blocked(&cam, before, &ridge), "a marker on this side of it");
+        assert!(!line_blocked(&cam, behind, &|_, _| 0.0), "flat ground hides nothing");
+    }
+
+    #[test]
+    fn a_sea_level_flat_view_needs_a_handful_of_leaves() {
+        let m = view_at(11.62, 48.1, 14.0, 60.0);
+        let n = m.leaves().len();
+        assert!((4..=300).contains(&n), "{n} leaves for one screen");
+    }
+
+    #[test]
     fn a_leaf_covers_its_part_of_an_ancestor() {
-        let whole = uv_of(Leaf { z: 5, x: 3, y: 4 }, 5);
+        let whole = uv_of(
+            Leaf {
+                z: 5,
+                x: 3,
+                y: 4,
+                wrap: 0,
+            },
+            5,
+        );
         assert_eq!((whole.min, whole.size()), (Pos2::ZERO, Vec2::splat(1.0)));
-        let quarter = uv_of(Leaf { z: 6, x: 7, y: 8 }, 5);
+        let quarter = uv_of(
+            Leaf {
+                z: 6,
+                x: 7,
+                y: 8,
+                wrap: 0,
+            },
+            5,
+        );
         assert_eq!((quarter.min, quarter.size()), (Pos2::new(0.5, 0.0), Vec2::splat(0.5)));
-        let sixteenth = uv_of(Leaf { z: 7, x: 13, y: 14 }, 5);
+        let sixteenth = uv_of(
+            Leaf {
+                z: 7,
+                x: 13,
+                y: 14,
+                wrap: 0,
+            },
+            5,
+        );
         assert_eq!(
             (sixteenth.min, sixteenth.size()),
             (Pos2::new(0.25, 0.5), Vec2::splat(0.25))
