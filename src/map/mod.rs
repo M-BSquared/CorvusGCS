@@ -679,6 +679,11 @@ impl Map {
                 }
             }
         }
+        if self.three_d && crate::map3d::gpu::failure().is_some() {
+            // This OpenGL cannot draw the 3D view: the flat map stays, and the
+            // 3D panel says why.
+            self.set_three_d(false);
+        }
         if self.three_d {
             self.show_3d(ui, state, vehicle, home, heading);
             return;

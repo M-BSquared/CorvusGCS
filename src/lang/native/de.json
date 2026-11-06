@@ -6,6 +6,7 @@
     "RTK base link degraded, float fix": "RTK-Basisverbindung verschlechtert, Float-Lösung",
     "Takeoff altitude reached": "Abhebehöhe erreicht",
     "Takeoff detected, mode {a}": "Abheben erkannt, Modus {a}",
+    "The 3D map cannot draw on this OpenGL: {a}": "Die 3D-Karte kann mit diesem OpenGL nicht zeichnen: {a}",
     "downloading…": "wird heruntergeladen…",
     "incomplete": "unvollständig",
     "z{a} to {b}": "z{a} bis {b}",

@@ -14,7 +14,10 @@ pub const R: f64 = 6_378_137.0;
 pub const FOV_DEG: f64 = 36.87;
 /// `THREE_D_PITCH`: where the camera goes when 3D is switched on.
 pub const THREE_D_PITCH: f64 = 60.0;
-pub const MAX_PITCH: f64 = 85.0;
+/// MapLibre's own limit, which the web map does not raise.
+pub const MAX_PITCH: f64 = 60.0;
+/// The lowest zoom the view goes out to (the web map's whole world view).
+pub const MIN_ZOOM: f64 = 3.0;
 
 pub type V3 = [f64; 3];
 
@@ -206,6 +209,34 @@ impl Camera {
         }
     }
 
+    /// Sets the zoom so the ground under pixel `(x, y)` stays under it: the
+    /// wheel zooms to the pointer, as MapLibre's scroll zoom does.
+    pub fn zoom_at(&mut self, x: f64, y: f64, zoom: f64) {
+        let before = self.ground_at(x, y, 0.0);
+        self.zoom = zoom;
+        if let (Some(a), Some(b)) = (before, self.ground_at(x, y, 0.0)) {
+            let (lng, lat) = self.geo_of(a.0 - b.0, a.1 - b.1);
+            self.lng = lng;
+            self.lat = lat;
+        }
+    }
+
+    /// Lowers the tilt, a degree at a time, until the camera is `margin`
+    /// metres above the ground under it. `ground` answers the height above
+    /// sea level at a longitude and latitude, `None` where it is not known.
+    pub fn keep_above(&mut self, ground: impl Fn(f64, f64) -> Option<f64>, margin: f64) {
+        for _ in 0..=MAX_PITCH as usize {
+            let (pos, ..) = self.basis();
+            let (lng, lat) = self.geo_of(pos[0], pos[1]);
+            match ground(lng, lat) {
+                Some(h) if pos[2] + self.ground < h + margin && self.pitch > 0.0 => {
+                    self.pitch = (self.pitch - 1.0).max(0.0);
+                }
+                _ => return,
+            }
+        }
+    }
+
     /// Turns by `dx` px and tilts by `dy` px of a right drag.
     pub fn turn(&mut self, dx: f64, dy: f64) {
         self.bearing = (self.bearing + dx * 0.4).rem_euclid(360.0);
@@ -324,6 +355,41 @@ mod tests {
         let (e, n) = c.ground_at(450.0, 380.0, 0.0).unwrap();
         let after = c.geo_of(e, n);
         assert!((before.0 - after.0).abs() < 1e-7 && (before.1 - after.1).abs() < 1e-7);
+    }
+
+    #[test]
+    fn the_wheel_zooms_to_the_pointer() {
+        let mut c = cam(60.0, 20.0);
+        let at = (560.0, 420.0);
+        let before = c.ground_at(at.0, at.1, 0.0).map(|(e, n)| c.geo_of(e, n)).unwrap();
+        c.zoom_at(at.0, at.1, c.zoom + 1.5);
+        let after = c.ground_at(at.0, at.1, 0.0).map(|(e, n)| c.geo_of(e, n)).unwrap();
+        assert!((before.0 - after.0).abs() < 1e-7 && (before.1 - after.1).abs() < 1e-7);
+        assert_eq!(c.zoom, 17.5);
+        let mut m = cam(60.0, 0.0);
+        let centre = (m.lng, m.lat);
+        m.zoom_at(400.0, 300.0, 15.0);
+        assert!((m.lng - centre.0).abs() < 1e-9 && (m.lat - centre.1).abs() < 1e-9);
+    }
+
+    #[test]
+    fn the_camera_does_not_go_under_the_ground() {
+        let mut c = cam(60.0, 0.0);
+        c.zoom = 12.0;
+        let cam_height = |c: &Camera| c.basis().0[2] + c.ground;
+        let high = cam_height(&c) + 400.0;
+        c.keep_above(|_, _| Some(high), 8.0);
+        assert!(c.pitch < 60.0, "the tilt came down");
+        assert!(cam_height(&c) >= high + 8.0 - 1e-6 || c.pitch == 0.0);
+        let mut free = cam(60.0, 0.0);
+        free.keep_above(|_, _| Some(0.0), 8.0);
+        assert_eq!(free.pitch, 60.0, "open ground changes nothing");
+        let mut unknown = cam(60.0, 0.0);
+        unknown.keep_above(|_, _| None, 8.0);
+        assert_eq!(unknown.pitch, 60.0, "no elevation, no change");
+        let mut wall = cam(60.0, 0.0);
+        wall.keep_above(|_, _| Some(1e9), 8.0);
+        assert_eq!(wall.pitch, 0.0, "it stops at a top down view");
     }
 
     #[test]
