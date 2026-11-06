@@ -73,6 +73,8 @@
 //!   NaN and infinity into `0.0` as `_sanitize` does; [`json::error`] is
 //!   `{"error": ...}`. A response equals the Python one as parsed JSON.
 
+pub use corvus_link as link;
+
 pub mod buffer;
 pub mod bundle;
 pub mod clock;
@@ -108,3 +110,23 @@ pub use crate::request::{Headers, Method, Origin, Query, Request};
 pub use crate::response::{Response, SseEvent, SseNext, SseStream, UNAVAILABLE};
 pub use crate::router::{Body, Handler, Pattern, Route, RouteOptions, Router, MAX_JSON_BODY, MAX_SETTINGS_BODY};
 pub use crate::settings::{ConfigListener, Settings};
+
+#[cfg(test)]
+mod link_tests {
+    use crate::link::plain::frame::{encode, Event, Parser, Proto};
+    use crate::link::plain::{defs::Wire, Message, Value};
+
+    #[test]
+    fn the_core_reaches_the_plain_mavlink_layer() {
+        let hb = Message::named("HEARTBEAT", Wire::V2)
+            .unwrap()
+            .with("type", Value::Int(2))
+            .with("autopilot", Value::Int(12));
+        let bytes = encode(Proto::V2, 1, 255, 190, &hb, None).unwrap();
+        let events = Parser::new().feed(&bytes);
+        let Event::Frame(f) = &events[0] else {
+            panic!("{events:?}")
+        };
+        assert_eq!(f.message().unwrap().get("autopilot"), Some(&Value::Int(12)));
+    }
+}
