@@ -10,6 +10,7 @@
 //! own. Every command is a POST to the same endpoint the web button posts
 //! to, on a thread of its own, and the button is busy until the answer.
 
+use crate::ui::tip::HoverTr;
 use std::sync::{Arc, Mutex};
 
 use eframe::egui::{self, Pos2, Rect, Stroke, Vec2};
@@ -685,7 +686,7 @@ impl FlightBar {
                         style::text_3()
                     },
                 );
-                if resp.on_hover_text("Close").clicked() {
+                if resp.on_hover_tr("Close").clicked() {
                     closed = true;
                 }
 
@@ -932,7 +933,7 @@ impl FlightBar {
     ) {
         let busy = self.busy(Command::Mode);
         let response = ui.interact(rect, ui.scope_id().with("modesel"), egui::Sense::click());
-        let response = response.on_hover_text(if ground { "Drive Mode" } else { "Flight Mode" });
+        let response = response.on_hover_tr(if ground { "Drive Mode" } else { "Flight Mode" });
         let fill = if response.hovered() && !busy {
             style::tint(0.10)
         } else {

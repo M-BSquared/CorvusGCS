@@ -4,6 +4,7 @@
 //! auto-connect just saw, the serial ports no link holds and a field for any
 //! other connection.
 
+use crate::ui::tip::HoverTr;
 use eframe::egui::{self, Color32, Pos2, Rect, Stroke, Vec2};
 use serde_json::Value;
 
@@ -297,7 +298,7 @@ impl Dialog {
                 circle(ui, sw.center(), SWATCH, paint_color.gamma_multiply(dim));
                 let sresp = ui
                     .interact(sw, ui.scope_id().with(("swatch", &v.id)), egui::Sense::click())
-                    .on_hover_text("Colour on the map");
+                    .on_hover_tr("Colour on the map");
                 if sresp.clicked() {
                     this.palette_for = if open_palette { None } else { Some(v.id.clone()) };
                 }
@@ -418,7 +419,7 @@ impl Dialog {
                                 ui.scope_id().with(("chip", &v.id, i)),
                                 egui::Sense::click(),
                             )
-                            .on_hover_text(if c.is_empty() { "Theme colour" } else { c.as_str() });
+                            .on_hover_tr(if c.is_empty() { "Theme colour" } else { c.as_str() });
                         if resp.clicked() {
                             color = Some((v.id.clone(), c.clone()));
                             this.palette_for = None;

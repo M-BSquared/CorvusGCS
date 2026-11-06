@@ -11,11 +11,14 @@
     "This page stopped working": "De Seitn geht nimma",
     "downloading…": "werd runtergelade…",
     "incomplete": "ned fertich",
+    "not connected": "ned verbundne *Schnauf*",
     "z{a} to {b}": "z{a} bis {b}",
     "{a} Notification": "{a} Meldung",
     "{a} Notifications": "{a} Meldungen",
     "{a} area": "{a} Bereich",
     "{a} areas": "{a} Bereiche",
-    "{a} new": "{a} neu"
+    "{a} new": "{a} neu",
+    "{a} new line": "{a} neue Zeil",
+    "{a} new lines": "{a} neue Zeiln"
   }
 }

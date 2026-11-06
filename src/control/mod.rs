@@ -10,6 +10,7 @@
 
 pub mod model;
 
+use crate::ui::tip::HoverTr;
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
@@ -541,7 +542,7 @@ impl Control {
         );
         let toggle = ui
             .interact(btn, ui.scope_id().with("padcollapse"), egui::Sense::click())
-            .on_hover_text(if collapsed {
+            .on_hover_tr(if collapsed {
                 "Expand the control pad"
             } else {
                 "Collapse the control pad"

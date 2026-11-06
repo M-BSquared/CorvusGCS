@@ -1,6 +1,7 @@
 //! The plugin's view (`.ent-*` of `map-entities.css`): the summary, the
 //! palette, the list and the editor of the selected entity.
 
+use crate::ui::tip::HoverTr;
 use eframe::egui::{self, Color32, Pos2, Rect, Stroke, StrokeKind, Vec2};
 
 use super::model::{
@@ -196,7 +197,7 @@ fn small_tool(
 ) -> bool {
     let resp = ui
         .interact(r, ui.scope_id().with(id), egui::Sense::click())
-        .on_hover_text(title);
+        .on_hover_tr(title);
     let hot = resp.hovered();
     let (fill, ink) = if hot && remove {
         (style::critical().gamma_multiply(0.16), style::critical())
@@ -276,7 +277,7 @@ fn kind_button(
 ) -> bool {
     let resp = ui
         .interact(r, ui.scope_id().with(("enkind", id)), egui::Sense::click())
-        .on_hover_text(format!("Place: {label}"));
+        .on_hover_tr(format!("Place: {label}"));
     let (fill, line) = if active {
         (
             mix(style::surface_2(), style::nav(), 0.14),

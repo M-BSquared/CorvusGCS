@@ -234,6 +234,7 @@ impl SetupPage {
             View::Radio(p) => p.take_notes(),
             View::Tuning(p) => p.take_notes(),
             View::Firmware(p) => p.take_notes(),
+            View::Safety(p) => p.take_notes(),
             View::FirstSetup(p) => p.take_notes(),
             _ => Vec::new(),
         }

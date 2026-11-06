@@ -25,4 +25,5 @@ pub mod select;
 pub mod slider;
 pub mod style;
 pub mod text;
+pub mod tip;
 pub mod toggle;

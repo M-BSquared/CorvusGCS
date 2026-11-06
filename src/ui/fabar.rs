@@ -3,6 +3,7 @@
 //! glass, its padding and the fitting of its buttons to the room are the
 //! caller's (`home::flight::fit_bar`); this paints one button.
 
+use crate::ui::tip::HoverTr;
 use eframe::egui::{self, Color32, Rect, Stroke, Vec2};
 
 use crate::ui::icons;
@@ -47,7 +48,7 @@ pub fn button(
     let resp = if title.is_empty() {
         resp
     } else {
-        resp.on_hover_text(title)
+        resp.on_hover_tr(title)
     };
     let hovered = resp.hovered() && !look.disabled && !look.busy;
     let (fill, color) = if look.armed {

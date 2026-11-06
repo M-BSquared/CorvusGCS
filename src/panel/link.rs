@@ -8,6 +8,7 @@
 //! the same sentence, and the forwarding hint is forwardingHint word for
 //! word. Recent links and the plug-in suggestion row come later.
 
+use crate::ui::tip::HoverTr;
 use eframe::egui::{self, Color32, Pos2, Rect, Shape, Stroke, Vec2};
 use serde_json::{json, Value};
 
@@ -472,7 +473,7 @@ impl LinkTab {
             let r = Rect::from_min_size(Pos2::new(rx - 25.0, cy - 12.5), Vec2::splat(25.0));
             let resp = ui
                 .interact(r, ui.scope_id().with("reconnect"), egui::Sense::click())
-                .on_hover_text("Reconnect this link");
+                .on_hover_tr("Reconnect this link");
             if resp.hovered() {
                 painter.rect_filled(r, style::RADIUS_BTN, style::tint(0.04));
             }
@@ -511,7 +512,7 @@ impl LinkTab {
                 dashed_pill(&painter, pill, style::border_strong());
                 painter.galley(pill.min + Vec2::new(6.0, 3.0), bg, style::text_3());
                 ui.interact(pill, ui.scope_id().with("autobadge"), egui::Sense::hover())
-                    .on_hover_text(*title);
+                    .on_hover_tr(*title);
                 bx = pill.left() - 8.0;
             }
             if !conn.is_empty() {
@@ -523,7 +524,7 @@ impl LinkTab {
                     style::text_2(),
                 );
                 ui.interact(clip, ui.scope_id().with("conn"), egui::Sense::hover())
-                    .on_hover_text(conn.as_str());
+                    .on_hover_tr(conn.as_str());
             }
             ly += why_h;
         }
@@ -534,7 +535,7 @@ impl LinkTab {
             let clip = Rect::from_min_size(Pos2::new(inner.left(), ly + 9.0), Vec2::new(inner.width(), 15.4));
             ui.painter_at(clip).galley(clip.min, eg, style::critical());
             ui.interact(clip, ui.scope_id().with("err"), egui::Sense::hover())
-                .on_hover_text(error.as_str());
+                .on_hover_tr(error.as_str());
         }
         card.bottom()
     }
@@ -677,7 +678,7 @@ impl LinkTab {
                         Rect::from_min_size(Pos2::new(inner_x, cy), Vec2::new(iw, 2.0 + 12.0 + 2.0 + 11.0 * 1.25));
                     let resp = ui
                         .interact(row, ui.scope_id().with(("preset", i)), egui::Sense::click())
-                        .on_hover_text(*conn);
+                        .on_hover_tr(*conn);
                     let (fill, stroke) = if resp.hovered() {
                         (style::glass(0.95), style::accent_a(0.45))
                     } else {

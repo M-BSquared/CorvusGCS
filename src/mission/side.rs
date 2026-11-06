@@ -5,6 +5,7 @@
 //! are flown, the editor for the selected item, and the buttons that put the
 //! plan on the vehicle or in a file.
 
+use crate::ui::tip::HoverTr;
 use eframe::egui::{self, Color32, Pos2, Rect, Stroke, Vec2};
 
 use crate::data::units::js_number;
@@ -898,7 +899,7 @@ impl MissionPage {
                     }
                     self.side.row_drag = None;
                 }
-                dh.on_hover_text("Drag to reorder");
+                dh.on_hover_tr("Drag to reorder");
             }
             let tint = |c: Color32| if done { style::text_3() } else { c };
             let kind_colour = match item.kind {

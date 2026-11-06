@@ -327,6 +327,7 @@ impl App {
 
     fn draw(&mut self, ui: &mut egui::Ui) {
         let state: Value = self.telemetry.state();
+        crate::ui::pagekit::set_link_up(state.get("connected") != Some(&Value::Bool(false)));
         let now = now_ms();
         self.map.update(&state);
         let caps = self.caps.get(ui.ctx(), &self.server, &state).clone();
@@ -740,7 +741,11 @@ impl eframe::App for App {
             let (x, y) = v.split_once(',')?;
             Some(egui::pos2(x.trim().parse().ok()?, y.trim().parse().ok()?))
         }) {
-            raw_input.events.push(egui::Event::PointerMoved(p));
+            // Sent only at the start: a pointer that keeps moving never shows
+            // a tooltip, and a still one does after its delay.
+            if now < 3.0 {
+                raw_input.events.push(egui::Event::PointerMoved(p));
+            }
         }
     }
 

@@ -1382,21 +1382,7 @@ impl CalibrationPage {
 
 /// The readiness chip: a status dot and a word, green when ready, red when not.
 fn ready_chip(text: &str, ok: bool) -> Chip {
-    if ok {
-        Chip {
-            fg: style::text_1(),
-            dot: Some((style::healthy(), true)),
-            ..Chip::new(text)
-        }
-    } else {
-        Chip {
-            fg: style::critical_bright(),
-            bg: style::critical_dark(),
-            border: style::critical(),
-            dot: Some((style::critical(), true)),
-            ..Chip::new(text)
-        }
-    }
+    Chip::ready(text, ok)
 }
 
 /// One calibration of the list; true when pressed.

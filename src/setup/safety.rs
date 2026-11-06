@@ -313,6 +313,10 @@ impl SafetyPage {
         p
     }
 
+    pub fn take_notes(&mut self) -> Vec<String> {
+        self.geofence.take_notes()
+    }
+
     pub fn take_errors(&mut self) -> Vec<String> {
         let mut e = std::mem::take(&mut self.errors);
         e.extend(self.form.take_errors());

@@ -1,5 +1,6 @@
 //! `.btn` and its variants, and `.icon-btn`: every button of the app.
 
+use crate::ui::tip::HoverTr;
 use std::sync::Arc;
 
 use eframe::egui::{self, Color32, Galley, Pos2, Rect, Stroke, Vec2};
@@ -135,7 +136,7 @@ impl<'a> Button<'a> {
         };
         let mut resp = ui.interact(rect, ui.scope_id().with(id), sense);
         if !self.title.is_empty() {
-            resp = resp.on_hover_text(self.title);
+            resp = resp.on_hover_tr(self.title);
         }
         let hover = resp.hovered() && self.enabled;
         let (fill, text, stroke) = match self.variant {
@@ -228,7 +229,7 @@ pub fn icon_btn(
 ) -> bool {
     let resp = ui
         .interact(rect, ui.scope_id().with(id), egui::Sense::click())
-        .on_hover_text(title);
+        .on_hover_tr(title);
     let (fill, color) = if active {
         (style::accent_dark(), style::accent_bright())
     } else if resp.hovered() {

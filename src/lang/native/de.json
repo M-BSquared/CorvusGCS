@@ -11,11 +11,14 @@
     "This page stopped working": "Diese Seite funktioniert nicht mehr",
     "downloading…": "wird heruntergeladen…",
     "incomplete": "unvollständig",
+    "not connected": "nicht verbunden",
     "z{a} to {b}": "z{a} bis {b}",
     "{a} Notification": "{a} Meldung",
     "{a} Notifications": "{a} Meldungen",
     "{a} area": "{a} Bereich",
     "{a} areas": "{a} Bereiche",
-    "{a} new": "{a} neu"
+    "{a} new": "{a} neu",
+    "{a} new line": "{a} neue Zeile",
+    "{a} new lines": "{a} neue Zeilen"
   }
 }

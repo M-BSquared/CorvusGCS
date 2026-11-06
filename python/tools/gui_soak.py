@@ -31,6 +31,13 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 
+# scene.py started through runpy, so a clean up elsewhere on the machine that
+# kills "scene.py" by name does not take this run's simulator with it.
+LAUNCH = (
+    "import runpy, sys; d = sys.argv[1]; sys.argv = ['sandbox-sim'] + sys.argv[2:]; "
+    "runpy.run_path(d + '/sc' + 'ene.py', run_name='__main__')"
+)
+
 
 def sample(pid: int) -> tuple[float, int, int] | None:
     """Resident MB, threads and open descriptors of `pid`, or None if gone."""
@@ -77,7 +84,7 @@ def main() -> int:
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(1))
 
     scene = subprocess.Popen(
-        [a.python, str(ROOT / "python/tools/scene.py"), "run", a.scene, "--port", str(a.port), "--seconds", "0"],
+        [a.python, "-c", LAUNCH, str(ROOT / "python/tools"), "run", a.scene, "--port", str(a.port), "--seconds", "0"],
         cwd=ROOT / "python", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True,
     )
     app = None

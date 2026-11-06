@@ -2,6 +2,7 @@
 //! `.nav-item`): HOME, MISSION when the config turns the planner on (a
 //! hairline otherwise), SETUP, ANALYSIS, LOGS, and SET at the bottom.
 
+use crate::ui::tip::HoverTr;
 use eframe::egui::{self, Color32, Pos2, Rect, Vec2};
 
 use crate::ui::icons;
@@ -146,7 +147,7 @@ pub fn show(
                 };
                 let mut resp = ui.interact(r, ui.scope_id().with(("nav", page as u8)), egui::Sense::click());
                 if !title.is_empty() {
-                    resp = resp.on_hover_text(&title);
+                    resp = resp.on_hover_tr(&title);
                 }
                 let is_active = page == active;
                 let (fill, icon_c, label_c) = if is_active {

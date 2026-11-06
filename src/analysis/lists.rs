@@ -2,6 +2,7 @@
 //! and the tlogs Corvus recorded, plus the erase confirmation
 //! (`buildUlog`, `buildTlog`, `confirmErase` of `python/src/js/analysis.js`).
 
+use crate::ui::tip::HoverTr;
 use eframe::egui::{self, Color32, Pos2, Rect, Stroke, Vec2};
 use serde_json::{json, Value};
 
@@ -99,7 +100,7 @@ fn review_button(
     let r = Rect::from_min_size(Pos2::new(right - w, row.center().y - h / 2.0), Vec2::new(w, h));
     let resp = ui
         .interact(r, ui.scope_id().with(id), egui::Sense::click())
-        .on_hover_text(title);
+        .on_hover_tr(title);
     if resp.hovered() {
         ui.painter().rect_filled(r, style::RADIUS_BTN, nav_dark());
     }
