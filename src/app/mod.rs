@@ -65,6 +65,7 @@ struct App {
     hud: Hud,
     flight: FlightBar,
     logo: egui::ImageSource<'static>,
+    company: crate::home::company::CompanyLogo,
     page: Page,
     setup: SetupPage,
     first_setup: crate::setup::firstsetup_watch::Prompt,
@@ -131,6 +132,7 @@ impl App {
         style::set_theme(e.theme);
         style::apply(ctx);
         self.logo = logo_source();
+        self.company.set(ctx, &e.company_logo, e.company_logo_rev);
         if !e.base_layer.is_empty() && self.map.has_layer(&e.base_layer) {
             self.map.set_source(ctx, &e.base_layer);
         }
@@ -338,6 +340,7 @@ impl App {
                 let _ = http::post_json(&server, "/api/warnings/clear", &serde_json::json!({}));
             });
         }
+        self.company.poll();
         let summary = self.board.summary(now);
 
         let vw = crate::app::responsive::Vw::of(ui.ctx());
@@ -379,6 +382,7 @@ impl App {
                     self.board.open,
                     &vw,
                     dot,
+                    self.company.loaded(),
                 );
                 if clicked.notifications {
                     let open = !self.board.open;
@@ -881,6 +885,11 @@ pub fn run(
                 },
                 flight,
                 logo,
+                company: {
+                    let mut c = crate::home::company::CompanyLogo::new(server.clone());
+                    c.set(&ctx, &settings::Effects::of(&config).company_logo, 0);
+                    c
+                },
                 page: start_page,
                 setup: {
                     let mut s = SetupPage::new(server.clone(), env.clone());

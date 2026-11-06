@@ -31,6 +31,9 @@ vte = "0.15.0"
 # The calibration wizard reads the autopilot's own STATUSTEXT wording with the
 # same patterns the web page uses (calib-protocol.js).
 regex = "1"
+# The system file dialog (Cocoa, Windows, and the desktop portal on Linux, so
+# no GTK or Qt is linked): a person picks a file instead of typing its path.
+rfd = "0.17"
 
 [build-dependencies]
 # The web interface's fonts are WOFF2 (src/vendor/fonts); egui reads TTF.

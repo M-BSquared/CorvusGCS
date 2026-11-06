@@ -1,4 +1,5 @@
 pub mod checklist_window;
+pub mod company;
 pub mod flight;
 pub mod hud;
 pub mod mapwindow;

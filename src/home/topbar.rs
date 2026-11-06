@@ -552,6 +552,7 @@ pub fn show(
     board_open: bool,
     vw: &crate::app::responsive::Vw,
     fleet: FleetDot,
+    company: Option<&crate::home::company::Loaded>,
 ) -> Clicked {
     let mut clicked = Clicked::default();
     let painter = ui.painter_at(rect);
@@ -619,6 +620,10 @@ pub fn show(
     let mut items: Vec<(f32, f32)> = vec![(logo_natural, logo_min)];
     items.extend(laid.iter().map(|l| (natural(l), 0.0)));
     items.push((notif_w, 0.0));
+    let company_w = company.map_or(0.0, |c| crate::home::company::width(c, vw.max600));
+    if company_w > 0.0 {
+        items.push((company_w, company_w));
+    }
     // between the items: the 2 px gap, the brand's 6 px margin, the 1 px
     // margin between two blocks, and the 3 px the notifications block sits off
     let gaps = 2.0 * (items.len() as f32 - 1.0) + 6.0 + laid.len().saturating_sub(1) as f32;
@@ -741,9 +746,13 @@ pub fn show(
         x + 3.0 - 1.0 + 1.0,
         notifications,
         board_open,
-        Some(widths[widths.len() - 1]),
+        Some(widths[1 + laid.len()]),
     );
     clicked.notifications = note_clicked;
+    if let Some(c) = company {
+        let at = x + 3.0 + widths[1 + laid.len()] + 2.0;
+        crate::home::company::paint(ui, rect, at, c, vw.max600);
+    }
     clicked
 }
 

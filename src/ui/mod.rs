@@ -4,6 +4,7 @@ pub mod chart;
 pub mod chip;
 pub mod fabar;
 pub mod field;
+pub mod filepicker;
 pub mod fonts;
 pub mod form;
 pub mod formfield;

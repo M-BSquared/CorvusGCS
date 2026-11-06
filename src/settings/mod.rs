@@ -54,6 +54,10 @@ pub struct Effects {
     pub track: crate::map::TrackLook,
     /// The top bar blocks switched off, by caption.
     pub topbar_hidden: Vec<&'static str>,
+    /// The company logo's file name (empty for none) and how often it was
+    /// replaced, so a new file under the same name is fetched again.
+    pub company_logo: String,
+    pub company_logo_rev: u32,
 }
 
 impl Effects {
@@ -92,6 +96,8 @@ impl Effects {
             .filter(|(k, d, _)| !model::flag(cfg, "ui", k, *d))
             .map(|(_, _, l)| l)
             .collect(),
+            company_logo: model::text(cfg, "branding", "logo").to_string(),
+            company_logo_rev: 0,
         }
     }
 }
@@ -130,7 +136,6 @@ pub(crate) enum Dialog {
     Ssh { original: Option<String> },
     SshRemove { name: String },
     Notice { title: String, lines: Vec<String> },
-    LogoFile,
     McpPerms,
     McpConnect { shown: bool },
     Credits,
@@ -367,7 +372,8 @@ impl SettingsPage {
     }
 
     fn sync_effects(&mut self) {
-        let now = Effects::of(&self.cfg);
+        let mut now = Effects::of(&self.cfg);
+        now.company_logo_rev = self.logo_rev;
         if now != self.effects {
             self.effects = now;
             self.effects_due = true;

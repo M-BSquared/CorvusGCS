@@ -31,7 +31,6 @@ impl SettingsPage {
             Dialog::Tokens => self.tokens_dialog(ctx),
             Dialog::DemRename { .. } | Dialog::DemRemove { .. } | Dialog::DemFiles { .. } => self.dem_dialogs(ctx),
             Dialog::Ssh { .. } | Dialog::SshRemove { .. } => self.ssh_dialogs(ctx),
-            Dialog::LogoFile => self.logo_dialog(ctx),
             Dialog::McpPerms | Dialog::McpConnect { .. } => self.mcp_dialogs(ctx),
             Dialog::Credits => self.credits_dialog(ctx),
             Dialog::Export | Dialog::Import | Dialog::Reset | Dialog::Notice { .. } => self.transfer_dialogs(ctx),
@@ -110,8 +109,13 @@ impl SettingsPage {
         });
         if choose {
             self.hush("logo");
-            self.text("logo_path").clear();
-            self.dialog = Some(Dialog::LogoFile);
+            let filter = crate::ui::filepicker::Filter {
+                name: "PNG",
+                extensions: &["png"],
+            };
+            if let Some(path) = crate::ui::filepicker::pick_file("Company logo", Some(filter)) {
+                self.upload_logo(ui.ctx(), &path);
+            }
         }
         if remove {
             self.say("logo", "Removing\u{2026}", Tone::Plain);
@@ -119,77 +123,20 @@ impl SettingsPage {
         }
     }
 
-    fn logo_dialog(&mut self, ctx: &egui::Context) -> bool {
-        let (mut go, mut close) = (false, false);
-        let msg = self.msgs.get("logo_dialog").cloned();
-        let buf = self.texts.entry("logo_path").or_default();
-        let closed = crate::ui::modal::show(
-            ctx,
-            "logo",
-            crate::ui::modal::Size::Md,
-            "Company logo",
-            |ui, x, y, w| {
-                let mut f = Form::new(x, y, w);
-                let resp = form::input(
-                ui,
-                &mut f,
-                "PNG file",
-                "",
-                "The path of a PNG on this computer. Optional artwork for the top right of the status bar, max 4 MB.",
-                buf,
-                "~/Pictures/logo.png",
-                true,
-                false,
-                "logopath",
-            );
-                if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                    go = true;
+    /// Reads the chosen file, checks it is a PNG and sends it.
+    fn upload_logo(&mut self, ctx: &egui::Context, path: &std::path::Path) {
+        let name = crate::ui::filepicker::file_name(path);
+        match std::fs::read(path) {
+            Err(_) => self.fail("logo", "Could not read the file."),
+            Ok(bytes) => match logo_problem(&name, &bytes) {
+                Some(p) => self.fail("logo", p),
+                None => {
+                    self.say("logo", "Uploading\u{2026}", Tone::Plain);
+                    let q = crate::net::http::encode_component(&name);
+                    self.act_bytes(ctx, "logo", &name, &format!("/api/branding/logo?name={q}"), bytes);
                 }
-                if let Some((t, tone)) = &msg {
-                    f.skip(10.0);
-                    form::message(ui, &mut f, t, *tone);
-                }
-                f.skip(18.0);
-                let (hit, bottom) = crate::ui::modal::actions(
-                    ui,
-                    f.x,
-                    f.y,
-                    f.w,
-                    vec![
-                        Button::new("CANCEL", Variant::Secondary),
-                        Button::new("UPLOAD", Variant::Primary).icon("upload"),
-                    ],
-                );
-                match hit {
-                    Some(0) => close = true,
-                    Some(1) => go = true,
-                    _ => {}
-                }
-                bottom
             },
-        );
-        if go {
-            let raw = self.text("logo_path").trim().trim_matches('"').to_string();
-            let path = raw.strip_prefix("~/").map_or(raw.clone(), |r| {
-                format!("{}/{r}", std::env::var("HOME").unwrap_or_default())
-            });
-            let name = std::path::Path::new(&path)
-                .file_name()
-                .map_or(String::new(), |n| n.to_string_lossy().into_owned());
-            match std::fs::read(&path) {
-                Err(_) => self.fail("logo_dialog", "Could not read the file."),
-                Ok(bytes) => match logo_problem(&name, &bytes) {
-                    Some(p) => self.fail("logo_dialog", p),
-                    None => {
-                        self.dialog = None;
-                        self.say("logo", "Uploading\u{2026}", Tone::Plain);
-                        let q = crate::net::http::encode_component(&name);
-                        self.act_bytes(ctx, "logo", &name, &format!("/api/branding/logo?name={q}"), bytes);
-                    }
-                },
-            }
         }
-        closed || close
     }
 
     pub(super) fn logo_done(&mut self, _ctx: &egui::Context, name: &'static str, answer: Result<Value, String>) {
@@ -219,6 +166,7 @@ impl SettingsPage {
             super::model::merge(&mut self.cfg, &json!({"branding": {"logo": file}}));
             self.say("logo", "Company logo updated.", Tone::Ok);
         }
+        self.sync_effects();
     }
 }
 

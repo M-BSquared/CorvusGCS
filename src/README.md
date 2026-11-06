@@ -52,6 +52,7 @@ SIGKILL if it is still there after 8 s. If the window does not close within
 | `src/net/sse.rs` | server-sent events |
 | `src/data/telemetry.rs` | the `/api/telemetry` reader thread and the latest state |
 | `src/data/units.rs` | display units from the config's `ui.units`, rounded the way the web interface rounds |
+| `src/home/company.rs` | the company logo at the far right of the top bar: fetched from `/api/branding/logo`, sized as `.tb-company-logo`, a PNG header read for its shape |
 | `src/home/topbar.rs` | the status bar, word for word the web interface's (`python/src/js/topbar.js`) |
 | `src/map/mod.rs` | the map (walkers) on the backend's tile proxy, vehicle and home markers |
 | `src/map/rail.rs` | the rail and the two buttons beside it: zoom, centre, layers, downloaded areas, measure, the clear track disc |
@@ -132,6 +133,7 @@ SIGKILL if it is still there after 8 s. If the window does not close within
 | `src/ui/kit.rs` | the facade of the controls, so `kit::Button` and the rest stay valid; each lives in its own file below |
 | `src/ui/button.rs`, `src/ui/select.rs`, `src/ui/toggle.rs`, `src/ui/text.rs` | `Button`, `Variant`, `icon_btn` (`.btn`, `.icon-btn`); `Choice` and `select` (`.field-select`); `checkbox`, `check_box`, `switch`; `wrapped`, `wrapped_weight`, `dot` |
 | `src/ui/field.rs` | `TextField`: the one text box, on a well, glass or floating surface, with an optional icon; `committed`, a well that keeps what is typed until Enter or blur; `outline`, the red or changed outline over a field |
+| `src/ui/filepicker.rs` | the system file dialog (`rfd`) with an extension filter: a person picks a file, no path is typed |
 | `src/ui/progress.rs` | `Bar`: the track and fill of every progress bar, determinate or sweeping, with the optional border |
 | `src/ui/listrow.rs` | `Mark` and `paint`: the hover and selected background of a list row |
 | `src/ui/slider.rs`, `src/ui/pills.rs` | the stepped slider (`.ui-slider`) and the icon pills of the Settings page (`.settings-tab`) |
@@ -321,9 +323,12 @@ The page writes what the web page writes, key for key, so the two interfaces
 share one config. Differences that follow from a native window:
 
 - **Plugins.** The Plugins pill lists the compiled-in plugins with a gear for their options (see Plugins below).
-- **Files.** There is no file picker without a dependency, so the company logo,
-  elevation files (a file or a folder of them), a settings file to import and
-  a private key ask for a path.
+- **Files.** The company logo is chosen with the system file dialog (`rfd`:
+  Cocoa, Windows, and the desktop portal on Linux, so no GTK is linked), not
+  typed as a path; `src/ui/filepicker.rs` wraps it. The logo is drawn at the
+  far right of the top bar (`src/home/company.rs`). Elevation files (a file or
+  a folder of them), a settings file to import and a private key still ask for
+  a path.
 - **Language.** The language picker lists `GET /api/languages` and writes
   `language`, as the web page does. The native interface's own words are
   English only for now: its strings are not yet looked up in `src/lang`, so a
