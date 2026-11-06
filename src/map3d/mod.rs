@@ -14,7 +14,7 @@ pub mod tile_cache;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use eframe::egui::{self, Color32, Mesh, Pos2, Rect, Stroke, Vec2};
+use eframe::egui::{self, Color32, Mesh, Pos2, Rect, Shape, Stroke, Vec2};
 use eframe::egui_glow;
 
 use crate::data::track::{self, Point, Track};
@@ -39,6 +39,8 @@ const MESH_BUILDS_PER_FRAME: usize = 40;
 const HIGHEST_GROUND: f64 = 5000.0;
 /// Heights over the view centre's ground, in metres, the ground box also reaches to.
 const RELIEF: [f64; 2] = [-600.0, 2500.0];
+/// A side of the geofence is cut into pieces about this long (metres) to test them for hills.
+const FENCE_PIECE_M: f64 = 40.0;
 /// How far above the ground under it the camera is kept, in metres.
 const KEEP_ABOVE_GROUND: f64 = 8.0;
 const TEXTURES: usize = 400;
@@ -69,6 +71,8 @@ pub struct Layers3d<'a> {
     pub past_colors: Vec<Color32>,
     /// A thin line at the height flown, above the track on the ground.
     pub in_air: bool,
+    /// The geofence area when the Home map is asked to show it.
+    pub fence: Option<&'a [[f64; 2]]>,
 }
 
 /// What the pointer did to the camera this frame.
@@ -627,7 +631,21 @@ impl Map3d {
         let origin = rect.min;
         let local = |p: Pos2| ((p.x - origin.x) as f64, (p.y - origin.y) as f64);
         let mut dragged = false;
-        if resp.dragged_by(egui::PointerButton::Primary) {
+        let touch = ui.input(|i| i.multi_touch());
+        if let Some(t) = touch {
+            // Two fingers (tablet mode): pinch zooms to the fingers, twisting
+            // turns the bearing, sliding up and down tilts.
+            let at = local(t.center_pos);
+            if (t.zoom_delta - 1.0).abs() > 1e-4 {
+                let zoom = (self.cam.zoom + f64::from(t.zoom_delta).log2())
+                    .clamp(crate::map3d::camera::MIN_ZOOM, self.max_zoom as f64 + 2.0);
+                self.cam.zoom_at(at.0, at.1, zoom);
+            }
+            self.cam.bearing = (self.cam.bearing - f64::from(t.rotation_delta).to_degrees()).rem_euclid(360.0);
+            self.cam.turn(0.0, f64::from(t.translation_delta.y) * 0.5);
+            dragged = true;
+        }
+        if touch.is_none() && resp.dragged_by(egui::PointerButton::Primary) {
             if let Some(p) = resp.interact_pointer_pos() {
                 let d = resp.drag_delta();
                 let now = local(p);
@@ -971,7 +989,11 @@ impl Map3d {
     /// Where a place on the ground is on screen, when the camera sees it.
     pub fn place_on_screen(&self, rect: Rect, p: [f64; 2]) -> Option<Pos2> {
         let h = self.ground_at(p[0], p[1]);
-        self.screen_of(rect.min, self.cam.local_of(p[0], p[1], h))
+        let at = self.cam.local_of(p[0], p[1], h);
+        if self.hidden(at) {
+            return None;
+        }
+        self.screen_of(rect.min, at)
     }
 
     /// Whether the ground between the camera and `target` (local metres) is
@@ -1066,7 +1088,72 @@ impl Map3d {
                 );
             }
         }
-        crate::plugins::shapes::paint_marks(ui, painter, &project, layers.shapes, None);
+        if let Some(fence) = layers.fence.filter(|f| f.len() >= 3) {
+            self.paint_fence(painter, origin, fence);
+        }
+        let project_mark = |p: [f64; 2]| {
+            let at = cam.local_of(p[0], p[1], self.ground_at(p[0], p[1]));
+            if self.hidden(at) {
+                None
+            } else {
+                self.screen_of(origin, at)
+            }
+        };
+        crate::plugins::shapes::paint_marks(ui, painter, &project_mark, layers.shapes, None);
+    }
+
+    /// The geofence on the ground (`setPolygonOverlay`: warning colour, 3 px,
+    /// dashed 2 to 1.5, a 6 percent wash): each side is cut into short pieces
+    /// and the ones behind a hill are left out, as the track is.
+    fn paint_fence(&self, painter: &egui::Painter, origin: Pos2, fence: &[[f64; 2]]) {
+        let warning = crate::ui::style::warning();
+        let mut runs: Vec<Vec<Pos2>> = vec![Vec::new()];
+        let mut seen = 0usize;
+        let mut total = 0usize;
+        for i in 0..fence.len() {
+            let (a, b) = (fence[i], fence[(i + 1) % fence.len()]);
+            let local = |t: f64| {
+                let (lng, lat) = (a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t);
+                self.cam.local_of(lng, lat, self.ground_at(lng, lat) + 1.0)
+            };
+            let (pa, pb) = (local(0.0), local(1.0));
+            let metres = (pb[0] - pa[0]).hypot(pb[1] - pa[1]);
+            let pieces = ((metres / FENCE_PIECE_M).ceil() as usize).clamp(1, 64);
+            for k in 0..=pieces {
+                let p = local(k as f64 / pieces as f64);
+                total += 1;
+                match self.screen_of(origin, p).filter(|_| !self.hidden(p)) {
+                    Some(s) => {
+                        seen += 1;
+                        runs.last_mut().expect("a run is open").push(s);
+                    }
+                    None => {
+                        if !runs.last().is_some_and(Vec::is_empty) {
+                            runs.push(Vec::new());
+                        }
+                    }
+                }
+            }
+        }
+        for run in runs.iter().filter(|r| r.len() >= 2) {
+            painter.extend(Shape::dashed_line(run, Stroke::new(3.0, warning), 6.0, 4.5));
+        }
+        if seen * 2 > total {
+            let pts: Vec<Pos2> = fence
+                .iter()
+                .filter_map(|c| self.screen_of(origin, self.cam.local_of(c[0], c[1], self.ground_at(c[0], c[1]))))
+                .collect();
+            if pts.len() == fence.len() {
+                let mut mesh = Mesh::default();
+                for p in &pts {
+                    mesh.colored_vertex(*p, warning.gamma_multiply(0.06));
+                }
+                for t in crate::setup::geofence_card::triangulate(&pts) {
+                    mesh.add_triangle(t[0] as u32, t[1] as u32, t[2] as u32);
+                }
+                painter.add(mesh);
+            }
+        }
     }
 }
 

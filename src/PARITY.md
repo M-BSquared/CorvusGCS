@@ -53,11 +53,13 @@ otherwise; "native file" is in `src/`.
 | Offline map dialog | tiles.js | map/tiles_*.rs | done |
 | Downloaded areas outline | map.js | map/regions.rs | done |
 | Track: record, smooth, clear, per-flight colours, keep over restart | map.js | data/track.rs, data/track_store.rs | done |
+| 3D robustness: context checks and the flat map as fallback, budgets per frame, bounded GPU tables, antimeridian and poles, offline notice, debug overlay (F3), regression pictures | map.js | map3d/gpu.rs, map3d/mod.rs, map3d/shots/ | done: the 3D map tested live on the Alps and a city; not tried on Linux or Windows, not on a second screen with another pixel density |
+| Geofence outline in 3D | map.js `setPolygonOverlay` | map3d/mod.rs `paint_fence` | done: drawn on the ground in pieces, the ones behind a hill left out; the fill is a flat wash on the screen |
 | Track drawn in 3D with the depth test (a ribbon mesh, constant width on the screen) | map.js `renderTrack3D` | map3d/ribbon.rs, map3d/gpu.rs | done |
-| Vehicle and home hidden behind a hill in 3D | map.js `occludedByGlobe` | map3d/mod.rs `hidden` | done: a terrain ray test on the screen markers, not a depth test |
+| Vehicle and home hidden behind a hill in 3D | map.js `occludedByGlobe` | map3d/mod.rs `hidden` | done: a terrain ray test on the screen markers (home, vehicle, other vehicles, plugin markers, geofence pieces), not a depth test; the ray test is a function with a test of its own |
 | 3D map: terrain, imagery, hillshade, sky, buildings | map.js | map3d/ | done |
 | 3D panel: detail, elevation model | map.js | map3d/panel.rs | done |
-| 3D buildings from an Overpass answer, through the backend's own cell | map.js, python/corvus/buildings.py | map3d/buildings.rs | done: a cell made by the real `BuildingService` from a stubbed Overpass server is read and extruded in a test (`make_buildings_cell.py` in the notes folder made the fixture); not seen drawn live, the sandbox blocks the real service |
+| 3D buildings from an Overpass answer, through the backend's own cell | map.js, python/corvus/buildings.py | map3d/buildings.rs | done: a dense city centre (515 buildings, `src/map3d/shots/make_city.py`) goes through the real `BuildingService` from a stubbed Overpass server into the backend's cache and was looked at in the running app (heights, opacity, no z fighting); also read and extruded in a test |
 | Context menu on the map: Fly to this point, Set home here, copy coordinates | map.js, app.js | map/tools.rs | done |
 | Fly-to-points plan (PLAN button, click to add, slider AGL, FLY, CLEAR) | map.js, app.js | map/tools.rs, home/flight.rs | done |
 | Home and vehicle markers | map.js | map/mod.rs | done |

@@ -383,6 +383,8 @@ impl Map {
         let (track_color, _) = crate::map::others::line_colors(flown_hex.as_deref().unwrap_or(""), false, 0);
         let past_colors = past_colors(&self.look, flown_hex.as_deref().unwrap_or(""), self.track.past.len());
         let vehicle_color = self.others.flown_color.unwrap_or_else(style::vehicle);
+        let fence = self.env.get();
+        let fence_outline = (fence.show_on_map && fence.polygon.len() >= 3).then_some(fence.polygon);
         let input = t.show(
             ui,
             rect,
@@ -397,6 +399,7 @@ impl Map {
                 track_color,
                 past_colors,
                 in_air: self.look.in_air,
+                fence: fence_outline.as_deref(),
             },
         );
         if input.dragged {
