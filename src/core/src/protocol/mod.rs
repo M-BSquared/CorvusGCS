@@ -13,6 +13,7 @@ use corvus_link::plain::{defs::Wire, Message, Value};
 pub mod link_host;
 pub mod logs;
 pub mod params;
+pub mod shell;
 
 /// What every protocol engine asks of the bridge it runs on. A protocol that
 /// needs more (a clock, listeners) extends it with its own host trait.

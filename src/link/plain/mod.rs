@@ -20,6 +20,7 @@ pub mod crc;
 pub mod frame;
 pub mod message;
 pub mod param_value;
+pub mod shell_text;
 pub mod time;
 
 pub use crate::link::{transport, websocket};

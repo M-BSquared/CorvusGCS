@@ -460,7 +460,149 @@ def logs_cases() -> list[dict]:
     return [{"scenario": sc, "expected": play_simple(sc, L.LogEngine(), ops)} for sc in logs_scenarios()]
 
 
-COMMANDS = {"params_cases.json": cases, "logs_cases.json": logs_cases}
+# --------------------------------------------------------------- shell ----
+
+class ShellMav:
+    def __init__(self, bridge) -> None:
+        self.bridge = bridge
+
+    def serial_control_send(self, *args):
+        if self.bridge.sc.get("send_fails") == "serial_control_send":
+            raise OSError("boom")
+        device, flags, timeout, baud, count, data = args[:6]
+        row = ["serial_control_send", [device, flags, timeout, baud, count, bytes(data).hex()] + list(args[6:])]
+        self.bridge.sent.append(row)
+
+
+class Dialect:
+    def __init__(self, sc) -> None:
+        self.label = sc.get("label", "PX4")
+        self.supports_shell = sc.get("supports_shell", True)
+
+
+class ShellBridge(SimpleBridge):
+    def __init__(self, sc: dict) -> None:
+        super().__init__(sc)
+        self._shell_lock = SendLock()
+        self._dialect = Dialect(sc)
+        self._conn = type("Conn", (), {})()
+        self._conn.mav = ShellMav(self)
+        self.entries: list = []
+        self.failures: list = []
+
+    def _command_failure(self, action, result):
+        self.failures.append([action, result])
+        return False
+
+    def _ack_is_for_us(self, msg):
+        return self.sc.get("ack_ours", True)
+
+
+class SerialMsg:
+    def __init__(self, device, count, data) -> None:
+        self.device = device
+        self.count = count
+        self.data = list(data) + [0] * (70 - len(data))
+
+
+def shell_scenarios() -> list[dict]:
+    def text(n):  # a multi chunk command
+        return ("x" * n)
+    return [
+        {"name": "command_ok", "steps": [{"op": "command", "text": "ls"}, {"op": "command", "text": "top\n"}]},
+        {"name": "command_chunks", "steps": [{"op": "command", "text": text(150)}]},
+        {"name": "command_multibyte", "steps": [{"op": "command", "text": "echo €ä🚀"}]},
+        {"name": "command_unsupported", "supports_shell": False, "label": "ArduPilot", "steps": [{"op": "command", "text": "ls"}]},
+        {"name": "command_not_ready", "ready": False, "steps": [{"op": "command", "text": "ls"}]},
+        {"name": "command_send_fails", "send_fails": "serial_control_send", "steps": [
+            {"op": "command", "text": "ls"}, {"op": "state"}]},
+        {"name": "write_raw", "steps": [{"op": "write", "text": "abc"}, {"op": "write", "text": "def"}, {"op": "state"}]},
+        {"name": "write_refusals", "limits": {"write_max": 10}, "steps": [
+            {"op": "write", "text": ""}, {"op": "write", "text": "x" * 11}]},
+        {"name": "write_unsupported", "supports_shell": False, "label": "ArduPilot", "steps": [{"op": "write", "text": "a"}]},
+        {"name": "write_not_ready", "ready": False, "steps": [{"op": "write", "text": "a"}]},
+        {"name": "write_send_fails", "send_fails": "serial_control_send", "steps": [{"op": "write", "text": "a"}]},
+        {"name": "lines_are_assembled", "steps": [
+            {"op": "command", "text": "ls"},
+            {"op": "recv", "device": 10, "data": "ab\r\ncd"}, {"op": "recv", "device": 10, "data": "ef\n\nnsh> "},
+            {"op": "recv", "device": 10, "data": "t\x08\x08op\n"}, {"op": "state"}]},
+        {"name": "line_cap_flushes", "limits": {"line_max": 10}, "steps": [
+            {"op": "command", "text": "ls"}, {"op": "recv", "device": 10, "data": "y" * 12}, {"op": "state"}]},
+        {"name": "utf8_split_across_chunks", "steps": [
+            {"op": "command", "text": "ls"},
+            {"op": "recv_bytes", "device": 10, "data": [0xE2, 0x82]}, {"op": "recv_bytes", "device": 10, "data": [0xAC, 0x0A]},
+            {"op": "recv_bytes", "device": 10, "data": [0x6F, 0x6B, 0xFF, 0x21, 0x0A]}]},
+        {"name": "ignored_input", "steps": [
+            {"op": "recv", "device": 10, "data": "nobody asked\n"},
+            {"op": "command", "text": "ls"}, {"op": "recv", "device": 3, "data": "other device\n"},
+            {"op": "recv_count", "device": 10, "count": 0}, {"op": "recv_count", "device": 10, "count": 71},
+            {"op": "state"}]},
+        {"name": "not_our_ack", "ack_ours": False, "steps": [
+            {"op": "command", "text": "ls"}, {"op": "recv", "device": 10, "data": "x\n"}]},
+        {"name": "raw_stream_with_backlog_and_subscribers", "limits": {"backlog": 20}, "steps": [
+            {"op": "add_sub"}, {"op": "write", "text": "a"}, {"op": "recv", "device": 10, "data": "line one\nline two\n"},
+            {"op": "recv", "device": 10, "data": "line three\n"}, {"op": "add_sub"}, {"op": "recv", "device": 10, "data": "!"},
+            {"op": "remove_sub", "which": 0}, {"op": "recv", "device": 10, "data": "?"}, {"op": "state"}]},
+        {"name": "stop_closes_the_session", "steps": [
+            {"op": "write", "text": "a"}, {"op": "recv", "device": 10, "data": "out\n"}, {"op": "stop"}, {"op": "state"}]},
+        {"name": "reset_forgets_partial_state", "steps": [
+            {"op": "command", "text": "ls"}, {"op": "recv", "device": 10, "data": "part"}, {"op": "reset"}, {"op": "state"}]},
+    ]
+
+
+def shell_cases() -> list[dict]:
+    from types import SimpleNamespace
+
+    from corvus_link import shell as S
+
+    out = []
+    for sc in shell_scenarios():
+        lim = sc.get("limits", {})
+        env = SimpleNamespace(SHELL_LINE_MAX_CHARS=lim.get("line_max", 8192), SHELL_BACKLOG_CHARS=lim.get("backlog", 65536),
+                              SHELL_WRITE_MAX_CHARS=lim.get("write_max", 4096))
+        eng = S.ShellEngine(env)
+        br = ShellBridge(sc)
+        subs: list = []
+        results = []
+        for step in sc["steps"]:
+            before = (len(br.sent), len(br.errors), len(br.console), len(br.failures), len(br.entries))
+            op = step["op"]
+            result = None
+            if op == "command":
+                result = eng.send_command(br, step["text"])
+            elif op == "write":
+                result = eng.write(br, step["text"])
+            elif op == "recv":
+                eng.handle(br, SerialMsg(step["device"], len(step["data"].encode()), step["data"].encode()))
+            elif op == "recv_bytes":
+                eng.handle(br, SerialMsg(step["device"], len(step["data"]), bytes(step["data"])))
+            elif op == "recv_count":
+                eng.handle(br, SerialMsg(step["device"], step["count"], b"abc"))
+            elif op == "add_sub":
+                idx = len(subs)
+                fn = (lambda e, idx=idx: br.entries.append([idx, e["text"]]))
+                subs.append(fn)
+                result = eng.add_sub(br, fn)
+            elif op == "remove_sub":
+                eng.remove_sub(br, subs[step["which"]])
+            elif op == "stop":
+                eng.stop(br)
+            elif op == "reset":
+                eng.reset(br)
+            elif op == "state":
+                result = {"active": eng.active, "raw": eng.raw, "buffer": eng.buffer, "backlog": eng.backlog}
+            else:
+                raise SystemExit(op)
+            results.append({"result": result, "sent": br.sent[before[0]:], "errors": br.errors[before[1]:],
+                            "console": br.console[before[2]:], "failures": br.failures[before[3]:],
+                            "entries": br.entries[before[4]:]})
+        out.append({"scenario": sc, "expected": clean({"steps": results, "final": {
+            "active": eng.active, "raw": eng.raw, "buffer": eng.buffer, "backlog": eng.backlog,
+            "last_error": br.last_error}})})
+    return out
+
+
+COMMANDS = {"params_cases.json": cases, "logs_cases.json": logs_cases, "shell_cases.json": shell_cases}
 
 
 def main(argv: list[str]) -> int:
