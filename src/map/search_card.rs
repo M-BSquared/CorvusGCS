@@ -3,6 +3,7 @@
 //! pin where the chosen one is. Every keystroke shows what this laptop can
 //! answer, the lookup of a name follows 350 ms after the last one.
 
+use crate::ui::tip::HoverTr;
 use eframe::egui::{self, Pos2, Rect, Vec2};
 use serde_json::Value;
 
@@ -177,7 +178,7 @@ impl SearchCard {
             Rect::from_center_size(trigger.center(), Vec2::splat(17.0)),
             color,
         );
-        resp.clone().on_hover_text("Search for a place");
+        resp.clone().on_hover_tr("Search for a place");
         if resp.clicked() {
             if self.open {
                 self.close();

@@ -207,6 +207,7 @@ pub struct TrackMap {
     tiles: Option<HttpTiles>,
     memory: MapMemory,
     attribution: &'static str,
+    credit: crate::map::credit::Credit,
     max_zoom: u8,
     paths: Vec<Path>,
     fitted: bool,
@@ -248,7 +249,7 @@ impl TrackMap {
     pub fn new(ctx: &egui::Context, server: &Server, sources: &Value, base_layer: &str, plot: &Plot) -> TrackMap {
         let id = imagery_layer(base_layer, sources);
         let (attribution, max_zoom) = describe(sources, &id);
-        let attribution: &'static str = Box::leak(attribution.into_boxed_str());
+        let attribution: &'static str = crate::data::intern::intern(&attribution);
         let source = CorvusTiles {
             base: server.url(),
             id,
@@ -263,6 +264,7 @@ impl TrackMap {
             tiles: Some(HttpTiles::with_options(source, options, ctx.clone())),
             memory: MapMemory::default(),
             attribution,
+            credit: Default::default(),
             max_zoom,
             paths: track_paths(plot),
             fitted: false,
@@ -329,7 +331,10 @@ impl TrackMap {
         }
         let painter = ui.painter_at(inner);
         self.controls(ui, &painter, inner, id);
-        crate::map::paint_credit(ui, inner, self.attribution, 0.0);
+        if response.dragged() {
+            self.credit.fold();
+        }
+        self.credit.show(ui, inner, self.attribution, 0.0, "trackmap");
         let opacity = hint_opacity(now - self.hint_at);
         if opacity > 0.0 {
             painter.rect_filled(inner, 0, Color32::from_black_alpha((0.4 * opacity * 255.0) as u8));

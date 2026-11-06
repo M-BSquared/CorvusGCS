@@ -3,6 +3,7 @@
 //! `app.js`) and the menu that opens on a point (`openContextMenu`, the two
 //! rows registered by `app.js`: fly to this point, set home here).
 
+use crate::ui::tip::HoverTr;
 use eframe::egui::{self, Color32, Pos2, Rect, Shape, Stroke, Vec2};
 use serde_json::{json, Value};
 
@@ -375,7 +376,7 @@ impl Tools {
                     },
                 );
                 if copy_resp
-                    .on_hover_text(if copied { "Copied" } else { "Copy coordinates" })
+                    .on_hover_tr(if copied { "Copied" } else { "Copy coordinates" })
                     .clicked()
                 {
                     ui.ctx().copy_text(coords.clone());

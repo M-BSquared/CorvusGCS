@@ -7,6 +7,7 @@
 //! web map's first layer; picking another comes with the map controls.
 
 pub mod cameras;
+pub mod credit;
 pub mod measure;
 pub mod others;
 pub mod rail;
@@ -138,6 +139,7 @@ pub struct Map {
     tiles: Option<HttpTiles>,
     memory: MapMemory,
     attribution: &'static str,
+    credit: credit::Credit,
     pub track: Track,
     first_fix: bool,
     /// Follows the aircraft until the operator drags the map.
@@ -209,6 +211,7 @@ impl Map {
             tiles: None,
             memory,
             attribution: "",
+            credit: credit::Credit::default(),
             track: Track::default(),
             first_fix: true,
             follow: true,
@@ -291,8 +294,8 @@ impl Map {
     /// Shows the source `id`, through the backend's proxy like every other.
     pub fn set_source(&mut self, ctx: &egui::Context, id: &str) {
         let (attribution, max_zoom) = describe(&self.sources, id);
-        // Leaked once per layer picked: walkers wants a 'static credit.
-        let attribution: &'static str = Box::leak(attribution.into_boxed_str());
+        // Kept once per credit: walkers wants a 'static one.
+        let attribution: &'static str = crate::data::intern::intern(&attribution);
         let source = CorvusTiles {
             base: self.server.url(),
             id: id.into(),
@@ -370,6 +373,7 @@ impl Map {
             return;
         };
         t.set_source(&self.source, max_zoom);
+        t.credit_h = self.credit.height();
         t.follow_sources(&self.sources);
         if let (true, Some((lng, lat))) = (follow, vehicle) {
             t.cam.lng = lng;
@@ -401,6 +405,7 @@ impl Map {
         );
         if input.dragged {
             self.follow = false;
+            self.credit.fold();
         }
         {
             let (rect_c, t) = (rect, &*t);
@@ -719,6 +724,7 @@ impl Map {
         }
         if response.dragged() {
             self.follow = false;
+            self.credit.fold();
         }
         if let Some((lng, lat)) = vehicle {
             if self.follow && !self.planner {
@@ -739,9 +745,16 @@ impl Map {
         }
     }
 
-    /// The tile credit, bottom left, in the pill main.css draws it in.
-    fn paint_attribution(&self, ui: &egui::Ui, rect: egui::Rect) {
-        paint_credit(ui, rect, self.attribution, self.bottom_lift);
+    /// The tile credit, bottom left, folded into its disc until clicked. With
+    /// terrain on, the elevation model's credit joins it in one line, as
+    /// MapLibre joins the credits of every source.
+    fn paint_attribution(&mut self, ui: &mut egui::Ui, rect: egui::Rect) {
+        let terrain = self
+            .three_d
+            .then(|| self.three.as_ref().and_then(|t| t.terrain_credit()))
+            .flatten();
+        let text = credit_text(self.attribution, terrain);
+        self.credit.show(ui, rect, &text, self.bottom_lift, "map");
     }
 
     /// Lets go of the tile downloader and joins its thread.
@@ -752,25 +765,14 @@ impl Map {
     }
 }
 
-/// The tile credit as a glass pill, bottom left of `rect`, `lift` above the
-/// usual 14 px.
-pub(crate) fn paint_credit(ui: &egui::Ui, rect: egui::Rect, text: &str, lift: f32) {
-    if text.is_empty() {
-        return;
+/// The credit line: the imagery's and, when given, the elevation model's.
+pub(crate) fn credit_text(imagery: &str, terrain: Option<&str>) -> String {
+    match (imagery.is_empty(), terrain.filter(|t| !t.is_empty())) {
+        (_, None) => imagery.to_string(),
+        (true, Some(t)) => t.to_string(),
+        (false, Some(t)) if t == imagery => imagery.to_string(),
+        (false, Some(t)) => format!("{imagery} | {t}"),
     }
-    let g = style::galley(ui, text, 10.0, style::Weight::W400, style::text_2(), 0.0);
-    let size = Vec2::new(g.size().x + 4.0 + 9.0, 25.0);
-    let pill = egui::Rect::from_min_size(
-        Pos2::new(rect.left() + 14.0, rect.bottom() - lift - 14.0 - size.y),
-        size,
-    );
-    let painter = ui.painter_at(rect);
-    style::glass_panel(&painter, "attribution", pill, egui::CornerRadius::same(255), 0.38);
-    painter.galley(
-        Pos2::new(pill.left() + 9.0, pill.center().y - g.size().y / 2.0),
-        g,
-        style::text_2(),
-    );
 }
 
 struct Layers<'a, 'o> {
@@ -1319,6 +1321,7 @@ mod tests {
             tiles: None,
             memory: MapMemory::default(),
             attribution: "",
+            credit: credit::Credit::default(),
             track: Track::default(),
             first_fix: true,
             follow: true,
