@@ -977,25 +977,7 @@ impl Map3d {
     /// Whether the ground between the camera and `target` (local metres) is
     /// higher than the line of sight: a hill in front of it.
     fn hidden(&self, target: V3) -> bool {
-        let view = self.cam.view();
-        const STEPS: usize = 48;
-        for i in 1..STEPS {
-            let t = i as f64 / STEPS as f64;
-            if t > 0.97 {
-                break;
-            }
-            let p = [
-                view.pos[0] + (target[0] - view.pos[0]) * t,
-                view.pos[1] + (target[1] - view.pos[1]) * t,
-                view.pos[2] + (target[2] - view.pos[2]) * t,
-            ];
-            let (lng, lat) = self.cam.geo_of(p[0], p[1]);
-            let terrain = self.ground_at(lng, lat) - self.cam.ground;
-            if terrain > p[2] + 1.0 {
-                return true;
-            }
-        }
-        false
+        line_blocked(&self.cam, target, &|lng, lat| self.ground_at(lng, lat))
     }
 
     /// The flown track as ribbons the depth test can hide behind a hill: a
@@ -1086,6 +1068,31 @@ impl Map3d {
         }
         crate::plugins::shapes::paint_marks(ui, painter, &project, layers.shapes, None);
     }
+}
+
+/// Whether the ground, as `ground` gives its height above sea level at a
+/// longitude and latitude, rises above the straight line from the camera to
+/// `target` (local metres). The last 3 percent of the line is not tested, so
+/// the ground a marker stands on does not hide it.
+fn line_blocked(cam: &Camera, target: V3, ground: &dyn Fn(f64, f64) -> f64) -> bool {
+    let view = cam.view();
+    const STEPS: usize = 48;
+    for i in 1..STEPS {
+        let t = i as f64 / STEPS as f64;
+        if t > 0.97 {
+            break;
+        }
+        let p = [
+            view.pos[0] + (target[0] - view.pos[0]) * t,
+            view.pos[1] + (target[1] - view.pos[1]) * t,
+            view.pos[2] + (target[2] - view.pos[2]) * t,
+        ];
+        let (lng, lat) = cam.geo_of(p[0], p[1]);
+        if ground(lng, lat) - cam.ground > p[2] + 1.0 {
+            return true;
+        }
+    }
+    false
 }
 
 /// The fog over the far ground at the horizon (`fog-ground-blend`): a band
@@ -1308,6 +1315,57 @@ mod tests {
             assert!(leaves.iter().all(|l| l.y < (1 << l.z)), "rows stay on the map");
             assert!(m.cam.lat <= crate::map3d::camera::MAX_LAT);
         }
+    }
+
+    #[test]
+    fn two_hundred_camera_jumps_leave_the_caches_bounded() {
+        let mut m = view_at(0.0, 0.0, 12.0, 60.0);
+        let mut seed = 0x9E37_79B9_7F4A_7C15u64;
+        let mut next = move || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            (seed >> 11) as f64 / (1u64 << 53) as f64
+        };
+        let (mut most_meshes, mut most_textures) = (0, 0);
+        for _ in 0..200 {
+            m.cam.set_centre((next() * 360.0 - 180.0, next() * 140.0 - 70.0));
+            m.cam.zoom = 3.0 + next() * 14.0;
+            m.cam.bearing = next() * 360.0;
+            m.cam.pitch = next() * 60.0;
+            m.frame += 40;
+            let leaves = m.leaves();
+            assert!(leaves.len() <= MAX_LEAVES + 8, "{} leaves", leaves.len());
+            let (items, built, _) = m.ground_items(&leaves);
+            assert!(built <= MESH_BUILDS_PER_FRAME);
+            assert!(items.len() <= leaves.len());
+            m.imagery.trim();
+            most_meshes = most_meshes.max(m.leaf_meshes.len());
+            most_textures = most_textures.max(m.tex_ids.len());
+        }
+        assert!(most_meshes <= MAX_LEAVES * 4, "{most_meshes} leaf meshes held");
+        assert!(
+            most_textures <= TEXTURES + MAX_LEAVES * 2,
+            "{most_textures} texture ids held"
+        );
+    }
+
+    #[test]
+    fn a_ridge_hides_what_lies_behind_it_and_not_what_is_above_it() {
+        let m = view_at(11.0, 47.0, 14.0, 60.0);
+        let cam = m.cam;
+        let wall_at = cam.geo_of(0.0, 150.0).1;
+        let ridge = move |_: f64, lat: f64| if (lat - wall_at).abs() < 0.0003 { 400.0 } else { 0.0 };
+        let behind = cam.local_of(11.0, cam.geo_of(0.0, 600.0).1, 0.0);
+        assert!(
+            line_blocked(&cam, behind, &ridge),
+            "a marker on the ground behind the ridge"
+        );
+        let high = cam.local_of(11.0, cam.geo_of(0.0, 600.0).1, 900.0);
+        assert!(!line_blocked(&cam, high, &ridge), "an aircraft above the ridge line");
+        let before = cam.local_of(11.0, cam.geo_of(0.0, -300.0).1, 0.0);
+        assert!(!line_blocked(&cam, before, &ridge), "a marker on this side of it");
+        assert!(!line_blocked(&cam, behind, &|_, _| 0.0), "flat ground hides nothing");
     }
 
     #[test]
