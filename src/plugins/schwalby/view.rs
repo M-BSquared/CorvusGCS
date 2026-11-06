@@ -1,7 +1,7 @@
 //! The shelf, the companion strip and the editor drawn (`.schw-*` of
 //! `schwalby.css`).
 
-use eframe::egui::{self, Color32, CornerRadius, Pos2, Rect, Stroke, Vec2};
+use eframe::egui::{self, Color32, Pos2, Rect, Stroke, Vec2};
 use serde_json::Value;
 
 use super::companion::{CompDialog, POWER_ACTIONS};
@@ -18,7 +18,7 @@ use crate::ui::kit::{self, Choice, Variant};
 use crate::ui::message::Tone;
 use crate::ui::segmented::{self, Segment};
 use crate::ui::style::{self, Weight};
-use crate::ui::{icons, modal, popover};
+use crate::ui::{icons, menu, modal, popover};
 
 const FIELD_GAP: f32 = 16.0;
 /// One row of the shelf: the 32 px button between its 5 px paddings and the hairline.
@@ -1548,74 +1548,21 @@ fn power_menu(p: &mut Schwalby, ctx: &egui::Context) {
         p.power_menu = false;
         return;
     };
-    let anchor = p.strip;
-    let width = anchor.width().clamp(200.0, 260.0);
-    let rows = POWER_ACTIONS.len() as f32;
-    let head_h = 10.0 * 1.21 + 4.0 + 6.0;
-    let row_h = 38.0;
-    let menu = Rect::from_min_size(
-        anchor.left_bottom() + Vec2::new(0.0, 4.0),
-        Vec2::new(width, 8.0 + head_h + rows * row_h + 8.0),
+    let mut items = vec![menu::Item::Head(c.display_name().to_string())];
+    items.extend(
+        POWER_ACTIONS
+            .iter()
+            .map(|a| menu::Row::new(a.id, a.label).icon(a.icon).note(a.note).into()),
     );
-    let mut picked = None;
-    let mut dismissed = false;
-    egui::Area::new(egui::Id::NULL.with("schw-power-menu"))
-        .order(egui::Order::Foreground)
-        .fixed_pos(menu.min)
-        .show(ctx, |ui| {
-            let painter = ui.painter().clone();
-            style::glass_panel(&painter, "schwpower", menu, style::RADIUS, 0.6);
-            ui.allocate_rect(menu, egui::Sense::hover());
-            let head = style::galley(
-                ui,
-                &c.display_name().to_uppercase(),
-                10.0,
-                Weight::W600,
-                style::text_3(),
-                0.8,
-            );
-            painter.galley(
-                Pos2::new(menu.left() + 14.0, menu.top() + 8.0 + 4.0),
-                head,
-                style::text_3(),
-            );
-            let mut y = menu.top() + 8.0 + head_h;
-            for (i, a) in POWER_ACTIONS.iter().enumerate() {
-                let r = Rect::from_min_size(Pos2::new(menu.left() + 8.0, y), Vec2::new(menu.width() - 16.0, row_h));
-                let resp = ui.interact(r, ui.scope_id().with(("schwpow", i)), egui::Sense::click());
-                if resp.hovered() {
-                    painter.rect_filled(r, CornerRadius::same(style::RADIUS_BTN), style::tint(0.06));
-                }
-                icons::paint(
-                    ui,
-                    a.icon,
-                    Rect::from_center_size(Pos2::new(r.left() + 16.0, r.center().y), Vec2::splat(15.0)),
-                    style::text_2(),
-                );
-                let l = style::galley(ui, a.label, 12.0, Weight::W600, style::text_1(), 0.0);
-                let n = style::galley(ui, a.note, 10.5, Weight::W400, style::text_3(), 0.0);
-                let total = l.size().y + n.size().y;
-                painter.galley(
-                    Pos2::new(r.left() + 32.0, r.center().y - total / 2.0),
-                    l.clone(),
-                    style::text_1(),
-                );
-                painter.galley(
-                    Pos2::new(r.left() + 32.0, r.center().y - total / 2.0 + l.size().y),
-                    n,
-                    style::text_3(),
-                );
-                if resp.clicked() {
-                    picked = Some(*a);
-                }
-                y += row_h;
-            }
-            dismissed = crate::ui::menu::dismissed(ui, &[menu, anchor]);
-        });
-    if let Some(a) = picked {
+    let id = egui::Id::NULL.with("schw-power-menu");
+    let out = menu::Menu::new(id, menu::Anchor::below(p.strip), &menu::Look::ACTIONS, &items).show(ctx);
+    if let Some(a) = out
+        .picked
+        .and_then(|v| POWER_ACTIONS.iter().find(|a| a.id == v).copied())
+    {
         p.power_menu = false;
         p.power_asked(a);
-    } else if dismissed {
+    } else if out.dismissed {
         p.power_menu = false;
     }
 }
