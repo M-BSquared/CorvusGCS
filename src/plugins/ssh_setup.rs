@@ -13,6 +13,7 @@ use crate::ui::form::{self, Form};
 use crate::ui::kit::{Button, Variant};
 use crate::ui::message::Tone;
 use crate::ui::modal;
+use crate::ui::pathfield::{Mode, PathField};
 
 /// Who asked, and what for, so the answer finds its way back.
 #[derive(Debug, Clone, PartialEq)]
@@ -214,16 +215,18 @@ impl SshSetup {
                 "ssetup-pass",
             );
             f.skip(14.0);
-            form::input(
+            form::path(
                 ui,
                 &mut f,
                 "Key file",
                 "",
                 "",
+                &PathField::new(Mode::File(None), "Private key")
+                    .placeholder("No key file chosen")
+                    .optional()
+                    .backend()
+                    .opens_in("~/.ssh"),
                 &mut self.key_path,
-                "/home/user/.ssh/id_rsa",
-                true,
-                false,
                 "ssetup-key",
             );
             if !error.is_empty() {

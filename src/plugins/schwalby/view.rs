@@ -1208,16 +1208,18 @@ fn new_connection(ui: &mut egui::Ui, f: &mut Form, c: &mut super::model::NewConn
         "schw-nc-pass",
     );
     inner.skip(12.0);
-    form::input(
+    form::path(
         ui,
         &mut inner,
         "Key file",
         "",
         "",
+        &crate::ui::pathfield::PathField::new(crate::ui::pathfield::Mode::File(None), "Private key")
+            .placeholder("No key file chosen")
+            .optional()
+            .backend()
+            .opens_in("~/.ssh"),
         &mut c.key_path,
-        "/home/you/.ssh/id_rsa",
-        true,
-        false,
         "schw-nc-key",
     );
     let rect = Rect::from_min_max(Pos2::new(f.x, top), Pos2::new(f.x + f.w, inner.y + 12.0));
