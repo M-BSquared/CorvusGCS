@@ -692,8 +692,165 @@ def http_cases() -> None:
     })
 
 
+def _nan(value: object) -> object:
+    return "nan" if isinstance(value, float) and value != value else value
+
+
+def _plan(plan: object) -> object:
+    if plan is None:
+        return None
+    return {"command": plan.command, "params": [_nan(float(x)) for x in plan.params],
+            "ok": plan.ok, "unsupported": plan.unsupported}
+
+
+def _event(event: object) -> object:
+    return None if event is None else [event.kind, event.level, event.message]
+
+
+def _fw(firmware: tuple[int, ...] | None) -> str:
+    return "none" if firmware is None else ".".join(str(n) for n in firmware)
+
+
+def _fw_parse(text: str) -> tuple[int, ...] | None:
+    return None if text == "none" else tuple(int(n) for n in text.split(".") if n != "")
+
+
+DIALECT_MAV_TYPES = list(range(0, 46)) + [99, 255]
+DIALECT_FIRMWARES = ["none", "", "1", "2", "1.14.0", "1.15.0", "1.16.5", "1.17.0", "1.18", "2.0"]
+DIALECT_SENSORS = ["gyro", "compass", "baro", "accel", "level", "accel_quick", "airspeed", "motor", "bogus", ""]
+DIALECT_POSITIONS = ["level", "LEFT", "nosedown", "noseup", "back", "right", "Back", "bogus", ""]
+DIALECT_STATUS_TEXTS = [
+    "Kill engaged", "kill-switch engaged", "Kill switch disengaged", "KILL SWITCH ENGAGED\n",
+    "Kill  engaged", "kill disengaged\n\n", "Kill-switch", "Disarmed by landing",
+    "disarmed by Kill-Switch", "Disarmed by  odd reason ", "Disarmed by ", "Disarmed by x\ny",
+    "Disarmed by x\n", "DISARMED BY FAILSAFE", "Disarmed by Auto Preflight Disarming",
+    "Disarmed by Ünïcode", "RC7: MotorEStop HIGH", "RC12: MotorEStop LOW", "RC: MotorEStop HIGH",
+    "rc7: MotorEStop HIGH", "RC7: MotorEStop HIGH\n", "RC7: MotorEStop high", "RC7: MotorEStop",
+    "hello", "", "[logger] Opened full log file", "[logger]x", "PreArm: Compass not calibrated",
+    "Arm: Throttle too high", "Preflight Fail: Kill switch engaged", "PreArm: ", "PreArm:",
+    "Preflight Fail:  x  ", "Arm: ", "PreArm: Motors Emergency Stopped",
+]
+DIALECT_PREARM_REASONS = ["kill switch engaged", " Kill Switch Engaged ", "Motors Emergency Stopped",
+                          "motors emergency stopped", "x", ""]
+DIALECT_MODE_NAMES = ["", "ALT_HOLD", "alt_hold", "ORBIT", "POSITION_SLOW", "ALTCTL", "POSCTL", "LOITER",
+                      "RTL", "FOLLOWME", "PRECLAND", "ALTITUDE_CRUISE", "TERMINATION", "GUIDED_COURSE",
+                      "MANUAL", "X_Y_Z", "RTGS", "RATTITUDE", "POSHOLD"]
+DIALECT_LIVE = {
+    "px4": [["MANUAL", {"t": [81, 1, 0]}], ["RTGS", {"t": [29, 4, 7]}], ["RATTITUDE", {"t": [81, 8, 0]}],
+            ["POSITION_SLOW", {"t": [81, 3, 2]}], ["ALTITUDE_CRUISE", {"t": [81, 11, 0]}],
+            ["CUSTOM", {"t": [1, 2, 3]}], ["LOITER", {"t": [29, 4, 9]}], ["SHORT", {"t": [1, 2]}],
+            ["LONG", {"t": [5, 6, 7, 8]}], ["FLAT", {"i": 4}], ["TXT", {"o": "x"}]],
+    "flat": [["STABILIZE", {"i": 0}], ["POSITION", {"i": 8}], ["GUIDED", {"i": 4}], ["OF_LOITER", {"i": 10}],
+             ["LEARNING", {"i": 2}], ["INITIALISING", {"i": 16}], ["BOOL", {"o": True}], ["TXT", {"o": "x"}],
+             ["F", {"o": 1.5}], ["TRIPLE", {"t": [1, 2, 3]}], ["AUTO", {"i": 3}], ["AUTO", {"i": 33}]],
+    "empty": [],
+}
+DIALECT_LIVE_TYPES = [0, 1, 2, 12, 99]
+DIALECT_TABLE_TYPES = [0, 1, 2, 5, 7, 10, 12, 19, 35, 99]
+DIALECT_MODE_TYPES = [0, 1, 2, 5, 7, 10, 12, 13, 19, 28, 35, 99]
+
+
+def _static(d: object) -> dict:
+    keys = ["stack", "label", "supports_shell", "supports_esc_calibration", "accel_cal_positions_are_prompted",
+            "autotune_style", "log_format", "log_suffix", "firmware_vendor", "mission_seq0_is_home",
+            "mission_mode", "mission_circles_as_waypoints", "mission_validity_reported",
+            "mission_rejection_hint", "param_encoding", "param_metadata_path", "param_metadata_format",
+            "param_metadata_cacheable", "param_file_format", "prearm_report_complete"]
+    out = {k: getattr(d, k) for k in keys}
+    out["prearm_prefixes"] = list(d.prearm_prefixes)
+    out["routine_statustext_prefixes"] = list(d.routine_statustext_prefixes)
+    return out
+
+
+def _describe(d: object, mav: int) -> dict:
+    takeoff = d.takeoff_plan(mav)
+    return {
+        "takeoff": [takeoff.order, takeoff.altitude_frame, takeoff.guided_mode, _nan(takeoff.min_pitch_deg)],
+        "guided_mode": d.guided_mode(mav), "stick_mode": d.stick_mode(mav),
+        "stick_modes": list(d.stick_modes(mav)), "reposition": d.reposition_altitude_frame(mav),
+        "hold_mode": d.hold_mode(mav), "velocity_mode": d.velocity_mode(mav),
+        "plugin_commands": [[k, v] for k, v in d.plugin_commands(mav).items()],
+        "mission_arm_mode": d.mission_arm_mode(mav), "autotune_mode": d.autotune_mode(mav),
+        "autotune_on": _plan(d.autotune_plan(mav, True)), "autotune_off": _plan(d.autotune_plan(mav, False)),
+        "mission_refusals": [[k, v] for k, v in d.mission_refusals(mav).items()],
+        "capabilities": d.capabilities(mav),
+    }
+
+
+def dialect_cases() -> None:
+    from corvus import autopilot as ap
+
+    stacks = {"px4": ap.dialect_for_stack("px4"), "ardupilot": ap.dialect_for_stack("ardupilot"),
+              "generic": ap.dialect_for_stack("generic")}
+    ids: list[object] = [-1, 0, 1, 3, 12, 13, 255, "px4", " PX4 ", "ArduPilotMega", "apm", "arducopter",
+                         "arduplane", "ardupilot", "x", "", "Generic"]
+    stack_ids = [[v, ap.stack_for_autopilot(v)] for v in ids]
+    supported: dict[str, bool] = {}
+    for name in list(ap.PX4_MODE_VALUES) + list(ap.PX4_RETIRED_MODES) + ["BOGUS", "ORBIT"]:
+        for fw in DIALECT_FIRMWARES:
+            firmware = _fw_parse(fw)
+            supported[f"{name}|{fw}"] = ap.px4_mode_supported(name, firmware)
+    classes = {str(m): [ap.vehicle_class(m), ap.is_ground_vehicle(m)] for m in DIALECT_MAV_TYPES + [-1]}
+    out: dict[str, object] = {"stack_ids": stack_ids, "px4_supported": supported, "classes": classes,
+                              "position_commands": sorted(ap.PLUGIN_POSITION_COMMANDS)}
+    per: dict[str, object] = {}
+    for key, d in stacks.items():
+        entry: dict[str, object] = {"static": _static(d)}
+        entry["types"] = {str(m): _describe(d, m) for m in DIALECT_MAV_TYPES}
+        entry["start_params"] = {str(c): [_nan(x) for x in d.mission_start_params(c)] for c in (-3, 0, 1, 2, 10)}
+        entry["events"] = {t: [_event(d.vehicle_event(t)), d.prearm_failure(t), d.is_routine_statustext(t)]
+                           for t in DIALECT_STATUS_TEXTS}
+        entry["prearm_events"] = {r: _event(d.prearm_event(r)) for r in DIALECT_PREARM_REASONS}
+        entry["labels"] = {n: d.mode_label(n) for n in DIALECT_MODE_NAMES}
+        entry["calibration"] = {s: _plan(d.calibration(s)) for s in DIALECT_SENSORS}
+        entry["cancel"] = {s: _plan(d.cancel_calibration(s)) for s in ["", "compass", "gyro"]}
+        entry["accel_position"] = {s: _plan(d.accel_position(s)) for s in DIALECT_POSITIONS}
+        entry["motor_test"] = [[m, pct, dur, _plan(d.motor_test(m, pct, dur))]
+                               for m, pct, dur in [(1, 50.0, 2.0), (4, 0.0, 0.0), (8, 100.0, 3.5), (2, 12.5, 1.0)]]
+        entry["motor_stop"] = {str(m): _plan(d.motor_stop(m)) for m in (1, 4, 8)}
+        tables: dict[str, object] = {}
+        for mav in DIALECT_TABLE_TYPES:
+            for fw in DIALECT_FIRMWARES:
+                firmware = _fw_parse(fw)
+                tables[f"{mav}|{fw}"] = [
+                    [[n, c.base_mode, c.custom_mode, c.custom_sub] for n, c in d.mode_table(mav, firmware).items()],
+                    d.available_modes(mav, firmware)]
+        entry["tables"] = tables
+        decode: dict[str, str] = {}
+        for mav in DIALECT_MODE_TYPES:
+            for base in (0, 1, 64, 65, 81, 129):
+                for custom in list(range(0, 31)) + [99, 65536, 3 << 16, (3 << 16) | (1 << 24)]:
+                    decode[f"{custom}|{base}|{mav}"] = d.decode_mode(custom, base, mav)
+        for main in range(0, 13):
+            for sub in list(range(0, 21)) + [255]:
+                custom = (main << 16) | (sub << 24)
+                decode[f"{custom}|81|2"] = d.decode_mode(custom, 81, 2)
+        entry["decode"] = decode
+        live: dict[str, object] = {}
+        for lname, spec in DIALECT_LIVE.items():
+            mapping: dict[str, object] = {}
+            for name, v in spec:
+                if "t" in v:
+                    mapping[name] = tuple(v["t"])
+                elif "i" in v:
+                    mapping[name] = v["i"]
+                else:
+                    mapping[name] = v["o"]
+            for mav in DIALECT_LIVE_TYPES:
+                for fw in ("none", "1.14.0", "1.17.0"):
+                    adopted = d.adopt_live_mapping(mapping, mav, _fw_parse(fw))
+                    live[f"{lname}|{mav}|{fw}"] = [[n, c.base_mode, c.custom_mode, c.custom_sub]
+                                                   for n, c in adopted.items()]
+        entry["live"] = live
+        per[key] = entry
+    out["dialects"] = per
+    out["live_specs"] = DIALECT_LIVE
+    write("dialect_cases.json", out)
+
+
 COMMANDS = {"routes": routes, "store": store, "buffers": buffers, "config": config_cases,
-            "partial": partial_cases, "bundle": bundle_cases, "languages": languages_cases, "http": http_cases}
+            "partial": partial_cases, "bundle": bundle_cases, "languages": languages_cases, "http": http_cases,
+            "dialect": dialect_cases}
 
 
 def main(argv: list[str]) -> int:
