@@ -33,7 +33,7 @@ CORVUS_GUI_SHOT=out.png cargo run -- --page motors     # save the window's own p
 CORVUS_GUI_SIZE=700,812 cargo run                      # open at that size, below the usual floor too
 CORVUS_GUI_HOVER=600,50 cargo run                      # hold the pointer there (a hover card, a hint)
 CORVUS_GUI_CLICK=560,310 cargo run -- --page motors    # press there once, at 6 s (an open menu)
-CORVUS_GUI_CLICK="178,472;400,200;enter" cargo run    # several presses, half a second apart; enter is the key
+CORVUS_GUI_CLICK="178,472;400,200;enter" cargo run    # several presses, half a second apart; enter is the key, a leading r is a right click ("r600,400")
 CORVUS_GUI_3D=11.5,47.4,13,200,82 cargo run             # open the 3D map, here: lng,lat,zoom[,bearing[,pitch]]; 1 alone keeps the view
 CORVUS_GUI_3D_PANEL=1 CORVUS_GUI_3D=1 cargo run         # with the 3D panel (buildings, elevation models) open
 ```
@@ -137,7 +137,7 @@ SIGKILL if it is still there after 8 s. If the window does not close within
 | `src/ui/progress.rs` | `Bar`: the track and fill of every progress bar, determinate or sweeping, with the optional border |
 | `src/ui/listrow.rs` | `Mark` and `paint`: the hover and selected background of a list row |
 | `src/ui/slider.rs`, `src/ui/pills.rs` | the stepped slider (`.ui-slider`) and the icon pills of the Settings page (`.settings-tab`) |
-| `src/ui/menu.rs` | `dropdown` and `row`: every list (select choices, flight modes, elevation models) |
+| `src/ui/menu.rs` | `Menu`: every list and popup menu (select choices, flight modes, the layers and camera lists, the context menu, the power menu, the search answers, elevation models), after `.ui-menu`, `.option-item` and `Corvus.ui.menu`; `Look` says which kind, `Anchor` where it opens, `Item` what is in it |
 | `src/ui/card.rs` | every bordered box: `card::paint` / `reserve` / `fill` with a `Look` (Panel, Page, Inset, Note, Raised, Quiet, Well, Console, Chosen, Tone, Custom), and `card::window`, the surface of a floating window |
 | `src/ui/segmented.rs` | the segmented switch (`.params-filter`, `.link-kinds`) |
 | `src/settings/mod.rs`, `src/settings/model.rs` | the Settings page: the pills, writes through `POST /api/config` that are in force at once and taken back when the backend refuses (`strict`), the `Effects` the window reads back (theme, size, units, Mission entry, distance tool, side panel tabs, base layer), and the rules of every picker with the web's expected text in tests (`renderSettingsPage` of `python/src/js/sidenav.js`) |
@@ -428,6 +428,7 @@ Which widget for what:
 | A button, an icon button | `kit::Button` (`Variant`), `kit::icon_btn` |
 | A text box | `field::TextField`; `kit::text_field` for the plain case; `field::outline` for the red outline of a refused value |
 | A select | `kit::select` (the list is `menu::dropdown`) |
+| Any other dropdown, list menu or popup menu (a chooser with dots, a list of actions with icons, a head, headings between groups, a note under a label) | `menu::Menu::new(id, Anchor, &Look::..., &items)` with `Item::Head`, `Section`, `Note`, `Row` (`.icon`, `.note`, `.trail`, `.on`); `.selected`, `.head` for a painted head, `.opacity`; `show(ctx)` returns the `Outcome` (picked value, dismissed, rect). Never paint rows by hand |
 | A check box, a switch | `kit::checkbox`, `toggle::check_box`, `kit::switch` |
 | A caption, a box and a hint (a field) | `formfield::field`, `field_with`, `field_info` at absolute positions, or `Form::field` and `Form::input` on a column |
 | A line of feedback (ok, error, warning) | `message::show` with a `message::Tone`; `Form::message` on a column |
