@@ -133,7 +133,7 @@ pub fn input(
         out = Some(formfield::input(ui, x, y, w, buf, placeholder, mono, secret, id));
         CONTROL_H
     });
-    out.expect("the field is drawn")
+    out.unwrap_or_else(|| ui.allocate_response(Vec2::ZERO, egui::Sense::hover()))
 }
 
 /// What a switch row says and shows.

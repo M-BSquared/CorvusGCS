@@ -1,11 +1,14 @@
 {
   "strings": {
     "Armed by internal command": "Durch internen Befehl armiert",
+    "Back to Home": "Zurück zur Startseite",
     "Datalink regained": "Datenverbindung wiederhergestellt",
     "Preflight checks passed": "Vorflugprüfungen bestanden",
     "RTK base link degraded, float fix": "RTK-Basisverbindung verschlechtert, Float-Lösung",
     "Takeoff altitude reached": "Abhebehöhe erreicht",
     "Takeoff detected, mode {a}": "Abheben erkannt, Modus {a}",
+    "The details are in the crash log in your Corvus folder (~/.corvus/gui-crash.log). The rest of the program keeps running.": "Die Einzelheiten stehen im Absturzprotokoll in deinem Corvus Ordner (~/.corvus/gui-crash.log). Der Rest des Programms läuft weiter.",
+    "This page stopped working": "Diese Seite funktioniert nicht mehr",
     "downloading…": "wird heruntergeladen…",
     "incomplete": "unvollständig",
     "z{a} to {b}": "z{a} bis {b}",

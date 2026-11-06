@@ -5,6 +5,11 @@
 //! rest so a comment, a `data:` split over several lines or a CRLF line end
 //! does not turn into a wrong event.
 
+/// The longest line, and the most data of one event, taken in: a stream that
+/// never ends a line or an event is dropped and followed again, not buffered.
+pub const LINE_MAX: usize = 16 * 1024 * 1024;
+const EVENT_MAX: usize = 16 * 1024 * 1024;
+
 /// One event off the stream.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Event {
@@ -19,6 +24,8 @@ pub struct Event {
 pub struct Parser {
     name: String,
     data: Vec<String>,
+    size: usize,
+    over: bool,
 }
 
 impl Parser {
@@ -27,8 +34,11 @@ impl Parser {
     pub fn line(&mut self, line: &str) -> Option<Event> {
         let line = line.strip_suffix('\r').unwrap_or(line);
         if line.is_empty() {
-            if self.data.is_empty() {
+            let over = std::mem::take(&mut self.over);
+            self.size = 0;
+            if self.data.is_empty() || over {
                 self.name.clear();
+                self.data.clear();
                 return None;
             }
             let name = if self.name.is_empty() {
@@ -48,7 +58,15 @@ impl Parser {
         };
         match field {
             "event" => self.name = value.to_string(),
-            "data" => self.data.push(value.to_string()),
+            "data" if !self.over => {
+                self.size += value.len();
+                if self.size > EVENT_MAX {
+                    self.over = true;
+                    self.data.clear();
+                } else {
+                    self.data.push(value.to_string());
+                }
+            }
             _ => {}
         }
         None
@@ -62,6 +80,20 @@ mod tests {
     fn feed(text: &str) -> Vec<Event> {
         let mut p = Parser::default();
         text.split('\n').filter_map(|l| p.line(l)).collect()
+    }
+
+    #[test]
+    fn an_event_past_the_size_limit_is_dropped_and_the_next_is_read() {
+        let mut p = Parser::default();
+        let big = "x".repeat(1024 * 1024);
+        let mut got = None;
+        for _ in 0..20 {
+            got = p.line(&format!("data: {big}")).or(got);
+        }
+        assert!(p.line("").is_none(), "the oversized event is not delivered");
+        assert!(p.data.is_empty());
+        p.line("data: ok");
+        assert_eq!(p.line("").map(|e| e.data), Some("ok".into()));
     }
 
     #[test]

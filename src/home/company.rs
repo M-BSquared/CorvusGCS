@@ -47,7 +47,9 @@ impl CompanyLogo {
         }
         self.name = name.to_string();
         self.rev = rev;
-        self.loaded = None;
+        if let Some(old) = self.loaded.take() {
+            ctx.forget_image(&old.uri);
+        }
         self.load = None;
         if name.is_empty() {
             return;

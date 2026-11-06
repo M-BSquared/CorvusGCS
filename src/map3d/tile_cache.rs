@@ -95,12 +95,12 @@ impl<T: Send + Sync + 'static> TileCache<T> {
         });
         let decode = Arc::new(decode);
         let threads = (0..WORKERS)
-            .map(|i| {
+            .filter_map(|i| {
                 let (sh, srv, ctx, dec) = (shared.clone(), server.clone(), ctx.clone(), decode.clone());
                 std::thread::Builder::new()
                     .name(format!("tiles-{i}"))
                     .spawn(move || worker(sh, srv, ctx, dec))
-                    .expect("a tile worker starts")
+                    .ok()
             })
             .collect();
         TileCache {

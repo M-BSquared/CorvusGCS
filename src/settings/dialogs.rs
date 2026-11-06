@@ -139,7 +139,7 @@ impl SettingsPage {
         }
     }
 
-    pub(super) fn logo_done(&mut self, _ctx: &egui::Context, name: &'static str, answer: Result<Value, String>) {
+    pub(super) fn logo_done(&mut self, ctx: &egui::Context, name: &'static str, answer: Result<Value, String>) {
         let removing = name == "logo_remove";
         let fallback = if removing {
             "Could not remove the logo."
@@ -151,6 +151,7 @@ impl SettingsPage {
             return;
         }
         self.logo = None;
+        ctx.forget_image(&format!("bytes://company-logo-{}.png", self.logo_rev));
         self.logo_rev += 1;
         if removing {
             super::model::merge(&mut self.cfg, &json!({"branding": {"logo": ""}}));

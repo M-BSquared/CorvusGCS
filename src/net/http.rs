@@ -11,6 +11,25 @@ use std::io::{self, BufRead, BufReader, Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
 use std::time::Duration;
 
+/// The longest line of a response head or a chunk header, the most header
+/// lines, and the most a body read into memory may hold: an answer past these
+/// is an error, never an allocation without end.
+const LINE_MAX: u64 = 16 * 1024;
+const HEADERS_MAX: usize = 200;
+pub const BODY_MAX: u64 = 256 * 1024 * 1024;
+
+/// `read_line` that gives up on a line longer than `LINE_MAX`.
+pub fn read_line_capped<R: BufRead>(reader: &mut R, line: &mut String) -> io::Result<usize> {
+    let n = reader.by_ref().take(LINE_MAX).read_line(line)?;
+    if n as u64 >= LINE_MAX && !line.ends_with('\n') {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "a line of the response is too long",
+        ));
+    }
+    Ok(n)
+}
+
 /// Where the server is: `http://host:port`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Server {
@@ -88,7 +107,7 @@ impl Response {
     /// The whole body as text.
     pub fn text(mut self) -> io::Result<String> {
         let mut out = String::new();
-        self.body.read_to_string(&mut out)?;
+        (&mut self.body).take(BODY_MAX).read_to_string(&mut out)?;
         Ok(out)
     }
 }
@@ -105,6 +124,7 @@ pub fn request(
 ) -> io::Result<Response> {
     let mut stream = server.connect(Duration::from_secs(3))?;
     stream.set_read_timeout(Some(read_timeout))?;
+    stream.set_write_timeout(Some(Duration::from_secs(30)))?;
     stream.set_nodelay(true)?;
     let mut head = format!(
         "{method} {path} HTTP/1.1\r\nHost: {}:{}\r\nAccept: {accept}\r\nConnection: close\r\n",
@@ -128,7 +148,7 @@ pub fn request(
 pub fn read_response<R: BufRead + Send + 'static>(mut reader: R) -> io::Result<Response> {
     let bad = |what: &str| io::Error::new(io::ErrorKind::InvalidData, what.to_string());
     let mut line = String::new();
-    reader.read_line(&mut line)?;
+    read_line_capped(&mut reader, &mut line)?;
     let status = line
         .split_whitespace()
         .nth(1)
@@ -137,8 +157,11 @@ pub fn read_response<R: BufRead + Send + 'static>(mut reader: R) -> io::Result<R
     let mut headers = Vec::new();
     loop {
         line.clear();
-        if reader.read_line(&mut line)? == 0 {
+        if read_line_capped(&mut reader, &mut line)? == 0 {
             return Err(bad("connection closed in the response head"));
+        }
+        if headers.len() >= HEADERS_MAX {
+            return Err(bad("too many header lines"));
         }
         let l = line.trim_end_matches(['\r', '\n']);
         if l.is_empty() {
@@ -178,7 +201,7 @@ impl<R: BufRead> Read for Chunked<R> {
         }
         if self.left == 0 {
             let mut size = String::new();
-            self.inner.read_line(&mut size)?;
+            read_line_capped(&mut self.inner, &mut size)?;
             let size = size.trim().split(';').next().unwrap_or("");
             self.left = usize::from_str_radix(size, 16)
                 .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "bad chunk size"))?;
@@ -195,7 +218,7 @@ impl<R: BufRead> Read for Chunked<R> {
         self.left -= n;
         if self.left == 0 {
             let mut crlf = String::new();
-            self.inner.read_line(&mut crlf)?;
+            read_line_capped(&mut self.inner, &mut crlf)?;
         }
         Ok(n)
     }
@@ -211,12 +234,12 @@ pub fn get_json(server: &Server, path: &str) -> Result<serde_json::Value, String
 /// GET a binary body (a map tile), `None` unless the answer is a 200.
 pub fn get_bytes(server: &Server, path: &str) -> Option<Vec<u8>> {
     use std::io::Read;
-    let mut r = request(server, "GET", path, None, "*/*", Duration::from_secs(15)).ok()?;
+    let r = request(server, "GET", path, None, "*/*", Duration::from_secs(15)).ok()?;
     if r.status != 200 {
         return None;
     }
     let mut out = Vec::new();
-    r.body.read_to_end(&mut out).ok()?;
+    r.body.take(BODY_MAX).read_to_end(&mut out).ok()?;
     Some(out)
 }
 
@@ -289,6 +312,7 @@ pub fn post_bytes(server: &Server, path: &str, body: &[u8], wait: Duration) -> R
     let fail = |e: io::Error| format!("{}{path}: {e}", server.url());
     let mut stream = server.connect(Duration::from_secs(3)).map_err(fail)?;
     stream.set_read_timeout(Some(wait)).map_err(fail)?;
+    stream.set_write_timeout(Some(Duration::from_secs(60))).map_err(fail)?;
     let head = format!(
         "POST {path} HTTP/1.1\r\nHost: {}:{}\r\nAccept: application/json\r\nConnection: close\r\nContent-Type: application/octet-stream\r\nContent-Length: {}\r\n\r\n",
         server.host,
@@ -318,6 +342,31 @@ mod tests {
 
     fn parse(raw: &'static str) -> Response {
         read_response(BufReader::new(raw.as_bytes())).unwrap()
+    }
+
+    #[test]
+    fn a_head_line_without_an_end_is_refused() {
+        let long = format!("HTTP/1.1 200 OK\r\nX-Long: {}\r\n\r\n", "a".repeat(40_000));
+        let e = read_response(BufReader::new(std::io::Cursor::new(long.into_bytes())))
+            .err()
+            .unwrap();
+        assert_eq!(e.kind(), io::ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn too_many_header_lines_are_refused() {
+        let many = format!("HTTP/1.1 200 OK\r\n{}\r\n", "X-A: b\r\n".repeat(HEADERS_MAX + 5));
+        let e = read_response(BufReader::new(std::io::Cursor::new(many.into_bytes())))
+            .err()
+            .unwrap();
+        assert_eq!(e.kind(), io::ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn a_line_at_the_limit_with_its_end_is_read() {
+        let ok = format!("HTTP/1.1 200 OK\r\nX-Long: {}\r\n\r\nbody", "a".repeat(1000));
+        let r = read_response(BufReader::new(std::io::Cursor::new(ok.into_bytes()))).unwrap();
+        assert_eq!(r.header("x-long").map(str::len), Some(1000));
     }
 
     #[test]

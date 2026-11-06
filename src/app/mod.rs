@@ -5,6 +5,7 @@
 pub mod nav;
 pub mod popout;
 pub mod responsive;
+pub mod soak;
 pub mod touch;
 
 use std::process::ExitCode;
@@ -60,6 +61,8 @@ struct App {
     checklist: crate::setup::checklist::Checklist,
     touch: touch::Touch,
     shot_sent: bool,
+    broken_frames: u32,
+    soak: soak::Soak,
     click_stage: u32,
     map: Map,
     hud: Hud,
@@ -283,6 +286,43 @@ impl App {
         } else if let Some((zoom, c)) = crate::setup::geofence::fit(&corners, (w, h), 80.0, 18.0) {
             self.map.go_to(c[0], c[1], zoom);
         }
+    }
+
+    /// What a frame shows when drawing it panicked: the panic is in the crash
+    /// log, the rest of the program runs on. True when "Back to Home" was pressed.
+    fn broken_page(&self, ui: &mut egui::Ui) -> bool {
+        let mut back = false;
+        egui::CentralPanel::default()
+            .frame(egui::Frame::NONE.fill(style::bg()))
+            .show(ui, |ui| {
+                let rect = ui.max_rect();
+                let painter = ui.painter_at(rect);
+                let title = style::galley(ui, "This page stopped working", 13.0, style::Weight::W600, style::text_1(), 0.0);
+                let note = crate::ui::kit::wrapped(
+                    ui,
+                    "The details are in the crash log in your Corvus folder (~/.corvus/gui-crash.log). The rest of the program keeps running.",
+                    11.0,
+                    style::text_3(),
+                    300.0,
+                );
+                let button = crate::ui::button::Button::new("Back to Home", crate::ui::button::Variant::Primary);
+                let (bw, bh) = (button.width(ui), button.height());
+                let h = title.size().y + 10.0 + note.size().y + 16.0 + bh;
+                let top = rect.center().y - h / 2.0;
+                painter.galley(
+                    egui::pos2(rect.center().x - title.size().x / 2.0, top),
+                    title.clone(),
+                    style::text_1(),
+                );
+                let y = top + title.size().y + 10.0;
+                painter.galley(egui::pos2(rect.center().x - note.size().x / 2.0, y), note.clone(), style::text_3());
+                let b = egui::Rect::from_min_size(
+                    egui::pos2(rect.center().x - bw / 2.0, y + note.size().y + 16.0),
+                    egui::vec2(bw, bh),
+                );
+                back = button.show(ui, b, "broken-back");
+            });
+        back
     }
 
     fn draw(&mut self, ui: &mut egui::Ui) {
@@ -630,6 +670,7 @@ impl eframe::App for App {
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
         self.shoot(ctx, raw_input);
         let now = raw_input.time.unwrap_or(0.0);
+        self.soak_tick(ctx, now);
         self.touch.handle(raw_input, now);
         if self.touch.waiting() {
             ctx.request_repaint_after(std::time::Duration::from_millis(100));
@@ -704,7 +745,16 @@ impl eframe::App for App {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        self.draw(ui);
+        match crate::crash::guarded(|| self.draw(ui)) {
+            Ok(()) => self.broken_frames = 0,
+            Err(_) => {
+                self.broken_frames = self.broken_frames.saturating_add(1);
+                if self.broken_page(ui) {
+                    self.page = Page::Home;
+                }
+                ui.ctx().request_repaint_after(std::time::Duration::from_millis(500));
+            }
+        }
     }
 
     fn on_exit(&mut self, gl: Option<&eframe::glow::Context>) {
@@ -873,6 +923,8 @@ pub fn run(
                 checklist: crate::setup::checklist::Checklist::new(server.clone(), &ctx),
                 touch: touch::Touch::load(),
                 shot_sent: false,
+                broken_frames: 0,
+                soak: Default::default(),
                 click_stage: 0,
                 map,
                 hud: {

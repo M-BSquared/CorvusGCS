@@ -250,7 +250,7 @@ impl SettingsPage {
                     .trim()
                     .to_string();
                     let saved = p.get("token_set").and_then(Value::as_bool).unwrap_or(false);
-                    let key: &'static str = Box::leak(format!("token_{}", s(p, "id")).into_boxed_str());
+                    let key: &'static str = crate::data::intern::intern(&format!("token_{}", s(p, "id")));
                     let hint = if saved {
                         "A key is saved. Type to replace it"
                     } else {

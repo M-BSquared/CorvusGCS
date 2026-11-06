@@ -15,6 +15,7 @@ use serde_json::{json, Value};
 
 use crate::net::bg::Pending;
 use crate::net::http::{self, Server};
+use crate::net::lock::Relock;
 use crate::net::stream::Stream;
 use crate::ui::card::{self, Look};
 use crate::ui::field::{Surface, TextField};
@@ -189,7 +190,7 @@ impl ConsoleTab {
     pub fn new(server: Server, ctx: &egui::Context) -> ConsoleTab {
         let buffer = Arc::new(Mutex::new(Buffer::default()));
         {
-            let mut b = buffer.lock().expect("console");
+            let mut b = buffer.relock();
             b.add("", "Corvus GCS MAVLink console.");
             b.add("", "Listening for live MAVLink messages \u{2026}");
             b.add("", "Type \"?\" for the command list, Tab to complete.");
@@ -197,7 +198,7 @@ impl ConsoleTab {
         let sink = buffer.clone();
         let repaint = ctx.clone();
         let stream = Stream::start(server.clone(), "/api/events?topics=console".into(), move |ev| {
-            let mut b = sink.lock().expect("console");
+            let mut b = sink.relock();
             if ev.name == "error" {
                 if !b.interrupted {
                     b.interrupted = true;
@@ -244,13 +245,13 @@ impl ConsoleTab {
 
     /// One line from outside the stream (a plugin's `api.console`).
     pub fn add_line(&self, level: &str, text: &str) {
-        self.buffer.lock().expect("console").add(level, text);
+        self.buffer.relock().add(level, text);
     }
 
     /// Every line of the buffer as a transcript, a filter typed into the tab
     /// notwithstanding (`consoleText({all: true})`).
     pub fn transcript(&self) -> String {
-        let b = self.buffer.lock().expect("console");
+        let b = self.buffer.relock();
         b.lines.iter().map(format_line).collect::<Vec<_>>().join("\n")
     }
 
@@ -262,7 +263,7 @@ impl ConsoleTab {
     }
 
     fn print_commands(&self) {
-        let mut b = self.buffer.lock().expect("console");
+        let mut b = self.buffer.relock();
         b.add("info", "Commands:");
         for (name, args, help, _) in COMMANDS {
             let sig = if args.is_empty() {
@@ -297,7 +298,7 @@ impl ConsoleTab {
         self.sending = Some(Pending::spawn(ctx, move || {
             http::post_json(&server, "/api/console/command", &json!({ "command": cmd }))
         }));
-        self.buffer.lock().expect("console").last_cmd = Some(v);
+        self.buffer.relock().last_cmd = Some(v);
     }
 
     fn take_answer(&mut self) {
@@ -305,7 +306,7 @@ impl ConsoleTab {
             return;
         };
         self.sending = None;
-        let v = self.buffer.lock().expect("console").last_cmd.take().unwrap_or_default();
+        let v = self.buffer.relock().last_cmd.take().unwrap_or_default();
         match r {
             Ok(res) => {
                 if res
@@ -314,24 +315,16 @@ impl ConsoleTab {
                 {
                     self.print_commands();
                 } else if let Some(e) = res.get("error").and_then(Value::as_str).filter(|e| !e.is_empty()) {
-                    self.buffer.lock().expect("console").add("error", e);
+                    self.buffer.relock().add("error", e);
                 } else if res.get("shell").is_some_and(|s| s.as_bool() == Some(true)) {
                     self.buffer
-                        .lock()
-                        .expect("console")
+                        .relock()
                         .add("info", "Shell command sent, output streaming\u{2026}");
                 } else if res.get("ok") == Some(&Value::Bool(true)) {
-                    self.buffer
-                        .lock()
-                        .expect("console")
-                        .add("success", &format!("Command sent: {v}"));
+                    self.buffer.relock().add("success", &format!("Command sent: {v}"));
                 }
             }
-            Err(e) => self
-                .buffer
-                .lock()
-                .expect("console")
-                .add("error", &format!("Command failed: {e}")),
+            Err(e) => self.buffer.relock().add("error", &format!("Command failed: {e}")),
         }
     }
 
@@ -501,7 +494,7 @@ impl ConsoleTab {
 
     /// The footer count: lines (or shown / all under a filter), held, paused.
     pub fn count_text(&self) -> String {
-        let b = self.buffer.lock().expect("console");
+        let b = self.buffer.relock();
         let mut parts = Vec::new();
         if self.filter.is_empty() {
             parts.push(b.lines.len().to_string());
@@ -522,7 +515,7 @@ impl ConsoleTab {
     fn tool(&mut self, i: usize, ctx: &egui::Context) {
         match i {
             0 => {
-                let mut b = self.buffer.lock().expect("console");
+                let mut b = self.buffer.relock();
                 b.paused = !b.paused;
                 if !b.paused {
                     let held = std::mem::take(&mut b.pending);
@@ -547,7 +540,7 @@ impl ConsoleTab {
                 let dir = std::env::var_os("HOME")
                     .map(|h| std::path::PathBuf::from(h).join("Downloads"))
                     .filter(|d| d.is_dir());
-                let mut b = self.buffer.lock().expect("console");
+                let mut b = self.buffer.relock();
                 match dir {
                     Some(d) => {
                         let path = d.join(format!("corvus-console-{}.log", now_ts().replace(':', "")));
@@ -560,7 +553,7 @@ impl ConsoleTab {
                 }
             }
             _ => {
-                let mut b = self.buffer.lock().expect("console");
+                let mut b = self.buffer.relock();
                 b.lines.clear();
                 b.pending.clear();
             }

@@ -33,6 +33,10 @@ const READY_HOLD_MS: f64 = 1500.0;
 const DISARM_EVENT_WINDOW_MS: f64 = 3000.0;
 const DEDUPE_WINDOW_MS: f64 = 3000.0;
 const TOAST_STACK_MAX: usize = 3;
+/// What the board keeps of its own lines and of commands in flight; the
+/// oldest go first, so a long session cannot grow either without bound.
+const LOCAL_MAX: usize = 200;
+const ATTEMPTS_MAX: usize = 100;
 
 /// One line on the board.
 #[derive(Debug, Clone, PartialEq)]
@@ -349,6 +353,9 @@ impl Board {
         };
         let lvl = n.level().to_string();
         self.local.insert(id, n);
+        while self.local.len() > LOCAL_MAX {
+            self.local.pop_first();
+        }
         self.toast(&lvl, &msg, "", "", now);
         id
     }
@@ -369,6 +376,9 @@ impl Board {
                 local_id: None,
             },
         );
+        while self.attempts.len() > ATTEMPTS_MAX {
+            self.attempts.pop_first();
+        }
         id
     }
 
@@ -444,6 +454,7 @@ impl Board {
         self.milestones(state, now);
         self.readiness(state, now);
         self.toasts.retain(|t| t.duration <= 0.0 || now - t.at < t.duration);
+        self.toasted_at.retain(|_, at| now - *at < TOAST_REPEAT_MS);
     }
 
     fn sync_remote(&mut self, state: &Value, now: f64) {
@@ -700,6 +711,33 @@ mod tests {
         let s = b.summary(101.0);
         assert_eq!(s.items.len(), 1);
         assert_eq!(s.items[0].msg, "Arming denied: no GPS");
+    }
+
+    #[test]
+    fn the_board_keeps_a_bounded_number_of_its_own_lines() {
+        let mut b = Board::default();
+        for i in 0..(LOCAL_MAX + 50) {
+            b.add_local("critical", &format!("failure {i}"), i as f64);
+        }
+        assert_eq!(b.local.len(), LOCAL_MAX);
+        let kept = b.visible(1.0);
+        assert!(kept.iter().any(|n| n.msg == format!("failure {}", LOCAL_MAX + 49)));
+        assert!(!kept.iter().any(|n| n.msg == "failure 0"));
+    }
+
+    #[test]
+    fn commands_in_flight_and_toast_memories_are_bounded() {
+        let mut b = Board::default();
+        for _ in 0..(ATTEMPTS_MAX + 30) {
+            b.begin(&["arm"], 0.0);
+        }
+        assert_eq!(b.attempts.len(), ATTEMPTS_MAX);
+        for i in 0..500 {
+            b.toast("warning", &format!("line {i}"), "", "", 0.0);
+        }
+        assert_eq!(b.toasted_at.len(), 500);
+        b.update(&json!({}), TOAST_REPEAT_MS + 1.0);
+        assert!(b.toasted_at.is_empty(), "a text past its repeat window is forgotten");
     }
 
     #[test]
