@@ -32,19 +32,32 @@ pub struct Buffer {
     pub vz: Vec<f64>,
 }
 
+/// `Number(state[key]) || 0`: a number, a numeric string or a boolean reads as
+/// its value, anything else as zero.
+fn number(state: &Value, key: &str) -> f64 {
+    let n = match state.get(key) {
+        Some(Value::Number(n)) => n.as_f64().unwrap_or(0.0),
+        Some(Value::String(t)) => t.trim().parse().unwrap_or(0.0),
+        Some(Value::Bool(b)) => f64::from(u8::from(*b)),
+        _ => 0.0,
+    };
+    if n.is_finite() {
+        n
+    } else {
+        0.0
+    }
+}
+
 impl Buffer {
     /// Appends a point only when a vibration value changed since the last
     /// one, so unrelated telemetry frames do not flood the buffer with
     /// duplicates (`updateBuffer`). Returns whether a point was added.
     pub fn update(&mut self, state: &Value, t_sec: f64) -> bool {
-        let n = |k: &str| {
-            state
-                .get(k)
-                .and_then(Value::as_f64)
-                .filter(|v| v.is_finite())
-                .unwrap_or(0.0)
-        };
-        let (vx, vy, vz) = (n("vibration_x"), n("vibration_y"), n("vibration_z"));
+        let (vx, vy, vz) = (
+            number(state, "vibration_x"),
+            number(state, "vibration_y"),
+            number(state, "vibration_z"),
+        );
         if let (Some(x), Some(y), Some(z)) = (self.vx.last(), self.vy.last(), self.vz.last()) {
             if *x == vx && *y == vy && *z == vz {
                 return false;
@@ -375,6 +388,35 @@ mod tests {
         assert_eq!(b.vx.len(), 2);
         assert_eq!(b.vz[1], 0.9);
         assert_eq!(b.t[1], 2.0);
+    }
+
+    #[test]
+    fn the_buffer_follows_the_web_function_step_by_step() {
+        let all: Value = serde_json::from_str(include_str!("model_cases.json")).expect("model_cases.json");
+        let mut b = Buffer::default();
+        for c in all["updateBuffer"].as_array().unwrap() {
+            let added = b.update(&c["in"][0], c["in"][1].as_f64().unwrap());
+            assert_eq!(added, c["out"]["added"].as_bool().unwrap(), "{}", c["in"]);
+            let want = &c["out"]["buffer"];
+            for (k, got) in [("t", &b.t), ("vx", &b.vx), ("vy", &b.vy), ("vz", &b.vz)] {
+                let want: Vec<f64> = want[k]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|v| v.as_f64().unwrap())
+                    .collect();
+                assert_eq!(*got, want, "{k} after {}", c["in"]);
+            }
+        }
+        let w = &all["window"];
+        let mut long = Buffer::default();
+        for i in 0..w["max"].as_u64().unwrap() as usize + 25 {
+            long.update(&s(i as f64, 0.0, 0.0), i as f64);
+        }
+        assert_eq!(long.vx.len() as u64, w["length"].as_u64().unwrap());
+        assert_eq!(long.vx[0], w["first"].as_f64().unwrap());
+        assert_eq!(*long.vx.last().unwrap(), w["last"].as_f64().unwrap());
+        assert_eq!(MAX_POINTS as u64, w["max"].as_u64().unwrap());
     }
 
     #[test]

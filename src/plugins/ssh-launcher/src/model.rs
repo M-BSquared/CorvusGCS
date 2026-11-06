@@ -199,6 +199,139 @@ pub fn missing_connections(buttons: &[Button], connections: &[Value]) -> Vec<Str
 mod tests {
     use super::*;
 
+    // What the web functions answered for the same inputs (`model_cases.json`,
+    // written by `src/plugins/dump_cases.js` from python/plugins).
+    fn cases(name: &str) -> Vec<(Value, Value)> {
+        let all: Value = serde_json::from_str(include_str!("model_cases.json")).expect("model_cases.json");
+        all[name]
+            .as_array()
+            .unwrap_or_else(|| panic!("no cases for {name}"))
+            .iter()
+            .map(|c| (c["in"].clone(), c["out"].clone()))
+            .collect()
+    }
+
+    fn text_of(v: &Value, k: &str) -> String {
+        v.get(k).and_then(Value::as_str).unwrap_or("").to_string()
+    }
+
+    fn conn_of(v: &Value) -> NewConn {
+        NewConn {
+            name: text_of(v, "name"),
+            host: text_of(v, "host"),
+            port: text_of(v, "port"),
+            username: text_of(v, "username"),
+            password: text_of(v, "password"),
+            key_path: text_of(v, "key_path"),
+        }
+    }
+
+    #[test]
+    fn a_button_is_made_as_the_web_makes_it() {
+        for (i, out) in cases("coerceButton") {
+            let got = coerce_button(&i[0]).map_or(Value::Null, |b| b.to_json());
+            assert_eq!(got, out, "{i}");
+        }
+        for (i, out) in cases("normalizeButtons") {
+            let got: Vec<Value> = normalize_buttons(&i[0]).iter().map(Button::to_json).collect();
+            let mut want: Vec<Value> = out.as_array().unwrap().clone();
+            let (got, want): (Vec<Value>, Vec<Value>) = (
+                got.into_iter()
+                    .map(|mut b| {
+                        b["id"] = Value::Null;
+                        b
+                    })
+                    .collect(),
+                want.iter_mut()
+                    .map(|b| {
+                        b["id"] = Value::Null;
+                        b.clone()
+                    })
+                    .collect(),
+            );
+            assert_eq!(got, want, "{i}");
+        }
+    }
+
+    #[test]
+    fn the_lines_are_the_ones_the_web_builds() {
+        for (i, out) in cases("remoteLine") {
+            let e = &i[0];
+            assert_eq!(
+                remote_line(&text_of(e, "directory"), &text_of(e, "command")),
+                out,
+                "{i}"
+            );
+        }
+        for (i, out) in cases("previewLine") {
+            let e = &i[0];
+            let got = preview_line(
+                &text_of(e, "connection"),
+                &text_of(e, "directory"),
+                &text_of(e, "command"),
+                coerce_mode(e),
+            );
+            assert_eq!(got, out, "{i}");
+        }
+    }
+
+    #[test]
+    fn the_modes_and_restarts_are_the_webs() {
+        for (i, out) in cases("coerceMode") {
+            assert_eq!(coerce_mode(&i[0]).as_str(), out, "{i}");
+        }
+        for (i, out) in cases("restarts") {
+            let e = &i[0];
+            let b = Button {
+                restart: e.get("restart") == Some(&json!(true)),
+                mode: if e.is_object() {
+                    coerce_mode(e)
+                } else {
+                    Mode::Background
+                },
+                ..Button::blank("", "")
+            };
+            assert_eq!(restarts(&b), out.as_bool().unwrap(), "{i}");
+        }
+    }
+
+    #[test]
+    fn a_new_connection_is_named_checked_and_sent_as_the_web_does() {
+        for (i, out) in cases("derivedName") {
+            assert_eq!(derived_name(&conn_of(&i[0])), out, "{i}");
+        }
+        for (i, out) in cases("newConnectionError") {
+            let taken: Vec<String> = i[1]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|t| t.as_str().unwrap().into())
+                .collect();
+            assert_eq!(new_connection_error(&conn_of(&i[0]), &taken), out, "{i}");
+        }
+        for (i, out) in cases("newConnectionBody") {
+            assert_eq!(new_connection_body(&conn_of(&i[0])), out, "{i}");
+        }
+    }
+
+    #[test]
+    fn a_background_run_and_the_missing_connections_read_as_the_web_reads_them() {
+        for (i, out) in cases("resultSummary") {
+            let (text, kind) = result_summary(&i[0]);
+            assert_eq!(json!({"text": text, "kind": kind}), out, "{i}");
+        }
+        for (i, out) in cases("missingConnections") {
+            let buttons: Vec<Button> = i[0]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|b| Button::blank(&text_of(b, "connection"), ""))
+                .collect();
+            let known = i[1].as_array().cloned().unwrap_or_default();
+            assert_eq!(json!(missing_connections(&buttons, &known)), out, "{i}");
+        }
+    }
+
     #[test]
     fn the_remote_line_quotes_the_folder_for_the_far_shell() {
         assert_eq!(remote_line("/home/p'x", " ./a.sh "), "cd -- '/home/p'\\''x' && ./a.sh");

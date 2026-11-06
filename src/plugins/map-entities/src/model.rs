@@ -125,6 +125,23 @@ fn plain(text: &str, max: usize) -> String {
         .collect()
 }
 
+/// `Number(text)` for what a person types: decimals, exponents and the
+/// unsigned `0x`, `0o` and `0b` forms JavaScript reads.
+fn js_number(text: &str) -> Option<f64> {
+    let radix = |digits: &str, base: u32| u64::from_str_radix(digits, base).ok().map(|n| n as f64);
+    let lower = text.to_ascii_lowercase();
+    if let Some(d) = lower.strip_prefix("0x") {
+        return radix(d, 16);
+    }
+    if let Some(d) = lower.strip_prefix("0o") {
+        return radix(d, 8);
+    }
+    if let Some(d) = lower.strip_prefix("0b") {
+        return radix(d, 2);
+    }
+    text.parse().ok()
+}
+
 /// One angle in decimal degrees from what an operator typed; a decimal comma
 /// is fine. `None` for anything that is not a number inside +-`limit`.
 pub fn parse_degrees(text: &str, limit: f64) -> Option<f64> {
@@ -132,7 +149,7 @@ pub fn parse_degrees(text: &str, limit: f64) -> Option<f64> {
     if t.is_empty() {
         return None;
     }
-    let n: f64 = t.replace(',', ".").parse().ok()?;
+    let n = js_number(&t.replace(',', "."))?;
     (n.is_finite() && n.abs() <= limit).then_some(n)
 }
 
@@ -806,6 +823,182 @@ pub fn log_text(e: &Entity, entry: &Entry) -> String {
 mod tests {
     use super::*;
     use std::collections::HashMap;
+
+    // What the web functions answered for the same inputs (`model_cases.json`,
+    // written by `src/plugins/dump_cases.js` from python/plugins).
+    fn cases(name: &str) -> Vec<(Value, Value)> {
+        let all: Value = serde_json::from_str(include_str!("model_cases.json")).expect("model_cases.json");
+        all[name]
+            .as_array()
+            .unwrap_or_else(|| panic!("no cases for {name}"))
+            .iter()
+            .map(|c| (c["in"].clone(), c["out"].clone()))
+            .collect()
+    }
+
+    /// Equal, with numbers to a few parts in a billion (the same sums in
+    /// another order).
+    fn same(got: &Value, want: &Value, what: &str) {
+        match (got, want) {
+            (Value::Number(a), Value::Number(b)) => {
+                let (a, b) = (a.as_f64().unwrap(), b.as_f64().unwrap());
+                assert!(
+                    (a - b).abs() <= 1e-9 * a.abs().max(b.abs()).max(1.0),
+                    "{what}: {a} vs {b}"
+                );
+            }
+            (Value::Array(a), Value::Array(b)) => {
+                assert_eq!(a.len(), b.len(), "{what}");
+                for (x, y) in a.iter().zip(b) {
+                    same(x, y, what);
+                }
+            }
+            (Value::Object(a), Value::Object(b)) => {
+                assert_eq!(a.keys().collect::<Vec<_>>(), b.keys().collect::<Vec<_>>(), "{what}");
+                for (k, x) in a {
+                    same(x, &b[k], what);
+                }
+            }
+            _ => assert_eq!(got, want, "{what}"),
+        }
+    }
+
+    fn opt(v: Option<f64>) -> Value {
+        v.map_or(Value::Null, |n| json!(n))
+    }
+
+    fn point(v: &Value) -> [f64; 2] {
+        [v[0].as_f64().unwrap(), v[1].as_f64().unwrap()]
+    }
+
+    /// An entity as the web's functions are handed one: only the fields the
+    /// case names, the rest as a new one of that kind has them.
+    fn entity(v: &Value) -> Entity {
+        let mut e = make_entity(v["kind"].as_str().unwrap(), [11.5, 48.1], Some([11.51, 48.1]), &[]).unwrap();
+        for (k, f) in [
+            ("lng", 0),
+            ("lat", 1),
+            ("lng2", 2),
+            ("lat2", 3),
+            ("base", 4),
+            ("height", 5),
+            ("radius", 6),
+            ("angle", 7),
+            ("bearing", 8),
+        ] {
+            if let Some(n) = v.get(k).and_then(Value::as_f64) {
+                match f {
+                    0 => e.lng = n,
+                    1 => e.lat = n,
+                    2 => e.lng2 = n,
+                    3 => e.lat2 = n,
+                    4 => e.base = n,
+                    5 => e.height = n,
+                    6 => e.radius = n,
+                    7 => e.angle = n,
+                    _ => e.bearing = n,
+                }
+            }
+        }
+        e
+    }
+
+    fn sample(v: &Value) -> Sample {
+        s(
+            v["lng"].as_f64().unwrap(),
+            v["lat"].as_f64().unwrap(),
+            v["alt"].as_f64().unwrap(),
+        )
+    }
+
+    #[test]
+    fn typed_coordinates_are_read_as_the_web_reads_them() {
+        for (i, out) in cases("parseDegrees") {
+            same(
+                &opt(parse_degrees(i[0].as_str().unwrap(), i[1].as_f64().unwrap())),
+                &out,
+                &i.to_string(),
+            );
+        }
+        for (i, out) in cases("parseCoordinatePair") {
+            let got = parse_coordinate_pair(i[0].as_str().unwrap())
+                .map_or(Value::Null, |(lat, lng)| json!({"lat": lat, "lng": lng}));
+            same(&got, &out, &i.to_string());
+        }
+    }
+
+    #[test]
+    fn distances_and_bearings_are_the_webs() {
+        for (i, out) in cases("distanceM") {
+            same(&json!(distance_m(point(&i[0]), point(&i[1]))), &out, &i.to_string());
+        }
+        for (i, out) in cases("bearingDeg") {
+            same(&json!(bearing_deg(point(&i[0]), point(&i[1]))), &out, &i.to_string());
+        }
+    }
+
+    #[test]
+    fn a_gate_is_crossed_and_judged_as_the_web_does() {
+        for (i, out) in cases("gateCrossing") {
+            let c = gate_crossing(
+                &entity(
+                    &json!({"kind": "gate", "lng": i[0]["lng"], "lat": i[0]["lat"], "lng2": i[0]["lng2"], "lat2": i[0]["lat2"], "base": i[0]["base"], "height": i[0]["height"]}),
+                ),
+                sample(&i[1]),
+                sample(&i[2]),
+            );
+            let got = c.map_or(
+                Value::Null,
+                |c| json!({"u": c.u, "t": c.t, "offset": c.offset, "alt": c.alt}),
+            );
+            same(&got, &out, &i.to_string());
+        }
+        for (i, out) in cases("gateVerdict") {
+            let g = entity(&json!({"kind": "gate", "base": i[0]["base"], "height": i[0]["height"]}));
+            let crossing = Crossing {
+                u: 0.5,
+                t: 0.5,
+                offset: 0.0,
+                alt: i[1]["alt"].as_f64().unwrap(),
+            };
+            let (ok, reason) = gate_verdict(&g, &crossing);
+            same(&json!({"ok": ok, "reason": reason}), &out, &i.to_string());
+        }
+    }
+
+    #[test]
+    fn a_zones_area_is_the_webs() {
+        for (i, out) in cases("sectorAngle") {
+            same(&json!(entity(&i[0]).sector_angle()), &out, &i.to_string());
+        }
+        for (i, out) in cases("inSector") {
+            let mut z = entity(&i[0]);
+            z.radius = 1e9;
+            assert_eq!(in_sector(&z, point(&i[1])), out.as_bool().unwrap(), "{i}");
+        }
+        for (i, out) in cases("sectorRing") {
+            same(&json!(sector_ring(&entity(&i[0]))), &out, &i.to_string());
+        }
+    }
+
+    #[test]
+    fn a_saved_entity_is_read_back_as_the_web_reads_it() {
+        for (i, out) in cases("normalizeEntity") {
+            let got = normalize_entity(&i[0]).map_or(Value::Null, |e| {
+                let j = e.to_json();
+                let mut o = serde_json::Map::new();
+                for k in out
+                    .as_object()
+                    .map(|m| m.keys().cloned().collect::<Vec<_>>())
+                    .unwrap_or_default()
+                {
+                    o.insert(k.clone(), j[&k].clone());
+                }
+                Value::Object(o)
+            });
+            same(&got, &out, &i.to_string());
+        }
+    }
 
     fn gate() -> Entity {
         let mut e = make_entity("gate", [11.0, 48.0], Some([11.0002, 48.0]), &[]).unwrap();
