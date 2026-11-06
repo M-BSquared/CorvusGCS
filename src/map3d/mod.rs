@@ -6,6 +6,7 @@
 pub mod buildings;
 pub mod camera;
 pub mod gpu;
+mod overlays;
 pub mod panel;
 pub mod ribbon;
 pub mod terrain;
@@ -1031,7 +1032,8 @@ impl Map3d {
         line_blocked(&self.cam, target, &|lng, lat| self.ground_at(lng, lat))
     }
 
-    /// The flown track as ribbons the depth test can hide behind a hill: a
+    /// What lies on or above the ground as geometry the depth test can hide
+    /// behind a hill: what plugins draw, then the flown track as ribbons, a
     /// dark casing and the colour on top, earlier flights quieter.
     fn line_items(&self, layers: &Layers3d<'_>) -> Vec<gpu::Item> {
         let rgb = |c: Color32| {
@@ -1042,7 +1044,7 @@ impl Map3d {
             ]
         };
         let centre = crate::map3d::camera::mercator(self.cam.lng, self.cam.lat);
-        let mut items = Vec::new();
+        let mut items = self.shape_items(layers.shapes);
         let mut add = |pts: &[Point], color: Color32, past: bool, air: bool| {
             let local: Vec<V3> = track::smooth(pts)
                 .iter()
@@ -1087,8 +1089,6 @@ impl Map3d {
 
     fn paint_layers(&self, ui: &egui::Ui, painter: &egui::Painter, origin: Pos2, layers: &Layers3d<'_>) {
         let cam = &self.cam;
-        let project = |p: [f64; 2]| self.screen_of(origin, cam.local_of(p[0], p[1], self.ground_at(p[0], p[1])));
-        crate::plugins::shapes::paint_areas(painter, &project, layers.shapes);
         if let Some((lng, lat)) = layers.home {
             let at = cam.local_of(lng, lat, self.ground_at(lng, lat));
             if let (false, Some(p)) = (self.hidden(at), self.screen_of(origin, at)) {
