@@ -247,3 +247,152 @@ pub fn py_capitalize(text: &str) -> String {
         None => String::new(),
     }
 }
+
+/// Python's `float(text)` for the strings it accepts.
+pub fn float_of_text(text: &str) -> Option<f64> {
+    let t = text.trim();
+    if t.is_empty() {
+        return None;
+    }
+    let cleaned: String;
+    let t = if t.contains('_') {
+        let bytes = t.as_bytes();
+        let ok = bytes.iter().enumerate().all(|(i, b)| {
+            *b != b'_'
+                || (i > 0 && i + 1 < bytes.len() && bytes[i - 1].is_ascii_digit() && bytes[i + 1].is_ascii_digit())
+        });
+        if !ok {
+            return None;
+        }
+        cleaned = t.replace('_', "");
+        cleaned.as_str()
+    } else {
+        t
+    };
+    let lower = t.to_ascii_lowercase();
+    let body = lower.trim_start_matches(['+', '-']);
+    if body.starts_with("0x")
+        || body.contains("nan(")
+        || (body.starts_with("inf") && body != "inf" && body != "infinity")
+    {
+        return None;
+    }
+    t.parse::<f64>().ok()
+}
+
+/// Python's `int(text)` for the strings it accepts: optional sign, digits with
+/// single underscores between them, surrounding whitespace.
+pub fn int_of_text(text: &str) -> Option<i64> {
+    let t = text.trim();
+    let body = t.strip_prefix(['+', '-']).unwrap_or(t);
+    let bytes = body.as_bytes();
+    if bytes.is_empty() || !bytes[0].is_ascii_digit() || !bytes[bytes.len() - 1].is_ascii_digit() {
+        return None;
+    }
+    let mut previous_underscore = false;
+    for b in bytes {
+        match b {
+            b'_' if previous_underscore => return None,
+            b'_' => previous_underscore = true,
+            b'0'..=b'9' => previous_underscore = false,
+            _ => return None,
+        }
+    }
+    let cleaned: String = t.chars().filter(|c| *c != '_').collect();
+    cleaned.parse().ok()
+}
+
+/// `float(value)` for a JSON value; None where Python raises. A bool is 1.0 or 0.0.
+pub fn py_float_of(value: &serde_json::Value) -> Option<f64> {
+    match value {
+        serde_json::Value::Number(n) => n.as_f64(),
+        serde_json::Value::String(s) => float_of_text(s),
+        serde_json::Value::Bool(b) => Some(if *b { 1.0 } else { 0.0 }),
+        _ => None,
+    }
+}
+
+/// `int(value)` for a JSON value; None where Python raises (or the result does
+/// not fit a machine integer, which no option list holds either).
+pub fn py_int_of(value: &serde_json::Value) -> Option<i64> {
+    match value {
+        serde_json::Value::Number(n) => n.as_i64().or_else(|| {
+            n.as_f64()
+                .filter(|f| f.is_finite() && f.abs() < 9.2e18)
+                .map(|f| f.trunc() as i64)
+        }),
+        serde_json::Value::String(s) => int_of_text(s),
+        serde_json::Value::Bool(b) => Some(i64::from(*b)),
+        _ => None,
+    }
+}
+
+/// Python truthiness of a JSON value.
+pub fn py_truthy(value: &serde_json::Value) -> bool {
+    match value {
+        serde_json::Value::Null => false,
+        serde_json::Value::Bool(b) => *b,
+        serde_json::Value::Number(n) => n.as_f64().is_some_and(|f| f != 0.0),
+        serde_json::Value::String(s) => !s.is_empty(),
+        serde_json::Value::Array(a) => !a.is_empty(),
+        serde_json::Value::Object(o) => !o.is_empty(),
+    }
+}
+
+fn py_string_repr(text: &str) -> String {
+    let quote = if text.contains('\'') && !text.contains('"') {
+        '"'
+    } else {
+        '\''
+    };
+    let mut out = String::from(quote);
+    for c in text.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if c == quote => {
+                out.push('\\');
+                out.push(c);
+            }
+            c if (c as u32) < 0x20 || c as u32 == 0x7f => out.push_str(&format!("\\x{:02x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push(quote);
+    out
+}
+
+/// `repr(value)` for a JSON value, as Python's own objects would print it.
+pub fn py_repr(value: &serde_json::Value) -> String {
+    match value {
+        serde_json::Value::Null => "None".into(),
+        serde_json::Value::Bool(b) => if *b { "True" } else { "False" }.into(),
+        serde_json::Value::Number(n) => match n.as_i64() {
+            Some(i) => i.to_string(),
+            None => n
+                .as_f64()
+                .map_or_else(|| n.to_string(), crate::protocol::params::float_text),
+        },
+        serde_json::Value::String(s) => py_string_repr(s),
+        serde_json::Value::Array(items) => {
+            format!("[{}]", items.iter().map(py_repr).collect::<Vec<_>>().join(", "))
+        }
+        serde_json::Value::Object(map) => format!(
+            "{{{}}}",
+            map.iter()
+                .map(|(k, v)| format!("{}: {}", py_string_repr(k), py_repr(v)))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    }
+}
+
+/// `str(value)` for a JSON value.
+pub fn py_str(value: &serde_json::Value) -> String {
+    match value {
+        serde_json::Value::String(s) => s.clone(),
+        other => py_repr(other),
+    }
+}

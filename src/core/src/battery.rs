@@ -17,7 +17,7 @@
 
 use serde_json::{json, Map, Value};
 
-use crate::protocol::common::{py_max, py_round, py_sum};
+use crate::protocol::common::{float_of_text, py_max, py_round, py_sum};
 
 pub const MIN_CELLS: i64 = 1;
 pub const MAX_CELLS: i64 = 24;
@@ -136,38 +136,6 @@ fn clamp(value: f64, low: f64, high: f64) -> f64 {
     } else {
         value
     }
-}
-
-/// Python's `float(text)` for the strings it accepts.
-fn float_of_text(text: &str) -> Option<f64> {
-    let t = text.trim();
-    if t.is_empty() {
-        return None;
-    }
-    let cleaned: String;
-    let t = if t.contains('_') {
-        let bytes = t.as_bytes();
-        let ok = bytes.iter().enumerate().all(|(i, b)| {
-            *b != b'_'
-                || (i > 0 && i + 1 < bytes.len() && bytes[i - 1].is_ascii_digit() && bytes[i + 1].is_ascii_digit())
-        });
-        if !ok {
-            return None;
-        }
-        cleaned = t.replace('_', "");
-        cleaned.as_str()
-    } else {
-        t
-    };
-    let lower = t.to_ascii_lowercase();
-    let body = lower.trim_start_matches(['+', '-']);
-    if body.starts_with("0x")
-        || body.contains("nan(")
-        || (body.starts_with("inf") && body != "inf" && body != "infinity")
-    {
-        return None;
-    }
-    t.parse::<f64>().ok()
 }
 
 /// A float, or `default`. Booleans are not numbers here.

@@ -2499,11 +2499,208 @@ def mission_cases() -> list[dict]:
     return out
 
 
+# ------------------------------------------------------------ remote id ----
+
+class RidMav:
+    def __init__(self, bridge) -> None:
+        self.bridge = bridge
+        if bridge.sc.get("v2", True):
+            for name in ("open_drone_id_basic_id", "open_drone_id_operator_id", "open_drone_id_self_id",
+                         "open_drone_id_system"):
+                setattr(self, name + "_send", self._sender(name))
+
+    def _sender(self, name):
+        def send(**kwargs):
+            fails = self.bridge.sc.get("send_fails")
+            if fails and fails["on"] == name:
+                raise OSError(fails["message"])
+            row = {k: (v.hex() if isinstance(v, bytes) else v) for k, v in kwargs.items()}
+            self.bridge.log.append(["send", name, row])
+        return send
+
+
+def rid_bridge_class():
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
+    from tests.reference import mavlink_remote_id_python as ref
+
+    class RidBridge(ref.RemoteIdMixin):
+        def __init__(self, sc: dict, clock: Clock) -> None:
+            self.sc = sc
+            self.clock = clock
+            self.log: list = []
+            self._target_system = sc.get("target", [1, 1])[0]
+            self._target_component = sc.get("target", [1, 1])[1]
+            self._conn = type("Conn", (), {})()
+            self._conn.mav = RidMav(self)
+            self._init_remote_id_state()
+
+    return RidBridge, ref
+
+
+RID_UNIX_BASE = 1_700_000_000.0
+
+
+def rid_raws() -> list:
+    sysd = lambda **kw: {"system": kw}
+    return [
+        None, {}, [], "x", 5, {"enabled": 1}, {"enabled": "no"}, {"enabled": []}, {"enabled": 0.0}, {"enabled": True},
+        {"region": "FAA"}, {"region": " faa "}, {"region": ""}, {"region": 5}, {"region": "mars"}, {"region": None},
+        {"basic_id": 5}, {"basic_id": {"id_type": "2", "ua_type": 15.9, "uas_id": "  ABC123  "}},
+        {"basic_id": {"id_type": True}}, {"basic_id": {"id_type": 9}}, {"basic_id": {"id_type": "1_0"}},
+        {"basic_id": {"id_type": " 3 ", "ua_type": "4.0"}}, {"basic_id": {"id_type": None, "ua_type": [1], "uas_id": 12345}},
+        {"basic_id": {"uas_id": "ünï\x00cödé OK ✓"}}, {"basic_id": {"uas_id": "A" * 40}}, {"basic_id": {"uas_id": ["a", 1]}},
+        {"basic_id": {"uas_id": {"k": "v"}}}, {"basic_id": {"uas_id": True}}, {"basic_id": {"uas_id": 3.0}},
+        {"basic_id": {"uas_id": "tab\tinside\nnewline"}}, {"basic_id": {"uas_id": "\x1c\x1dpad\x1f"}},
+        {"basic_id": {"uas_id": "it's"}}, {"basic_id": {"uas_id": ["it's", 'say "x"']}},
+        {"basic_id": {"uas_id": 1e16}}, {"basic_id": {"uas_id": 0.00001}}, {"basic_id": {"uas_id": None}},
+        {"operator_id": {"operator_id_type": 1, "operator_id": "FIN87astrdge12k8-xyz"}},
+        {"operator_id": {"operator_id": "x" * 25}}, {"operator_id": []},
+        {"self_id": {"description_type": 2, "description": "survey flight over the northern field today"}},
+        {"self_id": {"description_type": 3, "description": 7}},
+        sysd(operator_location_type=2, operator_latitude=48.1234567, operator_longitude=11.7654321, operator_altitude_geo=520.5),
+        sysd(operator_location_type=2, operator_latitude=91, operator_longitude=-181, operator_altitude_geo=40000),
+        sysd(operator_latitude="48.5", operator_longitude="x", operator_altitude_geo="nan"),
+        sysd(operator_altitude_geo=-2000), sysd(operator_latitude=True), sysd(operator_latitude=None),
+        sysd(operator_latitude=-95, operator_longitude=190), sysd(operator_latitude=-89.5, operator_longitude=-179.5),
+        sysd(operator_latitude=-90, operator_longitude=180, operator_altitude_geo=31767), sysd(operator_altitude_geo=31768),
+        sysd(area_ceiling=-1001, area_floor=31768), sysd(area_ceiling=-1000, area_floor=31767),
+        sysd(classification_type=1, category_eu=3, class_eu=7), sysd(classification_type=1, category_eu=9, class_eu=8),
+        sysd(classification_type=2), sysd(area_count=0, area_radius=-5), sysd(area_count=70000, area_radius=70000),
+        sysd(area_count="5", area_radius="12.7"), sysd(area_count=True, area_radius=False), sysd(area_count=2.9),
+        sysd(area_count="nan"), sysd(area_ceiling=120, area_floor=-5), sysd(area_ceiling="inf", area_floor="1e3"),
+        {"enabled": True, "region": "faa", "basic_id": {"id_type": 1, "ua_type": 2, "uas_id": "1596F37QZ0123456789"},
+         "operator_id": {"operator_id": "FIN123"}, "self_id": {"description": "test"},
+         "system": {"operator_location_type": 2, "operator_latitude": 48.1, "operator_longitude": 11.5,
+                    "operator_altitude_geo": 500, "classification_type": 1, "category_eu": 2, "class_eu": 3,
+                    "area_count": 3, "area_radius": 200, "area_ceiling": 120, "area_floor": 0}},
+    ]
+
+
+def rid_scenarios() -> list[dict]:
+    full = {"enabled": True, "region": "eu", "basic_id": {"id_type": 1, "ua_type": 2, "uas_id": "ABC123"},
+            "operator_id": {"operator_id": "FIN123"}, "self_id": {"description_type": 0, "description": "test"},
+            "system": {"operator_location_type": 2, "operator_latitude": 48.1234567, "operator_longitude": 11.7654321,
+                       "operator_altitude_geo": 520.5, "classification_type": 1, "category_eu": 2, "class_eu": 5}}
+    arm = lambda status, error: {"op": "arm", "status": status, "error": error}
+    return [
+        {"name": "defaults", "steps": [{"op": "settings"}, {"op": "status"}]},
+        {"name": "disabled_sends_nothing", "steps": [{"op": "send"}, {"op": "status"}]},
+        {"name": "enabled_broadcast", "steps": [
+            {"op": "set", "raw": full}, {"op": "send"}, {"op": "status"}, {"op": "advance", "seconds": 2.5}, {"op": "status"},
+            {"op": "advance", "seconds": 2.5}, {"op": "status"}, {"op": "send"}, {"op": "status"}]},
+        {"name": "takeoff_location_sends_no_position", "steps": [
+            {"op": "set", "raw": {**full, "system": {**full["system"], "operator_location_type": 0}}}, {"op": "send"}]},
+        {"name": "undeclared_classification_sends_no_class", "steps": [
+            {"op": "set", "raw": {**full, "system": {**full["system"], "classification_type": 0}}}, {"op": "send"}]},
+        {"name": "timestamp_follows_the_clock", "steps": [
+            {"op": "set", "raw": full}, {"op": "send"}, {"op": "advance", "seconds": 1000.25}, {"op": "send"}]},
+        {"name": "mavlink_1_link", "v2": False, "steps": [
+            {"op": "set", "raw": full}, {"op": "supported"}, {"op": "send"}, {"op": "status"}]},
+        {"name": "mavlink_1_link_disabled", "v2": False, "steps": [{"op": "send"}, {"op": "supported"}, {"op": "status"}]},
+        {"name": "send_fails_midway", "send_fails": {"on": "open_drone_id_self_id", "message": "boom"}, "steps": [
+            {"op": "set", "raw": full}, {"op": "send"}, {"op": "status"}]},
+        {"name": "send_recovers", "steps": [
+            {"op": "set", "raw": full}, {"op": "send"}, {"op": "status"}]},
+        {"name": "arm_status_stream", "steps": [
+            {"op": "set", "raw": full}, {"op": "status"},
+            arm(0, ""), {"op": "status"}, arm(1, "UAS ID missing"), {"op": "status"}, arm(7, "nul\x00ignored"), {"op": "status"},
+            arm(0, "  padded  "), arm(1, "x" * 80), {"op": "status"}]},
+        {"name": "arm_status_text", "steps": [arm(1, "café ✓ ok"), {"op": "status"}]},
+        {"name": "setting_a_new_identity_forgets_the_old_one", "steps": [
+            {"op": "set", "raw": full}, {"op": "send"}, arm(1, "bad"), {"op": "set", "raw": full}, {"op": "status"}]},
+        {"name": "forget_the_session", "steps": [
+            {"op": "set", "raw": full}, {"op": "send"}, arm(0, ""), {"op": "forget"}, {"op": "status"}, {"op": "settings"}]},
+        {"name": "settings_are_resolved", "steps": [
+            {"op": "set", "raw": {"enabled": 1, "region": "FAA", "basic_id": {"uas_id": " abc "}}}, {"op": "settings"}]},
+        {"name": "targets", "target": [7, 190], "steps": [{"op": "set", "raw": full}, {"op": "send"}]},
+        {"name": "pure_settings", "steps": [{"op": "pure_settings", "raw": raw} for raw in rid_raws()]},
+        {"name": "pure_messages", "steps": [
+            *[{"op": "pure_messages", "raw": raw, "target": [1, 1], "unix": 1_700_000_000.0} for raw in rid_raws()[-8:]],
+            *[{"op": "pure_messages", "raw": full, "target": [2, 190], "unix": u}
+              for u in (1_546_300_800.0, 1_546_300_799.5, 0.0, 6e9, 1_700_000_000.75)]]},
+        {"name": "pure_arm_status", "steps": [
+            {"op": "pure_arm", "status": s, "error": e} for s in (0, 1, 2, 255, None, "x") for e in ("", "boom", "aéb")]},
+    ]
+
+
+def rid_cases() -> list[dict]:
+    import datetime
+
+    RidBridge, ref = rid_bridge_class()
+    model = ref.remote_id_model
+    original = model.system_timestamp
+    out = []
+    for sc in rid_scenarios():
+        clock = Clock()
+        clock.t = 1000.0
+        br = RidBridge(sc, clock)
+
+        def monotonic(clock=clock):
+            return clock.t
+
+        def stamp(now=None, clock=clock):
+            moment = datetime.datetime.fromtimestamp(RID_UNIX_BASE + (clock.t - 1000.0), datetime.UTC)
+            return original(moment)
+
+        model.system_timestamp = stamp
+        results = []
+        try:
+            with mock.patch("time.monotonic", monotonic):
+                for step in sc["steps"]:
+                    before = len(br.log)
+                    op = step["op"]
+                    result = None
+                    if op == "settings":
+                        result = br.remote_id_settings()
+                    elif op == "set":
+                        result = br.set_remote_id(step["raw"])
+                    elif op == "send":
+                        br._send_remote_id(br._conn)
+                    elif op == "status":
+                        result = br.remote_id_status()
+                    elif op == "supported":
+                        result = br.remote_id_supported()
+                    elif op == "advance":
+                        clock.t += step["seconds"]
+                    elif op == "forget":
+                        br._forget_remote_id_session()
+                    elif op == "arm":
+                        msg = type("Arm", (), {})()
+                        msg.status, msg.error = step["status"], step["error"].encode()
+                        br._handle_remote_id_arm_status(msg)
+                    elif op == "pure_settings":
+                        result = model.settings(step["raw"])
+                    elif op == "pure_messages":
+                        moment = datetime.datetime.fromtimestamp(step["unix"], datetime.UTC)
+                        result = [[name, {k: (v.hex() if isinstance(v, bytes) else v) for k, v in kw.items()}]
+                                  for name, kw in _rid_messages(model, original, step, moment)]
+                    elif op == "pure_arm":
+                        err = step["error"].encode("utf-8")
+                        result = model.arm_status(step["status"], err)
+                    else:
+                        raise SystemExit(op)
+                    results.append({"result": result, "events": br.log[before:], "t": round(clock.t - 1000.0, 6)})
+        finally:
+            model.system_timestamp = original
+        out.append({"scenario": clean(sc), "expected": clean({"steps": results, "final": {}})})
+    return out
+
+
+def _rid_messages(model, original, step, moment):
+    saved = model.system_timestamp
+    model.system_timestamp = original
+    try:
+        return model.messages(step["raw"], target_system=step["target"][0], target_component=step["target"][1], now=moment)
+    finally:
+        model.system_timestamp = saved
+
+
 COMMANDS = {"params_cases.json": cases, "logs_cases.json": logs_cases, "shell_cases.json": shell_cases,
             "ftp_cases.json": ftp_cases, "flight_cases.json": flight_cases,
             "setup_cases.json": setup_cases,
             "telemetry_cases.json": telemetry_cases,
-            "missions_cases.json": mission_cases}
+            "missions_cases.json": mission_cases,
+            "remote_id_cases.json": rid_cases}
 
 
 def main(argv: list[str]) -> int:

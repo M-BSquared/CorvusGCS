@@ -17,6 +17,7 @@ pub mod link_host;
 pub mod logs;
 pub mod missions;
 pub mod params;
+pub mod remote_id;
 pub mod setup;
 pub mod shell;
 pub mod telemetry;
