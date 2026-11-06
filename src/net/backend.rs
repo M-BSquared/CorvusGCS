@@ -23,6 +23,28 @@ const GRACE: Duration = Duration::from_secs(8);
 /// `Backend` itself. 0 when there is none.
 static CHILD_PID: AtomicU32 = AtomicU32::new(0);
 
+/// A backend of an earlier run that still holds the instance lock and answers:
+/// its address when there is one. The Python backend refuses to start beside
+/// it ("already running"), so a second start joins it instead of exiting.
+pub fn running_peer() -> Option<Server> {
+    if std::env::var("CORVUS_ALLOW_MULTI")
+        .is_ok_and(|v| matches!(v.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"))
+    {
+        return None;
+    }
+    let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"))?;
+    peer_from_lock(&PathBuf::from(home).join(".corvus").join("corvus.lock"))
+}
+
+fn peer_from_lock(lock: &Path) -> Option<Server> {
+    let text = std::fs::read_to_string(lock).ok()?;
+    let record: serde_json::Value = serde_json::from_str(text.trim_end_matches('\0').trim()).ok()?;
+    let port = u16::try_from(record.get("port")?.as_u64()?).ok().filter(|p| *p != 0)?;
+    let server = Server::local(port);
+    http::get_json(&server, "/api/version").ok()?;
+    Some(server)
+}
+
 /// Where the backend comes from.
 #[derive(Debug, Clone)]
 pub struct Launch {
@@ -110,6 +132,7 @@ impl Backend {
         let program = launch.frozen.as_ref().unwrap_or(&launch.python);
         let child = command
             .arg(port.to_string())
+            .env("CORVUS_PARENT_PID", std::process::id().to_string())
             .current_dir(&launch.root)
             .stdin(Stdio::null())
             .spawn()
@@ -263,6 +286,55 @@ mod tests {
     }
 
     #[cfg(unix)]
+    fn answer_version_once() -> u16 {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            while let Ok((mut stream, _)) = listener.accept() {
+                let mut buf = [0u8; 1024];
+                let _ = stream.read(&mut buf);
+                let body = r#"{"product":"Corvus GCS","version":"1"}"#;
+                let _ = write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+            }
+        });
+        port
+    }
+
+    fn lock_file(text: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("corvus-lock-{}-{}", std::process::id(), text.len()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("corvus.lock");
+        std::fs::write(&path, text).unwrap();
+        path
+    }
+
+    #[test]
+    fn a_running_instance_that_answers_is_joined() {
+        let port = answer_version_once();
+        let lock = lock_file(&format!(r#"{{"pid": 1, "port": {port}, "started": 1.0}}"#));
+        assert_eq!(peer_from_lock(&lock).map(|s| s.url()), Some(Server::local(port).url()));
+    }
+
+    #[test]
+    fn a_lock_that_names_a_port_nobody_answers_on_is_ignored() {
+        let free = free_port().unwrap();
+        let lock = lock_file(&format!(r#"{{"pid": 1, "port": {free}, "started": 1.0}}"#));
+        assert!(peer_from_lock(&lock).is_none());
+    }
+
+    #[test]
+    fn a_missing_empty_or_broken_lock_is_ignored() {
+        assert!(peer_from_lock(Path::new("/nonexistent/corvus.lock")).is_none());
+        assert!(peer_from_lock(&lock_file("")).is_none());
+        assert!(peer_from_lock(&lock_file("not json")).is_none());
+        assert!(peer_from_lock(&lock_file(r#"{"pid": 1, "port": 0}"#)).is_none());
+    }
+
     #[test]
     fn a_child_that_honours_sigterm_stops_at_once() {
         let child = Command::new("sleep").arg("60").spawn().unwrap();

@@ -115,34 +115,39 @@ fn main() -> ExitCode {
             }
         },
         None => {
-            let start = args.root.clone().unwrap_or_else(|| {
-                std::env::current_exe()
-                    .ok()
-                    .and_then(|p| p.parent().map(PathBuf::from))
-                    .unwrap_or_else(|| PathBuf::from("."))
-            });
-            // A bundle carries its backend: frozen beside the executable on
-            // Windows. A checkout, or flags that say where it is, use serve.py.
-            let bundled = (args.root.is_none() && args.python.is_none())
-                .then(|| net::backend::Launch::bundled(&start))
-                .flatten();
-            let found = match bundled {
-                Some(launch) => Ok(launch),
-                None => net::backend::Launch::find(&start, args.python.clone()),
-            };
-            let started = found.and_then(|launch| {
-                let port = net::backend::free_port().map_err(|e| format!("no free port: {e}"))?;
-                net::backend::Backend::start(&launch, port)
-            });
-            match started {
-                Ok(b) => {
-                    let s = b.server().clone();
-                    local = Some(b);
-                    s
-                }
-                Err(e) => {
-                    eprintln!("corvus-gcs: {e}");
-                    return ExitCode::FAILURE;
+            if let Some(peer) = net::backend::running_peer() {
+                eprintln!("corvus-gcs: Corvus is already running, joining it at {}", peer.url());
+                peer
+            } else {
+                let start = args.root.clone().unwrap_or_else(|| {
+                    std::env::current_exe()
+                        .ok()
+                        .and_then(|p| p.parent().map(PathBuf::from))
+                        .unwrap_or_else(|| PathBuf::from("."))
+                });
+                // A bundle carries its backend: frozen beside the executable on
+                // Windows. A checkout, or flags that say where it is, use serve.py.
+                let bundled = (args.root.is_none() && args.python.is_none())
+                    .then(|| net::backend::Launch::bundled(&start))
+                    .flatten();
+                let found = match bundled {
+                    Some(launch) => Ok(launch),
+                    None => net::backend::Launch::find(&start, args.python.clone()),
+                };
+                let started = found.and_then(|launch| {
+                    let port = net::backend::free_port().map_err(|e| format!("no free port: {e}"))?;
+                    net::backend::Backend::start(&launch, port)
+                });
+                match started {
+                    Ok(b) => {
+                        let s = b.server().clone();
+                        local = Some(b);
+                        s
+                    }
+                    Err(e) => {
+                        eprintln!("corvus-gcs: {e}");
+                        return ExitCode::FAILURE;
+                    }
                 }
             }
         }
