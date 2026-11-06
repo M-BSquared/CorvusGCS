@@ -22,9 +22,9 @@ use self::model::{
     bearing_deg, make_entity, normalize_list, points_of, process_step, sample_of, sector_ring, status_color, Entity,
     Results, Sample, MAX_ENTITIES, MAX_STEP_M, MIN_STEP_M,
 };
-use super::options::OptionSpec;
-use super::shapes::{self, circle_ring, Style};
-use super::{Host, Info, MapEvent, Plugin};
+use corvus_api::plugin::options::OptionSpec;
+use corvus_api::plugin::shapes::{self, circle_ring, Style};
+use corvus_api::plugin::{Host, Info, MapEvent, Plugin};
 
 const UNDO_SECS: f64 = 8.0;
 const PENDING_KEY: &str = "pending";
@@ -538,8 +538,55 @@ impl MapEntities {
     }
 }
 
+/// The language files of this plugin, for the translation layer.
+pub const LANG: &[(&str, &str)] = &[
+    ("de", include_str!("../lang/de.json")),
+    ("fr", include_str!("../lang/fr.json")),
+    ("dl", include_str!("../lang/dl.json")),
+];
+
+/// One instance of the plugin, for the registry.
+pub fn plugin() -> Box<dyn Plugin> {
+    Box::new(MapEntities::default())
+}
+
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn the_plugin_says_what_the_web_plugins_manifest_says() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../python/plugins/map-entities/plugin.json"
+        );
+        let manifest: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        let info = MapEntities::default().info();
+        assert_eq!(manifest["id"], info.id);
+        assert_eq!(manifest["name"], info.name);
+        assert_eq!(manifest["icon"], info.icon);
+        assert_eq!(manifest["description"], info.description);
+        assert_eq!(manifest["version"], info.version);
+        assert_eq!(manifest["order"], info.order);
+    }
+
+    #[test]
+    fn the_language_files_hold_every_string_of_the_web_plugins_files() {
+        for (code, ours) in LANG {
+            let path = format!(
+                concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/../../../python/plugins/map-entities/lang/{}.json"
+                ),
+                code
+            );
+            let web = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
+            let (ours, web): (Value, Value) =
+                (serde_json::from_str(ours).unwrap(), serde_json::from_str(&web).unwrap());
+            for (k, v) in web["strings"].as_object().unwrap() {
+                assert_eq!(&ours["strings"][k], v, "{code}: {k}");
+            }
+        }
+    }
     use super::*;
 
     #[test]

@@ -14,7 +14,7 @@ use serde_json::{json, Value};
 
 use super::model::{describe_button, mcp_button, normalize_buttons, Button, MAX_BUTTONS, MCP_EDIT, MCP_RUN};
 use super::Schwalby;
-use crate::plugins::{Host, McpTool, Reply};
+use corvus_api::plugin::{Host, McpTool, Reply};
 
 enum Job {
     /// A change of the shelf, answered once the backend has saved it.

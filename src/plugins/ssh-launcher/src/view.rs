@@ -1,6 +1,6 @@
 //! The shelf and the editor drawn (`.sshl-*` of `ssh-launcher.css`).
 
-use crate::ui::tip::HoverTr;
+use corvus_api::ui::tip::HoverTr;
 use eframe::egui::{self, Color32, Pos2, Rect, Stroke, Vec2};
 use serde_json::Value;
 
@@ -9,13 +9,13 @@ use super::model::{
     Mode, NewConn, MAX_BUTTONS, NEW_CONNECTION,
 };
 use super::{Editor, SshLauncher};
-use crate::plugins::Host;
-use crate::ui::form::{self, Form};
-use crate::ui::kit::{self, Choice, Variant};
-use crate::ui::message::Tone;
-use crate::ui::popover;
-use crate::ui::style::{self, Weight};
-use crate::ui::{icons, modal};
+use corvus_api::plugin::Host;
+use corvus_api::ui::form::{self, Form};
+use corvus_api::ui::kit::{self, Choice, Variant};
+use corvus_api::ui::message::Tone;
+use corvus_api::ui::popover;
+use corvus_api::ui::style::{self, Weight};
+use corvus_api::ui::{icons, modal};
 
 const FIELD_GAP: f32 = 16.0;
 
@@ -596,7 +596,7 @@ fn new_connection(ui: &mut egui::Ui, f: &mut Form, c: &mut NewConn) {
         "Key file",
         "",
         "",
-        &crate::ui::pathfield::PathField::new(crate::ui::pathfield::Mode::File(None), "Private key")
+        &corvus_api::ui::pathfield::PathField::new(corvus_api::ui::pathfield::Mode::File(None), "Private key")
             .placeholder("No key file chosen")
             .optional()
             .backend()

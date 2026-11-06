@@ -1,7 +1,7 @@
 //! The plugin's view (`.ent-*` of `map-entities.css`): the summary, the
 //! palette, the list and the editor of the selected entity.
 
-use crate::ui::tip::HoverTr;
+use corvus_api::ui::tip::HoverTr;
 use eframe::egui::{self, Color32, Pos2, Rect, Stroke, StrokeKind, Vec2};
 
 use super::model::{
@@ -9,12 +9,12 @@ use super::model::{
     plain_name, points_of, row_detail, status_color, Entity, COLORS, KINDS, NAME_MAX, NOTE_MAX,
 };
 use super::{Aim, MapEntities};
-use crate::plugins::shapes::{hex, paint_glyph};
-use crate::plugins::Host;
-use crate::ui::field;
-use crate::ui::kit::{self, Button, Choice, Variant};
-use crate::ui::style::{self, Weight};
-use crate::ui::{formfield, icons};
+use corvus_api::plugin::shapes::{hex, paint_glyph};
+use corvus_api::plugin::Host;
+use corvus_api::ui::field;
+use corvus_api::ui::kit::{self, Button, Choice, Variant};
+use corvus_api::ui::style::{self, Weight};
+use corvus_api::ui::{formfield, icons};
 
 const GAP: f32 = 10.0;
 
@@ -713,7 +713,7 @@ fn detail(p: &mut MapEntities, ui: &mut egui::Ui, x: f32, y: f32, w: f32, e: Ent
                 if let Some(t) = text_box(
                     ui,
                     boxr,
-                    &crate::plugins::view::number_text(e.bearing),
+                    &corvus_api::plugin::number_text(e.bearing),
                     true,
                     key("bearing"),
                 ) {
@@ -800,7 +800,7 @@ fn small_btn(
 
 /// `toLocaleTimeString`, as 24 hour clock text.
 pub fn clock_text(secs: f64) -> String {
-    let (_, _, _, hh, mm, ss) = crate::data::clock::civil(secs as i64 + crate::panel::console::local_offset());
+    let (_, _, _, hh, mm, ss) = corvus_api::data::clock::civil(secs as i64 + corvus_api::data::clock::local_offset());
     format!("{hh:02}:{mm:02}:{ss:02}")
 }
 
@@ -866,7 +866,7 @@ fn number(
 ) {
     let r = g.place(false, 11.0 + 3.0 + CONTROL);
     let cr = caption(ui, r.left(), r.top(), r.width(), label, CONTROL);
-    let shown = crate::plugins::view::number_text((value * 100.0).round() / 100.0);
+    let shown = corvus_api::plugin::number_text((value * 100.0).round() / 100.0);
     if let Some(t) = text_box(ui, cr, &shown, true, (e.id.clone(), label.to_string())) {
         if let Ok(v) = t.trim().parse::<f64>() {
             if v.is_finite() {

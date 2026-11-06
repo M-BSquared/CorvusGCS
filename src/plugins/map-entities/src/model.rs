@@ -368,7 +368,7 @@ pub fn normalize_entity(raw: &Value) -> Option<Entity> {
     if let Some(c) = o
         .get("color")
         .and_then(Value::as_str)
-        .filter(|c| crate::plugins::shapes::hex(c).is_some())
+        .filter(|c| corvus_api::plugin::shapes::hex(c).is_some())
     {
         e.color = c.into();
     }

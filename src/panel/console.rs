@@ -122,31 +122,12 @@ fn now_ts() -> String {
     let secs = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_secs()) as i64;
-    let offset = local_offset_secs();
+    let offset = local_offset();
     let t = (secs + offset).rem_euclid(86400);
     format!("{:02}:{:02}:{:02}", t / 3600, (t % 3600) / 60, t % 60)
 }
 
-/// Seconds east of UTC on this machine now.
-pub fn local_offset() -> i64 {
-    local_offset_secs()
-}
-
-#[cfg(unix)]
-fn local_offset_secs() -> i64 {
-    // SAFETY: localtime_r writes into the tm we hand it.
-    unsafe {
-        let now = libc::time(std::ptr::null_mut());
-        let mut tm: libc::tm = std::mem::zeroed();
-        libc::localtime_r(&now, &mut tm);
-        tm.tm_gmtoff
-    }
-}
-
-#[cfg(not(unix))]
-fn local_offset_secs() -> i64 {
-    0
-}
+pub use crate::data::clock::local_offset;
 
 #[derive(Default)]
 struct Buffer {

@@ -11,9 +11,9 @@
 use eframe::egui::{self, Color32, Pos2, Rect, Stroke, Vec2};
 use serde_json::{json, Value};
 
-use super::{Host, Info, Plugin, Reply};
-use crate::ui::chart::{self, Series};
-use crate::ui::style::{self, Weight};
+use corvus_api::plugin::{Host, Info, Plugin, Reply};
+use corvus_api::ui::chart::{self, Series};
+use corvus_api::ui::style::{self, Weight};
 
 /// About 60 s at 10 Hz.
 pub const MAX_POINTS: usize = 600;
@@ -197,7 +197,7 @@ impl Plugin for Vibration {
         }
         y = ly + row_h + 6.0;
         // .vib-note
-        let g = crate::ui::kit::wrapped_weight(ui, NOTE, 10.5, Weight::W400, style::text_3(), w - 20.0 - 2.0, 1.5);
+        let g = corvus_api::ui::kit::wrapped_weight(ui, NOTE, 10.5, Weight::W400, style::text_3(), w - 20.0 - 2.0, 1.5);
         let note = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, g.size().y + 16.0 + 2.0));
         p.rect_filled(note, style::RADIUS_BTN, style::surface_2());
         p.rect_stroke(
@@ -274,7 +274,7 @@ fn trace_colors() -> [Color32; 3] {
 
 /// `.vib-warning`.
 fn warning(ui: &egui::Ui, x: f32, y: f32, w: f32, text: &str) -> f32 {
-    let g = crate::ui::kit::wrapped_weight(ui, text, 11.0, Weight::W400, style::warning(), w - 22.0, 1.45);
+    let g = corvus_api::ui::kit::wrapped_weight(ui, text, 11.0, Weight::W400, style::warning(), w - 22.0, 1.45);
     let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, g.size().y + 18.0));
     ui.painter().rect_filled(r, style::RADIUS_BTN, style::warning_dark());
     ui.painter().rect_stroke(
@@ -307,8 +307,55 @@ fn legend(ui: &egui::Ui, plot: Rect, colors: &[Color32; 3]) {
     }
 }
 
+/// The language files of this plugin, for the translation layer.
+pub const LANG: &[(&str, &str)] = &[
+    ("de", include_str!("../lang/de.json")),
+    ("fr", include_str!("../lang/fr.json")),
+    ("dl", include_str!("../lang/dl.json")),
+];
+
+/// One instance of the plugin, for the registry.
+pub fn plugin() -> Box<dyn Plugin> {
+    Box::new(Vibration::default())
+}
+
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn the_plugin_says_what_the_web_plugins_manifest_says() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../python/plugins/vibration/plugin.json"
+        );
+        let manifest: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        let info = Vibration::default().info();
+        assert_eq!(manifest["id"], info.id);
+        assert_eq!(manifest["name"], info.name);
+        assert_eq!(manifest["icon"], info.icon);
+        assert_eq!(manifest["description"], info.description);
+        assert_eq!(manifest["version"], info.version);
+        assert_eq!(manifest["order"], info.order);
+    }
+
+    #[test]
+    fn the_language_files_hold_every_string_of_the_web_plugins_files() {
+        for (code, ours) in LANG {
+            let path = format!(
+                concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/../../../python/plugins/vibration/lang/{}.json"
+                ),
+                code
+            );
+            let web = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
+            let (ours, web): (Value, Value) =
+                (serde_json::from_str(ours).unwrap(), serde_json::from_str(&web).unwrap());
+            for (k, v) in web["strings"].as_object().unwrap() {
+                assert_eq!(&ours["strings"][k], v, "{code}: {k}");
+            }
+        }
+    }
     use super::*;
 
     fn s(x: f64, y: f64, z: f64) -> Value {

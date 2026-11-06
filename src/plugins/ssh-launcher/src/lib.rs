@@ -21,8 +21,8 @@ use self::model::{
     coerce_button, normalize_buttons, reply_of, restarts, session_name, ssh_needs, Button, Mode, NewConn, CTRL_C,
     LIVE_POLL_SECS, MAX_BUTTONS, RESTART_GRACE_SECS,
 };
-use super::{Host, Info, Plugin, Reply};
-use crate::net::bg::Pending;
+use corvus_api::net::bg::Pending;
+use corvus_api::plugin::{Host, Info, Plugin, Reply};
 
 type Rep = Pending<Result<(u16, Value), String>>;
 
@@ -688,5 +688,57 @@ impl SshLauncher {
                 "error"
             },
         );
+    }
+}
+
+/// The language files of this plugin, for the translation layer.
+pub const LANG: &[(&str, &str)] = &[
+    ("de", include_str!("../lang/de.json")),
+    ("fr", include_str!("../lang/fr.json")),
+    ("dl", include_str!("../lang/dl.json")),
+];
+
+/// One instance of the plugin, for the registry.
+pub fn plugin() -> Box<dyn Plugin> {
+    Box::new(SshLauncher::default())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_plugin_says_what_the_web_plugins_manifest_says() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../python/plugins/ssh-launcher/plugin.json"
+        );
+        let manifest: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        let info = SshLauncher::default().info();
+        assert_eq!(manifest["id"], info.id);
+        assert_eq!(manifest["name"], info.name);
+        assert_eq!(manifest["icon"], info.icon);
+        assert_eq!(manifest["description"], info.description);
+        assert_eq!(manifest["version"], info.version);
+        assert_eq!(manifest["order"], info.order);
+    }
+
+    #[test]
+    fn the_language_files_hold_every_string_of_the_web_plugins_files() {
+        for (code, ours) in LANG {
+            let path = format!(
+                concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/../../../python/plugins/ssh-launcher/lang/{}.json"
+                ),
+                code
+            );
+            let web = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
+            let (ours, web): (Value, Value) =
+                (serde_json::from_str(ours).unwrap(), serde_json::from_str(&web).unwrap());
+            for (k, v) in web["strings"].as_object().unwrap() {
+                assert_eq!(&ours["strings"][k], v, "{code}: {k}");
+            }
+        }
     }
 }

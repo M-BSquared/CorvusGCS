@@ -488,7 +488,7 @@ pub fn paint_areas(painter: &egui::Painter, project: Project<'_>, shapes: &[Shap
                     for p in &screen {
                         mesh.colored_vertex(*p, c);
                     }
-                    for t in crate::setup::geofence_card::triangulate(&screen) {
+                    for t in crate::ui::polygon::triangulate(&screen) {
                         mesh.add_triangle(t[0] as u32, t[1] as u32, t[2] as u32);
                     }
                     painter.add(mesh);

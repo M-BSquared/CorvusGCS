@@ -14,6 +14,7 @@ use crate::ui::kit::{self, Button, Choice, Variant};
 use crate::ui::message::Tone;
 use crate::ui::style::{self, Weight};
 use crate::ui::{icons, modal, pagekit};
+use corvus_api::plugin::number_text;
 
 /// `.plugin-grid`: 12 px around, 10 px between, columns of at least 200 px.
 const GRID_PAD: f32 = 12.0;
@@ -289,15 +290,6 @@ fn option_field(
         }
     }
     out
-}
-
-/// A number the way a browser prints it in an input.
-pub fn number_text(n: f64) -> String {
-    if n.fract() == 0.0 && n.abs() < 1e15 {
-        format!("{}", n as i64)
-    } else {
-        format!("{n}")
-    }
 }
 
 #[cfg(test)]

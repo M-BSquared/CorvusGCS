@@ -9,9 +9,9 @@ use super::model::{
     session_name, Companion, NewConn, State, DEFAULT_INTERVAL_S, DEFAULT_TIMEOUT_S, NEW_CONNECTION, PLUGIN_ID,
 };
 use super::{Rep, Schwalby};
-use crate::net::bg::Pending;
-use crate::plugins::ssh_launcher::model::{reply_of, ssh_needs};
-use crate::plugins::Host;
+use corvus_api::net::bg::Pending;
+use corvus_api::plugin::ssh::{reply_of, ssh_needs};
+use corvus_api::plugin::Host;
 
 /// The ping loop: one probe at a time, `interval_s` apart.
 #[derive(Default)]

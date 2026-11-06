@@ -5,14 +5,15 @@ edition = "2021"
 rust-version = "1.99"
 publish = false
 description = "The Corvus GCS desktop interface: a native egui client of the Corvus backend"
+build = "build.rs"
 
 [workspace]
 # One lock file and one target folder for the interface and the crates it is
 # made of (the API plugins build on and the plugins themselves). src/link is
 # the MAVLink extension module: it has its own toolchain, lock and maturin
 # build, and stays out.
-members = ["src/api"]
-default-members = [".", "src/api"]
+members = ["src/api", "src/plugins/vibration", "src/plugins/ssh-launcher", "src/plugins/map-entities", "src/plugins/schwalby"]
+default-members = [".", "src/api", "src/plugins/vibration", "src/plugins/ssh-launcher", "src/plugins/map-entities", "src/plugins/schwalby"]
 exclude = ["src/link"]
 
 [[bin]]
@@ -21,6 +22,11 @@ path = "src/main.rs"
 
 [dependencies]
 corvus_api = { path = "src/api" }
+# One line for each folder of src/plugins (build.rs checks this and makes the list).
+corvus_plugin_vibration = { path = "src/plugins/vibration" }
+corvus_plugin_ssh_launcher = { path = "src/plugins/ssh-launcher" }
+corvus_plugin_map_entities = { path = "src/plugins/map-entities" }
+corvus_plugin_schwalby = { path = "src/plugins/schwalby" }
 # glow: the OpenGL renderer, whose paint callbacks can read what is already
 # drawn, which the frosted glass (frost.rs) needs; wgpu draws a frame in one
 # pass and cannot.
@@ -50,3 +56,7 @@ libc = "0.2"
 [profile.release]
 lto = "thin"
 codegen-units = 1
+
+[build-dependencies]
+# build.rs lists the plugin crates, and reads their Cargo.toml for it.
+toml = "0.8"

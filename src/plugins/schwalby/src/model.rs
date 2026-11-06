@@ -6,8 +6,8 @@
 
 use serde_json::{json, Map, Value};
 
-use crate::plugins::ssh_launcher::model::{coerce_mode, Mode};
-pub use crate::plugins::ssh_launcher::model::{
+use corvus_api::plugin::ssh::{coerce_mode, Mode};
+pub use corvus_api::plugin::ssh::{
     derived_name, new_connection_body, new_connection_error, new_id, NewConn, CTRL_C, MAX_BUTTONS, NEW_CONNECTION,
     RESTART_GRACE_SECS,
 };
@@ -658,9 +658,9 @@ pub fn format_rtt(ms: f64) -> String {
         return String::new();
     }
     if ms < 10.0 {
-        format!("{} ms", crate::data::units::js_to_fixed(ms, 1))
+        format!("{} ms", corvus_api::data::units::js_to_fixed(ms, 1))
     } else {
-        format!("{} ms", crate::data::units::js_to_fixed(ms.round(), 0))
+        format!("{} ms", corvus_api::data::units::js_to_fixed(ms.round(), 0))
     }
 }
 

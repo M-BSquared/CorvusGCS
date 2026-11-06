@@ -30,6 +30,24 @@ pub fn stamp(secs: i64, offset: i64, with_seconds: bool) -> String {
     }
 }
 
+/// Seconds east of UTC on this machine now.
+#[cfg(unix)]
+pub fn local_offset() -> i64 {
+    // SAFETY: localtime_r writes into the tm we hand it.
+    unsafe {
+        let now = libc::time(std::ptr::null_mut());
+        let mut tm: libc::tm = std::mem::zeroed();
+        libc::localtime_r(&now, &mut tm);
+        tm.tm_gmtoff
+    }
+}
+
+/// Seconds east of UTC on this machine now.
+#[cfg(not(unix))]
+pub fn local_offset() -> i64 {
+    0
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -6,4 +6,5 @@
 pub mod data;
 pub mod i18n;
 pub mod net;
+pub mod plugin;
 pub mod ui;

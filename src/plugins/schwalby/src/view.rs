@@ -1,7 +1,7 @@
 //! The shelf, the companion strip and the editor drawn (`.schw-*` of
 //! `schwalby.css`).
 
-use crate::ui::tip::HoverTr;
+use corvus_api::ui::tip::HoverTr;
 use eframe::egui::{self, Color32, Pos2, Rect, Stroke, Vec2};
 use serde_json::Value;
 
@@ -11,15 +11,15 @@ use super::model::{
     Button, State, Target, BUTTON_COLORS, MAX_BUTTONS, NEW_CONNECTION,
 };
 use super::{After, Confirm, Editor, Schwalby};
-use crate::plugins::ssh_launcher::model::{connection_options, Mode};
-use crate::plugins::Host;
-use crate::ui::card::{self, Look};
-use crate::ui::form::{self, Form};
-use crate::ui::kit::{self, Choice, Variant};
-use crate::ui::message::Tone;
-use crate::ui::segmented::{self, Segment};
-use crate::ui::style::{self, Weight};
-use crate::ui::{icons, menu, modal, popover};
+use corvus_api::plugin::ssh::{connection_options, Mode};
+use corvus_api::plugin::Host;
+use corvus_api::ui::card::{self, Look};
+use corvus_api::ui::form::{self, Form};
+use corvus_api::ui::kit::{self, Choice, Variant};
+use corvus_api::ui::message::Tone;
+use corvus_api::ui::segmented::{self, Segment};
+use corvus_api::ui::style::{self, Weight};
+use corvus_api::ui::{icons, menu, modal, popover};
 
 const FIELD_GAP: f32 = 16.0;
 /// One row of the shelf: the 32 px button between its 5 px paddings and the hairline.
@@ -1215,7 +1215,7 @@ fn new_connection(ui: &mut egui::Ui, f: &mut Form, c: &mut super::model::NewConn
         "Key file",
         "",
         "",
-        &crate::ui::pathfield::PathField::new(crate::ui::pathfield::Mode::File(None), "Private key")
+        &corvus_api::ui::pathfield::PathField::new(corvus_api::ui::pathfield::Mode::File(None), "Private key")
             .placeholder("No key file chosen")
             .optional()
             .backend()
@@ -1480,7 +1480,7 @@ fn companion_dialog(p: &mut Schwalby, ctx: &egui::Context, h: &mut Host) {
                 "",
                 |ui, x, y, w| {
                     let (bottom, out) =
-                        crate::ui::slider::show(ui, x + 8.0, y + 2.0, w - 16.0, "schw-interval", &isteps, icur);
+                        corvus_api::ui::slider::show(ui, x + 8.0, y + 2.0, w - 16.0, "schw-interval", &isteps, icur);
                     if let Some((i, _)) = out {
                         d.interval = model::INTERVAL_STEPS[i];
                         if d.timeout <= d.interval {
@@ -1496,7 +1496,7 @@ fn companion_dialog(p: &mut Schwalby, ctx: &egui::Context, h: &mut Host) {
             "How long without a single reply before the companion is shown as offline. Always longer than the ping interval, so one late reply does not count as a lost companion.",
             "",
             |ui, x, y, w| {
-                let (bottom, out) = crate::ui::slider::show(ui, x + 8.0, y + 2.0, w - 16.0, "schw-timeout", &tsteps, tcur);
+                let (bottom, out) = corvus_api::ui::slider::show(ui, x + 8.0, y + 2.0, w - 16.0, "schw-timeout", &tsteps, tcur);
                 if let Some((i, _)) = out {
                     d.timeout = model::TIMEOUT_STEPS[i];
                     if d.interval >= d.timeout {

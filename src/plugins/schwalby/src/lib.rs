@@ -31,10 +31,10 @@ use self::model::{
     ssh_summary, terminal_line, Button, Companion, NewConn, Target, CTRL_C, LIVE_POLL_SECS, LOCAL_HOST, MAX_BUTTONS,
     MCP_EDIT, MCP_RUN, NEW_CONNECTION, PLUGIN_ID, RESTART_GRACE_SECS,
 };
-use super::options::OptionSpec;
-use super::ssh_launcher::model::{reply_of, ssh_needs, Mode};
-use super::{Host, Info, McpTool, Plugin, Reply};
-use crate::net::bg::Pending;
+use corvus_api::net::bg::Pending;
+use corvus_api::plugin::options::OptionSpec;
+use corvus_api::plugin::ssh::{reply_of, ssh_needs, Mode};
+use corvus_api::plugin::{Host, Info, McpTool, Plugin, Reply};
 
 pub(crate) type Rep = Pending<Result<(u16, Value), String>>;
 
@@ -991,6 +991,58 @@ impl Schwalby {
                     .to_string(),
                 "err",
             ));
+        }
+    }
+}
+
+/// The language files of this plugin, for the translation layer.
+pub const LANG: &[(&str, &str)] = &[
+    ("de", include_str!("../lang/de.json")),
+    ("fr", include_str!("../lang/fr.json")),
+    ("dl", include_str!("../lang/dl.json")),
+];
+
+/// One instance of the plugin, for the registry.
+pub fn plugin() -> Box<dyn Plugin> {
+    Box::new(Schwalby::default())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_plugin_says_what_the_web_plugins_manifest_says() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../python/plugins/schwalby/plugin.json"
+        );
+        let manifest: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        let info = Schwalby::default().info();
+        assert_eq!(manifest["id"], info.id);
+        assert_eq!(manifest["name"], info.name);
+        assert_eq!(manifest["icon"], info.icon);
+        assert_eq!(manifest["description"], info.description);
+        assert_eq!(manifest["version"], info.version);
+        assert_eq!(manifest["order"], info.order);
+    }
+
+    #[test]
+    fn the_language_files_hold_every_string_of_the_web_plugins_files() {
+        for (code, ours) in LANG {
+            let path = format!(
+                concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/../../../python/plugins/schwalby/lang/{}.json"
+                ),
+                code
+            );
+            let web = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
+            let (ours, web): (Value, Value) =
+                (serde_json::from_str(ours).unwrap(), serde_json::from_str(&web).unwrap());
+            for (k, v) in web["strings"].as_object().unwrap() {
+                assert_eq!(&ours["strings"][k], v, "{code}: {k}");
+            }
         }
     }
 }
