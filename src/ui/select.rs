@@ -116,11 +116,7 @@ pub fn select_padded(
     if open {
         let rows: Vec<menu::Row> = choices
             .iter()
-            .map(|c| menu::Row {
-                value: c.value.clone(),
-                label: c.label.clone(),
-                enabled: c.enabled,
-            })
+            .map(|c| menu::Row::new(c.value.clone(), c.label.clone()).enabled(c.enabled))
             .collect();
         let look = if mono {
             menu::Look::SELECT_MONO
