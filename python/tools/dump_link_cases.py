@@ -105,8 +105,26 @@ def cases() -> dict:
     }
 
 
+def connection_errors() -> dict:
+    """What ``mavlink_connection`` says about strings that are not links."""
+    from corvus_link import mavutil
+
+    bad = ["udpin:1.2.3.4", "tcp:host:x", "udpout:1.2.3.4:70000", "tcp:1:2:3", "uds:", "/dev/ttyUSB0,fast",
+           "udpin:1.2.3.4:x:y", "tcpin:1.2.3.4", "udpbcast:a", "mcast:239.1.2.3:x", "udp:a:b:c", "udp:host:-1"]
+    out = {}
+    for text in bad:
+        try:
+            mavutil.mavlink_connection(text).close()
+            out[text] = None
+        except Exception as exc:  # noqa: BLE001 - the message is the fixture
+            out[text] = f"{type(exc).__name__}: {exc}"
+    return out
+
+
 def main(argv: list[str]) -> int:
-    text = json.dumps(cases(), indent=1) + "\n"
+    data = cases()
+    data["connection_errors"] = connection_errors()
+    text = json.dumps(data, indent=1) + "\n"
     if "--check" in argv:
         if not OUT.is_file() or OUT.read_text() != text:
             print("stale: run tools/dump_link_cases.py", file=sys.stderr)

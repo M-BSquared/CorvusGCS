@@ -223,3 +223,16 @@ fn a_mavlink_2_payload_that_lost_its_zeros_reads_back_zero_filled() {
     assert!(codec::unpack_payload(0, corvus_link::plain::defs::Wire::V1, &[1]).is_err());
     assert!(codec::unpack_payload(9999999, corvus_link::plain::defs::Wire::V2, &[]).is_err());
 }
+
+#[test]
+fn connection_strings_that_are_not_links_fail_with_pythons_words() {
+    use corvus_link::plain::connection::{parse_target, Options};
+    let c = cases();
+    let errors = c["connection_errors"].as_object().unwrap();
+    assert!(errors.len() >= 10);
+    for (text, want) in errors {
+        let got = parse_target(text, &Options::default()).expect_err(text).to_string();
+        let want = want.as_str().unwrap().split_once(": ").unwrap().1;
+        assert_eq!(got, want, "{text}");
+    }
+}

@@ -1847,5 +1847,19 @@
   "sysid": 7,
   "compid": 9,
   "seq": 5
+ },
+ "connection_errors": {
+  "udpin:1.2.3.4": "ValueError: UDP ports must be specified as host:port",
+  "tcp:host:x": "ValueError: invalid literal for int() with base 10: 'x'",
+  "udpout:1.2.3.4:70000": "OverflowError: bind(): port must be 0-65535.",
+  "tcp:1:2:3": "ValueError: TCP ports must be specified as host:port",
+  "uds:": "ValueError: Unix domain socket path must be specified",
+  "/dev/ttyUSB0,fast": "ValueError: invalid baud rate 'fast'",
+  "udpin:1.2.3.4:x:y": "ValueError: UDP ports must be specified as host:port",
+  "tcpin:1.2.3.4": "ValueError: TCP ports must be specified as host:port",
+  "udpbcast:a": "ValueError: UDP ports must be specified as host:port",
+  "mcast:239.1.2.3:x": "ValueError: invalid literal for int() with base 10: 'x'",
+  "udp:a:b:c": "ValueError: UDP ports must be specified as host:port",
+  "udp:host:-1": "OverflowError: bind(): port must be 0-65535."
  }
 }

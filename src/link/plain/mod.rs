@@ -10,9 +10,12 @@
 //! * [`codec`]: payload packing and unpacking.
 //! * [`frame`]: [`frame::encode`], the stream [`frame::Parser`] and
 //!   MAVLink 2 [`frame::Signing`].
+//! * [`connection`]: [`connection::open`] a link from a connection string,
+//!   `recv` frames, `send` messages, the systems heard.
 //! * [`transport`]: the UDP, TCP and serial links, as bytes in and out.
 
 pub mod codec;
+pub mod connection;
 pub mod crc;
 pub mod frame;
 pub mod message;
