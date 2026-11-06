@@ -11,6 +11,7 @@ use crate::ui::form::{self, Form, Switch};
 use crate::ui::kit::{Button, Variant};
 use crate::ui::message::Tone;
 use crate::ui::optioncards::Card;
+use crate::ui::pathfield::{Mode, PathField, Picked};
 use crate::ui::style;
 
 /// The parts a settings file is chosen by (`SECTIONS` of settings-transfer.js).
@@ -217,25 +218,26 @@ impl SettingsPage {
         if !self.texts.contains_key("params_dir") {
             self.texts.insert("params_dir", saved.clone());
         }
-        let mut commit = false;
+        let mut picked = None;
         form::card(ui, f, "", |ui, f| {
             let buf = self.texts.entry("params_dir").or_default();
-            let resp = form::input(
+            let field = PathField::new(Mode::Folder, "Parameter export folder")
+                .placeholder("~/.corvus/params")
+                .optional()
+                .backend();
+            picked = form::path(
                 ui,
                 f,
                 "Parameter export folder",
                 "",
                 "Where Export writes parameter files, on the machine running Corvus. Leave empty for ~/.corvus/params. The export dialog can still override it per file.",
+                &field,
                 buf,
-                "~/.corvus/params",
-                true,
-                false,
                 "paramsdir",
             );
-            commit = resp.lost_focus();
         });
-        if commit {
-            let v = self.text("params_dir").trim().to_string();
+        if let Some(p) = picked {
+            let v = p.text().trim().to_string();
             if v != saved {
                 self.write(ui.ctx(), json!({ "params_dir": v }), false);
             }
@@ -368,16 +370,17 @@ impl SettingsPage {
                             "exportname",
                         );
                         f.skip(14.0);
-                        form::input(
+                        form::path(
                             ui,
                             &mut f,
                             "Folder",
                             "",
                             "On the machine running Corvus. Created if it does not exist.",
+                            &PathField::new(Mode::Folder, "Export folder")
+                                .placeholder("~/Downloads")
+                                .optional()
+                                .backend(),
                             &mut dir,
-                            "~/Downloads",
-                            true,
-                            false,
                             "exportdir",
                         );
                         f.skip(14.0);
@@ -465,31 +468,20 @@ impl SettingsPage {
                     "Import settings",
                     |ui, x, y, w| {
                         let mut f = Form::new(x, y, w);
-                        let resp = form::input(
+                        let json = crate::ui::filepicker::Filter {
+                            name: "JSON",
+                            extensions: &["json"],
+                        };
+                        if let Some(Picked::Chosen(_)) = form::path(
                             ui,
                             &mut f,
                             "Settings file",
                             "",
-                            "The path of a file written by Export settings, on the machine running Corvus.",
+                            "A file written by Export settings.",
+                            &PathField::new(Mode::File(Some(json)), "Settings file").placeholder("No file chosen"),
                             &mut path,
-                            "~/Downloads/corvus-settings.json",
-                            true,
-                            false,
                             "importpath",
-                        );
-                        if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                            read = true;
-                        }
-                        f.skip(8.0);
-                        if form::actions(
-                            ui,
-                            &mut f,
-                            vec![Button::new("Read the file", Variant::Secondary)
-                                .icon("file-text")
-                                .small()],
-                        )
-                        .is_some()
-                        {
+                        ) {
                             read = true;
                         }
                         if let Some(b) = &bundle {

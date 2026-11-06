@@ -919,6 +919,9 @@ pub fn run(
                     if let Some(tab) = page.and_then(|p| p.strip_prefix("settings:")) {
                         s.open_tab(tab);
                     }
+                    if let Some(px) = scroll {
+                        s.scroll(px);
+                    }
                     s
                 },
                 mission: {

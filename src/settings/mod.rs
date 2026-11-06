@@ -165,6 +165,7 @@ pub struct SettingsPage {
     effects_due: bool,
     errors: Vec<String>,
     scroll_top: bool,
+    scroll_to: Option<f32>,
     entered: bool,
     sources_dirty: bool,
     show_on_map: Option<(f64, f64, f64)>,
@@ -197,6 +198,7 @@ impl SettingsPage {
             effects_due: false,
             errors: Vec::new(),
             scroll_top: false,
+            scroll_to: None,
             entered: false,
             sources_dirty: false,
             show_on_map: None,
@@ -226,6 +228,11 @@ impl SettingsPage {
     pub fn open_import(&mut self) {
         self.open_tab("data");
         self.dialog = Some(Dialog::Import);
+    }
+
+    /// Opens the page scrolled by `px` (the --scroll flag).
+    pub fn scroll(&mut self, px: f32) {
+        self.scroll_to = Some(px);
     }
 
     pub fn open_tab(&mut self, id: &str) {
@@ -449,6 +456,9 @@ impl SettingsPage {
             .auto_shrink([false, false]);
         if std::mem::take(&mut self.scroll_top) {
             area = area.vertical_scroll_offset(0.0);
+        }
+        if let Some(px) = self.scroll_to.take() {
+            area = area.vertical_scroll_offset(px);
         }
         area.show(&mut child, |ui| {
             let x = rect.left() + pagekit::PAD_X;

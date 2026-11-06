@@ -13,6 +13,7 @@ use crate::ui::form::{self, Form, CONTROL_H};
 use crate::ui::kit::{self, Button, Choice, Variant};
 use crate::ui::message::Tone;
 use crate::ui::optioncards::Card;
+use crate::ui::pathfield::{Mode, PathField};
 use crate::ui::style::{self, Weight};
 
 const MAP_RATE_HINT: &str = "How many times a second the aircraft on the map move, in 3D with their height line and shadow. 30 Hz needs about a third less CPU in 3D, which a laptop on battery notices. 60 Hz (the default) moves them more smoothly. The flight instruments and moving the map by hand always run at the display's full rate.";
@@ -697,18 +698,20 @@ impl SettingsPage {
                     "Load elevation files",
                     |ui, x, y, w| {
                         let mut f = Form::new(x, y, w);
-                        form::field(
-                        ui,
-                        &mut f,
-                        "File or folder",
-                        "",
-                        "The path of a GeoTIFF, XYZ text or ESRI ASCII grid file on this computer, or of a folder: every file in it that ends in .tif, .tiff, .txt, .xyz, .asc or .csv loads into one model.",
-                        |ui, x, y, w| {
-                            let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, CONTROL_H));
-                            crate::ui::field::TextField::new(buf).hint("/path/to/elevation").mono(true).pad(11.0, 11.0).show(ui, r, "demfilespath");
-                            CONTROL_H
-                        },
-                    );
+                        let filter = crate::ui::filepicker::Filter {
+                            name: "Elevation",
+                            extensions: &DEM_ACCEPT,
+                        };
+                        form::path(
+                            ui,
+                            &mut f,
+                            "File or folder",
+                            "",
+                            "A GeoTIFF, XYZ text or ESRI ASCII grid file on this computer, or a folder: every file in it that ends in .tif, .tiff, .txt, .xyz, .asc or .csv loads into one model.",
+                            &PathField::new(Mode::Either(Some(filter)), "Elevation files").placeholder("No file or folder chosen"),
+                            buf,
+                            "demfilespath",
+                        );
                         f.skip(18.0);
                         let (hit, bottom) = crate::ui::modal::actions(
                             ui,
