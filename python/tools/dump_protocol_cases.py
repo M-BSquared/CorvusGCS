@@ -602,7 +602,214 @@ def shell_cases() -> list[dict]:
     return out
 
 
-COMMANDS = {"params_cases.json": cases, "logs_cases.json": logs_cases, "shell_cases.json": shell_cases}
+# ----------------------------------------------------------------- ftp ----
+
+class FtpError(Exception):
+    def __init__(self, message: str, code: int = 0) -> None:
+        super().__init__(message)
+        self.message = message
+        self.code = code
+
+
+class FtpLock:
+    def __init__(self) -> None:
+        self.held = False
+
+    def acquire(self, blocking=True):
+        if self.held:
+            return False
+        self.held = True
+        return True
+
+    def release(self):
+        self.held = False
+
+
+class FtpMav:
+    def __init__(self, bridge) -> None:
+        self.bridge = bridge
+
+    def file_transfer_protocol_send(self, network, ts, tc, payload):
+        self.bridge.on_send(bytes(payload))
+
+
+class FtpBridge(SimpleBridge):
+    def __init__(self, sc: dict, eng) -> None:
+        super().__init__(sc)
+        self.engine = eng
+        self._ftp_lock = FtpLock()
+        self._stop_event = Flag(False)
+        self._conn = None if sc.get("not_connected") else type("Conn", (), {})()
+        if self._conn is not None:
+            self._conn.mav = FtpMav(self)
+            self._conn.source_system = 255
+            self._conn.source_component = 0
+        self.frames: list = []
+        self.opens = 0
+        self.burst_count = 0
+        self.files = {k: bytes.fromhex(v) if isinstance(v, str) else v for k, v in sc.get("files", {}).items()}
+
+    def _is_slow_link(self):
+        return bool(self.sc.get("slow"))
+
+    def on_send(self, p: bytes):
+        seq = p[0] | p[1] << 8
+        session, opcode, size = p[2], p[3], p[4]
+        offset = int.from_bytes(p[8:12], "little")
+        data = p[12:12 + size]
+        self.frames.append([seq, session, opcode, size, offset, data.hex()])
+        self.vehicle(seq, session, opcode, size, offset, data)
+
+    def reply(self, seq, session, req_op, opcode, offset=0, data=b"", burst_complete=False):
+        buf = bytearray(251)
+        buf[0:2] = ((seq + 1) & 0xFFFF).to_bytes(2, "little")
+        buf[2] = session
+        buf[3] = opcode
+        buf[4] = len(data)
+        buf[5] = req_op
+        buf[6] = 1 if burst_complete else 0
+        buf[8:12] = offset.to_bytes(4, "little")
+        buf[12:12 + len(data)] = data
+        msg = type("M", (), {})()
+        msg.target_system = 255
+        msg.target_component = 0
+        msg.payload = list(buf)
+        self.engine.handle_message(self, msg)
+
+    def nak(self, seq, session, req_op, code, offset=0):
+        self.reply(seq, session, req_op, 129, offset, bytes([code]))
+
+    def vehicle(self, seq, session, opcode, size, offset, data):
+        veh = self.sc.get("vehicle", {})
+        if veh.get("silent"):
+            return
+        if opcode == 4:  # open
+            self.opens += 1
+            path = data.decode()
+            if veh.get("no_sessions_once") and self.opens == 1:
+                return self.nak(seq, 0, 4, 5)
+            if path not in self.files:
+                return self.nak(seq, 0, 4, 10)
+            n = veh.get("report_size", len(self.files[path]))
+            self.current = self.files[path]
+            return self.reply(seq, 1, 4, 128, 0, n.to_bytes(4, "little"))
+        if opcode in (1, 2):
+            return self.reply(seq, session, opcode, 128)
+        if opcode == 14:
+            path = data.decode()
+            if path not in self.files:
+                return self.nak(seq, 0, 14, 10)
+            if veh.get("short_crc"):
+                return self.reply(seq, 0, 14, 128, 0, b"\x01")
+            import zlib
+            return self.reply(seq, 0, 14, 128, 0, zlib.crc32(self.files[path]).to_bytes(4, "little"))
+        if opcode == 15:  # burst read
+            self.burst_count += 1
+            chunk, f = 239, self.current
+            per_burst = veh.get("chunks_per_burst", 1000)
+            drop = veh.get("drop_first_burst", [])
+            pos, n = offset, 0
+            while True:
+                if pos >= len(f):
+                    return self.nak(seq, session, 15, 6, len(f))
+                if n >= per_burst:
+                    return
+                part = f[pos:pos + chunk]
+                done = pos + len(part) >= len(f)
+                if not (self.burst_count == 1 and n in drop):
+                    self.reply(seq, session, 15, 128, pos, part, burst_complete=done and not veh.get("no_eof_flag"))
+                pos += len(part)
+                n += 1
+                if done:
+                    if veh.get("eof_after"):
+                        self.nak(seq, session, 15, 6, len(f))
+                    return
+
+
+def ftp_scenarios() -> list[dict]:
+    body = lambda n: bytes((i * 7 + 3) % 251 for i in range(n)).hex()  # noqa: E731
+    big = {"/fs/a.bin": body(100), "/fs/b.bin": body(1000), "/fs/c.bin": body(700), "/fs/d.bin": body(5000)}
+    return [
+        {"name": "read_small", "files": big, "steps": [{"op": "read", "path": "/fs/a.bin"}]},
+        {"name": "read_multichunk_with_progress", "files": big, "steps": [{"op": "read", "path": "/fs/b.bin"}]},
+        {"name": "read_loss_recovers", "files": big, "vehicle": {"drop_first_burst": [1]}, "steps": [
+            {"op": "read", "path": "/fs/c.bin"}]},
+        {"name": "read_loss_slow_link", "slow": True, "files": big, "vehicle": {"drop_first_burst": [0, 2]}, "steps": [
+            {"op": "read", "path": "/fs/c.bin"}]},
+        {"name": "read_in_short_bursts", "files": big, "vehicle": {"chunks_per_burst": 2, "no_eof_flag": True}, "steps": [
+            {"op": "read", "path": "/fs/b.bin"}]},
+        {"name": "read_too_large", "files": big, "limits": {"max_file": 1000}, "steps": [{"op": "read", "path": "/fs/d.bin"}]},
+        {"name": "read_not_found", "files": big, "steps": [{"op": "read", "path": "/fs/none"}]},
+        {"name": "read_no_sessions_then_reset", "files": big, "vehicle": {"no_sessions_once": True}, "steps": [
+            {"op": "read", "path": "/fs/a.bin"}]},
+        {"name": "read_unknown_size_ends_at_eof", "files": big, "vehicle": {"report_size": 0, "eof_after": True,
+                                                                           "no_eof_flag": True}, "steps": [
+            {"op": "read", "path": "/fs/b.bin"}]},
+        {"name": "read_path_too_long", "files": big, "steps": [{"op": "read", "path": "/" + "p" * 300}]},
+        {"name": "read_not_connected", "not_connected": True, "files": big, "steps": [{"op": "read", "path": "/fs/a.bin"}]},
+        {"name": "read_cancelled", "files": big, "steps": [{"op": "read", "path": "/fs/a.bin", "cancel": True}]},
+        {"name": "read_stopped", "files": big, "stopped": True, "steps": [{"op": "read", "path": "/fs/a.bin"}]},
+        {"name": "read_no_answer", "files": big, "vehicle": {"silent": True}, "limits": {"retries": 2}, "steps": [
+            {"op": "read", "path": "/fs/a.bin"}]},
+        {"name": "crc_ok", "files": big, "steps": [{"op": "crc", "path": "/fs/b.bin"}]},
+        {"name": "crc_not_found", "files": big, "steps": [{"op": "crc", "path": "/fs/none"}]},
+        {"name": "crc_short_reply", "files": big, "vehicle": {"short_crc": True}, "steps": [{"op": "crc", "path": "/fs/a.bin"}]},
+        {"name": "crc_path_too_long", "files": big, "steps": [{"op": "crc", "path": "/" + "p" * 300}]},
+        {"name": "two_reads_in_a_row_reuse_the_engine", "files": big, "steps": [
+            {"op": "read", "path": "/fs/a.bin"}, {"op": "read", "path": "/fs/c.bin"}, {"op": "crc", "path": "/fs/a.bin"}]},
+    ]
+
+
+def ftp_cases() -> list[dict]:
+    from types import SimpleNamespace
+
+    from corvus_link import ftp as F
+
+    out = []
+    for sc in ftp_scenarios():
+        lim = sc.get("limits", {})
+        clock = Clock()
+
+        def mono(clock=clock):
+            clock.t += 0.05
+            return clock.t
+
+        env = SimpleNamespace(FtpError=FtpError, time=SimpleNamespace(monotonic=mono), FTP_REPLY_TIMEOUT_S=1.0,
+                              FTP_REPLY_TIMEOUT_S_SLOW=3.0, FTP_MAX_FILE_BYTES=lim.get("max_file", 8 * 1024 * 1024),
+                              FTP_BURST_ROUNDS=25, FTP_REQUEST_RETRIES=lim.get("retries", 3))
+        eng = F.FtpEngine(env)
+        br = FtpBridge(sc, eng)
+        br._stop_event.value = bool(sc.get("stopped"))
+        results = []
+        for step in sc["steps"]:
+            before = len(br.frames)
+            progress: list = []
+            cancel = Flag(True) if step.get("cancel") else None
+            if cancel is not None:
+                cancel.set = lambda: None
+            try:
+                if step["op"] == "read":
+                    cb = (lambda got, total, progress=progress: progress.append([got, total]))
+                    if cancel is not None:
+                        import threading
+                        ev = threading.Event()
+                        ev.set()
+                        data = eng.read_file(br, step["path"], cb, ev)
+                    else:
+                        data = eng.read_file(br, step["path"], cb)
+                    result = {"ok": bytes(data).hex()}
+                else:
+                    result = {"ok": eng.file_crc32(br, step["path"])}
+            except FtpError as exc:
+                result = {"error": [exc.message, exc.code]}
+            results.append({"result": result, "frames": br.frames[before:], "progress": progress})
+        out.append({"scenario": sc, "expected": clean({"steps": results, "final": {
+            "listening": eng.listening, "inbox": len(eng.inbox), "busy": br._ftp_lock.held}})})
+    return out
+
+
+COMMANDS = {"params_cases.json": cases, "logs_cases.json": logs_cases, "shell_cases.json": shell_cases,
+            "ftp_cases.json": ftp_cases}
 
 
 def main(argv: list[str]) -> int:
