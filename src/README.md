@@ -11,6 +11,7 @@ Android app as well. `src/link/` is the MAVLink crate (PyO3, its own
 src/main.rs            entry point, arguments, signals
 src/app/               the window: layout, rail, page switching, responsive widths
 src/net/ data/         the backend child, SSE, telemetry, track (the HTTP client and units are in src/api)
+src/core/              corvus_core: the backend as a library (router, internal_call, state store, settings, HTTP server)
 src/api/               the crate plugins build on: ui, i18n, net::http, plugin (trait, options, shapes)
 src/home/ map/ map3d/  the Home page: flight bar, HUD, top bar, the 2D and the 3D map
 src/mission/ setup/    the Mission planner and the Setup pages
@@ -43,6 +44,28 @@ Locally, `serve.py` runs as a child on a free port. Every way out (window
 closed, SIGINT, SIGTERM) sends it SIGTERM, which runs its own teardown, and
 SIGKILL if it is still there after 8 s. If the window does not close within
 10 s of a signal, the child is killed and the process exits.
+
+## The core (`src/core`, crate `corvus_core`)
+
+The backend of the Python program (`python/corvus`) becomes this library
+(plan: `src/BACKEND_PORT.md`). The foundation is the router, the state store,
+settings under `~/.corvus`, the instance lock, the version, the languages and
+the optional HTTP server; every other area (vehicle, map data, logs and
+firmware, peripherals, AI and plugins) is a module that registers its routes
+through the contract below, in its own folder, and is held to the Python routes
+by tests whose expected values are dumped from the Python
+(`python/tools/dump_core_cases.py`).
+
+| | |
+| --- | --- |
+| `Module` | `name`, `register(&mut Registry)`, `start(&Core)`, `stop(&Core)`. `register` only declares; threads start in `start` and are all joined in `stop`, which runs in reverse order on the way out. |
+| `Registry` | `get`, `post` (a JSON object in `req.payload()`), `post_with` (another cap, or a raw body for an upload), `delete`, `get_pattern` (`/api/tiles/{source}/{z:d}/{x:d}/{y:d}.png`, `{rest*}`), `guard` (a refusal before every non-GET handler, for HTTP and in process alike), `service`. A route registered twice fails the build. |
+| `Request` | `method`, `path`, `query` (`parse_qs`: `query.get("code")`), `headers`, `body`, `peer`, `origin`, `param("z")`, `payload()`. |
+| `Response` | `json`, `json_status`, `error(status, text)` (`{"error": text}`), `not_ok` (`{"ok": false, "error": text}`), `bytes`, `empty`, `sse(Box<dyn SseStream>)`. |
+| `Core::internal_call(method, path, payload)` | runs an endpoint in process and returns `(status, JSON)`: the same handler, validation and guards a request has. An AI tool and the interface use it; nothing reaches the link around a route. |
+| `Core::service::<T>()` | a value another area published (`reg.service(Arc<T>)`). |
+| `Core::wait_stopping(d)`, `is_stopping()` | what a loop sleeps on, so shutdown does not wait for it. |
+| 501 | every route the Python server answers that no module registered answers `501 {"error": "Not available in this build"}` (`unported.rs`, from `tests/data/python_routes.json`). Registering the route takes it over, with nothing else to edit. The interface shows the 501 as an offline notice. |
 
 ## What is here
 

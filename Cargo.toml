@@ -12,8 +12,8 @@ build = "build.rs"
 # made of (the API plugins build on and the plugins themselves). src/link is
 # the MAVLink extension module: it has its own toolchain, lock and maturin
 # build, and stays out.
-members = ["src/api", "src/plugins/vibration", "src/plugins/ssh-launcher", "src/plugins/map-entities", "src/plugins/schwalby"]
-default-members = [".", "src/api", "src/plugins/vibration", "src/plugins/ssh-launcher", "src/plugins/map-entities", "src/plugins/schwalby"]
+members = ["src/core", "src/api", "src/plugins/vibration", "src/plugins/ssh-launcher", "src/plugins/map-entities", "src/plugins/schwalby"]
+default-members = [".", "src/core", "src/api", "src/plugins/vibration", "src/plugins/ssh-launcher", "src/plugins/map-entities", "src/plugins/schwalby"]
 exclude = ["src/link"]
 
 [[bin]]
