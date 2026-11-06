@@ -589,16 +589,18 @@ fn new_connection(ui: &mut egui::Ui, f: &mut Form, c: &mut NewConn) {
         "sshl-nc-pass",
     );
     inner.skip(12.0);
-    form::input(
+    form::path(
         ui,
         &mut inner,
         "Key file",
         "",
         "",
+        &crate::ui::pathfield::PathField::new(crate::ui::pathfield::Mode::File(None), "Private key")
+            .placeholder("No key file chosen")
+            .optional()
+            .backend()
+            .opens_in("~/.ssh"),
         &mut c.key_path,
-        "/home/you/.ssh/id_rsa",
-        true,
-        false,
         "sshl-nc-key",
     );
     inner.skip(12.0);

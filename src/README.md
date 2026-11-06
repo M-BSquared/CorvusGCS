@@ -133,7 +133,8 @@ SIGKILL if it is still there after 8 s. If the window does not close within
 | `src/ui/kit.rs` | the facade of the controls, so `kit::Button` and the rest stay valid; each lives in its own file below |
 | `src/ui/button.rs`, `src/ui/select.rs`, `src/ui/toggle.rs`, `src/ui/text.rs` | `Button`, `Variant`, `icon_btn` (`.btn`, `.icon-btn`); `Choice` and `select` (`.field-select`); `checkbox`, `check_box`, `switch`; `wrapped`, `wrapped_weight`, `dot` |
 | `src/ui/field.rs` | `TextField`: the one text box, on a well, glass or floating surface, with an optional icon; `committed`, a well that keeps what is typed until Enter or blur; `outline`, the red or changed outline over a field |
-| `src/ui/filepicker.rs` | the system file dialog (`rfd`) with an extension filter: a person picks a file, no path is typed |
+| `src/ui/filepicker.rs` | the system file dialog (`rfd`): pick a file (with an extension filter), pick a folder, save a file; the start folder is taken from the value held |
+| `src/ui/pathfield.rs` | the path field (`form::path`): read only box in mono with Choose, Choose file, Choose folder and Clear buttons; modes file, folder, either and save; a backend field turns into a text box for a remote `--server` |
 | `src/ui/progress.rs` | `Bar`: the track and fill of every progress bar, determinate or sweeping, with the optional border |
 | `src/ui/listrow.rs` | `Mark` and `paint`: the hover and selected background of a list row |
 | `src/ui/slider.rs`, `src/ui/pills.rs` | the stepped slider (`.ui-slider`) and the icon pills of the Settings page (`.settings-tab`) |
@@ -323,12 +324,22 @@ The page writes what the web page writes, key for key, so the two interfaces
 share one config. Differences that follow from a native window:
 
 - **Plugins.** The Plugins pill lists the compiled-in plugins with a gear for their options (see Plugins below).
-- **Files.** The company logo is chosen with the system file dialog (`rfd`:
-  Cocoa, Windows, and the desktop portal on Linux, so no GTK is linked), not
-  typed as a path; `src/ui/filepicker.rs` wraps it. The logo is drawn at the
-  far right of the top bar (`src/home/company.rs`). Elevation files (a file or
-  a folder of them), a settings file to import and a private key still ask for
-  a path.
+- **Files.** Nobody types a path. Every file or folder on this computer is
+  chosen with the system file dialog (`rfd`: Cocoa, Windows, and the desktop
+  portal on Linux, so no GTK is linked); `src/ui/filepicker.rs` wraps it and
+  `src/ui/pathfield.rs` is the field that offers it (`form::path`): a read
+  only box in the style of a text field showing the path in mono, cut in the
+  middle when long, with Choose (and Clear where the setting is optional), or
+  Choose file and Choose folder where either is valid. The dialog opens in the
+  folder of the value held. Used by the company logo (drawn at the far right of
+  the top bar, `src/home/company.rs`), the parameter export folder, the
+  settings export folder and import file, elevation files or folders, SSH key
+  files, the flight log import and download folder, the parameter export folder
+  and import file, and the firmware file. A setting that names a place on the
+  backend's machine (export folders, the flight log folder, SSH keys) falls
+  back to a text box, with a line in its hint saying so, when `--server` points
+  at another computer (`Server::is_loopback`, `pathfield::set_backend_remote`).
+  `--page settings:TAB --scroll PX` opens a Settings tab scrolled.
 - **Language.** The language picker lists `GET /api/languages` and writes
   `language`, as the web page does. The native interface's own words are
   English only for now: its strings are not yet looked up in `src/lang`, so a

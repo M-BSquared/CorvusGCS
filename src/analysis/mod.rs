@@ -423,23 +423,25 @@ impl AnalysisPage {
             label.clone(),
             style::text_3(),
         );
-        let save = Button::new("Save", Variant::Secondary).small();
+        let typed = crate::ui::pathfield::backend_remote();
+        let save = Button::new(if typed { "Save" } else { "Choose\u{2026}" }, Variant::Secondary).small();
         let (bw, bh) = (save.width(ui), save.height());
         let ix = lx + label.size().x + 8.0;
         let input = Rect::from_min_max(
             Pos2::new(ix, row.top() + 6.0 + (h - 12.0 - 2.0 - 25.0) / 2.0 + 1.0),
             Pos2::new(row.right() - 11.0 - bw - 8.0, row.bottom() - 7.0),
         );
-        let focused = ui.memory(|m| m.has_focus(ui.scope_id().with("logdir")));
-        if focused {
-            card::paint(
-                ui.painter(),
-                input,
-                Look::custom(style::input(0.6), style::accent(), style::RADIUS_BTN),
-            );
-        }
-        let before = self.dir_text.clone();
-        let resp = {
+        let mut resp = None;
+        if typed {
+            let focused = ui.memory(|m| m.has_focus(ui.scope_id().with("logdir")));
+            if focused {
+                card::paint(
+                    ui.painter(),
+                    input,
+                    Look::custom(style::input(0.6), style::accent(), style::RADIUS_BTN),
+                );
+            }
+            let before = self.dir_text.clone();
             let buf = &mut self.dir_text;
             let mut t = crate::ui::field::TextField::new(buf)
                 .hint("~/.corvus/flightlogs")
@@ -448,10 +450,27 @@ impl AnalysisPage {
                 .pad(8.0, 8.0)
                 .surface(crate::ui::field::Surface::Bare);
             t = t.focus_color(style::accent());
-            t.show_with_id(ui, input, ui.scope_id().with("logdir"))
-        };
-        if self.dir_text != before {
-            self.dir_touched = true;
+            resp = Some(t.show_with_id(ui, input, ui.scope_id().with("logdir")));
+            if self.dir_text != before {
+                self.dir_touched = true;
+            }
+        } else {
+            let (text, color) = if self.dir_text.trim().is_empty() {
+                ("~/.corvus/flightlogs".to_string(), style::text_3())
+            } else {
+                (self.dir_text.clone(), style::text_1())
+            };
+            let inner = input.shrink2(Vec2::new(8.0, 0.0));
+            let shown = crate::ui::pathfield::fit_middle(&text, inner.width(), |t| {
+                style::galley_mono(ui, t, 11.5, color).size().x
+            });
+            let g = style::galley_mono(ui, &shown, 11.5, color);
+            ui.painter()
+                .galley(Pos2::new(inner.left(), inner.center().y - g.size().y / 2.0), g, color);
+            if !self.dir_text.trim().is_empty() {
+                ui.interact(input, ui.scope_id().with("logdir"), egui::Sense::hover())
+                    .on_hover_text(self.dir_text.as_str());
+            }
         }
         let pressed = save.show(
             ui,
@@ -462,11 +481,21 @@ impl AnalysisPage {
             "savedir",
         );
         f.y = row.bottom();
-        if (pressed || (resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter))))
-            && !self.dir_text.trim().is_empty()
-        {
-            let dir = self.dir_text.trim().to_string();
-            self.job(ui.ctx(), "dir", "/api/logs/dir", json!({ "dir": dir }));
+        f.y = row.bottom();
+        if typed {
+            let entered = resp.is_some_and(|r| r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)));
+            if (pressed || entered) && !self.dir_text.trim().is_empty() {
+                let dir = self.dir_text.trim().to_string();
+                self.job(ui.ctx(), "dir", "/api/logs/dir", json!({ "dir": dir }));
+            }
+        } else if pressed {
+            let start = crate::ui::filepicker::start_folder(&self.dir_text);
+            if let Some(p) = crate::ui::filepicker::pick_folder("Flight log folder", start.as_deref()) {
+                let dir = p.to_string_lossy().into_owned();
+                self.dir_text = dir.clone();
+                self.dir_touched = true;
+                self.job(ui.ctx(), "dir", "/api/logs/dir", json!({ "dir": dir }));
+            }
         }
         if !self.dir_note.0.is_empty() {
             f.skip(8.0);

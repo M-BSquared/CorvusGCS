@@ -8,6 +8,7 @@ use eframe::egui::{self, Pos2, Rect, Vec2};
 
 use crate::ui::field::TextField;
 use crate::ui::kit::{self, Choice};
+use crate::ui::pathfield::{PathField, Picked};
 use crate::ui::popover;
 use crate::ui::style::{self, Weight};
 
@@ -69,6 +70,20 @@ pub fn input(
         .secret(secret)
         .pad(11.0, 11.0)
         .show(ui, rect, id)
+}
+
+/// A path field `w` wide at `x, y`: read only, with the buttons that open the
+/// system file dialog. `value` becomes what is chosen.
+pub fn path(
+    ui: &mut egui::Ui,
+    x: f32,
+    y: f32,
+    w: f32,
+    field: &PathField<'_>,
+    value: &mut String,
+    id: impl std::hash::Hash + std::fmt::Debug,
+) -> Option<Picked> {
+    field.show(ui, x, y, w, value, id)
 }
 
 /// A select `w` wide at `x, y`; returns the value picked this frame.

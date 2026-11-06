@@ -11,6 +11,7 @@ use crate::ui::card::{self, Look};
 use crate::ui::form::{self, Form, CONTROL_H};
 use crate::ui::kit::{self, Button, Variant};
 use crate::ui::message::Tone;
+use crate::ui::pathfield::{Mode, PathField};
 use crate::ui::style::{self, Weight};
 
 const FLEET_HINT: &str = "One link is one vehicle. A second vehicle needs a radio of its own and a link of its own. Another autopilot heard on a link is ignored.";
@@ -424,16 +425,18 @@ impl SettingsPage {
                             "sshpassword",
                         );
                         f.skip(10.0);
-                        form::input(
+                        form::path(
                             ui,
                             &mut f,
                             "Key file",
                             "",
-                            "Optional. The path of a private key on this computer.",
+                            "Optional. A private key file, on the machine running Corvus.",
+                            &PathField::new(Mode::File(None), "Private key")
+                                .placeholder("No key file chosen")
+                                .optional()
+                                .backend()
+                                .opens_in("~/.ssh"),
                             &mut key,
-                            "~/.ssh/id_ed25519",
-                            true,
-                            false,
                             "sshkey",
                         );
                         if let Some((m, tone)) = &msg {

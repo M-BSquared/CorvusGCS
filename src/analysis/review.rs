@@ -111,8 +111,6 @@ pub struct Review {
     note: (String, bool),
     data: Option<ReviewData>,
     pick: String,
-    browse_open: bool,
-    path: String,
     open: HashSet<usize>,
     notes_open: bool,
     msg_filter: String,
@@ -128,8 +126,6 @@ impl Review {
             note: (String::new(), false),
             data: None,
             pick: String::new(),
-            browse_open: false,
-            path: String::new(),
             open: HashSet::new(),
             notes_open: false,
             msg_filter: "all".into(),
@@ -145,7 +141,6 @@ impl Review {
         self.label.clear();
         self.open.clear();
         self.notes_open = false;
-        self.browse_open = false;
     }
 
     fn start(&mut self, label: &str, work: impl FnOnce() -> Result<Value, String> + Send + 'static) {
@@ -371,38 +366,15 @@ impl AnalysisPage {
                 Rect::from_min_size(Pos2::new(inner.x, inner.y), Vec2::new(bw2, bh2)),
                 "reviewbrowse",
             ) {
-                self.review.browse_open = !self.review.browse_open;
+                let filter = crate::ui::filepicker::Filter {
+                    name: "ULog",
+                    extensions: &["ulg"],
+                };
+                if let Some(p) = crate::ui::filepicker::pick_file("Open a flight log", Some(filter), None) {
+                    file = Some(p.to_string_lossy().into_owned());
+                }
             }
             inner.y += bh2;
-            if self.review.browse_open {
-                inner.skip(8.0);
-                let ob = Button::new("Open", Variant::Secondary).enabled(!loading);
-                let ow = ob.width(ui);
-                let r = Rect::from_min_size(
-                    Pos2::new(inner.x, inner.y),
-                    Vec2::new(inner.w - ow - 8.0, form::CONTROL_H),
-                );
-                let resp = crate::ui::field::TextField::new(&mut self.review.path)
-                    .hint("~/Downloads/flight.ulg")
-                    .mono(true)
-                    .pad(11.0, 11.0)
-                    .show(ui, r, "reviewpath");
-                let h = ob.height();
-                let open = ob.show(
-                    ui,
-                    Rect::from_min_size(
-                        Pos2::new(r.right() + 8.0, inner.y + (form::CONTROL_H - h) / 2.0),
-                        Vec2::new(ow, h),
-                    ),
-                    "reviewopen",
-                );
-                if (open || (resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter))))
-                    && !self.review.path.trim().is_empty()
-                {
-                    file = Some(self.review.path.clone());
-                }
-                inner.y += form::CONTROL_H;
-            }
         }
         inner.skip(10.0);
         let (note, err) = if loading {

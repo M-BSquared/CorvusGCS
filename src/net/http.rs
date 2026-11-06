@@ -54,6 +54,15 @@ impl Server {
         }
     }
 
+    /// True when the server runs on this computer: the loopback interface or
+    /// `localhost`. A path on its disk is then a path on this one.
+    pub fn is_loopback(&self) -> bool {
+        let host = self.host.trim_start_matches('[').trim_end_matches(']');
+        host.eq_ignore_ascii_case("localhost")
+            || host == "::1"
+            || host.parse::<std::net::Ipv4Addr>().is_ok_and(|a| a.is_loopback())
+    }
+
     /// `http://host:port`, for showing.
     pub fn url(&self) -> String {
         format!("http://{}:{}", self.host, self.port)
@@ -318,6 +327,27 @@ mod tests {
 
     fn parse(raw: &'static str) -> Response {
         read_response(BufReader::new(raw.as_bytes())).unwrap()
+    }
+
+    #[test]
+    fn loopback_hosts_are_this_computer() {
+        for url in [
+            "http://127.0.0.1:8080",
+            "http://localhost:8080",
+            "http://LOCALHOST",
+            "http://[::1]:9",
+            "http://127.0.1.1:80",
+        ] {
+            assert!(Server::parse(url).unwrap().is_loopback(), "{url}");
+        }
+        for url in [
+            "http://192.168.1.20:8080",
+            "http://gcs.local",
+            "http://0.0.0.0:80",
+            "http://[fe80::1]:9",
+        ] {
+            assert!(!Server::parse(url).unwrap().is_loopback(), "{url}");
+        }
     }
 
     #[test]

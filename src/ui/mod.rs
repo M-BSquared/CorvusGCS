@@ -17,6 +17,7 @@ pub mod message;
 pub mod modal;
 pub mod optioncards;
 pub mod pagekit;
+pub mod pathfield;
 pub mod pills;
 pub mod popover;
 pub mod progress;
