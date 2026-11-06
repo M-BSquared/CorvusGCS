@@ -8,6 +8,7 @@ pub mod model;
 pub mod plot;
 mod review;
 mod scope;
+pub mod trackmap;
 
 use std::collections::BTreeSet;
 use std::time::Duration;
@@ -266,7 +267,7 @@ impl AnalysisPage {
     }
 
     /// Draws the page into `rect`.
-    pub fn show(&mut self, ui: &mut egui::Ui, rect: Rect, state: &Value, units: &Units) {
+    pub fn show(&mut self, ui: &mut egui::Ui, rect: Rect, state: &Value, units: &Units, imagery: &trackmap::Imagery) {
         self.poll(ui.ctx());
         let ready = !matches!(self.view, View::Review(_) | View::TlogReview(_)) || self.review.has_data();
         if ready && self.deferred_scroll.is_some() {
@@ -296,8 +297,8 @@ impl AnalysisPage {
                 View::Tiles => self.landing(ui, &mut f, state, units),
                 View::Ulog => self.ulog_view(ui, &mut f),
                 View::Tlog => self.tlog_view(ui, &mut f),
-                View::Review(_) => self.review_view(ui, &mut f, false, units),
-                View::TlogReview(_) => self.review_view(ui, &mut f, true, units),
+                View::Review(_) => self.review_view(ui, &mut f, false, units, imagery),
+                View::TlogReview(_) => self.review_view(ui, &mut f, true, units, imagery),
                 View::Scope => self.scope_view(ui, &mut f),
             }
             ui.allocate_space(Vec2::new(rect.width() - 1.0, f.y + pagekit::PAD_Y - top));

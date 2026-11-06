@@ -881,7 +881,7 @@ impl TilesCard {
                     let resp = ui.interact(main, ui.scope_id().with(("tilesmain", i)), egui::Sense::click());
                     resp.clone().on_hover_text("Show this area on the map");
                     let ng = style::galley(ui, &name, 12.0, Weight::W600, style::text_1(), 0.0);
-                    let meta = model::region_meta(r, &self.label_by_id(&source));
+                    let meta = crate::i18n::tr_joined(&model::region_meta(r, &self.label_by_id(&source)));
                     let mc = if running { style::warning() } else { style::text_3() };
                     let mg = style::galley(ui, &meta, 10.0, Weight::W400, mc, 0.0);
                     let th = ng.size().y + 1.0 + mg.size().y;

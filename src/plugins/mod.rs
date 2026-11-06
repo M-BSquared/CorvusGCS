@@ -19,6 +19,7 @@
 pub mod layer;
 pub mod map_entities;
 pub mod options;
+pub mod schwalby;
 pub mod shapes;
 pub mod ssh_launcher;
 mod ssh_setup;
@@ -66,6 +67,20 @@ pub enum MapEvent {
     PickCancelled,
 }
 
+/// One tool a plugin offers an AI client through Corvus' MCP server
+/// (`mcpTools` of a plugin's spec).
+#[derive(Debug, Clone, PartialEq)]
+pub struct McpTool {
+    pub name: String,
+    pub title: String,
+    pub description: String,
+    /// A JSON schema of type `object`.
+    pub input_schema: Value,
+    /// The operator is asked before every call.
+    pub confirm: bool,
+    pub read_only: bool,
+}
+
 /// What a plugin may do. Everything but `info` and `show` is optional.
 pub trait Plugin {
     fn info(&self) -> Info;
@@ -100,6 +115,21 @@ pub trait Plugin {
     /// The operator answered the login dialog this plugin asked for with
     /// `ssh_setup`: `saved` is whether a login was saved under that name.
     fn ssh_setup_done(&mut self, _tag: u64, _saved: bool, _h: &mut Host) {}
+
+    /// The tools an AI client may use right now (`mcpTools`); they follow the
+    /// plugin's options, so they are asked for again when those change.
+    fn mcp_tools(&self, _h: &Host) -> Vec<McpTool> {
+        Vec::new()
+    }
+
+    /// An AI client calls tool `name`. The answer is taken with `mcp_take`
+    /// under the same `token` once there is one.
+    fn mcp_call(&mut self, _name: &str, _args: &Value, _token: u64, _h: &mut Host) {}
+
+    /// The answer of a call, or `None` while it is still under way.
+    fn mcp_take(&mut self, _token: u64) -> Option<Result<Value, String>> {
+        Some(Err("The plugin offers no such tool right now.".into()))
+    }
 }
 
 /// The compiled-in plugins, in the order of their `order`.
@@ -108,6 +138,7 @@ pub fn builtin() -> Vec<Box<dyn Plugin>> {
         Box::new(vibration::Vibration::default()),
         Box::new(ssh_launcher::SshLauncher::default()),
         Box::new(map_entities::MapEntities::default()),
+        Box::new(schwalby::Schwalby::default()),
     ];
     all.sort_by(|a, b| {
         let (a, b) = (a.info(), b.info());
@@ -171,6 +202,10 @@ pub struct Registry {
     /// The card opened under PLUGINS.
     open: Option<usize>,
     shapes_dirty: bool,
+    /// Calls from an AI client that wait on a plugin: `(token, entry, call id)`.
+    mcp_waiting: Vec<(u64, usize, String)>,
+    mcp_failed: Vec<(String, String)>,
+    mcp_next: u64,
 }
 
 /// What a plugin is handed to talk to the app (`api`).
@@ -357,6 +392,9 @@ impl Registry {
             setups: Vec::new(),
             open: None,
             shapes_dirty: true,
+            mcp_waiting: Vec::new(),
+            mcp_failed: Vec::new(),
+            mcp_next: 0,
         }
     }
 
@@ -457,6 +495,68 @@ impl Registry {
         if self.entries.iter_mut().fold(false, |a, e| e.shapes.take_changed() | a) {
             self.shapes_dirty = true;
         }
+    }
+
+    // ---- tools for an AI client (`Corvus.mcp`) ----------------------------
+
+    /// Every plugin's tools, as the MCP window announces them.
+    pub fn mcp_tools(&mut self, ctx: &egui::Context, state: &Value) -> Vec<Value> {
+        let mut out = Vec::new();
+        if !self.loaded {
+            return out;
+        }
+        for i in 0..self.entries.len() {
+            let info = self.entries[i].info;
+            for t in self.with(i, ctx, state, |p, h| p.mcp_tools(h)) {
+                out.push(json!({
+                    "plugin": info.id, "plugin_name": info.name, "name": t.name, "title": t.title,
+                    "description": t.description, "input_schema": t.input_schema,
+                    "confirm": t.confirm, "read_only": t.read_only,
+                }));
+            }
+        }
+        out
+    }
+
+    /// An AI client's call (`runMcpTool`); its answer comes from `mcp_answers`.
+    pub fn mcp_call(
+        &mut self,
+        call_id: &str,
+        plugin: &str,
+        tool: &str,
+        args: &Value,
+        ctx: &egui::Context,
+        state: &Value,
+    ) {
+        let Some(i) = self.index_of(plugin) else {
+            self.mcp_failed.push((
+                call_id.to_string(),
+                format!("The plugin offers no tool {tool} right now."),
+            ));
+            return;
+        };
+        self.mcp_next += 1;
+        let token = self.mcp_next;
+        self.with(i, ctx, state, |p, h| p.mcp_call(tool, args, token, h));
+        self.mcp_waiting.push((token, i, call_id.to_string()));
+    }
+
+    /// The calls that have an answer now: `(call id, result)`.
+    pub fn mcp_answers(&mut self, ctx: &egui::Context, state: &Value) -> Vec<(String, Result<Value, String>)> {
+        let mut out: Vec<(String, Result<Value, String>)> = std::mem::take(&mut self.mcp_failed)
+            .into_iter()
+            .map(|(id, e)| (id, Err(e)))
+            .collect();
+        let waiting = std::mem::take(&mut self.mcp_waiting);
+        let mut keep = Vec::new();
+        for (token, i, id) in waiting {
+            match self.with(i, ctx, state, |p, _| p.mcp_take(token)) {
+                Some(r) => out.push((id, r)),
+                None => keep.push((token, i, id)),
+            }
+        }
+        self.mcp_waiting = keep;
+        out
     }
 
     /// The login dialogs plugins asked for, one per connection name.
@@ -682,7 +782,19 @@ mod tests {
     #[test]
     fn the_four_bundled_plugins_are_listed_in_the_order_of_their_manifests() {
         let ids: Vec<_> = builtin().iter().map(|p| p.info().id).collect();
-        assert_eq!(ids, ["vibration", "ssh-launcher", "map-entities"]);
+        assert_eq!(ids, ["vibration", "ssh-launcher", "schwalby", "map-entities"]);
+    }
+
+    #[test]
+    fn schwalby_says_what_its_manifest_says() {
+        let manifest: Value = serde_json::from_str(include_str!("../../python/plugins/schwalby/plugin.json")).unwrap();
+        let info = schwalby::Schwalby::default().info();
+        assert_eq!(manifest["id"], info.id);
+        assert_eq!(manifest["name"], info.name);
+        assert_eq!(manifest["icon"], info.icon);
+        assert_eq!(manifest["description"], info.description);
+        assert_eq!(manifest["version"], info.version);
+        assert_eq!(manifest["order"], info.order);
     }
 
     #[test]

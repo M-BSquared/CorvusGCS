@@ -1,0 +1,18 @@
+{
+  "strings": {
+    "Armed by internal command": "Durch internen Befehl armiert",
+    "Datalink regained": "Datenverbindung wiederhergestellt",
+    "Preflight checks passed": "Vorflugprüfungen bestanden",
+    "RTK base link degraded, float fix": "RTK-Basisverbindung verschlechtert, Float-Lösung",
+    "Takeoff altitude reached": "Abhebehöhe erreicht",
+    "Takeoff detected, mode {a}": "Abheben erkannt, Modus {a}",
+    "downloading…": "wird heruntergeladen…",
+    "incomplete": "unvollständig",
+    "z{a} to {b}": "z{a} bis {b}",
+    "{a} Notification": "{a} Meldung",
+    "{a} Notifications": "{a} Meldungen",
+    "{a} area": "{a} Bereich",
+    "{a} areas": "{a} Bereiche",
+    "{a} new": "{a} neu"
+  }
+}

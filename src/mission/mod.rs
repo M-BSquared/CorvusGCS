@@ -31,7 +31,7 @@ mod side;
 mod terrain;
 mod toolbar;
 
-use eframe::egui::{self, Rect};
+use eframe::egui::{self, Pos2, Rect, Vec2};
 use serde_json::Value;
 
 use crate::data::units::Units;
@@ -43,10 +43,71 @@ use crate::mission::mapview::{Draft, Out, PlanLayer};
 use crate::mission::plan::{Kind, Link, Plan, Shape, Tool, DEFAULT_ALT_M, START_OFFSET_WARN_M};
 use crate::mission::progress::Tracker;
 use crate::net::http::Server;
+use crate::ui::style;
 
 /// `--mission-side-w`, 280 below 1280 px.
 pub const SIDE_W: f32 = 320.0;
 pub const SIDE_W_NARROW: f32 = 280.0;
+
+/// `updatePatternHint`: what a finished shape says, for a finger or a mouse.
+pub fn ready_hint(by_finger: bool) -> &'static str {
+    if by_finger {
+        "Press FINISH to cover it. Tap for more points, hold the map to take one back."
+    } else {
+        "Enter or a double click covers it. Click for more points, right click undoes one."
+    }
+}
+
+/// Which plan the page opens on next time (`rememberLastPlan`, `forgetLastPlan`,
+/// `loadLastPlan` of `mission.js`): a per machine convenience kept in
+/// `~/.corvus/gui-mission-last.txt`. A failure is silent and means "start empty".
+mod last {
+    use std::path::{Path, PathBuf};
+
+    pub fn path() -> Option<PathBuf> {
+        std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".corvus").join("gui-mission-last.txt"))
+    }
+
+    pub fn read_at(path: &Path) -> Option<String> {
+        let name = std::fs::read_to_string(path).ok()?;
+        let name = name.trim();
+        (!name.is_empty()).then(|| name.to_string())
+    }
+
+    pub fn remember_at(path: &Path, name: &str) {
+        if let Some(dir) = path.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        let _ = std::fs::write(path, name);
+    }
+
+    pub fn forget_at(path: &Path, name: &str) {
+        if read_at(path).as_deref() == Some(name) {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+
+    pub fn read() -> Option<String> {
+        read_at(&path()?)
+    }
+
+    pub fn remember(name: &str) {
+        if let Some(p) = path() {
+            remember_at(&p, name);
+        }
+    }
+
+    pub fn forget(name: &str) {
+        if let Some(p) = path() {
+            forget_at(&p, name);
+        }
+    }
+}
+
+/// The map's row when the page is stacked: `minmax(320px, 55vh)`.
+pub fn stacked_map_height(vh: f32) -> f32 {
+    (0.55 * vh).max(320.0)
+}
 
 /// What the status line under the editor says, and in which colour.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -92,6 +153,8 @@ pub struct MissionPage {
     pub(crate) ground: Option<Ground>,
     pub(crate) profile: profile::Profile,
     pub(crate) side: side::SideState,
+    /// The stacked sidebar's height as last drawn, which the page reserves.
+    pub(crate) side_height: f32,
     pub(crate) tools: toolbar::ToolState,
     pub(crate) notices: Vec<(&'static str, String)>,
     sampler: terrain::Sampler,
@@ -167,6 +230,7 @@ impl MissionPage {
             ground: None,
             profile: profile::Profile::default(),
             side: side::SideState::default(),
+            side_height: 600.0,
             tools: toolbar::ToolState::default(),
             notices: Vec::new(),
             pattern_origin: None,
@@ -336,6 +400,7 @@ impl MissionPage {
                         .unwrap_or(&self.plan.name)
                         .to_string();
                     self.last_plan = Some(name.clone());
+                    last::remember(&name);
                     self.say(Level::Ok, format!("Saved as {name}."));
                 }
                 (Job::Save, Err(e)) => {
@@ -371,6 +436,7 @@ impl MissionPage {
                         self.plan.load_json(p, self.vehicle_type(), self.link.start);
                         let shown = res.get("name").and_then(Value::as_str).unwrap_or(&name).to_string();
                         self.last_plan = Some(shown.clone());
+                        last::remember(&shown);
                         self.refresh();
                         if !quiet {
                             self.fit_pending = true;
@@ -396,6 +462,7 @@ impl MissionPage {
                     if self.last_plan.as_deref() == Some(name.as_str()) {
                         self.last_plan = None;
                     }
+                    last::forget(&name);
                     if let Dialog::Open { plans, .. } = &mut self.dialog {
                         plans.retain(|p| p.name != name);
                     }
@@ -587,7 +654,7 @@ impl MissionPage {
 
     fn pattern_update_hint(&mut self) {
         if matches!(self.tool, Tool::Shape(s) if s != Shape::Circle) && self.pattern_ready() {
-            self.hint = "Enter or a double click covers it. Click for more points, right click undoes one.".into();
+            self.hint = ready_hint(crate::app::touch::on()).into();
         } else {
             self.update_hint();
         }
@@ -846,44 +913,27 @@ impl MissionPage {
         }
     }
 
-    /// Draws the page into `main`: the map with its tool bar and profile on
-    /// the left, the sidebar on the right.
+    /// The map with its tool bar, its rail and the plan on it, and where the
+    /// profile overlays it (`band` is the profile's own rect when stacked).
     #[allow(clippy::too_many_arguments)]
-    pub fn show(
+    fn show_map_region(
         &mut self,
         ui: &mut egui::Ui,
-        main: Rect,
+        map_rect: Rect,
         state: &Value,
-        units: &Units,
         map: &mut Map,
         rail: &mut MapRail,
         narrow: bool,
+        lift: f32,
+        band: Option<Rect>,
     ) {
         let ctx = ui.ctx().clone();
         let now = ui.input(|i| i.time);
-        self.follow_telemetry(&ctx, state, units);
-        self.take_answers(&ctx);
-        self.sample_ground(&ctx, now);
-        if self.first {
-            self.first = false;
-            self.check_view = true;
-            self.update_hint();
-            if let Some(name) = self.open_first.take() {
-                self.send(&ctx, Job::LoadPlan { name, quiet: false });
-            }
-        }
-        let side_w = if narrow { SIDE_W_NARROW } else { SIDE_W };
-        let map_rect = Rect::from_min_max(main.min, egui::pos2(main.right() - side_w, main.bottom()));
-        let side_rect = Rect::from_min_max(egui::pos2(map_rect.right(), main.top()), main.max);
-
-        map.planner = true;
-        rail.planner = true;
-        map.set_three_d(false);
-        map.bottom_lift = self.profile.height(narrow);
+        map.bottom_lift = lift;
         let mut out = Out::default();
         {
             let mut map_ui = ui.new_child(egui::UiBuilder::new().max_rect(map_rect));
-            map_ui.set_clip_rect(map_rect);
+            map_ui.set_clip_rect(map_rect.intersect(ui.clip_rect()));
             let mut layer = PlanLayer {
                 plan: &self.plan,
                 tool: self.tool,
@@ -896,28 +946,118 @@ impl MissionPage {
             map.show_with(&mut map_ui, state, Some(&mut layer));
             rail.show(&mut map_ui, map_rect, map, state);
             if (!self.plan.items.is_empty() || self.plan.home.is_some())
-                && crate::map::rail::clear_disc(
-                    &mut map_ui,
-                    map_rect,
-                    self.profile.height(narrow),
-                    "Delete the planned route",
-                )
+                && crate::map::rail::clear_disc(&mut map_ui, map_rect, lift, "Delete the planned route")
             {
                 self.confirm_clear();
             }
             self.show_toolbar(&mut map_ui, map_rect, now, narrow);
-            self.show_profile(&mut map_ui, map_rect, narrow);
+            if band.is_none() {
+                self.show_profile(&mut map_ui, map_rect, narrow, false);
+            }
+        }
+        if let Some(b) = band {
+            let mut prof_ui = ui.new_child(egui::UiBuilder::new().max_rect(b));
+            prof_ui.set_clip_rect(b.intersect(ui.clip_rect()));
+            self.show_profile(&mut prof_ui, b, narrow, true);
         }
         if let Some(n) = rail.notice.take() {
             self.notices.push(("warning", n.to_string()));
         }
         if std::mem::take(&mut rail.fit_requested) || std::mem::take(&mut self.fit_pending) {
-            let lift = self.profile.height(narrow) - 8.0;
+            let lift = if band.is_some() { 0.0 } else { lift - 8.0 };
             self.fit(map, map_rect.size(), lift);
         }
         self.apply_map(out);
         self.check_offscreen(map, map_rect.size());
-        self.show_side(ui, side_rect, narrow);
+        let _ = ctx;
+    }
+
+    /// The page under 960 px (`max-959` of `mission.css`): the map, the
+    /// profile as a band, then the sidebar at its natural height, all in one
+    /// column that scrolls. The map keeps 55 percent of the window height and
+    /// never less than 320 px.
+    fn show_stacked(
+        &mut self,
+        ui: &mut egui::Ui,
+        main: Rect,
+        state: &Value,
+        map: &mut Map,
+        rail: &mut MapRail,
+        narrow: bool,
+    ) {
+        let vh = ui.ctx().content_rect().height();
+        let map_h = stacked_map_height(vh);
+        let band_h = self.profile.band_height();
+        let side_min = (main.height() - map_h - band_h).max(0.0);
+        let side_h = self.side_height.max(side_min);
+        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(main));
+        child.set_clip_rect(main.intersect(ui.clip_rect()));
+        child.painter().rect_filled(main, 0, style::bg());
+        let area = egui::ScrollArea::vertical().id_salt("missionstacked");
+        area.auto_shrink([false, false])
+            .scroll_source(egui::scroll_area::ScrollSource::MOUSE_WHEEL | egui::scroll_area::ScrollSource::SCROLL_BAR)
+            .show(&mut child, |ui| {
+                let top = ui.max_rect().top();
+                let map_rect = Rect::from_min_size(Pos2::new(main.left(), top), Vec2::new(main.width(), map_h));
+                let band = Rect::from_min_size(
+                    Pos2::new(main.left(), map_rect.bottom()),
+                    Vec2::new(main.width(), band_h),
+                );
+                let side = Rect::from_min_size(Pos2::new(main.left(), band.bottom()), Vec2::new(main.width(), side_h));
+                self.show_map_region(ui, map_rect, state, map, rail, narrow, 0.0, Some(band));
+                let used = self.show_side(ui, side, narrow, true);
+                if (used - self.side_height).abs() > 0.5 {
+                    self.side_height = used;
+                    ui.ctx().request_repaint();
+                }
+                ui.allocate_space(Vec2::new(main.width(), map_h + band_h + side_h));
+            });
+    }
+
+    /// Draws the page into `main`: the map with its tool bar and profile on
+    /// the left, the sidebar on the right.
+    #[allow(clippy::too_many_arguments)]
+    pub fn show(
+        &mut self,
+        ui: &mut egui::Ui,
+        main: Rect,
+        state: &Value,
+        units: &Units,
+        map: &mut Map,
+        rail: &mut MapRail,
+        narrow: bool,
+        stacked: bool,
+    ) {
+        let ctx = ui.ctx().clone();
+        let now = ui.input(|i| i.time);
+        self.follow_telemetry(&ctx, state, units);
+        self.take_answers(&ctx);
+        self.sample_ground(&ctx, now);
+        if self.first {
+            self.first = false;
+            self.check_view = true;
+            self.update_hint();
+            if let Some(name) = self.open_first.take() {
+                self.send(&ctx, Job::LoadPlan { name, quiet: false });
+            } else if let Some(name) = last::read() {
+                // the plan the operator was drawing last time; no framing, and
+                // no complaint when it is gone
+                self.send(&ctx, Job::LoadPlan { name, quiet: true });
+            }
+        }
+        map.planner = true;
+        rail.planner = true;
+        map.set_three_d(false);
+        if stacked {
+            self.show_stacked(ui, main, state, map, rail, narrow);
+        } else {
+            let side_w = (if narrow { SIDE_W_NARROW } else { SIDE_W }).min(main.width());
+            let map_rect = Rect::from_min_max(main.min, egui::pos2(main.right() - side_w, main.bottom()));
+            let side_rect = Rect::from_min_max(egui::pos2(map_rect.right(), main.top()), main.max);
+            let lift = self.profile.height(narrow);
+            self.show_map_region(ui, map_rect, state, map, rail, narrow, lift, None);
+            self.show_side(ui, side_rect, narrow, false);
+        }
         self.show_dialogs(&ctx);
         self.keys(&ctx);
         let _ = (DEFAULT_ALT_M, START_OFFSET_WARN_M);
@@ -949,6 +1089,39 @@ mod tests {
 
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn the_last_plan_is_remembered_and_forgotten_by_name() {
+        let dir = std::env::temp_dir().join(format!("corvus-last-plan-{}", std::process::id()));
+        let file = dir.join("last.txt");
+        assert_eq!(last::read_at(&file), None, "nothing yet means start empty");
+        last::remember_at(&file, "Field A");
+        assert_eq!(last::read_at(&file).as_deref(), Some("Field A"));
+        last::forget_at(&file, "Field B");
+        assert_eq!(
+            last::read_at(&file).as_deref(),
+            Some("Field A"),
+            "another plan's removal leaves it"
+        );
+        last::forget_at(&file, "Field A");
+        assert_eq!(last::read_at(&file), None);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_finished_shape_names_the_finish_button_for_a_finger() {
+        assert_eq!(
+            ready_hint(true),
+            "Press FINISH to cover it. Tap for more points, hold the map to take one back."
+        );
+        assert!(ready_hint(false).starts_with("Enter or a double click"));
+    }
+
+    #[test]
+    fn the_stacked_map_takes_55_percent_of_the_window_and_never_under_320() {
+        assert_eq!(stacked_map_height(1000.0), 550.0);
+        assert_eq!(stacked_map_height(500.0), 320.0);
+    }
 
     fn page() -> MissionPage {
         MissionPage::new(Server::local(1), Value::Null)

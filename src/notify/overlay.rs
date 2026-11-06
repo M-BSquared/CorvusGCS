@@ -252,6 +252,7 @@ pub fn board(ctx: &egui::Context, screen: Rect, top: f32, board: &mut Board, now
             } else {
                 format!("{title} \u{00b7} {} new", summary.unread.len())
             };
+            let title = crate::i18n::tr_joined(&title);
             let tg = style::galley(ui, &title, 12.0, Weight::W600, style::text_1(), 0.5);
             let header_h = 11.0 * 2.0 + tg.size().y.max(28.0) + 1.0;
             let rows: Vec<(f32, &Notification)> = summary

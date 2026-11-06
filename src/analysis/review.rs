@@ -1,9 +1,8 @@
 //! Flight Review and Telemetry Review (`buildReview`, `buildTlogReview`,
 //! `renderReview` of `python/src/js/analysis.js`): the backend reads one log into a
 //! summary, the flight modes, findings, plots and the aircraft's own
-//! messages, and this draws them in that order. The ground track is drawn as
-//! a chart only; the web's Satellite switch over imagery is not in the native
-//! page yet.
+//! messages, and this draws them in that order. The ground track has the web's
+//! Chart / Satellite switch (`trackmap.rs`).
 
 use std::collections::{HashMap, HashSet};
 use std::time::Duration;
@@ -12,6 +11,7 @@ use eframe::egui::{self, Color32, Pos2, Rect, Stroke, Vec2};
 use serde_json::Value;
 
 use super::plot::{self, Band, Plot, PlotState};
+use super::trackmap::{self, Imagery, TrackMap};
 use super::{lists, model, AnalysisPage, View};
 use crate::data::units::Units;
 use crate::net::bg::Pending;
@@ -21,6 +21,7 @@ use crate::ui::chip::Chip;
 use crate::ui::form::{self, Form};
 use crate::ui::kit::{self, Button, Choice, Variant};
 use crate::ui::message::Tone;
+use crate::ui::segmented::{self, Segment};
 use crate::ui::style::{self, Weight};
 
 /// One log read into what the page shows.
@@ -31,8 +32,18 @@ pub struct ReviewData {
     pub findings: Vec<Value>,
     pub plots: Vec<Plot>,
     pub states: Vec<PlotState>,
+    pub views: Vec<PlotView>,
     pub groups: Vec<String>,
     pub messages: Vec<Value>,
+}
+
+/// Which view of a plot is up, and the map once it has been asked for. The
+/// map is built on the first press, not with the card, and goes with the
+/// review.
+#[derive(Default)]
+pub struct PlotView {
+    satellite: bool,
+    map: Option<TrackMap>,
 }
 
 fn list(v: &Value, key: &str) -> Vec<Value> {
@@ -73,6 +84,7 @@ impl ReviewData {
             bands,
             findings: list(v, "findings"),
             states: plots.iter().map(|_| PlotState::default()).collect(),
+            views: plots.iter().map(|_| PlotView::default()).collect(),
             plots,
             groups,
             messages: list(v, "messages"),
@@ -241,7 +253,14 @@ fn hexc(c: u32) -> Color32 {
 }
 
 impl AnalysisPage {
-    pub(super) fn review_view(&mut self, ui: &mut egui::Ui, f: &mut Form, tlog: bool, units: &Units) {
+    pub(super) fn review_view(
+        &mut self,
+        ui: &mut egui::Ui,
+        f: &mut Form,
+        tlog: bool,
+        units: &Units,
+        imagery: &Imagery,
+    ) {
         let _ = units;
         self.review.poll();
         let loading = self.review.load.is_some();
@@ -441,11 +460,11 @@ impl AnalysisPage {
             return;
         }
         if self.review.data.is_some() {
-            self.draw_review(ui, f);
+            self.draw_review(ui, f, imagery);
         }
     }
 
-    fn draw_review(&mut self, ui: &mut egui::Ui, f: &mut Form) {
+    fn draw_review(&mut self, ui: &mut egui::Ui, f: &mut Form, imagery: &Imagery) {
         let Some(data) = self.review.data.as_mut() else {
             return;
         };
@@ -691,13 +710,13 @@ impl AnalysisPage {
                 .collect();
             for i in idxs {
                 seen.push(i);
-                plot_card(ui, f, data, i, vh);
+                plot_card(ui, f, data, i, vh, &self.review.server, imagery);
             }
         }
         // a plot in no group is still drawn
         for i in 0..data.plots.len() {
             if !seen.contains(&i) {
-                plot_card(ui, f, data, i, vh);
+                plot_card(ui, f, data, i, vh, &self.review.server, imagery);
             }
         }
         // the aircraft's own messages
@@ -807,21 +826,101 @@ fn finding_row(ui: &mut egui::Ui, f: &mut Form, fnd: &Value, open: bool) -> bool
     resp.clicked()
 }
 
-/// One plot in its card.
-fn plot_card(ui: &mut egui::Ui, f: &mut Form, data: &mut ReviewData, i: usize, vh: f32) {
+/// One plot in its card. A track with an origin also has the Chart /
+/// Satellite switch in the head (`appendPlot`, `trackMapView`).
+fn plot_card(
+    ui: &mut egui::Ui,
+    f: &mut Form,
+    data: &mut ReviewData,
+    i: usize,
+    vh: f32,
+    server: &crate::net::http::Server,
+    imagery: &Imagery,
+) {
     let p = data.plots[i].clone();
     let slot = card::reserve(ui.painter());
     let top = f.y;
     let mut inner = Form::new(f.x + 19.0, top + 19.0, f.w - 38.0);
-    let (_, th) = form::head_title(ui, Pos2::new(inner.x, inner.y), &p.title);
-    inner.y += th + 8.0;
+    let mappable = trackmap::mappable(&p);
+    if mappable {
+        let segs = [
+            Segment::new("Chart").icon("chart-spline"),
+            Segment::new("Satellite").icon("satellite"),
+        ];
+        let seg_w = segmented::width(ui, &segs, &segmented::Opts::FILTER);
+        let title = style::galley(ui, &p.title.to_uppercase(), 13.0, Weight::W600, style::text_2(), 0.6);
+        let (tw, th) = (title.size().x, title.size().y + 9.0);
+        let seg_h = 3.0 * 2.0 + 2.0 + 5.0 * 2.0 + 11.0 * 1.21;
+        let wraps = tw + 12.0 + seg_w > inner.w;
+        let row_h = if wraps { th } else { th.max(seg_h) };
+        form::head_title(ui, Pos2::new(inner.x, inner.y + (row_h - th) / 2.0), &p.title);
+        let (seg_at, used) = if wraps {
+            (Pos2::new(inner.x, inner.y + th + 12.0), th + 12.0 + seg_h)
+        } else {
+            (
+                Pos2::new(inner.x + inner.w - seg_w, inner.y + (row_h - seg_h) / 2.0),
+                row_h,
+            )
+        };
+        let view = &mut data.views[i];
+        let (_, pressed) = segmented::show(
+            ui,
+            seg_at,
+            &segs,
+            usize::from(view.satellite),
+            &format!("trackview{i}"),
+            segmented::Opts::FILTER,
+        );
+        if let Some(n) = pressed {
+            view.satellite = n == 1;
+        }
+        inner.y += used + 8.0;
+    } else {
+        let (_, th) = form::head_title(ui, Pos2::new(inner.x, inner.y), &p.title);
+        inner.y += th + 8.0;
+    }
     let h = if p.equal { 460.0f32.min(vh * 0.7) } else { 268.0 };
     let rect = inner.rect(h);
-    if ui.is_rect_visible(rect) {
-        let bands = if p.is_time() { data.bands.clone() } else { Vec::new() };
-        plot::show(ui, rect, &p, &bands, &mut data.states[i], i);
+    let show_map = mappable && data.views[i].satellite;
+    if show_map {
+        let view = &mut data.views[i];
+        let map = view
+            .map
+            .get_or_insert_with(|| TrackMap::new(ui.ctx(), server, imagery.sources, imagery.layer, &p));
+        if ui.is_rect_visible(rect) {
+            map.show(ui, rect, i);
+        }
+        inner.y += h;
+        let key = map.key();
+        if !key.is_empty() {
+            inner.skip(8.0);
+            let (mut kx, mut ky) = (inner.x, inner.y);
+            let mut line_h = 0.0f32;
+            for (slot, name) in key {
+                let g = style::galley(ui, name, 11.0, Weight::W400, style::text_2(), 0.0);
+                let w = 8.0 + 5.0 + g.size().x;
+                if kx > inner.x && kx + w > inner.x + inner.w {
+                    kx = inner.x;
+                    ky += line_h + 4.0;
+                }
+                line_h = g.size().y;
+                ui.painter().rect_filled(
+                    Rect::from_min_size(Pos2::new(kx, ky + (line_h - 8.0) / 2.0), Vec2::splat(8.0)),
+                    2,
+                    plot::series_color(slot),
+                );
+                ui.painter().galley(Pos2::new(kx + 13.0, ky), g, style::text_2());
+                kx += w + 14.0;
+            }
+            inner.y = ky + line_h;
+        }
+    } else {
+        if ui.is_rect_visible(rect) {
+            let bands = if p.is_time() { data.bands.clone() } else { Vec::new() };
+            plot::show(ui, rect, &p, &bands, &mut data.states[i], i);
+        }
+        inner.y += h;
     }
-    inner.y += h;
     if !p.note.is_empty() {
         inner.skip(8.0);
         form::note(ui, &mut inner, &p.note);

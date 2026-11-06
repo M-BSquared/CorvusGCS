@@ -1,0 +1,13 @@
+{
+  "strings": {
+    "Accel HF": "Accél. HF",
+    "Accel HF vibration (z)": "Vibration HF accéléromètre (z)",
+    "Gyro HF": "Gyro HF",
+    "Gyro HF vibration (y)": "Vibration HF gyro (y)",
+    "Gyro coning": "Coning gyro",
+    "Gyro coning (x)": "Coning gyro (x)",
+    "Live PX4 vibration metrics and accelerometer clipping": "Mesures de vibration PX4 en direct et saturation de l'accéléromètre",
+    "PX4 repurposes these fields: vibration_x = gyro delta-angle coning, vibration_y = gyro high-frequency, vibration_z = accel high-frequency vibration. Higher accel-HF (red) = more mechanical vibration.": "PX4 détourne ces champs : vibration_x = coning de l'angle delta du gyro, vibration_y = gyro haute fréquence, vibration_z = accéléromètre haute fréquence. Une accél. HF plus élevée (rouge) = plus de vibration mécanique.",
+    "Vibration metric (unitless)": "Indice de vibration (sans unité)"
+  }
+}

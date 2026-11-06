@@ -23,12 +23,25 @@ const BUNDLED: &[(&str, &str)] = &[
     ("dl", include_str!("../lang/dl.json")),
 ];
 
-/// The files of the plugins, by language code. A plugin's entry never wins
+/// The files of the plugins and `lang/native`, the texts only this interface
+/// has (the web's files stay as they are), by language code. A plugin's entry never wins
 /// over the program's own for the same English text.
 const PLUGIN_FILES: &[(&str, &str)] = &[
+    ("de", include_str!("../lang/native/de.json")),
+    ("fr", include_str!("../lang/native/fr.json")),
+    ("dl", include_str!("../lang/native/dl.json")),
     ("de", include_str!("../plugins/map_entities/lang/de.json")),
     ("fr", include_str!("../plugins/map_entities/lang/fr.json")),
     ("dl", include_str!("../plugins/map_entities/lang/dl.json")),
+    ("de", include_str!("../plugins/schwalby/lang/de.json")),
+    ("fr", include_str!("../plugins/schwalby/lang/fr.json")),
+    ("dl", include_str!("../plugins/schwalby/lang/dl.json")),
+    ("de", include_str!("../plugins/ssh_launcher/lang/de.json")),
+    ("fr", include_str!("../plugins/ssh_launcher/lang/fr.json")),
+    ("dl", include_str!("../plugins/ssh_launcher/lang/dl.json")),
+    ("de", include_str!("../plugins/vibration/lang/de.json")),
+    ("fr", include_str!("../plugins/vibration/lang/fr.json")),
+    ("dl", include_str!("../plugins/vibration/lang/dl.json")),
 ];
 
 /// One language file, validated.

@@ -32,12 +32,12 @@ otherwise; "native file" is in `src/`.
 | First start page (welcome): look, units and review, workspace, controls, import, skip | welcome.js | welcome/mod.rs, welcome/model.rs | done: start page and four steps drawn and unit tested; the steps after the first were not clicked through against the sandbox |
 | Update check, "newer release" dialog, skip this version, open release page | update.js | update/mod.rs, settings/about.rs | done: unit tested, the dialog was not seen against a real answer (the sandbox is offline) |
 | Update marker (a dot on SET, the version in its tooltip) | update.js | app/nav.rs, update/mod.rs | done (the dot on the About pill is not drawn) |
-| MCP: question dialog (Allow, Refuse), indicator pill with Stop, refusals on the board, window heartbeat | mcp.js | mcp/mod.rs | done: unit tested, not seen with a live client; plugin tools are the plugins session's (the heartbeat sends none) |
+| MCP: question dialog (Allow, Refuse), indicator pill with Stop, refusals on the board, window heartbeat | mcp.js | mcp/mod.rs | done: unit tested; the plugin tools of Schwalby were announced by the heartbeat and called by a live MCP client |
 | One shared `/api/events` stream for console, params, firmware, tiles, shell, mcp, fleet | events.js | net/stream.rs (one stream per topic) | done |
 | Vehicle capabilities, greyed controls with the reason | capabilities.js | data/capabilities.rs (calibration cards, the control pad's stick mode, ground vehicle words) | done; the Mission page still reads its own `mission_unsupported` copy of the document |
 | Lazy vendor bundles | lazy.js | n/a | n/a: nothing to load lazily in a compiled program |
 | Credits dialog | credits.js | settings/credits.rs | done |
-| Language files, translation function | i18n.js | n/a | later: the language session |
+| Language files, translation function | i18n.js | i18n/, lang/ | done: looked at in German on the plugin pages (Schwalby shelf, editor and popup, Vibration, SSH Launcher, Map Entities), Settings Plugins, the Vehicles and Offline map dialogs and the notification board; nothing clipped. Texts the web leaves in English were added in `lang/native` and the plugins' own files. The rail's PROTOKOLLE is wider than its 58 px item, as it is on the web page |
 | Unit conversion and display | units.js | data/units.rs | done |
 | Animation helpers | anim.js | (egui animates natively) | n/a |
 
@@ -133,8 +133,9 @@ otherwise; "native file" is in `src/`.
 | Upload, save, open, read, new, clear confirmations | mission.js | mission/dialogs.rs | done |
 | Fly a mission end to end (upload, start, progress) against the simulator | mission.js | mission/ | done: the simulated PX4 accepts MISSION_START; verified upload, start and "Flying to 2" |
 | Row dragging, profile height dragging, marker dragging | mission.js | mission/side.rs, profile.rs, mapview.rs | partial: unit tested only |
-| Touch FINISH button (tablet mode), offscreen plan notice | mission.js | mission/toolbar.rs, mission/mod.rs | done |
-| Stacked layout under 960 px, last plan reopening | mission.js | mission/ | missing: the native page keeps the side panel beside the map down to its narrow layout (1279 px); not changed |
+| Touch FINISH button (tablet mode), offscreen plan notice | mission.js | mission/toolbar.rs, mission/mod.rs | done: both seen in the running app against the simulator (the plan notice after a quiet reopening of a plan in another city; FINISH ending a drawn area with 16 points). Found and fixed: a finished shape still said "Enter or a double click" in tablet mode instead of "Press FINISH ..." |
+| Stacked layout under 960 px: map at 55 percent of the window (not under 320 px), the profile as a band, the sidebar at its natural height with the list capped at 320 px, one column that scrolls | mission.js, css/mission.css | mission/mod.rs `show_stacked`, mission/side.rs, mission/profile.rs | done: seen at 900 px with a drawn plan; scrolling was exercised with a forced offset only |
+| Last plan reopening (the plan last saved or opened, kept in `~/.corvus/gui-mission-last.txt`, opened quietly, forgotten when deleted) | mission.js | mission/mod.rs `last` | done |
 | Shortcuts: Esc cancels row drag, search, pattern, tool; Enter finishes a pattern; Delete removes the point | mission.js | mission/mod.rs | check |
 
 ## Settings, Logs, Analysis
@@ -149,7 +150,7 @@ otherwise; "native file" is in `src/`.
 | Settings export and import | settings-transfer.js | settings/data_cards.rs | done |
 | Logs page | sidenav.js | logs/ | done |
 | Analysis: logs, Flight Review, Telemetry Review, Live Messages | analysis.js | analysis/ | done |
-| Review ground track over satellite imagery | analysis.js | analysis/review.rs | missing: needs the tile layer drawn under the plot, which the chart module does not have; not started |
+| Review ground track over satellite imagery: the Chart / Satellite switch, the layer rule, fit with 36 px padding, the key, the zoom buttons, ctrl + scroll to zoom with its hint | analysis.js | analysis/trackmap.rs, analysis/review.rs | done: seen against the simulator's flight log on the Esri layer; the imagery's square corners poke 2 px past the rounded border |
 
 ## Right panel
 
@@ -175,5 +176,5 @@ otherwise; "native file" is in `src/`.
 
 | Feature | Owner |
 | --- | --- |
-| Plugins in Rust, the PLUGINS tab, plugin map overlays and MCP tools | the plugins session (`src/plugins/`) |
+| Plugins in Rust, the PLUGINS tab, plugin map overlays and MCP tools | the plugins session (`src/plugins/`); all four bundled plugins are ported, Schwalby with its shelf, companion strip and MCP tools (seen against the simulator and an MCP client over `POST /mcp`) |
 | Every UI string through a translation function | the language session |

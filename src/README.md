@@ -111,14 +111,14 @@ SIGKILL if it is still there after 8 s. If the window does not close within
 | `src/setup/geofence.rs` | the geofence area the station keeps, its geometry (corners, crossing, area, framing) and the one shared copy (`python/src/js/geofence.js`) |
 | `src/setup/geofence_card.rs` | the Geofence card: the small map, drawing, dragging and adding corners, upload and removal, the large editor (`python/src/js/setup-geofence.js`) |
 | `src/setup/landing.rs` | the Landing card: the descent as one bar, the fields beside each stretch, the brackets with their lengths (`landingCard` of `python/src/js/setup-safety.js`) |
-| `src/mission/mod.rs` | the Mission page, the planner: the plan on the Home map as an overlay, the tool bar, the sidebar and the profile, with the map gestures applied to the plan (`python/src/js/mission.js`) |
+| `src/mission/mod.rs` | the Mission page, the planner (stacked into one scrolling column under 960 px; the last plan reopens quietly): the plan on the Home map as an overlay, the tool bar, the sidebar and the profile, with the map gestures applied to the plan (`python/src/js/mission.js`) |
 | `src/mission/plan.rs` | the item table and the bounds the backend validates against, the plan's JSON both ways, and the editing rules: start and takeoff, one ending, reorder slots, altitude, the aircraft kind, a start that follows the aircraft |
 | `src/mission/geometry.rs` | distances, stations, the altitude profile per aircraft, climb and glide, route length and time, circle rings, area and corridor sweeps, clearances (`python/src/js/mission-geometry.js`) |
 | `src/mission/issues.rs` | the warnings under the summary, a row's one line, the summary cells and the display units |
 | `src/mission/backend.rs`, `src/mission/progress.rs` | the `/api/mission` calls on background threads, and which revision and leg the vehicle is flying |
 | `src/mission/mapview.rs` | the route, rings, points, the start, the radius and pattern grips, and the pointer on the map |
 | `src/mission/toolbar.rs` | the tool bar (`ui::fabar`, fitted like the flight bar), its hint line and the pattern card |
-| `src/mission/side.rs` | the sidebar: name, summary, vehicle line, warnings, the item list with row dragging, the editor, the status line and the upload, save, open, read and new buttons |
+| `src/mission/side.rs` | the sidebar (beside the map, or stacked under it below 960 px at its natural height): name, summary, vehicle line, warnings, the item list with row dragging, the editor, the status line and the upload, save, open, read and new buttons |
 | `src/mission/profile.rs`, `src/mission/terrain.rs` | the altitude profile with draggable heights, and the elevation model sampled along the route |
 | `src/mission/dialogs.rs` | the upload, read and clear confirmations and the list of saved plans |
 | `src/ui/fabar.rs` | `.fa-btn`: an icon over a caption on a glass bar, with the active, armed, busy, blocked, disabled and next looks; the flight bar and the planner's tool bar |
@@ -148,6 +148,7 @@ SIGKILL if it is still there after 8 s. If the window does not close within
 | `src/logs/mod.rs` | the Logs page: the last 30 console lines, Export log through `POST /api/console/save` and Copy (`renderLogsPage` of `python/src/js/sidenav.js`) |
 | `src/analysis/mod.rs`, `src/analysis/model.rs` | the Analysis page: live telemetry tiles, the download folder, the four tiles, the status poll and its jobs, and the rules (sizes, local times, rates, sorting, findings, summary facts) with the web's expected text in tests (`python/src/js/analysis.js`) |
 | `src/analysis/lists.rs`, `src/analysis/scope.rs`, `src/analysis/review.rs` | the vehicle log list with sequential download and erase, the recorded tlogs, Live Messages, and Flight Review and Telemetry Review: summary, mode strip, findings, plots by group, the aircraft's messages |
+| `src/analysis/trackmap.rs` | the ground track over imagery: the inverse of the backend's projection, which layer opens, the fit, the map on the backend's tile proxy with the track as casing and core, the key, the zoom buttons and the ctrl + scroll hint (`trackMapView` of `python/src/js/analysis.js`); held to values the web code answered |
 | `src/analysis/plot.rs` | the plotting module that stands in for Plotly: linear axes with nice ticks, lines, markers and steps, flight mode bands, threshold line, legend, hover read out, drag to zoom and double click to reset, long traces reduced per pixel column |
 | `src/data/clock.rs` | calendar dates from Unix times, UTC and local |
 | `src/ui/form.rs` | the form vocabulary of a page that is a column of cards: the `Form` cursor over `formfield`, `message`, `optioncards`, `slider` and `pills`, with section, card, switch field, rows, actions |
@@ -158,11 +159,12 @@ SIGKILL if it is still there after 8 s. If the window does not close within
 | `src/plugins/ssh_setup.rs` | `sshSetup`: the login dialog for a saved SSH connection this computer lacks (`askSSHConnection` of `python/src/js/panel.js`) |
 | `src/plugins/vibration/` | Vibration Monitor: PX4's vibration metrics on a live chart, the 10 Hz stream while it is open, the one-shot warning (`python/plugins/vibration`) |
 | `src/plugins/ssh_launcher/` | SSH Launcher: the shelf, the editor, terminal and background runs, restart, stop, the live dot (`python/plugins/ssh-launcher`); `model.rs` holds its rules, held to the web helpers |
+| `src/plugins/schwalby/` | Schwalby: the shelf of one-press buttons that run here (`/api/local/*`) or over SSH, with edit mode and drag reordering, colours, the companion computer's ping strip with its popup and power menu, and the AI client's half over MCP (`python/plugins/schwalby`); `model.rs` holds the rules, held to `model_cases.json`, what the web functions answered; `companion.rs` the ping loop, the popup's state and the power calls; `mcp.rs` the tools; `view.rs` everything drawn; its language files are in `lang/` |
 | `src/plugins/map_entities/` | Map Entities: gates, trees and symbols with an area on the Home map, and the watch over the aircraft's track (`python/plugins/map-entities`); `model.rs` holds the geometry and the rules, held to values dumped from the web code |
 | `src/notify/mod.rs` | the notification board, its read and dismiss rules, the command dedupe and the toasts (`python/src/js/topbar.js`) |
 | `src/notify/overlay.rs` | the NOTIFICATIONS pill, the board and the toast stack |
 | `src/i18n/mod.rs`, `src/i18n/table.rs`, `src/i18n/files.rs` | the interface language (see "Languages" below): `tr`, `tr_fmt`, the table with `{name}` patterns, the language files compiled in and the operator's folder |
-| `src/lang/*.json` | the four languages (en, de, fr, dl), the web interface's own files; the Map Entities plugin's files sit in `src/plugins/map_entities/lang/` |
+| `src/lang/*.json` | the four languages (en, de, fr, dl), the web interface's own files; `src/lang/native/` holds the few texts only this interface builds (a count of areas, the board's header and a few vehicle messages), merged under the language like a plugin's file, so the web's files stay as they are; the Map Entities and Schwalby plugins' files sit in their own `lang/` folders |
 | `src/ui/frost.rs` | the frosted glass under every `.glass` surface |
 | `src/ui/fonts.rs`, `src/ui/icons.rs`, `build.rs` | Inter, JetBrains Mono and the Lucide icons, from the web's own files |
 
@@ -299,15 +301,13 @@ with a stub `window.Corvus` and print the result, as the existing tests did).
 
 ### What is not ported
 
-- **Schwalby** (`python/plugins/schwalby`) is not in the native interface yet:
-  its shelf has an edit mode with drag reordering, AI added buttons that wait
-  for approval, a companion indicator with ping, a popup and a power menu, and
-  MCP tools, about 2,900 lines of which none can be faked by a smaller shelf.
-  It stays a web plugin until it is ported whole.
-- **MCP tools.** The backend does have the hook (`POST /api/mcp/window` with the
-  tools, the `mcp` event topic for calls, `POST /api/mcp/result` for the
-  answers), but only Schwalby offers tools, so the trait has no method for them
-  yet.
+- **MCP tools.** A plugin offers tools to an AI client with `mcp_tools(h)`
+  (the web's `mcpTools`), runs a call in `mcp_call(name, args, token, h)` and
+  hands the answer back from `mcp_take(token)` once it has one, which may take
+  frames (a save, a press). The window announces the tools with its heartbeat
+  and at once when they change, and answers a `call` event through
+  `POST /api/mcp/result` (`src/mcp/mod.rs`). Schwalby is the one plugin that
+  offers any, behind its two switches.
 - **Flight bar buttons.** The web `Corvus.plugins` has none; `drawButton` on the
   map is the closest thing and is in `shapes.rs`.
 - **Reload plugins** re-reads the list of installed folders, as it always did;
@@ -340,9 +340,10 @@ share one config. Differences that follow from a native window:
 
 ## Analysis
 
-The review's ground track is drawn as a chart with equal axes. The web page's
-Satellite switch, which lays the same path over imagery, is not in the native
-page yet. A ULog from outside the download folder is opened by its path, and
+The review's ground track is drawn as a chart with equal axes, and has the web
+page's Chart / Satellite switch: the same path over imagery of the Home map's
+layer (or its provider's satellite layer when that is a street map), on the
+backend's tile proxy so it works offline. A ULog from outside the download folder is opened by its path, and
 posted to the backend as bytes the way the web page posts a picked file.
 `--page analysis:ulog`, `analysis:tlog`, `analysis:review` and
 `analysis:scope` open a view, `--page logs` and `--page settings:map` the

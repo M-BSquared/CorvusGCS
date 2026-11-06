@@ -260,6 +260,15 @@ impl App {
         for (owner, event) in self.map.plugins.take_events() {
             self.plugins.dispatch(ctx, state, owner, event);
         }
+        // tools for an AI client: what the plugins offer, the calls, the answers
+        let tools = self.plugins.mcp_tools(ctx, state);
+        self.mcp.set_tools(tools);
+        for (id, plugin, tool, args) in self.mcp.take_calls() {
+            self.plugins.mcp_call(&id, &plugin, &tool, &args, ctx, state);
+        }
+        for (id, result) in self.plugins.mcp_answers(ctx, state) {
+            self.mcp.reply(&id, result);
+        }
     }
 
     /// `fitCoords`: frames these points on the map with 80 px around them.
@@ -434,8 +443,16 @@ impl App {
                     self.checklist.window(&mut map_ui, ui.ctx(), main, below);
                     self.control.show(&mut map_ui, main, now);
                 } else if self.page == Page::Mission {
-                    self.mission
-                        .show(ui, main, &state, &self.units, &mut self.map, &mut self.rail, vw.max1279);
+                    self.mission.show(
+                        ui,
+                        main,
+                        &state,
+                        &self.units,
+                        &mut self.map,
+                        &mut self.rail,
+                        vw.max1279,
+                        vw.max959,
+                    );
                     for (level, text) in self.mission.take_notices() {
                         self.board.add_local(level, &text, now);
                     }
@@ -443,7 +460,11 @@ impl App {
                     self.setup.units = self.units;
                     self.setup.show(ui, main, &state, now, &mut self.checklist);
                 } else if self.page == Page::Analysis {
-                    self.analysis.show(ui, main, &state, &self.units);
+                    let imagery = crate::analysis::trackmap::Imagery {
+                        layer: &self.map.source,
+                        sources: self.map.sources(),
+                    };
+                    self.analysis.show(ui, main, &state, &self.units, &imagery);
                 } else if self.page == Page::Logs {
                     let transcript = self.panel.console_transcript();
                     self.logs.show(ui, main, &transcript);

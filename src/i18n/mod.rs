@@ -166,6 +166,15 @@ pub fn tr_fmt(english: &str, vars: &[(&str, &str)]) -> String {
     fill(&tr(english), vars)
 }
 
+/// [`tr`] for a line of parts joined with ` \u{b7} `, each part on its own, as
+/// the web translates the pieces of a row it builds.
+pub fn tr_joined(text: &str) -> String {
+    text.split(" \u{b7} ")
+        .map(|p| tr(p).into_owned())
+        .collect::<Vec<_>>()
+        .join(" \u{b7} ")
+}
+
 /// What the app's languages are, discovered on first use.
 fn with_languages<R>(f: impl FnOnce(&mut Vec<Language>, &mut Option<String>) -> R) -> R {
     let mut g = STATE.lock().unwrap_or_else(|p| p.into_inner());

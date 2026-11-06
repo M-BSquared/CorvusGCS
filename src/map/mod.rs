@@ -278,6 +278,11 @@ impl Map {
             .is_some_and(|l| l.iter().any(|s| s.get("id").and_then(Value::as_str) == Some(id)))
     }
 
+    /// The catalogue of base layers.
+    pub fn sources(&self) -> &Value {
+        &self.sources
+    }
+
     /// A fresh catalogue (a key was set, an elevation model came or went).
     pub fn set_sources(&mut self, sources: Value) {
         self.sources = sources;
@@ -736,22 +741,7 @@ impl Map {
 
     /// The tile credit, bottom left, in the pill main.css draws it in.
     fn paint_attribution(&self, ui: &egui::Ui, rect: egui::Rect) {
-        if self.attribution.is_empty() {
-            return;
-        }
-        let g = style::galley(ui, self.attribution, 10.0, style::Weight::W400, style::text_2(), 0.0);
-        let size = Vec2::new(g.size().x + 4.0 + 9.0, 25.0);
-        let pill = egui::Rect::from_min_size(
-            Pos2::new(rect.left() + 14.0, rect.bottom() - self.bottom_lift - 14.0 - size.y),
-            size,
-        );
-        let painter = ui.painter_at(rect);
-        style::glass_panel(&painter, "attribution", pill, egui::CornerRadius::same(255), 0.38);
-        painter.galley(
-            Pos2::new(pill.left() + 9.0, pill.center().y - g.size().y / 2.0),
-            g,
-            style::text_2(),
-        );
+        paint_credit(ui, rect, self.attribution, self.bottom_lift);
     }
 
     /// Lets go of the tile downloader and joins its thread.
@@ -760,6 +750,27 @@ impl Map {
         self.save_tracks();
         self.tiles = None;
     }
+}
+
+/// The tile credit as a glass pill, bottom left of `rect`, `lift` above the
+/// usual 14 px.
+pub(crate) fn paint_credit(ui: &egui::Ui, rect: egui::Rect, text: &str, lift: f32) {
+    if text.is_empty() {
+        return;
+    }
+    let g = style::galley(ui, text, 10.0, style::Weight::W400, style::text_2(), 0.0);
+    let size = Vec2::new(g.size().x + 4.0 + 9.0, 25.0);
+    let pill = egui::Rect::from_min_size(
+        Pos2::new(rect.left() + 14.0, rect.bottom() - lift - 14.0 - size.y),
+        size,
+    );
+    let painter = ui.painter_at(rect);
+    style::glass_panel(&painter, "attribution", pill, egui::CornerRadius::same(255), 0.38);
+    painter.galley(
+        Pos2::new(pill.left() + 9.0, pill.center().y - g.size().y / 2.0),
+        g,
+        style::text_2(),
+    );
 }
 
 struct Layers<'a, 'o> {

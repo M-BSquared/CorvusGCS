@@ -94,7 +94,7 @@ impl Row {
 
 fn label_galley(ui: &egui::Ui, label: &str, color: Color32, look: &Look) -> std::sync::Arc<egui::Galley> {
     if look.mono {
-        style::galley_mono(ui, label, 12.0, color)
+        style::galley_mono(ui, &crate::i18n::tr(label), 12.0, color)
     } else {
         style::galley(ui, label, 12.0, look.weight, color, 0.0)
     }

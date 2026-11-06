@@ -113,6 +113,8 @@ const ICONS: &[(&str, &str)] = &[
     ("magnet", "Magnet"),
     ("rotate-cw", "RotateCw"),
     ("eraser", "Eraser"),
+    ("laptop", "Laptop"),
+    ("grip-vertical", "GripVertical"),
     ("cloud-upload", "CloudUpload"),
     ("cloud-download", "CloudDownload"),
     ("folder-open", "FolderOpen"),

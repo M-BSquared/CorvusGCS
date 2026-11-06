@@ -49,6 +49,17 @@ impl Profile {
         14.0 + 8.0 + self.panel_h(narrow, false)
     }
 
+    /// The height of the band between the map and the sidebar when the page
+    /// is stacked: the grid row is `--mission-profile-h` (210 px below 1280)
+    /// unless the profile is folded, when it is `auto`.
+    pub fn band_height(&self) -> f32 {
+        if self.collapsed {
+            HEAD_H
+        } else {
+            210.0
+        }
+    }
+
     fn panel_h(&self, narrow: bool, drives: bool) -> f32 {
         if self.collapsed || drives {
             HEAD_H
@@ -188,16 +199,26 @@ fn resting_note(drives: bool) -> &'static str {
 }
 
 impl MissionPage {
-    /// Draws the profile panel along the bottom of the map.
-    pub(crate) fn show_profile(&mut self, ui: &mut egui::Ui, map: Rect, narrow: bool) {
+    /// Draws the profile panel along the bottom of the map, or, stacked
+    /// (`band`), as a full width band of its own under the map.
+    pub(crate) fn show_profile(&mut self, ui: &mut egui::Ui, map: Rect, narrow: bool, band: bool) {
         let drives = self.plan.drives;
         let h = self.profile.panel_h(narrow, drives);
-        let panel = Rect::from_min_size(
-            Pos2::new(map.left() + 14.0, map.bottom() - 14.0 - h),
-            Vec2::new(map.width() - 28.0, h),
-        );
+        let panel = if band {
+            map
+        } else {
+            Rect::from_min_size(
+                Pos2::new(map.left() + 14.0, map.bottom() - 14.0 - h),
+                Vec2::new(map.width() - 28.0, h),
+            )
+        };
         let painter = ui.painter().clone();
-        style::glass_panel(&painter, "missionprofile", panel, style::RADIUS, 0.55);
+        if band {
+            painter.rect_filled(panel, 0, style::glass(0.55));
+            painter.hline(panel.x_range(), panel.top() + 0.5, Stroke::new(1.0, style::tint(0.06)));
+        } else {
+            style::glass_panel(&painter, "missionprofile", panel, style::RADIUS, 0.55);
+        }
         ui.interact(
             panel,
             ui.scope_id().with("missionprofile"),
