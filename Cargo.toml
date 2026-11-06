@@ -5,13 +5,22 @@ edition = "2021"
 rust-version = "1.99"
 publish = false
 description = "The Corvus GCS desktop interface: a native egui client of the Corvus backend"
-build = "build.rs"
+
+[workspace]
+# One lock file and one target folder for the interface and the crates it is
+# made of (the API plugins build on and the plugins themselves). src/link is
+# the MAVLink extension module: it has its own toolchain, lock and maturin
+# build, and stays out.
+members = ["src/api"]
+default-members = [".", "src/api"]
+exclude = ["src/link"]
 
 [[bin]]
 name = "corvus-gcs"
 path = "src/main.rs"
 
 [dependencies]
+corvus_api = { path = "src/api" }
 # glow: the OpenGL renderer, whose paint callbacks can read what is already
 # drawn, which the frosted glass (frost.rs) needs; wgpu draws a frame in one
 # pass and cannot.
@@ -34,10 +43,6 @@ regex = "1"
 # The system file dialog (Cocoa, Windows, and the desktop portal on Linux, so
 # no GTK or Qt is linked): a person picks a file instead of typing its path.
 rfd = "0.17"
-
-[build-dependencies]
-# The web interface's fonts are WOFF2 (src/vendor/fonts); egui reads TTF.
-wuff = "0.2"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

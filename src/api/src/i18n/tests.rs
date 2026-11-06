@@ -131,12 +131,19 @@ fn every_language_file_keeps_its_placeholders_and_has_no_dash() {
 
 #[test]
 fn the_bundled_files_are_the_web_interfaces_files() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let root = &repo_root();
     for code in ["en", "de", "fr", "dl"] {
         let ours = std::fs::read_to_string(root.join("src/lang").join(format!("{code}.json"))).unwrap();
         let web = std::fs::read_to_string(root.join("python/src/lang").join(format!("{code}.json"))).unwrap();
         assert_eq!(ours, web, "{code}.json differs between src/lang and python/src/lang");
     }
+}
+
+fn repo_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .unwrap()
 }
 
 fn rust_files(dir: &Path, out: &mut Vec<PathBuf>) {
@@ -158,7 +165,7 @@ fn rust_files(dir: &Path, out: &mut Vec<PathBuf>) {
 fn used_keys() -> Vec<(PathBuf, String)> {
     let call = regex::Regex::new(r#"\btr(?:_fmt)?\(\s*"((?:[^"\\]|\\.)*)""#).unwrap();
     let mut files = Vec::new();
-    rust_files(&Path::new(env!("CARGO_MANIFEST_DIR")).join("src"), &mut files);
+    rust_files(&repo_root().join("src"), &mut files);
     let mut out = Vec::new();
     for f in files {
         if f.ends_with("i18n/tests.rs") {

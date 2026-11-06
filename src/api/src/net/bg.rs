@@ -24,8 +24,7 @@ impl<T: Send + 'static> Pending<T> {
         Pending(slot)
     }
 
-    /// An answer that is already here, for tests.
-    #[cfg(test)]
+    /// An answer that is already here (tests build pages with it).
     pub fn ready(v: T) -> Pending<T> {
         Pending(Arc::new(Mutex::new(Some(v))))
     }

@@ -238,6 +238,18 @@ pub fn set_language(wanted: &str) -> String {
     })
 }
 
+/// Registers the language files a plugin carries (`lang/` of its crate) and
+/// puts them to use in the language already in force.
+pub fn register_plugin_files(files: &'static [(&'static str, &'static str)]) {
+    if files::add_plugin_files(files) {
+        with_languages(|list, code| {
+            if let Some(c) = code.clone() {
+                apply(list, code, &c);
+            }
+        });
+    }
+}
+
 /// Read the operator's folder again, and the language in force with it. A
 /// language whose file is gone falls back to English.
 pub fn reload() -> usize {

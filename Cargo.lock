@@ -836,9 +836,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "corvus_api"
+version = "0.0.0"
+dependencies = [
+ "eframe",
+ "egui_extras",
+ "image",
+ "libc",
+ "regex",
+ "rfd",
+ "serde_json",
+ "wuff",
+]
+
+[[package]]
 name = "corvus_gui"
 version = "0.0.0"
 dependencies = [
+ "corvus_api",
  "ctrlc",
  "eframe",
  "egui_extras",
@@ -850,7 +865,6 @@ dependencies = [
  "serde_json",
  "vte",
  "walkers",
- "wuff",
 ]
 
 [[package]]

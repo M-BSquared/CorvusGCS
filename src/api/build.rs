@@ -164,7 +164,7 @@ const ICONS: &[(&str, &str)] = &[
 ];
 
 fn main() {
-    let web = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets");
+    let web = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
     let out = PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR"));
     for name in FONTS {
         let path = web.join(format!("fonts/{name}.woff2"));

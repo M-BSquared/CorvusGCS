@@ -17,31 +17,19 @@ const MAX_NAME_CHARS: usize = 60;
 /// The languages that ship with the program, compiled in so the binary needs
 /// no folder beside it.
 const BUNDLED: &[(&str, &str)] = &[
-    ("en", include_str!("../lang/en.json")),
-    ("de", include_str!("../lang/de.json")),
-    ("fr", include_str!("../lang/fr.json")),
-    ("dl", include_str!("../lang/dl.json")),
+    ("en", include_str!("../../../lang/en.json")),
+    ("de", include_str!("../../../lang/de.json")),
+    ("fr", include_str!("../../../lang/fr.json")),
+    ("dl", include_str!("../../../lang/dl.json")),
 ];
 
 /// The files of the plugins and `lang/native`, the texts only this interface
 /// has (the web's files stay as they are), by language code. A plugin's entry never wins
 /// over the program's own for the same English text.
 const PLUGIN_FILES: &[(&str, &str)] = &[
-    ("de", include_str!("../lang/native/de.json")),
-    ("fr", include_str!("../lang/native/fr.json")),
-    ("dl", include_str!("../lang/native/dl.json")),
-    ("de", include_str!("../plugins/map_entities/lang/de.json")),
-    ("fr", include_str!("../plugins/map_entities/lang/fr.json")),
-    ("dl", include_str!("../plugins/map_entities/lang/dl.json")),
-    ("de", include_str!("../plugins/schwalby/lang/de.json")),
-    ("fr", include_str!("../plugins/schwalby/lang/fr.json")),
-    ("dl", include_str!("../plugins/schwalby/lang/dl.json")),
-    ("de", include_str!("../plugins/ssh_launcher/lang/de.json")),
-    ("fr", include_str!("../plugins/ssh_launcher/lang/fr.json")),
-    ("dl", include_str!("../plugins/ssh_launcher/lang/dl.json")),
-    ("de", include_str!("../plugins/vibration/lang/de.json")),
-    ("fr", include_str!("../plugins/vibration/lang/fr.json")),
-    ("dl", include_str!("../plugins/vibration/lang/dl.json")),
+    ("de", include_str!("../../../lang/native/de.json")),
+    ("fr", include_str!("../../../lang/native/fr.json")),
+    ("dl", include_str!("../../../lang/native/dl.json")),
 ];
 
 /// One language file, validated.
@@ -191,10 +179,27 @@ pub fn discover(user: Option<&Path>) -> Vec<Language> {
     rows
 }
 
+/// The files plugin crates registered with [`add_plugin_files`].
+static EXTRA_FILES: std::sync::Mutex<Vec<(&'static str, &'static str)>> = std::sync::Mutex::new(Vec::new());
+
+/// Adds a plugin's own language files, `(code, file text)`, to the strings
+/// merged under each language. Returns whether any of them was new.
+pub fn add_plugin_files(files: &'static [(&'static str, &'static str)]) -> bool {
+    let mut held = EXTRA_FILES.lock().unwrap_or_else(|p| p.into_inner());
+    let before = held.len();
+    for f in files {
+        if !held.iter().any(|h| std::ptr::eq(h.1, f.1)) {
+            held.push(*f);
+        }
+    }
+    held.len() > before
+}
+
 /// The strings the plugins have for `code`, to merge under the language's own.
 pub fn plugin_strings(code: &str) -> HashMap<String, String> {
     let mut out = HashMap::new();
-    for (c, body) in PLUGIN_FILES {
+    let extra = EXTRA_FILES.lock().unwrap_or_else(|p| p.into_inner()).clone();
+    for (c, body) in PLUGIN_FILES.iter().chain(extra.iter()) {
         if *c != code {
             continue;
         }

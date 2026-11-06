@@ -14,7 +14,6 @@ mod crash;
 mod data;
 mod fleet;
 mod home;
-mod i18n;
 mod logs;
 mod map;
 mod map3d;
@@ -27,9 +26,10 @@ mod plugins;
 mod settings;
 mod setup;
 mod term;
-mod ui;
 mod update;
 mod welcome;
+
+pub use corvus_api::{i18n, ui};
 
 use std::path::PathBuf;
 use std::process::ExitCode;
