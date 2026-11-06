@@ -11,8 +11,10 @@ use eframe::egui::{self, Pos2, Rect, Stroke, Vec2};
 use crate::net::bg::Pending;
 use crate::setup::params_files::{self as files, Preview, FORMATS};
 use crate::ui::card::{self, Look};
+use crate::ui::formfield;
 use crate::ui::kit::{self, Button, Choice, Variant};
 use crate::ui::modal;
+use crate::ui::pathfield::{Mode, PathField, Picked};
 use crate::ui::style::{self, Weight};
 
 /// The Export dialog's fields.
@@ -175,22 +177,23 @@ pub fn export(ctx: &egui::Context, dlg: &mut ExportDlg, total: usize, modified: 
             }
             cy += FIELD_H + 14.0;
             cy = label(ui, x, cy, "Folder");
-            kit::text_field(
-                ui,
-                Rect::from_min_size(Pos2::new(x, cy), Vec2::new(w, FIELD_H)),
-                &mut dlg.dir,
-                "~/.corvus/params",
-                true,
-                "expdir",
-            );
+            let folder = PathField::new(Mode::Folder, "Export folder")
+                .placeholder("~/.corvus/params")
+                .optional()
+                .backend()
+                .height(FIELD_H);
+            formfield::path(ui, x, cy, w, &folder, &mut dlg.dir, "expdir");
             cy += FIELD_H;
-            cy = hint(
-                ui,
-                x,
-                cy,
-                w,
-                "On the machine running Corvus. Created if it does not exist.",
-            ) + 14.0;
+            let note = if folder.typed() {
+                format!(
+                    "{} {}",
+                    crate::i18n::tr("On the machine running Corvus. Created if it does not exist."),
+                    crate::i18n::tr(crate::ui::pathfield::REMOTE_HINT)
+                )
+            } else {
+                "On the machine running Corvus. Created if it does not exist.".to_string()
+            };
+            cy = hint(ui, x, cy, w, &note) + 14.0;
             let lg = style::galley(
                 ui,
                 "Only parameters changed from their default",
@@ -260,39 +263,26 @@ pub fn import(ctx: &egui::Context, dlg: &mut ImportDlg, armed: bool) -> Out {
                         x,
                         y,
                         w,
-                        "Enter the path of a parameter file (.params, .param or .json) on the machine running Corvus.",
+                        "Choose a parameter file (.params, .param or .json) to read.",
                     ) + 14.0;
                     cy = label(ui, x, cy, "File");
-                    let r = kit::text_field(
-                        ui,
-                        Rect::from_min_size(Pos2::new(x, cy), Vec2::new(w, FIELD_H)),
-                        &mut dlg.path,
-                        "~/.corvus/params/corvus-params.params",
-                        true,
-                        "imppath",
-                    );
-                    if r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) && !dlg.path.trim().is_empty() {
+                    let kinds = crate::ui::filepicker::Filter {
+                        name: "Parameters",
+                        extensions: &["params", "param", "json"],
+                    };
+                    let file = PathField::new(Mode::File(Some(kinds)), "Parameter file")
+                        .placeholder("No file chosen")
+                        .height(FIELD_H);
+                    if let Some(Picked::Chosen(_)) = formfield::path(ui, x, cy, w, &file, &mut dlg.path, "imppath") {
                         out = Out::Go;
                     }
                     cy += FIELD_H;
                     if let Some(m) = &dlg.message {
                         cy = message(ui, x, cy + 14.0, w, m);
                     }
-                    let (hit, bottom) = modal::actions(
-                        ui,
-                        x,
-                        cy + 18.0,
-                        w,
-                        vec![
-                            Button::new("Cancel", Variant::Secondary),
-                            Button::new("Read file", Variant::Primary)
-                                .icon("upload")
-                                .enabled(!dlg.path.trim().is_empty()),
-                        ],
-                    );
-                    if hit == Some(1) {
-                        out = Out::Go;
-                    } else if hit == Some(0) {
+                    let (hit, bottom) =
+                        modal::actions(ui, x, cy + 18.0, w, vec![Button::new("Cancel", Variant::Secondary)]);
+                    if hit == Some(0) {
                         out = Out::Close;
                     }
                     cy = bottom;

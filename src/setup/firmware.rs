@@ -26,6 +26,7 @@ use crate::ui::icons;
 use crate::ui::kit::{self, Button, Choice, Variant};
 use crate::ui::message::{self, Tone};
 use crate::ui::pagekit;
+use crate::ui::pathfield::{Mode, PathField};
 use crate::ui::style::{self, Weight};
 
 /// `.page-header` leaves 28 px under it and `.setup-page` 4 px between its
@@ -689,31 +690,12 @@ impl FirmwarePage {
     }
 
     fn file_row(&mut self, ui: &mut egui::Ui, x: f32, y: f32, w: f32) -> f32 {
-        let iw = w.min(420.0);
-        let resp = ff::input(
-            ui,
-            x,
-            y,
-            iw,
-            &mut self.file_path,
-            "Path to a .px4, .apj or .bin file",
-            true,
-            false,
-            "fwfile",
-        );
-        let _ = resp;
-        let name = if self.file_path.trim().is_empty() {
-            "No file selected".to_string()
-        } else {
-            model::file_name_of(&self.file_path)
+        let kinds = crate::ui::filepicker::Filter {
+            name: "Firmware",
+            extensions: &["px4", "apj", "bin"],
         };
-        let g = style::galley_mono(ui, &name, 11.5, style::text_2());
-        let h = g.size().y;
-        ui.painter().galley(
-            Pos2::new(x + iw + 10.0, y + (ff::CONTROL_H - h) / 2.0),
-            g,
-            style::text_2(),
-        );
+        let field = PathField::new(Mode::File(Some(kinds)), "Firmware file").placeholder("No file selected");
+        ff::path(ui, x, y, w.min(520.0), &field, &mut self.file_path, "fwfile");
         y + ff::CONTROL_H
     }
 
