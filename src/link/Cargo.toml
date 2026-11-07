@@ -13,13 +13,17 @@ path = "lib.rs"
 crate-type = ["cdylib", "rlib"]
 
 [features]
-default = ["tls"]
+default = ["tls", "python"]
+# The Python extension module (what python/ imports as corvus_link). Without it
+# the crate is plain Rust: the dialect tables, the transports and the `plain`
+# layer, with no PyO3 and no Python on the build machine.
+python = ["dep:pyo3"]
 # wss: needs a C compiler for ring, so a cross check without one runs with
 # --no-default-features.
 tls = ["dep:rustls", "dep:rustls-native-certs"]
 
 [dependencies]
-pyo3 = { version = "0.25", features = ["abi3-py312"] }
+pyo3 = { version = "0.25", features = ["abi3-py312"], optional = true }
 sha2 = "0.10"
 indexmap = "2"
 socket2 = { version = "0.5", features = ["all"] }
@@ -40,3 +44,7 @@ roxmltree = "0.20"
 [profile.release]
 lto = "thin"
 codegen-units = 1
+
+[dev-dependencies]
+# The plain layer's tests read the frames pymavlink produced.
+serde_json = "1"

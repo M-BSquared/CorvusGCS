@@ -1,0 +1,1453 @@
+{
+  "base": {
+    "mavlink_connection": "udp:0.0.0.0:14550",
+    "ssh_connections": [
+      {
+        "name": "a",
+        "host": "h",
+        "port": 22,
+        "username": "u",
+        "key_path": "",
+        "password": "pw"
+      }
+    ],
+    "theme": {
+      "name": "green"
+    },
+    "map": {
+      "base_layer": "esri",
+      "three_d": "off"
+    },
+    "map_tokens": {
+      "mapbox": "tok"
+    },
+    "controls": {
+      "virtual_joystick": true,
+      "gamepad": true
+    },
+    "ui": {
+      "scale": 1.25,
+      "units": {
+        "length": "m"
+      }
+    },
+    "updates": {
+      "check": true
+    },
+    "autoconnect": {
+      "enabled": true
+    },
+    "parameters": {
+      "cache_defaults": true
+    },
+    "review": {
+      "sensitivity": "strict"
+    },
+    "forwarding": {
+      "enabled": true,
+      "port": 14551
+    },
+    "mcp": {
+      "enabled": true
+    }
+  },
+  "cases": [
+    {
+      "name": "scalar_strings",
+      "partial": {
+        "tile_cache_dir": "/x",
+        "tlog_dir": "",
+        "missions_dir": "/m"
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "/x",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "/m",
+        "ssh_connections": [
+          {
+            "name": "a",
+            "host": "h",
+            "port": 22,
+            "username": "u",
+            "key_path": ""
+          }
+        ],
+        "theme": {
+          "name": "green"
+        },
+        "map": {
+          "base_layer": "esri",
+          "three_d": "off"
+        },
+        "controls": {
+          "virtual_joystick": true,
+          "gamepad": true
+        },
+        "ui": {
+          "units": {
+            "length": "m"
+          },
+          "scale": 1.25
+        },
+        "forwarding": {
+          "enabled": true,
+          "port": 14551
+        },
+        "autoconnect": {
+          "enabled": true
+        },
+        "updates": {
+          "check": true
+        },
+        "parameters": {
+          "cache_defaults": true
+        },
+        "review": {
+          "sensitivity": "strict"
+        },
+        "mcp": {
+          "enabled": true
+        }
+      },
+      "error": null,
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 8000,\n  \"tile_cache_dir\": \"/x\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"/m\",\n  \"ssh_connections\": [\n    {\n      \"name\": \"a\",\n      \"host\": \"h\",\n      \"port\": 22,\n      \"username\": \"u\",\n      \"key_path\": \"\",\n      \"password\": \"pw\"\n    }\n  ],\n  \"theme\": {\n    \"name\": \"green\"\n  },\n  \"map\": {\n    \"base_layer\": \"esri\",\n    \"three_d\": \"off\"\n  },\n  \"map_tokens\": {\n    \"mapbox\": \"tok\"\n  },\n  \"controls\": {\n    \"virtual_joystick\": true,\n    \"gamepad\": true\n  },\n  \"ui\": {\n    \"units\": {\n      \"length\": \"m\"\n    },\n    \"scale\": 1.25\n  },\n  \"forwarding\": {\n    \"enabled\": true,\n    \"port\": 14551\n  },\n  \"autoconnect\": {\n    \"enabled\": true\n  },\n  \"updates\": {\n    \"check\": true\n  },\n  \"parameters\": {\n    \"cache_defaults\": true\n  },\n  \"review\": {\n    \"sensitivity\": \"strict\"\n  },\n  \"mcp\": {\n    \"enabled\": true\n  }\n}\n"
+    },
+    {
+      "name": "port",
+      "partial": {
+        "http_port": "8001"
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8001,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": [
+          {
+            "name": "a",
+            "host": "h",
+            "port": 22,
+            "username": "u",
+            "key_path": ""
+          }
+        ],
+        "theme": {
+          "name": "green"
+        },
+        "map": {
+          "base_layer": "esri",
+          "three_d": "off"
+        },
+        "controls": {
+          "virtual_joystick": true,
+          "gamepad": true
+        },
+        "ui": {
+          "units": {
+            "length": "m"
+          },
+          "scale": 1.25
+        },
+        "forwarding": {
+          "enabled": true,
+          "port": 14551
+        },
+        "autoconnect": {
+          "enabled": true
+        },
+        "updates": {
+          "check": true
+        },
+        "parameters": {
+          "cache_defaults": true
+        },
+        "review": {
+          "sensitivity": "strict"
+        },
+        "mcp": {
+          "enabled": true
+        }
+      },
+      "error": null,
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 8001,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": [\n    {\n      \"name\": \"a\",\n      \"host\": \"h\",\n      \"port\": 22,\n      \"username\": \"u\",\n      \"key_path\": \"\",\n      \"password\": \"pw\"\n    }\n  ],\n  \"theme\": {\n    \"name\": \"green\"\n  },\n  \"map\": {\n    \"base_layer\": \"esri\",\n    \"three_d\": \"off\"\n  },\n  \"map_tokens\": {\n    \"mapbox\": \"tok\"\n  },\n  \"controls\": {\n    \"virtual_joystick\": true,\n    \"gamepad\": true\n  },\n  \"ui\": {\n    \"units\": {\n      \"length\": \"m\"\n    },\n    \"scale\": 1.25\n  },\n  \"forwarding\": {\n    \"enabled\": true,\n    \"port\": 14551\n  },\n  \"autoconnect\": {\n    \"enabled\": true\n  },\n  \"updates\": {\n    \"check\": true\n  },\n  \"parameters\": {\n    \"cache_defaults\": true\n  },\n  \"review\": {\n    \"sensitivity\": \"strict\"\n  },\n  \"mcp\": {\n    \"enabled\": true\n  }\n}\n"
+    },
+    {
+      "name": "port_range",
+      "partial": {
+        "http_port": 70000
+      },
+      "public": null,
+      "error": "http_port must be between 0 and 65535",
+      "saved": "{\"mavlink_connection\": \"udp:0.0.0.0:14550\", \"ssh_connections\": [{\"name\": \"a\", \"host\": \"h\", \"port\": 22, \"username\": \"u\", \"key_path\": \"\", \"password\": \"pw\"}], \"theme\": {\"name\": \"green\"}, \"map\": {\"base_layer\": \"esri\", \"three_d\": \"off\"}, \"map_tokens\": {\"mapbox\": \"tok\"}, \"controls\": {\"virtual_joystick\": true, \"gamepad\": true}, \"ui\": {\"scale\": 1.25, \"units\": {\"length\": \"m\"}}, \"updates\": {\"check\": true}, \"autoconnect\": {\"enabled\": true}, \"parameters\": {\"cache_defaults\": true}, \"review\": {\"sensitivity\": \"strict\"}, \"forwarding\": {\"enabled\": true, \"port\": 14551}, \"mcp\": {\"enabled\": true}}"
+    },
+    {
+      "name": "port_bool",
+      "partial": {
+        "http_port": true
+      },
+      "public": null,
+      "error": "http_port must be an integer",
+      "saved": "{\"mavlink_connection\": \"udp:0.0.0.0:14550\", \"ssh_connections\": [{\"name\": \"a\", \"host\": \"h\", \"port\": 22, \"username\": \"u\", \"key_path\": \"\", \"password\": \"pw\"}], \"theme\": {\"name\": \"green\"}, \"map\": {\"base_layer\": \"esri\", \"three_d\": \"off\"}, \"map_tokens\": {\"mapbox\": \"tok\"}, \"controls\": {\"virtual_joystick\": true, \"gamepad\": true}, \"ui\": {\"scale\": 1.25, \"units\": {\"length\": \"m\"}}, \"updates\": {\"check\": true}, \"autoconnect\": {\"enabled\": true}, \"parameters\": {\"cache_defaults\": true}, \"review\": {\"sensitivity\": \"strict\"}, \"forwarding\": {\"enabled\": true, \"port\": 14551}, \"mcp\": {\"enabled\": true}}"
+    },
+    {
+      "name": "port_text",
+      "partial": {
+        "http_port": "abc"
+      },
+      "public": null,
+      "error": "http_port must be an integer",
+      "saved": "{\"mavlink_connection\": \"udp:0.0.0.0:14550\", \"ssh_connections\": [{\"name\": \"a\", \"host\": \"h\", \"port\": 22, \"username\": \"u\", \"key_path\": \"\", \"password\": \"pw\"}], \"theme\": {\"name\": \"green\"}, \"map\": {\"base_layer\": \"esri\", \"three_d\": \"off\"}, \"map_tokens\": {\"mapbox\": \"tok\"}, \"controls\": {\"virtual_joystick\": true, \"gamepad\": true}, \"ui\": {\"scale\": 1.25, \"units\": {\"length\": \"m\"}}, \"updates\": {\"check\": true}, \"autoconnect\": {\"enabled\": true}, \"parameters\": {\"cache_defaults\": true}, \"review\": {\"sensitivity\": \"strict\"}, \"forwarding\": {\"enabled\": true, \"port\": 14551}, \"mcp\": {\"enabled\": true}}"
+    },
+    {
+      "name": "connection_empty",
+      "partial": {
+        "mavlink_connection": ""
+      },
+      "public": null,
+      "error": "mavlink_connection must be a non-empty string",
+      "saved": "{\"mavlink_connection\": \"udp:0.0.0.0:14550\", \"ssh_connections\": [{\"name\": \"a\", \"host\": \"h\", \"port\": 22, \"username\": \"u\", \"key_path\": \"\", \"password\": \"pw\"}], \"theme\": {\"name\": \"green\"}, \"map\": {\"base_layer\": \"esri\", \"three_d\": \"off\"}, \"map_tokens\": {\"mapbox\": \"tok\"}, \"controls\": {\"virtual_joystick\": true, \"gamepad\": true}, \"ui\": {\"scale\": 1.25, \"units\": {\"length\": \"m\"}}, \"updates\": {\"check\": true}, \"autoconnect\": {\"enabled\": true}, \"parameters\": {\"cache_defaults\": true}, \"review\": {\"sensitivity\": \"strict\"}, \"forwarding\": {\"enabled\": true, \"port\": 14551}, \"mcp\": {\"enabled\": true}}"
+    },
+    {
+      "name": "connection",
+      "partial": {
+        "mavlink_connection": "tcp:1.2.3.4:5760"
+      },
+      "public": {
+        "mavlink_connection": "tcp:1.2.3.4:5760",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": [
+          {
+            "name": "a",
+            "host": "h",
+            "port": 22,
+            "username": "u",
+            "key_path": ""
+          }
+        ],
+        "theme": {
+          "name": "green"
+        },
+        "map": {
+          "base_layer": "esri",
+          "three_d": "off"
+        },
+        "controls": {
+          "virtual_joystick": true,
+          "gamepad": true
+        },
+        "ui": {
+          "units": {
+            "length": "m"
+          },
+          "scale": 1.25
+        },
+        "forwarding": {
+          "enabled": true,
+          "port": 14551
+        },
+        "autoconnect": {
+          "enabled": true
+        },
+        "updates": {
+          "check": true
+        },
+        "parameters": {
+          "cache_defaults": true
+        },
+        "review": {
+          "sensitivity": "strict"
+        },
+        "mcp": {
+          "enabled": true
+        }
+      },
+      "error": null,
+      "saved": "{\n  \"mavlink_connection\": \"tcp:1.2.3.4:5760\",\n  \"http_port\": 8000,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": [\n    {\n      \"name\": \"a\",\n      \"host\": \"h\",\n      \"port\": 22,\n      \"username\": \"u\",\n      \"key_path\": \"\",\n      \"password\": \"pw\"\n    }\n  ],\n  \"theme\": {\n    \"name\": \"green\"\n  },\n  \"map\": {\n    \"base_layer\": \"esri\",\n    \"three_d\": \"off\"\n  },\n  \"map_tokens\": {\n    \"mapbox\": \"tok\"\n  },\n  \"controls\": {\n    \"virtual_joystick\": true,\n    \"gamepad\": true\n  },\n  \"ui\": {\n    \"units\": {\n      \"length\": \"m\"\n    },\n    \"scale\": 1.25\n  },\n  \"forwarding\": {\n    \"enabled\": true,\n    \"port\": 14551\n  },\n  \"autoconnect\": {\n    \"enabled\": true\n  },\n  \"updates\": {\n    \"check\": true\n  },\n  \"parameters\": {\n    \"cache_defaults\": true\n  },\n  \"review\": {\n    \"sensitivity\": \"strict\"\n  },\n  \"mcp\": {\n    \"enabled\": true\n  }\n}\n"
+    },
+    {
+      "name": "merge_controls",
+      "partial": {
+        "controls": {
+          "arrow_keys": true
+        }
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": [
+          {
+            "name": "a",
+            "host": "h",
+            "port": 22,
+            "username": "u",
+            "key_path": ""
+          }
+        ],
+        "theme": {
+          "name": "green"
+        },
+        "map": {
+          "base_layer": "esri",
+          "three_d": "off"
+        },
+        "controls": {
+          "virtual_joystick": true,
+          "gamepad": true,
+          "arrow_keys": true
+        },
+        "ui": {
+          "units": {
+            "length": "m"
+          },
+          "scale": 1.25
+        },
+        "forwarding": {
+          "enabled": true,
+          "port": 14551
+        },
+        "autoconnect": {
+          "enabled": true
+        },
+        "updates": {
+          "check": true
+        },
+        "parameters": {
+          "cache_defaults": true
+        },
+        "review": {
+          "sensitivity": "strict"
+        },
+        "mcp": {
+          "enabled": true
+        }
+      },
+      "error": null,
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 8000,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": [\n    {\n      \"name\": \"a\",\n      \"host\": \"h\",\n      \"port\": 22,\n      \"username\": \"u\",\n      \"key_path\": \"\",\n      \"password\": \"pw\"\n    }\n  ],\n  \"theme\": {\n    \"name\": \"green\"\n  },\n  \"map\": {\n    \"base_layer\": \"esri\",\n    \"three_d\": \"off\"\n  },\n  \"map_tokens\": {\n    \"mapbox\": \"tok\"\n  },\n  \"controls\": {\n    \"virtual_joystick\": true,\n    \"gamepad\": true,\n    \"arrow_keys\": true\n  },\n  \"ui\": {\n    \"units\": {\n      \"length\": \"m\"\n    },\n    \"scale\": 1.25\n  },\n  \"forwarding\": {\n    \"enabled\": true,\n    \"port\": 14551\n  },\n  \"autoconnect\": {\n    \"enabled\": true\n  },\n  \"updates\": {\n    \"check\": true\n  },\n  \"parameters\": {\n    \"cache_defaults\": true\n  },\n  \"review\": {\n    \"sensitivity\": \"strict\"\n  },\n  \"mcp\": {\n    \"enabled\": true\n  }\n}\n"
+    },
+    {
+      "name": "merge_ui",
+      "partial": {
+        "ui": {
+          "scale": 2,
+          "units": {
+            "speed": "kn"
+          }
+        }
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": [
+          {
+            "name": "a",
+            "host": "h",
+            "port": 22,
+            "username": "u",
+            "key_path": ""
+          }
+        ],
+        "theme": {
+          "name": "green"
+        },
+        "map": {
+          "base_layer": "esri",
+          "three_d": "off"
+        },
+        "controls": {
+          "virtual_joystick": true,
+          "gamepad": true
+        },
+        "ui": {
+          "units": {
+            "speed": "kn"
+          },
+          "scale": 2.0
+        },
+        "forwarding": {
+          "enabled": true,
+          "port": 14551
+        },
+        "autoconnect": {
+          "enabled": true
+        },
+        "updates": {
+          "check": true
+        },
+        "parameters": {
+          "cache_defaults": true
+        },
+        "review": {
+          "sensitivity": "strict"
+        },
+        "mcp": {
+          "enabled": true
+        }
+      },
+      "error": null,
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 8000,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": [\n    {\n      \"name\": \"a\",\n      \"host\": \"h\",\n      \"port\": 22,\n      \"username\": \"u\",\n      \"key_path\": \"\",\n      \"password\": \"pw\"\n    }\n  ],\n  \"theme\": {\n    \"name\": \"green\"\n  },\n  \"map\": {\n    \"base_layer\": \"esri\",\n    \"three_d\": \"off\"\n  },\n  \"map_tokens\": {\n    \"mapbox\": \"tok\"\n  },\n  \"controls\": {\n    \"virtual_joystick\": true,\n    \"gamepad\": true\n  },\n  \"ui\": {\n    \"units\": {\n      \"speed\": \"kn\"\n    },\n    \"scale\": 2.0\n  },\n  \"forwarding\": {\n    \"enabled\": true,\n    \"port\": 14551\n  },\n  \"autoconnect\": {\n    \"enabled\": true\n  },\n  \"updates\": {\n    \"check\": true\n  },\n  \"parameters\": {\n    \"cache_defaults\": true\n  },\n  \"review\": {\n    \"sensitivity\": \"strict\"\n  },\n  \"mcp\": {\n    \"enabled\": true\n  }\n}\n"
+    },
+    {
+      "name": "merge_map",
+      "partial": {
+        "map": {
+          "three_d": "full"
+        }
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": [
+          {
+            "name": "a",
+            "host": "h",
+            "port": 22,
+            "username": "u",
+            "key_path": ""
+          }
+        ],
+        "theme": {
+          "name": "green"
+        },
+        "map": {
+          "base_layer": "esri",
+          "three_d": "full"
+        },
+        "controls": {
+          "virtual_joystick": true,
+          "gamepad": true
+        },
+        "ui": {
+          "units": {
+            "length": "m"
+          },
+          "scale": 1.25
+        },
+        "forwarding": {
+          "enabled": true,
+          "port": 14551
+        },
+        "autoconnect": {
+          "enabled": true
+        },
+        "updates": {
+          "check": true
+        },
+        "parameters": {
+          "cache_defaults": true
+        },
+        "review": {
+          "sensitivity": "strict"
+        },
+        "mcp": {
+          "enabled": true
+        }
+      },
+      "error": null,
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 8000,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": [\n    {\n      \"name\": \"a\",\n      \"host\": \"h\",\n      \"port\": 22,\n      \"username\": \"u\",\n      \"key_path\": \"\",\n      \"password\": \"pw\"\n    }\n  ],\n  \"theme\": {\n    \"name\": \"green\"\n  },\n  \"map\": {\n    \"base_layer\": \"esri\",\n    \"three_d\": \"full\"\n  },\n  \"map_tokens\": {\n    \"mapbox\": \"tok\"\n  },\n  \"controls\": {\n    \"virtual_joystick\": true,\n    \"gamepad\": true\n  },\n  \"ui\": {\n    \"units\": {\n      \"length\": \"m\"\n    },\n    \"scale\": 1.25\n  },\n  \"forwarding\": {\n    \"enabled\": true,\n    \"port\": 14551\n  },\n  \"autoconnect\": {\n    \"enabled\": true\n  },\n  \"updates\": {\n    \"check\": true\n  },\n  \"parameters\": {\n    \"cache_defaults\": true\n  },\n  \"review\": {\n    \"sensitivity\": \"strict\"\n  },\n  \"mcp\": {\n    \"enabled\": true\n  }\n}\n"
+    },
+    {
+      "name": "merge_updates",
+      "partial": {
+        "updates": {
+          "skipped": "2026.10.01"
+        }
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": [
+          {
+            "name": "a",
+            "host": "h",
+            "port": 22,
+            "username": "u",
+            "key_path": ""
+          }
+        ],
+        "theme": {
+          "name": "green"
+        },
+        "map": {
+          "base_layer": "esri",
+          "three_d": "off"
+        },
+        "controls": {
+          "virtual_joystick": true,
+          "gamepad": true
+        },
+        "ui": {
+          "units": {
+            "length": "m"
+          },
+          "scale": 1.25
+        },
+        "forwarding": {
+          "enabled": true,
+          "port": 14551
+        },
+        "autoconnect": {
+          "enabled": true
+        },
+        "updates": {
+          "check": true,
+          "skipped": "2026.10.01"
+        },
+        "parameters": {
+          "cache_defaults": true
+        },
+        "review": {
+          "sensitivity": "strict"
+        },
+        "mcp": {
+          "enabled": true
+        }
+      },
+      "error": null,
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 8000,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": [\n    {\n      \"name\": \"a\",\n      \"host\": \"h\",\n      \"port\": 22,\n      \"username\": \"u\",\n      \"key_path\": \"\",\n      \"password\": \"pw\"\n    }\n  ],\n  \"theme\": {\n    \"name\": \"green\"\n  },\n  \"map\": {\n    \"base_layer\": \"esri\",\n    \"three_d\": \"off\"\n  },\n  \"map_tokens\": {\n    \"mapbox\": \"tok\"\n  },\n  \"controls\": {\n    \"virtual_joystick\": true,\n    \"gamepad\": true\n  },\n  \"ui\": {\n    \"units\": {\n      \"length\": \"m\"\n    },\n    \"scale\": 1.25\n  },\n  \"forwarding\": {\n    \"enabled\": true,\n    \"port\": 14551\n  },\n  \"autoconnect\": {\n    \"enabled\": true\n  },\n  \"updates\": {\n    \"check\": true,\n    \"skipped\": \"2026.10.01\"\n  },\n  \"parameters\": {\n    \"cache_defaults\": true\n  },\n  \"review\": {\n    \"sensitivity\": \"strict\"\n  },\n  \"mcp\": {\n    \"enabled\": true\n  }\n}\n"
+    },
+    {
+      "name": "merge_autoconnect",
+      "partial": {
+        "autoconnect": {
+          "usb": false
+        }
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": [
+          {
+            "name": "a",
+            "host": "h",
+            "port": 22,
+            "username": "u",
+            "key_path": ""
+          }
+        ],
+        "theme": {
+          "name": "green"
+        },
+        "map": {
+          "base_layer": "esri",
+          "three_d": "off"
+        },
+        "controls": {
+          "virtual_joystick": true,
+          "gamepad": true
+        },
+        "ui": {
+          "units": {
+            "length": "m"
+          },
+          "scale": 1.25
+        },
+        "forwarding": {
+          "enabled": true,
+          "port": 14551
+        },
+        "autoconnect": {
+          "enabled": true,
+          "usb": false
+        },
+        "updates": {
+          "check": true
+        },
+        "parameters": {
+          "cache_defaults": true
+        },
+        "review": {
+          "sensitivity": "strict"
+        },
+        "mcp": {
+          "enabled": true
+        }
+      },
+      "error": null,
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 8000,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": [\n    {\n      \"name\": \"a\",\n      \"host\": \"h\",\n      \"port\": 22,\n      \"username\": \"u\",\n      \"key_path\": \"\",\n      \"password\": \"pw\"\n    }\n  ],\n  \"theme\": {\n    \"name\": \"green\"\n  },\n  \"map\": {\n    \"base_layer\": \"esri\",\n    \"three_d\": \"off\"\n  },\n  \"map_tokens\": {\n    \"mapbox\": \"tok\"\n  },\n  \"controls\": {\n    \"virtual_joystick\": true,\n    \"gamepad\": true\n  },\n  \"ui\": {\n    \"units\": {\n      \"length\": \"m\"\n    },\n    \"scale\": 1.25\n  },\n  \"forwarding\": {\n    \"enabled\": true,\n    \"port\": 14551\n  },\n  \"autoconnect\": {\n    \"enabled\": true,\n    \"usb\": false\n  },\n  \"updates\": {\n    \"check\": true\n  },\n  \"parameters\": {\n    \"cache_defaults\": true\n  },\n  \"review\": {\n    \"sensitivity\": \"strict\"\n  },\n  \"mcp\": {\n    \"enabled\": true\n  }\n}\n"
+    },
+    {
+      "name": "merge_parameters",
+      "partial": {
+        "parameters": {
+          "cache_defaults": false
+        }
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": [
+          {
+            "name": "a",
+            "host": "h",
+            "port": 22,
+            "username": "u",
+            "key_path": ""
+          }
+        ],
+        "theme": {
+          "name": "green"
+        },
+        "map": {
+          "base_layer": "esri",
+          "three_d": "off"
+        },
+        "controls": {
+          "virtual_joystick": true,
+          "gamepad": true
+        },
+        "ui": {
+          "units": {
+            "length": "m"
+          },
+          "scale": 1.25
+        },
+        "forwarding": {
+          "enabled": true,
+          "port": 14551
+        },
+        "autoconnect": {
+          "enabled": true
+        },
+        "updates": {
+          "check": true
+        },
+        "parameters": {
+          "cache_defaults": false
+        },
+        "review": {
+          "sensitivity": "strict"
+        },
+        "mcp": {
+          "enabled": true
+        }
+      },
+      "error": null,
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 8000,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": [\n    {\n      \"name\": \"a\",\n      \"host\": \"h\",\n      \"port\": 22,\n      \"username\": \"u\",\n      \"key_path\": \"\",\n      \"password\": \"pw\"\n    }\n  ],\n  \"theme\": {\n    \"name\": \"green\"\n  },\n  \"map\": {\n    \"base_layer\": \"esri\",\n    \"three_d\": \"off\"\n  },\n  \"map_tokens\": {\n    \"mapbox\": \"tok\"\n  },\n  \"controls\": {\n    \"virtual_joystick\": true,\n    \"gamepad\": true\n  },\n  \"ui\": {\n    \"units\": {\n      \"length\": \"m\"\n    },\n    \"scale\": 1.25\n  },\n  \"forwarding\": {\n    \"enabled\": true,\n    \"port\": 14551\n  },\n  \"autoconnect\": {\n    \"enabled\": true\n  },\n  \"updates\": {\n    \"check\": true\n  },\n  \"parameters\": {\n    \"cache_defaults\": false\n  },\n  \"review\": {\n    \"sensitivity\": \"strict\"\n  },\n  \"mcp\": {\n    \"enabled\": true\n  }\n}\n"
+    },
+    {
+      "name": "merge_review",
+      "partial": {
+        "review": {
+          "sensitivity": "relaxed"
+        }
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": [
+          {
+            "name": "a",
+            "host": "h",
+            "port": 22,
+            "username": "u",
+            "key_path": ""
+          }
+        ],
+        "theme": {
+          "name": "green"
+        },
+        "map": {
+          "base_layer": "esri",
+          "three_d": "off"
+        },
+        "controls": {
+          "virtual_joystick": true,
+          "gamepad": true
+        },
+        "ui": {
+          "units": {
+            "length": "m"
+          },
+          "scale": 1.25
+        },
+        "forwarding": {
+          "enabled": true,
+          "port": 14551
+        },
+        "autoconnect": {
+          "enabled": true
+        },
+        "updates": {
+          "check": true
+        },
+        "parameters": {
+          "cache_defaults": true
+        },
+        "review": {
+          "sensitivity": "relaxed"
+        },
+        "mcp": {
+          "enabled": true
+        }
+      },
+      "error": null,
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 8000,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": [\n    {\n      \"name\": \"a\",\n      \"host\": \"h\",\n      \"port\": 22,\n      \"username\": \"u\",\n      \"key_path\": \"\",\n      \"password\": \"pw\"\n    }\n  ],\n  \"theme\": {\n    \"name\": \"green\"\n  },\n  \"map\": {\n    \"base_layer\": \"esri\",\n    \"three_d\": \"off\"\n  },\n  \"map_tokens\": {\n    \"mapbox\": \"tok\"\n  },\n  \"controls\": {\n    \"virtual_joystick\": true,\n    \"gamepad\": true\n  },\n  \"ui\": {\n    \"units\": {\n      \"length\": \"m\"\n    },\n    \"scale\": 1.25\n  },\n  \"forwarding\": {\n    \"enabled\": true,\n    \"port\": 14551\n  },\n  \"autoconnect\": {\n    \"enabled\": true\n  },\n  \"updates\": {\n    \"check\": true\n  },\n  \"parameters\": {\n    \"cache_defaults\": true\n  },\n  \"review\": {\n    \"sensitivity\": \"relaxed\"\n  },\n  \"mcp\": {\n    \"enabled\": true\n  }\n}\n"
+    },
+    {
+      "name": "replace_theme",
+      "partial": {
+        "theme": {
+          "name": "pink"
+        }
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": [
+          {
+            "name": "a",
+            "host": "h",
+            "port": 22,
+            "username": "u",
+            "key_path": ""
+          }
+        ],
+        "theme": {
+          "name": "pink"
+        },
+        "map": {
+          "base_layer": "esri",
+          "three_d": "off"
+        },
+        "controls": {
+          "virtual_joystick": true,
+          "gamepad": true
+        },
+        "ui": {
+          "units": {
+            "length": "m"
+          },
+          "scale": 1.25
+        },
+        "forwarding": {
+          "enabled": true,
+          "port": 14551
+        },
+        "autoconnect": {
+          "enabled": true
+        },
+        "updates": {
+          "check": true
+        },
+        "parameters": {
+          "cache_defaults": true
+        },
+        "review": {
+          "sensitivity": "strict"
+        },
+        "mcp": {
+          "enabled": true
+        }
+      },
+      "error": null,
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 8000,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": [\n    {\n      \"name\": \"a\",\n      \"host\": \"h\",\n      \"port\": 22,\n      \"username\": \"u\",\n      \"key_path\": \"\",\n      \"password\": \"pw\"\n    }\n  ],\n  \"theme\": {\n    \"name\": \"pink\"\n  },\n  \"map\": {\n    \"base_layer\": \"esri\",\n    \"three_d\": \"off\"\n  },\n  \"map_tokens\": {\n    \"mapbox\": \"tok\"\n  },\n  \"controls\": {\n    \"virtual_joystick\": true,\n    \"gamepad\": true\n  },\n  \"ui\": {\n    \"units\": {\n      \"length\": \"m\"\n    },\n    \"scale\": 1.25\n  },\n  \"forwarding\": {\n    \"enabled\": true,\n    \"port\": 14551\n  },\n  \"autoconnect\": {\n    \"enabled\": true\n  },\n  \"updates\": {\n    \"check\": true\n  },\n  \"parameters\": {\n    \"cache_defaults\": true\n  },\n  \"review\": {\n    \"sensitivity\": \"strict\"\n  },\n  \"mcp\": {\n    \"enabled\": true\n  }\n}\n"
+    },
+    {
+      "name": "theme_not_object",
+      "partial": {
+        "theme": "pink"
+      },
+      "public": null,
+      "error": "theme must be an object",
+      "saved": "{\"mavlink_connection\": \"udp:0.0.0.0:14550\", \"ssh_connections\": [{\"name\": \"a\", \"host\": \"h\", \"port\": 22, \"username\": \"u\", \"key_path\": \"\", \"password\": \"pw\"}], \"theme\": {\"name\": \"green\"}, \"map\": {\"base_layer\": \"esri\", \"three_d\": \"off\"}, \"map_tokens\": {\"mapbox\": \"tok\"}, \"controls\": {\"virtual_joystick\": true, \"gamepad\": true}, \"ui\": {\"scale\": 1.25, \"units\": {\"length\": \"m\"}}, \"updates\": {\"check\": true}, \"autoconnect\": {\"enabled\": true}, \"parameters\": {\"cache_defaults\": true}, \"review\": {\"sensitivity\": \"strict\"}, \"forwarding\": {\"enabled\": true, \"port\": 14551}, \"mcp\": {\"enabled\": true}}"
+    },
+    {
+      "name": "branding",
+      "partial": {
+        "branding": {
+          "logo": "a.png"
+        }
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": [
+          {
+            "name": "a",
+            "host": "h",
+            "port": 22,
+            "username": "u",
+            "key_path": ""
+          }
+        ],
+        "theme": {
+          "name": "green"
+        },
+        "map": {
+          "base_layer": "esri",
+          "three_d": "off"
+        },
+        "branding": {
+          "logo": "a.png"
+        },
+        "controls": {
+          "virtual_joystick": true,
+          "gamepad": true
+        },
+        "ui": {
+          "units": {
+            "length": "m"
+          },
+          "scale": 1.25
+        },
+        "forwarding": {
+          "enabled": true,
+          "port": 14551
+        },
+        "autoconnect": {
+          "enabled": true
+        },
+        "updates": {
+          "check": true
+        },
+        "parameters": {
+          "cache_defaults": true
+        },
+        "review": {
+          "sensitivity": "strict"
+        },
+        "mcp": {
+          "enabled": true
+        }
+      },
+      "error": null,
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 8000,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": [\n    {\n      \"name\": \"a\",\n      \"host\": \"h\",\n      \"port\": 22,\n      \"username\": \"u\",\n      \"key_path\": \"\",\n      \"password\": \"pw\"\n    }\n  ],\n  \"theme\": {\n    \"name\": \"green\"\n  },\n  \"map\": {\n    \"base_layer\": \"esri\",\n    \"three_d\": \"off\"\n  },\n  \"map_tokens\": {\n    \"mapbox\": \"tok\"\n  },\n  \"branding\": {\n    \"logo\": \"a.png\"\n  },\n  \"controls\": {\n    \"virtual_joystick\": true,\n    \"gamepad\": true\n  },\n  \"ui\": {\n    \"units\": {\n      \"length\": \"m\"\n    },\n    \"scale\": 1.25\n  },\n  \"forwarding\": {\n    \"enabled\": true,\n    \"port\": 14551\n  },\n  \"autoconnect\": {\n    \"enabled\": true\n  },\n  \"updates\": {\n    \"check\": true\n  },\n  \"parameters\": {\n    \"cache_defaults\": true\n  },\n  \"review\": {\n    \"sensitivity\": \"strict\"\n  },\n  \"mcp\": {\n    \"enabled\": true\n  }\n}\n"
+    },
+    {
+      "name": "language",
+      "partial": {
+        "language": "de"
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": [
+          {
+            "name": "a",
+            "host": "h",
+            "port": 22,
+            "username": "u",
+            "key_path": ""
+          }
+        ],
+        "theme": {
+          "name": "green"
+        },
+        "language": "de",
+        "map": {
+          "base_layer": "esri",
+          "three_d": "off"
+        },
+        "controls": {
+          "virtual_joystick": true,
+          "gamepad": true
+        },
+        "ui": {
+          "units": {
+            "length": "m"
+          },
+          "scale": 1.25
+        },
+        "forwarding": {
+          "enabled": true,
+          "port": 14551
+        },
+        "autoconnect": {
+          "enabled": true
+        },
+        "updates": {
+          "check": true
+        },
+        "parameters": {
+          "cache_defaults": true
+        },
+        "review": {
+          "sensitivity": "strict"
+        },
+        "mcp": {
+          "enabled": true
+        }
+      },
+      "error": null,
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 8000,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": [\n    {\n      \"name\": \"a\",\n      \"host\": \"h\",\n      \"port\": 22,\n      \"username\": \"u\",\n      \"key_path\": \"\",\n      \"password\": \"pw\"\n    }\n  ],\n  \"theme\": {\n    \"name\": \"green\"\n  },\n  \"language\": \"de\",\n  \"map\": {\n    \"base_layer\": \"esri\",\n    \"three_d\": \"off\"\n  },\n  \"map_tokens\": {\n    \"mapbox\": \"tok\"\n  },\n  \"controls\": {\n    \"virtual_joystick\": true,\n    \"gamepad\": true\n  },\n  \"ui\": {\n    \"units\": {\n      \"length\": \"m\"\n    },\n    \"scale\": 1.25\n  },\n  \"forwarding\": {\n    \"enabled\": true,\n    \"port\": 14551\n  },\n  \"autoconnect\": {\n    \"enabled\": true\n  },\n  \"updates\": {\n    \"check\": true\n  },\n  \"parameters\": {\n    \"cache_defaults\": true\n  },\n  \"review\": {\n    \"sensitivity\": \"strict\"\n  },\n  \"mcp\": {\n    \"enabled\": true\n  }\n}\n"
+    },
+    {
+      "name": "language_clear",
+      "partial": {
+        "language": ""
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": [
+          {
+            "name": "a",
+            "host": "h",
+            "port": 22,
+            "username": "u",
+            "key_path": ""
+          }
+        ],
+        "theme": {
+          "name": "green"
+        },
+        "map": {
+          "base_layer": "esri",
+          "three_d": "off"
+        },
+        "controls": {
+          "virtual_joystick": true,
+          "gamepad": true
+        },
+        "ui": {
+          "units": {
+            "length": "m"
+          },
+          "scale": 1.25
+        },
+        "forwarding": {
+          "enabled": true,
+          "port": 14551
+        },
+        "autoconnect": {
+          "enabled": true
+        },
+        "updates": {
+          "check": true
+        },
+        "parameters": {
+          "cache_defaults": true
+        },
+        "review": {
+          "sensitivity": "strict"
+        },
+        "mcp": {
+          "enabled": true
+        }
+      },
+      "error": null,
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 8000,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": [\n    {\n      \"name\": \"a\",\n      \"host\": \"h\",\n      \"port\": 22,\n      \"username\": \"u\",\n      \"key_path\": \"\",\n      \"password\": \"pw\"\n    }\n  ],\n  \"theme\": {\n    \"name\": \"green\"\n  },\n  \"map\": {\n    \"base_layer\": \"esri\",\n    \"three_d\": \"off\"\n  },\n  \"map_tokens\": {\n    \"mapbox\": \"tok\"\n  },\n  \"controls\": {\n    \"virtual_joystick\": true,\n    \"gamepad\": true\n  },\n  \"ui\": {\n    \"units\": {\n      \"length\": \"m\"\n    },\n    \"scale\": 1.25\n  },\n  \"forwarding\": {\n    \"enabled\": true,\n    \"port\": 14551\n  },\n  \"autoconnect\": {\n    \"enabled\": true\n  },\n  \"updates\": {\n    \"check\": true\n  },\n  \"parameters\": {\n    \"cache_defaults\": true\n  },\n  \"review\": {\n    \"sensitivity\": \"strict\"\n  },\n  \"mcp\": {\n    \"enabled\": true\n  }\n}\n"
+    },
+    {
+      "name": "language_bad",
+      "partial": {
+        "language": "xx_yy"
+      },
+      "public": null,
+      "error": "language must be a language code such as de or pt-BR",
+      "saved": "{\"mavlink_connection\": \"udp:0.0.0.0:14550\", \"ssh_connections\": [{\"name\": \"a\", \"host\": \"h\", \"port\": 22, \"username\": \"u\", \"key_path\": \"\", \"password\": \"pw\"}], \"theme\": {\"name\": \"green\"}, \"map\": {\"base_layer\": \"esri\", \"three_d\": \"off\"}, \"map_tokens\": {\"mapbox\": \"tok\"}, \"controls\": {\"virtual_joystick\": true, \"gamepad\": true}, \"ui\": {\"scale\": 1.25, \"units\": {\"length\": \"m\"}}, \"updates\": {\"check\": true}, \"autoconnect\": {\"enabled\": true}, \"parameters\": {\"cache_defaults\": true}, \"review\": {\"sensitivity\": \"strict\"}, \"forwarding\": {\"enabled\": true, \"port\": 14551}, \"mcp\": {\"enabled\": true}}"
+    },
+    {
+      "name": "ssh_replace",
+      "partial": {
+        "ssh_connections": [
+          {
+            "name": "z",
+            "host": "q"
+          }
+        ]
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": [
+          {
+            "name": "z",
+            "host": "q",
+            "port": 22,
+            "username": "",
+            "key_path": ""
+          }
+        ],
+        "theme": {
+          "name": "green"
+        },
+        "map": {
+          "base_layer": "esri",
+          "three_d": "off"
+        },
+        "controls": {
+          "virtual_joystick": true,
+          "gamepad": true
+        },
+        "ui": {
+          "units": {
+            "length": "m"
+          },
+          "scale": 1.25
+        },
+        "forwarding": {
+          "enabled": true,
+          "port": 14551
+        },
+        "autoconnect": {
+          "enabled": true
+        },
+        "updates": {
+          "check": true
+        },
+        "parameters": {
+          "cache_defaults": true
+        },
+        "review": {
+          "sensitivity": "strict"
+        },
+        "mcp": {
+          "enabled": true
+        }
+      },
+      "error": null,
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 8000,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": [\n    {\n      \"name\": \"z\",\n      \"host\": \"q\",\n      \"port\": 22,\n      \"username\": \"\",\n      \"key_path\": \"\",\n      \"password\": \"\"\n    }\n  ],\n  \"theme\": {\n    \"name\": \"green\"\n  },\n  \"map\": {\n    \"base_layer\": \"esri\",\n    \"three_d\": \"off\"\n  },\n  \"map_tokens\": {\n    \"mapbox\": \"tok\"\n  },\n  \"controls\": {\n    \"virtual_joystick\": true,\n    \"gamepad\": true\n  },\n  \"ui\": {\n    \"units\": {\n      \"length\": \"m\"\n    },\n    \"scale\": 1.25\n  },\n  \"forwarding\": {\n    \"enabled\": true,\n    \"port\": 14551\n  },\n  \"autoconnect\": {\n    \"enabled\": true\n  },\n  \"updates\": {\n    \"check\": true\n  },\n  \"parameters\": {\n    \"cache_defaults\": true\n  },\n  \"review\": {\n    \"sensitivity\": \"strict\"\n  },\n  \"mcp\": {\n    \"enabled\": true\n  }\n}\n"
+    },
+    {
+      "name": "ssh_not_list",
+      "partial": {
+        "ssh_connections": {}
+      },
+      "public": null,
+      "error": "ssh_connections must be a list",
+      "saved": "{\"mavlink_connection\": \"udp:0.0.0.0:14550\", \"ssh_connections\": [{\"name\": \"a\", \"host\": \"h\", \"port\": 22, \"username\": \"u\", \"key_path\": \"\", \"password\": \"pw\"}], \"theme\": {\"name\": \"green\"}, \"map\": {\"base_layer\": \"esri\", \"three_d\": \"off\"}, \"map_tokens\": {\"mapbox\": \"tok\"}, \"controls\": {\"virtual_joystick\": true, \"gamepad\": true}, \"ui\": {\"scale\": 1.25, \"units\": {\"length\": \"m\"}}, \"updates\": {\"check\": true}, \"autoconnect\": {\"enabled\": true}, \"parameters\": {\"cache_defaults\": true}, \"review\": {\"sensitivity\": \"strict\"}, \"forwarding\": {\"enabled\": true, \"port\": 14551}, \"mcp\": {\"enabled\": true}}"
+    },
+    {
+      "name": "tile_sources",
+      "partial": {
+        "tile_sources": {
+          "a": {}
+        }
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "tile_sources": {
+          "a": {}
+        },
+        "ssh_connections": [
+          {
+            "name": "a",
+            "host": "h",
+            "port": 22,
+            "username": "u",
+            "key_path": ""
+          }
+        ],
+        "theme": {
+          "name": "green"
+        },
+        "map": {
+          "base_layer": "esri",
+          "three_d": "off"
+        },
+        "controls": {
+          "virtual_joystick": true,
+          "gamepad": true
+        },
+        "ui": {
+          "units": {
+            "length": "m"
+          },
+          "scale": 1.25
+        },
+        "forwarding": {
+          "enabled": true,
+          "port": 14551
+        },
+        "autoconnect": {
+          "enabled": true
+        },
+        "updates": {
+          "check": true
+        },
+        "parameters": {
+          "cache_defaults": true
+        },
+        "review": {
+          "sensitivity": "strict"
+        },
+        "mcp": {
+          "enabled": true
+        }
+      },
+      "error": null,
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 8000,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"tile_sources\": {\n    \"a\": {}\n  },\n  \"ssh_connections\": [\n    {\n      \"name\": \"a\",\n      \"host\": \"h\",\n      \"port\": 22,\n      \"username\": \"u\",\n      \"key_path\": \"\",\n      \"password\": \"pw\"\n    }\n  ],\n  \"theme\": {\n    \"name\": \"green\"\n  },\n  \"map\": {\n    \"base_layer\": \"esri\",\n    \"three_d\": \"off\"\n  },\n  \"map_tokens\": {\n    \"mapbox\": \"tok\"\n  },\n  \"controls\": {\n    \"virtual_joystick\": true,\n    \"gamepad\": true\n  },\n  \"ui\": {\n    \"units\": {\n      \"length\": \"m\"\n    },\n    \"scale\": 1.25\n  },\n  \"forwarding\": {\n    \"enabled\": true,\n    \"port\": 14551\n  },\n  \"autoconnect\": {\n    \"enabled\": true\n  },\n  \"updates\": {\n    \"check\": true\n  },\n  \"parameters\": {\n    \"cache_defaults\": true\n  },\n  \"review\": {\n    \"sensitivity\": \"strict\"\n  },\n  \"mcp\": {\n    \"enabled\": true\n  }\n}\n"
+    },
+    {
+      "name": "tile_sources_bad",
+      "partial": {
+        "tile_sources": []
+      },
+      "public": null,
+      "error": "tile_sources must be an object",
+      "saved": "{\"mavlink_connection\": \"udp:0.0.0.0:14550\", \"ssh_connections\": [{\"name\": \"a\", \"host\": \"h\", \"port\": 22, \"username\": \"u\", \"key_path\": \"\", \"password\": \"pw\"}], \"theme\": {\"name\": \"green\"}, \"map\": {\"base_layer\": \"esri\", \"three_d\": \"off\"}, \"map_tokens\": {\"mapbox\": \"tok\"}, \"controls\": {\"virtual_joystick\": true, \"gamepad\": true}, \"ui\": {\"scale\": 1.25, \"units\": {\"length\": \"m\"}}, \"updates\": {\"check\": true}, \"autoconnect\": {\"enabled\": true}, \"parameters\": {\"cache_defaults\": true}, \"review\": {\"sensitivity\": \"strict\"}, \"forwarding\": {\"enabled\": true, \"port\": 14551}, \"mcp\": {\"enabled\": true}}"
+    },
+    {
+      "name": "stream_rates",
+      "partial": {
+        "stream_rates": {
+          "X": 1
+        }
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "stream_rates": {
+          "X": 1
+        },
+        "ssh_connections": [
+          {
+            "name": "a",
+            "host": "h",
+            "port": 22,
+            "username": "u",
+            "key_path": ""
+          }
+        ],
+        "theme": {
+          "name": "green"
+        },
+        "map": {
+          "base_layer": "esri",
+          "three_d": "off"
+        },
+        "controls": {
+          "virtual_joystick": true,
+          "gamepad": true
+        },
+        "ui": {
+          "units": {
+            "length": "m"
+          },
+          "scale": 1.25
+        },
+        "forwarding": {
+          "enabled": true,
+          "port": 14551
+        },
+        "autoconnect": {
+          "enabled": true
+        },
+        "updates": {
+          "check": true
+        },
+        "parameters": {
+          "cache_defaults": true
+        },
+        "review": {
+          "sensitivity": "strict"
+        },
+        "mcp": {
+          "enabled": true
+        }
+      },
+      "error": null,
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 8000,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"stream_rates\": {\n    \"X\": 1\n  },\n  \"ssh_connections\": [\n    {\n      \"name\": \"a\",\n      \"host\": \"h\",\n      \"port\": 22,\n      \"username\": \"u\",\n      \"key_path\": \"\",\n      \"password\": \"pw\"\n    }\n  ],\n  \"theme\": {\n    \"name\": \"green\"\n  },\n  \"map\": {\n    \"base_layer\": \"esri\",\n    \"three_d\": \"off\"\n  },\n  \"map_tokens\": {\n    \"mapbox\": \"tok\"\n  },\n  \"controls\": {\n    \"virtual_joystick\": true,\n    \"gamepad\": true\n  },\n  \"ui\": {\n    \"units\": {\n      \"length\": \"m\"\n    },\n    \"scale\": 1.25\n  },\n  \"forwarding\": {\n    \"enabled\": true,\n    \"port\": 14551\n  },\n  \"autoconnect\": {\n    \"enabled\": true\n  },\n  \"updates\": {\n    \"check\": true\n  },\n  \"parameters\": {\n    \"cache_defaults\": true\n  },\n  \"review\": {\n    \"sensitivity\": \"strict\"\n  },\n  \"mcp\": {\n    \"enabled\": true\n  }\n}\n"
+    },
+    {
+      "name": "owned_elsewhere",
+      "partial": {
+        "forwarding": {
+          "enabled": false
+        },
+        "map_tokens": {
+          "x": "y"
+        },
+        "mcp": {
+          "enabled": false
+        },
+        "plugins": {
+          "a": {}
+        },
+        "fleet": {}
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": [
+          {
+            "name": "a",
+            "host": "h",
+            "port": 22,
+            "username": "u",
+            "key_path": ""
+          }
+        ],
+        "theme": {
+          "name": "green"
+        },
+        "map": {
+          "base_layer": "esri",
+          "three_d": "off"
+        },
+        "controls": {
+          "virtual_joystick": true,
+          "gamepad": true
+        },
+        "ui": {
+          "units": {
+            "length": "m"
+          },
+          "scale": 1.25
+        },
+        "forwarding": {
+          "enabled": true,
+          "port": 14551
+        },
+        "autoconnect": {
+          "enabled": true
+        },
+        "updates": {
+          "check": true
+        },
+        "parameters": {
+          "cache_defaults": true
+        },
+        "review": {
+          "sensitivity": "strict"
+        },
+        "mcp": {
+          "enabled": true
+        }
+      },
+      "error": null,
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 8000,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": [\n    {\n      \"name\": \"a\",\n      \"host\": \"h\",\n      \"port\": 22,\n      \"username\": \"u\",\n      \"key_path\": \"\",\n      \"password\": \"pw\"\n    }\n  ],\n  \"theme\": {\n    \"name\": \"green\"\n  },\n  \"map\": {\n    \"base_layer\": \"esri\",\n    \"three_d\": \"off\"\n  },\n  \"map_tokens\": {\n    \"mapbox\": \"tok\"\n  },\n  \"controls\": {\n    \"virtual_joystick\": true,\n    \"gamepad\": true\n  },\n  \"ui\": {\n    \"units\": {\n      \"length\": \"m\"\n    },\n    \"scale\": 1.25\n  },\n  \"forwarding\": {\n    \"enabled\": true,\n    \"port\": 14551\n  },\n  \"autoconnect\": {\n    \"enabled\": true\n  },\n  \"updates\": {\n    \"check\": true\n  },\n  \"parameters\": {\n    \"cache_defaults\": true\n  },\n  \"review\": {\n    \"sensitivity\": \"strict\"\n  },\n  \"mcp\": {\n    \"enabled\": true\n  }\n}\n"
+    },
+    {
+      "name": "unknown",
+      "partial": {
+        "surprise": 1
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": [
+          {
+            "name": "a",
+            "host": "h",
+            "port": 22,
+            "username": "u",
+            "key_path": ""
+          }
+        ],
+        "theme": {
+          "name": "green"
+        },
+        "map": {
+          "base_layer": "esri",
+          "three_d": "off"
+        },
+        "controls": {
+          "virtual_joystick": true,
+          "gamepad": true
+        },
+        "ui": {
+          "units": {
+            "length": "m"
+          },
+          "scale": 1.25
+        },
+        "forwarding": {
+          "enabled": true,
+          "port": 14551
+        },
+        "autoconnect": {
+          "enabled": true
+        },
+        "updates": {
+          "check": true
+        },
+        "parameters": {
+          "cache_defaults": true
+        },
+        "review": {
+          "sensitivity": "strict"
+        },
+        "mcp": {
+          "enabled": true
+        }
+      },
+      "error": null,
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 8000,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": [\n    {\n      \"name\": \"a\",\n      \"host\": \"h\",\n      \"port\": 22,\n      \"username\": \"u\",\n      \"key_path\": \"\",\n      \"password\": \"pw\"\n    }\n  ],\n  \"theme\": {\n    \"name\": \"green\"\n  },\n  \"map\": {\n    \"base_layer\": \"esri\",\n    \"three_d\": \"off\"\n  },\n  \"map_tokens\": {\n    \"mapbox\": \"tok\"\n  },\n  \"controls\": {\n    \"virtual_joystick\": true,\n    \"gamepad\": true\n  },\n  \"ui\": {\n    \"units\": {\n      \"length\": \"m\"\n    },\n    \"scale\": 1.25\n  },\n  \"forwarding\": {\n    \"enabled\": true,\n    \"port\": 14551\n  },\n  \"autoconnect\": {\n    \"enabled\": true\n  },\n  \"updates\": {\n    \"check\": true\n  },\n  \"parameters\": {\n    \"cache_defaults\": true\n  },\n  \"review\": {\n    \"sensitivity\": \"strict\"\n  },\n  \"mcp\": {\n    \"enabled\": true\n  }\n}\n"
+    },
+    {
+      "name": "empty",
+      "partial": {},
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": [
+          {
+            "name": "a",
+            "host": "h",
+            "port": 22,
+            "username": "u",
+            "key_path": ""
+          }
+        ],
+        "theme": {
+          "name": "green"
+        },
+        "map": {
+          "base_layer": "esri",
+          "three_d": "off"
+        },
+        "controls": {
+          "virtual_joystick": true,
+          "gamepad": true
+        },
+        "ui": {
+          "units": {
+            "length": "m"
+          },
+          "scale": 1.25
+        },
+        "forwarding": {
+          "enabled": true,
+          "port": 14551
+        },
+        "autoconnect": {
+          "enabled": true
+        },
+        "updates": {
+          "check": true
+        },
+        "parameters": {
+          "cache_defaults": true
+        },
+        "review": {
+          "sensitivity": "strict"
+        },
+        "mcp": {
+          "enabled": true
+        }
+      },
+      "error": null,
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 8000,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": [\n    {\n      \"name\": \"a\",\n      \"host\": \"h\",\n      \"port\": 22,\n      \"username\": \"u\",\n      \"key_path\": \"\",\n      \"password\": \"pw\"\n    }\n  ],\n  \"theme\": {\n    \"name\": \"green\"\n  },\n  \"map\": {\n    \"base_layer\": \"esri\",\n    \"three_d\": \"off\"\n  },\n  \"map_tokens\": {\n    \"mapbox\": \"tok\"\n  },\n  \"controls\": {\n    \"virtual_joystick\": true,\n    \"gamepad\": true\n  },\n  \"ui\": {\n    \"units\": {\n      \"length\": \"m\"\n    },\n    \"scale\": 1.25\n  },\n  \"forwarding\": {\n    \"enabled\": true,\n    \"port\": 14551\n  },\n  \"autoconnect\": {\n    \"enabled\": true\n  },\n  \"updates\": {\n    \"check\": true\n  },\n  \"parameters\": {\n    \"cache_defaults\": true\n  },\n  \"review\": {\n    \"sensitivity\": \"strict\"\n  },\n  \"mcp\": {\n    \"enabled\": true\n  }\n}\n"
+    },
+    {
+      "name": "first_error_wins",
+      "partial": {
+        "http_port": 1,
+        "theme": 5
+      },
+      "public": null,
+      "error": "theme must be an object",
+      "saved": "{\"mavlink_connection\": \"udp:0.0.0.0:14550\", \"ssh_connections\": [{\"name\": \"a\", \"host\": \"h\", \"port\": 22, \"username\": \"u\", \"key_path\": \"\", \"password\": \"pw\"}], \"theme\": {\"name\": \"green\"}, \"map\": {\"base_layer\": \"esri\", \"three_d\": \"off\"}, \"map_tokens\": {\"mapbox\": \"tok\"}, \"controls\": {\"virtual_joystick\": true, \"gamepad\": true}, \"ui\": {\"scale\": 1.25, \"units\": {\"length\": \"m\"}}, \"updates\": {\"check\": true}, \"autoconnect\": {\"enabled\": true}, \"parameters\": {\"cache_defaults\": true}, \"review\": {\"sensitivity\": \"strict\"}, \"forwarding\": {\"enabled\": true, \"port\": 14551}, \"mcp\": {\"enabled\": true}}"
+    }
+  ]
+}

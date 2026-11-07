@@ -105,7 +105,10 @@ impl Credit {
             size,
         );
         let icon = Rect::from_center_size(
-            Pos2::new(pill.left() + BORDER + PAD + ICON / 2.0, pill.bottom() - disc_size() / 2.0),
+            Pos2::new(
+                pill.left() + BORDER + PAD + ICON / 2.0,
+                pill.bottom() - disc_size() / 2.0,
+            ),
             Vec2::splat(ICON),
         );
         let hit = if self.open { icon.expand(PAD) } else { pill };

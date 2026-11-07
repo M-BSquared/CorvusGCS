@@ -1,0 +1,5666 @@
+{
+ "cases": [
+  {
+   "scenario": {
+    "name": "available_calibrations",
+    "steps": [
+     {
+      "op": "available"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": [
+       "accel",
+       "accel_quick",
+       "airspeed",
+       "baro",
+       "compass",
+       "gyro",
+       "level",
+       "motor"
+      ],
+      "events": []
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "active": "",
+     "return_mode": "",
+     "tested": [],
+     "snapshot": {
+      "armed": false,
+      "mode": "",
+      "landed_state": null,
+      "autotune_state": null
+     }
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "available_ardupilot",
+    "stack": "ardupilot",
+    "mav_type": 2,
+    "steps": [
+     {
+      "op": "available"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": [
+       "accel",
+       "accel_quick",
+       "airspeed",
+       "baro",
+       "compass",
+       "gyro",
+       "level"
+      ],
+      "events": []
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "active": "",
+     "return_mode": "",
+     "tested": [],
+     "snapshot": {
+      "armed": false,
+      "mode": "",
+      "landed_state": null,
+      "autotune_state": null
+     }
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "available_generic",
+    "stack": "generic",
+    "steps": [
+     {
+      "op": "available"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": [
+       "accel",
+       "baro",
+       "gyro",
+       "level"
+      ],
+      "events": []
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "active": "",
+     "return_mode": "",
+     "tested": [],
+     "snapshot": {
+      "armed": false,
+      "mode": "",
+      "landed_state": null,
+      "autotune_state": null
+     }
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "calibrate_every_sensor_px4",
+    "steps": [
+     {
+      "op": "calibrate",
+      "sensor": "gyro"
+     },
+     {
+      "op": "calibrate",
+      "sensor": "compass"
+     },
+     {
+      "op": "calibrate",
+      "sensor": "baro"
+     },
+     {
+      "op": "calibrate",
+      "sensor": "accel"
+     },
+     {
+      "op": "calibrate",
+      "sensor": "level"
+     },
+     {
+      "op": "calibrate",
+      "sensor": "accel_quick"
+     },
+     {
+      "op": "calibrate",
+      "sensor": "airspeed"
+     },
+     {
+      "op": "calibrate",
+      "sensor": "motor"
+     },
+     {
+      "op": "calibrate",
+      "sensor": "bogus"
+     },
+     {
+      "op": "calibrate",
+      "sensor": ""
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        241,
+        [
+         1.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0
+        ],
+        5.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "console",
+        "CALIBRATE",
+        "gyro calibration started",
+        "success"
+       ]
+      ]
+     },
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        241,
+        [
+         0.0,
+         1.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0
+        ],
+        5.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "console",
+        "CALIBRATE",
+        "compass calibration started",
+        "success"
+       ]
+      ]
+     },
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        241,
+        [
+         0.0,
+         0.0,
+         1.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0
+        ],
+        5.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "console",
+        "CALIBRATE",
+        "baro calibration started",
+        "success"
+       ]
+      ]
+     },
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        241,
+        [
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         1.0,
+         0.0,
+         0.0
+        ],
+        5.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "console",
+        "CALIBRATE",
+        "accel calibration started",
+        "success"
+       ]
+      ]
+     },
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        241,
+        [
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         2.0,
+         0.0,
+         0.0
+        ],
+        5.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "console",
+        "CALIBRATE",
+        "level calibration started",
+        "success"
+       ]
+      ]
+     },
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        241,
+        [
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         4.0,
+         0.0,
+         0.0
+        ],
+        5.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "console",
+        "CALIBRATE",
+        "accel_quick calibration started",
+        "success"
+       ]
+      ]
+     },
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        241,
+        [
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         1.0,
+         0.0
+        ],
+        5.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "console",
+        "CALIBRATE",
+        "airspeed calibration started",
+        "success"
+       ]
+      ]
+     },
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        241,
+        [
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         1.0
+        ],
+        5.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "console",
+        "CALIBRATE",
+        "motor calibration started",
+        "success"
+       ]
+      ]
+     },
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        "unknown calibration: bogus"
+       ]
+      ]
+     },
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        "unknown calibration: "
+       ]
+      ]
+     }
+    ],
+    "final": {
+     "last_error": "unknown calibration: ",
+     "active": "motor",
+     "return_mode": "",
+     "tested": [],
+     "snapshot": {
+      "armed": false,
+      "mode": "",
+      "landed_state": null,
+      "autotune_state": null
+     }
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "calibrate_every_sensor_ardupilot",
+    "stack": "ardupilot",
+    "mav_type": 2,
+    "steps": [
+     {
+      "op": "calibrate",
+      "sensor": "gyro"
+     },
+     {
+      "op": "calibrate",
+      "sensor": "compass"
+     },
+     {
+      "op": "calibrate",
+      "sensor": "baro"
+     },
+     {
+      "op": "calibrate",
+      "sensor": "accel"
+     },
+     {
+      "op": "calibrate",
+      "sensor": "level"
+     },
+     {
+      "op": "calibrate",
+      "sensor": "accel_quick"
+     },
+     {
+      "op": "calibrate",
+      "sensor": "airspeed"
+     },
+     {
+      "op": "calibrate",
+      "sensor": "motor"
+     },
+     {
+      "op": "calibrate",
+      "sensor": "bogus"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        241,
+        [
+         1.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0
+        ],
+        5.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "console",
+        "CALIBRATE",
+        "gyro calibration started",
+        "success"
+       ]
+      ]
+     },
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        42424,
+        [
+         0.0,
+         0.0,
+         1.0,
+         0.0,
+         0.0,
+         "nan",
+         "nan"
+        ],
+        5.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "console",
+        "CALIBRATE",
+        "compass calibration started",
+        "success"
+       ]
+      ]
+     },
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        241,
+        [
+         0.0,
+         0.0,
+         1.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0
+        ],
+        5.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "console",
+        "CALIBRATE",
+        "baro calibration started",
+        "success"
+       ]
+      ]
+     },
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        241,
+        [
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         1.0,
+         0.0,
+         0.0
+        ],
+        5.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "console",
+        "CALIBRATE",
+        "accel calibration started",
+        "success"
+       ]
+      ]
+     },
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        241,
+        [
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         2.0,
+         0.0,
+         0.0
+        ],
+        5.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "console",
+        "CALIBRATE",
+        "level calibration started",
+        "success"
+       ]
+      ]
+     },
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        241,
+        [
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         4.0,
+         0.0,
+         0.0
+        ],
+        5.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "console",
+        "CALIBRATE",
+        "accel_quick calibration started",
+        "success"
+       ]
+      ]
+     },
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        241,
+        [
+         0.0,
+         0.0,
+         1.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0
+        ],
+        5.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "console",
+        "CALIBRATE",
+        "airspeed calibration started",
+        "success"
+       ]
+      ]
+     },
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        "ArduPilot calibrates ESCs by setting ESC_CALIBRATION to 3 and rebooting with the throttle high. It is not a MAVLink command, so Corvus will not do it behind a button"
+       ]
+      ]
+     },
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        "unknown calibration: bogus"
+       ]
+      ]
+     }
+    ],
+    "final": {
+     "last_error": "unknown calibration: bogus",
+     "active": "airspeed",
+     "return_mode": "",
+     "tested": [],
+     "snapshot": {
+      "armed": false,
+      "mode": "",
+      "landed_state": null,
+      "autotune_state": null
+     }
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "calibrate_every_sensor_generic",
+    "stack": "generic",
+    "steps": [
+     {
+      "op": "calibrate",
+      "sensor": "gyro"
+     },
+     {
+      "op": "calibrate",
+      "sensor": "compass"
+     },
+     {
+      "op": "calibrate",
+      "sensor": "baro"
+     },
+     {
+      "op": "calibrate",
+      "sensor": "accel"
+     },
+     {
+      "op": "calibrate",
+      "sensor": "motor"
+     },
+     {
+      "op": "calibrate",
+      "sensor": "bogus"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        241,
+        [
+         1.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0
+        ],
+        5.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "console",
+        "CALIBRATE",
+        "gyro calibration started",
+        "success"
+       ]
+      ]
+     },
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        "Generic has no compass calibration"
+       ]
+      ]
+     },
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        241,
+        [
+         0.0,
+         0.0,
+         1.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0
+        ],
+        5.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "console",
+        "CALIBRATE",
+        "baro calibration started",
+        "success"
+       ]
+      ]
+     },
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        241,
+        [
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         1.0,
+         0.0,
+         0.0
+        ],
+        5.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "console",
+        "CALIBRATE",
+        "accel calibration started",
+        "success"
+       ]
+      ]
+     },
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        "Generic has no motor calibration"
+       ]
+      ]
+     },
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        "unknown calibration: bogus"
+       ]
+      ]
+     }
+    ],
+    "final": {
+     "last_error": "unknown calibration: bogus",
+     "active": "accel",
+     "return_mode": "",
+     "tested": [],
+     "snapshot": {
+      "armed": false,
+      "mode": "",
+      "landed_state": null,
+      "autotune_state": null
+     }
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "calibrate_armed",
+    "snapshot": {
+     "armed": true
+    },
+    "steps": [
+     {
+      "op": "calibrate",
+      "sensor": "gyro"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        "cannot calibrate while armed"
+       ]
+      ]
+     }
+    ],
+    "final": {
+     "last_error": "cannot calibrate while armed",
+     "active": "",
+     "return_mode": "",
+     "tested": [],
+     "snapshot": {
+      "armed": true,
+      "mode": "",
+      "landed_state": null,
+      "autotune_state": null
+     }
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "calibrate_not_ready",
+    "ready": false,
+    "steps": [
+     {
+      "op": "calibrate",
+      "sensor": "gyro"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "failure",
+        "Calibrate gyro",
+        -2
+       ]
+      ]
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "active": "",
+     "return_mode": "",
+     "tested": [],
+     "snapshot": {
+      "armed": false,
+      "mode": "",
+      "landed_state": null,
+      "autotune_state": null
+     }
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "calibrate_refused",
+    "results": {
+     "241": 4
+    },
+    "steps": [
+     {
+      "op": "calibrate",
+      "sensor": "gyro"
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        241,
+        [
+         1.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0
+        ],
+        5.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "failure",
+        "Calibrate gyro",
+        4
+       ]
+      ]
+     },
+     {
+      "result": {
+       "active": "",
+       "return_mode": "",
+       "tested": []
+      },
+      "events": []
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "active": "",
+     "return_mode": "",
+     "tested": [],
+     "snapshot": {
+      "armed": false,
+      "mode": "",
+      "landed_state": null,
+      "autotune_state": null
+     }
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "cancel_px4",
+    "steps": [
+     {
+      "op": "calibrate",
+      "sensor": "gyro"
+     },
+     {
+      "op": "cancel"
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        241,
+        [
+         1.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0
+        ],
+        5.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "console",
+        "CALIBRATE",
+        "gyro calibration started",
+        "success"
+       ]
+      ]
+     },
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        241,
+        [
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0
+        ],
+        5.0,
+        0,
+        false,
+        [
+         1
+        ]
+       ],
+       [
+        "console",
+        "CALIBRATE",
+        "calibration cancelled",
+        "warning"
+       ]
+      ]
+     },
+     {
+      "result": {
+       "active": "",
+       "return_mode": "",
+       "tested": []
+      },
+      "events": []
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "active": "",
+     "return_mode": "",
+     "tested": [],
+     "snapshot": {
+      "armed": false,
+      "mode": "",
+      "landed_state": null,
+      "autotune_state": null
+     }
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "cancel_ardupilot_compass",
+    "stack": "ardupilot",
+    "mav_type": 2,
+    "steps": [
+     {
+      "op": "calibrate",
+      "sensor": "compass"
+     },
+     {
+      "op": "cancel"
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        42424,
+        [
+         0.0,
+         0.0,
+         1.0,
+         0.0,
+         0.0,
+         "nan",
+         "nan"
+        ],
+        5.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "console",
+        "CALIBRATE",
+        "compass calibration started",
+        "success"
+       ]
+      ]
+     },
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        42426,
+        [
+         0.0,
+         0.0,
+         0.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        5.0,
+        0,
+        false,
+        [
+         1
+        ]
+       ],
+       [
+        "console",
+        "CALIBRATE",
+        "calibration cancelled",
+        "warning"
+       ]
+      ]
+     },
+     {
+      "result": {
+       "active": "",
+       "return_mode": "",
+       "tested": []
+      },
+      "events": []
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "active": "",
+     "return_mode": "",
+     "tested": [],
+     "snapshot": {
+      "armed": false,
+      "mode": "",
+      "landed_state": null,
+      "autotune_state": null
+     }
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "cancel_ardupilot_other",
+    "stack": "ardupilot",
+    "mav_type": 2,
+    "steps": [
+     {
+      "op": "calibrate",
+      "sensor": "gyro"
+     },
+     {
+      "op": "cancel"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        241,
+        [
+         1.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0
+        ],
+        5.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "console",
+        "CALIBRATE",
+        "gyro calibration started",
+        "success"
+       ]
+      ]
+     },
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        241,
+        [
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0
+        ],
+        5.0,
+        0,
+        false,
+        [
+         1
+        ]
+       ],
+       [
+        "console",
+        "CALIBRATE",
+        "calibration cancelled",
+        "warning"
+       ]
+      ]
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "active": "",
+     "return_mode": "",
+     "tested": [],
+     "snapshot": {
+      "armed": false,
+      "mode": "",
+      "landed_state": null,
+      "autotune_state": null
+     }
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "cancel_nothing_running",
+    "steps": [
+     {
+      "op": "cancel"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        241,
+        [
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0
+        ],
+        5.0,
+        0,
+        false,
+        [
+         1
+        ]
+       ],
+       [
+        "console",
+        "CALIBRATE",
+        "calibration cancelled",
+        "warning"
+       ]
+      ]
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "active": "",
+     "return_mode": "",
+     "tested": [],
+     "snapshot": {
+      "armed": false,
+      "mode": "",
+      "landed_state": null,
+      "autotune_state": null
+     }
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "cancel_refused_keeps_calibration",
+    "results": {
+     "241": [
+      0,
+      4
+     ]
+    },
+    "steps": [
+     {
+      "op": "calibrate",
+      "sensor": "gyro"
+     },
+     {
+      "op": "cancel"
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        241,
+        [
+         1.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0
+        ],
+        5.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "console",
+        "CALIBRATE",
+        "gyro calibration started",
+        "success"
+       ]
+      ]
+     },
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        241,
+        [
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0
+        ],
+        5.0,
+        0,
+        false,
+        [
+         1
+        ]
+       ],
+       [
+        "failure",
+        "Cancel calibration",
+        4
+       ]
+      ]
+     },
+     {
+      "result": {
+       "active": "gyro",
+       "return_mode": "",
+       "tested": []
+      },
+      "events": []
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "active": "gyro",
+     "return_mode": "",
+     "tested": [],
+     "snapshot": {
+      "armed": false,
+      "mode": "",
+      "landed_state": null,
+      "autotune_state": null
+     }
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "cancel_not_ready",
+    "ready": false,
+    "steps": [
+     {
+      "op": "cancel"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "failure",
+        "Cancel calibration",
+        -2
+       ]
+      ]
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "active": "",
+     "return_mode": "",
+     "tested": [],
+     "snapshot": {
+      "armed": false,
+      "mode": "",
+      "landed_state": null,
+      "autotune_state": null
+     }
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "cancel_armed_is_fine",
+    "snapshot": {
+     "armed": true
+    },
+    "steps": [
+     {
+      "op": "cancel"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        241,
+        [
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0
+        ],
+        5.0,
+        0,
+        false,
+        [
+         1
+        ]
+       ],
+       [
+        "console",
+        "CALIBRATE",
+        "calibration cancelled",
+        "warning"
+       ]
+      ]
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "active": "",
+     "return_mode": "",
+     "tested": [],
+     "snapshot": {
+      "armed": true,
+      "mode": "",
+      "landed_state": null,
+      "autotune_state": null
+     }
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "accel_position_px4",
+    "steps": [
+     {
+      "op": "accel_position",
+      "position": "level"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        "PX4 detects each calibration position on its own. There is nothing for the ground station to confirm"
+       ]
+      ]
+     }
+    ],
+    "final": {
+     "last_error": "PX4 detects each calibration position on its own. There is nothing for the ground station to confirm",
+     "active": "",
+     "return_mode": "",
+     "tested": [],
+     "snapshot": {
+      "armed": false,
+      "mode": "",
+      "landed_state": null,
+      "autotune_state": null
+     }
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "accel_position_ardupilot",
+    "stack": "ardupilot",
+    "mav_type": 2,
+    "steps": [
+     {
+      "op": "accel_position",
+      "position": "level"
+     },
+     {
+      "op": "accel_position",
+      "position": "LEFT"
+     },
+     {
+      "op": "accel_position",
+      "position": "nosedown"
+     },
+     {
+      "op": "accel_position",
+      "position": "noseup"
+     },
+     {
+      "op": "accel_position",
+      "position": "back"
+     },
+     {
+      "op": "accel_position",
+      "position": "right"
+     },
+     {
+      "op": "accel_position",
+      "position": "bogus"
+     },
+     {
+      "op": "accel_position",
+      "position": ""
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        42429,
+        [
+         1.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0
+        ],
+        5.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "console",
+        "CALIBRATE",
+        "position confirmed: level",
+        "info"
+       ]
+      ]
+     },
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        42429,
+        [
+         2.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0
+        ],
+        5.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "console",
+        "CALIBRATE",
+        "position confirmed: LEFT",
+        "info"
+       ]
+      ]
+     },
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        42429,
+        [
+         4.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0
+        ],
+        5.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "console",
+        "CALIBRATE",
+        "position confirmed: nosedown",
+        "info"
+       ]
+      ]
+     },
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        42429,
+        [
+         5.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0
+        ],
+        5.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "console",
+        "CALIBRATE",
+        "position confirmed: noseup",
+        "info"
+       ]
+      ]
+     },
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        42429,
+        [
+         6.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0
+        ],
+        5.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "console",
+        "CALIBRATE",
+        "position confirmed: back",
+        "info"
+       ]
+      ]
+     },
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        42429,
+        [
+         3.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0
+        ],
+        5.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "console",
+        "CALIBRATE",
+        "position confirmed: right",
+        "info"
+       ]
+      ]
+     },
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        "unknown calibration position: bogus"
+       ]
+      ]
+     },
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        "unknown calibration position: "
+       ]
+      ]
+     }
+    ],
+    "final": {
+     "last_error": "unknown calibration position: ",
+     "active": "",
+     "return_mode": "",
+     "tested": [],
+     "snapshot": {
+      "armed": false,
+      "mode": "",
+      "landed_state": null,
+      "autotune_state": null
+     }
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "accel_position_not_ready",
+    "stack": "ardupilot",
+    "mav_type": 2,
+    "ready": false,
+    "steps": [
+     {
+      "op": "accel_position",
+      "position": "level"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "failure",
+        "Calibration position",
+        -2
+       ]
+      ]
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "active": "",
+     "return_mode": "",
+     "tested": [],
+     "snapshot": {
+      "armed": false,
+      "mode": "",
+      "landed_state": null,
+      "autotune_state": null
+     }
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "accel_position_refused",
+    "stack": "ardupilot",
+    "mav_type": 2,
+    "results": {
+     "42429": 4
+    },
+    "steps": [
+     {
+      "op": "accel_position",
+      "position": "level"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        42429,
+        [
+         1.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0
+        ],
+        5.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "failure",
+        "Calibration position",
+        4
+       ]
+      ]
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "active": "",
+     "return_mode": "",
+     "tested": [],
+     "snapshot": {
+      "armed": false,
+      "mode": "",
+      "landed_state": null,
+      "autotune_state": null
+     }
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "motor_test_px4",
+    "steps": [
+     {
+      "op": "motor_test",
+      "motor": 1,
+      "throttle": 50.0,
+      "duration": 2.0
+     },
+     {
+      "op": "motor_test",
+      "motor": 12,
+      "throttle": 12.5,
+      "duration": 0.5
+     },
+     {
+      "op": "motor_test",
+      "motor": 1,
+      "throttle": 100.0,
+      "duration": 3.5
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        310,
+        [
+         0.5,
+         2.0,
+         0.0,
+         0.0,
+         1.0,
+         0.0,
+         0.0
+        ],
+        5.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "console",
+        "MOTOR",
+        "motor 1 test at 50% for 2s",
+        "warning"
+       ]
+      ]
+     },
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        310,
+        [
+         0.125,
+         0.5,
+         0.0,
+         0.0,
+         12.0,
+         0.0,
+         0.0
+        ],
+        5.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "console",
+        "MOTOR",
+        "motor 12 test at 12.5% for 0.5s",
+        "warning"
+       ]
+      ]
+     },
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        310,
+        [
+         1.0,
+         3.5,
+         0.0,
+         0.0,
+         1.0,
+         0.0,
+         0.0
+        ],
+        5.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "console",
+        "MOTOR",
+        "motor 1 test at 100% for 3.5s",
+        "warning"
+       ]
+      ]
+     },
+     {
+      "result": {
+       "active": "",
+       "return_mode": "",
+       "tested": [
+        12,
+        1
+       ]
+      },
+      "events": []
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "active": "",
+     "return_mode": "",
+     "tested": [
+      12,
+      1
+     ],
+     "snapshot": {
+      "armed": false,
+      "mode": "",
+      "landed_state": null,
+      "autotune_state": null
+     }
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "motor_test_ardupilot",
+    "stack": "ardupilot",
+    "mav_type": 2,
+    "steps": [
+     {
+      "op": "motor_test",
+      "motor": 3,
+      "throttle": 20.0,
+      "duration": 1.0
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        209,
+        [
+         3.0,
+         0.0,
+         20.0,
+         1.0,
+         0.0,
+         0.0,
+         0.0
+        ],
+        5.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "console",
+        "MOTOR",
+        "motor 3 test at 20% for 1s",
+        "warning"
+       ]
+      ]
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "active": "",
+     "return_mode": "",
+     "tested": [
+      3
+     ],
+     "snapshot": {
+      "armed": false,
+      "mode": "",
+      "landed_state": null,
+      "autotune_state": null
+     }
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "motor_test_generic",
+    "stack": "generic",
+    "steps": [
+     {
+      "op": "motor_test",
+      "motor": 3,
+      "throttle": 20.0,
+      "duration": 1.0
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        209,
+        [
+         3.0,
+         0.0,
+         20.0,
+         1.0,
+         0.0,
+         0.0,
+         0.0
+        ],
+        5.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "console",
+        "MOTOR",
+        "motor 3 test at 20% for 1s",
+        "warning"
+       ]
+      ]
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "active": "",
+     "return_mode": "",
+     "tested": [
+      3
+     ],
+     "snapshot": {
+      "armed": false,
+      "mode": "",
+      "landed_state": null,
+      "autotune_state": null
+     }
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "motor_test_checks",
+    "steps": [
+     {
+      "op": "motor_test",
+      "motor": 0,
+      "throttle": 10.0,
+      "duration": 1.0
+     },
+     {
+      "op": "motor_test",
+      "motor": 17,
+      "throttle": 10.0,
+      "duration": 1.0
+     },
+     {
+      "op": "motor_test",
+      "motor": 1,
+      "throttle": 101.0,
+      "duration": 1.0
+     },
+     {
+      "op": "motor_test",
+      "motor": 1,
+      "throttle": -1.0,
+      "duration": 1.0
+     },
+     {
+      "op": "motor_test",
+      "motor": 1,
+      "throttle": "nan",
+      "duration": 1.0
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        "motor must be between 1 and 16"
+       ]
+      ]
+     },
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        "motor must be between 1 and 16"
+       ]
+      ]
+     },
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        "throttle must be between 0 and 100 percent"
+       ]
+      ]
+     },
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        "throttle must be between 0 and 100 percent"
+       ]
+      ]
+     },
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        "throttle must be between 0 and 100 percent"
+       ]
+      ]
+     }
+    ],
+    "final": {
+     "last_error": "throttle must be between 0 and 100 percent",
+     "active": "",
+     "return_mode": "",
+     "tested": [],
+     "snapshot": {
+      "armed": false,
+      "mode": "",
+      "landed_state": null,
+      "autotune_state": null
+     }
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "motor_test_duration_is_bounded",
+    "steps": [
+     {
+      "op": "motor_test",
+      "motor": 1,
+      "throttle": 10.0,
+      "duration": 99.0
+     },
+     {
+      "op": "motor_test",
+      "motor": 2,
+      "throttle": 10.0,
+      "duration": -4.0
+     },
+     {
+      "op": "motor_test",
+      "motor": 3,
+      "throttle": 10.0,
+      "duration": "nan"
+     },
+     {
+      "op": "motor_test",
+      "motor": 4,
+      "throttle": 1.234e-05,
+      "duration": 0.0001
+     },
+     {
+      "op": "motor_test",
+      "motor": 5,
+      "throttle": 100.0,
+      "duration": "inf"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        310,
+        [
+         0.1,
+         10.0,
+         0.0,
+         0.0,
+         1.0,
+         0.0,
+         0.0
+        ],
+        5.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "console",
+        "MOTOR",
+        "motor 1 test at 10% for 10s",
+        "warning"
+       ]
+      ]
+     },
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        310,
+        [
+         0.1,
+         0.0,
+         0.0,
+         0.0,
+         2.0,
+         0.0,
+         0.0
+        ],
+        5.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "console",
+        "MOTOR",
+        "motor 2 test at 10% for 0s",
+        "warning"
+       ]
+      ]
+     },
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        310,
+        [
+         0.1,
+         10.0,
+         0.0,
+         0.0,
+         3.0,
+         0.0,
+         0.0
+        ],
+        5.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "console",
+        "MOTOR",
+        "motor 3 test at 10% for 10s",
+        "warning"
+       ]
+      ]
+     },
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        310,
+        [
+         1.234e-07,
+         0.0001,
+         0.0,
+         0.0,
+         4.0,
+         0.0,
+         0.0
+        ],
+        5.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "console",
+        "MOTOR",
+        "motor 4 test at 1.234e-05% for 0.0001s",
+        "warning"
+       ]
+      ]
+     },
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        310,
+        [
+         1.0,
+         10.0,
+         0.0,
+         0.0,
+         5.0,
+         0.0,
+         0.0
+        ],
+        5.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "console",
+        "MOTOR",
+        "motor 5 test at 100% for 10s",
+        "warning"
+       ]
+      ]
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "active": "",
+     "return_mode": "",
+     "tested": [
+      1,
+      2,
+      3,
+      4,
+      5
+     ],
+     "snapshot": {
+      "armed": false,
+      "mode": "",
+      "landed_state": null,
+      "autotune_state": null
+     }
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "motor_test_armed",
+    "snapshot": {
+     "armed": true
+    },
+    "steps": [
+     {
+      "op": "motor_test",
+      "motor": 1,
+      "throttle": 10.0,
+      "duration": 1.0
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        "cannot test motors while armed"
+       ]
+      ]
+     }
+    ],
+    "final": {
+     "last_error": "cannot test motors while armed",
+     "active": "",
+     "return_mode": "",
+     "tested": [],
+     "snapshot": {
+      "armed": true,
+      "mode": "",
+      "landed_state": null,
+      "autotune_state": null
+     }
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "motor_test_not_ready",
+    "ready": false,
+    "steps": [
+     {
+      "op": "motor_test",
+      "motor": 1,
+      "throttle": 10.0,
+      "duration": 1.0
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "failure",
+        "Motor test 1",
+        -2
+       ]
+      ]
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "active": "",
+     "return_mode": "",
+     "tested": [],
+     "snapshot": {
+      "armed": false,
+      "mode": "",
+      "landed_state": null,
+      "autotune_state": null
+     }
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "motor_test_refused",
+    "results": {
+     "310": 2
+    },
+    "steps": [
+     {
+      "op": "motor_test",
+      "motor": 1,
+      "throttle": 10.0,
+      "duration": 1.0
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        310,
+        [
+         0.1,
+         1.0,
+         0.0,
+         0.0,
+         1.0,
+         0.0,
+         0.0
+        ],
+        5.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "failure",
+        "Motor test 1",
+        2
+       ]
+      ]
+     },
+     {
+      "result": {
+       "active": "",
+       "return_mode": "",
+       "tested": []
+      },
+      "events": []
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "active": "",
+     "return_mode": "",
+     "tested": [],
+     "snapshot": {
+      "armed": false,
+      "mode": "",
+      "landed_state": null,
+      "autotune_state": null
+     }
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "motor_stop_order",
+    "steps": [
+     {
+      "op": "motor_test",
+      "motor": 3,
+      "throttle": 10.0,
+      "duration": 1.0
+     },
+     {
+      "op": "motor_test",
+      "motor": 12,
+      "throttle": 10.0,
+      "duration": 1.0
+     },
+     {
+      "op": "stop_motor"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        310,
+        [
+         0.1,
+         1.0,
+         0.0,
+         0.0,
+         3.0,
+         0.0,
+         0.0
+        ],
+        5.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "console",
+        "MOTOR",
+        "motor 3 test at 10% for 1s",
+        "warning"
+       ]
+      ]
+     },
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        310,
+        [
+         0.1,
+         1.0,
+         0.0,
+         0.0,
+         12.0,
+         0.0,
+         0.0
+        ],
+        5.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "console",
+        "MOTOR",
+        "motor 12 test at 10% for 1s",
+        "warning"
+       ]
+      ]
+     },
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        310,
+        [
+         "nan",
+         0.0,
+         0.0,
+         0.0,
+         12.0,
+         0.0,
+         0.0
+        ],
+        2.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "cmd",
+        310,
+        [
+         "nan",
+         0.0,
+         0.0,
+         0.0,
+         3.0,
+         0.0,
+         0.0
+        ],
+        2.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "cmd",
+        310,
+        [
+         "nan",
+         0.0,
+         0.0,
+         0.0,
+         1.0,
+         0.0,
+         0.0
+        ],
+        2.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "cmd",
+        310,
+        [
+         "nan",
+         0.0,
+         0.0,
+         0.0,
+         2.0,
+         0.0,
+         0.0
+        ],
+        2.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "cmd",
+        310,
+        [
+         "nan",
+         0.0,
+         0.0,
+         0.0,
+         4.0,
+         0.0,
+         0.0
+        ],
+        2.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "cmd",
+        310,
+        [
+         "nan",
+         0.0,
+         0.0,
+         0.0,
+         5.0,
+         0.0,
+         0.0
+        ],
+        2.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "cmd",
+        310,
+        [
+         "nan",
+         0.0,
+         0.0,
+         0.0,
+         6.0,
+         0.0,
+         0.0
+        ],
+        2.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "cmd",
+        310,
+        [
+         "nan",
+         0.0,
+         0.0,
+         0.0,
+         7.0,
+         0.0,
+         0.0
+        ],
+        2.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "cmd",
+        310,
+        [
+         "nan",
+         0.0,
+         0.0,
+         0.0,
+         8.0,
+         0.0,
+         0.0
+        ],
+        2.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "console",
+        "MOTOR",
+        "motor test stopped",
+        "warning"
+       ]
+      ]
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "active": "",
+     "return_mode": "",
+     "tested": [
+      3,
+      12
+     ],
+     "snapshot": {
+      "armed": false,
+      "mode": "",
+      "landed_state": null,
+      "autotune_state": null
+     }
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "motor_stop_unconfirmed",
+    "results": {
+     "310": [
+      0,
+      4,
+      0,
+      2
+     ]
+    },
+    "steps": [
+     {
+      "op": "stop_motor"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        310,
+        [
+         "nan",
+         0.0,
+         0.0,
+         0.0,
+         1.0,
+         0.0,
+         0.0
+        ],
+        2.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "cmd",
+        310,
+        [
+         "nan",
+         0.0,
+         0.0,
+         0.0,
+         2.0,
+         0.0,
+         0.0
+        ],
+        2.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "cmd",
+        310,
+        [
+         "nan",
+         0.0,
+         0.0,
+         0.0,
+         3.0,
+         0.0,
+         0.0
+        ],
+        2.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "cmd",
+        310,
+        [
+         "nan",
+         0.0,
+         0.0,
+         0.0,
+         4.0,
+         0.0,
+         0.0
+        ],
+        2.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "cmd",
+        310,
+        [
+         "nan",
+         0.0,
+         0.0,
+         0.0,
+         5.0,
+         0.0,
+         0.0
+        ],
+        2.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "cmd",
+        310,
+        [
+         "nan",
+         0.0,
+         0.0,
+         0.0,
+         6.0,
+         0.0,
+         0.0
+        ],
+        2.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "cmd",
+        310,
+        [
+         "nan",
+         0.0,
+         0.0,
+         0.0,
+         7.0,
+         0.0,
+         0.0
+        ],
+        2.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "cmd",
+        310,
+        [
+         "nan",
+         0.0,
+         0.0,
+         0.0,
+         8.0,
+         0.0,
+         0.0
+        ],
+        2.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "error",
+        "motor stop not confirmed for every motor"
+       ],
+       [
+        "console",
+        "MOTOR",
+        "motor test stopped",
+        "warning"
+       ]
+      ]
+     }
+    ],
+    "final": {
+     "last_error": "motor stop not confirmed for every motor",
+     "active": "",
+     "return_mode": "",
+     "tested": [],
+     "snapshot": {
+      "armed": false,
+      "mode": "",
+      "landed_state": null,
+      "autotune_state": null
+     }
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "motor_stop_ardupilot",
+    "stack": "ardupilot",
+    "mav_type": 2,
+    "steps": [
+     {
+      "op": "stop_motor"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        209,
+        [
+         1.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0
+        ],
+        2.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "cmd",
+        209,
+        [
+         2.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0
+        ],
+        2.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "cmd",
+        209,
+        [
+         3.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0
+        ],
+        2.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "cmd",
+        209,
+        [
+         4.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0
+        ],
+        2.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "cmd",
+        209,
+        [
+         5.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0
+        ],
+        2.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "cmd",
+        209,
+        [
+         6.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0
+        ],
+        2.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "cmd",
+        209,
+        [
+         7.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0
+        ],
+        2.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "cmd",
+        209,
+        [
+         8.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0
+        ],
+        2.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "console",
+        "MOTOR",
+        "motor test stopped",
+        "warning"
+       ]
+      ]
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "active": "",
+     "return_mode": "",
+     "tested": [],
+     "snapshot": {
+      "armed": false,
+      "mode": "",
+      "landed_state": null,
+      "autotune_state": null
+     }
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "motor_stop_not_ready",
+    "ready": false,
+    "steps": [
+     {
+      "op": "stop_motor"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "failure",
+        "Stop motor test",
+        -2
+       ]
+      ]
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "active": "",
+     "return_mode": "",
+     "tested": [],
+     "snapshot": {
+      "armed": false,
+      "mode": "",
+      "landed_state": null,
+      "autotune_state": null
+     }
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "motor_stop_armed_is_fine",
+    "snapshot": {
+     "armed": true
+    },
+    "steps": [
+     {
+      "op": "stop_motor"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        310,
+        [
+         "nan",
+         0.0,
+         0.0,
+         0.0,
+         1.0,
+         0.0,
+         0.0
+        ],
+        2.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "cmd",
+        310,
+        [
+         "nan",
+         0.0,
+         0.0,
+         0.0,
+         2.0,
+         0.0,
+         0.0
+        ],
+        2.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "cmd",
+        310,
+        [
+         "nan",
+         0.0,
+         0.0,
+         0.0,
+         3.0,
+         0.0,
+         0.0
+        ],
+        2.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "cmd",
+        310,
+        [
+         "nan",
+         0.0,
+         0.0,
+         0.0,
+         4.0,
+         0.0,
+         0.0
+        ],
+        2.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "cmd",
+        310,
+        [
+         "nan",
+         0.0,
+         0.0,
+         0.0,
+         5.0,
+         0.0,
+         0.0
+        ],
+        2.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "cmd",
+        310,
+        [
+         "nan",
+         0.0,
+         0.0,
+         0.0,
+         6.0,
+         0.0,
+         0.0
+        ],
+        2.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "cmd",
+        310,
+        [
+         "nan",
+         0.0,
+         0.0,
+         0.0,
+         7.0,
+         0.0,
+         0.0
+        ],
+        2.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "cmd",
+        310,
+        [
+         "nan",
+         0.0,
+         0.0,
+         0.0,
+         8.0,
+         0.0,
+         0.0
+        ],
+        2.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "console",
+        "MOTOR",
+        "motor test stopped",
+        "warning"
+       ]
+      ]
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "active": "",
+     "return_mode": "",
+     "tested": [],
+     "snapshot": {
+      "armed": true,
+      "mode": "",
+      "landed_state": null,
+      "autotune_state": null
+     }
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "autotune_px4_start_stop",
+    "snapshot": {
+     "armed": true,
+     "landed_state": 2,
+     "mode": "LOITER"
+    },
+    "results": {
+     "212": [
+      0,
+      5,
+      0
+     ]
+    },
+    "steps": [
+     {
+      "op": "autotune",
+      "axis": "all",
+      "enable": true
+     },
+     {
+      "op": "autotune",
+      "axis": "all",
+      "enable": true
+     },
+     {
+      "op": "autotune",
+      "axis": "all",
+      "enable": false
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        212,
+        [
+         1.0,
+         0.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        5.0,
+        0,
+        true,
+        []
+       ],
+       [
+        "update",
+        {
+         "autotune_state": "running",
+         "autotune_progress": 0
+        }
+       ],
+       [
+        "console",
+        "AUTOTUNE",
+        "Autotune started",
+        "success"
+       ]
+      ]
+     },
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        212,
+        [
+         1.0,
+         0.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        5.0,
+        0,
+        true,
+        []
+       ],
+       [
+        "update",
+        {
+         "autotune_state": "running",
+         "autotune_progress": 0
+        }
+       ],
+       [
+        "console",
+        "AUTOTUNE",
+        "Autotune started",
+        "success"
+       ]
+      ]
+     },
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        212,
+        [
+         0.0,
+         0.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        5.0,
+        0,
+        true,
+        []
+       ],
+       [
+        "update",
+        {
+         "autotune_state": "",
+         "autotune_progress": 0
+        }
+       ],
+       [
+        "console",
+        "AUTOTUNE",
+        "Autotune stopped",
+        "warning"
+       ]
+      ]
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "active": "",
+     "return_mode": "",
+     "tested": [],
+     "snapshot": {
+      "armed": true,
+      "mode": "LOITER",
+      "landed_state": 2,
+      "autotune_state": "",
+      "autotune_progress": 0
+     }
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "autotune_px4_axis",
+    "snapshot": {
+     "armed": true,
+     "landed_state": 2,
+     "mode": "LOITER"
+    },
+    "steps": [
+     {
+      "op": "autotune",
+      "axis": "roll",
+      "enable": true
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        "unknown autotune axis: roll"
+       ]
+      ]
+     }
+    ],
+    "final": {
+     "last_error": "unknown autotune axis: roll",
+     "active": "",
+     "return_mode": "",
+     "tested": [],
+     "snapshot": {
+      "armed": true,
+      "mode": "LOITER",
+      "landed_state": 2,
+      "autotune_state": null
+     }
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "autotune_px4_preconditions",
+    "steps": [
+     {
+      "op": "autotune",
+      "axis": "all",
+      "enable": true
+     },
+     {
+      "op": "set_snapshot",
+      "snapshot": {
+       "armed": true,
+       "landed_state": 1
+      }
+     },
+     {
+      "op": "autotune",
+      "axis": "all",
+      "enable": true
+     },
+     {
+      "op": "set_snapshot",
+      "snapshot": {
+       "armed": true,
+       "landed_state": 0
+      }
+     },
+     {
+      "op": "autotune",
+      "axis": "all",
+      "enable": true
+     },
+     {
+      "op": "set_snapshot",
+      "snapshot": {
+       "armed": true,
+       "landed_state": null
+      }
+     },
+     {
+      "op": "autotune",
+      "axis": "all",
+      "enable": true
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        "the autotune runs in flight: arm the vehicle and take off before starting it"
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        "the vehicle is still on the ground: hold a stable hover before starting the autotune"
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        212,
+        [
+         1.0,
+         0.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        5.0,
+        0,
+        true,
+        []
+       ],
+       [
+        "update",
+        {
+         "autotune_state": "running",
+         "autotune_progress": 0
+        }
+       ],
+       [
+        "console",
+        "AUTOTUNE",
+        "Autotune started",
+        "success"
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        212,
+        [
+         1.0,
+         0.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        5.0,
+        0,
+        true,
+        []
+       ],
+       [
+        "update",
+        {
+         "autotune_state": "running",
+         "autotune_progress": 0
+        }
+       ],
+       [
+        "console",
+        "AUTOTUNE",
+        "Autotune started",
+        "success"
+       ]
+      ]
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "active": "",
+     "return_mode": "",
+     "tested": [],
+     "snapshot": {
+      "armed": true,
+      "mode": "",
+      "landed_state": null,
+      "autotune_state": "running",
+      "autotune_progress": 0
+     }
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "autotune_px4_stop_needs_nothing",
+    "steps": [
+     {
+      "op": "autotune",
+      "axis": "all",
+      "enable": false
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        212,
+        [
+         0.0,
+         0.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        5.0,
+        0,
+        true,
+        []
+       ],
+       [
+        "update",
+        {
+         "autotune_state": "",
+         "autotune_progress": 0
+        }
+       ],
+       [
+        "console",
+        "AUTOTUNE",
+        "Autotune stopped",
+        "warning"
+       ]
+      ]
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "active": "",
+     "return_mode": "",
+     "tested": [],
+     "snapshot": {
+      "armed": false,
+      "mode": "",
+      "landed_state": null,
+      "autotune_state": "",
+      "autotune_progress": 0
+     }
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "autotune_px4_refused",
+    "snapshot": {
+     "armed": true,
+     "landed_state": 2,
+     "mode": "LOITER"
+    },
+    "results": {
+     "212": 1
+    },
+    "steps": [
+     {
+      "op": "autotune",
+      "axis": "all",
+      "enable": true
+     },
+     {
+      "op": "autotune",
+      "axis": "all",
+      "enable": false
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        212,
+        [
+         1.0,
+         0.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        5.0,
+        0,
+        true,
+        []
+       ],
+       [
+        "update",
+        {
+         "autotune_state": "failed",
+         "autotune_progress": 0
+        }
+       ],
+       [
+        "failure",
+        "Autotune all",
+        1
+       ]
+      ]
+     },
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        212,
+        [
+         0.0,
+         0.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        5.0,
+        0,
+        true,
+        []
+       ],
+       [
+        "failure",
+        "Autotune all",
+        1
+       ]
+      ]
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "active": "",
+     "return_mode": "",
+     "tested": [],
+     "snapshot": {
+      "armed": true,
+      "mode": "LOITER",
+      "landed_state": 2,
+      "autotune_state": "failed",
+      "autotune_progress": 0
+     }
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "autotune_px4_not_ready",
+    "snapshot": {
+     "armed": true,
+     "landed_state": 2,
+     "mode": "LOITER"
+    },
+    "ready": false,
+    "steps": [
+     {
+      "op": "autotune",
+      "axis": "all",
+      "enable": true
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "failure",
+        "Autotune all",
+        -2
+       ]
+      ]
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "active": "",
+     "return_mode": "",
+     "tested": [],
+     "snapshot": {
+      "armed": true,
+      "mode": "LOITER",
+      "landed_state": 2,
+      "autotune_state": null
+     }
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "autotune_generic",
+    "stack": "generic",
+    "snapshot": {
+     "armed": true,
+     "landed_state": 2,
+     "mode": "LOITER"
+    },
+    "steps": [
+     {
+      "op": "autotune",
+      "axis": "all",
+      "enable": true
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        "Corvus does not know how this autopilot runs an autotune"
+       ]
+      ]
+     }
+    ],
+    "final": {
+     "last_error": "Corvus does not know how this autopilot runs an autotune",
+     "active": "",
+     "return_mode": "",
+     "tested": [],
+     "snapshot": {
+      "armed": true,
+      "mode": "LOITER",
+      "landed_state": 2,
+      "autotune_state": null
+     }
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "autotune_ardupilot_start_stop",
+    "stack": "ardupilot",
+    "mav_type": 2,
+    "snapshot": {
+     "armed": true,
+     "landed_state": 2,
+     "mode": "LOITER"
+    },
+    "steps": [
+     {
+      "op": "autotune",
+      "axis": "all",
+      "enable": true
+     },
+     {
+      "op": "state"
+     },
+     {
+      "op": "autotune",
+      "axis": "all",
+      "enable": false
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "set_mode",
+        "AUTOTUNE"
+       ],
+       [
+        "update",
+        {
+         "autotune_state": "running",
+         "autotune_progress": 0
+        }
+       ],
+       [
+        "console",
+        "AUTOTUNE",
+        "AUTOTUNE engaged. ArduPilot narrates the tune over the console",
+        "success"
+       ]
+      ]
+     },
+     {
+      "result": {
+       "active": "",
+       "return_mode": "LOITER",
+       "tested": []
+      },
+      "events": []
+     },
+     {
+      "result": true,
+      "events": [
+       [
+        "set_mode",
+        "LOITER"
+       ],
+       [
+        "update",
+        {
+         "autotune_state": "",
+         "autotune_progress": 0
+        }
+       ],
+       [
+        "console",
+        "AUTOTUNE",
+        "Autotune left, now in LOITER",
+        "warning"
+       ]
+      ]
+     },
+     {
+      "result": {
+       "active": "",
+       "return_mode": "",
+       "tested": []
+      },
+      "events": []
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "active": "",
+     "return_mode": "",
+     "tested": [],
+     "snapshot": {
+      "armed": true,
+      "mode": "LOITER",
+      "landed_state": 2,
+      "autotune_state": "",
+      "autotune_progress": 0
+     }
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "autotune_ardupilot_already_in_mode",
+    "stack": "ardupilot",
+    "mav_type": 2,
+    "snapshot": {
+     "armed": true,
+     "landed_state": 2,
+     "mode": "AUTOTUNE"
+    },
+    "steps": [
+     {
+      "op": "autotune",
+      "axis": "all",
+      "enable": true
+     },
+     {
+      "op": "state"
+     },
+     {
+      "op": "autotune",
+      "axis": "all",
+      "enable": false
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "set_mode",
+        "AUTOTUNE"
+       ],
+       [
+        "update",
+        {
+         "autotune_state": "running",
+         "autotune_progress": 0
+        }
+       ],
+       [
+        "console",
+        "AUTOTUNE",
+        "AUTOTUNE engaged. ArduPilot narrates the tune over the console",
+        "success"
+       ]
+      ]
+     },
+     {
+      "result": {
+       "active": "",
+       "return_mode": "",
+       "tested": []
+      },
+      "events": []
+     },
+     {
+      "result": true,
+      "events": [
+       [
+        "set_mode",
+        "LOITER"
+       ],
+       [
+        "update",
+        {
+         "autotune_state": "",
+         "autotune_progress": 0
+        }
+       ],
+       [
+        "console",
+        "AUTOTUNE",
+        "Autotune left, now in LOITER",
+        "warning"
+       ]
+      ]
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "active": "",
+     "return_mode": "",
+     "tested": [],
+     "snapshot": {
+      "armed": true,
+      "mode": "AUTOTUNE",
+      "landed_state": 2,
+      "autotune_state": "",
+      "autotune_progress": 0
+     }
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "autotune_ardupilot_no_airframe_mode",
+    "stack": "ardupilot",
+    "mav_type": 10,
+    "snapshot": {
+     "armed": true,
+     "landed_state": 2,
+     "mode": "LOITER"
+    },
+    "steps": [
+     {
+      "op": "autotune",
+      "axis": "all",
+      "enable": true
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        "ArduPilot has no autotune mode on this vehicle"
+       ]
+      ]
+     }
+    ],
+    "final": {
+     "last_error": "ArduPilot has no autotune mode on this vehicle",
+     "active": "",
+     "return_mode": "",
+     "tested": [],
+     "snapshot": {
+      "armed": true,
+      "mode": "LOITER",
+      "landed_state": 2,
+      "autotune_state": null
+     }
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "autotune_ardupilot_plane",
+    "stack": "ardupilot",
+    "mav_type": 1,
+    "snapshot": {
+     "armed": true,
+     "landed_state": 2,
+     "mode": "FBWA"
+    },
+    "steps": [
+     {
+      "op": "autotune",
+      "axis": "all",
+      "enable": true
+     },
+     {
+      "op": "autotune",
+      "axis": "all",
+      "enable": false
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "set_mode",
+        "AUTOTUNE"
+       ],
+       [
+        "update",
+        {
+         "autotune_state": "running",
+         "autotune_progress": 0
+        }
+       ],
+       [
+        "console",
+        "AUTOTUNE",
+        "AUTOTUNE engaged. ArduPilot narrates the tune over the console",
+        "success"
+       ]
+      ]
+     },
+     {
+      "result": true,
+      "events": [
+       [
+        "set_mode",
+        "FBWA"
+       ],
+       [
+        "update",
+        {
+         "autotune_state": "",
+         "autotune_progress": 0
+        }
+       ],
+       [
+        "console",
+        "AUTOTUNE",
+        "Autotune left, now in FBWA",
+        "warning"
+       ]
+      ]
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "active": "",
+     "return_mode": "",
+     "tested": [],
+     "snapshot": {
+      "armed": true,
+      "mode": "FBWA",
+      "landed_state": 2,
+      "autotune_state": "",
+      "autotune_progress": 0
+     }
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "autotune_ardupilot_preconditions",
+    "stack": "ardupilot",
+    "mav_type": 2,
+    "steps": [
+     {
+      "op": "autotune",
+      "axis": "all",
+      "enable": true
+     },
+     {
+      "op": "set_snapshot",
+      "snapshot": {
+       "armed": true,
+       "landed_state": 1
+      }
+     },
+     {
+      "op": "autotune",
+      "axis": "all",
+      "enable": true
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        "the autotune runs in flight: arm the vehicle and take off before starting it"
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        "the vehicle is still on the ground: hold a stable hover before starting the autotune"
+       ]
+      ]
+     }
+    ],
+    "final": {
+     "last_error": "the vehicle is still on the ground: hold a stable hover before starting the autotune",
+     "active": "",
+     "return_mode": "",
+     "tested": [],
+     "snapshot": {
+      "armed": true,
+      "mode": "",
+      "landed_state": 1,
+      "autotune_state": null
+     }
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "autotune_ardupilot_mode_refused",
+    "stack": "ardupilot",
+    "mav_type": 2,
+    "snapshot": {
+     "armed": true,
+     "landed_state": 2,
+     "mode": "LOITER"
+    },
+    "set_mode_ok": false,
+    "steps": [
+     {
+      "op": "autotune",
+      "axis": "all",
+      "enable": true
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "set_mode",
+        "AUTOTUNE"
+       ],
+       [
+        "update",
+        {
+         "autotune_state": "failed",
+         "autotune_progress": 0
+        }
+       ]
+      ]
+     },
+     {
+      "result": {
+       "active": "",
+       "return_mode": "",
+       "tested": []
+      },
+      "events": []
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "active": "",
+     "return_mode": "",
+     "tested": [],
+     "snapshot": {
+      "armed": true,
+      "mode": "LOITER",
+      "landed_state": 2,
+      "autotune_state": "failed",
+      "autotune_progress": 0
+     }
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "autotune_ardupilot_stop_without_return_mode",
+    "stack": "ardupilot",
+    "mav_type": 2,
+    "snapshot": {
+     "armed": true,
+     "landed_state": 2,
+     "mode": "LOITER"
+    },
+    "steps": [
+     {
+      "op": "autotune",
+      "axis": "all",
+      "enable": false
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "set_mode",
+        "LOITER"
+       ],
+       [
+        "update",
+        {
+         "autotune_state": "",
+         "autotune_progress": 0
+        }
+       ],
+       [
+        "console",
+        "AUTOTUNE",
+        "Autotune left, now in LOITER",
+        "warning"
+       ]
+      ]
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "active": "",
+     "return_mode": "",
+     "tested": [],
+     "snapshot": {
+      "armed": true,
+      "mode": "LOITER",
+      "landed_state": 2,
+      "autotune_state": "",
+      "autotune_progress": 0
+     }
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "autotune_ardupilot_stop_nothing_to_return_to",
+    "stack": "ardupilot",
+    "mav_type": 2,
+    "snapshot": {
+     "armed": true,
+     "landed_state": 2,
+     "mode": "LOITER"
+    },
+    "mode_values": [
+     "AUTOTUNE",
+     "RTL"
+    ],
+    "steps": [
+     {
+      "op": "autotune",
+      "axis": "all",
+      "enable": false
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        "no mode to return to. Select one on the mode selector to leave the autotune"
+       ]
+      ]
+     }
+    ],
+    "final": {
+     "last_error": "no mode to return to. Select one on the mode selector to leave the autotune",
+     "active": "",
+     "return_mode": "",
+     "tested": [],
+     "snapshot": {
+      "armed": true,
+      "mode": "LOITER",
+      "landed_state": 2,
+      "autotune_state": null
+     }
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "autotune_ardupilot_stop_refused",
+    "stack": "ardupilot",
+    "mav_type": 2,
+    "snapshot": {
+     "armed": true,
+     "landed_state": 2,
+     "mode": "LOITER"
+    },
+    "set_mode_results": {
+     "LOITER": false
+    },
+    "steps": [
+     {
+      "op": "autotune",
+      "axis": "all",
+      "enable": true
+     },
+     {
+      "op": "set_snapshot",
+      "snapshot": {
+       "mode": "AUTOTUNE"
+      }
+     },
+     {
+      "op": "autotune",
+      "axis": "all",
+      "enable": false
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "set_mode",
+        "AUTOTUNE"
+       ],
+       [
+        "update",
+        {
+         "autotune_state": "running",
+         "autotune_progress": 0
+        }
+       ],
+       [
+        "console",
+        "AUTOTUNE",
+        "AUTOTUNE engaged. ArduPilot narrates the tune over the console",
+        "success"
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": false,
+      "events": [
+       [
+        "set_mode",
+        "LOITER"
+       ]
+      ]
+     },
+     {
+      "result": {
+       "active": "",
+       "return_mode": "LOITER",
+       "tested": []
+      },
+      "events": []
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "active": "",
+     "return_mode": "LOITER",
+     "tested": [],
+     "snapshot": {
+      "armed": true,
+      "mode": "AUTOTUNE",
+      "landed_state": 2,
+      "autotune_state": "running",
+      "autotune_progress": 0
+     }
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "autotune_ack_stream",
+    "steps": [
+     {
+      "op": "ack",
+      "result": 5,
+      "progress": 10
+     },
+     {
+      "op": "ack",
+      "result": 5,
+      "progress": 250
+     },
+     {
+      "op": "ack",
+      "result": 5,
+      "progress": -4
+     },
+     {
+      "op": "ack",
+      "result": 5,
+      "progress": 0
+     },
+     {
+      "op": "ack",
+      "result": 0,
+      "progress": 0
+     },
+     {
+      "op": "ack",
+      "result": 0,
+      "progress": 0
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "autotune_state": "running",
+         "autotune_progress": 10
+        }
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "autotune_state": "running",
+         "autotune_progress": 100
+        }
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "autotune_state": "running",
+         "autotune_progress": 0
+        }
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "autotune_state": "running",
+         "autotune_progress": 0
+        }
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "autotune_state": "done",
+         "autotune_progress": 100
+        }
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "events": []
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "active": "",
+     "return_mode": "",
+     "tested": [],
+     "snapshot": {
+      "armed": false,
+      "mode": "",
+      "landed_state": null,
+      "autotune_state": "done",
+      "autotune_progress": 100
+     }
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "autotune_ack_accepted_without_a_run",
+    "steps": [
+     {
+      "op": "ack",
+      "result": 0,
+      "progress": 0
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": []
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "active": "",
+     "return_mode": "",
+     "tested": [],
+     "snapshot": {
+      "armed": false,
+      "mode": "",
+      "landed_state": null,
+      "autotune_state": null
+     }
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "autotune_ack_refusals",
+    "steps": [
+     {
+      "op": "ack",
+      "result": 4,
+      "progress": 0
+     },
+     {
+      "op": "ack",
+      "result": 1,
+      "progress": 0
+     },
+     {
+      "op": "ack",
+      "result": 77,
+      "progress": 0
+     },
+     {
+      "op": "ack",
+      "result": -1,
+      "progress": 0
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "autotune_state": "failed"
+        }
+       ],
+       [
+        "merge_warning",
+        "Autotune refused: FAILED",
+        "warning"
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "autotune_state": "failed"
+        }
+       ],
+       [
+        "merge_warning",
+        "Autotune refused: TEMPORARILY_REJECTED",
+        "warning"
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "autotune_state": "failed"
+        }
+       ],
+       [
+        "merge_warning",
+        "Autotune refused: result=77",
+        "warning"
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "autotune_state": "failed"
+        }
+       ],
+       [
+        "merge_warning",
+        "Autotune refused: ACK_TIMEOUT",
+        "warning"
+       ]
+      ]
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "active": "",
+     "return_mode": "",
+     "tested": [],
+     "snapshot": {
+      "armed": false,
+      "mode": "",
+      "landed_state": null,
+      "autotune_state": "failed"
+     }
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "reboot",
+    "steps": [
+     {
+      "op": "reboot"
+     },
+     {
+      "op": "bootloader"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        246,
+        [
+         1.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0
+        ],
+        3.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "reset_cache"
+       ],
+       [
+        "console",
+        "REBOOT",
+        "Reboot accepted. The autopilot restarts now",
+        "success"
+       ]
+      ]
+     },
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        246,
+        [
+         3.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "console",
+        "REBOOT",
+        "Reboot to bootloader accepted",
+        "success"
+       ]
+      ]
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "active": "",
+     "return_mode": "",
+     "tested": [],
+     "snapshot": {
+      "armed": false,
+      "mode": "",
+      "landed_state": null,
+      "autotune_state": null
+     }
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "reboot_armed",
+    "snapshot": {
+     "armed": true
+    },
+    "steps": [
+     {
+      "op": "reboot"
+     },
+     {
+      "op": "bootloader"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        "cannot reboot while armed"
+       ]
+      ]
+     },
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        "cannot reboot to bootloader while armed"
+       ]
+      ]
+     }
+    ],
+    "final": {
+     "last_error": "cannot reboot to bootloader while armed",
+     "active": "",
+     "return_mode": "",
+     "tested": [],
+     "snapshot": {
+      "armed": true,
+      "mode": "",
+      "landed_state": null,
+      "autotune_state": null
+     }
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "reboot_not_ready",
+    "ready": false,
+    "steps": [
+     {
+      "op": "reboot"
+     },
+     {
+      "op": "bootloader"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "failure",
+        "Reboot",
+        -2
+       ]
+      ]
+     },
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "failure",
+        "Reboot to bootloader",
+        -2
+       ]
+      ]
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "active": "",
+     "return_mode": "",
+     "tested": [],
+     "snapshot": {
+      "armed": false,
+      "mode": "",
+      "landed_state": null,
+      "autotune_state": null
+     }
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "reboot_refused",
+    "results": {
+     "246": 2
+    },
+    "steps": [
+     {
+      "op": "reboot"
+     },
+     {
+      "op": "bootloader"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        246,
+        [
+         1.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0,
+         0.0
+        ],
+        3.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "failure",
+        "Reboot",
+        2
+       ]
+      ]
+     },
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        246,
+        [
+         3.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        0,
+        false,
+        []
+       ],
+       [
+        "failure",
+        "Reboot to bootloader",
+        2
+       ]
+      ]
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "active": "",
+     "return_mode": "",
+     "tested": [],
+     "snapshot": {
+      "armed": false,
+      "mode": "",
+      "landed_state": null,
+      "autotune_state": null
+     }
+    }
+   }
+  }
+ ]
+}

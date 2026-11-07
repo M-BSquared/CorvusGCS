@@ -39,8 +39,15 @@ pub fn apply(title: &str, dark: bool, radius: f64) {
         let Some(frame) = (unsafe { content.superview() }) else {
             continue;
         };
-        let name = unsafe { if dark { NSAppearanceNameDarkAqua } else { NSAppearanceNameAqua } };
-        let existing = unsafe { frame.subviews() }
+        let name = unsafe {
+            if dark {
+                NSAppearanceNameDarkAqua
+            } else {
+                NSAppearanceNameAqua
+            }
+        };
+        let existing = frame
+            .subviews()
             .iter()
             .find(|v| v.isKindOfClass(NSVisualEffectView::class()));
         let view: Retained<NSVisualEffectView> = match existing {

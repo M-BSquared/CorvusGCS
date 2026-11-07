@@ -1,0 +1,6297 @@
+{
+ "cases": [
+  {
+   "scenario": {
+    "name": "defaults",
+    "steps": [
+     {
+      "op": "settings"
+     },
+     {
+      "op": "status"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": {
+       "enabled": false,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 0,
+        "uas_id": ""
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": ""
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": ""
+       },
+       "system": {
+        "operator_location_type": 0,
+        "operator_latitude": 0.0,
+        "operator_longitude": 0.0,
+        "operator_altitude_geo": -1000.0,
+        "classification_type": 0,
+        "category_eu": 0,
+        "class_eu": 0,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": false,
+       "supported": true,
+       "broadcasting": false,
+       "last_sent_age": null,
+       "error": "",
+       "arm_status": null
+      },
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "disabled_sends_nothing",
+    "steps": [
+     {
+      "op": "send"
+     },
+     {
+      "op": "status"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": false,
+       "supported": true,
+       "broadcasting": false,
+       "last_sent_age": null,
+       "error": "",
+       "arm_status": null
+      },
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "enabled_broadcast",
+    "steps": [
+     {
+      "op": "set",
+      "raw": {
+       "enabled": true,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 2,
+        "uas_id": "ABC123"
+       },
+       "operator_id": {
+        "operator_id": "FIN123"
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": "test"
+       },
+       "system": {
+        "operator_location_type": 2,
+        "operator_latitude": 48.1234567,
+        "operator_longitude": 11.7654321,
+        "operator_altitude_geo": 520.5,
+        "classification_type": 1,
+        "category_eu": 2,
+        "class_eu": 5
+       }
+      }
+     },
+     {
+      "op": "send"
+     },
+     {
+      "op": "status"
+     },
+     {
+      "op": "advance",
+      "seconds": 2.5
+     },
+     {
+      "op": "status"
+     },
+     {
+      "op": "advance",
+      "seconds": 2.5
+     },
+     {
+      "op": "status"
+     },
+     {
+      "op": "send"
+     },
+     {
+      "op": "status"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": {
+       "enabled": true,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 2,
+        "uas_id": "ABC123"
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": "FIN123"
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": "test"
+       },
+       "system": {
+        "operator_location_type": 2,
+        "operator_latitude": 48.1234567,
+        "operator_longitude": 11.7654321,
+        "operator_altitude_geo": 520.5,
+        "classification_type": 1,
+        "category_eu": 2,
+        "class_eu": 5,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "send",
+        "open_drone_id_basic_id",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "id_type": 1,
+         "ua_type": 2,
+         "uas_id": "4142433132330000000000000000000000000000"
+        }
+       ],
+       [
+        "send",
+        "open_drone_id_operator_id",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "operator_id_type": 0,
+         "operator_id": "46494e3132330000000000000000000000000000"
+        }
+       ],
+       [
+        "send",
+        "open_drone_id_self_id",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "description_type": 0,
+         "description": "7465737400000000000000000000000000000000000000"
+        }
+       ],
+       [
+        "send",
+        "open_drone_id_system",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "operator_location_type": 2,
+         "classification_type": 1,
+         "operator_latitude": 481234567,
+         "operator_longitude": 117654321,
+         "area_count": 1,
+         "area_radius": 0,
+         "area_ceiling": -1000.0,
+         "area_floor": -1000.0,
+         "category_eu": 2,
+         "class_eu": 5,
+         "operator_altitude_geo": 520.5,
+         "timestamp": 153699200
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": true,
+       "supported": true,
+       "broadcasting": true,
+       "last_sent_age": 0.0,
+       "error": "",
+       "arm_status": null
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 2.5
+     },
+     {
+      "result": {
+       "enabled": true,
+       "supported": true,
+       "broadcasting": true,
+       "last_sent_age": 2.5,
+       "error": "",
+       "arm_status": null
+      },
+      "events": [],
+      "t": 2.5
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 5.0
+     },
+     {
+      "result": {
+       "enabled": true,
+       "supported": true,
+       "broadcasting": false,
+       "last_sent_age": 5.0,
+       "error": "",
+       "arm_status": null
+      },
+      "events": [],
+      "t": 5.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "send",
+        "open_drone_id_basic_id",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "id_type": 1,
+         "ua_type": 2,
+         "uas_id": "4142433132330000000000000000000000000000"
+        }
+       ],
+       [
+        "send",
+        "open_drone_id_operator_id",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "operator_id_type": 0,
+         "operator_id": "46494e3132330000000000000000000000000000"
+        }
+       ],
+       [
+        "send",
+        "open_drone_id_self_id",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "description_type": 0,
+         "description": "7465737400000000000000000000000000000000000000"
+        }
+       ],
+       [
+        "send",
+        "open_drone_id_system",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "operator_location_type": 2,
+         "classification_type": 1,
+         "operator_latitude": 481234567,
+         "operator_longitude": 117654321,
+         "area_count": 1,
+         "area_radius": 0,
+         "area_ceiling": -1000.0,
+         "area_floor": -1000.0,
+         "category_eu": 2,
+         "class_eu": 5,
+         "operator_altitude_geo": 520.5,
+         "timestamp": 153699205
+        }
+       ]
+      ],
+      "t": 5.0
+     },
+     {
+      "result": {
+       "enabled": true,
+       "supported": true,
+       "broadcasting": true,
+       "last_sent_age": 0.0,
+       "error": "",
+       "arm_status": null
+      },
+      "events": [],
+      "t": 5.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "takeoff_location_sends_no_position",
+    "steps": [
+     {
+      "op": "set",
+      "raw": {
+       "enabled": true,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 2,
+        "uas_id": "ABC123"
+       },
+       "operator_id": {
+        "operator_id": "FIN123"
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": "test"
+       },
+       "system": {
+        "operator_location_type": 0,
+        "operator_latitude": 48.1234567,
+        "operator_longitude": 11.7654321,
+        "operator_altitude_geo": 520.5,
+        "classification_type": 1,
+        "category_eu": 2,
+        "class_eu": 5
+       }
+      }
+     },
+     {
+      "op": "send"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": {
+       "enabled": true,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 2,
+        "uas_id": "ABC123"
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": "FIN123"
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": "test"
+       },
+       "system": {
+        "operator_location_type": 0,
+        "operator_latitude": 48.1234567,
+        "operator_longitude": 11.7654321,
+        "operator_altitude_geo": 520.5,
+        "classification_type": 1,
+        "category_eu": 2,
+        "class_eu": 5,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "send",
+        "open_drone_id_basic_id",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "id_type": 1,
+         "ua_type": 2,
+         "uas_id": "4142433132330000000000000000000000000000"
+        }
+       ],
+       [
+        "send",
+        "open_drone_id_operator_id",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "operator_id_type": 0,
+         "operator_id": "46494e3132330000000000000000000000000000"
+        }
+       ],
+       [
+        "send",
+        "open_drone_id_self_id",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "description_type": 0,
+         "description": "7465737400000000000000000000000000000000000000"
+        }
+       ],
+       [
+        "send",
+        "open_drone_id_system",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "operator_location_type": 0,
+         "classification_type": 1,
+         "operator_latitude": 0,
+         "operator_longitude": 0,
+         "area_count": 1,
+         "area_radius": 0,
+         "area_ceiling": -1000.0,
+         "area_floor": -1000.0,
+         "category_eu": 2,
+         "class_eu": 5,
+         "operator_altitude_geo": -1000.0,
+         "timestamp": 153699200
+        }
+       ]
+      ],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "undeclared_classification_sends_no_class",
+    "steps": [
+     {
+      "op": "set",
+      "raw": {
+       "enabled": true,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 2,
+        "uas_id": "ABC123"
+       },
+       "operator_id": {
+        "operator_id": "FIN123"
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": "test"
+       },
+       "system": {
+        "operator_location_type": 2,
+        "operator_latitude": 48.1234567,
+        "operator_longitude": 11.7654321,
+        "operator_altitude_geo": 520.5,
+        "classification_type": 0,
+        "category_eu": 2,
+        "class_eu": 5
+       }
+      }
+     },
+     {
+      "op": "send"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": {
+       "enabled": true,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 2,
+        "uas_id": "ABC123"
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": "FIN123"
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": "test"
+       },
+       "system": {
+        "operator_location_type": 2,
+        "operator_latitude": 48.1234567,
+        "operator_longitude": 11.7654321,
+        "operator_altitude_geo": 520.5,
+        "classification_type": 0,
+        "category_eu": 2,
+        "class_eu": 5,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "send",
+        "open_drone_id_basic_id",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "id_type": 1,
+         "ua_type": 2,
+         "uas_id": "4142433132330000000000000000000000000000"
+        }
+       ],
+       [
+        "send",
+        "open_drone_id_operator_id",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "operator_id_type": 0,
+         "operator_id": "46494e3132330000000000000000000000000000"
+        }
+       ],
+       [
+        "send",
+        "open_drone_id_self_id",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "description_type": 0,
+         "description": "7465737400000000000000000000000000000000000000"
+        }
+       ],
+       [
+        "send",
+        "open_drone_id_system",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "operator_location_type": 2,
+         "classification_type": 0,
+         "operator_latitude": 481234567,
+         "operator_longitude": 117654321,
+         "area_count": 1,
+         "area_radius": 0,
+         "area_ceiling": -1000.0,
+         "area_floor": -1000.0,
+         "category_eu": 0,
+         "class_eu": 0,
+         "operator_altitude_geo": 520.5,
+         "timestamp": 153699200
+        }
+       ]
+      ],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "timestamp_follows_the_clock",
+    "steps": [
+     {
+      "op": "set",
+      "raw": {
+       "enabled": true,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 2,
+        "uas_id": "ABC123"
+       },
+       "operator_id": {
+        "operator_id": "FIN123"
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": "test"
+       },
+       "system": {
+        "operator_location_type": 2,
+        "operator_latitude": 48.1234567,
+        "operator_longitude": 11.7654321,
+        "operator_altitude_geo": 520.5,
+        "classification_type": 1,
+        "category_eu": 2,
+        "class_eu": 5
+       }
+      }
+     },
+     {
+      "op": "send"
+     },
+     {
+      "op": "advance",
+      "seconds": 1000.25
+     },
+     {
+      "op": "send"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": {
+       "enabled": true,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 2,
+        "uas_id": "ABC123"
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": "FIN123"
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": "test"
+       },
+       "system": {
+        "operator_location_type": 2,
+        "operator_latitude": 48.1234567,
+        "operator_longitude": 11.7654321,
+        "operator_altitude_geo": 520.5,
+        "classification_type": 1,
+        "category_eu": 2,
+        "class_eu": 5,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "send",
+        "open_drone_id_basic_id",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "id_type": 1,
+         "ua_type": 2,
+         "uas_id": "4142433132330000000000000000000000000000"
+        }
+       ],
+       [
+        "send",
+        "open_drone_id_operator_id",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "operator_id_type": 0,
+         "operator_id": "46494e3132330000000000000000000000000000"
+        }
+       ],
+       [
+        "send",
+        "open_drone_id_self_id",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "description_type": 0,
+         "description": "7465737400000000000000000000000000000000000000"
+        }
+       ],
+       [
+        "send",
+        "open_drone_id_system",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "operator_location_type": 2,
+         "classification_type": 1,
+         "operator_latitude": 481234567,
+         "operator_longitude": 117654321,
+         "area_count": 1,
+         "area_radius": 0,
+         "area_ceiling": -1000.0,
+         "area_floor": -1000.0,
+         "category_eu": 2,
+         "class_eu": 5,
+         "operator_altitude_geo": 520.5,
+         "timestamp": 153699200
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 1000.25
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "send",
+        "open_drone_id_basic_id",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "id_type": 1,
+         "ua_type": 2,
+         "uas_id": "4142433132330000000000000000000000000000"
+        }
+       ],
+       [
+        "send",
+        "open_drone_id_operator_id",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "operator_id_type": 0,
+         "operator_id": "46494e3132330000000000000000000000000000"
+        }
+       ],
+       [
+        "send",
+        "open_drone_id_self_id",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "description_type": 0,
+         "description": "7465737400000000000000000000000000000000000000"
+        }
+       ],
+       [
+        "send",
+        "open_drone_id_system",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "operator_location_type": 2,
+         "classification_type": 1,
+         "operator_latitude": 481234567,
+         "operator_longitude": 117654321,
+         "area_count": 1,
+         "area_radius": 0,
+         "area_ceiling": -1000.0,
+         "area_floor": -1000.0,
+         "category_eu": 2,
+         "class_eu": 5,
+         "operator_altitude_geo": 520.5,
+         "timestamp": 153700200
+        }
+       ]
+      ],
+      "t": 1000.25
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "mavlink_1_link",
+    "v2": false,
+    "steps": [
+     {
+      "op": "set",
+      "raw": {
+       "enabled": true,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 2,
+        "uas_id": "ABC123"
+       },
+       "operator_id": {
+        "operator_id": "FIN123"
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": "test"
+       },
+       "system": {
+        "operator_location_type": 2,
+        "operator_latitude": 48.1234567,
+        "operator_longitude": 11.7654321,
+        "operator_altitude_geo": 520.5,
+        "classification_type": 1,
+        "category_eu": 2,
+        "class_eu": 5
+       }
+      }
+     },
+     {
+      "op": "supported"
+     },
+     {
+      "op": "send"
+     },
+     {
+      "op": "status"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": {
+       "enabled": true,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 2,
+        "uas_id": "ABC123"
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": "FIN123"
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": "test"
+       },
+       "system": {
+        "operator_location_type": 2,
+        "operator_latitude": 48.1234567,
+        "operator_longitude": 11.7654321,
+        "operator_altitude_geo": 520.5,
+        "classification_type": 1,
+        "category_eu": 2,
+        "class_eu": 5,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": false,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": true,
+       "supported": false,
+       "broadcasting": false,
+       "last_sent_age": null,
+       "error": "this link is MAVLink 1, and the Remote ID messages are MAVLink 2 only",
+       "arm_status": null
+      },
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "mavlink_1_link_disabled",
+    "v2": false,
+    "steps": [
+     {
+      "op": "send"
+     },
+     {
+      "op": "supported"
+     },
+     {
+      "op": "status"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": false,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": false,
+       "supported": false,
+       "broadcasting": false,
+       "last_sent_age": null,
+       "error": "",
+       "arm_status": null
+      },
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "send_fails_midway",
+    "send_fails": {
+     "on": "open_drone_id_self_id",
+     "message": "boom"
+    },
+    "steps": [
+     {
+      "op": "set",
+      "raw": {
+       "enabled": true,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 2,
+        "uas_id": "ABC123"
+       },
+       "operator_id": {
+        "operator_id": "FIN123"
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": "test"
+       },
+       "system": {
+        "operator_location_type": 2,
+        "operator_latitude": 48.1234567,
+        "operator_longitude": 11.7654321,
+        "operator_altitude_geo": 520.5,
+        "classification_type": 1,
+        "category_eu": 2,
+        "class_eu": 5
+       }
+      }
+     },
+     {
+      "op": "send"
+     },
+     {
+      "op": "status"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": {
+       "enabled": true,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 2,
+        "uas_id": "ABC123"
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": "FIN123"
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": "test"
+       },
+       "system": {
+        "operator_location_type": 2,
+        "operator_latitude": 48.1234567,
+        "operator_longitude": 11.7654321,
+        "operator_altitude_geo": 520.5,
+        "classification_type": 1,
+        "category_eu": 2,
+        "class_eu": 5,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "send",
+        "open_drone_id_basic_id",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "id_type": 1,
+         "ua_type": 2,
+         "uas_id": "4142433132330000000000000000000000000000"
+        }
+       ],
+       [
+        "send",
+        "open_drone_id_operator_id",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "operator_id_type": 0,
+         "operator_id": "46494e3132330000000000000000000000000000"
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": true,
+       "supported": true,
+       "broadcasting": false,
+       "last_sent_age": null,
+       "error": "boom",
+       "arm_status": null
+      },
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "send_recovers",
+    "steps": [
+     {
+      "op": "set",
+      "raw": {
+       "enabled": true,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 2,
+        "uas_id": "ABC123"
+       },
+       "operator_id": {
+        "operator_id": "FIN123"
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": "test"
+       },
+       "system": {
+        "operator_location_type": 2,
+        "operator_latitude": 48.1234567,
+        "operator_longitude": 11.7654321,
+        "operator_altitude_geo": 520.5,
+        "classification_type": 1,
+        "category_eu": 2,
+        "class_eu": 5
+       }
+      }
+     },
+     {
+      "op": "send"
+     },
+     {
+      "op": "status"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": {
+       "enabled": true,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 2,
+        "uas_id": "ABC123"
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": "FIN123"
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": "test"
+       },
+       "system": {
+        "operator_location_type": 2,
+        "operator_latitude": 48.1234567,
+        "operator_longitude": 11.7654321,
+        "operator_altitude_geo": 520.5,
+        "classification_type": 1,
+        "category_eu": 2,
+        "class_eu": 5,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "send",
+        "open_drone_id_basic_id",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "id_type": 1,
+         "ua_type": 2,
+         "uas_id": "4142433132330000000000000000000000000000"
+        }
+       ],
+       [
+        "send",
+        "open_drone_id_operator_id",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "operator_id_type": 0,
+         "operator_id": "46494e3132330000000000000000000000000000"
+        }
+       ],
+       [
+        "send",
+        "open_drone_id_self_id",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "description_type": 0,
+         "description": "7465737400000000000000000000000000000000000000"
+        }
+       ],
+       [
+        "send",
+        "open_drone_id_system",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "operator_location_type": 2,
+         "classification_type": 1,
+         "operator_latitude": 481234567,
+         "operator_longitude": 117654321,
+         "area_count": 1,
+         "area_radius": 0,
+         "area_ceiling": -1000.0,
+         "area_floor": -1000.0,
+         "category_eu": 2,
+         "class_eu": 5,
+         "operator_altitude_geo": 520.5,
+         "timestamp": 153699200
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": true,
+       "supported": true,
+       "broadcasting": true,
+       "last_sent_age": 0.0,
+       "error": "",
+       "arm_status": null
+      },
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "arm_status_stream",
+    "steps": [
+     {
+      "op": "set",
+      "raw": {
+       "enabled": true,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 2,
+        "uas_id": "ABC123"
+       },
+       "operator_id": {
+        "operator_id": "FIN123"
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": "test"
+       },
+       "system": {
+        "operator_location_type": 2,
+        "operator_latitude": 48.1234567,
+        "operator_longitude": 11.7654321,
+        "operator_altitude_geo": 520.5,
+        "classification_type": 1,
+        "category_eu": 2,
+        "class_eu": 5
+       }
+      }
+     },
+     {
+      "op": "status"
+     },
+     {
+      "op": "arm",
+      "status": 0,
+      "error": ""
+     },
+     {
+      "op": "status"
+     },
+     {
+      "op": "arm",
+      "status": 1,
+      "error": "UAS ID missing"
+     },
+     {
+      "op": "status"
+     },
+     {
+      "op": "arm",
+      "status": 7,
+      "error": "nul\u0000ignored"
+     },
+     {
+      "op": "status"
+     },
+     {
+      "op": "arm",
+      "status": 0,
+      "error": "  padded  "
+     },
+     {
+      "op": "arm",
+      "status": 1,
+      "error": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+     },
+     {
+      "op": "status"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": {
+       "enabled": true,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 2,
+        "uas_id": "ABC123"
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": "FIN123"
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": "test"
+       },
+       "system": {
+        "operator_location_type": 2,
+        "operator_latitude": 48.1234567,
+        "operator_longitude": 11.7654321,
+        "operator_altitude_geo": 520.5,
+        "classification_type": 1,
+        "category_eu": 2,
+        "class_eu": 5,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": true,
+       "supported": true,
+       "broadcasting": false,
+       "last_sent_age": null,
+       "error": "",
+       "arm_status": null
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": true,
+       "supported": true,
+       "broadcasting": false,
+       "last_sent_age": null,
+       "error": "",
+       "arm_status": {
+        "ok": true,
+        "status": 0,
+        "error": ""
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": true,
+       "supported": true,
+       "broadcasting": false,
+       "last_sent_age": null,
+       "error": "",
+       "arm_status": {
+        "ok": false,
+        "status": 1,
+        "error": "UAS ID missing"
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": true,
+       "supported": true,
+       "broadcasting": false,
+       "last_sent_age": null,
+       "error": "",
+       "arm_status": {
+        "ok": false,
+        "status": 7,
+        "error": "nul"
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": true,
+       "supported": true,
+       "broadcasting": false,
+       "last_sent_age": null,
+       "error": "",
+       "arm_status": {
+        "ok": false,
+        "status": 1,
+        "error": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+       }
+      },
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "arm_status_text",
+    "steps": [
+     {
+      "op": "arm",
+      "status": 1,
+      "error": "caf\u00e9 \u2713 ok"
+     },
+     {
+      "op": "status"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": false,
+       "supported": true,
+       "broadcasting": false,
+       "last_sent_age": null,
+       "error": "",
+       "arm_status": {
+        "ok": false,
+        "status": 1,
+        "error": "caf  ok"
+       }
+      },
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "setting_a_new_identity_forgets_the_old_one",
+    "steps": [
+     {
+      "op": "set",
+      "raw": {
+       "enabled": true,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 2,
+        "uas_id": "ABC123"
+       },
+       "operator_id": {
+        "operator_id": "FIN123"
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": "test"
+       },
+       "system": {
+        "operator_location_type": 2,
+        "operator_latitude": 48.1234567,
+        "operator_longitude": 11.7654321,
+        "operator_altitude_geo": 520.5,
+        "classification_type": 1,
+        "category_eu": 2,
+        "class_eu": 5
+       }
+      }
+     },
+     {
+      "op": "send"
+     },
+     {
+      "op": "arm",
+      "status": 1,
+      "error": "bad"
+     },
+     {
+      "op": "set",
+      "raw": {
+       "enabled": true,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 2,
+        "uas_id": "ABC123"
+       },
+       "operator_id": {
+        "operator_id": "FIN123"
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": "test"
+       },
+       "system": {
+        "operator_location_type": 2,
+        "operator_latitude": 48.1234567,
+        "operator_longitude": 11.7654321,
+        "operator_altitude_geo": 520.5,
+        "classification_type": 1,
+        "category_eu": 2,
+        "class_eu": 5
+       }
+      }
+     },
+     {
+      "op": "status"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": {
+       "enabled": true,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 2,
+        "uas_id": "ABC123"
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": "FIN123"
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": "test"
+       },
+       "system": {
+        "operator_location_type": 2,
+        "operator_latitude": 48.1234567,
+        "operator_longitude": 11.7654321,
+        "operator_altitude_geo": 520.5,
+        "classification_type": 1,
+        "category_eu": 2,
+        "class_eu": 5,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "send",
+        "open_drone_id_basic_id",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "id_type": 1,
+         "ua_type": 2,
+         "uas_id": "4142433132330000000000000000000000000000"
+        }
+       ],
+       [
+        "send",
+        "open_drone_id_operator_id",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "operator_id_type": 0,
+         "operator_id": "46494e3132330000000000000000000000000000"
+        }
+       ],
+       [
+        "send",
+        "open_drone_id_self_id",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "description_type": 0,
+         "description": "7465737400000000000000000000000000000000000000"
+        }
+       ],
+       [
+        "send",
+        "open_drone_id_system",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "operator_location_type": 2,
+         "classification_type": 1,
+         "operator_latitude": 481234567,
+         "operator_longitude": 117654321,
+         "area_count": 1,
+         "area_radius": 0,
+         "area_ceiling": -1000.0,
+         "area_floor": -1000.0,
+         "category_eu": 2,
+         "class_eu": 5,
+         "operator_altitude_geo": 520.5,
+         "timestamp": 153699200
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": true,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 2,
+        "uas_id": "ABC123"
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": "FIN123"
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": "test"
+       },
+       "system": {
+        "operator_location_type": 2,
+        "operator_latitude": 48.1234567,
+        "operator_longitude": 11.7654321,
+        "operator_altitude_geo": 520.5,
+        "classification_type": 1,
+        "category_eu": 2,
+        "class_eu": 5,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": true,
+       "supported": true,
+       "broadcasting": false,
+       "last_sent_age": null,
+       "error": "",
+       "arm_status": null
+      },
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "forget_the_session",
+    "steps": [
+     {
+      "op": "set",
+      "raw": {
+       "enabled": true,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 2,
+        "uas_id": "ABC123"
+       },
+       "operator_id": {
+        "operator_id": "FIN123"
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": "test"
+       },
+       "system": {
+        "operator_location_type": 2,
+        "operator_latitude": 48.1234567,
+        "operator_longitude": 11.7654321,
+        "operator_altitude_geo": 520.5,
+        "classification_type": 1,
+        "category_eu": 2,
+        "class_eu": 5
+       }
+      }
+     },
+     {
+      "op": "send"
+     },
+     {
+      "op": "arm",
+      "status": 0,
+      "error": ""
+     },
+     {
+      "op": "forget"
+     },
+     {
+      "op": "status"
+     },
+     {
+      "op": "settings"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": {
+       "enabled": true,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 2,
+        "uas_id": "ABC123"
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": "FIN123"
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": "test"
+       },
+       "system": {
+        "operator_location_type": 2,
+        "operator_latitude": 48.1234567,
+        "operator_longitude": 11.7654321,
+        "operator_altitude_geo": 520.5,
+        "classification_type": 1,
+        "category_eu": 2,
+        "class_eu": 5,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "send",
+        "open_drone_id_basic_id",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "id_type": 1,
+         "ua_type": 2,
+         "uas_id": "4142433132330000000000000000000000000000"
+        }
+       ],
+       [
+        "send",
+        "open_drone_id_operator_id",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "operator_id_type": 0,
+         "operator_id": "46494e3132330000000000000000000000000000"
+        }
+       ],
+       [
+        "send",
+        "open_drone_id_self_id",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "description_type": 0,
+         "description": "7465737400000000000000000000000000000000000000"
+        }
+       ],
+       [
+        "send",
+        "open_drone_id_system",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "operator_location_type": 2,
+         "classification_type": 1,
+         "operator_latitude": 481234567,
+         "operator_longitude": 117654321,
+         "area_count": 1,
+         "area_radius": 0,
+         "area_ceiling": -1000.0,
+         "area_floor": -1000.0,
+         "category_eu": 2,
+         "class_eu": 5,
+         "operator_altitude_geo": 520.5,
+         "timestamp": 153699200
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": true,
+       "supported": true,
+       "broadcasting": false,
+       "last_sent_age": null,
+       "error": "",
+       "arm_status": null
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": true,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 2,
+        "uas_id": "ABC123"
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": "FIN123"
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": "test"
+       },
+       "system": {
+        "operator_location_type": 2,
+        "operator_latitude": 48.1234567,
+        "operator_longitude": 11.7654321,
+        "operator_altitude_geo": 520.5,
+        "classification_type": 1,
+        "category_eu": 2,
+        "class_eu": 5,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "settings_are_resolved",
+    "steps": [
+     {
+      "op": "set",
+      "raw": {
+       "enabled": 1,
+       "region": "FAA",
+       "basic_id": {
+        "uas_id": " abc "
+       }
+      }
+     },
+     {
+      "op": "settings"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": {
+       "enabled": true,
+       "region": "faa",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 0,
+        "uas_id": "abc"
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": ""
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": ""
+       },
+       "system": {
+        "operator_location_type": 0,
+        "operator_latitude": 0.0,
+        "operator_longitude": 0.0,
+        "operator_altitude_geo": -1000.0,
+        "classification_type": 0,
+        "category_eu": 0,
+        "class_eu": 0,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": true,
+       "region": "faa",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 0,
+        "uas_id": "abc"
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": ""
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": ""
+       },
+       "system": {
+        "operator_location_type": 0,
+        "operator_latitude": 0.0,
+        "operator_longitude": 0.0,
+        "operator_altitude_geo": -1000.0,
+        "classification_type": 0,
+        "category_eu": 0,
+        "class_eu": 0,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "targets",
+    "target": [
+     7,
+     190
+    ],
+    "steps": [
+     {
+      "op": "set",
+      "raw": {
+       "enabled": true,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 2,
+        "uas_id": "ABC123"
+       },
+       "operator_id": {
+        "operator_id": "FIN123"
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": "test"
+       },
+       "system": {
+        "operator_location_type": 2,
+        "operator_latitude": 48.1234567,
+        "operator_longitude": 11.7654321,
+        "operator_altitude_geo": 520.5,
+        "classification_type": 1,
+        "category_eu": 2,
+        "class_eu": 5
+       }
+      }
+     },
+     {
+      "op": "send"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": {
+       "enabled": true,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 2,
+        "uas_id": "ABC123"
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": "FIN123"
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": "test"
+       },
+       "system": {
+        "operator_location_type": 2,
+        "operator_latitude": 48.1234567,
+        "operator_longitude": 11.7654321,
+        "operator_altitude_geo": 520.5,
+        "classification_type": 1,
+        "category_eu": 2,
+        "class_eu": 5,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "send",
+        "open_drone_id_basic_id",
+        {
+         "target_system": 7,
+         "target_component": 190,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "id_type": 1,
+         "ua_type": 2,
+         "uas_id": "4142433132330000000000000000000000000000"
+        }
+       ],
+       [
+        "send",
+        "open_drone_id_operator_id",
+        {
+         "target_system": 7,
+         "target_component": 190,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "operator_id_type": 0,
+         "operator_id": "46494e3132330000000000000000000000000000"
+        }
+       ],
+       [
+        "send",
+        "open_drone_id_self_id",
+        {
+         "target_system": 7,
+         "target_component": 190,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "description_type": 0,
+         "description": "7465737400000000000000000000000000000000000000"
+        }
+       ],
+       [
+        "send",
+        "open_drone_id_system",
+        {
+         "target_system": 7,
+         "target_component": 190,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "operator_location_type": 2,
+         "classification_type": 1,
+         "operator_latitude": 481234567,
+         "operator_longitude": 117654321,
+         "area_count": 1,
+         "area_radius": 0,
+         "area_ceiling": -1000.0,
+         "area_floor": -1000.0,
+         "category_eu": 2,
+         "class_eu": 5,
+         "operator_altitude_geo": 520.5,
+         "timestamp": 153699200
+        }
+       ]
+      ],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "pure_settings",
+    "steps": [
+     {
+      "op": "pure_settings",
+      "raw": null
+     },
+     {
+      "op": "pure_settings",
+      "raw": {}
+     },
+     {
+      "op": "pure_settings",
+      "raw": []
+     },
+     {
+      "op": "pure_settings",
+      "raw": "x"
+     },
+     {
+      "op": "pure_settings",
+      "raw": 5
+     },
+     {
+      "op": "pure_settings",
+      "raw": {
+       "enabled": 1
+      }
+     },
+     {
+      "op": "pure_settings",
+      "raw": {
+       "enabled": "no"
+      }
+     },
+     {
+      "op": "pure_settings",
+      "raw": {
+       "enabled": []
+      }
+     },
+     {
+      "op": "pure_settings",
+      "raw": {
+       "enabled": 0.0
+      }
+     },
+     {
+      "op": "pure_settings",
+      "raw": {
+       "enabled": true
+      }
+     },
+     {
+      "op": "pure_settings",
+      "raw": {
+       "region": "FAA"
+      }
+     },
+     {
+      "op": "pure_settings",
+      "raw": {
+       "region": " faa "
+      }
+     },
+     {
+      "op": "pure_settings",
+      "raw": {
+       "region": ""
+      }
+     },
+     {
+      "op": "pure_settings",
+      "raw": {
+       "region": 5
+      }
+     },
+     {
+      "op": "pure_settings",
+      "raw": {
+       "region": "mars"
+      }
+     },
+     {
+      "op": "pure_settings",
+      "raw": {
+       "region": null
+      }
+     },
+     {
+      "op": "pure_settings",
+      "raw": {
+       "basic_id": 5
+      }
+     },
+     {
+      "op": "pure_settings",
+      "raw": {
+       "basic_id": {
+        "id_type": "2",
+        "ua_type": 15.9,
+        "uas_id": "  ABC123  "
+       }
+      }
+     },
+     {
+      "op": "pure_settings",
+      "raw": {
+       "basic_id": {
+        "id_type": true
+       }
+      }
+     },
+     {
+      "op": "pure_settings",
+      "raw": {
+       "basic_id": {
+        "id_type": 9
+       }
+      }
+     },
+     {
+      "op": "pure_settings",
+      "raw": {
+       "basic_id": {
+        "id_type": "1_0"
+       }
+      }
+     },
+     {
+      "op": "pure_settings",
+      "raw": {
+       "basic_id": {
+        "id_type": " 3 ",
+        "ua_type": "4.0"
+       }
+      }
+     },
+     {
+      "op": "pure_settings",
+      "raw": {
+       "basic_id": {
+        "id_type": null,
+        "ua_type": [
+         1
+        ],
+        "uas_id": 12345
+       }
+      }
+     },
+     {
+      "op": "pure_settings",
+      "raw": {
+       "basic_id": {
+        "uas_id": "\u00fcn\u00ef\u0000c\u00f6d\u00e9 OK \u2713"
+       }
+      }
+     },
+     {
+      "op": "pure_settings",
+      "raw": {
+       "basic_id": {
+        "uas_id": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+       }
+      }
+     },
+     {
+      "op": "pure_settings",
+      "raw": {
+       "basic_id": {
+        "uas_id": [
+         "a",
+         1
+        ]
+       }
+      }
+     },
+     {
+      "op": "pure_settings",
+      "raw": {
+       "basic_id": {
+        "uas_id": {
+         "k": "v"
+        }
+       }
+      }
+     },
+     {
+      "op": "pure_settings",
+      "raw": {
+       "basic_id": {
+        "uas_id": true
+       }
+      }
+     },
+     {
+      "op": "pure_settings",
+      "raw": {
+       "basic_id": {
+        "uas_id": 3.0
+       }
+      }
+     },
+     {
+      "op": "pure_settings",
+      "raw": {
+       "basic_id": {
+        "uas_id": "tab\tinside\nnewline"
+       }
+      }
+     },
+     {
+      "op": "pure_settings",
+      "raw": {
+       "basic_id": {
+        "uas_id": "\u001c\u001dpad\u001f"
+       }
+      }
+     },
+     {
+      "op": "pure_settings",
+      "raw": {
+       "basic_id": {
+        "uas_id": "it's"
+       }
+      }
+     },
+     {
+      "op": "pure_settings",
+      "raw": {
+       "basic_id": {
+        "uas_id": [
+         "it's",
+         "say \"x\""
+        ]
+       }
+      }
+     },
+     {
+      "op": "pure_settings",
+      "raw": {
+       "basic_id": {
+        "uas_id": 1e+16
+       }
+      }
+     },
+     {
+      "op": "pure_settings",
+      "raw": {
+       "basic_id": {
+        "uas_id": 1e-05
+       }
+      }
+     },
+     {
+      "op": "pure_settings",
+      "raw": {
+       "basic_id": {
+        "uas_id": null
+       }
+      }
+     },
+     {
+      "op": "pure_settings",
+      "raw": {
+       "operator_id": {
+        "operator_id_type": 1,
+        "operator_id": "FIN87astrdge12k8-xyz"
+       }
+      }
+     },
+     {
+      "op": "pure_settings",
+      "raw": {
+       "operator_id": {
+        "operator_id": "xxxxxxxxxxxxxxxxxxxxxxxxx"
+       }
+      }
+     },
+     {
+      "op": "pure_settings",
+      "raw": {
+       "operator_id": []
+      }
+     },
+     {
+      "op": "pure_settings",
+      "raw": {
+       "self_id": {
+        "description_type": 2,
+        "description": "survey flight over the northern field today"
+       }
+      }
+     },
+     {
+      "op": "pure_settings",
+      "raw": {
+       "self_id": {
+        "description_type": 3,
+        "description": 7
+       }
+      }
+     },
+     {
+      "op": "pure_settings",
+      "raw": {
+       "system": {
+        "operator_location_type": 2,
+        "operator_latitude": 48.1234567,
+        "operator_longitude": 11.7654321,
+        "operator_altitude_geo": 520.5
+       }
+      }
+     },
+     {
+      "op": "pure_settings",
+      "raw": {
+       "system": {
+        "operator_location_type": 2,
+        "operator_latitude": 91,
+        "operator_longitude": -181,
+        "operator_altitude_geo": 40000
+       }
+      }
+     },
+     {
+      "op": "pure_settings",
+      "raw": {
+       "system": {
+        "operator_latitude": "48.5",
+        "operator_longitude": "x",
+        "operator_altitude_geo": "nan"
+       }
+      }
+     },
+     {
+      "op": "pure_settings",
+      "raw": {
+       "system": {
+        "operator_altitude_geo": -2000
+       }
+      }
+     },
+     {
+      "op": "pure_settings",
+      "raw": {
+       "system": {
+        "operator_latitude": true
+       }
+      }
+     },
+     {
+      "op": "pure_settings",
+      "raw": {
+       "system": {
+        "operator_latitude": null
+       }
+      }
+     },
+     {
+      "op": "pure_settings",
+      "raw": {
+       "system": {
+        "operator_latitude": -95,
+        "operator_longitude": 190
+       }
+      }
+     },
+     {
+      "op": "pure_settings",
+      "raw": {
+       "system": {
+        "operator_latitude": -89.5,
+        "operator_longitude": -179.5
+       }
+      }
+     },
+     {
+      "op": "pure_settings",
+      "raw": {
+       "system": {
+        "operator_latitude": -90,
+        "operator_longitude": 180,
+        "operator_altitude_geo": 31767
+       }
+      }
+     },
+     {
+      "op": "pure_settings",
+      "raw": {
+       "system": {
+        "operator_altitude_geo": 31768
+       }
+      }
+     },
+     {
+      "op": "pure_settings",
+      "raw": {
+       "system": {
+        "area_ceiling": -1001,
+        "area_floor": 31768
+       }
+      }
+     },
+     {
+      "op": "pure_settings",
+      "raw": {
+       "system": {
+        "area_ceiling": -1000,
+        "area_floor": 31767
+       }
+      }
+     },
+     {
+      "op": "pure_settings",
+      "raw": {
+       "system": {
+        "classification_type": 1,
+        "category_eu": 3,
+        "class_eu": 7
+       }
+      }
+     },
+     {
+      "op": "pure_settings",
+      "raw": {
+       "system": {
+        "classification_type": 1,
+        "category_eu": 9,
+        "class_eu": 8
+       }
+      }
+     },
+     {
+      "op": "pure_settings",
+      "raw": {
+       "system": {
+        "classification_type": 2
+       }
+      }
+     },
+     {
+      "op": "pure_settings",
+      "raw": {
+       "system": {
+        "area_count": 0,
+        "area_radius": -5
+       }
+      }
+     },
+     {
+      "op": "pure_settings",
+      "raw": {
+       "system": {
+        "area_count": 70000,
+        "area_radius": 70000
+       }
+      }
+     },
+     {
+      "op": "pure_settings",
+      "raw": {
+       "system": {
+        "area_count": "5",
+        "area_radius": "12.7"
+       }
+      }
+     },
+     {
+      "op": "pure_settings",
+      "raw": {
+       "system": {
+        "area_count": true,
+        "area_radius": false
+       }
+      }
+     },
+     {
+      "op": "pure_settings",
+      "raw": {
+       "system": {
+        "area_count": 2.9
+       }
+      }
+     },
+     {
+      "op": "pure_settings",
+      "raw": {
+       "system": {
+        "area_count": "nan"
+       }
+      }
+     },
+     {
+      "op": "pure_settings",
+      "raw": {
+       "system": {
+        "area_ceiling": 120,
+        "area_floor": -5
+       }
+      }
+     },
+     {
+      "op": "pure_settings",
+      "raw": {
+       "system": {
+        "area_ceiling": "inf",
+        "area_floor": "1e3"
+       }
+      }
+     },
+     {
+      "op": "pure_settings",
+      "raw": {
+       "enabled": true,
+       "region": "faa",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 2,
+        "uas_id": "1596F37QZ0123456789"
+       },
+       "operator_id": {
+        "operator_id": "FIN123"
+       },
+       "self_id": {
+        "description": "test"
+       },
+       "system": {
+        "operator_location_type": 2,
+        "operator_latitude": 48.1,
+        "operator_longitude": 11.5,
+        "operator_altitude_geo": 500,
+        "classification_type": 1,
+        "category_eu": 2,
+        "class_eu": 3,
+        "area_count": 3,
+        "area_radius": 200,
+        "area_ceiling": 120,
+        "area_floor": 0
+       }
+      }
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": {
+       "enabled": false,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 0,
+        "uas_id": ""
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": ""
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": ""
+       },
+       "system": {
+        "operator_location_type": 0,
+        "operator_latitude": 0.0,
+        "operator_longitude": 0.0,
+        "operator_altitude_geo": -1000.0,
+        "classification_type": 0,
+        "category_eu": 0,
+        "class_eu": 0,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": false,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 0,
+        "uas_id": ""
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": ""
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": ""
+       },
+       "system": {
+        "operator_location_type": 0,
+        "operator_latitude": 0.0,
+        "operator_longitude": 0.0,
+        "operator_altitude_geo": -1000.0,
+        "classification_type": 0,
+        "category_eu": 0,
+        "class_eu": 0,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": false,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 0,
+        "uas_id": ""
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": ""
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": ""
+       },
+       "system": {
+        "operator_location_type": 0,
+        "operator_latitude": 0.0,
+        "operator_longitude": 0.0,
+        "operator_altitude_geo": -1000.0,
+        "classification_type": 0,
+        "category_eu": 0,
+        "class_eu": 0,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": false,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 0,
+        "uas_id": ""
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": ""
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": ""
+       },
+       "system": {
+        "operator_location_type": 0,
+        "operator_latitude": 0.0,
+        "operator_longitude": 0.0,
+        "operator_altitude_geo": -1000.0,
+        "classification_type": 0,
+        "category_eu": 0,
+        "class_eu": 0,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": false,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 0,
+        "uas_id": ""
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": ""
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": ""
+       },
+       "system": {
+        "operator_location_type": 0,
+        "operator_latitude": 0.0,
+        "operator_longitude": 0.0,
+        "operator_altitude_geo": -1000.0,
+        "classification_type": 0,
+        "category_eu": 0,
+        "class_eu": 0,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": true,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 0,
+        "uas_id": ""
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": ""
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": ""
+       },
+       "system": {
+        "operator_location_type": 0,
+        "operator_latitude": 0.0,
+        "operator_longitude": 0.0,
+        "operator_altitude_geo": -1000.0,
+        "classification_type": 0,
+        "category_eu": 0,
+        "class_eu": 0,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": true,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 0,
+        "uas_id": ""
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": ""
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": ""
+       },
+       "system": {
+        "operator_location_type": 0,
+        "operator_latitude": 0.0,
+        "operator_longitude": 0.0,
+        "operator_altitude_geo": -1000.0,
+        "classification_type": 0,
+        "category_eu": 0,
+        "class_eu": 0,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": false,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 0,
+        "uas_id": ""
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": ""
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": ""
+       },
+       "system": {
+        "operator_location_type": 0,
+        "operator_latitude": 0.0,
+        "operator_longitude": 0.0,
+        "operator_altitude_geo": -1000.0,
+        "classification_type": 0,
+        "category_eu": 0,
+        "class_eu": 0,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": false,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 0,
+        "uas_id": ""
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": ""
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": ""
+       },
+       "system": {
+        "operator_location_type": 0,
+        "operator_latitude": 0.0,
+        "operator_longitude": 0.0,
+        "operator_altitude_geo": -1000.0,
+        "classification_type": 0,
+        "category_eu": 0,
+        "class_eu": 0,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": true,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 0,
+        "uas_id": ""
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": ""
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": ""
+       },
+       "system": {
+        "operator_location_type": 0,
+        "operator_latitude": 0.0,
+        "operator_longitude": 0.0,
+        "operator_altitude_geo": -1000.0,
+        "classification_type": 0,
+        "category_eu": 0,
+        "class_eu": 0,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": false,
+       "region": "faa",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 0,
+        "uas_id": ""
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": ""
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": ""
+       },
+       "system": {
+        "operator_location_type": 0,
+        "operator_latitude": 0.0,
+        "operator_longitude": 0.0,
+        "operator_altitude_geo": -1000.0,
+        "classification_type": 0,
+        "category_eu": 0,
+        "class_eu": 0,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": false,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 0,
+        "uas_id": ""
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": ""
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": ""
+       },
+       "system": {
+        "operator_location_type": 0,
+        "operator_latitude": 0.0,
+        "operator_longitude": 0.0,
+        "operator_altitude_geo": -1000.0,
+        "classification_type": 0,
+        "category_eu": 0,
+        "class_eu": 0,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": false,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 0,
+        "uas_id": ""
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": ""
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": ""
+       },
+       "system": {
+        "operator_location_type": 0,
+        "operator_latitude": 0.0,
+        "operator_longitude": 0.0,
+        "operator_altitude_geo": -1000.0,
+        "classification_type": 0,
+        "category_eu": 0,
+        "class_eu": 0,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": false,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 0,
+        "uas_id": ""
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": ""
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": ""
+       },
+       "system": {
+        "operator_location_type": 0,
+        "operator_latitude": 0.0,
+        "operator_longitude": 0.0,
+        "operator_altitude_geo": -1000.0,
+        "classification_type": 0,
+        "category_eu": 0,
+        "class_eu": 0,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": false,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 0,
+        "uas_id": ""
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": ""
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": ""
+       },
+       "system": {
+        "operator_location_type": 0,
+        "operator_latitude": 0.0,
+        "operator_longitude": 0.0,
+        "operator_altitude_geo": -1000.0,
+        "classification_type": 0,
+        "category_eu": 0,
+        "class_eu": 0,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": false,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 0,
+        "uas_id": ""
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": ""
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": ""
+       },
+       "system": {
+        "operator_location_type": 0,
+        "operator_latitude": 0.0,
+        "operator_longitude": 0.0,
+        "operator_altitude_geo": -1000.0,
+        "classification_type": 0,
+        "category_eu": 0,
+        "class_eu": 0,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": false,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 0,
+        "uas_id": ""
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": ""
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": ""
+       },
+       "system": {
+        "operator_location_type": 0,
+        "operator_latitude": 0.0,
+        "operator_longitude": 0.0,
+        "operator_altitude_geo": -1000.0,
+        "classification_type": 0,
+        "category_eu": 0,
+        "class_eu": 0,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": false,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 2,
+        "ua_type": 15,
+        "uas_id": "ABC123"
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": ""
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": ""
+       },
+       "system": {
+        "operator_location_type": 0,
+        "operator_latitude": 0.0,
+        "operator_longitude": 0.0,
+        "operator_altitude_geo": -1000.0,
+        "classification_type": 0,
+        "category_eu": 0,
+        "class_eu": 0,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": false,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 0,
+        "uas_id": ""
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": ""
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": ""
+       },
+       "system": {
+        "operator_location_type": 0,
+        "operator_latitude": 0.0,
+        "operator_longitude": 0.0,
+        "operator_altitude_geo": -1000.0,
+        "classification_type": 0,
+        "category_eu": 0,
+        "class_eu": 0,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": false,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 0,
+        "uas_id": ""
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": ""
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": ""
+       },
+       "system": {
+        "operator_location_type": 0,
+        "operator_latitude": 0.0,
+        "operator_longitude": 0.0,
+        "operator_altitude_geo": -1000.0,
+        "classification_type": 0,
+        "category_eu": 0,
+        "class_eu": 0,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": false,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 0,
+        "uas_id": ""
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": ""
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": ""
+       },
+       "system": {
+        "operator_location_type": 0,
+        "operator_latitude": 0.0,
+        "operator_longitude": 0.0,
+        "operator_altitude_geo": -1000.0,
+        "classification_type": 0,
+        "category_eu": 0,
+        "class_eu": 0,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": false,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 3,
+        "ua_type": 0,
+        "uas_id": ""
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": ""
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": ""
+       },
+       "system": {
+        "operator_location_type": 0,
+        "operator_latitude": 0.0,
+        "operator_longitude": 0.0,
+        "operator_altitude_geo": -1000.0,
+        "classification_type": 0,
+        "category_eu": 0,
+        "class_eu": 0,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": false,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 0,
+        "uas_id": "12345"
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": ""
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": ""
+       },
+       "system": {
+        "operator_location_type": 0,
+        "operator_latitude": 0.0,
+        "operator_longitude": 0.0,
+        "operator_altitude_geo": -1000.0,
+        "classification_type": 0,
+        "category_eu": 0,
+        "class_eu": 0,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": false,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 0,
+        "uas_id": "ncd OK "
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": ""
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": ""
+       },
+       "system": {
+        "operator_location_type": 0,
+        "operator_latitude": 0.0,
+        "operator_longitude": 0.0,
+        "operator_altitude_geo": -1000.0,
+        "classification_type": 0,
+        "category_eu": 0,
+        "class_eu": 0,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": false,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 0,
+        "uas_id": "AAAAAAAAAAAAAAAAAAAA"
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": ""
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": ""
+       },
+       "system": {
+        "operator_location_type": 0,
+        "operator_latitude": 0.0,
+        "operator_longitude": 0.0,
+        "operator_altitude_geo": -1000.0,
+        "classification_type": 0,
+        "category_eu": 0,
+        "class_eu": 0,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": false,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 0,
+        "uas_id": "['a', 1]"
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": ""
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": ""
+       },
+       "system": {
+        "operator_location_type": 0,
+        "operator_latitude": 0.0,
+        "operator_longitude": 0.0,
+        "operator_altitude_geo": -1000.0,
+        "classification_type": 0,
+        "category_eu": 0,
+        "class_eu": 0,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": false,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 0,
+        "uas_id": "{'k': 'v'}"
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": ""
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": ""
+       },
+       "system": {
+        "operator_location_type": 0,
+        "operator_latitude": 0.0,
+        "operator_longitude": 0.0,
+        "operator_altitude_geo": -1000.0,
+        "classification_type": 0,
+        "category_eu": 0,
+        "class_eu": 0,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": false,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 0,
+        "uas_id": "True"
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": ""
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": ""
+       },
+       "system": {
+        "operator_location_type": 0,
+        "operator_latitude": 0.0,
+        "operator_longitude": 0.0,
+        "operator_altitude_geo": -1000.0,
+        "classification_type": 0,
+        "category_eu": 0,
+        "class_eu": 0,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": false,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 0,
+        "uas_id": "3.0"
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": ""
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": ""
+       },
+       "system": {
+        "operator_location_type": 0,
+        "operator_latitude": 0.0,
+        "operator_longitude": 0.0,
+        "operator_altitude_geo": -1000.0,
+        "classification_type": 0,
+        "category_eu": 0,
+        "class_eu": 0,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": false,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 0,
+        "uas_id": "tabinsidenewline"
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": ""
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": ""
+       },
+       "system": {
+        "operator_location_type": 0,
+        "operator_latitude": 0.0,
+        "operator_longitude": 0.0,
+        "operator_altitude_geo": -1000.0,
+        "classification_type": 0,
+        "category_eu": 0,
+        "class_eu": 0,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": false,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 0,
+        "uas_id": "pad"
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": ""
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": ""
+       },
+       "system": {
+        "operator_location_type": 0,
+        "operator_latitude": 0.0,
+        "operator_longitude": 0.0,
+        "operator_altitude_geo": -1000.0,
+        "classification_type": 0,
+        "category_eu": 0,
+        "class_eu": 0,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": false,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 0,
+        "uas_id": "it's"
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": ""
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": ""
+       },
+       "system": {
+        "operator_location_type": 0,
+        "operator_latitude": 0.0,
+        "operator_longitude": 0.0,
+        "operator_altitude_geo": -1000.0,
+        "classification_type": 0,
+        "category_eu": 0,
+        "class_eu": 0,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": false,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 0,
+        "uas_id": "[\"it's\", 'say \"x\"']"
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": ""
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": ""
+       },
+       "system": {
+        "operator_location_type": 0,
+        "operator_latitude": 0.0,
+        "operator_longitude": 0.0,
+        "operator_altitude_geo": -1000.0,
+        "classification_type": 0,
+        "category_eu": 0,
+        "class_eu": 0,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": false,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 0,
+        "uas_id": "1e+16"
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": ""
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": ""
+       },
+       "system": {
+        "operator_location_type": 0,
+        "operator_latitude": 0.0,
+        "operator_longitude": 0.0,
+        "operator_altitude_geo": -1000.0,
+        "classification_type": 0,
+        "category_eu": 0,
+        "class_eu": 0,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": false,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 0,
+        "uas_id": "1e-05"
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": ""
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": ""
+       },
+       "system": {
+        "operator_location_type": 0,
+        "operator_latitude": 0.0,
+        "operator_longitude": 0.0,
+        "operator_altitude_geo": -1000.0,
+        "classification_type": 0,
+        "category_eu": 0,
+        "class_eu": 0,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": false,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 0,
+        "uas_id": ""
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": ""
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": ""
+       },
+       "system": {
+        "operator_location_type": 0,
+        "operator_latitude": 0.0,
+        "operator_longitude": 0.0,
+        "operator_altitude_geo": -1000.0,
+        "classification_type": 0,
+        "category_eu": 0,
+        "class_eu": 0,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": false,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 0,
+        "uas_id": ""
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": "FIN87astrdge12k8-xyz"
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": ""
+       },
+       "system": {
+        "operator_location_type": 0,
+        "operator_latitude": 0.0,
+        "operator_longitude": 0.0,
+        "operator_altitude_geo": -1000.0,
+        "classification_type": 0,
+        "category_eu": 0,
+        "class_eu": 0,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": false,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 0,
+        "uas_id": ""
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": "xxxxxxxxxxxxxxxxxxxx"
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": ""
+       },
+       "system": {
+        "operator_location_type": 0,
+        "operator_latitude": 0.0,
+        "operator_longitude": 0.0,
+        "operator_altitude_geo": -1000.0,
+        "classification_type": 0,
+        "category_eu": 0,
+        "class_eu": 0,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": false,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 0,
+        "uas_id": ""
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": ""
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": ""
+       },
+       "system": {
+        "operator_location_type": 0,
+        "operator_latitude": 0.0,
+        "operator_longitude": 0.0,
+        "operator_altitude_geo": -1000.0,
+        "classification_type": 0,
+        "category_eu": 0,
+        "class_eu": 0,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": false,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 0,
+        "uas_id": ""
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": ""
+       },
+       "self_id": {
+        "description_type": 2,
+        "description": "survey flight over the "
+       },
+       "system": {
+        "operator_location_type": 0,
+        "operator_latitude": 0.0,
+        "operator_longitude": 0.0,
+        "operator_altitude_geo": -1000.0,
+        "classification_type": 0,
+        "category_eu": 0,
+        "class_eu": 0,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": false,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 0,
+        "uas_id": ""
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": ""
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": "7"
+       },
+       "system": {
+        "operator_location_type": 0,
+        "operator_latitude": 0.0,
+        "operator_longitude": 0.0,
+        "operator_altitude_geo": -1000.0,
+        "classification_type": 0,
+        "category_eu": 0,
+        "class_eu": 0,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": false,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 0,
+        "uas_id": ""
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": ""
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": ""
+       },
+       "system": {
+        "operator_location_type": 2,
+        "operator_latitude": 48.1234567,
+        "operator_longitude": 11.7654321,
+        "operator_altitude_geo": 520.5,
+        "classification_type": 0,
+        "category_eu": 0,
+        "class_eu": 0,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": false,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 0,
+        "uas_id": ""
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": ""
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": ""
+       },
+       "system": {
+        "operator_location_type": 2,
+        "operator_latitude": 90.0,
+        "operator_longitude": -180.0,
+        "operator_altitude_geo": 31767.0,
+        "classification_type": 0,
+        "category_eu": 0,
+        "class_eu": 0,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": false,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 0,
+        "uas_id": ""
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": ""
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": ""
+       },
+       "system": {
+        "operator_location_type": 0,
+        "operator_latitude": 48.5,
+        "operator_longitude": 0.0,
+        "operator_altitude_geo": -1000.0,
+        "classification_type": 0,
+        "category_eu": 0,
+        "class_eu": 0,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": false,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 0,
+        "uas_id": ""
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": ""
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": ""
+       },
+       "system": {
+        "operator_location_type": 0,
+        "operator_latitude": 0.0,
+        "operator_longitude": 0.0,
+        "operator_altitude_geo": -1000.0,
+        "classification_type": 0,
+        "category_eu": 0,
+        "class_eu": 0,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": false,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 0,
+        "uas_id": ""
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": ""
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": ""
+       },
+       "system": {
+        "operator_location_type": 0,
+        "operator_latitude": 1.0,
+        "operator_longitude": 0.0,
+        "operator_altitude_geo": -1000.0,
+        "classification_type": 0,
+        "category_eu": 0,
+        "class_eu": 0,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": false,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 0,
+        "uas_id": ""
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": ""
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": ""
+       },
+       "system": {
+        "operator_location_type": 0,
+        "operator_latitude": 0.0,
+        "operator_longitude": 0.0,
+        "operator_altitude_geo": -1000.0,
+        "classification_type": 0,
+        "category_eu": 0,
+        "class_eu": 0,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": false,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 0,
+        "uas_id": ""
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": ""
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": ""
+       },
+       "system": {
+        "operator_location_type": 0,
+        "operator_latitude": -90.0,
+        "operator_longitude": 180.0,
+        "operator_altitude_geo": -1000.0,
+        "classification_type": 0,
+        "category_eu": 0,
+        "class_eu": 0,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": false,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 0,
+        "uas_id": ""
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": ""
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": ""
+       },
+       "system": {
+        "operator_location_type": 0,
+        "operator_latitude": -89.5,
+        "operator_longitude": -179.5,
+        "operator_altitude_geo": -1000.0,
+        "classification_type": 0,
+        "category_eu": 0,
+        "class_eu": 0,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": false,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 0,
+        "uas_id": ""
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": ""
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": ""
+       },
+       "system": {
+        "operator_location_type": 0,
+        "operator_latitude": -90.0,
+        "operator_longitude": 180.0,
+        "operator_altitude_geo": 31767.0,
+        "classification_type": 0,
+        "category_eu": 0,
+        "class_eu": 0,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": false,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 0,
+        "uas_id": ""
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": ""
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": ""
+       },
+       "system": {
+        "operator_location_type": 0,
+        "operator_latitude": 0.0,
+        "operator_longitude": 0.0,
+        "operator_altitude_geo": 31767.0,
+        "classification_type": 0,
+        "category_eu": 0,
+        "class_eu": 0,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": false,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 0,
+        "uas_id": ""
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": ""
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": ""
+       },
+       "system": {
+        "operator_location_type": 0,
+        "operator_latitude": 0.0,
+        "operator_longitude": 0.0,
+        "operator_altitude_geo": -1000.0,
+        "classification_type": 0,
+        "category_eu": 0,
+        "class_eu": 0,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": 31767.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": false,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 0,
+        "uas_id": ""
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": ""
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": ""
+       },
+       "system": {
+        "operator_location_type": 0,
+        "operator_latitude": 0.0,
+        "operator_longitude": 0.0,
+        "operator_altitude_geo": -1000.0,
+        "classification_type": 0,
+        "category_eu": 0,
+        "class_eu": 0,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": 31767.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": false,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 0,
+        "uas_id": ""
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": ""
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": ""
+       },
+       "system": {
+        "operator_location_type": 0,
+        "operator_latitude": 0.0,
+        "operator_longitude": 0.0,
+        "operator_altitude_geo": -1000.0,
+        "classification_type": 1,
+        "category_eu": 3,
+        "class_eu": 7,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": false,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 0,
+        "uas_id": ""
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": ""
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": ""
+       },
+       "system": {
+        "operator_location_type": 0,
+        "operator_latitude": 0.0,
+        "operator_longitude": 0.0,
+        "operator_altitude_geo": -1000.0,
+        "classification_type": 1,
+        "category_eu": 0,
+        "class_eu": 0,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": false,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 0,
+        "uas_id": ""
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": ""
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": ""
+       },
+       "system": {
+        "operator_location_type": 0,
+        "operator_latitude": 0.0,
+        "operator_longitude": 0.0,
+        "operator_altitude_geo": -1000.0,
+        "classification_type": 0,
+        "category_eu": 0,
+        "class_eu": 0,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": false,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 0,
+        "uas_id": ""
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": ""
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": ""
+       },
+       "system": {
+        "operator_location_type": 0,
+        "operator_latitude": 0.0,
+        "operator_longitude": 0.0,
+        "operator_altitude_geo": -1000.0,
+        "classification_type": 0,
+        "category_eu": 0,
+        "class_eu": 0,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": false,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 0,
+        "uas_id": ""
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": ""
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": ""
+       },
+       "system": {
+        "operator_location_type": 0,
+        "operator_latitude": 0.0,
+        "operator_longitude": 0.0,
+        "operator_altitude_geo": -1000.0,
+        "classification_type": 0,
+        "category_eu": 0,
+        "class_eu": 0,
+        "area_count": 65535,
+        "area_radius": 65535,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": false,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 0,
+        "uas_id": ""
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": ""
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": ""
+       },
+       "system": {
+        "operator_location_type": 0,
+        "operator_latitude": 0.0,
+        "operator_longitude": 0.0,
+        "operator_altitude_geo": -1000.0,
+        "classification_type": 0,
+        "category_eu": 0,
+        "class_eu": 0,
+        "area_count": 5,
+        "area_radius": 12,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": false,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 0,
+        "uas_id": ""
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": ""
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": ""
+       },
+       "system": {
+        "operator_location_type": 0,
+        "operator_latitude": 0.0,
+        "operator_longitude": 0.0,
+        "operator_altitude_geo": -1000.0,
+        "classification_type": 0,
+        "category_eu": 0,
+        "class_eu": 0,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": false,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 0,
+        "uas_id": ""
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": ""
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": ""
+       },
+       "system": {
+        "operator_location_type": 0,
+        "operator_latitude": 0.0,
+        "operator_longitude": 0.0,
+        "operator_altitude_geo": -1000.0,
+        "classification_type": 0,
+        "category_eu": 0,
+        "class_eu": 0,
+        "area_count": 2,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": false,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 0,
+        "uas_id": ""
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": ""
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": ""
+       },
+       "system": {
+        "operator_location_type": 0,
+        "operator_latitude": 0.0,
+        "operator_longitude": 0.0,
+        "operator_altitude_geo": -1000.0,
+        "classification_type": 0,
+        "category_eu": 0,
+        "class_eu": 0,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": -1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": false,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 0,
+        "uas_id": ""
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": ""
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": ""
+       },
+       "system": {
+        "operator_location_type": 0,
+        "operator_latitude": 0.0,
+        "operator_longitude": 0.0,
+        "operator_altitude_geo": -1000.0,
+        "classification_type": 0,
+        "category_eu": 0,
+        "class_eu": 0,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": 120.0,
+        "area_floor": -5.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": false,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 0,
+        "uas_id": ""
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": ""
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": ""
+       },
+       "system": {
+        "operator_location_type": 0,
+        "operator_latitude": 0.0,
+        "operator_longitude": 0.0,
+        "operator_altitude_geo": -1000.0,
+        "classification_type": 0,
+        "category_eu": 0,
+        "class_eu": 0,
+        "area_count": 1,
+        "area_radius": 0,
+        "area_ceiling": -1000.0,
+        "area_floor": 1000.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "enabled": true,
+       "region": "faa",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 2,
+        "uas_id": "1596F37QZ0123456789"
+       },
+       "operator_id": {
+        "operator_id_type": 0,
+        "operator_id": "FIN123"
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": "test"
+       },
+       "system": {
+        "operator_location_type": 2,
+        "operator_latitude": 48.1,
+        "operator_longitude": 11.5,
+        "operator_altitude_geo": 500.0,
+        "classification_type": 1,
+        "category_eu": 2,
+        "class_eu": 3,
+        "area_count": 3,
+        "area_radius": 200,
+        "area_ceiling": 120.0,
+        "area_floor": 0.0
+       }
+      },
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "pure_messages",
+    "steps": [
+     {
+      "op": "pure_messages",
+      "raw": {
+       "system": {
+        "area_count": 70000,
+        "area_radius": 70000
+       }
+      },
+      "target": [
+       1,
+       1
+      ],
+      "unix": 1700000000.0
+     },
+     {
+      "op": "pure_messages",
+      "raw": {
+       "system": {
+        "area_count": "5",
+        "area_radius": "12.7"
+       }
+      },
+      "target": [
+       1,
+       1
+      ],
+      "unix": 1700000000.0
+     },
+     {
+      "op": "pure_messages",
+      "raw": {
+       "system": {
+        "area_count": true,
+        "area_radius": false
+       }
+      },
+      "target": [
+       1,
+       1
+      ],
+      "unix": 1700000000.0
+     },
+     {
+      "op": "pure_messages",
+      "raw": {
+       "system": {
+        "area_count": 2.9
+       }
+      },
+      "target": [
+       1,
+       1
+      ],
+      "unix": 1700000000.0
+     },
+     {
+      "op": "pure_messages",
+      "raw": {
+       "system": {
+        "area_count": "nan"
+       }
+      },
+      "target": [
+       1,
+       1
+      ],
+      "unix": 1700000000.0
+     },
+     {
+      "op": "pure_messages",
+      "raw": {
+       "system": {
+        "area_ceiling": 120,
+        "area_floor": -5
+       }
+      },
+      "target": [
+       1,
+       1
+      ],
+      "unix": 1700000000.0
+     },
+     {
+      "op": "pure_messages",
+      "raw": {
+       "system": {
+        "area_ceiling": "inf",
+        "area_floor": "1e3"
+       }
+      },
+      "target": [
+       1,
+       1
+      ],
+      "unix": 1700000000.0
+     },
+     {
+      "op": "pure_messages",
+      "raw": {
+       "enabled": true,
+       "region": "faa",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 2,
+        "uas_id": "1596F37QZ0123456789"
+       },
+       "operator_id": {
+        "operator_id": "FIN123"
+       },
+       "self_id": {
+        "description": "test"
+       },
+       "system": {
+        "operator_location_type": 2,
+        "operator_latitude": 48.1,
+        "operator_longitude": 11.5,
+        "operator_altitude_geo": 500,
+        "classification_type": 1,
+        "category_eu": 2,
+        "class_eu": 3,
+        "area_count": 3,
+        "area_radius": 200,
+        "area_ceiling": 120,
+        "area_floor": 0
+       }
+      },
+      "target": [
+       1,
+       1
+      ],
+      "unix": 1700000000.0
+     },
+     {
+      "op": "pure_messages",
+      "raw": {
+       "enabled": true,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 2,
+        "uas_id": "ABC123"
+       },
+       "operator_id": {
+        "operator_id": "FIN123"
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": "test"
+       },
+       "system": {
+        "operator_location_type": 2,
+        "operator_latitude": 48.1234567,
+        "operator_longitude": 11.7654321,
+        "operator_altitude_geo": 520.5,
+        "classification_type": 1,
+        "category_eu": 2,
+        "class_eu": 5
+       }
+      },
+      "target": [
+       2,
+       190
+      ],
+      "unix": 1546300800.0
+     },
+     {
+      "op": "pure_messages",
+      "raw": {
+       "enabled": true,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 2,
+        "uas_id": "ABC123"
+       },
+       "operator_id": {
+        "operator_id": "FIN123"
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": "test"
+       },
+       "system": {
+        "operator_location_type": 2,
+        "operator_latitude": 48.1234567,
+        "operator_longitude": 11.7654321,
+        "operator_altitude_geo": 520.5,
+        "classification_type": 1,
+        "category_eu": 2,
+        "class_eu": 5
+       }
+      },
+      "target": [
+       2,
+       190
+      ],
+      "unix": 1546300799.5
+     },
+     {
+      "op": "pure_messages",
+      "raw": {
+       "enabled": true,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 2,
+        "uas_id": "ABC123"
+       },
+       "operator_id": {
+        "operator_id": "FIN123"
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": "test"
+       },
+       "system": {
+        "operator_location_type": 2,
+        "operator_latitude": 48.1234567,
+        "operator_longitude": 11.7654321,
+        "operator_altitude_geo": 520.5,
+        "classification_type": 1,
+        "category_eu": 2,
+        "class_eu": 5
+       }
+      },
+      "target": [
+       2,
+       190
+      ],
+      "unix": 0.0
+     },
+     {
+      "op": "pure_messages",
+      "raw": {
+       "enabled": true,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 2,
+        "uas_id": "ABC123"
+       },
+       "operator_id": {
+        "operator_id": "FIN123"
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": "test"
+       },
+       "system": {
+        "operator_location_type": 2,
+        "operator_latitude": 48.1234567,
+        "operator_longitude": 11.7654321,
+        "operator_altitude_geo": 520.5,
+        "classification_type": 1,
+        "category_eu": 2,
+        "class_eu": 5
+       }
+      },
+      "target": [
+       2,
+       190
+      ],
+      "unix": 6000000000.0
+     },
+     {
+      "op": "pure_messages",
+      "raw": {
+       "enabled": true,
+       "region": "eu",
+       "basic_id": {
+        "id_type": 1,
+        "ua_type": 2,
+        "uas_id": "ABC123"
+       },
+       "operator_id": {
+        "operator_id": "FIN123"
+       },
+       "self_id": {
+        "description_type": 0,
+        "description": "test"
+       },
+       "system": {
+        "operator_location_type": 2,
+        "operator_latitude": 48.1234567,
+        "operator_longitude": 11.7654321,
+        "operator_altitude_geo": 520.5,
+        "classification_type": 1,
+        "category_eu": 2,
+        "class_eu": 5
+       }
+      },
+      "target": [
+       2,
+       190
+      ],
+      "unix": 1700000000.75
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": [
+       [
+        "open_drone_id_basic_id",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "id_type": 1,
+         "ua_type": 0,
+         "uas_id": "0000000000000000000000000000000000000000"
+        }
+       ],
+       [
+        "open_drone_id_operator_id",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "operator_id_type": 0,
+         "operator_id": "0000000000000000000000000000000000000000"
+        }
+       ],
+       [
+        "open_drone_id_self_id",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "description_type": 0,
+         "description": "0000000000000000000000000000000000000000000000"
+        }
+       ],
+       [
+        "open_drone_id_system",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "operator_location_type": 0,
+         "classification_type": 0,
+         "operator_latitude": 0,
+         "operator_longitude": 0,
+         "area_count": 65535,
+         "area_radius": 65535,
+         "area_ceiling": -1000.0,
+         "area_floor": -1000.0,
+         "category_eu": 0,
+         "class_eu": 0,
+         "operator_altitude_geo": -1000.0,
+         "timestamp": 153699200
+        }
+       ]
+      ],
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": [
+       [
+        "open_drone_id_basic_id",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "id_type": 1,
+         "ua_type": 0,
+         "uas_id": "0000000000000000000000000000000000000000"
+        }
+       ],
+       [
+        "open_drone_id_operator_id",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "operator_id_type": 0,
+         "operator_id": "0000000000000000000000000000000000000000"
+        }
+       ],
+       [
+        "open_drone_id_self_id",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "description_type": 0,
+         "description": "0000000000000000000000000000000000000000000000"
+        }
+       ],
+       [
+        "open_drone_id_system",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "operator_location_type": 0,
+         "classification_type": 0,
+         "operator_latitude": 0,
+         "operator_longitude": 0,
+         "area_count": 5,
+         "area_radius": 12,
+         "area_ceiling": -1000.0,
+         "area_floor": -1000.0,
+         "category_eu": 0,
+         "class_eu": 0,
+         "operator_altitude_geo": -1000.0,
+         "timestamp": 153699200
+        }
+       ]
+      ],
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": [
+       [
+        "open_drone_id_basic_id",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "id_type": 1,
+         "ua_type": 0,
+         "uas_id": "0000000000000000000000000000000000000000"
+        }
+       ],
+       [
+        "open_drone_id_operator_id",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "operator_id_type": 0,
+         "operator_id": "0000000000000000000000000000000000000000"
+        }
+       ],
+       [
+        "open_drone_id_self_id",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "description_type": 0,
+         "description": "0000000000000000000000000000000000000000000000"
+        }
+       ],
+       [
+        "open_drone_id_system",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "operator_location_type": 0,
+         "classification_type": 0,
+         "operator_latitude": 0,
+         "operator_longitude": 0,
+         "area_count": 1,
+         "area_radius": 0,
+         "area_ceiling": -1000.0,
+         "area_floor": -1000.0,
+         "category_eu": 0,
+         "class_eu": 0,
+         "operator_altitude_geo": -1000.0,
+         "timestamp": 153699200
+        }
+       ]
+      ],
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": [
+       [
+        "open_drone_id_basic_id",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "id_type": 1,
+         "ua_type": 0,
+         "uas_id": "0000000000000000000000000000000000000000"
+        }
+       ],
+       [
+        "open_drone_id_operator_id",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "operator_id_type": 0,
+         "operator_id": "0000000000000000000000000000000000000000"
+        }
+       ],
+       [
+        "open_drone_id_self_id",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "description_type": 0,
+         "description": "0000000000000000000000000000000000000000000000"
+        }
+       ],
+       [
+        "open_drone_id_system",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "operator_location_type": 0,
+         "classification_type": 0,
+         "operator_latitude": 0,
+         "operator_longitude": 0,
+         "area_count": 2,
+         "area_radius": 0,
+         "area_ceiling": -1000.0,
+         "area_floor": -1000.0,
+         "category_eu": 0,
+         "class_eu": 0,
+         "operator_altitude_geo": -1000.0,
+         "timestamp": 153699200
+        }
+       ]
+      ],
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": [
+       [
+        "open_drone_id_basic_id",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "id_type": 1,
+         "ua_type": 0,
+         "uas_id": "0000000000000000000000000000000000000000"
+        }
+       ],
+       [
+        "open_drone_id_operator_id",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "operator_id_type": 0,
+         "operator_id": "0000000000000000000000000000000000000000"
+        }
+       ],
+       [
+        "open_drone_id_self_id",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "description_type": 0,
+         "description": "0000000000000000000000000000000000000000000000"
+        }
+       ],
+       [
+        "open_drone_id_system",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "operator_location_type": 0,
+         "classification_type": 0,
+         "operator_latitude": 0,
+         "operator_longitude": 0,
+         "area_count": 1,
+         "area_radius": 0,
+         "area_ceiling": -1000.0,
+         "area_floor": -1000.0,
+         "category_eu": 0,
+         "class_eu": 0,
+         "operator_altitude_geo": -1000.0,
+         "timestamp": 153699200
+        }
+       ]
+      ],
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": [
+       [
+        "open_drone_id_basic_id",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "id_type": 1,
+         "ua_type": 0,
+         "uas_id": "0000000000000000000000000000000000000000"
+        }
+       ],
+       [
+        "open_drone_id_operator_id",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "operator_id_type": 0,
+         "operator_id": "0000000000000000000000000000000000000000"
+        }
+       ],
+       [
+        "open_drone_id_self_id",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "description_type": 0,
+         "description": "0000000000000000000000000000000000000000000000"
+        }
+       ],
+       [
+        "open_drone_id_system",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "operator_location_type": 0,
+         "classification_type": 0,
+         "operator_latitude": 0,
+         "operator_longitude": 0,
+         "area_count": 1,
+         "area_radius": 0,
+         "area_ceiling": 120.0,
+         "area_floor": -5.0,
+         "category_eu": 0,
+         "class_eu": 0,
+         "operator_altitude_geo": -1000.0,
+         "timestamp": 153699200
+        }
+       ]
+      ],
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": [
+       [
+        "open_drone_id_basic_id",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "id_type": 1,
+         "ua_type": 0,
+         "uas_id": "0000000000000000000000000000000000000000"
+        }
+       ],
+       [
+        "open_drone_id_operator_id",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "operator_id_type": 0,
+         "operator_id": "0000000000000000000000000000000000000000"
+        }
+       ],
+       [
+        "open_drone_id_self_id",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "description_type": 0,
+         "description": "0000000000000000000000000000000000000000000000"
+        }
+       ],
+       [
+        "open_drone_id_system",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "operator_location_type": 0,
+         "classification_type": 0,
+         "operator_latitude": 0,
+         "operator_longitude": 0,
+         "area_count": 1,
+         "area_radius": 0,
+         "area_ceiling": -1000.0,
+         "area_floor": 1000.0,
+         "category_eu": 0,
+         "class_eu": 0,
+         "operator_altitude_geo": -1000.0,
+         "timestamp": 153699200
+        }
+       ]
+      ],
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": [
+       [
+        "open_drone_id_basic_id",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "id_type": 1,
+         "ua_type": 2,
+         "uas_id": "31353936463337515a3031323334353637383900"
+        }
+       ],
+       [
+        "open_drone_id_operator_id",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "operator_id_type": 0,
+         "operator_id": "46494e3132330000000000000000000000000000"
+        }
+       ],
+       [
+        "open_drone_id_self_id",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "description_type": 0,
+         "description": "7465737400000000000000000000000000000000000000"
+        }
+       ],
+       [
+        "open_drone_id_system",
+        {
+         "target_system": 1,
+         "target_component": 1,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "operator_location_type": 2,
+         "classification_type": 1,
+         "operator_latitude": 481000000,
+         "operator_longitude": 115000000,
+         "area_count": 3,
+         "area_radius": 200,
+         "area_ceiling": 120.0,
+         "area_floor": 0.0,
+         "category_eu": 2,
+         "class_eu": 3,
+         "operator_altitude_geo": 500.0,
+         "timestamp": 153699200
+        }
+       ]
+      ],
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": [
+       [
+        "open_drone_id_basic_id",
+        {
+         "target_system": 2,
+         "target_component": 190,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "id_type": 1,
+         "ua_type": 2,
+         "uas_id": "4142433132330000000000000000000000000000"
+        }
+       ],
+       [
+        "open_drone_id_operator_id",
+        {
+         "target_system": 2,
+         "target_component": 190,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "operator_id_type": 0,
+         "operator_id": "46494e3132330000000000000000000000000000"
+        }
+       ],
+       [
+        "open_drone_id_self_id",
+        {
+         "target_system": 2,
+         "target_component": 190,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "description_type": 0,
+         "description": "7465737400000000000000000000000000000000000000"
+        }
+       ],
+       [
+        "open_drone_id_system",
+        {
+         "target_system": 2,
+         "target_component": 190,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "operator_location_type": 2,
+         "classification_type": 1,
+         "operator_latitude": 481234567,
+         "operator_longitude": 117654321,
+         "area_count": 1,
+         "area_radius": 0,
+         "area_ceiling": -1000.0,
+         "area_floor": -1000.0,
+         "category_eu": 2,
+         "class_eu": 5,
+         "operator_altitude_geo": 520.5,
+         "timestamp": 0
+        }
+       ]
+      ],
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": [
+       [
+        "open_drone_id_basic_id",
+        {
+         "target_system": 2,
+         "target_component": 190,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "id_type": 1,
+         "ua_type": 2,
+         "uas_id": "4142433132330000000000000000000000000000"
+        }
+       ],
+       [
+        "open_drone_id_operator_id",
+        {
+         "target_system": 2,
+         "target_component": 190,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "operator_id_type": 0,
+         "operator_id": "46494e3132330000000000000000000000000000"
+        }
+       ],
+       [
+        "open_drone_id_self_id",
+        {
+         "target_system": 2,
+         "target_component": 190,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "description_type": 0,
+         "description": "7465737400000000000000000000000000000000000000"
+        }
+       ],
+       [
+        "open_drone_id_system",
+        {
+         "target_system": 2,
+         "target_component": 190,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "operator_location_type": 2,
+         "classification_type": 1,
+         "operator_latitude": 481234567,
+         "operator_longitude": 117654321,
+         "area_count": 1,
+         "area_radius": 0,
+         "area_ceiling": -1000.0,
+         "area_floor": -1000.0,
+         "category_eu": 2,
+         "class_eu": 5,
+         "operator_altitude_geo": 520.5,
+         "timestamp": 0
+        }
+       ]
+      ],
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": [
+       [
+        "open_drone_id_basic_id",
+        {
+         "target_system": 2,
+         "target_component": 190,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "id_type": 1,
+         "ua_type": 2,
+         "uas_id": "4142433132330000000000000000000000000000"
+        }
+       ],
+       [
+        "open_drone_id_operator_id",
+        {
+         "target_system": 2,
+         "target_component": 190,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "operator_id_type": 0,
+         "operator_id": "46494e3132330000000000000000000000000000"
+        }
+       ],
+       [
+        "open_drone_id_self_id",
+        {
+         "target_system": 2,
+         "target_component": 190,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "description_type": 0,
+         "description": "7465737400000000000000000000000000000000000000"
+        }
+       ],
+       [
+        "open_drone_id_system",
+        {
+         "target_system": 2,
+         "target_component": 190,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "operator_location_type": 2,
+         "classification_type": 1,
+         "operator_latitude": 481234567,
+         "operator_longitude": 117654321,
+         "area_count": 1,
+         "area_radius": 0,
+         "area_ceiling": -1000.0,
+         "area_floor": -1000.0,
+         "category_eu": 2,
+         "class_eu": 5,
+         "operator_altitude_geo": 520.5,
+         "timestamp": 0
+        }
+       ]
+      ],
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": [
+       [
+        "open_drone_id_basic_id",
+        {
+         "target_system": 2,
+         "target_component": 190,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "id_type": 1,
+         "ua_type": 2,
+         "uas_id": "4142433132330000000000000000000000000000"
+        }
+       ],
+       [
+        "open_drone_id_operator_id",
+        {
+         "target_system": 2,
+         "target_component": 190,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "operator_id_type": 0,
+         "operator_id": "46494e3132330000000000000000000000000000"
+        }
+       ],
+       [
+        "open_drone_id_self_id",
+        {
+         "target_system": 2,
+         "target_component": 190,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "description_type": 0,
+         "description": "7465737400000000000000000000000000000000000000"
+        }
+       ],
+       [
+        "open_drone_id_system",
+        {
+         "target_system": 2,
+         "target_component": 190,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "operator_location_type": 2,
+         "classification_type": 1,
+         "operator_latitude": 481234567,
+         "operator_longitude": 117654321,
+         "area_count": 1,
+         "area_radius": 0,
+         "area_ceiling": -1000.0,
+         "area_floor": -1000.0,
+         "category_eu": 2,
+         "class_eu": 5,
+         "operator_altitude_geo": 520.5,
+         "timestamp": 4294967295
+        }
+       ]
+      ],
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": [
+       [
+        "open_drone_id_basic_id",
+        {
+         "target_system": 2,
+         "target_component": 190,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "id_type": 1,
+         "ua_type": 2,
+         "uas_id": "4142433132330000000000000000000000000000"
+        }
+       ],
+       [
+        "open_drone_id_operator_id",
+        {
+         "target_system": 2,
+         "target_component": 190,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "operator_id_type": 0,
+         "operator_id": "46494e3132330000000000000000000000000000"
+        }
+       ],
+       [
+        "open_drone_id_self_id",
+        {
+         "target_system": 2,
+         "target_component": 190,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "description_type": 0,
+         "description": "7465737400000000000000000000000000000000000000"
+        }
+       ],
+       [
+        "open_drone_id_system",
+        {
+         "target_system": 2,
+         "target_component": 190,
+         "id_or_mac": "0000000000000000000000000000000000000000",
+         "operator_location_type": 2,
+         "classification_type": 1,
+         "operator_latitude": 481234567,
+         "operator_longitude": 117654321,
+         "area_count": 1,
+         "area_radius": 0,
+         "area_ceiling": -1000.0,
+         "area_floor": -1000.0,
+         "category_eu": 2,
+         "class_eu": 5,
+         "operator_altitude_geo": 520.5,
+         "timestamp": 153699200
+        }
+       ]
+      ],
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "pure_arm_status",
+    "steps": [
+     {
+      "op": "pure_arm",
+      "status": 0,
+      "error": ""
+     },
+     {
+      "op": "pure_arm",
+      "status": 0,
+      "error": "boom"
+     },
+     {
+      "op": "pure_arm",
+      "status": 0,
+      "error": "a\u00e9b"
+     },
+     {
+      "op": "pure_arm",
+      "status": 1,
+      "error": ""
+     },
+     {
+      "op": "pure_arm",
+      "status": 1,
+      "error": "boom"
+     },
+     {
+      "op": "pure_arm",
+      "status": 1,
+      "error": "a\u00e9b"
+     },
+     {
+      "op": "pure_arm",
+      "status": 2,
+      "error": ""
+     },
+     {
+      "op": "pure_arm",
+      "status": 2,
+      "error": "boom"
+     },
+     {
+      "op": "pure_arm",
+      "status": 2,
+      "error": "a\u00e9b"
+     },
+     {
+      "op": "pure_arm",
+      "status": 255,
+      "error": ""
+     },
+     {
+      "op": "pure_arm",
+      "status": 255,
+      "error": "boom"
+     },
+     {
+      "op": "pure_arm",
+      "status": 255,
+      "error": "a\u00e9b"
+     },
+     {
+      "op": "pure_arm",
+      "status": null,
+      "error": ""
+     },
+     {
+      "op": "pure_arm",
+      "status": null,
+      "error": "boom"
+     },
+     {
+      "op": "pure_arm",
+      "status": null,
+      "error": "a\u00e9b"
+     },
+     {
+      "op": "pure_arm",
+      "status": "x",
+      "error": ""
+     },
+     {
+      "op": "pure_arm",
+      "status": "x",
+      "error": "boom"
+     },
+     {
+      "op": "pure_arm",
+      "status": "x",
+      "error": "a\u00e9b"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": {
+       "ok": true,
+       "status": 0,
+       "error": ""
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "ok": true,
+       "status": 0,
+       "error": "boom"
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "ok": true,
+       "status": 0,
+       "error": "ab"
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "ok": false,
+       "status": 1,
+       "error": ""
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "ok": false,
+       "status": 1,
+       "error": "boom"
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "ok": false,
+       "status": 1,
+       "error": "ab"
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "ok": false,
+       "status": 2,
+       "error": ""
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "ok": false,
+       "status": 2,
+       "error": "boom"
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "ok": false,
+       "status": 2,
+       "error": "ab"
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "ok": false,
+       "status": 255,
+       "error": ""
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "ok": false,
+       "status": 255,
+       "error": "boom"
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "ok": false,
+       "status": 255,
+       "error": "ab"
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "ok": false,
+       "status": 1,
+       "error": ""
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "ok": false,
+       "status": 1,
+       "error": "boom"
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "ok": false,
+       "status": 1,
+       "error": "ab"
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "ok": false,
+       "status": 1,
+       "error": ""
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "ok": false,
+       "status": 1,
+       "error": "boom"
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "ok": false,
+       "status": 1,
+       "error": "ab"
+      },
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  }
+ ]
+}

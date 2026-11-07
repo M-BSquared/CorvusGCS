@@ -615,7 +615,13 @@ impl Map3d {
 
     /// The mesh of a leaf: made once, again only when its elevation changes.
     /// Past this frame's build budget a leaf keeps the mesh it had, or waits.
-    fn leaf_mesh(&mut self, l: Leaf, dem: Option<Dem>, builds: &mut usize, started: std::time::Instant) -> Option<(Arc<MeshData>, bool)> {
+    fn leaf_mesh(
+        &mut self,
+        l: Leaf,
+        dem: Option<Dem>,
+        builds: &mut usize,
+        started: std::time::Instant,
+    ) -> Option<(Arc<MeshData>, bool)> {
         let key = (l.z, l.x, l.y);
         if let Some(m) = self.leaf_meshes.get_mut(&key) {
             let same = match (&m.dem, &dem) {

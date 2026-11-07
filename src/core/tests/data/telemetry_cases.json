@@ -1,0 +1,10729 @@
+{
+ "cases": [
+  {
+   "scenario": {
+    "name": "battery_settings",
+    "steps": [
+     {
+      "op": "battery"
+     },
+     {
+      "op": "set_battery",
+      "raw": {
+       "estimate": true,
+       "cells": 6
+      }
+     },
+     {
+      "op": "battery"
+     },
+     {
+      "op": "set_battery",
+      "raw": {
+       "chemistry": "liion",
+       "resistance": "9"
+      }
+     },
+     {
+      "op": "set_battery",
+      "raw": null
+     },
+     {
+      "op": "set_battery",
+      "raw": 7
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": {
+       "estimate": false,
+       "chemistry": "lipo",
+       "cells": 0,
+       "full_cell": 4.2,
+       "empty_cell": 3.6,
+       "resistance": 0.0,
+       "capacity_mah": 0.0
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "estimate": true,
+       "chemistry": "lipo",
+       "cells": 6,
+       "full_cell": 4.2,
+       "empty_cell": 3.6,
+       "resistance": 0.0,
+       "capacity_mah": 0.0
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "estimate": true,
+       "chemistry": "lipo",
+       "cells": 6,
+       "full_cell": 4.2,
+       "empty_cell": 3.6,
+       "resistance": 0.0,
+       "capacity_mah": 0.0
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "estimate": false,
+       "chemistry": "liion",
+       "cells": 0,
+       "full_cell": 4.2,
+       "empty_cell": 3.2,
+       "resistance": 9.0,
+       "capacity_mah": 0.0
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "estimate": false,
+       "chemistry": "lipo",
+       "cells": 0,
+       "full_cell": 4.2,
+       "empty_cell": 3.6,
+       "resistance": 0.0,
+       "capacity_mah": 0.0
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "estimate": false,
+       "chemistry": "lipo",
+       "cells": 0,
+       "full_cell": 4.2,
+       "empty_cell": 3.6,
+       "resistance": 0.0,
+       "capacity_mah": 0.0
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "hb": [],
+       "radio_seen": false,
+       "uplink": 0,
+       "cells": 0,
+       "drain": [],
+       "source": ""
+      },
+      "events": []
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "rc": []
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "battery_fields_autopilot",
+    "steps": [
+     {
+      "op": "fields",
+      "v": 25.2,
+      "a": 3.0,
+      "reported": 80
+     },
+     {
+      "op": "fields",
+      "v": 24.0,
+      "a": 30.0,
+      "reported": -1
+     },
+     {
+      "op": "fields",
+      "v": 0.0,
+      "a": 0.0,
+      "reported": 100
+     },
+     {
+      "op": "fields",
+      "v": 3.0,
+      "a": 0.0,
+      "reported": 0
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": {
+       "battery_voltage": 25.2,
+       "battery_current": 3.0,
+       "battery_percent": 80,
+       "battery_percent_fc": 80,
+       "battery_percent_est": 100.0,
+       "battery_source": "autopilot",
+       "battery_cells": 6,
+       "battery_cell_voltage": 4.2
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_voltage": 24.0,
+       "battery_current": 30.0,
+       "battery_percent": 0,
+       "battery_percent_fc": -1,
+       "battery_percent_est": 76.4,
+       "battery_source": "autopilot",
+       "battery_cells": 6,
+       "battery_cell_voltage": 4.0
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_voltage": 0.0,
+       "battery_current": 0.0,
+       "battery_percent": 100,
+       "battery_percent_fc": 100,
+       "battery_percent_est": -1.0,
+       "battery_source": "autopilot",
+       "battery_cells": 6,
+       "battery_cell_voltage": 0.0
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_voltage": 3.0,
+       "battery_current": 0.0,
+       "battery_percent": 0,
+       "battery_percent_fc": 0,
+       "battery_percent_est": 0.0,
+       "battery_source": "autopilot",
+       "battery_cells": 6,
+       "battery_cell_voltage": 0.5
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "hb": [],
+       "radio_seen": false,
+       "uplink": 0,
+       "cells": 6,
+       "drain": [],
+       "source": ""
+      },
+      "events": []
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "rc": []
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "battery_cells_are_latched",
+    "steps": [
+     {
+      "op": "fields",
+      "v": 25.2,
+      "a": 3.0,
+      "reported": 80
+     },
+     {
+      "op": "fields",
+      "v": 21.5,
+      "a": 3.0,
+      "reported": 80
+     },
+     {
+      "op": "state"
+     },
+     {
+      "op": "forget_cells"
+     },
+     {
+      "op": "fields",
+      "v": 21.5,
+      "a": 3.0,
+      "reported": 80
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": {
+       "battery_voltage": 25.2,
+       "battery_current": 3.0,
+       "battery_percent": 80,
+       "battery_percent_fc": 80,
+       "battery_percent_est": 100.0,
+       "battery_source": "autopilot",
+       "battery_cells": 6,
+       "battery_cell_voltage": 4.2
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_voltage": 21.5,
+       "battery_current": 3.0,
+       "battery_percent": 80,
+       "battery_percent_fc": 80,
+       "battery_percent_est": 0.0,
+       "battery_source": "autopilot",
+       "battery_cells": 6,
+       "battery_cell_voltage": 3.583
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "hb": [],
+       "radio_seen": false,
+       "uplink": 0,
+       "cells": 6,
+       "drain": [],
+       "source": ""
+      },
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": {
+       "battery_voltage": 21.5,
+       "battery_current": 3.0,
+       "battery_percent": 80,
+       "battery_percent_fc": 80,
+       "battery_percent_est": 0.0,
+       "battery_source": "autopilot",
+       "battery_cells": 6,
+       "battery_cell_voltage": 3.583
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "hb": [],
+       "radio_seen": false,
+       "uplink": 0,
+       "cells": 6,
+       "drain": [],
+       "source": ""
+      },
+      "events": []
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "rc": []
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "battery_cells_configured",
+    "steps": [
+     {
+      "op": "set_battery",
+      "raw": {
+       "cells": 4
+      }
+     },
+     {
+      "op": "fields",
+      "v": 16.0,
+      "a": 0.0,
+      "reported": 50
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": {
+       "estimate": false,
+       "chemistry": "lipo",
+       "cells": 4,
+       "full_cell": 4.2,
+       "empty_cell": 3.6,
+       "resistance": 0.0,
+       "capacity_mah": 0.0
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_voltage": 16.0,
+       "battery_current": 0.0,
+       "battery_percent": 50,
+       "battery_percent_fc": 50,
+       "battery_percent_est": 76.4,
+       "battery_source": "autopilot",
+       "battery_cells": 4,
+       "battery_cell_voltage": 4.0
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "hb": [],
+       "radio_seen": false,
+       "uplink": 0,
+       "cells": 0,
+       "drain": [],
+       "source": ""
+      },
+      "events": []
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "rc": []
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "battery_estimate_shown",
+    "steps": [
+     {
+      "op": "set_battery",
+      "raw": {
+       "estimate": true
+      }
+     },
+     {
+      "op": "fields",
+      "v": 25.2,
+      "a": 0.0,
+      "reported": 40
+     },
+     {
+      "op": "fields",
+      "v": 22.2,
+      "a": 20.0,
+      "reported": 40
+     },
+     {
+      "op": "fields",
+      "v": 0.0,
+      "a": 0.0,
+      "reported": 40
+     },
+     {
+      "op": "fields",
+      "v": 22.2,
+      "a": 20.0,
+      "reported": -1
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": {
+       "estimate": true,
+       "chemistry": "lipo",
+       "cells": 0,
+       "full_cell": 4.2,
+       "empty_cell": 3.6,
+       "resistance": 0.0,
+       "capacity_mah": 0.0
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_voltage": 25.2,
+       "battery_current": 0.0,
+       "battery_percent": 100,
+       "battery_percent_fc": 40,
+       "battery_percent_est": 100.0,
+       "battery_source": "estimate",
+       "battery_cells": 6,
+       "battery_cell_voltage": 4.2
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_voltage": 22.2,
+       "battery_current": 20.0,
+       "battery_percent": 8,
+       "battery_percent_fc": 40,
+       "battery_percent_est": 8.0,
+       "battery_source": "estimate",
+       "battery_cells": 6,
+       "battery_cell_voltage": 3.7
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_voltage": 0.0,
+       "battery_current": 0.0,
+       "battery_percent": 40,
+       "battery_percent_fc": 40,
+       "battery_percent_est": -1.0,
+       "battery_source": "autopilot",
+       "battery_cells": 6,
+       "battery_cell_voltage": 0.0
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_voltage": 22.2,
+       "battery_current": 20.0,
+       "battery_percent": 8,
+       "battery_percent_fc": -1,
+       "battery_percent_est": 8.0,
+       "battery_source": "estimate",
+       "battery_cells": 6,
+       "battery_cell_voltage": 3.7
+      },
+      "events": []
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "rc": []
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "battery_settings_reset_the_latch",
+    "steps": [
+     {
+      "op": "fields",
+      "v": 25.2,
+      "a": 3.0,
+      "reported": 80
+     },
+     {
+      "op": "set_battery",
+      "raw": {
+       "estimate": true
+      }
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": {
+       "battery_voltage": 25.2,
+       "battery_current": 3.0,
+       "battery_percent": 80,
+       "battery_percent_fc": 80,
+       "battery_percent_est": 100.0,
+       "battery_source": "autopilot",
+       "battery_cells": 6,
+       "battery_cell_voltage": 4.2
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "estimate": true,
+       "chemistry": "lipo",
+       "cells": 0,
+       "full_cell": 4.2,
+       "empty_cell": 3.6,
+       "resistance": 0.0,
+       "capacity_mah": 0.0
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "hb": [],
+       "radio_seen": false,
+       "uplink": 0,
+       "cells": 0,
+       "drain": [],
+       "source": ""
+      },
+      "events": []
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "rc": []
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "battery_endurance",
+    "steps": [
+     {
+      "op": "endurance",
+      "percent": 80.0,
+      "source": "autopilot",
+      "armed": false,
+      "now": 0.0
+     },
+     {
+      "op": "endurance",
+      "percent": 80.0,
+      "source": "autopilot",
+      "armed": true,
+      "now": 0.0
+     },
+     {
+      "op": "endurance",
+      "percent": 79.5,
+      "source": "autopilot",
+      "armed": true,
+      "now": 10.0
+     },
+     {
+      "op": "endurance",
+      "percent": 79.0,
+      "source": "autopilot",
+      "armed": true,
+      "now": 20.0
+     },
+     {
+      "op": "endurance",
+      "percent": 78.5,
+      "source": "autopilot",
+      "armed": true,
+      "now": 30.0
+     },
+     {
+      "op": "endurance",
+      "percent": 78.0,
+      "source": "autopilot",
+      "armed": true,
+      "now": 40.0
+     },
+     {
+      "op": "endurance",
+      "percent": 77.5,
+      "source": "autopilot",
+      "armed": true,
+      "now": 50.0
+     },
+     {
+      "op": "endurance",
+      "percent": 77.0,
+      "source": "autopilot",
+      "armed": true,
+      "now": 60.0
+     },
+     {
+      "op": "endurance",
+      "percent": 76.5,
+      "source": "autopilot",
+      "armed": true,
+      "now": 70.0
+     },
+     {
+      "op": "endurance",
+      "percent": 76.0,
+      "source": "autopilot",
+      "armed": true,
+      "now": 80.0
+     },
+     {
+      "op": "endurance",
+      "percent": 75.5,
+      "source": "autopilot",
+      "armed": true,
+      "now": 90.0
+     },
+     {
+      "op": "endurance",
+      "percent": 75.0,
+      "source": "autopilot",
+      "armed": true,
+      "now": 100.0
+     },
+     {
+      "op": "endurance",
+      "percent": 74.5,
+      "source": "autopilot",
+      "armed": true,
+      "now": 110.0
+     },
+     {
+      "op": "endurance",
+      "percent": 74.0,
+      "source": "autopilot",
+      "armed": true,
+      "now": 120.0
+     },
+     {
+      "op": "endurance",
+      "percent": 73.5,
+      "source": "autopilot",
+      "armed": true,
+      "now": 130.0
+     },
+     {
+      "op": "state"
+     },
+     {
+      "op": "endurance",
+      "percent": 60.0,
+      "source": "estimate",
+      "armed": true,
+      "now": 200.0
+     },
+     {
+      "op": "state"
+     },
+     {
+      "op": "endurance",
+      "percent": null,
+      "source": "estimate",
+      "armed": true,
+      "now": 210.0
+     },
+     {
+      "op": "endurance",
+      "percent": 59.0,
+      "source": "estimate",
+      "armed": false,
+      "now": 220.0
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 1540
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 1530
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 1520
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 1510
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 1500
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 1490
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 1480
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 1470
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "hb": [],
+       "radio_seen": false,
+       "uplink": 0,
+       "cells": 0,
+       "drain": [
+        [
+         0.0,
+         80.0
+        ],
+        [
+         10.0,
+         79.5
+        ],
+        [
+         20.0,
+         79.0
+        ],
+        [
+         30.0,
+         78.5
+        ],
+        [
+         40.0,
+         78.0
+        ],
+        [
+         50.0,
+         77.5
+        ],
+        [
+         60.0,
+         77.0
+        ],
+        [
+         70.0,
+         76.5
+        ],
+        [
+         80.0,
+         76.0
+        ],
+        [
+         90.0,
+         75.5
+        ],
+        [
+         100.0,
+         75.0
+        ],
+        [
+         110.0,
+         74.5
+        ],
+        [
+         120.0,
+         74.0
+        ],
+        [
+         130.0,
+         73.5
+        ]
+       ],
+       "source": "autopilot"
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "hb": [],
+       "radio_seen": false,
+       "uplink": 0,
+       "cells": 0,
+       "drain": [
+        [
+         200.0,
+         60.0
+        ]
+       ],
+       "source": "estimate"
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "hb": [],
+       "radio_seen": false,
+       "uplink": 0,
+       "cells": 0,
+       "drain": [],
+       "source": "estimate"
+      },
+      "events": []
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "rc": []
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "battery_endurance_window",
+    "steps": [
+     {
+      "op": "endurance",
+      "percent": 100.0,
+      "source": "autopilot",
+      "armed": true,
+      "now": 0.0
+     },
+     {
+      "op": "endurance",
+      "percent": 99.9,
+      "source": "autopilot",
+      "armed": true,
+      "now": 1.0
+     },
+     {
+      "op": "endurance",
+      "percent": 99.8,
+      "source": "autopilot",
+      "armed": true,
+      "now": 2.0
+     },
+     {
+      "op": "endurance",
+      "percent": 99.7,
+      "source": "autopilot",
+      "armed": true,
+      "now": 3.0
+     },
+     {
+      "op": "endurance",
+      "percent": 99.6,
+      "source": "autopilot",
+      "armed": true,
+      "now": 4.0
+     },
+     {
+      "op": "endurance",
+      "percent": 99.5,
+      "source": "autopilot",
+      "armed": true,
+      "now": 5.0
+     },
+     {
+      "op": "endurance",
+      "percent": 99.4,
+      "source": "autopilot",
+      "armed": true,
+      "now": 6.0
+     },
+     {
+      "op": "endurance",
+      "percent": 99.3,
+      "source": "autopilot",
+      "armed": true,
+      "now": 7.0
+     },
+     {
+      "op": "endurance",
+      "percent": 99.2,
+      "source": "autopilot",
+      "armed": true,
+      "now": 8.0
+     },
+     {
+      "op": "endurance",
+      "percent": 99.1,
+      "source": "autopilot",
+      "armed": true,
+      "now": 9.0
+     },
+     {
+      "op": "endurance",
+      "percent": 99.0,
+      "source": "autopilot",
+      "armed": true,
+      "now": 10.0
+     },
+     {
+      "op": "endurance",
+      "percent": 98.9,
+      "source": "autopilot",
+      "armed": true,
+      "now": 11.0
+     },
+     {
+      "op": "endurance",
+      "percent": 98.8,
+      "source": "autopilot",
+      "armed": true,
+      "now": 12.0
+     },
+     {
+      "op": "endurance",
+      "percent": 98.7,
+      "source": "autopilot",
+      "armed": true,
+      "now": 13.0
+     },
+     {
+      "op": "endurance",
+      "percent": 98.6,
+      "source": "autopilot",
+      "armed": true,
+      "now": 14.0
+     },
+     {
+      "op": "endurance",
+      "percent": 98.5,
+      "source": "autopilot",
+      "armed": true,
+      "now": 15.0
+     },
+     {
+      "op": "endurance",
+      "percent": 98.4,
+      "source": "autopilot",
+      "armed": true,
+      "now": 16.0
+     },
+     {
+      "op": "endurance",
+      "percent": 98.3,
+      "source": "autopilot",
+      "armed": true,
+      "now": 17.0
+     },
+     {
+      "op": "endurance",
+      "percent": 98.2,
+      "source": "autopilot",
+      "armed": true,
+      "now": 18.0
+     },
+     {
+      "op": "endurance",
+      "percent": 98.1,
+      "source": "autopilot",
+      "armed": true,
+      "now": 19.0
+     },
+     {
+      "op": "endurance",
+      "percent": 98.0,
+      "source": "autopilot",
+      "armed": true,
+      "now": 20.0
+     },
+     {
+      "op": "endurance",
+      "percent": 97.9,
+      "source": "autopilot",
+      "armed": true,
+      "now": 21.0
+     },
+     {
+      "op": "endurance",
+      "percent": 97.8,
+      "source": "autopilot",
+      "armed": true,
+      "now": 22.0
+     },
+     {
+      "op": "endurance",
+      "percent": 97.7,
+      "source": "autopilot",
+      "armed": true,
+      "now": 23.0
+     },
+     {
+      "op": "endurance",
+      "percent": 97.6,
+      "source": "autopilot",
+      "armed": true,
+      "now": 24.0
+     },
+     {
+      "op": "endurance",
+      "percent": 97.5,
+      "source": "autopilot",
+      "armed": true,
+      "now": 25.0
+     },
+     {
+      "op": "endurance",
+      "percent": 97.4,
+      "source": "autopilot",
+      "armed": true,
+      "now": 26.0
+     },
+     {
+      "op": "endurance",
+      "percent": 97.3,
+      "source": "autopilot",
+      "armed": true,
+      "now": 27.0
+     },
+     {
+      "op": "endurance",
+      "percent": 97.2,
+      "source": "autopilot",
+      "armed": true,
+      "now": 28.0
+     },
+     {
+      "op": "endurance",
+      "percent": 97.1,
+      "source": "autopilot",
+      "armed": true,
+      "now": 29.0
+     },
+     {
+      "op": "endurance",
+      "percent": 97.0,
+      "source": "autopilot",
+      "armed": true,
+      "now": 30.0
+     },
+     {
+      "op": "endurance",
+      "percent": 96.9,
+      "source": "autopilot",
+      "armed": true,
+      "now": 31.0
+     },
+     {
+      "op": "endurance",
+      "percent": 96.8,
+      "source": "autopilot",
+      "armed": true,
+      "now": 32.0
+     },
+     {
+      "op": "endurance",
+      "percent": 96.7,
+      "source": "autopilot",
+      "armed": true,
+      "now": 33.0
+     },
+     {
+      "op": "endurance",
+      "percent": 96.6,
+      "source": "autopilot",
+      "armed": true,
+      "now": 34.0
+     },
+     {
+      "op": "endurance",
+      "percent": 96.5,
+      "source": "autopilot",
+      "armed": true,
+      "now": 35.0
+     },
+     {
+      "op": "endurance",
+      "percent": 96.4,
+      "source": "autopilot",
+      "armed": true,
+      "now": 36.0
+     },
+     {
+      "op": "endurance",
+      "percent": 96.3,
+      "source": "autopilot",
+      "armed": true,
+      "now": 37.0
+     },
+     {
+      "op": "endurance",
+      "percent": 96.2,
+      "source": "autopilot",
+      "armed": true,
+      "now": 38.0
+     },
+     {
+      "op": "endurance",
+      "percent": 96.1,
+      "source": "autopilot",
+      "armed": true,
+      "now": 39.0
+     },
+     {
+      "op": "endurance",
+      "percent": 96.0,
+      "source": "autopilot",
+      "armed": true,
+      "now": 40.0
+     },
+     {
+      "op": "endurance",
+      "percent": 95.9,
+      "source": "autopilot",
+      "armed": true,
+      "now": 41.0
+     },
+     {
+      "op": "endurance",
+      "percent": 95.8,
+      "source": "autopilot",
+      "armed": true,
+      "now": 42.0
+     },
+     {
+      "op": "endurance",
+      "percent": 95.7,
+      "source": "autopilot",
+      "armed": true,
+      "now": 43.0
+     },
+     {
+      "op": "endurance",
+      "percent": 95.6,
+      "source": "autopilot",
+      "armed": true,
+      "now": 44.0
+     },
+     {
+      "op": "endurance",
+      "percent": 95.5,
+      "source": "autopilot",
+      "armed": true,
+      "now": 45.0
+     },
+     {
+      "op": "endurance",
+      "percent": 95.4,
+      "source": "autopilot",
+      "armed": true,
+      "now": 46.0
+     },
+     {
+      "op": "endurance",
+      "percent": 95.3,
+      "source": "autopilot",
+      "armed": true,
+      "now": 47.0
+     },
+     {
+      "op": "endurance",
+      "percent": 95.2,
+      "source": "autopilot",
+      "armed": true,
+      "now": 48.0
+     },
+     {
+      "op": "endurance",
+      "percent": 95.1,
+      "source": "autopilot",
+      "armed": true,
+      "now": 49.0
+     },
+     {
+      "op": "endurance",
+      "percent": 95.0,
+      "source": "autopilot",
+      "armed": true,
+      "now": 50.0
+     },
+     {
+      "op": "endurance",
+      "percent": 94.9,
+      "source": "autopilot",
+      "armed": true,
+      "now": 51.0
+     },
+     {
+      "op": "endurance",
+      "percent": 94.8,
+      "source": "autopilot",
+      "armed": true,
+      "now": 52.0
+     },
+     {
+      "op": "endurance",
+      "percent": 94.7,
+      "source": "autopilot",
+      "armed": true,
+      "now": 53.0
+     },
+     {
+      "op": "endurance",
+      "percent": 94.6,
+      "source": "autopilot",
+      "armed": true,
+      "now": 54.0
+     },
+     {
+      "op": "endurance",
+      "percent": 94.5,
+      "source": "autopilot",
+      "armed": true,
+      "now": 55.0
+     },
+     {
+      "op": "endurance",
+      "percent": 94.4,
+      "source": "autopilot",
+      "armed": true,
+      "now": 56.0
+     },
+     {
+      "op": "endurance",
+      "percent": 94.3,
+      "source": "autopilot",
+      "armed": true,
+      "now": 57.0
+     },
+     {
+      "op": "endurance",
+      "percent": 94.2,
+      "source": "autopilot",
+      "armed": true,
+      "now": 58.0
+     },
+     {
+      "op": "endurance",
+      "percent": 94.1,
+      "source": "autopilot",
+      "armed": true,
+      "now": 59.0
+     },
+     {
+      "op": "endurance",
+      "percent": 94.0,
+      "source": "autopilot",
+      "armed": true,
+      "now": 60.0
+     },
+     {
+      "op": "endurance",
+      "percent": 93.9,
+      "source": "autopilot",
+      "armed": true,
+      "now": 61.0
+     },
+     {
+      "op": "endurance",
+      "percent": 93.8,
+      "source": "autopilot",
+      "armed": true,
+      "now": 62.0
+     },
+     {
+      "op": "endurance",
+      "percent": 93.7,
+      "source": "autopilot",
+      "armed": true,
+      "now": 63.0
+     },
+     {
+      "op": "endurance",
+      "percent": 93.6,
+      "source": "autopilot",
+      "armed": true,
+      "now": 64.0
+     },
+     {
+      "op": "endurance",
+      "percent": 93.5,
+      "source": "autopilot",
+      "armed": true,
+      "now": 65.0
+     },
+     {
+      "op": "endurance",
+      "percent": 93.4,
+      "source": "autopilot",
+      "armed": true,
+      "now": 66.0
+     },
+     {
+      "op": "endurance",
+      "percent": 93.3,
+      "source": "autopilot",
+      "armed": true,
+      "now": 67.0
+     },
+     {
+      "op": "endurance",
+      "percent": 93.2,
+      "source": "autopilot",
+      "armed": true,
+      "now": 68.0
+     },
+     {
+      "op": "endurance",
+      "percent": 93.1,
+      "source": "autopilot",
+      "armed": true,
+      "now": 69.0
+     },
+     {
+      "op": "endurance",
+      "percent": 93.0,
+      "source": "autopilot",
+      "armed": true,
+      "now": 70.0
+     },
+     {
+      "op": "endurance",
+      "percent": 92.9,
+      "source": "autopilot",
+      "armed": true,
+      "now": 71.0
+     },
+     {
+      "op": "endurance",
+      "percent": 92.8,
+      "source": "autopilot",
+      "armed": true,
+      "now": 72.0
+     },
+     {
+      "op": "endurance",
+      "percent": 92.7,
+      "source": "autopilot",
+      "armed": true,
+      "now": 73.0
+     },
+     {
+      "op": "endurance",
+      "percent": 92.6,
+      "source": "autopilot",
+      "armed": true,
+      "now": 74.0
+     },
+     {
+      "op": "endurance",
+      "percent": 92.5,
+      "source": "autopilot",
+      "armed": true,
+      "now": 75.0
+     },
+     {
+      "op": "endurance",
+      "percent": 92.4,
+      "source": "autopilot",
+      "armed": true,
+      "now": 76.0
+     },
+     {
+      "op": "endurance",
+      "percent": 92.3,
+      "source": "autopilot",
+      "armed": true,
+      "now": 77.0
+     },
+     {
+      "op": "endurance",
+      "percent": 92.2,
+      "source": "autopilot",
+      "armed": true,
+      "now": 78.0
+     },
+     {
+      "op": "endurance",
+      "percent": 92.1,
+      "source": "autopilot",
+      "armed": true,
+      "now": 79.0
+     },
+     {
+      "op": "endurance",
+      "percent": 92.0,
+      "source": "autopilot",
+      "armed": true,
+      "now": 80.0
+     },
+     {
+      "op": "endurance",
+      "percent": 91.9,
+      "source": "autopilot",
+      "armed": true,
+      "now": 81.0
+     },
+     {
+      "op": "endurance",
+      "percent": 91.8,
+      "source": "autopilot",
+      "armed": true,
+      "now": 82.0
+     },
+     {
+      "op": "endurance",
+      "percent": 91.7,
+      "source": "autopilot",
+      "armed": true,
+      "now": 83.0
+     },
+     {
+      "op": "endurance",
+      "percent": 91.6,
+      "source": "autopilot",
+      "armed": true,
+      "now": 84.0
+     },
+     {
+      "op": "endurance",
+      "percent": 91.5,
+      "source": "autopilot",
+      "armed": true,
+      "now": 85.0
+     },
+     {
+      "op": "endurance",
+      "percent": 91.4,
+      "source": "autopilot",
+      "armed": true,
+      "now": 86.0
+     },
+     {
+      "op": "endurance",
+      "percent": 91.3,
+      "source": "autopilot",
+      "armed": true,
+      "now": 87.0
+     },
+     {
+      "op": "endurance",
+      "percent": 91.2,
+      "source": "autopilot",
+      "armed": true,
+      "now": 88.0
+     },
+     {
+      "op": "endurance",
+      "percent": 91.1,
+      "source": "autopilot",
+      "armed": true,
+      "now": 89.0
+     },
+     {
+      "op": "endurance",
+      "percent": 91.0,
+      "source": "autopilot",
+      "armed": true,
+      "now": 90.0
+     },
+     {
+      "op": "endurance",
+      "percent": 90.9,
+      "source": "autopilot",
+      "armed": true,
+      "now": 91.0
+     },
+     {
+      "op": "endurance",
+      "percent": 90.8,
+      "source": "autopilot",
+      "armed": true,
+      "now": 92.0
+     },
+     {
+      "op": "endurance",
+      "percent": 90.7,
+      "source": "autopilot",
+      "armed": true,
+      "now": 93.0
+     },
+     {
+      "op": "endurance",
+      "percent": 90.6,
+      "source": "autopilot",
+      "armed": true,
+      "now": 94.0
+     },
+     {
+      "op": "endurance",
+      "percent": 90.5,
+      "source": "autopilot",
+      "armed": true,
+      "now": 95.0
+     },
+     {
+      "op": "endurance",
+      "percent": 90.4,
+      "source": "autopilot",
+      "armed": true,
+      "now": 96.0
+     },
+     {
+      "op": "endurance",
+      "percent": 90.3,
+      "source": "autopilot",
+      "armed": true,
+      "now": 97.0
+     },
+     {
+      "op": "endurance",
+      "percent": 90.2,
+      "source": "autopilot",
+      "armed": true,
+      "now": 98.0
+     },
+     {
+      "op": "endurance",
+      "percent": 90.1,
+      "source": "autopilot",
+      "armed": true,
+      "now": 99.0
+     },
+     {
+      "op": "endurance",
+      "percent": 90.0,
+      "source": "autopilot",
+      "armed": true,
+      "now": 100.0
+     },
+     {
+      "op": "endurance",
+      "percent": 89.9,
+      "source": "autopilot",
+      "armed": true,
+      "now": 101.0
+     },
+     {
+      "op": "endurance",
+      "percent": 89.8,
+      "source": "autopilot",
+      "armed": true,
+      "now": 102.0
+     },
+     {
+      "op": "endurance",
+      "percent": 89.7,
+      "source": "autopilot",
+      "armed": true,
+      "now": 103.0
+     },
+     {
+      "op": "endurance",
+      "percent": 89.6,
+      "source": "autopilot",
+      "armed": true,
+      "now": 104.0
+     },
+     {
+      "op": "endurance",
+      "percent": 89.5,
+      "source": "autopilot",
+      "armed": true,
+      "now": 105.0
+     },
+     {
+      "op": "endurance",
+      "percent": 89.4,
+      "source": "autopilot",
+      "armed": true,
+      "now": 106.0
+     },
+     {
+      "op": "endurance",
+      "percent": 89.3,
+      "source": "autopilot",
+      "armed": true,
+      "now": 107.0
+     },
+     {
+      "op": "endurance",
+      "percent": 89.2,
+      "source": "autopilot",
+      "armed": true,
+      "now": 108.0
+     },
+     {
+      "op": "endurance",
+      "percent": 89.1,
+      "source": "autopilot",
+      "armed": true,
+      "now": 109.0
+     },
+     {
+      "op": "endurance",
+      "percent": 89.0,
+      "source": "autopilot",
+      "armed": true,
+      "now": 110.0
+     },
+     {
+      "op": "endurance",
+      "percent": 88.9,
+      "source": "autopilot",
+      "armed": true,
+      "now": 111.0
+     },
+     {
+      "op": "endurance",
+      "percent": 88.8,
+      "source": "autopilot",
+      "armed": true,
+      "now": 112.0
+     },
+     {
+      "op": "endurance",
+      "percent": 88.7,
+      "source": "autopilot",
+      "armed": true,
+      "now": 113.0
+     },
+     {
+      "op": "endurance",
+      "percent": 88.6,
+      "source": "autopilot",
+      "armed": true,
+      "now": 114.0
+     },
+     {
+      "op": "endurance",
+      "percent": 88.5,
+      "source": "autopilot",
+      "armed": true,
+      "now": 115.0
+     },
+     {
+      "op": "endurance",
+      "percent": 88.4,
+      "source": "autopilot",
+      "armed": true,
+      "now": 116.0
+     },
+     {
+      "op": "endurance",
+      "percent": 88.3,
+      "source": "autopilot",
+      "armed": true,
+      "now": 117.0
+     },
+     {
+      "op": "endurance",
+      "percent": 88.2,
+      "source": "autopilot",
+      "armed": true,
+      "now": 118.0
+     },
+     {
+      "op": "endurance",
+      "percent": 88.1,
+      "source": "autopilot",
+      "armed": true,
+      "now": 119.0
+     },
+     {
+      "op": "endurance",
+      "percent": 88.0,
+      "source": "autopilot",
+      "armed": true,
+      "now": 120.0
+     },
+     {
+      "op": "endurance",
+      "percent": 87.9,
+      "source": "autopilot",
+      "armed": true,
+      "now": 121.0
+     },
+     {
+      "op": "endurance",
+      "percent": 87.8,
+      "source": "autopilot",
+      "armed": true,
+      "now": 122.0
+     },
+     {
+      "op": "endurance",
+      "percent": 87.7,
+      "source": "autopilot",
+      "armed": true,
+      "now": 123.0
+     },
+     {
+      "op": "endurance",
+      "percent": 87.6,
+      "source": "autopilot",
+      "armed": true,
+      "now": 124.0
+     },
+     {
+      "op": "endurance",
+      "percent": 87.5,
+      "source": "autopilot",
+      "armed": true,
+      "now": 125.0
+     },
+     {
+      "op": "endurance",
+      "percent": 87.4,
+      "source": "autopilot",
+      "armed": true,
+      "now": 126.0
+     },
+     {
+      "op": "endurance",
+      "percent": 87.3,
+      "source": "autopilot",
+      "armed": true,
+      "now": 127.0
+     },
+     {
+      "op": "endurance",
+      "percent": 87.2,
+      "source": "autopilot",
+      "armed": true,
+      "now": 128.0
+     },
+     {
+      "op": "endurance",
+      "percent": 87.1,
+      "source": "autopilot",
+      "armed": true,
+      "now": 129.0
+     },
+     {
+      "op": "endurance",
+      "percent": 87.0,
+      "source": "autopilot",
+      "armed": true,
+      "now": 130.0
+     },
+     {
+      "op": "endurance",
+      "percent": 86.9,
+      "source": "autopilot",
+      "armed": true,
+      "now": 131.0
+     },
+     {
+      "op": "endurance",
+      "percent": 86.8,
+      "source": "autopilot",
+      "armed": true,
+      "now": 132.0
+     },
+     {
+      "op": "endurance",
+      "percent": 86.7,
+      "source": "autopilot",
+      "armed": true,
+      "now": 133.0
+     },
+     {
+      "op": "endurance",
+      "percent": 86.6,
+      "source": "autopilot",
+      "armed": true,
+      "now": 134.0
+     },
+     {
+      "op": "endurance",
+      "percent": 86.5,
+      "source": "autopilot",
+      "armed": true,
+      "now": 135.0
+     },
+     {
+      "op": "endurance",
+      "percent": 86.4,
+      "source": "autopilot",
+      "armed": true,
+      "now": 136.0
+     },
+     {
+      "op": "endurance",
+      "percent": 86.3,
+      "source": "autopilot",
+      "armed": true,
+      "now": 137.0
+     },
+     {
+      "op": "endurance",
+      "percent": 86.2,
+      "source": "autopilot",
+      "armed": true,
+      "now": 138.0
+     },
+     {
+      "op": "endurance",
+      "percent": 86.1,
+      "source": "autopilot",
+      "armed": true,
+      "now": 139.0
+     },
+     {
+      "op": "endurance",
+      "percent": 86.0,
+      "source": "autopilot",
+      "armed": true,
+      "now": 140.0
+     },
+     {
+      "op": "endurance",
+      "percent": 85.9,
+      "source": "autopilot",
+      "armed": true,
+      "now": 141.0
+     },
+     {
+      "op": "endurance",
+      "percent": 85.8,
+      "source": "autopilot",
+      "armed": true,
+      "now": 142.0
+     },
+     {
+      "op": "endurance",
+      "percent": 85.7,
+      "source": "autopilot",
+      "armed": true,
+      "now": 143.0
+     },
+     {
+      "op": "endurance",
+      "percent": 85.6,
+      "source": "autopilot",
+      "armed": true,
+      "now": 144.0
+     },
+     {
+      "op": "endurance",
+      "percent": 85.5,
+      "source": "autopilot",
+      "armed": true,
+      "now": 145.0
+     },
+     {
+      "op": "endurance",
+      "percent": 85.4,
+      "source": "autopilot",
+      "armed": true,
+      "now": 146.0
+     },
+     {
+      "op": "endurance",
+      "percent": 85.3,
+      "source": "autopilot",
+      "armed": true,
+      "now": 147.0
+     },
+     {
+      "op": "endurance",
+      "percent": 85.2,
+      "source": "autopilot",
+      "armed": true,
+      "now": 148.0
+     },
+     {
+      "op": "endurance",
+      "percent": 85.1,
+      "source": "autopilot",
+      "armed": true,
+      "now": 149.0
+     },
+     {
+      "op": "endurance",
+      "percent": 85.0,
+      "source": "autopilot",
+      "armed": true,
+      "now": 150.0
+     },
+     {
+      "op": "endurance",
+      "percent": 84.9,
+      "source": "autopilot",
+      "armed": true,
+      "now": 151.0
+     },
+     {
+      "op": "endurance",
+      "percent": 84.8,
+      "source": "autopilot",
+      "armed": true,
+      "now": 152.0
+     },
+     {
+      "op": "endurance",
+      "percent": 84.7,
+      "source": "autopilot",
+      "armed": true,
+      "now": 153.0
+     },
+     {
+      "op": "endurance",
+      "percent": 84.6,
+      "source": "autopilot",
+      "armed": true,
+      "now": 154.0
+     },
+     {
+      "op": "endurance",
+      "percent": 84.5,
+      "source": "autopilot",
+      "armed": true,
+      "now": 155.0
+     },
+     {
+      "op": "endurance",
+      "percent": 84.4,
+      "source": "autopilot",
+      "armed": true,
+      "now": 156.0
+     },
+     {
+      "op": "endurance",
+      "percent": 84.3,
+      "source": "autopilot",
+      "armed": true,
+      "now": 157.0
+     },
+     {
+      "op": "endurance",
+      "percent": 84.2,
+      "source": "autopilot",
+      "armed": true,
+      "now": 158.0
+     },
+     {
+      "op": "endurance",
+      "percent": 84.1,
+      "source": "autopilot",
+      "armed": true,
+      "now": 159.0
+     },
+     {
+      "op": "endurance",
+      "percent": 84.0,
+      "source": "autopilot",
+      "armed": true,
+      "now": 160.0
+     },
+     {
+      "op": "endurance",
+      "percent": 83.9,
+      "source": "autopilot",
+      "armed": true,
+      "now": 161.0
+     },
+     {
+      "op": "endurance",
+      "percent": 83.8,
+      "source": "autopilot",
+      "armed": true,
+      "now": 162.0
+     },
+     {
+      "op": "endurance",
+      "percent": 83.7,
+      "source": "autopilot",
+      "armed": true,
+      "now": 163.0
+     },
+     {
+      "op": "endurance",
+      "percent": 83.6,
+      "source": "autopilot",
+      "armed": true,
+      "now": 164.0
+     },
+     {
+      "op": "endurance",
+      "percent": 83.5,
+      "source": "autopilot",
+      "armed": true,
+      "now": 165.0
+     },
+     {
+      "op": "endurance",
+      "percent": 83.4,
+      "source": "autopilot",
+      "armed": true,
+      "now": 166.0
+     },
+     {
+      "op": "endurance",
+      "percent": 83.3,
+      "source": "autopilot",
+      "armed": true,
+      "now": 167.0
+     },
+     {
+      "op": "endurance",
+      "percent": 83.2,
+      "source": "autopilot",
+      "armed": true,
+      "now": 168.0
+     },
+     {
+      "op": "endurance",
+      "percent": 83.1,
+      "source": "autopilot",
+      "armed": true,
+      "now": 169.0
+     },
+     {
+      "op": "endurance",
+      "percent": 83.0,
+      "source": "autopilot",
+      "armed": true,
+      "now": 170.0
+     },
+     {
+      "op": "endurance",
+      "percent": 82.9,
+      "source": "autopilot",
+      "armed": true,
+      "now": 171.0
+     },
+     {
+      "op": "endurance",
+      "percent": 82.8,
+      "source": "autopilot",
+      "armed": true,
+      "now": 172.0
+     },
+     {
+      "op": "endurance",
+      "percent": 82.7,
+      "source": "autopilot",
+      "armed": true,
+      "now": 173.0
+     },
+     {
+      "op": "endurance",
+      "percent": 82.6,
+      "source": "autopilot",
+      "armed": true,
+      "now": 174.0
+     },
+     {
+      "op": "endurance",
+      "percent": 82.5,
+      "source": "autopilot",
+      "armed": true,
+      "now": 175.0
+     },
+     {
+      "op": "endurance",
+      "percent": 82.4,
+      "source": "autopilot",
+      "armed": true,
+      "now": 176.0
+     },
+     {
+      "op": "endurance",
+      "percent": 82.3,
+      "source": "autopilot",
+      "armed": true,
+      "now": 177.0
+     },
+     {
+      "op": "endurance",
+      "percent": 82.2,
+      "source": "autopilot",
+      "armed": true,
+      "now": 178.0
+     },
+     {
+      "op": "endurance",
+      "percent": 82.1,
+      "source": "autopilot",
+      "armed": true,
+      "now": 179.0
+     },
+     {
+      "op": "endurance",
+      "percent": 82.0,
+      "source": "autopilot",
+      "armed": true,
+      "now": 180.0
+     },
+     {
+      "op": "endurance",
+      "percent": 81.9,
+      "source": "autopilot",
+      "armed": true,
+      "now": 181.0
+     },
+     {
+      "op": "endurance",
+      "percent": 81.8,
+      "source": "autopilot",
+      "armed": true,
+      "now": 182.0
+     },
+     {
+      "op": "endurance",
+      "percent": 81.7,
+      "source": "autopilot",
+      "armed": true,
+      "now": 183.0
+     },
+     {
+      "op": "endurance",
+      "percent": 81.6,
+      "source": "autopilot",
+      "armed": true,
+      "now": 184.0
+     },
+     {
+      "op": "endurance",
+      "percent": 81.5,
+      "source": "autopilot",
+      "armed": true,
+      "now": 185.0
+     },
+     {
+      "op": "endurance",
+      "percent": 81.4,
+      "source": "autopilot",
+      "armed": true,
+      "now": 186.0
+     },
+     {
+      "op": "endurance",
+      "percent": 81.3,
+      "source": "autopilot",
+      "armed": true,
+      "now": 187.0
+     },
+     {
+      "op": "endurance",
+      "percent": 81.2,
+      "source": "autopilot",
+      "armed": true,
+      "now": 188.0
+     },
+     {
+      "op": "endurance",
+      "percent": 81.1,
+      "source": "autopilot",
+      "armed": true,
+      "now": 189.0
+     },
+     {
+      "op": "endurance",
+      "percent": 81.0,
+      "source": "autopilot",
+      "armed": true,
+      "now": 190.0
+     },
+     {
+      "op": "endurance",
+      "percent": 80.9,
+      "source": "autopilot",
+      "armed": true,
+      "now": 191.0
+     },
+     {
+      "op": "endurance",
+      "percent": 80.8,
+      "source": "autopilot",
+      "armed": true,
+      "now": 192.0
+     },
+     {
+      "op": "endurance",
+      "percent": 80.7,
+      "source": "autopilot",
+      "armed": true,
+      "now": 193.0
+     },
+     {
+      "op": "endurance",
+      "percent": 80.6,
+      "source": "autopilot",
+      "armed": true,
+      "now": 194.0
+     },
+     {
+      "op": "endurance",
+      "percent": 80.5,
+      "source": "autopilot",
+      "armed": true,
+      "now": 195.0
+     },
+     {
+      "op": "endurance",
+      "percent": 80.4,
+      "source": "autopilot",
+      "armed": true,
+      "now": 196.0
+     },
+     {
+      "op": "endurance",
+      "percent": 80.3,
+      "source": "autopilot",
+      "armed": true,
+      "now": 197.0
+     },
+     {
+      "op": "endurance",
+      "percent": 80.2,
+      "source": "autopilot",
+      "armed": true,
+      "now": 198.0
+     },
+     {
+      "op": "endurance",
+      "percent": 80.1,
+      "source": "autopilot",
+      "armed": true,
+      "now": 199.0
+     },
+     {
+      "op": "endurance",
+      "percent": 80.0,
+      "source": "autopilot",
+      "armed": true,
+      "now": 200.0
+     },
+     {
+      "op": "endurance",
+      "percent": 79.9,
+      "source": "autopilot",
+      "armed": true,
+      "now": 201.0
+     },
+     {
+      "op": "endurance",
+      "percent": 79.8,
+      "source": "autopilot",
+      "armed": true,
+      "now": 202.0
+     },
+     {
+      "op": "endurance",
+      "percent": 79.7,
+      "source": "autopilot",
+      "armed": true,
+      "now": 203.0
+     },
+     {
+      "op": "endurance",
+      "percent": 79.6,
+      "source": "autopilot",
+      "armed": true,
+      "now": 204.0
+     },
+     {
+      "op": "endurance",
+      "percent": 79.5,
+      "source": "autopilot",
+      "armed": true,
+      "now": 205.0
+     },
+     {
+      "op": "endurance",
+      "percent": 79.4,
+      "source": "autopilot",
+      "armed": true,
+      "now": 206.0
+     },
+     {
+      "op": "endurance",
+      "percent": 79.3,
+      "source": "autopilot",
+      "armed": true,
+      "now": 207.0
+     },
+     {
+      "op": "endurance",
+      "percent": 79.2,
+      "source": "autopilot",
+      "armed": true,
+      "now": 208.0
+     },
+     {
+      "op": "endurance",
+      "percent": 79.1,
+      "source": "autopilot",
+      "armed": true,
+      "now": 209.0
+     },
+     {
+      "op": "endurance",
+      "percent": 79.0,
+      "source": "autopilot",
+      "armed": true,
+      "now": 210.0
+     },
+     {
+      "op": "endurance",
+      "percent": 78.9,
+      "source": "autopilot",
+      "armed": true,
+      "now": 211.0
+     },
+     {
+      "op": "endurance",
+      "percent": 78.8,
+      "source": "autopilot",
+      "armed": true,
+      "now": 212.0
+     },
+     {
+      "op": "endurance",
+      "percent": 78.7,
+      "source": "autopilot",
+      "armed": true,
+      "now": 213.0
+     },
+     {
+      "op": "endurance",
+      "percent": 78.6,
+      "source": "autopilot",
+      "armed": true,
+      "now": 214.0
+     },
+     {
+      "op": "endurance",
+      "percent": 78.5,
+      "source": "autopilot",
+      "armed": true,
+      "now": 215.0
+     },
+     {
+      "op": "endurance",
+      "percent": 78.4,
+      "source": "autopilot",
+      "armed": true,
+      "now": 216.0
+     },
+     {
+      "op": "endurance",
+      "percent": 78.3,
+      "source": "autopilot",
+      "armed": true,
+      "now": 217.0
+     },
+     {
+      "op": "endurance",
+      "percent": 78.2,
+      "source": "autopilot",
+      "armed": true,
+      "now": 218.0
+     },
+     {
+      "op": "endurance",
+      "percent": 78.1,
+      "source": "autopilot",
+      "armed": true,
+      "now": 219.0
+     },
+     {
+      "op": "endurance",
+      "percent": 78.0,
+      "source": "autopilot",
+      "armed": true,
+      "now": 220.0
+     },
+     {
+      "op": "endurance",
+      "percent": 77.9,
+      "source": "autopilot",
+      "armed": true,
+      "now": 221.0
+     },
+     {
+      "op": "endurance",
+      "percent": 77.8,
+      "source": "autopilot",
+      "armed": true,
+      "now": 222.0
+     },
+     {
+      "op": "endurance",
+      "percent": 77.7,
+      "source": "autopilot",
+      "armed": true,
+      "now": 223.0
+     },
+     {
+      "op": "endurance",
+      "percent": 77.6,
+      "source": "autopilot",
+      "armed": true,
+      "now": 224.0
+     },
+     {
+      "op": "endurance",
+      "percent": 77.5,
+      "source": "autopilot",
+      "armed": true,
+      "now": 225.0
+     },
+     {
+      "op": "endurance",
+      "percent": 77.4,
+      "source": "autopilot",
+      "armed": true,
+      "now": 226.0
+     },
+     {
+      "op": "endurance",
+      "percent": 77.3,
+      "source": "autopilot",
+      "armed": true,
+      "now": 227.0
+     },
+     {
+      "op": "endurance",
+      "percent": 77.2,
+      "source": "autopilot",
+      "armed": true,
+      "now": 228.0
+     },
+     {
+      "op": "endurance",
+      "percent": 77.1,
+      "source": "autopilot",
+      "armed": true,
+      "now": 229.0
+     },
+     {
+      "op": "endurance",
+      "percent": 77.0,
+      "source": "autopilot",
+      "armed": true,
+      "now": 230.0
+     },
+     {
+      "op": "endurance",
+      "percent": 76.9,
+      "source": "autopilot",
+      "armed": true,
+      "now": 231.0
+     },
+     {
+      "op": "endurance",
+      "percent": 76.8,
+      "source": "autopilot",
+      "armed": true,
+      "now": 232.0
+     },
+     {
+      "op": "endurance",
+      "percent": 76.7,
+      "source": "autopilot",
+      "armed": true,
+      "now": 233.0
+     },
+     {
+      "op": "endurance",
+      "percent": 76.6,
+      "source": "autopilot",
+      "armed": true,
+      "now": 234.0
+     },
+     {
+      "op": "endurance",
+      "percent": 76.5,
+      "source": "autopilot",
+      "armed": true,
+      "now": 235.0
+     },
+     {
+      "op": "endurance",
+      "percent": 76.4,
+      "source": "autopilot",
+      "armed": true,
+      "now": 236.0
+     },
+     {
+      "op": "endurance",
+      "percent": 76.3,
+      "source": "autopilot",
+      "armed": true,
+      "now": 237.0
+     },
+     {
+      "op": "endurance",
+      "percent": 76.2,
+      "source": "autopilot",
+      "armed": true,
+      "now": 238.0
+     },
+     {
+      "op": "endurance",
+      "percent": 76.1,
+      "source": "autopilot",
+      "armed": true,
+      "now": 239.0
+     },
+     {
+      "op": "endurance",
+      "percent": 76.0,
+      "source": "autopilot",
+      "armed": true,
+      "now": 240.0
+     },
+     {
+      "op": "endurance",
+      "percent": 75.9,
+      "source": "autopilot",
+      "armed": true,
+      "now": 241.0
+     },
+     {
+      "op": "endurance",
+      "percent": 75.8,
+      "source": "autopilot",
+      "armed": true,
+      "now": 242.0
+     },
+     {
+      "op": "endurance",
+      "percent": 75.7,
+      "source": "autopilot",
+      "armed": true,
+      "now": 243.0
+     },
+     {
+      "op": "endurance",
+      "percent": 75.6,
+      "source": "autopilot",
+      "armed": true,
+      "now": 244.0
+     },
+     {
+      "op": "endurance",
+      "percent": 75.5,
+      "source": "autopilot",
+      "armed": true,
+      "now": 245.0
+     },
+     {
+      "op": "endurance",
+      "percent": 75.4,
+      "source": "autopilot",
+      "armed": true,
+      "now": 246.0
+     },
+     {
+      "op": "endurance",
+      "percent": 75.3,
+      "source": "autopilot",
+      "armed": true,
+      "now": 247.0
+     },
+     {
+      "op": "endurance",
+      "percent": 75.2,
+      "source": "autopilot",
+      "armed": true,
+      "now": 248.0
+     },
+     {
+      "op": "endurance",
+      "percent": 75.1,
+      "source": "autopilot",
+      "armed": true,
+      "now": 249.0
+     },
+     {
+      "op": "endurance",
+      "percent": 75.0,
+      "source": "autopilot",
+      "armed": true,
+      "now": 250.0
+     },
+     {
+      "op": "endurance",
+      "percent": 74.9,
+      "source": "autopilot",
+      "armed": true,
+      "now": 251.0
+     },
+     {
+      "op": "endurance",
+      "percent": 74.8,
+      "source": "autopilot",
+      "armed": true,
+      "now": 252.0
+     },
+     {
+      "op": "endurance",
+      "percent": 74.7,
+      "source": "autopilot",
+      "armed": true,
+      "now": 253.0
+     },
+     {
+      "op": "endurance",
+      "percent": 74.6,
+      "source": "autopilot",
+      "armed": true,
+      "now": 254.0
+     },
+     {
+      "op": "endurance",
+      "percent": 74.5,
+      "source": "autopilot",
+      "armed": true,
+      "now": 255.0
+     },
+     {
+      "op": "endurance",
+      "percent": 74.4,
+      "source": "autopilot",
+      "armed": true,
+      "now": 256.0
+     },
+     {
+      "op": "endurance",
+      "percent": 74.3,
+      "source": "autopilot",
+      "armed": true,
+      "now": 257.0
+     },
+     {
+      "op": "endurance",
+      "percent": 74.2,
+      "source": "autopilot",
+      "armed": true,
+      "now": 258.0
+     },
+     {
+      "op": "endurance",
+      "percent": 74.1,
+      "source": "autopilot",
+      "armed": true,
+      "now": 259.0
+     },
+     {
+      "op": "endurance",
+      "percent": 74.0,
+      "source": "autopilot",
+      "armed": true,
+      "now": 260.0
+     },
+     {
+      "op": "endurance",
+      "percent": 73.9,
+      "source": "autopilot",
+      "armed": true,
+      "now": 261.0
+     },
+     {
+      "op": "endurance",
+      "percent": 73.8,
+      "source": "autopilot",
+      "armed": true,
+      "now": 262.0
+     },
+     {
+      "op": "endurance",
+      "percent": 73.7,
+      "source": "autopilot",
+      "armed": true,
+      "now": 263.0
+     },
+     {
+      "op": "endurance",
+      "percent": 73.6,
+      "source": "autopilot",
+      "armed": true,
+      "now": 264.0
+     },
+     {
+      "op": "endurance",
+      "percent": 73.5,
+      "source": "autopilot",
+      "armed": true,
+      "now": 265.0
+     },
+     {
+      "op": "endurance",
+      "percent": 73.4,
+      "source": "autopilot",
+      "armed": true,
+      "now": 266.0
+     },
+     {
+      "op": "endurance",
+      "percent": 73.3,
+      "source": "autopilot",
+      "armed": true,
+      "now": 267.0
+     },
+     {
+      "op": "endurance",
+      "percent": 73.2,
+      "source": "autopilot",
+      "armed": true,
+      "now": 268.0
+     },
+     {
+      "op": "endurance",
+      "percent": 73.1,
+      "source": "autopilot",
+      "armed": true,
+      "now": 269.0
+     },
+     {
+      "op": "endurance",
+      "percent": 73.0,
+      "source": "autopilot",
+      "armed": true,
+      "now": 270.0
+     },
+     {
+      "op": "endurance",
+      "percent": 72.9,
+      "source": "autopilot",
+      "armed": true,
+      "now": 271.0
+     },
+     {
+      "op": "endurance",
+      "percent": 72.8,
+      "source": "autopilot",
+      "armed": true,
+      "now": 272.0
+     },
+     {
+      "op": "endurance",
+      "percent": 72.7,
+      "source": "autopilot",
+      "armed": true,
+      "now": 273.0
+     },
+     {
+      "op": "endurance",
+      "percent": 72.6,
+      "source": "autopilot",
+      "armed": true,
+      "now": 274.0
+     },
+     {
+      "op": "endurance",
+      "percent": 72.5,
+      "source": "autopilot",
+      "armed": true,
+      "now": 275.0
+     },
+     {
+      "op": "endurance",
+      "percent": 72.4,
+      "source": "autopilot",
+      "armed": true,
+      "now": 276.0
+     },
+     {
+      "op": "endurance",
+      "percent": 72.3,
+      "source": "autopilot",
+      "armed": true,
+      "now": 277.0
+     },
+     {
+      "op": "endurance",
+      "percent": 72.2,
+      "source": "autopilot",
+      "armed": true,
+      "now": 278.0
+     },
+     {
+      "op": "endurance",
+      "percent": 72.1,
+      "source": "autopilot",
+      "armed": true,
+      "now": 279.0
+     },
+     {
+      "op": "endurance",
+      "percent": 72.0,
+      "source": "autopilot",
+      "armed": true,
+      "now": 280.0
+     },
+     {
+      "op": "endurance",
+      "percent": 71.9,
+      "source": "autopilot",
+      "armed": true,
+      "now": 281.0
+     },
+     {
+      "op": "endurance",
+      "percent": 71.8,
+      "source": "autopilot",
+      "armed": true,
+      "now": 282.0
+     },
+     {
+      "op": "endurance",
+      "percent": 71.7,
+      "source": "autopilot",
+      "armed": true,
+      "now": 283.0
+     },
+     {
+      "op": "endurance",
+      "percent": 71.6,
+      "source": "autopilot",
+      "armed": true,
+      "now": 284.0
+     },
+     {
+      "op": "endurance",
+      "percent": 71.5,
+      "source": "autopilot",
+      "armed": true,
+      "now": 285.0
+     },
+     {
+      "op": "endurance",
+      "percent": 71.4,
+      "source": "autopilot",
+      "armed": true,
+      "now": 286.0
+     },
+     {
+      "op": "endurance",
+      "percent": 71.3,
+      "source": "autopilot",
+      "armed": true,
+      "now": 287.0
+     },
+     {
+      "op": "endurance",
+      "percent": 71.2,
+      "source": "autopilot",
+      "armed": true,
+      "now": 288.0
+     },
+     {
+      "op": "endurance",
+      "percent": 71.1,
+      "source": "autopilot",
+      "armed": true,
+      "now": 289.0
+     },
+     {
+      "op": "endurance",
+      "percent": 71.0,
+      "source": "autopilot",
+      "armed": true,
+      "now": 290.0
+     },
+     {
+      "op": "endurance",
+      "percent": 70.9,
+      "source": "autopilot",
+      "armed": true,
+      "now": 291.0
+     },
+     {
+      "op": "endurance",
+      "percent": 70.8,
+      "source": "autopilot",
+      "armed": true,
+      "now": 292.0
+     },
+     {
+      "op": "endurance",
+      "percent": 70.7,
+      "source": "autopilot",
+      "armed": true,
+      "now": 293.0
+     },
+     {
+      "op": "endurance",
+      "percent": 70.6,
+      "source": "autopilot",
+      "armed": true,
+      "now": 294.0
+     },
+     {
+      "op": "endurance",
+      "percent": 70.5,
+      "source": "autopilot",
+      "armed": true,
+      "now": 295.0
+     },
+     {
+      "op": "endurance",
+      "percent": 70.4,
+      "source": "autopilot",
+      "armed": true,
+      "now": 296.0
+     },
+     {
+      "op": "endurance",
+      "percent": 70.3,
+      "source": "autopilot",
+      "armed": true,
+      "now": 297.0
+     },
+     {
+      "op": "endurance",
+      "percent": 70.2,
+      "source": "autopilot",
+      "armed": true,
+      "now": 298.0
+     },
+     {
+      "op": "endurance",
+      "percent": 70.1,
+      "source": "autopilot",
+      "armed": true,
+      "now": 299.0
+     },
+     {
+      "op": "endurance",
+      "percent": 70.0,
+      "source": "autopilot",
+      "armed": true,
+      "now": 300.0
+     },
+     {
+      "op": "endurance",
+      "percent": 69.9,
+      "source": "autopilot",
+      "armed": true,
+      "now": 301.0
+     },
+     {
+      "op": "endurance",
+      "percent": 69.8,
+      "source": "autopilot",
+      "armed": true,
+      "now": 302.0
+     },
+     {
+      "op": "endurance",
+      "percent": 69.7,
+      "source": "autopilot",
+      "armed": true,
+      "now": 303.0
+     },
+     {
+      "op": "endurance",
+      "percent": 69.6,
+      "source": "autopilot",
+      "armed": true,
+      "now": 304.0
+     },
+     {
+      "op": "endurance",
+      "percent": 69.5,
+      "source": "autopilot",
+      "armed": true,
+      "now": 305.0
+     },
+     {
+      "op": "endurance",
+      "percent": 69.4,
+      "source": "autopilot",
+      "armed": true,
+      "now": 306.0
+     },
+     {
+      "op": "endurance",
+      "percent": 69.3,
+      "source": "autopilot",
+      "armed": true,
+      "now": 307.0
+     },
+     {
+      "op": "endurance",
+      "percent": 69.2,
+      "source": "autopilot",
+      "armed": true,
+      "now": 308.0
+     },
+     {
+      "op": "endurance",
+      "percent": 69.1,
+      "source": "autopilot",
+      "armed": true,
+      "now": 309.0
+     },
+     {
+      "op": "endurance",
+      "percent": 69.0,
+      "source": "autopilot",
+      "armed": true,
+      "now": 310.0
+     },
+     {
+      "op": "endurance",
+      "percent": 68.9,
+      "source": "autopilot",
+      "armed": true,
+      "now": 311.0
+     },
+     {
+      "op": "endurance",
+      "percent": 68.8,
+      "source": "autopilot",
+      "armed": true,
+      "now": 312.0
+     },
+     {
+      "op": "endurance",
+      "percent": 68.7,
+      "source": "autopilot",
+      "armed": true,
+      "now": 313.0
+     },
+     {
+      "op": "endurance",
+      "percent": 68.6,
+      "source": "autopilot",
+      "armed": true,
+      "now": 314.0
+     },
+     {
+      "op": "endurance",
+      "percent": 68.5,
+      "source": "autopilot",
+      "armed": true,
+      "now": 315.0
+     },
+     {
+      "op": "endurance",
+      "percent": 68.4,
+      "source": "autopilot",
+      "armed": true,
+      "now": 316.0
+     },
+     {
+      "op": "endurance",
+      "percent": 68.3,
+      "source": "autopilot",
+      "armed": true,
+      "now": 317.0
+     },
+     {
+      "op": "endurance",
+      "percent": 68.2,
+      "source": "autopilot",
+      "armed": true,
+      "now": 318.0
+     },
+     {
+      "op": "endurance",
+      "percent": 68.1,
+      "source": "autopilot",
+      "armed": true,
+      "now": 319.0
+     },
+     {
+      "op": "endurance",
+      "percent": 68.0,
+      "source": "autopilot",
+      "armed": true,
+      "now": 320.0
+     },
+     {
+      "op": "endurance",
+      "percent": 67.9,
+      "source": "autopilot",
+      "armed": true,
+      "now": 321.0
+     },
+     {
+      "op": "endurance",
+      "percent": 67.8,
+      "source": "autopilot",
+      "armed": true,
+      "now": 322.0
+     },
+     {
+      "op": "endurance",
+      "percent": 67.69999999999999,
+      "source": "autopilot",
+      "armed": true,
+      "now": 323.0
+     },
+     {
+      "op": "endurance",
+      "percent": 67.6,
+      "source": "autopilot",
+      "armed": true,
+      "now": 324.0
+     },
+     {
+      "op": "endurance",
+      "percent": 67.5,
+      "source": "autopilot",
+      "armed": true,
+      "now": 325.0
+     },
+     {
+      "op": "endurance",
+      "percent": 67.4,
+      "source": "autopilot",
+      "armed": true,
+      "now": 326.0
+     },
+     {
+      "op": "endurance",
+      "percent": 67.3,
+      "source": "autopilot",
+      "armed": true,
+      "now": 327.0
+     },
+     {
+      "op": "endurance",
+      "percent": 67.19999999999999,
+      "source": "autopilot",
+      "armed": true,
+      "now": 328.0
+     },
+     {
+      "op": "endurance",
+      "percent": 67.1,
+      "source": "autopilot",
+      "armed": true,
+      "now": 329.0
+     },
+     {
+      "op": "endurance",
+      "percent": 67.0,
+      "source": "autopilot",
+      "armed": true,
+      "now": 330.0
+     },
+     {
+      "op": "endurance",
+      "percent": 66.9,
+      "source": "autopilot",
+      "armed": true,
+      "now": 331.0
+     },
+     {
+      "op": "endurance",
+      "percent": 66.8,
+      "source": "autopilot",
+      "armed": true,
+      "now": 332.0
+     },
+     {
+      "op": "endurance",
+      "percent": 66.69999999999999,
+      "source": "autopilot",
+      "armed": true,
+      "now": 333.0
+     },
+     {
+      "op": "endurance",
+      "percent": 66.6,
+      "source": "autopilot",
+      "armed": true,
+      "now": 334.0
+     },
+     {
+      "op": "endurance",
+      "percent": 66.5,
+      "source": "autopilot",
+      "armed": true,
+      "now": 335.0
+     },
+     {
+      "op": "endurance",
+      "percent": 66.4,
+      "source": "autopilot",
+      "armed": true,
+      "now": 336.0
+     },
+     {
+      "op": "endurance",
+      "percent": 66.3,
+      "source": "autopilot",
+      "armed": true,
+      "now": 337.0
+     },
+     {
+      "op": "endurance",
+      "percent": 66.19999999999999,
+      "source": "autopilot",
+      "armed": true,
+      "now": 338.0
+     },
+     {
+      "op": "endurance",
+      "percent": 66.1,
+      "source": "autopilot",
+      "armed": true,
+      "now": 339.0
+     },
+     {
+      "op": "endurance",
+      "percent": 66.0,
+      "source": "autopilot",
+      "armed": true,
+      "now": 340.0
+     },
+     {
+      "op": "endurance",
+      "percent": 65.9,
+      "source": "autopilot",
+      "armed": true,
+      "now": 341.0
+     },
+     {
+      "op": "endurance",
+      "percent": 65.8,
+      "source": "autopilot",
+      "armed": true,
+      "now": 342.0
+     },
+     {
+      "op": "endurance",
+      "percent": 65.69999999999999,
+      "source": "autopilot",
+      "armed": true,
+      "now": 343.0
+     },
+     {
+      "op": "endurance",
+      "percent": 65.6,
+      "source": "autopilot",
+      "armed": true,
+      "now": 344.0
+     },
+     {
+      "op": "endurance",
+      "percent": 65.5,
+      "source": "autopilot",
+      "armed": true,
+      "now": 345.0
+     },
+     {
+      "op": "endurance",
+      "percent": 65.4,
+      "source": "autopilot",
+      "armed": true,
+      "now": 346.0
+     },
+     {
+      "op": "endurance",
+      "percent": 65.3,
+      "source": "autopilot",
+      "armed": true,
+      "now": 347.0
+     },
+     {
+      "op": "endurance",
+      "percent": 65.19999999999999,
+      "source": "autopilot",
+      "armed": true,
+      "now": 348.0
+     },
+     {
+      "op": "endurance",
+      "percent": 65.1,
+      "source": "autopilot",
+      "armed": true,
+      "now": 349.0
+     },
+     {
+      "op": "endurance",
+      "percent": 65.0,
+      "source": "autopilot",
+      "armed": true,
+      "now": 350.0
+     },
+     {
+      "op": "endurance",
+      "percent": 64.9,
+      "source": "autopilot",
+      "armed": true,
+      "now": 351.0
+     },
+     {
+      "op": "endurance",
+      "percent": 64.8,
+      "source": "autopilot",
+      "armed": true,
+      "now": 352.0
+     },
+     {
+      "op": "endurance",
+      "percent": 64.69999999999999,
+      "source": "autopilot",
+      "armed": true,
+      "now": 353.0
+     },
+     {
+      "op": "endurance",
+      "percent": 64.6,
+      "source": "autopilot",
+      "armed": true,
+      "now": 354.0
+     },
+     {
+      "op": "endurance",
+      "percent": 64.5,
+      "source": "autopilot",
+      "armed": true,
+      "now": 355.0
+     },
+     {
+      "op": "endurance",
+      "percent": 64.4,
+      "source": "autopilot",
+      "armed": true,
+      "now": 356.0
+     },
+     {
+      "op": "endurance",
+      "percent": 64.3,
+      "source": "autopilot",
+      "armed": true,
+      "now": 357.0
+     },
+     {
+      "op": "endurance",
+      "percent": 64.19999999999999,
+      "source": "autopilot",
+      "armed": true,
+      "now": 358.0
+     },
+     {
+      "op": "endurance",
+      "percent": 64.1,
+      "source": "autopilot",
+      "armed": true,
+      "now": 359.0
+     },
+     {
+      "op": "endurance",
+      "percent": 64.0,
+      "source": "autopilot",
+      "armed": true,
+      "now": 360.0
+     },
+     {
+      "op": "endurance",
+      "percent": 63.9,
+      "source": "autopilot",
+      "armed": true,
+      "now": 361.0
+     },
+     {
+      "op": "endurance",
+      "percent": 63.8,
+      "source": "autopilot",
+      "armed": true,
+      "now": 362.0
+     },
+     {
+      "op": "endurance",
+      "percent": 63.699999999999996,
+      "source": "autopilot",
+      "armed": true,
+      "now": 363.0
+     },
+     {
+      "op": "endurance",
+      "percent": 63.6,
+      "source": "autopilot",
+      "armed": true,
+      "now": 364.0
+     },
+     {
+      "op": "endurance",
+      "percent": 63.5,
+      "source": "autopilot",
+      "armed": true,
+      "now": 365.0
+     },
+     {
+      "op": "endurance",
+      "percent": 63.4,
+      "source": "autopilot",
+      "armed": true,
+      "now": 366.0
+     },
+     {
+      "op": "endurance",
+      "percent": 63.3,
+      "source": "autopilot",
+      "armed": true,
+      "now": 367.0
+     },
+     {
+      "op": "endurance",
+      "percent": 63.199999999999996,
+      "source": "autopilot",
+      "armed": true,
+      "now": 368.0
+     },
+     {
+      "op": "endurance",
+      "percent": 63.1,
+      "source": "autopilot",
+      "armed": true,
+      "now": 369.0
+     },
+     {
+      "op": "endurance",
+      "percent": 63.0,
+      "source": "autopilot",
+      "armed": true,
+      "now": 370.0
+     },
+     {
+      "op": "endurance",
+      "percent": 62.9,
+      "source": "autopilot",
+      "armed": true,
+      "now": 371.0
+     },
+     {
+      "op": "endurance",
+      "percent": 62.8,
+      "source": "autopilot",
+      "armed": true,
+      "now": 372.0
+     },
+     {
+      "op": "endurance",
+      "percent": 62.699999999999996,
+      "source": "autopilot",
+      "armed": true,
+      "now": 373.0
+     },
+     {
+      "op": "endurance",
+      "percent": 62.6,
+      "source": "autopilot",
+      "armed": true,
+      "now": 374.0
+     },
+     {
+      "op": "endurance",
+      "percent": 62.5,
+      "source": "autopilot",
+      "armed": true,
+      "now": 375.0
+     },
+     {
+      "op": "endurance",
+      "percent": 62.4,
+      "source": "autopilot",
+      "armed": true,
+      "now": 376.0
+     },
+     {
+      "op": "endurance",
+      "percent": 62.3,
+      "source": "autopilot",
+      "armed": true,
+      "now": 377.0
+     },
+     {
+      "op": "endurance",
+      "percent": 62.199999999999996,
+      "source": "autopilot",
+      "armed": true,
+      "now": 378.0
+     },
+     {
+      "op": "endurance",
+      "percent": 62.1,
+      "source": "autopilot",
+      "armed": true,
+      "now": 379.0
+     },
+     {
+      "op": "endurance",
+      "percent": 62.0,
+      "source": "autopilot",
+      "armed": true,
+      "now": 380.0
+     },
+     {
+      "op": "endurance",
+      "percent": 61.9,
+      "source": "autopilot",
+      "armed": true,
+      "now": 381.0
+     },
+     {
+      "op": "endurance",
+      "percent": 61.8,
+      "source": "autopilot",
+      "armed": true,
+      "now": 382.0
+     },
+     {
+      "op": "endurance",
+      "percent": 61.699999999999996,
+      "source": "autopilot",
+      "armed": true,
+      "now": 383.0
+     },
+     {
+      "op": "endurance",
+      "percent": 61.599999999999994,
+      "source": "autopilot",
+      "armed": true,
+      "now": 384.0
+     },
+     {
+      "op": "endurance",
+      "percent": 61.5,
+      "source": "autopilot",
+      "armed": true,
+      "now": 385.0
+     },
+     {
+      "op": "endurance",
+      "percent": 61.4,
+      "source": "autopilot",
+      "armed": true,
+      "now": 386.0
+     },
+     {
+      "op": "endurance",
+      "percent": 61.3,
+      "source": "autopilot",
+      "armed": true,
+      "now": 387.0
+     },
+     {
+      "op": "endurance",
+      "percent": 61.199999999999996,
+      "source": "autopilot",
+      "armed": true,
+      "now": 388.0
+     },
+     {
+      "op": "endurance",
+      "percent": 61.099999999999994,
+      "source": "autopilot",
+      "armed": true,
+      "now": 389.0
+     },
+     {
+      "op": "endurance",
+      "percent": 61.0,
+      "source": "autopilot",
+      "armed": true,
+      "now": 390.0
+     },
+     {
+      "op": "endurance",
+      "percent": 60.9,
+      "source": "autopilot",
+      "armed": true,
+      "now": 391.0
+     },
+     {
+      "op": "endurance",
+      "percent": 60.8,
+      "source": "autopilot",
+      "armed": true,
+      "now": 392.0
+     },
+     {
+      "op": "endurance",
+      "percent": 60.699999999999996,
+      "source": "autopilot",
+      "armed": true,
+      "now": 393.0
+     },
+     {
+      "op": "endurance",
+      "percent": 60.599999999999994,
+      "source": "autopilot",
+      "armed": true,
+      "now": 394.0
+     },
+     {
+      "op": "endurance",
+      "percent": 60.5,
+      "source": "autopilot",
+      "armed": true,
+      "now": 395.0
+     },
+     {
+      "op": "endurance",
+      "percent": 60.4,
+      "source": "autopilot",
+      "armed": true,
+      "now": 396.0
+     },
+     {
+      "op": "endurance",
+      "percent": 60.3,
+      "source": "autopilot",
+      "armed": true,
+      "now": 397.0
+     },
+     {
+      "op": "endurance",
+      "percent": 60.199999999999996,
+      "source": "autopilot",
+      "armed": true,
+      "now": 398.0
+     },
+     {
+      "op": "endurance",
+      "percent": 60.099999999999994,
+      "source": "autopilot",
+      "armed": true,
+      "now": 399.0
+     },
+     {
+      "op": "endurance",
+      "percent": 60.0,
+      "source": "autopilot",
+      "armed": true,
+      "now": 400.0
+     },
+     {
+      "op": "endurance",
+      "percent": 59.9,
+      "source": "autopilot",
+      "armed": true,
+      "now": 401.0
+     },
+     {
+      "op": "endurance",
+      "percent": 59.8,
+      "source": "autopilot",
+      "armed": true,
+      "now": 402.0
+     },
+     {
+      "op": "endurance",
+      "percent": 59.699999999999996,
+      "source": "autopilot",
+      "armed": true,
+      "now": 403.0
+     },
+     {
+      "op": "endurance",
+      "percent": 59.599999999999994,
+      "source": "autopilot",
+      "armed": true,
+      "now": 404.0
+     },
+     {
+      "op": "endurance",
+      "percent": 59.5,
+      "source": "autopilot",
+      "armed": true,
+      "now": 405.0
+     },
+     {
+      "op": "endurance",
+      "percent": 59.4,
+      "source": "autopilot",
+      "armed": true,
+      "now": 406.0
+     },
+     {
+      "op": "endurance",
+      "percent": 59.3,
+      "source": "autopilot",
+      "armed": true,
+      "now": 407.0
+     },
+     {
+      "op": "endurance",
+      "percent": 59.199999999999996,
+      "source": "autopilot",
+      "armed": true,
+      "now": 408.0
+     },
+     {
+      "op": "endurance",
+      "percent": 59.099999999999994,
+      "source": "autopilot",
+      "armed": true,
+      "now": 409.0
+     },
+     {
+      "op": "endurance",
+      "percent": 59.0,
+      "source": "autopilot",
+      "armed": true,
+      "now": 410.0
+     },
+     {
+      "op": "endurance",
+      "percent": 58.9,
+      "source": "autopilot",
+      "armed": true,
+      "now": 411.0
+     },
+     {
+      "op": "endurance",
+      "percent": 58.8,
+      "source": "autopilot",
+      "armed": true,
+      "now": 412.0
+     },
+     {
+      "op": "endurance",
+      "percent": 58.699999999999996,
+      "source": "autopilot",
+      "armed": true,
+      "now": 413.0
+     },
+     {
+      "op": "endurance",
+      "percent": 58.599999999999994,
+      "source": "autopilot",
+      "armed": true,
+      "now": 414.0
+     },
+     {
+      "op": "endurance",
+      "percent": 58.5,
+      "source": "autopilot",
+      "armed": true,
+      "now": 415.0
+     },
+     {
+      "op": "endurance",
+      "percent": 58.4,
+      "source": "autopilot",
+      "armed": true,
+      "now": 416.0
+     },
+     {
+      "op": "endurance",
+      "percent": 58.3,
+      "source": "autopilot",
+      "armed": true,
+      "now": 417.0
+     },
+     {
+      "op": "endurance",
+      "percent": 58.199999999999996,
+      "source": "autopilot",
+      "armed": true,
+      "now": 418.0
+     },
+     {
+      "op": "endurance",
+      "percent": 58.099999999999994,
+      "source": "autopilot",
+      "armed": true,
+      "now": 419.0
+     },
+     {
+      "op": "endurance",
+      "percent": 58.0,
+      "source": "autopilot",
+      "armed": true,
+      "now": 420.0
+     },
+     {
+      "op": "endurance",
+      "percent": 57.9,
+      "source": "autopilot",
+      "armed": true,
+      "now": 421.0
+     },
+     {
+      "op": "endurance",
+      "percent": 57.8,
+      "source": "autopilot",
+      "armed": true,
+      "now": 422.0
+     },
+     {
+      "op": "endurance",
+      "percent": 57.699999999999996,
+      "source": "autopilot",
+      "armed": true,
+      "now": 423.0
+     },
+     {
+      "op": "endurance",
+      "percent": 57.599999999999994,
+      "source": "autopilot",
+      "armed": true,
+      "now": 424.0
+     },
+     {
+      "op": "endurance",
+      "percent": 57.5,
+      "source": "autopilot",
+      "armed": true,
+      "now": 425.0
+     },
+     {
+      "op": "endurance",
+      "percent": 57.4,
+      "source": "autopilot",
+      "armed": true,
+      "now": 426.0
+     },
+     {
+      "op": "endurance",
+      "percent": 57.3,
+      "source": "autopilot",
+      "armed": true,
+      "now": 427.0
+     },
+     {
+      "op": "endurance",
+      "percent": 57.199999999999996,
+      "source": "autopilot",
+      "armed": true,
+      "now": 428.0
+     },
+     {
+      "op": "endurance",
+      "percent": 57.099999999999994,
+      "source": "autopilot",
+      "armed": true,
+      "now": 429.0
+     },
+     {
+      "op": "endurance",
+      "percent": 57.0,
+      "source": "autopilot",
+      "armed": true,
+      "now": 430.0
+     },
+     {
+      "op": "endurance",
+      "percent": 56.9,
+      "source": "autopilot",
+      "armed": true,
+      "now": 431.0
+     },
+     {
+      "op": "endurance",
+      "percent": 56.8,
+      "source": "autopilot",
+      "armed": true,
+      "now": 432.0
+     },
+     {
+      "op": "endurance",
+      "percent": 56.699999999999996,
+      "source": "autopilot",
+      "armed": true,
+      "now": 433.0
+     },
+     {
+      "op": "endurance",
+      "percent": 56.599999999999994,
+      "source": "autopilot",
+      "armed": true,
+      "now": 434.0
+     },
+     {
+      "op": "endurance",
+      "percent": 56.5,
+      "source": "autopilot",
+      "armed": true,
+      "now": 435.0
+     },
+     {
+      "op": "endurance",
+      "percent": 56.4,
+      "source": "autopilot",
+      "armed": true,
+      "now": 436.0
+     },
+     {
+      "op": "endurance",
+      "percent": 56.3,
+      "source": "autopilot",
+      "armed": true,
+      "now": 437.0
+     },
+     {
+      "op": "endurance",
+      "percent": 56.199999999999996,
+      "source": "autopilot",
+      "armed": true,
+      "now": 438.0
+     },
+     {
+      "op": "endurance",
+      "percent": 56.099999999999994,
+      "source": "autopilot",
+      "armed": true,
+      "now": 439.0
+     },
+     {
+      "op": "endurance",
+      "percent": 56.0,
+      "source": "autopilot",
+      "armed": true,
+      "now": 440.0
+     },
+     {
+      "op": "endurance",
+      "percent": 55.9,
+      "source": "autopilot",
+      "armed": true,
+      "now": 441.0
+     },
+     {
+      "op": "endurance",
+      "percent": 55.8,
+      "source": "autopilot",
+      "armed": true,
+      "now": 442.0
+     },
+     {
+      "op": "endurance",
+      "percent": 55.699999999999996,
+      "source": "autopilot",
+      "armed": true,
+      "now": 443.0
+     },
+     {
+      "op": "endurance",
+      "percent": 55.599999999999994,
+      "source": "autopilot",
+      "armed": true,
+      "now": 444.0
+     },
+     {
+      "op": "endurance",
+      "percent": 55.5,
+      "source": "autopilot",
+      "armed": true,
+      "now": 445.0
+     },
+     {
+      "op": "endurance",
+      "percent": 55.4,
+      "source": "autopilot",
+      "armed": true,
+      "now": 446.0
+     },
+     {
+      "op": "endurance",
+      "percent": 55.3,
+      "source": "autopilot",
+      "armed": true,
+      "now": 447.0
+     },
+     {
+      "op": "endurance",
+      "percent": 55.199999999999996,
+      "source": "autopilot",
+      "armed": true,
+      "now": 448.0
+     },
+     {
+      "op": "endurance",
+      "percent": 55.099999999999994,
+      "source": "autopilot",
+      "armed": true,
+      "now": 449.0
+     },
+     {
+      "op": "state_len"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": -1
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 940
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 939
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 938
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 937
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 936
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 935
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 934
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 933
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 932
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 931
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 930
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 929
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 928
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 927
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 926
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 925
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 924
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 923
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 922
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 921
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 920
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 919
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 918
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 917
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 916
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 915
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 914
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 913
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 912
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 911
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 910
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 909
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 908
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 907
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 906
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 905
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 904
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 903
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 902
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 901
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 900
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 899
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 898
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 897
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 896
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 895
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 894
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 893
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 892
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 891
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 890
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 889
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 888
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 887
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 886
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 885
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 884
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 883
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 882
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 881
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 880
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 879
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 878
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 877
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 876
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 875
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 874
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 873
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 872
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 871
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 870
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 869
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 868
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 867
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 866
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 865
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 864
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 863
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 862
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 861
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 860
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 859
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 858
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 857
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 856
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 855
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 854
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 853
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 852
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 851
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 850
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 849
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 848
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 847
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 846
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 845
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 844
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 843
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 842
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 841
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 840
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 839
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 838
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 837
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 836
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 835
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 834
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 833
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 832
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 831
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 830
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 829
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 828
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 827
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 826
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 825
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 824
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 823
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 822
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 821
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 820
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 819
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 818
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 817
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 816
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 815
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 814
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 813
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 812
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 811
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 810
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 809
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 808
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 807
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 806
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 805
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 804
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 803
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 802
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 801
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 800
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 799
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 798
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 797
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 796
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 795
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 794
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 793
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 792
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 791
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 790
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 789
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 788
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 787
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 786
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 785
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 784
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 783
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 782
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 781
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 780
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 779
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 778
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 777
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 776
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 775
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 774
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 773
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 772
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 771
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 770
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 769
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 768
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 767
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 766
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 765
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 764
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 763
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 762
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 761
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 760
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 759
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 758
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 757
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 756
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 755
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 754
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 753
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 752
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 751
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 750
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 749
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 748
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 747
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 746
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 745
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 744
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 743
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 742
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 741
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 740
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 739
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 738
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 737
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 736
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 735
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 734
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 733
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 732
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 731
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 730
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 729
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 728
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 727
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 726
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 725
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 724
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 723
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 722
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 721
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 720
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 719
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 718
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 717
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 716
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 715
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 714
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 713
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 712
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 711
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 710
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 709
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 708
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 707
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 706
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 705
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 704
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 703
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 702
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 701
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 700
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 699
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 698
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 697
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 696
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 695
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 694
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 693
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 692
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 691
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 690
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 689
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 688
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 687
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 686
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 685
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 684
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 683
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 682
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 681
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 680
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 679
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 678
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 677
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 676
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 675
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 674
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 673
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 672
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 671
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 670
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 669
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 668
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 667
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 666
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 665
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 664
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 663
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 662
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 661
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 660
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 659
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 658
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 657
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 656
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 655
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 654
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 653
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 652
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 651
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 650
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 649
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 648
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 647
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 646
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 645
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 644
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 643
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 642
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 641
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 640
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 639
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 638
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 637
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 636
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 635
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 634
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 633
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 632
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 631
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 630
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 629
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 628
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 627
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 626
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 625
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 624
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 623
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 622
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 621
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 620
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 619
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 618
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 617
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 616
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 615
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 614
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 613
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 612
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 611
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 610
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 609
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 608
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 607
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 606
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 605
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 604
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 603
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 602
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 601
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 600
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 599
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 598
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 597
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 596
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 595
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 594
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 593
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 592
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 591
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 590
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 589
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 588
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 587
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 586
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 585
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 584
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 583
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 582
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 581
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 580
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 579
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 578
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 577
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 576
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 575
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 574
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 573
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 572
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 571
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 570
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 569
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 568
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 567
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 566
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 565
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 564
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 563
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 562
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 561
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 560
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 559
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 558
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 557
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 556
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 555
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 554
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 553
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 552
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "battery_endurance_est": 551
+      },
+      "events": []
+     },
+     {
+      "result": 400,
+      "events": []
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "rc": []
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "battery_status_cells",
+    "steps": [
+     {
+      "op": "battery_status",
+      "fields": {
+       "id": 0,
+       "voltages": [
+        4100,
+        4120,
+        4110,
+        4090,
+        65535,
+        65535,
+        65535,
+        65535,
+        65535,
+        65535
+       ],
+       "current_consumed": 1200,
+       "temperature": 2550,
+       "time_remaining": 900
+      }
+     },
+     {
+      "op": "battery_status",
+      "fields": {
+       "id": 0,
+       "voltages": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+       ],
+       "current_consumed": 0,
+       "temperature": 32767,
+       "time_remaining": -5
+      }
+     },
+     {
+      "op": "battery_status",
+      "fields": {
+       "id": 0,
+       "voltages": [
+        16800,
+        65535,
+        65535,
+        65535,
+        65535,
+        65535,
+        65535,
+        65535,
+        65535,
+        65535
+       ],
+       "current_consumed": -1,
+       "temperature": 0,
+       "time_remaining": 0
+      }
+     },
+     {
+      "op": "battery_status",
+      "fields": {
+       "id": 0,
+       "voltages": [
+        65534,
+        65535,
+        65535,
+        65535,
+        65535,
+        65535,
+        65535,
+        65535,
+        65535,
+        65535
+       ],
+       "voltages_ext": [
+        5000,
+        65535,
+        65535,
+        65535
+       ],
+       "current_consumed": 10
+      }
+     },
+     {
+      "op": "battery_status",
+      "fields": {
+       "id": 0,
+       "voltages": [
+        65534,
+        65535,
+        65535,
+        65535,
+        65535,
+        65535,
+        65535,
+        65535,
+        65535,
+        65535
+       ],
+       "voltages_ext": [
+        5000,
+        6000,
+        65535,
+        65535
+       ]
+      }
+     },
+     {
+      "op": "battery_status",
+      "fields": {
+       "id": 0,
+       "voltages": [
+        3700,
+        3700,
+        3700,
+        3700,
+        3700,
+        3700,
+        3700,
+        3700,
+        3700,
+        3700
+       ],
+       "voltages_ext": [
+        3700,
+        3700,
+        0,
+        65535
+       ],
+       "temperature": -1234
+      }
+     },
+     {
+      "op": "battery_status",
+      "fields": {
+       "id": 1,
+       "voltages": [
+        3700,
+        3700,
+        3700,
+        3700,
+        3700,
+        3700,
+        3700,
+        3700,
+        3700,
+        3700
+       ]
+      }
+     },
+     {
+      "op": "battery_status",
+      "fields": {
+       "id": 0,
+       "voltages": [
+        3701,
+        3702,
+        3703,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+       ]
+      }
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "battery_cell_voltages": [
+          4.1,
+          4.12,
+          4.11,
+          4.09
+         ],
+         "battery_consumed_mah": 1200.0,
+         "battery_temperature": 25.5,
+         "battery_time_remaining": 900
+        }
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "battery_cell_voltages": [],
+         "battery_consumed_mah": 0.0,
+         "battery_temperature": null,
+         "battery_time_remaining": 0
+        }
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "battery_cell_voltages": [],
+         "battery_temperature": 0.0,
+         "battery_time_remaining": 0
+        }
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "battery_cell_voltages": [
+          65.534,
+          5.0
+         ],
+         "battery_consumed_mah": 10.0,
+         "battery_temperature": 0.0,
+         "battery_time_remaining": 0
+        }
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "battery_cell_voltages": [
+          65.534,
+          5.0,
+          6.0
+         ],
+         "battery_consumed_mah": 0.0,
+         "battery_temperature": 0.0,
+         "battery_time_remaining": 0
+        }
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "battery_cell_voltages": [
+          3.7,
+          3.7,
+          3.7,
+          3.7,
+          3.7,
+          3.7,
+          3.7,
+          3.7,
+          3.7,
+          3.7,
+          3.7,
+          3.7
+         ],
+         "battery_consumed_mah": 0.0,
+         "battery_temperature": -12.3,
+         "battery_time_remaining": 0
+        }
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "battery_cell_voltages": [
+          3.701,
+          3.702,
+          3.703
+         ],
+         "battery_consumed_mah": 0.0,
+         "battery_temperature": 0.0,
+         "battery_time_remaining": 0
+        }
+       ]
+      ]
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "rc": []
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "gnss_integrity_decoded",
+    "target_system": 1,
+    "steps": [
+     {
+      "op": "gnss",
+      "fields": {
+       "id": 0,
+       "jamming_state": 1,
+       "spoofing_state": 3,
+       "gnss_signal_quality": 7
+      },
+      "system": 1
+     },
+     {
+      "op": "gnss",
+      "fields": {
+       "id": 0,
+       "jamming_state": 2,
+       "spoofing_state": 2,
+       "gnss_signal_quality": 11
+      },
+      "system": 1
+     },
+     {
+      "op": "gnss",
+      "fields": {
+       "id": 0,
+       "jamming_state": 9,
+       "spoofing_state": 0,
+       "gnss_signal_quality": 255
+      },
+      "system": 0
+     },
+     {
+      "op": "gnss",
+      "fields": {
+       "id": 0,
+       "jamming_state": 3,
+       "spoofing_state": 1,
+       "gnss_signal_quality": 0
+      },
+      "system": 5
+     },
+     {
+      "op": "gnss",
+      "fields": {
+       "id": 1,
+       "jamming_state": 3,
+       "spoofing_state": 1,
+       "gnss_signal_quality": 4
+      },
+      "system": 1
+     },
+     {
+      "op": "forget_gnss"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "gps_jamming": "ok",
+         "gps_spoofing": "detected",
+         "gps_signal_quality": 7
+        }
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "gps_jamming": "mitigated",
+         "gps_spoofing": "mitigated",
+         "gps_signal_quality": -1
+        }
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "gps_jamming": "",
+         "gps_spoofing": "",
+         "gps_signal_quality": -1
+        }
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "gps_jamming": "",
+         "gps_spoofing": "",
+         "gps_signal_quality": -1
+        }
+       ]
+      ]
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "rc": []
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "gnss_integrity_unknown_target",
+    "target_system": 0,
+    "steps": [
+     {
+      "op": "gnss",
+      "fields": {
+       "id": 0,
+       "jamming_state": 3,
+       "spoofing_state": 3,
+       "gnss_signal_quality": 10
+      },
+      "system": 9
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "gps_jamming": "detected",
+         "gps_spoofing": "detected",
+         "gps_signal_quality": 10
+        }
+       ]
+      ]
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "rc": []
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "gnss_integrity_frames",
+    "target_system": 1,
+    "steps": [
+     {
+      "op": "gnss_frame",
+      "frame": "fd100000070101b901000000000000000000000001010000000583c4"
+     },
+     {
+      "op": "gnss_frame",
+      "frame": "fd0c0000070101b901000000000000000000000003024b4e"
+     },
+     {
+      "op": "gnss_frame",
+      "frame": "fd010000070101b9010000da89"
+     },
+     {
+      "op": "gnss_frame",
+      "frame": "fd100000070401b901000000000000000000000001010000000588d8"
+     },
+     {
+      "op": "gnss_frame",
+      "frame": "fd100000070101b9010000000000000000000200010100000005795f"
+     },
+     {
+      "op": "gnss_frame",
+      "frame": "fd100000070101b901000000000000000000000001010000000582c4"
+     },
+     {
+      "op": "gnss_frame",
+      "frame": "fe100000070101b901000000000000000000000001010000000583c4"
+     },
+     {
+      "op": "gnss_frame",
+      "frame": "fd100000070101b90100000000000000000000000101000000"
+     },
+     {
+      "op": "gnss_frame",
+      "frame": "fd100000070101b8010000000000000000000000010100000005d51b"
+     },
+     {
+      "op": "gnss_frame",
+      "frame": "fd120000070101b90100000000000000000000000101000000050000a319"
+     },
+     {
+      "op": "gnss_frame",
+      "frame": ""
+     },
+     {
+      "op": "gnss_frame",
+      "frame": "fd0100"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "gps_jamming": "ok",
+         "gps_spoofing": "ok",
+         "gps_signal_quality": 5
+        }
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "gps_jamming": "detected",
+         "gps_spoofing": "mitigated",
+         "gps_signal_quality": 0
+        }
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "gps_jamming": "",
+         "gps_spoofing": "",
+         "gps_signal_quality": 0
+        }
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "rc": []
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "attitude_target",
+    "steps": [
+     {
+      "op": "att",
+      "fields": {
+       "q": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+       ],
+       "body_roll_rate": 0.1,
+       "body_pitch_rate": -0.2,
+       "body_yaw_rate": 0.0
+      }
+     },
+     {
+      "op": "att",
+      "fields": {
+       "q": [
+        0.9238795,
+        0.0,
+        0.3826834,
+        0.0
+       ],
+       "body_roll_rate": 1.5,
+       "body_pitch_rate": 0.0,
+       "body_yaw_rate": -3.0
+      }
+     },
+     {
+      "op": "att",
+      "fields": {
+       "q": [
+        0.7071068,
+        0.7071068,
+        0.0,
+        0.0
+       ]
+      }
+     },
+     {
+      "op": "att",
+      "fields": {
+       "q": [
+        0.5,
+        0.5,
+        0.5,
+        0.5
+       ]
+      }
+     },
+     {
+      "op": "att",
+      "fields": {
+       "q": [
+        1.2,
+        0.0,
+        0.9,
+        0.0
+       ]
+      }
+     },
+     {
+      "op": "att",
+      "fields": {
+       "q": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+       ],
+       "body_yaw_rate": 0.05
+      }
+     },
+     {
+      "op": "att",
+      "fields": {
+       "q": [
+        0.7,
+        0.0,
+        0.7,
+        0.1
+       ],
+       "body_roll_rate": 0.123456
+      }
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "rollspeed_sp": 5.7,
+         "pitchspeed_sp": -11.5,
+         "yawspeed_sp": 0.0,
+         "setpoints_live": true,
+         "roll_sp": 0.0,
+         "pitch_sp": 0.0,
+         "yaw_sp": 0.0
+        }
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "rollspeed_sp": 85.9,
+         "pitchspeed_sp": 0.0,
+         "yawspeed_sp": -171.9,
+         "setpoints_live": true,
+         "roll_sp": 0.0,
+         "pitch_sp": 45.0,
+         "yaw_sp": 0.0
+        }
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "rollspeed_sp": 0.0,
+         "pitchspeed_sp": 0.0,
+         "yawspeed_sp": 0.0,
+         "setpoints_live": true,
+         "roll_sp": 90.0,
+         "pitch_sp": 0.0,
+         "yaw_sp": 0.0
+        }
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "rollspeed_sp": 0.0,
+         "pitchspeed_sp": 0.0,
+         "yawspeed_sp": 0.0,
+         "setpoints_live": true,
+         "roll_sp": 90.0,
+         "pitch_sp": 0.0,
+         "yaw_sp": 90.0
+        }
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "rollspeed_sp": 0.0,
+         "pitchspeed_sp": 0.0,
+         "yawspeed_sp": 0.0,
+         "setpoints_live": true,
+         "roll_sp": 180.0,
+         "pitch_sp": 90.0,
+         "yaw_sp": 180.0
+        }
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "rollspeed_sp": 0.0,
+         "pitchspeed_sp": 0.0,
+         "yawspeed_sp": 2.9,
+         "setpoints_live": true,
+         "roll_sp": 0.0,
+         "pitch_sp": 0.0,
+         "yaw_sp": 0.0
+        }
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "rollspeed_sp": 7.1,
+         "pitchspeed_sp": 0.0,
+         "yawspeed_sp": 0.0,
+         "setpoints_live": true,
+         "roll_sp": 81.9,
+         "pitch_sp": 78.5,
+         "yaw_sp": 90.0
+        }
+       ]
+      ]
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "rc": []
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "position_target",
+    "steps": [
+     {
+      "op": "pos",
+      "fields": {
+       "vx": 1.234,
+       "vy": -2.5,
+       "vz": 0.005
+      }
+     },
+     {
+      "op": "pos",
+      "fields": {
+       "vx": 0.0,
+       "vy": 0.0,
+       "vz": 0.0
+      }
+     },
+     {
+      "op": "pos",
+      "fields": {
+       "vx": 10.125,
+       "vy": 0.015,
+       "vz": -0.025
+      }
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "vx_sp": 1.23,
+         "vy_sp": -2.5,
+         "vz_sp": 0.01,
+         "setpoints_live": true
+        }
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "vx_sp": 0.0,
+         "vy_sp": 0.0,
+         "vz_sp": 0.0,
+         "setpoints_live": true
+        }
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "vx_sp": 10.12,
+         "vy_sp": 0.01,
+         "vz_sp": -0.03,
+         "setpoints_live": true
+        }
+       ]
+      ]
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "rc": []
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "rc_channels_full",
+    "steps": [
+     {
+      "op": "rc",
+      "fields": {
+       "chan1_raw": 1010,
+       "chan2_raw": 1020,
+       "chan3_raw": 1030,
+       "chan4_raw": 1040,
+       "chan5_raw": 1050,
+       "chan6_raw": 1060,
+       "chan7_raw": 1070,
+       "chan8_raw": 1080,
+       "chan9_raw": 1090,
+       "chan10_raw": 1100,
+       "chan11_raw": 1110,
+       "chan12_raw": 1120,
+       "chan13_raw": 1130,
+       "chan14_raw": 1140,
+       "chan15_raw": 1150,
+       "chan16_raw": 1160,
+       "chan17_raw": 1170,
+       "chan18_raw": 1180,
+       "chancount": 8,
+       "rssi": 90
+      }
+     },
+     {
+      "op": "rc",
+      "fields": {
+       "chan1_raw": 1010,
+       "chan2_raw": 1020,
+       "chan3_raw": 1030,
+       "chan4_raw": 1040,
+       "chan5_raw": 1050,
+       "chan6_raw": 1060,
+       "chan7_raw": 1070,
+       "chan8_raw": 1080,
+       "chan9_raw": 1090,
+       "chan10_raw": 1100,
+       "chan11_raw": 1110,
+       "chan12_raw": 1120,
+       "chan13_raw": 1130,
+       "chan14_raw": 1140,
+       "chan15_raw": 1150,
+       "chan16_raw": 1160,
+       "chan17_raw": 1170,
+       "chan18_raw": 1180,
+       "chancount": 18,
+       "rssi": 254
+      }
+     },
+     {
+      "op": "rc",
+      "fields": {
+       "chan1_raw": 1010,
+       "chan2_raw": 1020,
+       "chan3_raw": 1030,
+       "chan4_raw": 1040,
+       "chan5_raw": 1050,
+       "chan6_raw": 1060,
+       "chan7_raw": 1070,
+       "chan8_raw": 1080,
+       "chan9_raw": 1090,
+       "chan10_raw": 1100,
+       "chan11_raw": 1110,
+       "chan12_raw": 1120,
+       "chan13_raw": 1130,
+       "chan14_raw": 1140,
+       "chan15_raw": 1150,
+       "chan16_raw": 1160,
+       "chan17_raw": 1170,
+       "chan18_raw": 1180,
+       "chancount": 0,
+       "rssi": 255
+      }
+     },
+     {
+      "op": "rc",
+      "fields": {
+       "chan1_raw": 1010,
+       "chan2_raw": 1020,
+       "chan3_raw": 1030,
+       "chan4_raw": 1040,
+       "chan5_raw": 1050,
+       "chan6_raw": 1060,
+       "chan7_raw": 1070,
+       "chan8_raw": 1080,
+       "chan9_raw": 1090,
+       "chan10_raw": 1100,
+       "chan11_raw": 1110,
+       "chan12_raw": 1120,
+       "chan13_raw": 1130,
+       "chan14_raw": 1140,
+       "chan15_raw": 1150,
+       "chan16_raw": 1160,
+       "chan17_raw": 1170,
+       "chan18_raw": 1180,
+       "chancount": 40,
+       "rssi": 101
+      }
+     },
+     {
+      "op": "rc",
+      "fields": {
+       "chan1_raw": 65535,
+       "chan2_raw": 0,
+       "chan3_raw": 65534,
+       "chan4_raw": 1040,
+       "chan5_raw": 1050,
+       "chan6_raw": 1060,
+       "chan7_raw": 1070,
+       "chan8_raw": 1080,
+       "chan9_raw": 1090,
+       "chan10_raw": 1100,
+       "chan11_raw": 1110,
+       "chan12_raw": 1120,
+       "chan13_raw": 1130,
+       "chan14_raw": 1140,
+       "chan15_raw": 1150,
+       "chan16_raw": 1160,
+       "chan17_raw": 1170,
+       "chan18_raw": 1180,
+       "chancount": 3,
+       "rssi": 100
+      }
+     },
+     {
+      "op": "rc",
+      "fields": {
+       "chan1_raw": 1010,
+       "chan2_raw": 1020,
+       "chan3_raw": 1030,
+       "chan4_raw": 1040,
+       "chan5_raw": 1050,
+       "chan6_raw": 1060,
+       "chan7_raw": 1070,
+       "chan8_raw": 1080,
+       "chan9_raw": 1090,
+       "chan10_raw": 1100,
+       "chan11_raw": 1110,
+       "chan12_raw": 1120,
+       "chan13_raw": 1130,
+       "chan14_raw": 1140,
+       "chan15_raw": 1150,
+       "chan16_raw": 1160,
+       "chan17_raw": 1170,
+       "chan18_raw": 1180,
+       "chancount": 4,
+       "rssi": 0
+      }
+     },
+     {
+      "op": "rc",
+      "fields": {
+       "chan1_raw": 1010,
+       "chan2_raw": 1020,
+       "chan3_raw": 1030,
+       "chan4_raw": 1040,
+       "chan5_raw": 1050,
+       "chan6_raw": 1060,
+       "chan7_raw": 1070,
+       "chan8_raw": 1080,
+       "chan9_raw": 1090,
+       "chan10_raw": 1100,
+       "chan11_raw": 1110,
+       "chan12_raw": 1120,
+       "chan13_raw": 1130,
+       "chan14_raw": 1140,
+       "chan15_raw": 1150,
+       "chan16_raw": 1160,
+       "chan17_raw": 1170,
+       "chan18_raw": 1180,
+       "chancount": 4,
+       "rssi": 50
+      }
+     },
+     {
+      "op": "rc",
+      "fields": {
+       "chan1_raw": 1010,
+       "chan2_raw": 1020,
+       "chan3_raw": 1030,
+       "chan4_raw": 1040,
+       "chan5_raw": 1050,
+       "chan6_raw": 1060,
+       "chan7_raw": 1070,
+       "chan8_raw": 1080,
+       "chan9_raw": 1090,
+       "chan10_raw": 1100,
+       "chan11_raw": 1110,
+       "chan12_raw": 1120,
+       "chan13_raw": 1130,
+       "chan14_raw": 1140,
+       "chan15_raw": 1150,
+       "chan16_raw": 1160,
+       "chan17_raw": 1170,
+       "chan18_raw": 1180,
+       "chancount": 4,
+       "rssi": 100
+      }
+     },
+     {
+      "op": "rc",
+      "fields": {
+       "chan1_raw": 1010,
+       "chan2_raw": 1020,
+       "chan3_raw": 1030,
+       "chan4_raw": 1040,
+       "chan5_raw": 1050,
+       "chan6_raw": 1060,
+       "chan7_raw": 1070,
+       "chan8_raw": 1080,
+       "chan9_raw": 1090,
+       "chan10_raw": 1100,
+       "chan11_raw": 1110,
+       "chan12_raw": 1120,
+       "chan13_raw": 1130,
+       "chan14_raw": 1140,
+       "chan15_raw": 1150,
+       "chan16_raw": 1160,
+       "chan17_raw": 1170,
+       "chan18_raw": 1180,
+       "chancount": 4,
+       "rssi": 101
+      }
+     },
+     {
+      "op": "rc",
+      "fields": {
+       "chan1_raw": 1010,
+       "chan2_raw": 1020,
+       "chan3_raw": 1030,
+       "chan4_raw": 1040,
+       "chan5_raw": 1050,
+       "chan6_raw": 1060,
+       "chan7_raw": 1070,
+       "chan8_raw": 1080,
+       "chan9_raw": 1090,
+       "chan10_raw": 1100,
+       "chan11_raw": 1110,
+       "chan12_raw": 1120,
+       "chan13_raw": 1130,
+       "chan14_raw": 1140,
+       "chan15_raw": 1150,
+       "chan16_raw": 1160,
+       "chan17_raw": 1170,
+       "chan18_raw": 1180,
+       "chancount": 4,
+       "rssi": 127
+      }
+     },
+     {
+      "op": "rc",
+      "fields": {
+       "chan1_raw": 1010,
+       "chan2_raw": 1020,
+       "chan3_raw": 1030,
+       "chan4_raw": 1040,
+       "chan5_raw": 1050,
+       "chan6_raw": 1060,
+       "chan7_raw": 1070,
+       "chan8_raw": 1080,
+       "chan9_raw": 1090,
+       "chan10_raw": 1100,
+       "chan11_raw": 1110,
+       "chan12_raw": 1120,
+       "chan13_raw": 1130,
+       "chan14_raw": 1140,
+       "chan15_raw": 1150,
+       "chan16_raw": 1160,
+       "chan17_raw": 1170,
+       "chan18_raw": 1180,
+       "chancount": 4,
+       "rssi": 128
+      }
+     },
+     {
+      "op": "rc",
+      "fields": {
+       "chan1_raw": 1010,
+       "chan2_raw": 1020,
+       "chan3_raw": 1030,
+       "chan4_raw": 1040,
+       "chan5_raw": 1050,
+       "chan6_raw": 1060,
+       "chan7_raw": 1070,
+       "chan8_raw": 1080,
+       "chan9_raw": 1090,
+       "chan10_raw": 1100,
+       "chan11_raw": 1110,
+       "chan12_raw": 1120,
+       "chan13_raw": 1130,
+       "chan14_raw": 1140,
+       "chan15_raw": 1150,
+       "chan16_raw": 1160,
+       "chan17_raw": 1170,
+       "chan18_raw": 1180,
+       "chancount": 4,
+       "rssi": 200
+      }
+     },
+     {
+      "op": "rc",
+      "fields": {
+       "chan1_raw": 1010,
+       "chan2_raw": 1020,
+       "chan3_raw": 1030,
+       "chan4_raw": 1040,
+       "chan5_raw": 1050,
+       "chan6_raw": 1060,
+       "chan7_raw": 1070,
+       "chan8_raw": 1080,
+       "chan9_raw": 1090,
+       "chan10_raw": 1100,
+       "chan11_raw": 1110,
+       "chan12_raw": 1120,
+       "chan13_raw": 1130,
+       "chan14_raw": 1140,
+       "chan15_raw": 1150,
+       "chan16_raw": 1160,
+       "chan17_raw": 1170,
+       "chan18_raw": 1180,
+       "chancount": 4,
+       "rssi": 253
+      }
+     },
+     {
+      "op": "rc",
+      "fields": {
+       "chan1_raw": 1010,
+       "chan2_raw": 1020,
+       "chan3_raw": 1030,
+       "chan4_raw": 1040,
+       "chan5_raw": 1050,
+       "chan6_raw": 1060,
+       "chan7_raw": 1070,
+       "chan8_raw": 1080,
+       "chan9_raw": 1090,
+       "chan10_raw": 1100,
+       "chan11_raw": 1110,
+       "chan12_raw": 1120,
+       "chan13_raw": 1130,
+       "chan14_raw": 1140,
+       "chan15_raw": 1150,
+       "chan16_raw": 1160,
+       "chan17_raw": 1170,
+       "chan18_raw": 1180,
+       "chancount": 4,
+       "rssi": 254
+      }
+     },
+     {
+      "op": "rc",
+      "fields": {
+       "chan1_raw": 1010,
+       "chan2_raw": 1020,
+       "chan3_raw": 1030,
+       "chan4_raw": 1040,
+       "chan5_raw": 1050,
+       "chan6_raw": 1060,
+       "chan7_raw": 1070,
+       "chan8_raw": 1080,
+       "chan9_raw": 1090,
+       "chan10_raw": 1100,
+       "chan11_raw": 1110,
+       "chan12_raw": 1120,
+       "chan13_raw": 1130,
+       "chan14_raw": 1140,
+       "chan15_raw": 1150,
+       "chan16_raw": 1160,
+       "chan17_raw": 1170,
+       "chan18_raw": 1180,
+       "chancount": 4,
+       "rssi": 255
+      }
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "rc_channels": [
+          1010,
+          1020,
+          1030,
+          1040,
+          1050,
+          1060,
+          1070,
+          1080
+         ],
+         "rc_channel_count": 8,
+         "rc_rssi": 90,
+         "rc_live": true
+        }
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "rc_channels": [
+          1010,
+          1020,
+          1030,
+          1040,
+          1050,
+          1060,
+          1070,
+          1080,
+          1090,
+          1100,
+          1110,
+          1120,
+          1130,
+          1140,
+          1150,
+          1160,
+          1170,
+          1180
+         ],
+         "rc_channel_count": 18,
+         "rc_rssi": 100,
+         "rc_live": true
+        }
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "rc_channels": [
+          1010,
+          1020,
+          1030,
+          1040,
+          1050,
+          1060,
+          1070,
+          1080,
+          1090,
+          1100,
+          1110,
+          1120,
+          1130,
+          1140,
+          1150,
+          1160,
+          1170,
+          1180
+         ],
+         "rc_channel_count": 18,
+         "rc_rssi": -1,
+         "rc_live": true
+        }
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "rc_channels": [
+          1010,
+          1020,
+          1030,
+          1040,
+          1050,
+          1060,
+          1070,
+          1080,
+          1090,
+          1100,
+          1110,
+          1120,
+          1130,
+          1140,
+          1150,
+          1160,
+          1170,
+          1180
+         ],
+         "rc_channel_count": 18,
+         "rc_rssi": 40,
+         "rc_live": true
+        }
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "rc_channels": [
+          0,
+          0,
+          65534
+         ],
+         "rc_channel_count": 3,
+         "rc_rssi": 100,
+         "rc_live": true
+        }
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "rc_channels": [
+          1010,
+          1020,
+          1030,
+          1040
+         ],
+         "rc_channel_count": 4,
+         "rc_rssi": 0,
+         "rc_live": true
+        }
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "rc_channels": [
+          1010,
+          1020,
+          1030,
+          1040
+         ],
+         "rc_channel_count": 4,
+         "rc_rssi": 50,
+         "rc_live": true
+        }
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "rc_channels": [
+          1010,
+          1020,
+          1030,
+          1040
+         ],
+         "rc_channel_count": 4,
+         "rc_rssi": 100,
+         "rc_live": true
+        }
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "rc_channels": [
+          1010,
+          1020,
+          1030,
+          1040
+         ],
+         "rc_channel_count": 4,
+         "rc_rssi": 40,
+         "rc_live": true
+        }
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "rc_channels": [
+          1010,
+          1020,
+          1030,
+          1040
+         ],
+         "rc_channel_count": 4,
+         "rc_rssi": 50,
+         "rc_live": true
+        }
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "rc_channels": [
+          1010,
+          1020,
+          1030,
+          1040
+         ],
+         "rc_channel_count": 4,
+         "rc_rssi": 50,
+         "rc_live": true
+        }
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "rc_channels": [
+          1010,
+          1020,
+          1030,
+          1040
+         ],
+         "rc_channel_count": 4,
+         "rc_rssi": 79,
+         "rc_live": true
+        }
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "rc_channels": [
+          1010,
+          1020,
+          1030,
+          1040
+         ],
+         "rc_channel_count": 4,
+         "rc_rssi": 100,
+         "rc_live": true
+        }
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "rc_channels": [
+          1010,
+          1020,
+          1030,
+          1040
+         ],
+         "rc_channel_count": 4,
+         "rc_rssi": 100,
+         "rc_live": true
+        }
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "rc_channels": [
+          1010,
+          1020,
+          1030,
+          1040
+         ],
+         "rc_channel_count": 4,
+         "rc_rssi": -1,
+         "rc_live": true
+        }
+       ]
+      ]
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "rc": [
+      1010,
+      1020,
+      1030,
+      1040
+     ]
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "rc_channels_raw_banks",
+    "steps": [
+     {
+      "op": "rc_raw",
+      "fields": {
+       "port": 0,
+       "chan1_raw": 1101,
+       "chan2_raw": 1102,
+       "chan3_raw": 1103,
+       "chan4_raw": 1104,
+       "chan5_raw": 1105,
+       "chan6_raw": 1106,
+       "chan7_raw": 1107,
+       "chan8_raw": 1108,
+       "rssi": 80
+      }
+     },
+     {
+      "op": "rc_raw",
+      "fields": {
+       "port": 1,
+       "chan1_raw": 1201,
+       "chan2_raw": 1202,
+       "chan3_raw": 1203,
+       "chan4_raw": 1204,
+       "chan5_raw": 1205,
+       "chan6_raw": 1206,
+       "chan7_raw": 1207,
+       "chan8_raw": 1208,
+       "rssi": 80
+      }
+     },
+     {
+      "op": "rc_raw",
+      "fields": {
+       "port": 2,
+       "chan1_raw": 1301,
+       "chan2_raw": 1302,
+       "chan3_raw": 1303,
+       "chan4_raw": 1304,
+       "chan5_raw": 1305,
+       "chan6_raw": 1306,
+       "chan7_raw": 1307,
+       "chan8_raw": 1308,
+       "rssi": 255
+      }
+     },
+     {
+      "op": "rc_raw",
+      "fields": {
+       "port": 3,
+       "chan1_raw": 1401,
+       "chan2_raw": 1402,
+       "chan3_raw": 1403,
+       "chan4_raw": 1404,
+       "chan5_raw": 1405,
+       "chan6_raw": 1406,
+       "chan7_raw": 1407,
+       "chan8_raw": 1408,
+       "rssi": 80
+      }
+     },
+     {
+      "op": "rc_raw",
+      "fields": {
+       "port": 0,
+       "chan1_raw": 65535,
+       "chan2_raw": 2000
+      }
+     },
+     {
+      "op": "rc",
+      "fields": {
+       "chan1_raw": 1010,
+       "chan2_raw": 1020,
+       "chan3_raw": 1030,
+       "chan4_raw": 1040,
+       "chan5_raw": 1050,
+       "chan6_raw": 1060,
+       "chan7_raw": 1070,
+       "chan8_raw": 1080,
+       "chan9_raw": 1090,
+       "chan10_raw": 1100,
+       "chan11_raw": 1110,
+       "chan12_raw": 1120,
+       "chan13_raw": 1130,
+       "chan14_raw": 1140,
+       "chan15_raw": 1150,
+       "chan16_raw": 1160,
+       "chan17_raw": 1170,
+       "chan18_raw": 1180,
+       "chancount": 18,
+       "rssi": 20
+      }
+     },
+     {
+      "op": "rc_raw",
+      "fields": {
+       "port": 1,
+       "chan1_raw": 1501,
+       "chan2_raw": 1502,
+       "chan3_raw": 1503,
+       "chan4_raw": 1504,
+       "chan5_raw": 1505,
+       "chan6_raw": 1506,
+       "chan7_raw": 1507,
+       "chan8_raw": 1508
+      }
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "rc_channels": [
+          1101,
+          1102,
+          1103,
+          1104,
+          1105,
+          1106,
+          1107,
+          1108
+         ],
+         "rc_channel_count": 8,
+         "rc_rssi": 80,
+         "rc_live": true
+        }
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "rc_channels": [
+          1101,
+          1102,
+          1103,
+          1104,
+          1105,
+          1106,
+          1107,
+          1108,
+          1201,
+          1202,
+          1203,
+          1204,
+          1205,
+          1206,
+          1207,
+          1208
+         ],
+         "rc_channel_count": 16,
+         "rc_rssi": 80,
+         "rc_live": true
+        }
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "rc_channels": [
+          1101,
+          1102,
+          1103,
+          1104,
+          1105,
+          1106,
+          1107,
+          1108,
+          1201,
+          1202,
+          1203,
+          1204,
+          1205,
+          1206,
+          1207,
+          1208,
+          1301,
+          1302
+         ],
+         "rc_channel_count": 18,
+         "rc_rssi": -1,
+         "rc_live": true
+        }
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "rc_channels": [
+          0,
+          2000,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1201,
+          1202,
+          1203,
+          1204,
+          1205,
+          1206,
+          1207,
+          1208,
+          1301,
+          1302
+         ],
+         "rc_channel_count": 18,
+         "rc_rssi": 0,
+         "rc_live": true
+        }
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "rc_channels": [
+          1010,
+          1020,
+          1030,
+          1040,
+          1050,
+          1060,
+          1070,
+          1080,
+          1090,
+          1100,
+          1110,
+          1120,
+          1130,
+          1140,
+          1150,
+          1160,
+          1170,
+          1180
+         ],
+         "rc_channel_count": 18,
+         "rc_rssi": 20,
+         "rc_live": true
+        }
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "rc_channels": [
+          1010,
+          1020,
+          1030,
+          1040,
+          1050,
+          1060,
+          1070,
+          1080,
+          1501,
+          1502,
+          1503,
+          1504,
+          1505,
+          1506,
+          1507,
+          1508,
+          1170,
+          1180
+         ],
+         "rc_channel_count": 18,
+         "rc_rssi": 0,
+         "rc_live": true
+        }
+       ]
+      ]
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "rc": [
+      1010,
+      1020,
+      1030,
+      1040,
+      1050,
+      1060,
+      1070,
+      1080,
+      1501,
+      1502,
+      1503,
+      1504,
+      1505,
+      1506,
+      1507,
+      1508,
+      1170,
+      1180
+     ]
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "radio_status_and_link_quality",
+    "steps": [
+     {
+      "op": "link_quality"
+     },
+     {
+      "op": "hb",
+      "t": 100.0
+     },
+     {
+      "op": "hb",
+      "t": 101.0
+     },
+     {
+      "op": "hb",
+      "t": 102.0
+     },
+     {
+      "op": "hb",
+      "t": 103.0
+     },
+     {
+      "op": "hb",
+      "t": 104.0
+     },
+     {
+      "op": "jitter"
+     },
+     {
+      "op": "link_quality"
+     },
+     {
+      "op": "radio",
+      "fields": {
+       "remrssi": 150,
+       "txbuf": 100,
+       "rxerrors": 3,
+       "fixed": 1
+      }
+     },
+     {
+      "op": "radio",
+      "fields": {
+       "remrssi": 255,
+       "txbuf": 100,
+       "rxerrors": 4,
+       "fixed": 2
+      }
+     },
+     {
+      "op": "radio",
+      "fields": {
+       "remrssi": 0,
+       "txbuf": 0
+      }
+     },
+     {
+      "op": "radio",
+      "fields": {
+       "remrssi": 90,
+       "txbuf": 40
+      }
+     },
+     {
+      "op": "radio",
+      "fields": {
+       "remrssi": 60,
+       "txbuf": 10
+      }
+     },
+     {
+      "op": "radio",
+      "fields": {
+       "remrssi": 41,
+       "txbuf": 0
+      }
+     },
+     {
+      "op": "radio",
+      "fields": {
+       "remrssi": 200,
+       "txbuf": 200
+      }
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "link_quality": "good"
+        }
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "heartbeat_jitter_ms": 0.0
+        }
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "link_quality": "good"
+        }
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "uplink": 100,
+         "uplink_rssi": 150.0,
+         "uplink_rxerrors": 3,
+         "uplink_fixed": 1
+        }
+       ],
+       [
+        "update",
+        {
+         "link_quality": "good"
+        }
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "uplink": 100,
+         "uplink_rssi": 255.0,
+         "uplink_rxerrors": 4,
+         "uplink_fixed": 2
+        }
+       ],
+       [
+        "update",
+        {
+         "link_quality": "good"
+        }
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "uplink": 100,
+         "uplink_rssi": 0.0,
+         "uplink_rxerrors": 0,
+         "uplink_fixed": 0
+        }
+       ],
+       [
+        "update",
+        {
+         "link_quality": "good"
+        }
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "uplink": 44,
+         "uplink_rssi": 90.0,
+         "uplink_rxerrors": 0,
+         "uplink_fixed": 0
+        }
+       ],
+       [
+        "update",
+        {
+         "link_quality": "fair"
+        }
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "uplink": 16,
+         "uplink_rssi": 60.0,
+         "uplink_rxerrors": 0,
+         "uplink_fixed": 0
+        }
+       ],
+       [
+        "update",
+        {
+         "link_quality": "poor"
+        }
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "uplink": 1,
+         "uplink_rssi": 41.0,
+         "uplink_rxerrors": 0,
+         "uplink_fixed": 0
+        }
+       ],
+       [
+        "update",
+        {
+         "link_quality": "poor"
+        }
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "uplink": 100,
+         "uplink_rssi": 200.0,
+         "uplink_rxerrors": 0,
+         "uplink_fixed": 0
+        }
+       ],
+       [
+        "update",
+        {
+         "link_quality": "good"
+        }
+       ]
+      ]
+     },
+     {
+      "result": {
+       "hb": [
+        100.0,
+        101.0,
+        102.0,
+        103.0,
+        104.0
+       ],
+       "radio_seen": true,
+       "uplink": 100,
+       "cells": 0,
+       "drain": [],
+       "source": ""
+      },
+      "events": []
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "rc": []
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "link_quality_with_jitter",
+    "steps": [
+     {
+      "op": "hb",
+      "t": 0.0
+     },
+     {
+      "op": "hb",
+      "t": 1.0
+     },
+     {
+      "op": "hb",
+      "t": 3.5
+     },
+     {
+      "op": "hb",
+      "t": 4.0
+     },
+     {
+      "op": "hb",
+      "t": 7.0
+     },
+     {
+      "op": "jitter"
+     },
+     {
+      "op": "current_jitter"
+     },
+     {
+      "op": "radio",
+      "fields": {
+       "remrssi": 150,
+       "txbuf": 100
+      }
+     },
+     {
+      "op": "radio",
+      "fields": {
+       "remrssi": 120,
+       "txbuf": 60
+      }
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "heartbeat_jitter_ms": 1030.8
+        }
+       ]
+      ]
+     },
+     {
+      "result": 1030.8,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "uplink": 100,
+         "uplink_rssi": 150.0,
+         "uplink_rxerrors": 0,
+         "uplink_fixed": 0
+        }
+       ],
+       [
+        "update",
+        {
+         "link_quality": "fair"
+        }
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "uplink": 69,
+         "uplink_rssi": 120.0,
+         "uplink_rxerrors": 0,
+         "uplink_fixed": 0
+        }
+       ],
+       [
+        "update",
+        {
+         "link_quality": "fair"
+        }
+       ]
+      ]
+     },
+     {
+      "result": {
+       "hb": [
+        0.0,
+        1.0,
+        3.5,
+        4.0,
+        7.0
+       ],
+       "radio_seen": true,
+       "uplink": 69,
+       "cells": 0,
+       "drain": [],
+       "source": ""
+      },
+      "events": []
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "rc": []
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "heartbeat_window",
+    "steps": [
+     {
+      "op": "hb",
+      "t": 0.0
+     },
+     {
+      "op": "hb",
+      "t": 0.9973
+     },
+     {
+      "op": "hb",
+      "t": 1.9946
+     },
+     {
+      "op": "hb",
+      "t": 2.9919
+     },
+     {
+      "op": "hb",
+      "t": 3.9892
+     },
+     {
+      "op": "hb",
+      "t": 4.9864999999999995
+     },
+     {
+      "op": "hb",
+      "t": 5.9838
+     },
+     {
+      "op": "hb",
+      "t": 6.9811
+     },
+     {
+      "op": "hb",
+      "t": 7.9784
+     },
+     {
+      "op": "hb",
+      "t": 8.9757
+     },
+     {
+      "op": "hb",
+      "t": 9.972999999999999
+     },
+     {
+      "op": "hb",
+      "t": 10.9703
+     },
+     {
+      "op": "hb",
+      "t": 11.9676
+     },
+     {
+      "op": "hb",
+      "t": 12.9649
+     },
+     {
+      "op": "hb",
+      "t": 13.9622
+     },
+     {
+      "op": "hb",
+      "t": 14.9595
+     },
+     {
+      "op": "hb",
+      "t": 15.9568
+     },
+     {
+      "op": "hb",
+      "t": 16.9541
+     },
+     {
+      "op": "hb",
+      "t": 17.9514
+     },
+     {
+      "op": "hb",
+      "t": 18.9487
+     },
+     {
+      "op": "hb",
+      "t": 19.945999999999998
+     },
+     {
+      "op": "hb",
+      "t": 20.9433
+     },
+     {
+      "op": "hb",
+      "t": 21.9406
+     },
+     {
+      "op": "hb",
+      "t": 22.9379
+     },
+     {
+      "op": "hb",
+      "t": 23.9352
+     },
+     {
+      "op": "hb",
+      "t": 24.932499999999997
+     },
+     {
+      "op": "hb",
+      "t": 25.9298
+     },
+     {
+      "op": "hb",
+      "t": 26.9271
+     },
+     {
+      "op": "hb",
+      "t": 27.9244
+     },
+     {
+      "op": "hb",
+      "t": 28.921699999999998
+     },
+     {
+      "op": "hb",
+      "t": 29.919
+     },
+     {
+      "op": "hb",
+      "t": 30.9163
+     },
+     {
+      "op": "hb",
+      "t": 31.9136
+     },
+     {
+      "op": "hb",
+      "t": 32.9109
+     },
+     {
+      "op": "hb",
+      "t": 33.9082
+     },
+     {
+      "op": "hb",
+      "t": 34.905499999999996
+     },
+     {
+      "op": "hb",
+      "t": 35.9028
+     },
+     {
+      "op": "hb",
+      "t": 36.9001
+     },
+     {
+      "op": "hb",
+      "t": 37.8974
+     },
+     {
+      "op": "hb",
+      "t": 38.8947
+     },
+     {
+      "op": "jitter"
+     },
+     {
+      "op": "state"
+     },
+     {
+      "op": "forget_link"
+     },
+     {
+      "op": "state"
+     },
+     {
+      "op": "jitter"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "heartbeat_jitter_ms": 0.0
+        }
+       ]
+      ]
+     },
+     {
+      "result": {
+       "hb": [
+        9.972999999999999,
+        10.9703,
+        11.9676,
+        12.9649,
+        13.9622,
+        14.9595,
+        15.9568,
+        16.9541,
+        17.9514,
+        18.9487,
+        19.945999999999998,
+        20.9433,
+        21.9406,
+        22.9379,
+        23.9352,
+        24.932499999999997,
+        25.9298,
+        26.9271,
+        27.9244,
+        28.921699999999998,
+        29.919,
+        30.9163,
+        31.9136,
+        32.9109,
+        33.9082,
+        34.905499999999996,
+        35.9028,
+        36.9001,
+        37.8974,
+        38.8947
+       ],
+       "radio_seen": false,
+       "uplink": 0,
+       "cells": 0,
+       "drain": [],
+       "source": ""
+      },
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": {
+       "hb": [],
+       "radio_seen": false,
+       "uplink": 0,
+       "cells": 0,
+       "drain": [],
+       "source": ""
+      },
+      "events": []
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "heartbeat_jitter_ms": 0.0
+        }
+       ]
+      ]
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "rc": []
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "vibration_stream",
+    "steps": [
+     {
+      "op": "vibration",
+      "enabled": true,
+      "rate": 10
+     },
+     {
+      "op": "vibration",
+      "enabled": true,
+      "rate": 1
+     },
+     {
+      "op": "vibration",
+      "enabled": true,
+      "rate": 50
+     },
+     {
+      "op": "vibration",
+      "enabled": true,
+      "rate": 7
+     },
+     {
+      "op": "vibration",
+      "enabled": true,
+      "rate": 0
+     },
+     {
+      "op": "vibration",
+      "enabled": true,
+      "rate": 51
+     },
+     {
+      "op": "vibration",
+      "enabled": false,
+      "rate": 10
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "interval",
+        241,
+        100000
+       ]
+      ]
+     },
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "interval",
+        241,
+        1000000
+       ]
+      ]
+     },
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "interval",
+        241,
+        20000
+       ]
+      ]
+     },
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "interval",
+        241,
+        142857
+       ]
+      ]
+     },
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        "vibration rate must be between 1 and 50 Hz"
+       ]
+      ]
+     },
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        "vibration rate must be between 1 and 50 Hz"
+       ]
+      ]
+     },
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "interval",
+        241,
+        0
+       ]
+      ]
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "rc": []
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "vibration_stream_refused",
+    "interval_results": {
+     "241": false
+    },
+    "steps": [
+     {
+      "op": "vibration",
+      "enabled": true,
+      "rate": 10
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "interval",
+        241,
+        100000
+       ]
+      ]
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "rc": []
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "rangefinder_stream",
+    "intervals": {
+     "132": 250000
+    },
+    "steps": [
+     {
+      "op": "rangefinder",
+      "enabled": true
+     },
+     {
+      "op": "rangefinder",
+      "enabled": false
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "interval",
+        132,
+        250000
+       ]
+      ]
+     },
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "interval",
+        132,
+        250000
+       ],
+       [
+        "forget_rangefinder",
+        null
+       ],
+       [
+        "update",
+        {
+         "rangefinder_distance": null
+        }
+       ]
+      ]
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "rc": []
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "rangefinder_stream_slow",
+    "slow_link": true,
+    "steps": [
+     {
+      "op": "rangefinder",
+      "enabled": true
+     },
+     {
+      "op": "rangefinder",
+      "enabled": false
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "interval",
+        132,
+        1000000
+       ]
+      ]
+     },
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "interval",
+        132,
+        0
+       ],
+       [
+        "forget_rangefinder",
+        null
+       ],
+       [
+        "update",
+        {
+         "rangefinder_distance": null
+        }
+       ]
+      ]
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "rc": []
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "rangefinder_stream_not_ready",
+    "ready": false,
+    "steps": [
+     {
+      "op": "rangefinder",
+      "enabled": true
+     },
+     {
+      "op": "rangefinder",
+      "enabled": false
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        "not connected"
+       ],
+       [
+        "update",
+        {
+         "rangefinder_distance": null
+        }
+       ]
+      ]
+     },
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        "not connected"
+       ],
+       [
+        "update",
+        {
+         "rangefinder_distance": null
+        }
+       ]
+      ]
+     }
+    ],
+    "final": {
+     "last_error": "not connected",
+     "rc": []
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "rangefinder_stream_refused",
+    "interval_results": {
+     "132": false
+    },
+    "steps": [
+     {
+      "op": "rangefinder",
+      "enabled": false
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "interval",
+        132,
+        0
+       ],
+       [
+        "forget_rangefinder",
+        null
+       ],
+       [
+        "update",
+        {
+         "rangefinder_distance": null
+        }
+       ]
+      ]
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "rc": []
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "rc_stream",
+    "intervals": {
+     "65": 200000
+    },
+    "steps": [
+     {
+      "op": "rc_stream",
+      "enabled": true,
+      "rate": 20
+     },
+     {
+      "op": "rc_stream",
+      "enabled": true,
+      "rate": 2
+     },
+     {
+      "op": "rc_stream",
+      "enabled": true,
+      "rate": 0
+     },
+     {
+      "op": "rc_stream",
+      "enabled": true,
+      "rate": 99
+     },
+     {
+      "op": "rc_stream",
+      "enabled": false,
+      "rate": 20
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "interval",
+        65,
+        50000
+       ]
+      ]
+     },
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "interval",
+        65,
+        200000
+       ]
+      ]
+     },
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        "RC rate must be between 1 and 50 Hz"
+       ]
+      ]
+     },
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        "RC rate must be between 1 and 50 Hz"
+       ]
+      ]
+     },
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "interval",
+        65,
+        200000
+       ],
+       [
+        "update",
+        {
+         "rc_live": false
+        }
+       ]
+      ]
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "rc": []
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "rc_stream_without_baseline",
+    "steps": [
+     {
+      "op": "rc_stream",
+      "enabled": true,
+      "rate": 20
+     },
+     {
+      "op": "rc_stream",
+      "enabled": false,
+      "rate": 20
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "interval",
+        65,
+        50000
+       ]
+      ]
+     },
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "interval",
+        65,
+        0
+       ],
+       [
+        "update",
+        {
+         "rc_live": false
+        }
+       ]
+      ]
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "rc": []
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "rc_stream_not_ready",
+    "ready": false,
+    "steps": [
+     {
+      "op": "rc_stream",
+      "enabled": true,
+      "rate": 20
+     },
+     {
+      "op": "rc_stream",
+      "enabled": false,
+      "rate": 20
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        "not connected"
+       ],
+       [
+        "update",
+        {
+         "rc_live": false
+        }
+       ]
+      ]
+     },
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        "not connected"
+       ],
+       [
+        "update",
+        {
+         "rc_live": false
+        }
+       ]
+      ]
+     }
+    ],
+    "final": {
+     "last_error": "not connected",
+     "rc": []
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "rc_stream_refused",
+    "interval_results": {
+     "65": false
+    },
+    "steps": [
+     {
+      "op": "rc_stream",
+      "enabled": true,
+      "rate": 20
+     },
+     {
+      "op": "rc_stream",
+      "enabled": false,
+      "rate": 20
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "interval",
+        65,
+        50000
+       ]
+      ]
+     },
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "interval",
+        65,
+        0
+       ],
+       [
+        "update",
+        {
+         "rc_live": false
+        }
+       ]
+      ]
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "rc": []
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "tuning_stream",
+    "intervals": {
+     "30": 20000,
+     "83": 0
+    },
+    "steps": [
+     {
+      "op": "tuning",
+      "enabled": true,
+      "rate": 20
+     },
+     {
+      "op": "tuning",
+      "enabled": true,
+      "rate": 80
+     },
+     {
+      "op": "tuning",
+      "enabled": true,
+      "rate": 0
+     },
+     {
+      "op": "tuning",
+      "enabled": false,
+      "rate": 20
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "interval",
+        30,
+        20000
+       ],
+       [
+        "interval",
+        83,
+        50000
+       ],
+       [
+        "interval",
+        85,
+        50000
+       ]
+      ]
+     },
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        "tuning rate must be between 1 and 50 Hz"
+       ]
+      ]
+     },
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        "tuning rate must be between 1 and 50 Hz"
+       ]
+      ]
+     },
+     {
+      "result": true,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "interval",
+        30,
+        20000
+       ],
+       [
+        "interval",
+        83,
+        0
+       ],
+       [
+        "interval",
+        85,
+        0
+       ],
+       [
+        "update",
+        {
+         "setpoints_live": false
+        }
+       ]
+      ]
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "rc": []
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "tuning_stream_partial",
+    "interval_results": {
+     "83": false
+    },
+    "steps": [
+     {
+      "op": "tuning",
+      "enabled": true,
+      "rate": 10
+     },
+     {
+      "op": "tuning",
+      "enabled": false,
+      "rate": 10
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "interval",
+        30,
+        100000
+       ],
+       [
+        "interval",
+        83,
+        100000
+       ],
+       [
+        "interval",
+        85,
+        100000
+       ]
+      ]
+     },
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "interval",
+        30,
+        0
+       ],
+       [
+        "interval",
+        83,
+        0
+       ],
+       [
+        "interval",
+        85,
+        0
+       ],
+       [
+        "update",
+        {
+         "setpoints_live": false
+        }
+       ]
+      ]
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "rc": []
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "tuning_stream_not_ready",
+    "ready": false,
+    "steps": [
+     {
+      "op": "tuning",
+      "enabled": true,
+      "rate": 10
+     },
+     {
+      "op": "tuning",
+      "enabled": false,
+      "rate": 10
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        "not connected"
+       ],
+       [
+        "update",
+        {
+         "setpoints_live": false
+        }
+       ]
+      ]
+     },
+     {
+      "result": false,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "error",
+        "not connected"
+       ],
+       [
+        "update",
+        {
+         "setpoints_live": false
+        }
+       ]
+      ]
+     }
+    ],
+    "final": {
+     "last_error": "not connected",
+     "rc": []
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "stream_intervals",
+    "intervals": {
+     "30": 20000,
+     "65": 200000
+    },
+    "steps": [
+     {
+      "op": "interval",
+      "id": 30,
+      "requested": 10000
+     },
+     {
+      "op": "interval",
+      "id": 30,
+      "requested": 50000
+     },
+     {
+      "op": "interval",
+      "id": 30,
+      "requested": null
+     },
+     {
+      "op": "interval",
+      "id": 83,
+      "requested": 40000
+     },
+     {
+      "op": "interval",
+      "id": 83,
+      "requested": null
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": 10000,
+      "events": []
+     },
+     {
+      "result": 20000,
+      "events": []
+     },
+     {
+      "result": 20000,
+      "events": []
+     },
+     {
+      "result": 40000,
+      "events": []
+     },
+     {
+      "result": 0,
+      "events": []
+     }
+    ],
+    "final": {
+     "last_error": "",
+     "rc": []
+    }
+   }
+  }
+ ]
+}

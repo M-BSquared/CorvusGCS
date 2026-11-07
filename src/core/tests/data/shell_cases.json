@@ -1,0 +1,1376 @@
+{
+ "cases": [
+  {
+   "scenario": {
+    "name": "command_ok",
+    "steps": [
+     {
+      "op": "command",
+      "text": "ls"
+     },
+     {
+      "op": "command",
+      "text": "top\n"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "sent": [
+       [
+        "serial_control_send",
+        [
+         10,
+         22,
+         0,
+         0,
+         3,
+         "6c730a00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        ]
+       ]
+      ],
+      "errors": [
+       ""
+      ],
+      "console": [],
+      "failures": [],
+      "entries": []
+     },
+     {
+      "result": true,
+      "sent": [
+       [
+        "serial_control_send",
+        [
+         10,
+         22,
+         0,
+         0,
+         4,
+         "746f700a000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        ]
+       ]
+      ],
+      "errors": [
+       ""
+      ],
+      "console": [],
+      "failures": [],
+      "entries": []
+     }
+    ],
+    "final": {
+     "active": true,
+     "raw": false,
+     "buffer": "",
+     "backlog": "",
+     "last_error": ""
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "command_chunks",
+    "steps": [
+     {
+      "op": "command",
+      "text": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "sent": [
+       [
+        "serial_control_send",
+        [
+         10,
+         22,
+         0,
+         0,
+         70,
+         "78787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878"
+        ]
+       ],
+       [
+        "serial_control_send",
+        [
+         10,
+         22,
+         0,
+         0,
+         70,
+         "78787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878"
+        ]
+       ],
+       [
+        "serial_control_send",
+        [
+         10,
+         22,
+         0,
+         0,
+         11,
+         "787878787878787878780a0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        ]
+       ]
+      ],
+      "errors": [
+       ""
+      ],
+      "console": [],
+      "failures": [],
+      "entries": []
+     }
+    ],
+    "final": {
+     "active": true,
+     "raw": false,
+     "buffer": "",
+     "backlog": "",
+     "last_error": ""
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "command_multibyte",
+    "steps": [
+     {
+      "op": "command",
+      "text": "echo \u20ac\u00e4\ud83d\ude80"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "sent": [
+       [
+        "serial_control_send",
+        [
+         10,
+         22,
+         0,
+         0,
+         15,
+         "6563686f20e282acc3a4f09f9a800a00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        ]
+       ]
+      ],
+      "errors": [
+       ""
+      ],
+      "console": [],
+      "failures": [],
+      "entries": []
+     }
+    ],
+    "final": {
+     "active": true,
+     "raw": false,
+     "buffer": "",
+     "backlog": "",
+     "last_error": ""
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "command_unsupported",
+    "supports_shell": false,
+    "label": "ArduPilot",
+    "steps": [
+     {
+      "op": "command",
+      "text": "ls"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "sent": [],
+      "errors": [
+       "",
+       "ArduPilot has no MAVLink shell. The console is a PX4 feature (NSH over SERIAL_CONTROL)"
+      ],
+      "console": [],
+      "failures": [],
+      "entries": []
+     }
+    ],
+    "final": {
+     "active": false,
+     "raw": false,
+     "buffer": "",
+     "backlog": "",
+     "last_error": "ArduPilot has no MAVLink shell. The console is a PX4 feature (NSH over SERIAL_CONTROL)"
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "command_not_ready",
+    "ready": false,
+    "steps": [
+     {
+      "op": "command",
+      "text": "ls"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "sent": [],
+      "errors": [
+       ""
+      ],
+      "console": [],
+      "failures": [
+       [
+        "Shell",
+        -2
+       ]
+      ],
+      "entries": []
+     }
+    ],
+    "final": {
+     "active": false,
+     "raw": false,
+     "buffer": "",
+     "backlog": "",
+     "last_error": ""
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "command_send_fails",
+    "send_fails": "serial_control_send",
+    "steps": [
+     {
+      "op": "command",
+      "text": "ls"
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "sent": [],
+      "errors": [
+       "",
+       "shell send failed: boom"
+      ],
+      "console": [],
+      "failures": [],
+      "entries": []
+     },
+     {
+      "result": {
+       "active": false,
+       "raw": false,
+       "buffer": "",
+       "backlog": ""
+      },
+      "sent": [],
+      "errors": [],
+      "console": [],
+      "failures": [],
+      "entries": []
+     }
+    ],
+    "final": {
+     "active": false,
+     "raw": false,
+     "buffer": "",
+     "backlog": "",
+     "last_error": "shell send failed: boom"
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "write_raw",
+    "steps": [
+     {
+      "op": "write",
+      "text": "abc"
+     },
+     {
+      "op": "write",
+      "text": "def"
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "sent": [
+       [
+        "serial_control_send",
+        [
+         10,
+         22,
+         0,
+         0,
+         3,
+         "61626300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        ]
+       ]
+      ],
+      "errors": [
+       ""
+      ],
+      "console": [],
+      "failures": [],
+      "entries": []
+     },
+     {
+      "result": true,
+      "sent": [
+       [
+        "serial_control_send",
+        [
+         10,
+         22,
+         0,
+         0,
+         3,
+         "64656600000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        ]
+       ]
+      ],
+      "errors": [
+       ""
+      ],
+      "console": [],
+      "failures": [],
+      "entries": []
+     },
+     {
+      "result": {
+       "active": true,
+       "raw": true,
+       "buffer": "",
+       "backlog": ""
+      },
+      "sent": [],
+      "errors": [],
+      "console": [],
+      "failures": [],
+      "entries": []
+     }
+    ],
+    "final": {
+     "active": true,
+     "raw": true,
+     "buffer": "",
+     "backlog": "",
+     "last_error": ""
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "write_refusals",
+    "limits": {
+     "write_max": 10
+    },
+    "steps": [
+     {
+      "op": "write",
+      "text": ""
+     },
+     {
+      "op": "write",
+      "text": "xxxxxxxxxxx"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "sent": [],
+      "errors": [
+       "",
+       "nothing to send to the shell"
+      ],
+      "console": [],
+      "failures": [],
+      "entries": []
+     },
+     {
+      "result": false,
+      "sent": [],
+      "errors": [
+       "",
+       "too much at once for the shell (11 characters, at most 10)"
+      ],
+      "console": [],
+      "failures": [],
+      "entries": []
+     }
+    ],
+    "final": {
+     "active": false,
+     "raw": false,
+     "buffer": "",
+     "backlog": "",
+     "last_error": "too much at once for the shell (11 characters, at most 10)"
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "write_unsupported",
+    "supports_shell": false,
+    "label": "ArduPilot",
+    "steps": [
+     {
+      "op": "write",
+      "text": "a"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "sent": [],
+      "errors": [
+       "",
+       "ArduPilot has no NuttX shell. It is a PX4 feature (NSH over SERIAL_CONTROL)"
+      ],
+      "console": [],
+      "failures": [],
+      "entries": []
+     }
+    ],
+    "final": {
+     "active": false,
+     "raw": false,
+     "buffer": "",
+     "backlog": "",
+     "last_error": "ArduPilot has no NuttX shell. It is a PX4 feature (NSH over SERIAL_CONTROL)"
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "write_not_ready",
+    "ready": false,
+    "steps": [
+     {
+      "op": "write",
+      "text": "a"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "sent": [],
+      "errors": [
+       "",
+       "not connected"
+      ],
+      "console": [],
+      "failures": [],
+      "entries": []
+     }
+    ],
+    "final": {
+     "active": false,
+     "raw": false,
+     "buffer": "",
+     "backlog": "",
+     "last_error": "not connected"
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "write_send_fails",
+    "send_fails": "serial_control_send",
+    "steps": [
+     {
+      "op": "write",
+      "text": "a"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "sent": [],
+      "errors": [
+       "",
+       "shell send failed: boom"
+      ],
+      "console": [],
+      "failures": [],
+      "entries": []
+     }
+    ],
+    "final": {
+     "active": true,
+     "raw": true,
+     "buffer": "",
+     "backlog": "",
+     "last_error": "shell send failed: boom"
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "lines_are_assembled",
+    "steps": [
+     {
+      "op": "command",
+      "text": "ls"
+     },
+     {
+      "op": "recv",
+      "device": 10,
+      "data": "ab\r\ncd"
+     },
+     {
+      "op": "recv",
+      "device": 10,
+      "data": "ef\n\nnsh> "
+     },
+     {
+      "op": "recv",
+      "device": 10,
+      "data": "t\b\bop\n"
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "sent": [
+       [
+        "serial_control_send",
+        [
+         10,
+         22,
+         0,
+         0,
+         3,
+         "6c730a00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        ]
+       ]
+      ],
+      "errors": [
+       ""
+      ],
+      "console": [],
+      "failures": [],
+      "entries": []
+     },
+     {
+      "result": null,
+      "sent": [],
+      "errors": [],
+      "console": [
+       [
+        "SHELL",
+        "ab",
+        "info"
+       ]
+      ],
+      "failures": [],
+      "entries": []
+     },
+     {
+      "result": null,
+      "sent": [],
+      "errors": [],
+      "console": [
+       [
+        "SHELL",
+        "cdef",
+        "info"
+       ]
+      ],
+      "failures": [],
+      "entries": []
+     },
+     {
+      "result": null,
+      "sent": [],
+      "errors": [],
+      "console": [
+       [
+        "SHELL",
+        "nsh>op",
+        "info"
+       ]
+      ],
+      "failures": [],
+      "entries": []
+     },
+     {
+      "result": {
+       "active": true,
+       "raw": false,
+       "buffer": "",
+       "backlog": ""
+      },
+      "sent": [],
+      "errors": [],
+      "console": [],
+      "failures": [],
+      "entries": []
+     }
+    ],
+    "final": {
+     "active": true,
+     "raw": false,
+     "buffer": "",
+     "backlog": "",
+     "last_error": ""
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "line_cap_flushes",
+    "limits": {
+     "line_max": 10
+    },
+    "steps": [
+     {
+      "op": "command",
+      "text": "ls"
+     },
+     {
+      "op": "recv",
+      "device": 10,
+      "data": "yyyyyyyyyyyy"
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "sent": [
+       [
+        "serial_control_send",
+        [
+         10,
+         22,
+         0,
+         0,
+         3,
+         "6c730a00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        ]
+       ]
+      ],
+      "errors": [
+       ""
+      ],
+      "console": [],
+      "failures": [],
+      "entries": []
+     },
+     {
+      "result": null,
+      "sent": [],
+      "errors": [],
+      "console": [
+       [
+        "SHELL",
+        "yyyyyyyyyyyy",
+        "info"
+       ]
+      ],
+      "failures": [],
+      "entries": []
+     },
+     {
+      "result": {
+       "active": true,
+       "raw": false,
+       "buffer": "",
+       "backlog": ""
+      },
+      "sent": [],
+      "errors": [],
+      "console": [],
+      "failures": [],
+      "entries": []
+     }
+    ],
+    "final": {
+     "active": true,
+     "raw": false,
+     "buffer": "",
+     "backlog": "",
+     "last_error": ""
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "utf8_split_across_chunks",
+    "steps": [
+     {
+      "op": "command",
+      "text": "ls"
+     },
+     {
+      "op": "recv_bytes",
+      "device": 10,
+      "data": [
+       226,
+       130
+      ]
+     },
+     {
+      "op": "recv_bytes",
+      "device": 10,
+      "data": [
+       172,
+       10
+      ]
+     },
+     {
+      "op": "recv_bytes",
+      "device": 10,
+      "data": [
+       111,
+       107,
+       255,
+       33,
+       10
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "sent": [
+       [
+        "serial_control_send",
+        [
+         10,
+         22,
+         0,
+         0,
+         3,
+         "6c730a00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        ]
+       ]
+      ],
+      "errors": [
+       ""
+      ],
+      "console": [],
+      "failures": [],
+      "entries": []
+     },
+     {
+      "result": null,
+      "sent": [],
+      "errors": [],
+      "console": [],
+      "failures": [],
+      "entries": []
+     },
+     {
+      "result": null,
+      "sent": [],
+      "errors": [],
+      "console": [
+       [
+        "SHELL",
+        "\u20ac",
+        "info"
+       ]
+      ],
+      "failures": [],
+      "entries": []
+     },
+     {
+      "result": null,
+      "sent": [],
+      "errors": [],
+      "console": [
+       [
+        "SHELL",
+        "ok\ufffd!",
+        "info"
+       ]
+      ],
+      "failures": [],
+      "entries": []
+     }
+    ],
+    "final": {
+     "active": true,
+     "raw": false,
+     "buffer": "",
+     "backlog": "",
+     "last_error": ""
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "ignored_input",
+    "steps": [
+     {
+      "op": "recv",
+      "device": 10,
+      "data": "nobody asked\n"
+     },
+     {
+      "op": "command",
+      "text": "ls"
+     },
+     {
+      "op": "recv",
+      "device": 3,
+      "data": "other device\n"
+     },
+     {
+      "op": "recv_count",
+      "device": 10,
+      "count": 0
+     },
+     {
+      "op": "recv_count",
+      "device": 10,
+      "count": 71
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "sent": [],
+      "errors": [],
+      "console": [],
+      "failures": [],
+      "entries": []
+     },
+     {
+      "result": true,
+      "sent": [
+       [
+        "serial_control_send",
+        [
+         10,
+         22,
+         0,
+         0,
+         3,
+         "6c730a00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        ]
+       ]
+      ],
+      "errors": [
+       ""
+      ],
+      "console": [],
+      "failures": [],
+      "entries": []
+     },
+     {
+      "result": null,
+      "sent": [],
+      "errors": [],
+      "console": [],
+      "failures": [],
+      "entries": []
+     },
+     {
+      "result": null,
+      "sent": [],
+      "errors": [],
+      "console": [],
+      "failures": [],
+      "entries": []
+     },
+     {
+      "result": null,
+      "sent": [],
+      "errors": [],
+      "console": [],
+      "failures": [],
+      "entries": []
+     },
+     {
+      "result": {
+       "active": true,
+       "raw": false,
+       "buffer": "",
+       "backlog": ""
+      },
+      "sent": [],
+      "errors": [],
+      "console": [],
+      "failures": [],
+      "entries": []
+     }
+    ],
+    "final": {
+     "active": true,
+     "raw": false,
+     "buffer": "",
+     "backlog": "",
+     "last_error": ""
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "not_our_ack",
+    "ack_ours": false,
+    "steps": [
+     {
+      "op": "command",
+      "text": "ls"
+     },
+     {
+      "op": "recv",
+      "device": 10,
+      "data": "x\n"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "sent": [
+       [
+        "serial_control_send",
+        [
+         10,
+         22,
+         0,
+         0,
+         3,
+         "6c730a00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        ]
+       ]
+      ],
+      "errors": [
+       ""
+      ],
+      "console": [],
+      "failures": [],
+      "entries": []
+     },
+     {
+      "result": null,
+      "sent": [],
+      "errors": [],
+      "console": [],
+      "failures": [],
+      "entries": []
+     }
+    ],
+    "final": {
+     "active": true,
+     "raw": false,
+     "buffer": "",
+     "backlog": "",
+     "last_error": ""
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "raw_stream_with_backlog_and_subscribers",
+    "limits": {
+     "backlog": 20
+    },
+    "steps": [
+     {
+      "op": "add_sub"
+     },
+     {
+      "op": "write",
+      "text": "a"
+     },
+     {
+      "op": "recv",
+      "device": 10,
+      "data": "line one\nline two\n"
+     },
+     {
+      "op": "recv",
+      "device": 10,
+      "data": "line three\n"
+     },
+     {
+      "op": "add_sub"
+     },
+     {
+      "op": "recv",
+      "device": 10,
+      "data": "!"
+     },
+     {
+      "op": "remove_sub",
+      "which": 0
+     },
+     {
+      "op": "recv",
+      "device": 10,
+      "data": "?"
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": "",
+      "sent": [],
+      "errors": [],
+      "console": [],
+      "failures": [],
+      "entries": []
+     },
+     {
+      "result": true,
+      "sent": [
+       [
+        "serial_control_send",
+        [
+         10,
+         22,
+         0,
+         0,
+         1,
+         "61000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        ]
+       ]
+      ],
+      "errors": [
+       ""
+      ],
+      "console": [],
+      "failures": [],
+      "entries": []
+     },
+     {
+      "result": null,
+      "sent": [],
+      "errors": [],
+      "console": [],
+      "failures": [],
+      "entries": [
+       [
+        0,
+        "line one\nline two\n"
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "sent": [],
+      "errors": [],
+      "console": [],
+      "failures": [],
+      "entries": [
+       [
+        0,
+        "line three\n"
+       ]
+      ]
+     },
+     {
+      "result": "line three\n",
+      "sent": [],
+      "errors": [],
+      "console": [],
+      "failures": [],
+      "entries": []
+     },
+     {
+      "result": null,
+      "sent": [],
+      "errors": [],
+      "console": [],
+      "failures": [],
+      "entries": [
+       [
+        0,
+        "!"
+       ],
+       [
+        1,
+        "!"
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "sent": [],
+      "errors": [],
+      "console": [],
+      "failures": [],
+      "entries": []
+     },
+     {
+      "result": null,
+      "sent": [],
+      "errors": [],
+      "console": [],
+      "failures": [],
+      "entries": [
+       [
+        1,
+        "?"
+       ]
+      ]
+     },
+     {
+      "result": {
+       "active": true,
+       "raw": true,
+       "buffer": "",
+       "backlog": "line three\n!?"
+      },
+      "sent": [],
+      "errors": [],
+      "console": [],
+      "failures": [],
+      "entries": []
+     }
+    ],
+    "final": {
+     "active": true,
+     "raw": true,
+     "buffer": "",
+     "backlog": "line three\n!?",
+     "last_error": ""
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "stop_closes_the_session",
+    "steps": [
+     {
+      "op": "write",
+      "text": "a"
+     },
+     {
+      "op": "recv",
+      "device": 10,
+      "data": "out\n"
+     },
+     {
+      "op": "stop"
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "sent": [
+       [
+        "serial_control_send",
+        [
+         10,
+         22,
+         0,
+         0,
+         1,
+         "61000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        ]
+       ]
+      ],
+      "errors": [
+       ""
+      ],
+      "console": [],
+      "failures": [],
+      "entries": []
+     },
+     {
+      "result": null,
+      "sent": [],
+      "errors": [],
+      "console": [],
+      "failures": [],
+      "entries": []
+     },
+     {
+      "result": null,
+      "sent": [
+       [
+        "serial_control_send",
+        [
+         10,
+         0,
+         0,
+         0,
+         0,
+         "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        ]
+       ]
+      ],
+      "errors": [],
+      "console": [],
+      "failures": [],
+      "entries": []
+     },
+     {
+      "result": {
+       "active": false,
+       "raw": false,
+       "buffer": "",
+       "backlog": ""
+      },
+      "sent": [],
+      "errors": [],
+      "console": [],
+      "failures": [],
+      "entries": []
+     }
+    ],
+    "final": {
+     "active": false,
+     "raw": false,
+     "buffer": "",
+     "backlog": "",
+     "last_error": ""
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "reset_forgets_partial_state",
+    "steps": [
+     {
+      "op": "command",
+      "text": "ls"
+     },
+     {
+      "op": "recv",
+      "device": 10,
+      "data": "part"
+     },
+     {
+      "op": "reset"
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "sent": [
+       [
+        "serial_control_send",
+        [
+         10,
+         22,
+         0,
+         0,
+         3,
+         "6c730a00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        ]
+       ]
+      ],
+      "errors": [
+       ""
+      ],
+      "console": [],
+      "failures": [],
+      "entries": []
+     },
+     {
+      "result": null,
+      "sent": [],
+      "errors": [],
+      "console": [],
+      "failures": [],
+      "entries": []
+     },
+     {
+      "result": null,
+      "sent": [],
+      "errors": [],
+      "console": [],
+      "failures": [],
+      "entries": []
+     },
+     {
+      "result": {
+       "active": false,
+       "raw": false,
+       "buffer": "",
+       "backlog": ""
+      },
+      "sent": [],
+      "errors": [],
+      "console": [],
+      "failures": [],
+      "entries": []
+     }
+    ],
+    "final": {
+     "active": false,
+     "raw": false,
+     "buffer": "",
+     "backlog": "",
+     "last_error": ""
+    }
+   }
+  }
+ ]
+}

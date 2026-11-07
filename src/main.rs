@@ -1,11 +1,14 @@
 //! Corvus GCS, the native desktop interface.
 //!
-//!     corvus-gcs                         start the backend here and show it
+//!     corvus-gcs                         start the Python backend (serve.py) as a child and show it
+//!     corvus-gcs --core                  run `corvus_core` in this process instead (still partial)
 //!     corvus-gcs --server http://h:8080  connect to a backend elsewhere
-//!     corvus-gcs --root DIR --python PY  where serve.py is, what runs it
+//!     corvus-gcs --root DIR --python PY  say where serve.py and its Python are
 //!
-//! Locally the backend (`serve.py`) is a child of this process and is taken
-//! down on every way out; see `net::backend`.
+//! `corvus_core` answers only what is ported (`src/BACKEND_PORT.md`); every
+//! other route says "Not available in this build", so it is opt in until the
+//! port is complete. Either backend is stopped on every way out; see
+//! `net::backend`.
 
 mod analysis;
 mod app;
@@ -47,6 +50,7 @@ static CONTEXT: OnceLock<egui::Context> = OnceLock::new();
 
 #[derive(Debug, Default)]
 struct Args {
+    core: bool,
     server: Option<String>,
     root: Option<PathBuf>,
     python: Option<PathBuf>,
@@ -63,10 +67,11 @@ fn parse_args() -> Result<Args, String> {
             "--server" => args.server = Some(value("--server")?),
             "--root" => args.root = Some(PathBuf::from(value("--root")?)),
             "--python" => args.python = Some(PathBuf::from(value("--python")?)),
+            "--core" => args.core = true,
             "--page" => args.page = Some(value("--page")?),
             "--scroll" => args.scroll = value("--scroll")?.parse().ok(),
             "-h" | "--help" => {
-                println!("usage: corvus-gcs [--server http://host:port] [--root DIR] [--python PATH] [--page setup|TILE|safety:SENSOR|mission|mission:NAME|settings|logs|analysis] [--scroll PX]");
+                println!("usage: corvus-gcs [--core] [--server http://host:port] [--root DIR] [--python PATH] (where serve.py is) [--page setup|TILE|safety:SENSOR|mission|mission:NAME|settings|logs|analysis] [--scroll PX]");
                 std::process::exit(0);
             }
             other => return Err(format!("unknown argument {other}")),
@@ -114,6 +119,17 @@ fn main() -> ExitCode {
                 return ExitCode::from(2);
             }
         },
+        None if args.core => match net::backend::Backend::start_core() {
+            Ok(b) => {
+                let s = b.server().clone();
+                local = Some(b);
+                s
+            }
+            Err(e) => {
+                eprintln!("corvus-gcs: {e}");
+                return ExitCode::FAILURE;
+            }
+        },
         None => {
             if let Some(peer) = net::backend::running_peer() {
                 eprintln!("corvus-gcs: Corvus is already running, joining it at {}", peer.url());
@@ -155,7 +171,8 @@ fn main() -> ExitCode {
 
     let code = app::run(server, &CONTEXT, args.page.as_deref(), args.scroll);
     // The interface (and with it the telemetry thread) is gone; now the
-    // backend, SIGTERM first.
+    // backend: the core is stopped and its threads joined, a Python child
+    // gets SIGTERM first.
     drop(local);
     code
 }

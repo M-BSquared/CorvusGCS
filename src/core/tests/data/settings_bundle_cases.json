@@ -1,0 +1,592 @@
+{
+  "sections": {
+    "interface": [
+      "theme",
+      "language",
+      "ui",
+      "controls",
+      "branding",
+      "updates",
+      "review"
+    ],
+    "map": [
+      "map",
+      "map_tokens",
+      "tile_sources"
+    ],
+    "connections": [
+      "mavlink_connection",
+      "autoconnect",
+      "forwarding",
+      "stream_rates",
+      "ssh_connections",
+      "mcp"
+    ],
+    "vehicle": [
+      "battery",
+      "remote_id",
+      "rtk",
+      "video",
+      "parameters",
+      "checklists"
+    ],
+    "folders": [
+      "http_port",
+      "tile_cache_dir",
+      "tlog_dir",
+      "params_dir",
+      "firmware_dir",
+      "log_download_dir",
+      "missions_dir"
+    ],
+    "plugins": [],
+    "layout": []
+  },
+  "excluded": [
+    "fleet",
+    "plugins"
+  ],
+  "redacted": {
+    "theme": {
+      "name": "green"
+    },
+    "language": "de",
+    "ui": {
+      "scale": 1.5
+    },
+    "map": {
+      "provider": "esri"
+    },
+    "mavlink_connection": "udp:0.0.0.0:14550",
+    "http_port": 8000,
+    "ssh_connections": [
+      {
+        "name": "a",
+        "host": "h",
+        "username": "u"
+      },
+      {
+        "name": "b",
+        "host": "h2",
+        "username": "u"
+      }
+    ],
+    "rtk": {
+      "ntrip": {
+        "host": "c",
+        "port": 2101,
+        "username": "n",
+        "password": ""
+      },
+      "enabled": true
+    },
+    "video": {
+      "streams": [
+        {
+          "url": "rtsp://x",
+          "username": "v"
+        }
+      ],
+      "ffmpeg": ""
+    },
+    "plugins": {
+      "legacy": {
+        "a": 1
+      }
+    },
+    "fleet": {
+      "links": []
+    },
+    "battery": {
+      "estimate": true
+    }
+  },
+  "built": {
+    "all": {
+      "kind": "corvus-settings",
+      "format": 2,
+      "product": "Corvus GCS",
+      "version": "<version>",
+      "exported_at": "<time>",
+      "secrets": false,
+      "sections": [
+        "interface",
+        "map",
+        "connections",
+        "vehicle",
+        "folders",
+        "plugins",
+        "layout"
+      ],
+      "config": {
+        "theme": {
+          "name": "green"
+        },
+        "language": "de",
+        "ui": {
+          "scale": 1.5
+        },
+        "map": {
+          "provider": "esri"
+        },
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "ssh_connections": [
+          {
+            "name": "a",
+            "host": "h",
+            "username": "u"
+          },
+          {
+            "name": "b",
+            "host": "h2",
+            "username": "u"
+          }
+        ],
+        "rtk": {
+          "ntrip": {
+            "host": "c",
+            "port": 2101,
+            "username": "n",
+            "password": ""
+          },
+          "enabled": true
+        },
+        "video": {
+          "streams": [
+            {
+              "url": "rtsp://x",
+              "username": "v"
+            }
+          ],
+          "ffmpeg": ""
+        },
+        "battery": {
+          "estimate": true
+        }
+      },
+      "plugins": {},
+      "plugin_files": {},
+      "browser": {}
+    },
+    "interface_only": {
+      "kind": "corvus-settings",
+      "format": 2,
+      "product": "Corvus GCS",
+      "version": "<version>",
+      "exported_at": "<time>",
+      "secrets": false,
+      "sections": [
+        "interface"
+      ],
+      "config": {
+        "theme": {
+          "name": "green"
+        },
+        "language": "de",
+        "ui": {
+          "scale": 1.5
+        }
+      },
+      "plugins": {},
+      "plugin_files": {},
+      "browser": {}
+    },
+    "with_secrets": {
+      "kind": "corvus-settings",
+      "format": 2,
+      "product": "Corvus GCS",
+      "version": "<version>",
+      "exported_at": "<time>",
+      "secrets": true,
+      "sections": [
+        "interface",
+        "map",
+        "connections",
+        "vehicle",
+        "folders",
+        "plugins",
+        "layout"
+      ],
+      "config": {
+        "theme": {
+          "name": "green"
+        },
+        "language": "de",
+        "ui": {
+          "scale": 1.5
+        },
+        "map": {
+          "provider": "esri"
+        },
+        "map_tokens": {
+          "mapbox": "tok"
+        },
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "ssh_connections": [
+          {
+            "name": "a",
+            "host": "h",
+            "username": "u",
+            "password": "pw"
+          },
+          {
+            "name": "b",
+            "host": "h2",
+            "username": "u"
+          }
+        ],
+        "rtk": {
+          "ntrip": {
+            "host": "c",
+            "port": 2101,
+            "username": "n",
+            "password": "secret"
+          },
+          "enabled": true
+        },
+        "video": {
+          "streams": [
+            {
+              "url": "rtsp://x",
+              "username": "v",
+              "password": "cam"
+            }
+          ],
+          "ffmpeg": ""
+        },
+        "battery": {
+          "estimate": true
+        }
+      },
+      "plugins": {},
+      "plugin_files": {},
+      "browser": {}
+    },
+    "no_sections": {
+      "kind": "corvus-settings",
+      "format": 2,
+      "product": "Corvus GCS",
+      "version": "<version>",
+      "exported_at": "<time>",
+      "secrets": false,
+      "sections": [],
+      "config": {},
+      "plugins": {},
+      "plugin_files": {},
+      "browser": {}
+    },
+    "plugins_section": {
+      "kind": "corvus-settings",
+      "format": 2,
+      "product": "Corvus GCS",
+      "version": "<version>",
+      "exported_at": "<time>",
+      "secrets": false,
+      "sections": [
+        "plugins",
+        "layout"
+      ],
+      "config": {},
+      "plugins": {
+        "p": {
+          "k": 1
+        }
+      },
+      "plugin_files": {
+        "p": {
+          "a.js": "eA=="
+        }
+      },
+      "browser": {
+        "corvus.a": "1"
+      }
+    }
+  },
+  "merges": {
+    "interface": {
+      "theme": {
+        "name": "pink"
+      },
+      "http_port": 9000,
+      "map_tokens": {
+        "mapbox": "old",
+        "bing": "b"
+      },
+      "ssh_connections": [
+        {
+          "name": "a",
+          "host": "h",
+          "username": "u",
+          "password": "pw"
+        }
+      ],
+      "rtk": {
+        "ntrip": {
+          "host": "c",
+          "port": 2101,
+          "username": "n",
+          "password": "secret"
+        }
+      },
+      "video": {
+        "streams": [
+          {
+            "url": "rtsp://x",
+            "username": "v",
+            "password": "cam"
+          }
+        ]
+      }
+    },
+    "all_no_secrets": {
+      "theme": {
+        "name": "pink"
+      },
+      "map_tokens": {
+        "mapbox": "new",
+        "bing": "b"
+      },
+      "ssh_connections": [
+        {
+          "name": "a",
+          "host": "h",
+          "username": "u",
+          "password": "pw"
+        },
+        {
+          "name": "c",
+          "host": "z"
+        }
+      ],
+      "rtk": {
+        "ntrip": {
+          "host": "c",
+          "port": 2101,
+          "username": "n",
+          "password": "secret"
+        }
+      },
+      "video": {
+        "streams": [
+          {
+            "url": "rtsp://x",
+            "username": "v",
+            "password": "cam"
+          },
+          {
+            "url": "rtsp://y",
+            "username": "v"
+          }
+        ]
+      }
+    },
+    "all_secrets": {
+      "theme": {
+        "name": "pink"
+      },
+      "map_tokens": {
+        "mapbox": "new"
+      },
+      "ssh_connections": [
+        {
+          "name": "a",
+          "host": "h",
+          "username": "u"
+        },
+        {
+          "name": "c",
+          "host": "z"
+        }
+      ],
+      "rtk": {
+        "ntrip": {
+          "host": "c",
+          "port": 2101,
+          "username": "n",
+          "password": ""
+        }
+      },
+      "video": {
+        "streams": [
+          {
+            "url": "rtsp://x",
+            "username": "v"
+          },
+          {
+            "url": "rtsp://y",
+            "username": "v"
+          }
+        ]
+      }
+    },
+    "map_only": {
+      "theme": {
+        "name": "blue"
+      },
+      "http_port": 9000,
+      "map_tokens": {
+        "mapbox": "new",
+        "bing": "b"
+      },
+      "ssh_connections": [
+        {
+          "name": "a",
+          "host": "h",
+          "username": "u",
+          "password": "pw"
+        }
+      ],
+      "rtk": {
+        "ntrip": {
+          "host": "c",
+          "port": 2101,
+          "username": "n",
+          "password": "secret"
+        }
+      },
+      "video": {
+        "streams": [
+          {
+            "url": "rtsp://x",
+            "username": "v",
+            "password": "cam"
+          }
+        ]
+      }
+    }
+  },
+  "parses": {
+    "good_v2": {
+      "ok": true,
+      "value": {
+        "version": "1",
+        "exported_at": "",
+        "secrets": true,
+        "sections": [
+          "interface",
+          "map"
+        ],
+        "config": {
+          "theme": {
+            "name": "x"
+          },
+          "map": {}
+        },
+        "plugins": {},
+        "plugin_files": {},
+        "logo": null,
+        "browser": {
+          "corvus.x": "1"
+        }
+      }
+    },
+    "v1_all_sections": {
+      "ok": true,
+      "value": {
+        "version": "",
+        "exported_at": "",
+        "secrets": false,
+        "sections": [
+          "interface",
+          "map",
+          "connections",
+          "vehicle",
+          "folders",
+          "plugins",
+          "layout"
+        ],
+        "config": {
+          "theme": {
+            "name": "x"
+          },
+          "http_port": 1
+        },
+        "plugins": {},
+        "plugin_files": {},
+        "logo": null,
+        "browser": {}
+      }
+    },
+    "wrong_kind": {
+      "ok": false,
+      "error": "This is not a Corvus GCS settings file."
+    },
+    "not_a_dict": {
+      "ok": false,
+      "error": "This is not a Corvus GCS settings file."
+    },
+    "bad_format": {
+      "ok": false,
+      "error": "The settings file has no valid format number."
+    },
+    "newer": {
+      "ok": false,
+      "error": "The settings file was written by a newer Corvus GCS. Update this station first."
+    },
+    "no_config": {
+      "ok": false,
+      "error": "The settings file carries no configuration."
+    },
+    "no_sections": {
+      "ok": false,
+      "error": "The settings file does not say which settings it carries."
+    },
+    "bad_logo": {
+      "ok": false,
+      "error": "The company logo in the settings file is unreadable."
+    },
+    "logo_not_png": {
+      "ok": false,
+      "error": "The company logo in the settings file is not a PNG image."
+    },
+    "logo_png": {
+      "ok": true,
+      "value": {
+        "version": "",
+        "exported_at": "",
+        "secrets": false,
+        "sections": [
+          "interface"
+        ],
+        "config": {},
+        "plugins": {},
+        "plugin_files": {},
+        "logo": "89504e470d0a1a0a000000",
+        "browser": {}
+      }
+    }
+  },
+  "section_of": {
+    "theme": "interface",
+    "http_port": "folders",
+    "plugins": null,
+    "fleet": null,
+    "nope": null,
+    "mcp": "connections"
+  },
+  "normalize": {
+    "none": [
+      "connections",
+      "folders",
+      "interface",
+      "layout",
+      "map",
+      "plugins",
+      "vehicle"
+    ],
+    "list": [
+      "map"
+    ]
+  },
+  "ids": {
+    "all": [
+      "a",
+      "b"
+    ],
+    "some": [
+      "a"
+    ]
+  }
+}

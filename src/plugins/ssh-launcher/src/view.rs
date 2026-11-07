@@ -1,7 +1,7 @@
 //! The shelf and the editor drawn (`.sshl-*` of `ssh-launcher.css`).
 
-use corvus_api::ui::tip::HoverTr;
 use corvus_api::ui::card;
+use corvus_api::ui::tip::HoverTr;
 use eframe::egui::{self, Color32, Pos2, Rect, Stroke, Vec2};
 use serde_json::Value;
 

@@ -4,10 +4,10 @@
 
 pub mod nav;
 pub mod popout;
-pub mod vibrancy;
 pub mod responsive;
 pub mod soak;
 pub mod touch;
+pub mod vibrancy;
 
 use std::process::ExitCode;
 use std::sync::OnceLock;
@@ -673,7 +673,6 @@ impl eframe::App for App {
     fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
         egui::Rgba::TRANSPARENT.to_array()
     }
-
 
     /// `CORVUS_GUI_HOVER=x,y` holds the pointer there, so a hover card or a
     /// hint can be looked at without a hand on the mouse.

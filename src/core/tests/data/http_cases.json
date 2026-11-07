@@ -1,0 +1,288 @@
+{
+  "csp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; worker-src 'self' blob:; child-src 'self' blob:; media-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+  "security_headers": [
+    [
+      "Content-Security-Policy",
+      "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; worker-src 'self' blob:; child-src 'self' blob:; media-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+    ],
+    [
+      "X-Content-Type-Options",
+      "nosniff"
+    ],
+    [
+      "X-Frame-Options",
+      "DENY"
+    ],
+    [
+      "Referrer-Policy",
+      "no-referrer"
+    ]
+  ],
+  "cors": {
+    "|": {
+      "": "",
+      "null": "",
+      "http://localhost:8000": "http://localhost:8000",
+      "http://127.0.0.1": "http://127.0.0.1",
+      "https://[::1]:9": "https://[::1]:9",
+      "http://LOCALHOST/": "http://LOCALHOST/",
+      "ftp://localhost": "",
+      "http://evil.example": "",
+      "http://localhost.evil.example": "",
+      "http://u@localhost": "",
+      "http://localhost/path": "",
+      "http://localhost?x=1": "",
+      "http://localhost:99999": "",
+      "http://localhost:abc": "",
+      "localhost": "",
+      "http://localhost/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": "",
+      "https://gcs.lan": "",
+      "http://localhost;x": ""
+    },
+    "|0.0.0.0": {
+      "": "",
+      "null": "",
+      "http://localhost:8000": "http://localhost:8000",
+      "http://127.0.0.1": "http://127.0.0.1",
+      "https://[::1]:9": "https://[::1]:9",
+      "http://LOCALHOST/": "http://LOCALHOST/",
+      "ftp://localhost": "",
+      "http://evil.example": "",
+      "http://localhost.evil.example": "",
+      "http://u@localhost": "",
+      "http://localhost/path": "",
+      "http://localhost?x=1": "",
+      "http://localhost:99999": "",
+      "http://localhost:abc": "",
+      "localhost": "",
+      "http://localhost/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": "",
+      "https://gcs.lan": "",
+      "http://localhost;x": ""
+    },
+    "https://gcs.lan|": {
+      "": "",
+      "null": "",
+      "http://localhost:8000": "http://localhost:8000",
+      "http://127.0.0.1": "http://127.0.0.1",
+      "https://[::1]:9": "https://[::1]:9",
+      "http://LOCALHOST/": "http://LOCALHOST/",
+      "ftp://localhost": "",
+      "http://evil.example": "",
+      "http://localhost.evil.example": "",
+      "http://u@localhost": "",
+      "http://localhost/path": "",
+      "http://localhost?x=1": "",
+      "http://localhost:99999": "",
+      "http://localhost:abc": "",
+      "localhost": "",
+      "http://localhost/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": "",
+      "https://gcs.lan": "https://gcs.lan",
+      "http://localhost;x": ""
+    },
+    "https://gcs.lan|0.0.0.0": {
+      "": "",
+      "null": "",
+      "http://localhost:8000": "http://localhost:8000",
+      "http://127.0.0.1": "http://127.0.0.1",
+      "https://[::1]:9": "https://[::1]:9",
+      "http://LOCALHOST/": "http://LOCALHOST/",
+      "ftp://localhost": "",
+      "http://evil.example": "",
+      "http://localhost.evil.example": "",
+      "http://u@localhost": "",
+      "http://localhost/path": "",
+      "http://localhost?x=1": "",
+      "http://localhost:99999": "",
+      "http://localhost:abc": "",
+      "localhost": "",
+      "http://localhost/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": "",
+      "https://gcs.lan": "https://gcs.lan",
+      "http://localhost;x": ""
+    }
+  },
+  "host": {
+    "|": {
+      "<none>": true,
+      "": true,
+      "localhost:8000": true,
+      "127.0.0.1": true,
+      "[::1]:8000": true,
+      "LocalHost": true,
+      "evil.example": false,
+      "evil.example:8000": false,
+      "localhost:junk": false,
+      ":80": false,
+      "127.0.0.1.evil.example": false,
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": false,
+      "gcs.lan:8000": false,
+      "other.lan": false,
+      "localhost:99999": false,
+      "[::1]": true,
+      "user@localhost": true
+    },
+    "|0.0.0.0": {
+      "<none>": true,
+      "": true,
+      "localhost:8000": true,
+      "127.0.0.1": true,
+      "[::1]:8000": true,
+      "LocalHost": true,
+      "evil.example": true,
+      "evil.example:8000": true,
+      "localhost:junk": true,
+      ":80": true,
+      "127.0.0.1.evil.example": true,
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": true,
+      "gcs.lan:8000": true,
+      "other.lan": true,
+      "localhost:99999": true,
+      "[::1]": true,
+      "user@localhost": true
+    },
+    "https://gcs.lan|": {
+      "<none>": true,
+      "": true,
+      "localhost:8000": true,
+      "127.0.0.1": true,
+      "[::1]:8000": true,
+      "LocalHost": true,
+      "evil.example": false,
+      "evil.example:8000": false,
+      "localhost:junk": false,
+      ":80": false,
+      "127.0.0.1.evil.example": false,
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": false,
+      "gcs.lan:8000": true,
+      "other.lan": false,
+      "localhost:99999": false,
+      "[::1]": true,
+      "user@localhost": true
+    },
+    "https://gcs.lan|0.0.0.0": {
+      "<none>": true,
+      "": true,
+      "localhost:8000": true,
+      "127.0.0.1": true,
+      "[::1]:8000": true,
+      "LocalHost": true,
+      "evil.example": true,
+      "evil.example:8000": true,
+      "localhost:junk": true,
+      ":80": true,
+      "127.0.0.1.evil.example": true,
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": true,
+      "gcs.lan:8000": true,
+      "other.lan": true,
+      "localhost:99999": true,
+      "[::1]": true,
+      "user@localhost": true
+    }
+  },
+  "unchanged": [
+    {
+      "if_none_match": "\"a\"",
+      "if_modified_since": null,
+      "etag": "\"a\"",
+      "mtime": 100.0,
+      "result": true
+    },
+    {
+      "if_none_match": "W/\"a\", \"b\"",
+      "if_modified_since": null,
+      "etag": "\"a\"",
+      "mtime": 100.0,
+      "result": true
+    },
+    {
+      "if_none_match": "*",
+      "if_modified_since": null,
+      "etag": "\"a\"",
+      "mtime": 100.0,
+      "result": true
+    },
+    {
+      "if_none_match": "\"x\"",
+      "if_modified_since": "Thu, 01 Jan 1970 00:16:40 GMT",
+      "etag": "\"a\"",
+      "mtime": 100.0,
+      "result": false
+    },
+    {
+      "if_none_match": null,
+      "if_modified_since": "Thu, 01 Jan 1970 00:01:40 GMT",
+      "etag": "\"a\"",
+      "mtime": 100.4,
+      "result": true
+    },
+    {
+      "if_none_match": null,
+      "if_modified_since": "Thu, 01 Jan 1970 00:01:39 GMT",
+      "etag": "\"a\"",
+      "mtime": 100.0,
+      "result": false
+    },
+    {
+      "if_none_match": null,
+      "if_modified_since": "junk",
+      "etag": "\"a\"",
+      "mtime": 100.0,
+      "result": false
+    },
+    {
+      "if_none_match": null,
+      "if_modified_since": null,
+      "etag": "\"a\"",
+      "mtime": 100.0,
+      "result": false
+    },
+    {
+      "if_none_match": "",
+      "if_modified_since": "Thu, 01 Jan 1970 00:01:40 GMT",
+      "etag": "\"a\"",
+      "mtime": 100.0,
+      "result": true
+    }
+  ],
+  "content_types": {
+    "a.html": "text/html",
+    "a.JS": "text/javascript",
+    "a.mjs": "text/javascript",
+    "a.css": "text/css",
+    "a.json": "application/json",
+    "a.map": "application/json",
+    "a.svg": "image/svg+xml",
+    "a.png": "image/png",
+    "a.jpg": "image/jpeg",
+    "a.jpeg": "image/jpeg",
+    "a.gif": "image/gif",
+    "a.webp": "image/webp",
+    "a.ico": "image/vnd.microsoft.icon",
+    "a.woff": "font/woff",
+    "a.woff2": "font/woff2",
+    "a.ttf": "font/ttf",
+    "a.otf": "font/otf",
+    "a.wasm": "application/wasm",
+    "a.txt": "text/plain",
+    "a.md": "text/markdown",
+    "a.csv": "text/csv",
+    "a.bin": "application/octet-stream",
+    "a.xml": "text/xml",
+    "noext": "application/octet-stream",
+    "a.pdf": "application/pdf",
+    "a.mp4": "video/mp4"
+  },
+  "http_date": {
+    "0": "Thu, 01 Jan 1970 00:00:00 GMT",
+    "1700000000": "Tue, 14 Nov 2023 22:13:20 GMT",
+    "951782400": "Tue, 29 Feb 2000 00:00:00 GMT",
+    "1793980800": "Fri, 06 Nov 2026 16:00:00 GMT"
+  },
+  "accept_key": "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=",
+  "mask": "81850102030469676f686e",
+  "encode": [
+    "8100",
+    "817d78787878",
+    "817e007e7878",
+    "817f00000000"
+  ]
+}

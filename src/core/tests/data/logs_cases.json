@@ -1,0 +1,398 @@
+{
+ "cases": [
+  {
+   "scenario": {
+    "name": "list_ok",
+    "steps": [
+     {
+      "op": "list",
+      "start": 0,
+      "end": 65535
+     },
+     {
+      "op": "list",
+      "start": 3,
+      "end": 9
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "sent": [
+       [
+        "log_request_list_send",
+        [
+         0,
+         65535
+        ]
+       ]
+      ],
+      "errors": [],
+      "console": []
+     },
+     {
+      "result": true,
+      "sent": [
+       [
+        "log_request_list_send",
+        [
+         3,
+         9
+        ]
+       ]
+      ],
+      "errors": [],
+      "console": []
+     }
+    ],
+    "final": {
+     "last_error": ""
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "list_not_connected",
+    "ready": false,
+    "steps": [
+     {
+      "op": "list",
+      "start": 0,
+      "end": 5
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "sent": [],
+      "errors": [
+       "not connected"
+      ],
+      "console": []
+     }
+    ],
+    "final": {
+     "last_error": "not connected"
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "list_send_fails",
+    "send_fails": "log_request_list_send",
+    "steps": [
+     {
+      "op": "list",
+      "start": 0,
+      "end": 5
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "sent": [],
+      "errors": [
+       "log list request failed: boom"
+      ],
+      "console": []
+     }
+    ],
+    "final": {
+     "last_error": "log list request failed: boom"
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "data_ok",
+    "steps": [
+     {
+      "op": "data",
+      "id": 2,
+      "offset": 1000,
+      "count": 90
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "sent": [
+       [
+        "log_request_data_send",
+        [
+         2,
+         1000,
+         90
+        ]
+       ]
+      ],
+      "errors": [],
+      "console": []
+     }
+    ],
+    "final": {
+     "last_error": ""
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "data_not_connected",
+    "ready": false,
+    "steps": [
+     {
+      "op": "data",
+      "id": 2,
+      "offset": 0,
+      "count": 90
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "sent": [],
+      "errors": [
+       "not connected"
+      ],
+      "console": []
+     }
+    ],
+    "final": {
+     "last_error": "not connected"
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "data_send_fails",
+    "send_fails": "log_request_data_send",
+    "steps": [
+     {
+      "op": "data",
+      "id": 2,
+      "offset": 0,
+      "count": 90
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "sent": [],
+      "errors": [
+       "log data request failed: boom"
+      ],
+      "console": []
+     }
+    ],
+    "final": {
+     "last_error": "log data request failed: boom"
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "erase_ok",
+    "steps": [
+     {
+      "op": "erase"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "sent": [
+       [
+        "log_erase_send",
+        []
+       ]
+      ],
+      "errors": [
+       ""
+      ],
+      "console": [
+       [
+        "LOGS",
+        "erasing all on-board logs",
+        "warning"
+       ]
+      ]
+     }
+    ],
+    "final": {
+     "last_error": ""
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "erase_armed",
+    "armed": true,
+    "steps": [
+     {
+      "op": "erase"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "sent": [],
+      "errors": [
+       "",
+       "cannot erase logs while armed"
+      ],
+      "console": []
+     }
+    ],
+    "final": {
+     "last_error": "cannot erase logs while armed"
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "erase_not_connected",
+    "ready": false,
+    "steps": [
+     {
+      "op": "erase"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "sent": [],
+      "errors": [
+       "",
+       "not connected"
+      ],
+      "console": []
+     }
+    ],
+    "final": {
+     "last_error": "not connected"
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "erase_send_fails",
+    "send_fails": "log_erase_send",
+    "steps": [
+     {
+      "op": "erase"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "sent": [],
+      "errors": [
+       "",
+       "log erase failed: boom"
+      ],
+      "console": []
+     }
+    ],
+    "final": {
+     "last_error": "log erase failed: boom"
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "end_ok_and_best_effort",
+    "steps": [
+     {
+      "op": "end"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "sent": [
+       [
+        "log_request_end_send",
+        []
+       ]
+      ],
+      "errors": [],
+      "console": []
+     }
+    ],
+    "final": {
+     "last_error": ""
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "end_not_connected",
+    "ready": false,
+    "steps": [
+     {
+      "op": "end"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "sent": [],
+      "errors": [],
+      "console": []
+     }
+    ],
+    "final": {
+     "last_error": ""
+    }
+   }
+  },
+  {
+   "scenario": {
+    "name": "end_send_fails",
+    "send_fails": "log_request_end_send",
+    "steps": [
+     {
+      "op": "end"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "sent": [],
+      "errors": [],
+      "console": []
+     }
+    ],
+    "final": {
+     "last_error": ""
+    }
+   }
+  }
+ ]
+}

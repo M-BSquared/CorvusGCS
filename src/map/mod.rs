@@ -270,10 +270,13 @@ impl Map {
             .cloned()
             .unwrap_or_default();
         let usable = |id: &str| {
-            providers.iter().find(|p| p.get("id").and_then(Value::as_str) == Some(id)).is_none_or(|p| {
-                let flag = |k: &str| p.get(k).and_then(Value::as_bool).unwrap_or(false);
-                !flag("token_required") || flag("token_set")
-            })
+            providers
+                .iter()
+                .find(|p| p.get("id").and_then(Value::as_str) == Some(id))
+                .is_none_or(|p| {
+                    let flag = |k: &str| p.get(k).and_then(Value::as_bool).unwrap_or(false);
+                    !flag("token_required") || flag("token_set")
+                })
         };
         let provider_label = |id: &str| {
             providers
@@ -857,7 +860,12 @@ impl Map {
             return;
         }
         if !self.follow_easing {
-            let half = |s: f32| (s * FOLLOW_BOX_FRACTION).max(FOLLOW_BOX_MIN_PX).min(s * FOLLOW_BOX_MAX_FRACTION) / 2.0;
+            let half = |s: f32| {
+                (s * FOLLOW_BOX_FRACTION)
+                    .max(FOLLOW_BOX_MIN_PX)
+                    .min(s * FOLLOW_BOX_MAX_FRACTION)
+                    / 2.0
+            };
             if off.x.abs() <= half(size.x) && off.y.abs() <= half(size.y) {
                 return;
             }
@@ -872,7 +880,8 @@ impl Map {
         let k = 1.0 - (-dt / FOLLOW_EASE_S).exp();
         let from = projector.unproject(rect.center().to_vec2());
         let step = |a: f64, b: f64| a + (b - a) * k;
-        self.memory.center_at(walkers::lon_lat(step(from.x(), lng), step(from.y(), lat)));
+        self.memory
+            .center_at(walkers::lon_lat(step(from.x(), lng), step(from.y(), lat)));
         ui.ctx().request_repaint();
     }
 

@@ -8,7 +8,6 @@
 
 use std::collections::HashMap;
 use std::sync::Mutex;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use pyo3::exceptions::{PyAttributeError, PyException};
 use pyo3::prelude::*;
@@ -45,12 +44,7 @@ fn error_message(py: Python<'_>, err: &PyErr) -> String {
         .unwrap_or_else(|_| err.value(py).to_string())
 }
 
-pub fn now() -> f64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs_f64())
-        .unwrap_or(0.0)
-}
+pub use crate::plain::time::now;
 
 fn logger_info(py: Python<'_>, text: &str) {
     if let Ok(logging) = py.import("logging") {

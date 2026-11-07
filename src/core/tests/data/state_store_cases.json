@@ -1,0 +1,1930 @@
+{
+  "notify_min_interval": 0.03333333333333333,
+  "immediate_keys": [
+    "armed",
+    "autotune_state",
+    "connected",
+    "flight_termination",
+    "kill_switch",
+    "landed_state",
+    "link_auto",
+    "link_bootloader",
+    "link_quality",
+    "link_status",
+    "link_suggestion",
+    "mode"
+  ],
+  "station_keys": [
+    "link_auto",
+    "link_bootloader",
+    "link_connection",
+    "link_error",
+    "link_quality",
+    "link_status",
+    "link_suggestion",
+    "rtk_accuracy",
+    "rtk_progress",
+    "rtk_source",
+    "rtk_state"
+  ],
+  "cases": [
+    {
+      "name": "coalescing",
+      "history_len": 600,
+      "steps": [
+        {
+          "op": "listen"
+        },
+        {
+          "op": "tick",
+          "to": 100.0
+        },
+        {
+          "op": "update",
+          "args": {
+            "position": [
+              1.5,
+              2.5
+            ]
+          }
+        },
+        {
+          "op": "tick",
+          "to": 100.01
+        },
+        {
+          "op": "update",
+          "args": {
+            "heading": 3.0
+          }
+        },
+        {
+          "op": "tick",
+          "to": 100.02
+        },
+        {
+          "op": "update",
+          "args": {
+            "mode": "AUTO"
+          }
+        },
+        {
+          "op": "tick",
+          "to": 100.05
+        },
+        {
+          "op": "update",
+          "args": {
+            "groundspeed": 5.5
+          }
+        },
+        {
+          "op": "tick",
+          "to": 100.06
+        },
+        {
+          "op": "update",
+          "args": {
+            "groundspeed": 6.5
+          }
+        },
+        {
+          "op": "update",
+          "args": {
+            "not_a_field": 1
+          }
+        },
+        {
+          "op": "tick",
+          "to": 100.2
+        },
+        {
+          "op": "update",
+          "args": {
+            "nonsense": 1
+          }
+        },
+        {
+          "op": "update",
+          "args": {
+            "rc_channels": [
+              1500,
+              1501
+            ],
+            "vx": 0.25
+          }
+        }
+      ],
+      "results": [
+        {
+          "calls": 0,
+          "version": 0,
+          "result": null
+        },
+        {
+          "calls": 0,
+          "version": 0,
+          "result": null
+        },
+        {
+          "calls": 1,
+          "version": 1,
+          "result": null
+        },
+        {
+          "calls": 0,
+          "version": 1,
+          "result": null
+        },
+        {
+          "calls": 0,
+          "version": 2,
+          "result": null
+        },
+        {
+          "calls": 0,
+          "version": 2,
+          "result": null
+        },
+        {
+          "calls": 1,
+          "version": 3,
+          "result": null
+        },
+        {
+          "calls": 0,
+          "version": 3,
+          "result": null
+        },
+        {
+          "calls": 0,
+          "version": 4,
+          "result": null
+        },
+        {
+          "calls": 0,
+          "version": 4,
+          "result": null
+        },
+        {
+          "calls": 1,
+          "version": 5,
+          "result": null
+        },
+        {
+          "calls": 0,
+          "version": 5,
+          "result": null
+        },
+        {
+          "calls": 0,
+          "version": 5,
+          "result": null
+        },
+        {
+          "calls": 1,
+          "version": 5,
+          "result": null
+        },
+        {
+          "calls": 0,
+          "version": 6,
+          "result": null
+        }
+      ],
+      "snapshot": {
+        "connected": false,
+        "vehicle_id": "",
+        "armed": false,
+        "vehicle_type": "",
+        "autopilot": "",
+        "autopilot_stack": "",
+        "mode": "AUTO",
+        "mode_label": "",
+        "px4_version": "",
+        "px4_version_detail": "",
+        "position": [
+          1.5,
+          2.5
+        ],
+        "altitude_amsl": 0.0,
+        "altitude_agl": 0.0,
+        "heading": 3.0,
+        "groundspeed": 6.5,
+        "airspeed": 0.0,
+        "vspeed": 0.0,
+        "pitch": 0.0,
+        "roll": 0.0,
+        "yaw": 0.0,
+        "rollspeed": 0.0,
+        "pitchspeed": 0.0,
+        "yawspeed": 0.0,
+        "vx": 0.25,
+        "vy": 0.0,
+        "vz": 0.0,
+        "roll_sp": 0.0,
+        "pitch_sp": 0.0,
+        "yaw_sp": 0.0,
+        "rollspeed_sp": 0.0,
+        "pitchspeed_sp": 0.0,
+        "yawspeed_sp": 0.0,
+        "vx_sp": 0.0,
+        "vy_sp": 0.0,
+        "vz_sp": 0.0,
+        "setpoints_live": false,
+        "battery_percent": 0,
+        "battery_voltage": 0.0,
+        "battery_current": 0.0,
+        "battery_percent_fc": -1,
+        "battery_percent_est": -1.0,
+        "battery_source": "autopilot",
+        "battery_cells": 0,
+        "battery_cell_voltage": 0.0,
+        "battery_cell_voltages": [],
+        "battery_consumed_mah": 0.0,
+        "battery_temperature": null,
+        "battery_time_remaining": 0,
+        "battery_endurance_est": -1,
+        "gps_fix": "",
+        "gps_satellites": 0,
+        "gps_hdop": 99.0,
+        "gps_vdop": 99.0,
+        "gps_h_acc": -1.0,
+        "gps_v_acc": -1.0,
+        "gps_altitude": null,
+        "rangefinder_distance": null,
+        "gps_health": "",
+        "gps_jamming": "",
+        "gps_spoofing": "",
+        "gps_signal_quality": -1,
+        "rtk_state": "",
+        "rtk_source": "",
+        "rtk_accuracy": 0.0,
+        "rtk_progress": 0,
+        "vibration_x": 0.0,
+        "vibration_y": 0.0,
+        "vibration_z": 0.0,
+        "clipping_0": 0,
+        "clipping_1": 0,
+        "clipping_2": 0,
+        "rc_channels": [
+          1500,
+          1501
+        ],
+        "rc_channel_count": 0,
+        "rc_rssi": -1,
+        "rc_live": false,
+        "uplink": 0,
+        "uplink_rssi": 0.0,
+        "uplink_rxerrors": 0,
+        "uplink_fixed": 0,
+        "heartbeat_jitter_ms": 0.0,
+        "link_quality": "unknown",
+        "link_status": "disconnected",
+        "link_connection": "",
+        "link_error": "",
+        "link_auto": {},
+        "link_suggestion": null,
+        "link_bootloader": null,
+        "time": "",
+        "warnings": [],
+        "home": [
+          0.0,
+          0.0
+        ],
+        "boot_ms": 0,
+        "prearm_ok": null,
+        "prearm_reasons": [],
+        "landed_state": 0,
+        "flight_termination": false,
+        "kill_switch": false,
+        "autotune_state": "",
+        "autotune_progress": 0,
+        "mission": [],
+        "mission_state": "",
+        "mission_seq": -1,
+        "mission_reached": -1,
+        "mission_total": -1,
+        "mission_known": false,
+        "mission_revision": 0,
+        "mission_item": -1,
+        "mission_reached_item": -1
+      },
+      "last_notified": {
+        "connected": false,
+        "vehicle_id": "",
+        "armed": false,
+        "vehicle_type": "",
+        "autopilot": "",
+        "autopilot_stack": "",
+        "mode": "AUTO",
+        "mode_label": "",
+        "px4_version": "",
+        "px4_version_detail": "",
+        "position": [
+          1.5,
+          2.5
+        ],
+        "altitude_amsl": 0.0,
+        "altitude_agl": 0.0,
+        "heading": 3.0,
+        "groundspeed": 6.5,
+        "airspeed": 0.0,
+        "vspeed": 0.0,
+        "pitch": 0.0,
+        "roll": 0.0,
+        "yaw": 0.0,
+        "rollspeed": 0.0,
+        "pitchspeed": 0.0,
+        "yawspeed": 0.0,
+        "vx": 0.0,
+        "vy": 0.0,
+        "vz": 0.0,
+        "roll_sp": 0.0,
+        "pitch_sp": 0.0,
+        "yaw_sp": 0.0,
+        "rollspeed_sp": 0.0,
+        "pitchspeed_sp": 0.0,
+        "yawspeed_sp": 0.0,
+        "vx_sp": 0.0,
+        "vy_sp": 0.0,
+        "vz_sp": 0.0,
+        "setpoints_live": false,
+        "battery_percent": 0,
+        "battery_voltage": 0.0,
+        "battery_current": 0.0,
+        "battery_percent_fc": -1,
+        "battery_percent_est": -1.0,
+        "battery_source": "autopilot",
+        "battery_cells": 0,
+        "battery_cell_voltage": 0.0,
+        "battery_cell_voltages": [],
+        "battery_consumed_mah": 0.0,
+        "battery_temperature": null,
+        "battery_time_remaining": 0,
+        "battery_endurance_est": -1,
+        "gps_fix": "",
+        "gps_satellites": 0,
+        "gps_hdop": 99.0,
+        "gps_vdop": 99.0,
+        "gps_h_acc": -1.0,
+        "gps_v_acc": -1.0,
+        "gps_altitude": null,
+        "rangefinder_distance": null,
+        "gps_health": "",
+        "gps_jamming": "",
+        "gps_spoofing": "",
+        "gps_signal_quality": -1,
+        "rtk_state": "",
+        "rtk_source": "",
+        "rtk_accuracy": 0.0,
+        "rtk_progress": 0,
+        "vibration_x": 0.0,
+        "vibration_y": 0.0,
+        "vibration_z": 0.0,
+        "clipping_0": 0,
+        "clipping_1": 0,
+        "clipping_2": 0,
+        "rc_channels": [],
+        "rc_channel_count": 0,
+        "rc_rssi": -1,
+        "rc_live": false,
+        "uplink": 0,
+        "uplink_rssi": 0.0,
+        "uplink_rxerrors": 0,
+        "uplink_fixed": 0,
+        "heartbeat_jitter_ms": 0.0,
+        "link_quality": "unknown",
+        "link_status": "disconnected",
+        "link_connection": "",
+        "link_error": "",
+        "link_auto": {},
+        "link_suggestion": null,
+        "link_bootloader": null,
+        "time": "",
+        "warnings": [],
+        "home": [
+          0.0,
+          0.0
+        ],
+        "boot_ms": 0,
+        "prearm_ok": null,
+        "prearm_reasons": [],
+        "landed_state": 0,
+        "flight_termination": false,
+        "kill_switch": false,
+        "autotune_state": "",
+        "autotune_progress": 0,
+        "mission": [],
+        "mission_state": "",
+        "mission_seq": -1,
+        "mission_reached": -1,
+        "mission_total": -1,
+        "mission_known": false,
+        "mission_revision": 0,
+        "mission_item": -1,
+        "mission_reached_item": -1
+      },
+      "history": {
+        "altitude": [],
+        "groundspeed": [
+          5.5,
+          6.5
+        ],
+        "battery": [],
+        "other": []
+      },
+      "json": "{\"connected\": false, \"vehicle_id\": \"\", \"armed\": false, \"vehicle_type\": \"\", \"autopilot\": \"\", \"autopilot_stack\": \"\", \"mode\": \"AUTO\", \"mode_label\": \"\", \"px4_version\": \"\", \"px4_version_detail\": \"\", \"position\": [1.5, 2.5], \"altitude_amsl\": 0.0, \"altitude_agl\": 0.0, \"heading\": 3.0, \"groundspeed\": 6.5, \"airspeed\": 0.0, \"vspeed\": 0.0, \"pitch\": 0.0, \"roll\": 0.0, \"yaw\": 0.0, \"rollspeed\": 0.0, \"pitchspeed\": 0.0, \"yawspeed\": 0.0, \"vx\": 0.25, \"vy\": 0.0, \"vz\": 0.0, \"roll_sp\": 0.0, \"pitch_sp\": 0.0, \"yaw_sp\": 0.0, \"rollspeed_sp\": 0.0, \"pitchspeed_sp\": 0.0, \"yawspeed_sp\": 0.0, \"vx_sp\": 0.0, \"vy_sp\": 0.0, \"vz_sp\": 0.0, \"setpoints_live\": false, \"battery_percent\": 0, \"battery_voltage\": 0.0, \"battery_current\": 0.0, \"battery_percent_fc\": -1, \"battery_percent_est\": -1.0, \"battery_source\": \"autopilot\", \"battery_cells\": 0, \"battery_cell_voltage\": 0.0, \"battery_cell_voltages\": [], \"battery_consumed_mah\": 0.0, \"battery_temperature\": null, \"battery_time_remaining\": 0, \"battery_endurance_est\": -1, \"gps_fix\": \"\", \"gps_satellites\": 0, \"gps_hdop\": 99.0, \"gps_vdop\": 99.0, \"gps_h_acc\": -1.0, \"gps_v_acc\": -1.0, \"gps_altitude\": null, \"rangefinder_distance\": null, \"gps_health\": \"\", \"gps_jamming\": \"\", \"gps_spoofing\": \"\", \"gps_signal_quality\": -1, \"rtk_state\": \"\", \"rtk_source\": \"\", \"rtk_accuracy\": 0.0, \"rtk_progress\": 0, \"vibration_x\": 0.0, \"vibration_y\": 0.0, \"vibration_z\": 0.0, \"clipping_0\": 0, \"clipping_1\": 0, \"clipping_2\": 0, \"rc_channels\": [1500, 1501], \"rc_channel_count\": 0, \"rc_rssi\": -1, \"rc_live\": false, \"uplink\": 0, \"uplink_rssi\": 0.0, \"uplink_rxerrors\": 0, \"uplink_fixed\": 0, \"heartbeat_jitter_ms\": 0.0, \"link_quality\": \"unknown\", \"link_status\": \"disconnected\", \"link_connection\": \"\", \"link_error\": \"\", \"link_auto\": {}, \"link_suggestion\": null, \"link_bootloader\": null, \"time\": \"\", \"warnings\": [], \"home\": [0.0, 0.0], \"boot_ms\": 0, \"prearm_ok\": null, \"prearm_reasons\": [], \"landed_state\": 0, \"flight_termination\": false, \"kill_switch\": false, \"autotune_state\": \"\", \"autotune_progress\": 0, \"mission\": [], \"mission_state\": \"\", \"mission_seq\": -1, \"mission_reached\": -1, \"mission_total\": -1, \"mission_known\": false, \"mission_revision\": 0, \"mission_item\": -1, \"mission_reached_item\": -1}"
+    },
+    {
+      "name": "no_listener_no_clock_read",
+      "history_len": 600,
+      "steps": [
+        {
+          "op": "tick",
+          "to": 5.0
+        },
+        {
+          "op": "update",
+          "args": {
+            "armed": true,
+            "mode": "HOLD",
+            "mode_label": "HOLD"
+          }
+        },
+        {
+          "op": "update",
+          "args": {
+            "battery_percent": 80,
+            "battery_temperature": 0.0
+          }
+        }
+      ],
+      "results": [
+        {
+          "calls": 0,
+          "version": 0,
+          "result": null
+        },
+        {
+          "calls": 0,
+          "version": 1,
+          "result": null
+        },
+        {
+          "calls": 0,
+          "version": 2,
+          "result": null
+        }
+      ],
+      "snapshot": {
+        "connected": false,
+        "vehicle_id": "",
+        "armed": true,
+        "vehicle_type": "",
+        "autopilot": "",
+        "autopilot_stack": "",
+        "mode": "HOLD",
+        "mode_label": "HOLD",
+        "px4_version": "",
+        "px4_version_detail": "",
+        "position": [
+          0.0,
+          0.0
+        ],
+        "altitude_amsl": 0.0,
+        "altitude_agl": 0.0,
+        "heading": 0.0,
+        "groundspeed": 0.0,
+        "airspeed": 0.0,
+        "vspeed": 0.0,
+        "pitch": 0.0,
+        "roll": 0.0,
+        "yaw": 0.0,
+        "rollspeed": 0.0,
+        "pitchspeed": 0.0,
+        "yawspeed": 0.0,
+        "vx": 0.0,
+        "vy": 0.0,
+        "vz": 0.0,
+        "roll_sp": 0.0,
+        "pitch_sp": 0.0,
+        "yaw_sp": 0.0,
+        "rollspeed_sp": 0.0,
+        "pitchspeed_sp": 0.0,
+        "yawspeed_sp": 0.0,
+        "vx_sp": 0.0,
+        "vy_sp": 0.0,
+        "vz_sp": 0.0,
+        "setpoints_live": false,
+        "battery_percent": 80,
+        "battery_voltage": 0.0,
+        "battery_current": 0.0,
+        "battery_percent_fc": -1,
+        "battery_percent_est": -1.0,
+        "battery_source": "autopilot",
+        "battery_cells": 0,
+        "battery_cell_voltage": 0.0,
+        "battery_cell_voltages": [],
+        "battery_consumed_mah": 0.0,
+        "battery_temperature": 0.0,
+        "battery_time_remaining": 0,
+        "battery_endurance_est": -1,
+        "gps_fix": "",
+        "gps_satellites": 0,
+        "gps_hdop": 99.0,
+        "gps_vdop": 99.0,
+        "gps_h_acc": -1.0,
+        "gps_v_acc": -1.0,
+        "gps_altitude": null,
+        "rangefinder_distance": null,
+        "gps_health": "",
+        "gps_jamming": "",
+        "gps_spoofing": "",
+        "gps_signal_quality": -1,
+        "rtk_state": "",
+        "rtk_source": "",
+        "rtk_accuracy": 0.0,
+        "rtk_progress": 0,
+        "vibration_x": 0.0,
+        "vibration_y": 0.0,
+        "vibration_z": 0.0,
+        "clipping_0": 0,
+        "clipping_1": 0,
+        "clipping_2": 0,
+        "rc_channels": [],
+        "rc_channel_count": 0,
+        "rc_rssi": -1,
+        "rc_live": false,
+        "uplink": 0,
+        "uplink_rssi": 0.0,
+        "uplink_rxerrors": 0,
+        "uplink_fixed": 0,
+        "heartbeat_jitter_ms": 0.0,
+        "link_quality": "unknown",
+        "link_status": "disconnected",
+        "link_connection": "",
+        "link_error": "",
+        "link_auto": {},
+        "link_suggestion": null,
+        "link_bootloader": null,
+        "time": "",
+        "warnings": [],
+        "home": [
+          0.0,
+          0.0
+        ],
+        "boot_ms": 0,
+        "prearm_ok": null,
+        "prearm_reasons": [],
+        "landed_state": 0,
+        "flight_termination": false,
+        "kill_switch": false,
+        "autotune_state": "",
+        "autotune_progress": 0,
+        "mission": [],
+        "mission_state": "",
+        "mission_seq": -1,
+        "mission_reached": -1,
+        "mission_total": -1,
+        "mission_known": false,
+        "mission_revision": 0,
+        "mission_item": -1,
+        "mission_reached_item": -1
+      },
+      "last_notified": null,
+      "history": {
+        "altitude": [],
+        "groundspeed": [],
+        "battery": [
+          80
+        ],
+        "other": []
+      },
+      "json": "{\"connected\": false, \"vehicle_id\": \"\", \"armed\": true, \"vehicle_type\": \"\", \"autopilot\": \"\", \"autopilot_stack\": \"\", \"mode\": \"HOLD\", \"mode_label\": \"HOLD\", \"px4_version\": \"\", \"px4_version_detail\": \"\", \"position\": [0.0, 0.0], \"altitude_amsl\": 0.0, \"altitude_agl\": 0.0, \"heading\": 0.0, \"groundspeed\": 0.0, \"airspeed\": 0.0, \"vspeed\": 0.0, \"pitch\": 0.0, \"roll\": 0.0, \"yaw\": 0.0, \"rollspeed\": 0.0, \"pitchspeed\": 0.0, \"yawspeed\": 0.0, \"vx\": 0.0, \"vy\": 0.0, \"vz\": 0.0, \"roll_sp\": 0.0, \"pitch_sp\": 0.0, \"yaw_sp\": 0.0, \"rollspeed_sp\": 0.0, \"pitchspeed_sp\": 0.0, \"yawspeed_sp\": 0.0, \"vx_sp\": 0.0, \"vy_sp\": 0.0, \"vz_sp\": 0.0, \"setpoints_live\": false, \"battery_percent\": 80, \"battery_voltage\": 0.0, \"battery_current\": 0.0, \"battery_percent_fc\": -1, \"battery_percent_est\": -1.0, \"battery_source\": \"autopilot\", \"battery_cells\": 0, \"battery_cell_voltage\": 0.0, \"battery_cell_voltages\": [], \"battery_consumed_mah\": 0.0, \"battery_temperature\": 0.0, \"battery_time_remaining\": 0, \"battery_endurance_est\": -1, \"gps_fix\": \"\", \"gps_satellites\": 0, \"gps_hdop\": 99.0, \"gps_vdop\": 99.0, \"gps_h_acc\": -1.0, \"gps_v_acc\": -1.0, \"gps_altitude\": null, \"rangefinder_distance\": null, \"gps_health\": \"\", \"gps_jamming\": \"\", \"gps_spoofing\": \"\", \"gps_signal_quality\": -1, \"rtk_state\": \"\", \"rtk_source\": \"\", \"rtk_accuracy\": 0.0, \"rtk_progress\": 0, \"vibration_x\": 0.0, \"vibration_y\": 0.0, \"vibration_z\": 0.0, \"clipping_0\": 0, \"clipping_1\": 0, \"clipping_2\": 0, \"rc_channels\": [], \"rc_channel_count\": 0, \"rc_rssi\": -1, \"rc_live\": false, \"uplink\": 0, \"uplink_rssi\": 0.0, \"uplink_rxerrors\": 0, \"uplink_fixed\": 0, \"heartbeat_jitter_ms\": 0.0, \"link_quality\": \"unknown\", \"link_status\": \"disconnected\", \"link_connection\": \"\", \"link_error\": \"\", \"link_auto\": {}, \"link_suggestion\": null, \"link_bootloader\": null, \"time\": \"\", \"warnings\": [], \"home\": [0.0, 0.0], \"boot_ms\": 0, \"prearm_ok\": null, \"prearm_reasons\": [], \"landed_state\": 0, \"flight_termination\": false, \"kill_switch\": false, \"autotune_state\": \"\", \"autotune_progress\": 0, \"mission\": [], \"mission_state\": \"\", \"mission_seq\": -1, \"mission_reached\": -1, \"mission_total\": -1, \"mission_known\": false, \"mission_revision\": 0, \"mission_item\": -1, \"mission_reached_item\": -1}"
+    },
+    {
+      "name": "history_ring",
+      "history_len": 3,
+      "steps": [
+        {
+          "op": "update",
+          "args": {
+            "altitude_amsl": 1.0
+          }
+        },
+        {
+          "op": "update",
+          "args": {
+            "altitude_amsl": 2.0,
+            "groundspeed": 3.0
+          }
+        },
+        {
+          "op": "update",
+          "args": {
+            "altitude_amsl": 3.0,
+            "battery_percent": 90
+          }
+        },
+        {
+          "op": "update",
+          "args": {
+            "altitude_amsl": 4.0,
+            "battery_percent": 89
+          }
+        },
+        {
+          "op": "update",
+          "args": {
+            "altitude_amsl": 5.0,
+            "groundspeed": 4.0
+          }
+        }
+      ],
+      "results": [
+        {
+          "calls": 0,
+          "version": 1,
+          "result": null
+        },
+        {
+          "calls": 0,
+          "version": 2,
+          "result": null
+        },
+        {
+          "calls": 0,
+          "version": 3,
+          "result": null
+        },
+        {
+          "calls": 0,
+          "version": 4,
+          "result": null
+        },
+        {
+          "calls": 0,
+          "version": 5,
+          "result": null
+        }
+      ],
+      "snapshot": {
+        "connected": false,
+        "vehicle_id": "",
+        "armed": false,
+        "vehicle_type": "",
+        "autopilot": "",
+        "autopilot_stack": "",
+        "mode": "",
+        "mode_label": "",
+        "px4_version": "",
+        "px4_version_detail": "",
+        "position": [
+          0.0,
+          0.0
+        ],
+        "altitude_amsl": 5.0,
+        "altitude_agl": 0.0,
+        "heading": 0.0,
+        "groundspeed": 4.0,
+        "airspeed": 0.0,
+        "vspeed": 0.0,
+        "pitch": 0.0,
+        "roll": 0.0,
+        "yaw": 0.0,
+        "rollspeed": 0.0,
+        "pitchspeed": 0.0,
+        "yawspeed": 0.0,
+        "vx": 0.0,
+        "vy": 0.0,
+        "vz": 0.0,
+        "roll_sp": 0.0,
+        "pitch_sp": 0.0,
+        "yaw_sp": 0.0,
+        "rollspeed_sp": 0.0,
+        "pitchspeed_sp": 0.0,
+        "yawspeed_sp": 0.0,
+        "vx_sp": 0.0,
+        "vy_sp": 0.0,
+        "vz_sp": 0.0,
+        "setpoints_live": false,
+        "battery_percent": 89,
+        "battery_voltage": 0.0,
+        "battery_current": 0.0,
+        "battery_percent_fc": -1,
+        "battery_percent_est": -1.0,
+        "battery_source": "autopilot",
+        "battery_cells": 0,
+        "battery_cell_voltage": 0.0,
+        "battery_cell_voltages": [],
+        "battery_consumed_mah": 0.0,
+        "battery_temperature": null,
+        "battery_time_remaining": 0,
+        "battery_endurance_est": -1,
+        "gps_fix": "",
+        "gps_satellites": 0,
+        "gps_hdop": 99.0,
+        "gps_vdop": 99.0,
+        "gps_h_acc": -1.0,
+        "gps_v_acc": -1.0,
+        "gps_altitude": null,
+        "rangefinder_distance": null,
+        "gps_health": "",
+        "gps_jamming": "",
+        "gps_spoofing": "",
+        "gps_signal_quality": -1,
+        "rtk_state": "",
+        "rtk_source": "",
+        "rtk_accuracy": 0.0,
+        "rtk_progress": 0,
+        "vibration_x": 0.0,
+        "vibration_y": 0.0,
+        "vibration_z": 0.0,
+        "clipping_0": 0,
+        "clipping_1": 0,
+        "clipping_2": 0,
+        "rc_channels": [],
+        "rc_channel_count": 0,
+        "rc_rssi": -1,
+        "rc_live": false,
+        "uplink": 0,
+        "uplink_rssi": 0.0,
+        "uplink_rxerrors": 0,
+        "uplink_fixed": 0,
+        "heartbeat_jitter_ms": 0.0,
+        "link_quality": "unknown",
+        "link_status": "disconnected",
+        "link_connection": "",
+        "link_error": "",
+        "link_auto": {},
+        "link_suggestion": null,
+        "link_bootloader": null,
+        "time": "",
+        "warnings": [],
+        "home": [
+          0.0,
+          0.0
+        ],
+        "boot_ms": 0,
+        "prearm_ok": null,
+        "prearm_reasons": [],
+        "landed_state": 0,
+        "flight_termination": false,
+        "kill_switch": false,
+        "autotune_state": "",
+        "autotune_progress": 0,
+        "mission": [],
+        "mission_state": "",
+        "mission_seq": -1,
+        "mission_reached": -1,
+        "mission_total": -1,
+        "mission_known": false,
+        "mission_revision": 0,
+        "mission_item": -1,
+        "mission_reached_item": -1
+      },
+      "last_notified": null,
+      "history": {
+        "altitude": [
+          3.0,
+          4.0,
+          5.0
+        ],
+        "groundspeed": [
+          3.0,
+          4.0
+        ],
+        "battery": [
+          90,
+          89
+        ],
+        "other": []
+      },
+      "json": "{\"connected\": false, \"vehicle_id\": \"\", \"armed\": false, \"vehicle_type\": \"\", \"autopilot\": \"\", \"autopilot_stack\": \"\", \"mode\": \"\", \"mode_label\": \"\", \"px4_version\": \"\", \"px4_version_detail\": \"\", \"position\": [0.0, 0.0], \"altitude_amsl\": 5.0, \"altitude_agl\": 0.0, \"heading\": 0.0, \"groundspeed\": 4.0, \"airspeed\": 0.0, \"vspeed\": 0.0, \"pitch\": 0.0, \"roll\": 0.0, \"yaw\": 0.0, \"rollspeed\": 0.0, \"pitchspeed\": 0.0, \"yawspeed\": 0.0, \"vx\": 0.0, \"vy\": 0.0, \"vz\": 0.0, \"roll_sp\": 0.0, \"pitch_sp\": 0.0, \"yaw_sp\": 0.0, \"rollspeed_sp\": 0.0, \"pitchspeed_sp\": 0.0, \"yawspeed_sp\": 0.0, \"vx_sp\": 0.0, \"vy_sp\": 0.0, \"vz_sp\": 0.0, \"setpoints_live\": false, \"battery_percent\": 89, \"battery_voltage\": 0.0, \"battery_current\": 0.0, \"battery_percent_fc\": -1, \"battery_percent_est\": -1.0, \"battery_source\": \"autopilot\", \"battery_cells\": 0, \"battery_cell_voltage\": 0.0, \"battery_cell_voltages\": [], \"battery_consumed_mah\": 0.0, \"battery_temperature\": null, \"battery_time_remaining\": 0, \"battery_endurance_est\": -1, \"gps_fix\": \"\", \"gps_satellites\": 0, \"gps_hdop\": 99.0, \"gps_vdop\": 99.0, \"gps_h_acc\": -1.0, \"gps_v_acc\": -1.0, \"gps_altitude\": null, \"rangefinder_distance\": null, \"gps_health\": \"\", \"gps_jamming\": \"\", \"gps_spoofing\": \"\", \"gps_signal_quality\": -1, \"rtk_state\": \"\", \"rtk_source\": \"\", \"rtk_accuracy\": 0.0, \"rtk_progress\": 0, \"vibration_x\": 0.0, \"vibration_y\": 0.0, \"vibration_z\": 0.0, \"clipping_0\": 0, \"clipping_1\": 0, \"clipping_2\": 0, \"rc_channels\": [], \"rc_channel_count\": 0, \"rc_rssi\": -1, \"rc_live\": false, \"uplink\": 0, \"uplink_rssi\": 0.0, \"uplink_rxerrors\": 0, \"uplink_fixed\": 0, \"heartbeat_jitter_ms\": 0.0, \"link_quality\": \"unknown\", \"link_status\": \"disconnected\", \"link_connection\": \"\", \"link_error\": \"\", \"link_auto\": {}, \"link_suggestion\": null, \"link_bootloader\": null, \"time\": \"\", \"warnings\": [], \"home\": [0.0, 0.0], \"boot_ms\": 0, \"prearm_ok\": null, \"prearm_reasons\": [], \"landed_state\": 0, \"flight_termination\": false, \"kill_switch\": false, \"autotune_state\": \"\", \"autotune_progress\": 0, \"mission\": [], \"mission_state\": \"\", \"mission_seq\": -1, \"mission_reached\": -1, \"mission_total\": -1, \"mission_known\": false, \"mission_revision\": 0, \"mission_item\": -1, \"mission_reached_item\": -1}"
+    },
+    {
+      "name": "warnings",
+      "history_len": 600,
+      "steps": [
+        {
+          "op": "listen"
+        },
+        {
+          "op": "tick",
+          "to": 10.0
+        },
+        {
+          "op": "merge_warning",
+          "text": "low battery",
+          "level": "warning",
+          "meta": "12:00:01"
+        },
+        {
+          "op": "merge_warning",
+          "text": "gps lost",
+          "level": "info"
+        },
+        {
+          "op": "merge_warning",
+          "text": "low battery",
+          "level": "critical",
+          "meta": "12:00:05"
+        },
+        {
+          "op": "merge_warning",
+          "text": "low battery",
+          "level": "info",
+          "meta": "12:00:06"
+        },
+        {
+          "op": "merge_warning",
+          "text": "Kill",
+          "level": "warning",
+          "meta": "12:01:00",
+          "event": "kill"
+        },
+        {
+          "op": "merge_warning",
+          "text": "PreArm: x",
+          "level": "warning",
+          "meta": "12:01:01",
+          "event": "prearm"
+        },
+        {
+          "op": "resolve_warnings",
+          "events": [
+            "kill"
+          ]
+        },
+        {
+          "op": "resolve_warnings",
+          "events": [
+            "kill"
+          ]
+        },
+        {
+          "op": "resolve_warnings",
+          "events": [
+            "nothing"
+          ]
+        },
+        {
+          "op": "merge_warning",
+          "text": "Kill",
+          "level": "warning",
+          "meta": "12:02:00",
+          "event": "kill"
+        },
+        {
+          "op": "merge_warning",
+          "text": "a",
+          "level": "info",
+          "meta": "m",
+          "max_warnings": 3
+        },
+        {
+          "op": "merge_warning",
+          "text": "b",
+          "level": "info",
+          "meta": "m",
+          "max_warnings": 3
+        },
+        {
+          "op": "clear_warnings"
+        }
+      ],
+      "results": [
+        {
+          "calls": 0,
+          "version": 0,
+          "result": null
+        },
+        {
+          "calls": 0,
+          "version": 0,
+          "result": null
+        },
+        {
+          "calls": 1,
+          "version": 1,
+          "result": null
+        },
+        {
+          "calls": 0,
+          "version": 2,
+          "result": null
+        },
+        {
+          "calls": 0,
+          "version": 3,
+          "result": null
+        },
+        {
+          "calls": 0,
+          "version": 4,
+          "result": null
+        },
+        {
+          "calls": 0,
+          "version": 5,
+          "result": null
+        },
+        {
+          "calls": 0,
+          "version": 6,
+          "result": null
+        },
+        {
+          "calls": 0,
+          "version": 7,
+          "result": true
+        },
+        {
+          "calls": 0,
+          "version": 7,
+          "result": false
+        },
+        {
+          "calls": 0,
+          "version": 7,
+          "result": false
+        },
+        {
+          "calls": 0,
+          "version": 8,
+          "result": null
+        },
+        {
+          "calls": 0,
+          "version": 9,
+          "result": null
+        },
+        {
+          "calls": 0,
+          "version": 10,
+          "result": null
+        },
+        {
+          "calls": 0,
+          "version": 11,
+          "result": null
+        }
+      ],
+      "snapshot": {
+        "connected": false,
+        "vehicle_id": "",
+        "armed": false,
+        "vehicle_type": "",
+        "autopilot": "",
+        "autopilot_stack": "",
+        "mode": "",
+        "mode_label": "",
+        "px4_version": "",
+        "px4_version_detail": "",
+        "position": [
+          0.0,
+          0.0
+        ],
+        "altitude_amsl": 0.0,
+        "altitude_agl": 0.0,
+        "heading": 0.0,
+        "groundspeed": 0.0,
+        "airspeed": 0.0,
+        "vspeed": 0.0,
+        "pitch": 0.0,
+        "roll": 0.0,
+        "yaw": 0.0,
+        "rollspeed": 0.0,
+        "pitchspeed": 0.0,
+        "yawspeed": 0.0,
+        "vx": 0.0,
+        "vy": 0.0,
+        "vz": 0.0,
+        "roll_sp": 0.0,
+        "pitch_sp": 0.0,
+        "yaw_sp": 0.0,
+        "rollspeed_sp": 0.0,
+        "pitchspeed_sp": 0.0,
+        "yawspeed_sp": 0.0,
+        "vx_sp": 0.0,
+        "vy_sp": 0.0,
+        "vz_sp": 0.0,
+        "setpoints_live": false,
+        "battery_percent": 0,
+        "battery_voltage": 0.0,
+        "battery_current": 0.0,
+        "battery_percent_fc": -1,
+        "battery_percent_est": -1.0,
+        "battery_source": "autopilot",
+        "battery_cells": 0,
+        "battery_cell_voltage": 0.0,
+        "battery_cell_voltages": [],
+        "battery_consumed_mah": 0.0,
+        "battery_temperature": null,
+        "battery_time_remaining": 0,
+        "battery_endurance_est": -1,
+        "gps_fix": "",
+        "gps_satellites": 0,
+        "gps_hdop": 99.0,
+        "gps_vdop": 99.0,
+        "gps_h_acc": -1.0,
+        "gps_v_acc": -1.0,
+        "gps_altitude": null,
+        "rangefinder_distance": null,
+        "gps_health": "",
+        "gps_jamming": "",
+        "gps_spoofing": "",
+        "gps_signal_quality": -1,
+        "rtk_state": "",
+        "rtk_source": "",
+        "rtk_accuracy": 0.0,
+        "rtk_progress": 0,
+        "vibration_x": 0.0,
+        "vibration_y": 0.0,
+        "vibration_z": 0.0,
+        "clipping_0": 0,
+        "clipping_1": 0,
+        "clipping_2": 0,
+        "rc_channels": [],
+        "rc_channel_count": 0,
+        "rc_rssi": -1,
+        "rc_live": false,
+        "uplink": 0,
+        "uplink_rssi": 0.0,
+        "uplink_rxerrors": 0,
+        "uplink_fixed": 0,
+        "heartbeat_jitter_ms": 0.0,
+        "link_quality": "unknown",
+        "link_status": "disconnected",
+        "link_connection": "",
+        "link_error": "",
+        "link_auto": {},
+        "link_suggestion": null,
+        "link_bootloader": null,
+        "time": "",
+        "warnings": [],
+        "home": [
+          0.0,
+          0.0
+        ],
+        "boot_ms": 0,
+        "prearm_ok": null,
+        "prearm_reasons": [],
+        "landed_state": 0,
+        "flight_termination": false,
+        "kill_switch": false,
+        "autotune_state": "",
+        "autotune_progress": 0,
+        "mission": [],
+        "mission_state": "",
+        "mission_seq": -1,
+        "mission_reached": -1,
+        "mission_total": -1,
+        "mission_known": false,
+        "mission_revision": 0,
+        "mission_item": -1,
+        "mission_reached_item": -1
+      },
+      "last_notified": {
+        "connected": false,
+        "vehicle_id": "",
+        "armed": false,
+        "vehicle_type": "",
+        "autopilot": "",
+        "autopilot_stack": "",
+        "mode": "",
+        "mode_label": "",
+        "px4_version": "",
+        "px4_version_detail": "",
+        "position": [
+          0.0,
+          0.0
+        ],
+        "altitude_amsl": 0.0,
+        "altitude_agl": 0.0,
+        "heading": 0.0,
+        "groundspeed": 0.0,
+        "airspeed": 0.0,
+        "vspeed": 0.0,
+        "pitch": 0.0,
+        "roll": 0.0,
+        "yaw": 0.0,
+        "rollspeed": 0.0,
+        "pitchspeed": 0.0,
+        "yawspeed": 0.0,
+        "vx": 0.0,
+        "vy": 0.0,
+        "vz": 0.0,
+        "roll_sp": 0.0,
+        "pitch_sp": 0.0,
+        "yaw_sp": 0.0,
+        "rollspeed_sp": 0.0,
+        "pitchspeed_sp": 0.0,
+        "yawspeed_sp": 0.0,
+        "vx_sp": 0.0,
+        "vy_sp": 0.0,
+        "vz_sp": 0.0,
+        "setpoints_live": false,
+        "battery_percent": 0,
+        "battery_voltage": 0.0,
+        "battery_current": 0.0,
+        "battery_percent_fc": -1,
+        "battery_percent_est": -1.0,
+        "battery_source": "autopilot",
+        "battery_cells": 0,
+        "battery_cell_voltage": 0.0,
+        "battery_cell_voltages": [],
+        "battery_consumed_mah": 0.0,
+        "battery_temperature": null,
+        "battery_time_remaining": 0,
+        "battery_endurance_est": -1,
+        "gps_fix": "",
+        "gps_satellites": 0,
+        "gps_hdop": 99.0,
+        "gps_vdop": 99.0,
+        "gps_h_acc": -1.0,
+        "gps_v_acc": -1.0,
+        "gps_altitude": null,
+        "rangefinder_distance": null,
+        "gps_health": "",
+        "gps_jamming": "",
+        "gps_spoofing": "",
+        "gps_signal_quality": -1,
+        "rtk_state": "",
+        "rtk_source": "",
+        "rtk_accuracy": 0.0,
+        "rtk_progress": 0,
+        "vibration_x": 0.0,
+        "vibration_y": 0.0,
+        "vibration_z": 0.0,
+        "clipping_0": 0,
+        "clipping_1": 0,
+        "clipping_2": 0,
+        "rc_channels": [],
+        "rc_channel_count": 0,
+        "rc_rssi": -1,
+        "rc_live": false,
+        "uplink": 0,
+        "uplink_rssi": 0.0,
+        "uplink_rxerrors": 0,
+        "uplink_fixed": 0,
+        "heartbeat_jitter_ms": 0.0,
+        "link_quality": "unknown",
+        "link_status": "disconnected",
+        "link_connection": "",
+        "link_error": "",
+        "link_auto": {},
+        "link_suggestion": null,
+        "link_bootloader": null,
+        "time": "",
+        "warnings": [
+          {
+            "level": "warning",
+            "msg": "low battery",
+            "meta": "12:00:01"
+          }
+        ],
+        "home": [
+          0.0,
+          0.0
+        ],
+        "boot_ms": 0,
+        "prearm_ok": null,
+        "prearm_reasons": [],
+        "landed_state": 0,
+        "flight_termination": false,
+        "kill_switch": false,
+        "autotune_state": "",
+        "autotune_progress": 0,
+        "mission": [],
+        "mission_state": "",
+        "mission_seq": -1,
+        "mission_reached": -1,
+        "mission_total": -1,
+        "mission_known": false,
+        "mission_revision": 0,
+        "mission_item": -1,
+        "mission_reached_item": -1
+      },
+      "history": {
+        "altitude": [],
+        "groundspeed": [],
+        "battery": [],
+        "other": []
+      },
+      "json": "{\"connected\": false, \"vehicle_id\": \"\", \"armed\": false, \"vehicle_type\": \"\", \"autopilot\": \"\", \"autopilot_stack\": \"\", \"mode\": \"\", \"mode_label\": \"\", \"px4_version\": \"\", \"px4_version_detail\": \"\", \"position\": [0.0, 0.0], \"altitude_amsl\": 0.0, \"altitude_agl\": 0.0, \"heading\": 0.0, \"groundspeed\": 0.0, \"airspeed\": 0.0, \"vspeed\": 0.0, \"pitch\": 0.0, \"roll\": 0.0, \"yaw\": 0.0, \"rollspeed\": 0.0, \"pitchspeed\": 0.0, \"yawspeed\": 0.0, \"vx\": 0.0, \"vy\": 0.0, \"vz\": 0.0, \"roll_sp\": 0.0, \"pitch_sp\": 0.0, \"yaw_sp\": 0.0, \"rollspeed_sp\": 0.0, \"pitchspeed_sp\": 0.0, \"yawspeed_sp\": 0.0, \"vx_sp\": 0.0, \"vy_sp\": 0.0, \"vz_sp\": 0.0, \"setpoints_live\": false, \"battery_percent\": 0, \"battery_voltage\": 0.0, \"battery_current\": 0.0, \"battery_percent_fc\": -1, \"battery_percent_est\": -1.0, \"battery_source\": \"autopilot\", \"battery_cells\": 0, \"battery_cell_voltage\": 0.0, \"battery_cell_voltages\": [], \"battery_consumed_mah\": 0.0, \"battery_temperature\": null, \"battery_time_remaining\": 0, \"battery_endurance_est\": -1, \"gps_fix\": \"\", \"gps_satellites\": 0, \"gps_hdop\": 99.0, \"gps_vdop\": 99.0, \"gps_h_acc\": -1.0, \"gps_v_acc\": -1.0, \"gps_altitude\": null, \"rangefinder_distance\": null, \"gps_health\": \"\", \"gps_jamming\": \"\", \"gps_spoofing\": \"\", \"gps_signal_quality\": -1, \"rtk_state\": \"\", \"rtk_source\": \"\", \"rtk_accuracy\": 0.0, \"rtk_progress\": 0, \"vibration_x\": 0.0, \"vibration_y\": 0.0, \"vibration_z\": 0.0, \"clipping_0\": 0, \"clipping_1\": 0, \"clipping_2\": 0, \"rc_channels\": [], \"rc_channel_count\": 0, \"rc_rssi\": -1, \"rc_live\": false, \"uplink\": 0, \"uplink_rssi\": 0.0, \"uplink_rxerrors\": 0, \"uplink_fixed\": 0, \"heartbeat_jitter_ms\": 0.0, \"link_quality\": \"unknown\", \"link_status\": \"disconnected\", \"link_connection\": \"\", \"link_error\": \"\", \"link_auto\": {}, \"link_suggestion\": null, \"link_bootloader\": null, \"time\": \"\", \"warnings\": [], \"home\": [0.0, 0.0], \"boot_ms\": 0, \"prearm_ok\": null, \"prearm_reasons\": [], \"landed_state\": 0, \"flight_termination\": false, \"kill_switch\": false, \"autotune_state\": \"\", \"autotune_progress\": 0, \"mission\": [], \"mission_state\": \"\", \"mission_seq\": -1, \"mission_reached\": -1, \"mission_total\": -1, \"mission_known\": false, \"mission_revision\": 0, \"mission_item\": -1, \"mission_reached_item\": -1}"
+    },
+    {
+      "name": "link_life",
+      "history_len": 600,
+      "steps": [
+        {
+          "op": "listen"
+        },
+        {
+          "op": "tick",
+          "to": 50.0
+        },
+        {
+          "op": "is_stale",
+          "timeout": 5.0
+        },
+        {
+          "op": "heartbeat"
+        },
+        {
+          "op": "update",
+          "args": {
+            "armed": true,
+            "mode": "AUTO",
+            "mode_label": "AUTO",
+            "prearm_ok": true,
+            "prearm_reasons": [
+              "a"
+            ],
+            "landed_state": 2,
+            "flight_termination": true,
+            "kill_switch": true,
+            "autotune_state": "running",
+            "setpoints_live": true,
+            "mission_state": "active",
+            "rc_live": true,
+            "rangefinder_distance": 1.5,
+            "link_status": "connected",
+            "link_connection": "udp:0.0.0.0:14550",
+            "link_error": "x"
+          }
+        },
+        {
+          "op": "tick",
+          "to": 52.0
+        },
+        {
+          "op": "heartbeat"
+        },
+        {
+          "op": "is_stale",
+          "timeout": 5.0
+        },
+        {
+          "op": "tick",
+          "to": 58.0
+        },
+        {
+          "op": "is_stale",
+          "timeout": 5.0
+        },
+        {
+          "op": "set_disconnected"
+        },
+        {
+          "op": "update",
+          "args": {
+            "autotune_state": "done"
+          }
+        },
+        {
+          "op": "set_disconnected"
+        }
+      ],
+      "results": [
+        {
+          "calls": 0,
+          "version": 0,
+          "result": null
+        },
+        {
+          "calls": 0,
+          "version": 0,
+          "result": null
+        },
+        {
+          "calls": 0,
+          "version": 0,
+          "result": true
+        },
+        {
+          "calls": 1,
+          "version": 1,
+          "result": 50.0
+        },
+        {
+          "calls": 1,
+          "version": 2,
+          "result": null
+        },
+        {
+          "calls": 0,
+          "version": 2,
+          "result": null
+        },
+        {
+          "calls": 0,
+          "version": 2,
+          "result": 52.0
+        },
+        {
+          "calls": 0,
+          "version": 2,
+          "result": false
+        },
+        {
+          "calls": 0,
+          "version": 2,
+          "result": null
+        },
+        {
+          "calls": 0,
+          "version": 2,
+          "result": true
+        },
+        {
+          "calls": 1,
+          "version": 3,
+          "result": null
+        },
+        {
+          "calls": 1,
+          "version": 4,
+          "result": null
+        },
+        {
+          "calls": 1,
+          "version": 5,
+          "result": null
+        }
+      ],
+      "snapshot": {
+        "connected": false,
+        "vehicle_id": "",
+        "armed": false,
+        "vehicle_type": "",
+        "autopilot": "",
+        "autopilot_stack": "",
+        "mode": "DISCONNECTED",
+        "mode_label": "DISCONNECTED",
+        "px4_version": "",
+        "px4_version_detail": "",
+        "position": [
+          0.0,
+          0.0
+        ],
+        "altitude_amsl": 0.0,
+        "altitude_agl": 0.0,
+        "heading": 0.0,
+        "groundspeed": 0.0,
+        "airspeed": 0.0,
+        "vspeed": 0.0,
+        "pitch": 0.0,
+        "roll": 0.0,
+        "yaw": 0.0,
+        "rollspeed": 0.0,
+        "pitchspeed": 0.0,
+        "yawspeed": 0.0,
+        "vx": 0.0,
+        "vy": 0.0,
+        "vz": 0.0,
+        "roll_sp": 0.0,
+        "pitch_sp": 0.0,
+        "yaw_sp": 0.0,
+        "rollspeed_sp": 0.0,
+        "pitchspeed_sp": 0.0,
+        "yawspeed_sp": 0.0,
+        "vx_sp": 0.0,
+        "vy_sp": 0.0,
+        "vz_sp": 0.0,
+        "setpoints_live": false,
+        "battery_percent": 0,
+        "battery_voltage": 0.0,
+        "battery_current": 0.0,
+        "battery_percent_fc": -1,
+        "battery_percent_est": -1.0,
+        "battery_source": "autopilot",
+        "battery_cells": 0,
+        "battery_cell_voltage": 0.0,
+        "battery_cell_voltages": [],
+        "battery_consumed_mah": 0.0,
+        "battery_temperature": null,
+        "battery_time_remaining": 0,
+        "battery_endurance_est": -1,
+        "gps_fix": "",
+        "gps_satellites": 0,
+        "gps_hdop": 99.0,
+        "gps_vdop": 99.0,
+        "gps_h_acc": -1.0,
+        "gps_v_acc": -1.0,
+        "gps_altitude": null,
+        "rangefinder_distance": null,
+        "gps_health": "",
+        "gps_jamming": "",
+        "gps_spoofing": "",
+        "gps_signal_quality": -1,
+        "rtk_state": "",
+        "rtk_source": "",
+        "rtk_accuracy": 0.0,
+        "rtk_progress": 0,
+        "vibration_x": 0.0,
+        "vibration_y": 0.0,
+        "vibration_z": 0.0,
+        "clipping_0": 0,
+        "clipping_1": 0,
+        "clipping_2": 0,
+        "rc_channels": [],
+        "rc_channel_count": 0,
+        "rc_rssi": -1,
+        "rc_live": false,
+        "uplink": 0,
+        "uplink_rssi": 0.0,
+        "uplink_rxerrors": 0,
+        "uplink_fixed": 0,
+        "heartbeat_jitter_ms": 0.0,
+        "link_quality": "unknown",
+        "link_status": "disconnected",
+        "link_connection": "udp:0.0.0.0:14550",
+        "link_error": "x",
+        "link_auto": {},
+        "link_suggestion": null,
+        "link_bootloader": null,
+        "time": "",
+        "warnings": [],
+        "home": [
+          0.0,
+          0.0
+        ],
+        "boot_ms": 0,
+        "prearm_ok": null,
+        "prearm_reasons": [],
+        "landed_state": 0,
+        "flight_termination": false,
+        "kill_switch": false,
+        "autotune_state": "done",
+        "autotune_progress": 0,
+        "mission": [],
+        "mission_state": "",
+        "mission_seq": -1,
+        "mission_reached": -1,
+        "mission_total": -1,
+        "mission_known": false,
+        "mission_revision": 0,
+        "mission_item": -1,
+        "mission_reached_item": -1
+      },
+      "last_notified": {
+        "connected": false,
+        "vehicle_id": "",
+        "armed": false,
+        "vehicle_type": "",
+        "autopilot": "",
+        "autopilot_stack": "",
+        "mode": "DISCONNECTED",
+        "mode_label": "DISCONNECTED",
+        "px4_version": "",
+        "px4_version_detail": "",
+        "position": [
+          0.0,
+          0.0
+        ],
+        "altitude_amsl": 0.0,
+        "altitude_agl": 0.0,
+        "heading": 0.0,
+        "groundspeed": 0.0,
+        "airspeed": 0.0,
+        "vspeed": 0.0,
+        "pitch": 0.0,
+        "roll": 0.0,
+        "yaw": 0.0,
+        "rollspeed": 0.0,
+        "pitchspeed": 0.0,
+        "yawspeed": 0.0,
+        "vx": 0.0,
+        "vy": 0.0,
+        "vz": 0.0,
+        "roll_sp": 0.0,
+        "pitch_sp": 0.0,
+        "yaw_sp": 0.0,
+        "rollspeed_sp": 0.0,
+        "pitchspeed_sp": 0.0,
+        "yawspeed_sp": 0.0,
+        "vx_sp": 0.0,
+        "vy_sp": 0.0,
+        "vz_sp": 0.0,
+        "setpoints_live": false,
+        "battery_percent": 0,
+        "battery_voltage": 0.0,
+        "battery_current": 0.0,
+        "battery_percent_fc": -1,
+        "battery_percent_est": -1.0,
+        "battery_source": "autopilot",
+        "battery_cells": 0,
+        "battery_cell_voltage": 0.0,
+        "battery_cell_voltages": [],
+        "battery_consumed_mah": 0.0,
+        "battery_temperature": null,
+        "battery_time_remaining": 0,
+        "battery_endurance_est": -1,
+        "gps_fix": "",
+        "gps_satellites": 0,
+        "gps_hdop": 99.0,
+        "gps_vdop": 99.0,
+        "gps_h_acc": -1.0,
+        "gps_v_acc": -1.0,
+        "gps_altitude": null,
+        "rangefinder_distance": null,
+        "gps_health": "",
+        "gps_jamming": "",
+        "gps_spoofing": "",
+        "gps_signal_quality": -1,
+        "rtk_state": "",
+        "rtk_source": "",
+        "rtk_accuracy": 0.0,
+        "rtk_progress": 0,
+        "vibration_x": 0.0,
+        "vibration_y": 0.0,
+        "vibration_z": 0.0,
+        "clipping_0": 0,
+        "clipping_1": 0,
+        "clipping_2": 0,
+        "rc_channels": [],
+        "rc_channel_count": 0,
+        "rc_rssi": -1,
+        "rc_live": false,
+        "uplink": 0,
+        "uplink_rssi": 0.0,
+        "uplink_rxerrors": 0,
+        "uplink_fixed": 0,
+        "heartbeat_jitter_ms": 0.0,
+        "link_quality": "unknown",
+        "link_status": "disconnected",
+        "link_connection": "udp:0.0.0.0:14550",
+        "link_error": "x",
+        "link_auto": {},
+        "link_suggestion": null,
+        "link_bootloader": null,
+        "time": "",
+        "warnings": [],
+        "home": [
+          0.0,
+          0.0
+        ],
+        "boot_ms": 0,
+        "prearm_ok": null,
+        "prearm_reasons": [],
+        "landed_state": 0,
+        "flight_termination": false,
+        "kill_switch": false,
+        "autotune_state": "done",
+        "autotune_progress": 0,
+        "mission": [],
+        "mission_state": "",
+        "mission_seq": -1,
+        "mission_reached": -1,
+        "mission_total": -1,
+        "mission_known": false,
+        "mission_revision": 0,
+        "mission_item": -1,
+        "mission_reached_item": -1
+      },
+      "history": {
+        "altitude": [],
+        "groundspeed": [],
+        "battery": [],
+        "other": []
+      },
+      "json": "{\"connected\": false, \"vehicle_id\": \"\", \"armed\": false, \"vehicle_type\": \"\", \"autopilot\": \"\", \"autopilot_stack\": \"\", \"mode\": \"DISCONNECTED\", \"mode_label\": \"DISCONNECTED\", \"px4_version\": \"\", \"px4_version_detail\": \"\", \"position\": [0.0, 0.0], \"altitude_amsl\": 0.0, \"altitude_agl\": 0.0, \"heading\": 0.0, \"groundspeed\": 0.0, \"airspeed\": 0.0, \"vspeed\": 0.0, \"pitch\": 0.0, \"roll\": 0.0, \"yaw\": 0.0, \"rollspeed\": 0.0, \"pitchspeed\": 0.0, \"yawspeed\": 0.0, \"vx\": 0.0, \"vy\": 0.0, \"vz\": 0.0, \"roll_sp\": 0.0, \"pitch_sp\": 0.0, \"yaw_sp\": 0.0, \"rollspeed_sp\": 0.0, \"pitchspeed_sp\": 0.0, \"yawspeed_sp\": 0.0, \"vx_sp\": 0.0, \"vy_sp\": 0.0, \"vz_sp\": 0.0, \"setpoints_live\": false, \"battery_percent\": 0, \"battery_voltage\": 0.0, \"battery_current\": 0.0, \"battery_percent_fc\": -1, \"battery_percent_est\": -1.0, \"battery_source\": \"autopilot\", \"battery_cells\": 0, \"battery_cell_voltage\": 0.0, \"battery_cell_voltages\": [], \"battery_consumed_mah\": 0.0, \"battery_temperature\": null, \"battery_time_remaining\": 0, \"battery_endurance_est\": -1, \"gps_fix\": \"\", \"gps_satellites\": 0, \"gps_hdop\": 99.0, \"gps_vdop\": 99.0, \"gps_h_acc\": -1.0, \"gps_v_acc\": -1.0, \"gps_altitude\": null, \"rangefinder_distance\": null, \"gps_health\": \"\", \"gps_jamming\": \"\", \"gps_spoofing\": \"\", \"gps_signal_quality\": -1, \"rtk_state\": \"\", \"rtk_source\": \"\", \"rtk_accuracy\": 0.0, \"rtk_progress\": 0, \"vibration_x\": 0.0, \"vibration_y\": 0.0, \"vibration_z\": 0.0, \"clipping_0\": 0, \"clipping_1\": 0, \"clipping_2\": 0, \"rc_channels\": [], \"rc_channel_count\": 0, \"rc_rssi\": -1, \"rc_live\": false, \"uplink\": 0, \"uplink_rssi\": 0.0, \"uplink_rxerrors\": 0, \"uplink_fixed\": 0, \"heartbeat_jitter_ms\": 0.0, \"link_quality\": \"unknown\", \"link_status\": \"disconnected\", \"link_connection\": \"udp:0.0.0.0:14550\", \"link_error\": \"x\", \"link_auto\": {}, \"link_suggestion\": null, \"link_bootloader\": null, \"time\": \"\", \"warnings\": [], \"home\": [0.0, 0.0], \"boot_ms\": 0, \"prearm_ok\": null, \"prearm_reasons\": [], \"landed_state\": 0, \"flight_termination\": false, \"kill_switch\": false, \"autotune_state\": \"done\", \"autotune_progress\": 0, \"mission\": [], \"mission_state\": \"\", \"mission_seq\": -1, \"mission_reached\": -1, \"mission_total\": -1, \"mission_known\": false, \"mission_revision\": 0, \"mission_item\": -1, \"mission_reached_item\": -1}"
+    },
+    {
+      "name": "forget_vehicle",
+      "history_len": 600,
+      "steps": [
+        {
+          "op": "listen"
+        },
+        {
+          "op": "tick",
+          "to": 70.0
+        },
+        {
+          "op": "heartbeat"
+        },
+        {
+          "op": "update",
+          "args": {
+            "vehicle_id": "main:1",
+            "position": [
+              48.1,
+              11.5
+            ],
+            "battery_percent": 55,
+            "link_status": "connected",
+            "link_quality": "good",
+            "rtk_state": "fixed",
+            "rtk_accuracy": 0.02,
+            "altitude_amsl": 12.0,
+            "link_suggestion": {
+              "device": "/dev/x"
+            },
+            "link_auto": {
+              "a": 1
+            }
+          }
+        },
+        {
+          "op": "merge_warning",
+          "text": "w",
+          "level": "warning",
+          "meta": "m"
+        },
+        {
+          "op": "forget_vehicle"
+        },
+        {
+          "op": "is_stale",
+          "timeout": 5.0
+        }
+      ],
+      "results": [
+        {
+          "calls": 0,
+          "version": 0,
+          "result": null
+        },
+        {
+          "calls": 0,
+          "version": 0,
+          "result": null
+        },
+        {
+          "calls": 1,
+          "version": 1,
+          "result": 70.0
+        },
+        {
+          "calls": 1,
+          "version": 2,
+          "result": null
+        },
+        {
+          "calls": 0,
+          "version": 3,
+          "result": null
+        },
+        {
+          "calls": 1,
+          "version": 4,
+          "result": null
+        },
+        {
+          "calls": 0,
+          "version": 4,
+          "result": true
+        }
+      ],
+      "snapshot": {
+        "connected": false,
+        "vehicle_id": "",
+        "armed": false,
+        "vehicle_type": "",
+        "autopilot": "",
+        "autopilot_stack": "",
+        "mode": "",
+        "mode_label": "",
+        "px4_version": "",
+        "px4_version_detail": "",
+        "position": [
+          0.0,
+          0.0
+        ],
+        "altitude_amsl": 0.0,
+        "altitude_agl": 0.0,
+        "heading": 0.0,
+        "groundspeed": 0.0,
+        "airspeed": 0.0,
+        "vspeed": 0.0,
+        "pitch": 0.0,
+        "roll": 0.0,
+        "yaw": 0.0,
+        "rollspeed": 0.0,
+        "pitchspeed": 0.0,
+        "yawspeed": 0.0,
+        "vx": 0.0,
+        "vy": 0.0,
+        "vz": 0.0,
+        "roll_sp": 0.0,
+        "pitch_sp": 0.0,
+        "yaw_sp": 0.0,
+        "rollspeed_sp": 0.0,
+        "pitchspeed_sp": 0.0,
+        "yawspeed_sp": 0.0,
+        "vx_sp": 0.0,
+        "vy_sp": 0.0,
+        "vz_sp": 0.0,
+        "setpoints_live": false,
+        "battery_percent": 0,
+        "battery_voltage": 0.0,
+        "battery_current": 0.0,
+        "battery_percent_fc": -1,
+        "battery_percent_est": -1.0,
+        "battery_source": "autopilot",
+        "battery_cells": 0,
+        "battery_cell_voltage": 0.0,
+        "battery_cell_voltages": [],
+        "battery_consumed_mah": 0.0,
+        "battery_temperature": null,
+        "battery_time_remaining": 0,
+        "battery_endurance_est": -1,
+        "gps_fix": "",
+        "gps_satellites": 0,
+        "gps_hdop": 99.0,
+        "gps_vdop": 99.0,
+        "gps_h_acc": -1.0,
+        "gps_v_acc": -1.0,
+        "gps_altitude": null,
+        "rangefinder_distance": null,
+        "gps_health": "",
+        "gps_jamming": "",
+        "gps_spoofing": "",
+        "gps_signal_quality": -1,
+        "rtk_state": "fixed",
+        "rtk_source": "",
+        "rtk_accuracy": 0.02,
+        "rtk_progress": 0,
+        "vibration_x": 0.0,
+        "vibration_y": 0.0,
+        "vibration_z": 0.0,
+        "clipping_0": 0,
+        "clipping_1": 0,
+        "clipping_2": 0,
+        "rc_channels": [],
+        "rc_channel_count": 0,
+        "rc_rssi": -1,
+        "rc_live": false,
+        "uplink": 0,
+        "uplink_rssi": 0.0,
+        "uplink_rxerrors": 0,
+        "uplink_fixed": 0,
+        "heartbeat_jitter_ms": 0.0,
+        "link_quality": "good",
+        "link_status": "connected",
+        "link_connection": "",
+        "link_error": "",
+        "link_auto": {
+          "a": 1
+        },
+        "link_suggestion": {
+          "device": "/dev/x"
+        },
+        "link_bootloader": null,
+        "time": "",
+        "warnings": [],
+        "home": [
+          0.0,
+          0.0
+        ],
+        "boot_ms": 0,
+        "prearm_ok": null,
+        "prearm_reasons": [],
+        "landed_state": 0,
+        "flight_termination": false,
+        "kill_switch": false,
+        "autotune_state": "",
+        "autotune_progress": 0,
+        "mission": [],
+        "mission_state": "",
+        "mission_seq": -1,
+        "mission_reached": -1,
+        "mission_total": -1,
+        "mission_known": false,
+        "mission_revision": 0,
+        "mission_item": -1,
+        "mission_reached_item": -1
+      },
+      "last_notified": {
+        "connected": false,
+        "vehicle_id": "",
+        "armed": false,
+        "vehicle_type": "",
+        "autopilot": "",
+        "autopilot_stack": "",
+        "mode": "",
+        "mode_label": "",
+        "px4_version": "",
+        "px4_version_detail": "",
+        "position": [
+          0.0,
+          0.0
+        ],
+        "altitude_amsl": 0.0,
+        "altitude_agl": 0.0,
+        "heading": 0.0,
+        "groundspeed": 0.0,
+        "airspeed": 0.0,
+        "vspeed": 0.0,
+        "pitch": 0.0,
+        "roll": 0.0,
+        "yaw": 0.0,
+        "rollspeed": 0.0,
+        "pitchspeed": 0.0,
+        "yawspeed": 0.0,
+        "vx": 0.0,
+        "vy": 0.0,
+        "vz": 0.0,
+        "roll_sp": 0.0,
+        "pitch_sp": 0.0,
+        "yaw_sp": 0.0,
+        "rollspeed_sp": 0.0,
+        "pitchspeed_sp": 0.0,
+        "yawspeed_sp": 0.0,
+        "vx_sp": 0.0,
+        "vy_sp": 0.0,
+        "vz_sp": 0.0,
+        "setpoints_live": false,
+        "battery_percent": 0,
+        "battery_voltage": 0.0,
+        "battery_current": 0.0,
+        "battery_percent_fc": -1,
+        "battery_percent_est": -1.0,
+        "battery_source": "autopilot",
+        "battery_cells": 0,
+        "battery_cell_voltage": 0.0,
+        "battery_cell_voltages": [],
+        "battery_consumed_mah": 0.0,
+        "battery_temperature": null,
+        "battery_time_remaining": 0,
+        "battery_endurance_est": -1,
+        "gps_fix": "",
+        "gps_satellites": 0,
+        "gps_hdop": 99.0,
+        "gps_vdop": 99.0,
+        "gps_h_acc": -1.0,
+        "gps_v_acc": -1.0,
+        "gps_altitude": null,
+        "rangefinder_distance": null,
+        "gps_health": "",
+        "gps_jamming": "",
+        "gps_spoofing": "",
+        "gps_signal_quality": -1,
+        "rtk_state": "fixed",
+        "rtk_source": "",
+        "rtk_accuracy": 0.02,
+        "rtk_progress": 0,
+        "vibration_x": 0.0,
+        "vibration_y": 0.0,
+        "vibration_z": 0.0,
+        "clipping_0": 0,
+        "clipping_1": 0,
+        "clipping_2": 0,
+        "rc_channels": [],
+        "rc_channel_count": 0,
+        "rc_rssi": -1,
+        "rc_live": false,
+        "uplink": 0,
+        "uplink_rssi": 0.0,
+        "uplink_rxerrors": 0,
+        "uplink_fixed": 0,
+        "heartbeat_jitter_ms": 0.0,
+        "link_quality": "good",
+        "link_status": "connected",
+        "link_connection": "",
+        "link_error": "",
+        "link_auto": {
+          "a": 1
+        },
+        "link_suggestion": {
+          "device": "/dev/x"
+        },
+        "link_bootloader": null,
+        "time": "",
+        "warnings": [],
+        "home": [
+          0.0,
+          0.0
+        ],
+        "boot_ms": 0,
+        "prearm_ok": null,
+        "prearm_reasons": [],
+        "landed_state": 0,
+        "flight_termination": false,
+        "kill_switch": false,
+        "autotune_state": "",
+        "autotune_progress": 0,
+        "mission": [],
+        "mission_state": "",
+        "mission_seq": -1,
+        "mission_reached": -1,
+        "mission_total": -1,
+        "mission_known": false,
+        "mission_revision": 0,
+        "mission_item": -1,
+        "mission_reached_item": -1
+      },
+      "history": {
+        "altitude": [],
+        "groundspeed": [],
+        "battery": [],
+        "other": []
+      },
+      "json": "{\"connected\": false, \"vehicle_id\": \"\", \"armed\": false, \"vehicle_type\": \"\", \"autopilot\": \"\", \"autopilot_stack\": \"\", \"mode\": \"\", \"mode_label\": \"\", \"px4_version\": \"\", \"px4_version_detail\": \"\", \"position\": [0.0, 0.0], \"altitude_amsl\": 0.0, \"altitude_agl\": 0.0, \"heading\": 0.0, \"groundspeed\": 0.0, \"airspeed\": 0.0, \"vspeed\": 0.0, \"pitch\": 0.0, \"roll\": 0.0, \"yaw\": 0.0, \"rollspeed\": 0.0, \"pitchspeed\": 0.0, \"yawspeed\": 0.0, \"vx\": 0.0, \"vy\": 0.0, \"vz\": 0.0, \"roll_sp\": 0.0, \"pitch_sp\": 0.0, \"yaw_sp\": 0.0, \"rollspeed_sp\": 0.0, \"pitchspeed_sp\": 0.0, \"yawspeed_sp\": 0.0, \"vx_sp\": 0.0, \"vy_sp\": 0.0, \"vz_sp\": 0.0, \"setpoints_live\": false, \"battery_percent\": 0, \"battery_voltage\": 0.0, \"battery_current\": 0.0, \"battery_percent_fc\": -1, \"battery_percent_est\": -1.0, \"battery_source\": \"autopilot\", \"battery_cells\": 0, \"battery_cell_voltage\": 0.0, \"battery_cell_voltages\": [], \"battery_consumed_mah\": 0.0, \"battery_temperature\": null, \"battery_time_remaining\": 0, \"battery_endurance_est\": -1, \"gps_fix\": \"\", \"gps_satellites\": 0, \"gps_hdop\": 99.0, \"gps_vdop\": 99.0, \"gps_h_acc\": -1.0, \"gps_v_acc\": -1.0, \"gps_altitude\": null, \"rangefinder_distance\": null, \"gps_health\": \"\", \"gps_jamming\": \"\", \"gps_spoofing\": \"\", \"gps_signal_quality\": -1, \"rtk_state\": \"fixed\", \"rtk_source\": \"\", \"rtk_accuracy\": 0.02, \"rtk_progress\": 0, \"vibration_x\": 0.0, \"vibration_y\": 0.0, \"vibration_z\": 0.0, \"clipping_0\": 0, \"clipping_1\": 0, \"clipping_2\": 0, \"rc_channels\": [], \"rc_channel_count\": 0, \"rc_rssi\": -1, \"rc_live\": false, \"uplink\": 0, \"uplink_rssi\": 0.0, \"uplink_rxerrors\": 0, \"uplink_fixed\": 0, \"heartbeat_jitter_ms\": 0.0, \"link_quality\": \"good\", \"link_status\": \"connected\", \"link_connection\": \"\", \"link_error\": \"\", \"link_auto\": {\"a\": 1}, \"link_suggestion\": {\"device\": \"/dev/x\"}, \"link_bootloader\": null, \"time\": \"\", \"warnings\": [], \"home\": [0.0, 0.0], \"boot_ms\": 0, \"prearm_ok\": null, \"prearm_reasons\": [], \"landed_state\": 0, \"flight_termination\": false, \"kill_switch\": false, \"autotune_state\": \"\", \"autotune_progress\": 0, \"mission\": [], \"mission_state\": \"\", \"mission_seq\": -1, \"mission_reached\": -1, \"mission_total\": -1, \"mission_known\": false, \"mission_revision\": 0, \"mission_item\": -1, \"mission_reached_item\": -1}"
+    }
+  ]
+}

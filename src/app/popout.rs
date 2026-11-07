@@ -115,7 +115,11 @@ pub fn show_titlebar<R>(
     };
     ctx.show_viewport_immediate(viewport_id(key), builder, |ui, class| {
         egui::CentralPanel::default()
-            .frame(egui::Frame::NONE.fill(if solid_window() { style::bg() } else { egui::Color32::TRANSPARENT }))
+            .frame(egui::Frame::NONE.fill(if solid_window() {
+                style::bg()
+            } else {
+                egui::Color32::TRANSPARENT
+            }))
             .show(ui, |_| {});
         if !solid_window() {
             super::vibrancy::apply(title, style::is_dark(), 12.0);

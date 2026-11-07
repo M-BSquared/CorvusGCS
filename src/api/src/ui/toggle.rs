@@ -85,11 +85,7 @@ pub fn switch(
         Look::custom(fill.gamma_multiply(fade), line.gamma_multiply(fade), 255),
     );
     let knob = if on { style::text_inverted() } else { style::text_3() };
-    let slide = ui.ctx().animate_bool_with_time(
-        resp.id.with("knob"),
-        on,
-        0.13,
-    );
+    let slide = ui.ctx().animate_bool_with_time(resp.id.with("knob"), on, 0.13);
     let painter = ui.painter();
     painter.circle_filled(
         Pos2::new(rect.left() + 11.0 + 16.0 * slide, rect.center().y),

@@ -169,7 +169,10 @@ impl TermWindow {
                 crate::ui::icons::paint(
                     ui,
                     "square-terminal",
-                    Rect::from_center_size(Pos2::new(bar.left() + if lights { 78.0 } else { 10.0 } + 7.0, bar.center().y), Vec2::splat(14.0)),
+                    Rect::from_center_size(
+                        Pos2::new(bar.left() + if lights { 78.0 } else { 10.0 } + 7.0, bar.center().y),
+                        Vec2::splat(14.0),
+                    ),
                     style::text_2(),
                 );
                 let tx = bar.left() + if lights { 78.0 } else { 10.0 } + 14.0 + 8.0;

@@ -125,7 +125,11 @@ fn summary(p: &MapEntities, ui: &egui::Ui, x: f32, y: f32, w: f32) -> f32 {
             "bad" => (mix(style::border_soft(), style::critical(), 0.55), style::critical()),
             _ => (style::border_soft(), style::text_1()),
         };
-        card::paint(ui.painter(), r, card::Look::custom(style::surface_2(), line, style::RADIUS_BTN));
+        card::paint(
+            ui.painter(),
+            r,
+            card::Look::custom(style::surface_2(), line, style::RADIUS_BTN),
+        );
         let lg = style::galley(ui, &label.to_uppercase(), 9.5, Weight::W400, style::text_2(), 0.7);
         let vg = style::galley_mono(ui, value, 13.0, ink);
         ui.painter().galley(

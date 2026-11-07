@@ -1,0 +1,258 @@
+{
+  "cases": [
+    {
+      "name": "latest",
+      "capacity": 4,
+      "op": "put_latest",
+      "items": [
+        1,
+        2,
+        3
+      ],
+      "qsize": 1,
+      "first": 3,
+      "rest": [],
+      "then_empty": true
+    },
+    {
+      "name": "fifo",
+      "capacity": 3,
+      "op": "put_fifo",
+      "items": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "qsize": 3,
+      "first": 3,
+      "rest": [
+        4,
+        5
+      ],
+      "then_empty": true
+    },
+    {
+      "name": "console_dedupes_and_orders",
+      "capacity": 5,
+      "op": "put_console",
+      "items": [
+        {
+          "name": "EKF",
+          "text": "a",
+          "level": "info"
+        },
+        {
+          "name": "EKF",
+          "text": "b",
+          "level": "info"
+        },
+        {
+          "name": "EKF",
+          "text": "a",
+          "level": "info"
+        },
+        {
+          "name": "SHELL",
+          "text": "x",
+          "level": "info"
+        },
+        {
+          "name": "SHELL",
+          "text": "x",
+          "level": "info"
+        },
+        {
+          "name": "EKF",
+          "text": "c",
+          "level": "error"
+        }
+      ],
+      "qsize": 5,
+      "first": {
+        "name": "EKF",
+        "text": "b",
+        "level": "info"
+      },
+      "rest": [
+        {
+          "name": "EKF",
+          "text": "a",
+          "level": "info"
+        },
+        {
+          "name": "SHELL",
+          "text": "x",
+          "level": "info"
+        },
+        {
+          "name": "SHELL",
+          "text": "x",
+          "level": "info"
+        },
+        {
+          "name": "EKF",
+          "text": "c",
+          "level": "error"
+        }
+      ],
+      "then_empty": true
+    },
+    {
+      "name": "console_evicts_the_newest_quiet_line",
+      "capacity": 3,
+      "op": "put_console",
+      "items": [
+        {
+          "name": "A",
+          "text": "1",
+          "level": "info"
+        },
+        {
+          "name": "A",
+          "text": "2",
+          "level": "warning"
+        },
+        {
+          "name": "A",
+          "text": "3",
+          "level": "info"
+        },
+        {
+          "name": "A",
+          "text": "4",
+          "level": "info"
+        },
+        {
+          "name": "A",
+          "text": "5",
+          "level": "error"
+        }
+      ],
+      "qsize": 3,
+      "first": {
+        "name": "A",
+        "text": "1",
+        "level": "info"
+      },
+      "rest": [
+        {
+          "name": "A",
+          "text": "2",
+          "level": "warning"
+        },
+        {
+          "name": "A",
+          "text": "5",
+          "level": "error"
+        }
+      ],
+      "then_empty": true
+    },
+    {
+      "name": "console_drops_a_quiet_line_when_full_of_urgent",
+      "capacity": 2,
+      "op": "put_console",
+      "items": [
+        {
+          "name": "A",
+          "text": "1",
+          "level": "error"
+        },
+        {
+          "name": "A",
+          "text": "2",
+          "level": "critical"
+        },
+        {
+          "name": "A",
+          "text": "3",
+          "level": "info"
+        },
+        {
+          "name": "A",
+          "text": "4",
+          "level": "warning"
+        }
+      ],
+      "qsize": 2,
+      "first": {
+        "name": "A",
+        "text": "1",
+        "level": "error"
+      },
+      "rest": [
+        {
+          "name": "A",
+          "text": "4",
+          "level": "warning"
+        }
+      ],
+      "then_empty": true
+    }
+  ],
+  "mux": {
+    "topics": [
+      [
+        "params",
+        16
+      ],
+      [
+        "console",
+        3
+      ],
+      [
+        "fleet",
+        1
+      ],
+      [
+        "firmware",
+        2
+      ]
+    ],
+    "drained": [
+      [
+        "params",
+        {
+          "n": 2
+        }
+      ],
+      [
+        "console",
+        {
+          "name": "A",
+          "text": "x",
+          "level": "info"
+        }
+      ],
+      [
+        "console",
+        {
+          "name": "A",
+          "text": "y",
+          "level": "error"
+        }
+      ],
+      [
+        "fleet",
+        {
+          "f": 2
+        }
+      ],
+      [
+        "firmware",
+        {
+          "p": 2
+        }
+      ],
+      [
+        "firmware",
+        {
+          "p": 3
+        }
+      ]
+    ],
+    "then_empty": true
+  }
+}
