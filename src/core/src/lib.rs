@@ -97,6 +97,7 @@ pub mod response;
 pub mod serial_ports;
 pub mod store;
 pub mod tlog;
+pub mod vehicle;
 pub mod version;
 pub mod ws;
 
@@ -120,6 +121,7 @@ pub use crate::request::{Headers, Method, Origin, Query, Request};
 pub use crate::response::{Response, SseEvent, SseNext, SseStream, UNAVAILABLE};
 pub use crate::router::{Body, Handler, Pattern, Route, RouteOptions, Router, MAX_JSON_BODY, MAX_SETTINGS_BODY};
 pub use crate::settings::{ConfigListener, Settings};
+pub use crate::vehicle::{VehicleModule, VehicleService};
 
 #[cfg(test)]
 mod link_tests {

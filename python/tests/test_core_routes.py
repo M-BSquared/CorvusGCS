@@ -145,3 +145,158 @@ def test_the_core_stops_on_sigterm_with_exit_zero(tmp_path) -> None:
     finally:
         if proc.poll() is None:
             proc.kill()
+
+
+# ---- the vehicle area: the vehicle list, the fence area and the mission files ----
+
+FLEET_VOLATILE = ("connection", "status", "error", "event_seq")
+
+
+@pytest.fixture(scope="module")
+def vehicle_pair():
+    with harness.Pair(seed=harness.standard_seed()) as p:
+        yield p
+
+
+def test_the_vehicle_list_starts_as_python_has_it(vehicle_pair) -> None:
+    diffs = vehicle_pair.compare_get("/api/fleet", FLEET_VOLATILE)
+    assert not diffs, "\n".join(diffs)
+
+
+@pytest.mark.parametrize("path,body", [
+    ("/api/fleet/select", {}),
+    ("/api/fleet/select", {"id": 5}),
+    ("/api/fleet/select", {"id": "main:1"}),
+    ("/api/fleet/select", {"id": "link-9:1"}),
+    ("/api/fleet/select", {"id": "main:0"}),
+    ("/api/fleet/vehicle", {"id": "main:1", "name": 5}),
+    ("/api/fleet/vehicle", {"id": "main:1", "color": 5}),
+    ("/api/fleet/vehicle", {"id": "main:1", "color": "red"}),
+    ("/api/fleet/vehicle", {"id": "bad", "name": "x"}),
+    ("/api/fleet/vehicle", {"id": "main:1", "name": "  Big   Red  "}),
+    ("/api/fleet/vehicle", {"id": "main:1", "color": "#abcdef"}),
+    ("/api/fleet/vehicle", {"id": "main:1", "name": "", "color": ""}),
+    ("/api/fleet/links/add", {}),
+    ("/api/fleet/links/add", {"connection": ""}),
+    ("/api/fleet/links/add", {"connection": 5}),
+    ("/api/fleet/links/add", {"connection": "carrier-pigeon:1"}),
+    ("/api/fleet/links/add", {"connection": "serial:"}),
+    ("/api/fleet/links/remove", {"id": "main"}),
+    ("/api/fleet/links/remove", {"id": "link-7"}),
+    ("/api/fleet/links/remove", {}),
+    ("/api/fleet/vehicle/remove", {"id": "nonsense"}),
+    ("/api/fleet/vehicle/remove", {"id": "main:1"}),
+    ("/api/fleet/vehicle/remove", {"id": "link-4:2"}),
+    ("/api/fleet/vehicle/remove", {"id": "main:1", "confirm_armed": "yes"}),
+])
+def test_a_vehicle_list_request_is_answered_as_python_does(vehicle_pair, path, body) -> None:
+    diffs = vehicle_pair.compare_post(path, body, FLEET_VOLATILE)
+    diffs += vehicle_pair.compare_get("/api/fleet", FLEET_VOLATILE)
+    assert not diffs, "\n".join(diffs)
+
+
+def test_the_vehicle_names_reach_the_config_file_as_python_writes_them(vehicle_pair) -> None:
+    import json
+
+    py = json.loads((vehicle_pair.py.state_dir / "config.json").read_text(encoding="utf-8")).get("fleet")
+    rs = json.loads((vehicle_pair.rs.state_dir / "config.json").read_text(encoding="utf-8")).get("fleet")
+    assert rs == py
+
+
+GEOFENCE_SQUARE = [[8.5, 47.5], [8.6, 47.5], [8.6, 47.6], [8.5, 47.6]]
+
+
+@pytest.mark.parametrize("body", [
+    {"polygon": GEOFENCE_SQUARE},
+    {"polygon": GEOFENCE_SQUARE + [GEOFENCE_SQUARE[0]], "show_on_map": False},
+    {"show_on_map": True},
+    {"show_on_map": "yes"},
+    {"polygon": "x"},
+    {"polygon": [[1, 2]]},
+    {"polygon": [[0, 0], [2, 2], [2, 0], [0, 2]]},
+    {"polygon": [[0, 0], [181, 0], [1, 1]]},
+    {"polygon": None},
+    {},
+])
+def test_the_fence_area_is_kept_as_python_keeps_it(vehicle_pair, body) -> None:
+    diffs = vehicle_pair.compare_get("/api/geofence")
+    diffs += vehicle_pair.compare_post("/api/geofence/save", body)
+    diffs += vehicle_pair.compare_get("/api/geofence")
+    assert not diffs, "\n".join(diffs)
+
+
+def test_the_fence_file_is_byte_for_byte_the_pythons(vehicle_pair) -> None:
+    vehicle_pair.compare_post("/api/geofence/save", {"polygon": GEOFENCE_SQUARE, "show_on_map": False})
+    py = (vehicle_pair.py.state_dir / "geofence.json").read_text(encoding="utf-8")
+    rs = (vehicle_pair.rs.state_dir / "geofence.json").read_text(encoding="utf-8")
+    assert rs == py
+
+
+def test_a_fence_that_is_not_connected_is_refused_as_python_refuses_it(vehicle_pair) -> None:
+    diffs = vehicle_pair.compare_post("/api/geofence/upload", {})
+    diffs += vehicle_pair.compare_post("/api/geofence/clear", {})
+    diffs += vehicle_pair.compare_post("/api/geofence/save", {"polygon": []})
+    diffs += vehicle_pair.compare_post("/api/geofence/upload", {})
+    assert not diffs, "\n".join(diffs)
+
+
+MISSION_PLAN = {
+    "name": "My Plan! v2", "aircraft": "multirotor", "speed": 5,
+    "home": {"lat": 47.4, "lon": 8.4},
+    "items": [
+        {"type": "takeoff", "lat": 47.5, "lon": 8.5, "alt": 20},
+        {"type": "waypoint", "lat": 47.501, "lon": 8.502, "alt": 30, "hold": 5, "speed": 8, "name": "Gate A"},
+        {"type": "loiter_turns", "lat": 47.502, "lon": 8.505, "alt": 30, "turns": 2, "radius": 30, "direction": -1},
+        {"type": "land", "lat": 47.5, "lon": 8.5, "approach_alt": 25},
+        {"type": "rtl"},
+    ],
+}
+
+
+def test_the_saved_mission_plans_are_kept_as_python_keeps_them(vehicle_pair) -> None:
+    p = vehicle_pair
+    diffs = p.compare_get("/api/mission/plans", ("modified",))
+    for body in (
+        {"plan": MISSION_PLAN}, {"plan": MISSION_PLAN, "name": "Second / flight"}, {"plan": {"items": []}},
+        {"plan": {"items": [], "name": "../../evil"}}, {"plan": {"items": 5}}, {"plan": None}, {},
+        {"plan": {"items": [{"type": "waypoint", "lat": 91, "lon": 0, "alt": 1}]}},
+    ):
+        diffs += p.compare_post("/api/mission/plans/save", body)
+    diffs += p.compare_get("/api/mission/plans", ("modified",))
+    for name in ("My Plan v2", "Second flight", "Mission", "evil", "nothing", "", "../x", 5):
+        diffs += p.compare_post("/api/mission/plans/load", {"name": name})
+    for name in ("Second flight", "Second flight", "", 5):
+        diffs += p.compare_post("/api/mission/plans/remove", {"name": name})
+    diffs += p.compare_get("/api/mission/plans", ("modified",))
+    assert not diffs, "\n".join(diffs)
+    py = sorted(f.name for f in (p.py.state_dir / "missions").iterdir())
+    rs = sorted(f.name for f in (p.rs.state_dir / "missions").iterdir())
+    assert rs == py
+    for name in py:
+        assert (p.rs.state_dir / "missions" / name).read_text(encoding="utf-8") == \
+            (p.py.state_dir / "missions" / name).read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("path,body", [
+    ("/api/mission/upload", {"plan": MISSION_PLAN}),
+    ("/api/mission/upload", {"plan": MISSION_PLAN, "start": True}),
+    ("/api/mission/upload", {"plan": MISSION_PLAN, "start": "yes"}),
+    ("/api/mission/upload", {"plan": {"items": []}}),
+    ("/api/mission/upload", {"plan": {"items": 5}}),
+    ("/api/mission/upload", {"plan": {**MISSION_PLAN, "aircraft": "rover"}}),
+    ("/api/mission/upload", {"plan": MISSION_PLAN, "vehicle": "bad"}),
+    ("/api/mission/upload", {"plan": MISSION_PLAN, "vehicle": "main:1"}),
+    ("/api/mission/upload", {"plan": MISSION_PLAN, "vehicle": "link-5:1"}),
+    ("/api/mission/start", {"items": 3}),
+    ("/api/mission/start", {"items": 0}),
+    ("/api/mission/start", {"items": True}),
+    ("/api/mission/start", {"items": 3.0}),
+    ("/api/mission/start", {"items": 256}),
+    ("/api/mission/start", {}),
+    ("/api/mission/clear", {}),
+    ("/api/mission/clear", {"vehicle": "main:1"}),
+    ("/api/mission/download", {}),
+])
+def test_a_mission_request_without_a_vehicle_is_refused_as_python_refuses_it(vehicle_pair, path, body) -> None:
+    diffs = vehicle_pair.compare_post(path, body)
+    assert not diffs, "\n".join(diffs)

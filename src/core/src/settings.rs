@@ -90,6 +90,24 @@ impl Settings {
         self.commit(core, cfg)
     }
 
+    /// `update` for a caller with no `Core` at hand (a worker thread saving
+    /// the vehicle list): saved the same way, and the listeners are not told.
+    pub fn update_quiet<F>(&self, f: F) -> std::io::Result<()>
+    where
+        F: FnOnce(&mut CorvusConfig),
+    {
+        let _w = self.write.lock().unwrap_or_else(|e| e.into_inner());
+        let mut cfg = (*self.get()).clone();
+        f(&mut cfg);
+        let cfg = Arc::new(cfg);
+        *self.current.write().unwrap_or_else(|e| e.into_inner()) = cfg.clone();
+        let saved = config::save(&cfg, &self.path);
+        if let Err(e) = &saved {
+            eprintln!("corvus: config save to {} failed: {e}", self.path.display());
+        }
+        saved
+    }
+
     fn commit(&self, core: &Core, cfg: CorvusConfig) -> std::io::Result<()> {
         let cfg = Arc::new(cfg);
         *self.current.write().unwrap_or_else(|e| e.into_inner()) = cfg.clone();

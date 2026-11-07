@@ -2183,6 +2183,26 @@ impl Bridge {
         self.shared.engines.setup.reboot_autopilot(self.shared.as_ref())
     }
 
+    /// The plan items with every Circle flown as waypoints when the stack
+    /// refuses `NAV_LOITER_TURNS` in a mission.
+    pub fn lower_mission_plan(&self, items: &[PlanItem]) -> Vec<PlanItem> {
+        self.shared
+            .engines
+            .missions
+            .lower_mission_plan(self.shared.as_ref(), items)
+    }
+
+    /// The area last put on the vehicle over this link, `Some(empty)` after a
+    /// clear, None when this link has not transferred one.
+    pub fn vehicle_fence(&self) -> Option<Vec<(f64, f64)>> {
+        self.shared.engines.missions.vehicle_fence()
+    }
+
+    /// The MAV_TYPE of the vehicle on this link, 0 before one is heard.
+    pub fn vehicle_type_id(&self) -> i64 {
+        self.shared.st().mav_type
+    }
+
     pub fn upload_mission_plan(&self, items: &[PlanItem]) -> bool {
         self.shared
             .engines
