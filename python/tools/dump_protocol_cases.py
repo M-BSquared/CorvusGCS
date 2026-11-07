@@ -3983,6 +3983,534 @@ def rtcm_cases() -> list[dict]:
     return out
 
 
+# ---------------------------------------------------------------- fleet ----
+
+FLEET_MAV_TYPES = {
+    0: "GENERIC", 1: "FIXED_WING", 2: "QUADROTOR", 3: "COAXIAL",
+    4: "HELICOPTER", 7: "AIRSHIP", 8: "FREE_BALLOON", 9: "ROCKET",
+    10: "GROUNDED_ROVER", 11: "SURFACE_BOAT", 12: "SUBMARINE",
+    13: "HEXAROTOR", 14: "OCTOROTOR", 15: "TRIROTOR",
+    19: "VTOL_DUOROTOR", 20: "VTOL_QUADROTOR", 21: "VTOL_TILTROTOR",
+}
+
+
+def fleet_ref():
+    root = pathlib.Path(__file__).resolve().parent.parent
+    sys.path.insert(0, str(root))
+    from corvus import serial_ports
+    sys.modules.setdefault("tests.reference.serial_ports", serial_ports)
+    from tests.reference import fleet_python as ref
+    return ref
+
+
+class FleetStoreStub:
+    def __init__(self, log: list, link: str, snap: dict | None = None) -> None:
+        self.log = log
+        self.link = link
+        self.snap = dict(snap or {})
+
+    def get_snapshot(self) -> dict:
+        return dict(self.snap)
+
+    def update(self, **fields) -> None:
+        self.snap.update(fields)
+        self.log.append(["store", self.link, "update", fields])
+
+    def forget_vehicle(self) -> None:
+        self.log.append(["store", self.link, "forget_vehicle"])
+
+    def shutdown(self) -> None:
+        self.log.append(["store", self.link, "shutdown"])
+
+
+def fleet_bridge_class(ref):
+    from corvus.serial_ports import split_serial_connection
+
+    class FleetBridgeStub:
+        def __init__(self, link: str, connection: str, log: list, accept: bool = True) -> None:
+            self.link = link
+            self._conn = connection
+            self.log = log
+            self.fleet_tracker = ref.FleetTracker(FLEET_MAV_TYPES)
+            self.controlled = None
+            self.connected = True
+            self.accept = accept
+
+        @property
+        def fleet_link_id(self) -> str:
+            return self.link
+
+        @fleet_link_id.setter
+        def fleet_link_id(self, value: str) -> None:
+            self.link = value
+
+        def connection_string(self) -> str:
+            return self._conn
+
+        def controlled_system(self):
+            return self.controlled
+
+        def validate_connection(self, connection: str) -> None:
+            if connection.startswith("bad:"):
+                raise ValueError(f"{connection} is not a connection string")
+
+        def serial_device(self) -> str:
+            return split_serial_connection(self._conn)[0] if self._conn.startswith("serial:") else ""
+
+        def start(self) -> None:
+            self.log.append(["bridge", self.link, "start"])
+
+        def stop(self) -> None:
+            self.log.append(["bridge", self.link, "stop"])
+
+        def is_connected(self) -> bool:
+            return self.connected
+
+        def inject_rtcm(self, frame: bytes) -> bool:
+            self.log.append(["bridge", self.link, "rtcm", frame.hex()])
+            return self.accept
+
+    return FleetBridgeStub
+
+
+def fh(link="main", system=1, component=1, autopilot=12, mav_type=2, base_mode=129, custom_mode=196608,
+       status=4, vh=True) -> dict:
+    return {"op": "frame", "link": link, "name": "HEARTBEAT", "system": system, "component": component, "vh": vh,
+            "fields": {"autopilot": autopilot, "type": mav_type, "base_mode": base_mode,
+                       "custom_mode": custom_mode, "system_status": status}}
+
+
+def ff(name: str, fields: dict, link="main", system=1, component=1) -> dict:
+    return {"op": "frame", "link": link, "name": name, "fields": fields, "system": system, "component": component,
+            "vh": False}
+
+
+def fgp(lat, lon, rel=12000, alt=480000, hdg=9000, vx=300, vy=400, **kw) -> dict:
+    return ff("GLOBAL_POSITION_INT", {"lat": lat, "lon": lon, "relative_alt": rel, "alt": alt, "hdg": hdg,
+                                      "vx": vx, "vy": vy}, **kw)
+
+
+def fleet_scenarios() -> list[dict]:
+    adv = lambda s: {"op": "advance", "seconds": s}
+    snap = {"op": "snapshot"}
+    sysq = lambda link="main": {"op": "systems", "link": link}
+    bind = lambda link="main", system=1, component=1: {"op": "bind", "link": link, "system": system, "component": component}
+    out: list[dict] = []
+
+    out.append({"name": "tracker_unbound_and_heartbeats", "steps": [
+        fh(), sysq(), bind(), fh(vh=False), sysq(), fh(), sysq(),
+        fh(autopilot=3, mav_type=2, base_mode=1, custom_mode=4), sysq(),
+        fh(autopilot=12, mav_type=99, base_mode=129, custom_mode=50593792, status=5), sysq(),
+        fh(autopilot=3, mav_type=1, base_mode=1, custom_mode=11), sysq(),
+        fh(autopilot=8, mav_type=0, base_mode=0, custom_mode=0, status=0), sysq(),
+        bind("main", 0), bind("main", 256), sysq(),
+    ]})
+    out.append({"name": "tracker_position_and_speed", "steps": [
+        bind(), fgp(473977000, 85455000), sysq(), fh(), fgp(473977000, 85455000), sysq(),
+        fgp(0, 0), sysq(),
+        fgp(910000000, 85455000), fgp(473977000, 1810000000), sysq(),
+        fgp(-473977123, -85455999, rel=-1550, alt=-50, hdg=65535, vx=-30, vy=40), sysq(),
+        fgp(473977000, 85455000, hdg=35999, vx=0, vy=0), sysq(),
+        fgp(473977049, 85455051, rel=1049, alt=1051, hdg=12345, vx=1, vy=1), sysq(),
+        ff("VFR_HUD", {"heading": 270, "groundspeed": 12.345}), sysq(),
+        ff("VFR_HUD", {"heading": 359, "groundspeed": 0.05}), sysq(),
+    ]})
+    out.append({"name": "tracker_attitude_heading", "steps": [
+        bind(), fh(), ff("ATTITUDE", {"yaw": 1.5707963267948966}), sysq(),
+        ff("ATTITUDE", {"yaw": 3.0}), sysq(), bind("main", 1, 1), fh(),
+        ff("VFR_HUD", {"heading": 10, "groundspeed": 1.0}), ff("ATTITUDE", {"yaw": 3.0}), sysq(),
+        bind("main", 2), bind("main", 1), fh(), ff("ATTITUDE", {"yaw": -1.5707963267948966}), sysq(),
+        bind("main", 2), fh(system=2), ff("ATTITUDE", {"yaw": -1e-20}, system=2), sysq(),
+    ]})
+    out.append({"name": "tracker_battery", "steps": [
+        bind(), fh(),
+        ff("SYS_STATUS", {"battery_remaining": 87, "voltage_battery": 12612}), sysq(),
+        ff("SYS_STATUS", {"battery_remaining": -1, "voltage_battery": 65535}), sysq(),
+        ff("SYS_STATUS", {"battery_remaining": 101, "voltage_battery": 0}), sysq(),
+        ff("SYS_STATUS", {"battery_remaining": 0, "voltage_battery": 1}), sysq(),
+        ff("SYS_STATUS", {"battery_remaining": 100, "voltage_battery": 25049}), sysq(),
+    ]})
+    out.append({"name": "tracker_component_and_system", "steps": [
+        bind("main", 1, 1), fh(component=2), sysq(), fh(system=2), sysq(),
+        fh(component=1), sysq(), fgp(473977000, 85455000, component=3), sysq(),
+        fgp(473977000, 85455000, system=2), sysq(), fgp(473977000, 85455000), sysq(),
+        fh(component=7), sysq(), bind("main", 1, 9), fh(component=9), sysq(),
+        bind("main", 1, 0), fh(component=3), sysq(), fgp(473977000, 85455000, component=9), sysq(),
+        bind("main", 2, 1), sysq(), fh(system=2), sysq(),
+        {"op": "forget", "link": "main"}, sysq(), fh(system=2), sysq(),
+    ]})
+    out.append({"name": "tracker_statustext", "steps": [
+        bind(), fh(),
+        ff("STATUSTEXT", {"severity": 6, "text": "info only"}),
+        ff("STATUSTEXT", {"severity": 4, "text": "  Low   battery \t warning  "}),
+        ff("STATUSTEXT", {"severity": 2, "text": "Failsafe: RC lost"}),
+        ff("STATUSTEXT", {"severity": 3, "text": "   "}),
+        ff("STATUSTEXT", {"severity": 0, "text": "äö emergency"}),
+        {"op": "events", "link": "main", "since": 0}, {"op": "events", "link": "main", "since": 2},
+        *[ff("STATUSTEXT", {"severity": 4, "text": f"Warning number {i}"}) for i in range(45)],
+        {"op": "events", "link": "main", "since": 0}, {"op": "events", "link": "main", "since": 40},
+        {"op": "events", "link": "main", "since": 1000},
+    ]})
+    out.append({"name": "tracker_stale_and_forget", "steps": [
+        bind(), fh(), adv(4.9), sysq(), adv(0.2), sysq(), adv(594.0), sysq(), adv(1.0), sysq(), adv(1.0), sysq(),
+        fh(), sysq(), adv(7), fh(), sysq(),
+    ]})
+
+    out.append({"name": "fleet_single_vehicle", "steps": [
+        snap, bind(), snap, fh(), fgp(473977000, 85455000), {"op": "controlled", "link": "main", "system": 1}, snap,
+        {"op": "store", "link": "main", "fields": {"link_status": "connected", "link_error": ""}}, snap,
+        {"op": "store", "link": "main", "fields": {"link_suggestion": {"connection_string": "serial:/dev/ttyACM0:115200"}}},
+        snap, {"op": "store", "link": "main", "fields": {"link_suggestion": "junk"}}, snap, {"op": "config"},
+    ]})
+    out.append({"name": "fleet_two_links_colours", "steps": [
+        bind(), fh(), {"op": "controlled", "link": "main", "system": 1},
+        {"op": "add_link", "connection": "udp:127.0.0.1:14551"}, {"op": "bind_extra", "id": "link-2", "system": 1, "component": 1},
+        {"op": "frame_extra", "id": "link-2", "spec": fh(link="link-2")},
+        snap, {"op": "controlled", "link": "link-2", "system": 1}, snap, {"op": "config"},
+        {"op": "select", "key": "link-2:1"}, snap, {"op": "select", "key": "main:1"}, snap,
+        {"op": "set_meta", "key": "link-2:1", "color": "#00a3b4", "name": "Scout"}, snap, adv(10), snap,
+        {"op": "remove_link", "id": "link-2"}, snap, {"op": "config"},
+        {"op": "add_link", "connection": "udp:127.0.0.1:14552"}, {"op": "bind_extra", "id": "link-2", "system": 1, "component": 1},
+        {"op": "frame_extra", "id": "link-2", "spec": fh(link="link-2")}, snap,
+    ]})
+    out.append({"name": "fleet_colour_grace", "steps": [
+        bind(), fh(), {"op": "add_link", "connection": "udp:127.0.0.1:14551"},
+        {"op": "bind_extra", "id": "link-2", "system": 2, "component": 1},
+        {"op": "frame_extra", "id": "link-2", "spec": fh(link="link-2", system=2)},
+        snap, adv(14.0), snap, adv(1.5), snap, {"op": "config"},
+        {"op": "controlled", "link": "main", "system": 1}, snap,
+    ]})
+    out.append({"name": "fleet_colour_grace_nothing_flown", "steps": [
+        {"op": "add_link", "connection": "udp:127.0.0.1:14551"}, {"op": "bind_extra", "id": "link-2", "system": 1, "component": 1},
+        {"op": "frame_extra", "id": "link-2", "spec": fh(link="link-2")},
+        {"op": "add_link", "connection": "udp:127.0.0.1:14552"}, {"op": "bind_extra", "id": "link-3", "system": 2, "component": 1},
+        {"op": "frame_extra", "id": "link-3", "spec": fh(link="link-3", system=2)},
+        *[s for seconds in (0, 3.0, 3.0, 3.0, 3.0, 2.0, 0.9, 0.1, 0.1) for s in (
+            adv(seconds), {"op": "frame_extra", "id": "link-2", "spec": fh(link="link-2")},
+            {"op": "frame_extra", "id": "link-3", "spec": fh(link="link-3", system=2)}, snap)],
+        {"op": "config"},
+    ]})
+    out.append({"name": "fleet_colours_palette_runs_out", "steps": [
+        bind(), fh(), {"op": "controlled", "link": "main", "system": 1},
+        *[s for n in range(2, 10) for s in (
+            {"op": "add_link", "connection": f"udp:127.0.0.1:{14550 + n}"},
+            {"op": "bind_extra", "id": f"link-{n}", "system": 1, "component": 1},
+            {"op": "frame_extra", "id": f"link-{n}", "spec": fh(link=f"link-{n}")})],
+        snap, {"op": "config"},
+    ]})
+    out.append({"name": "fleet_add_link_errors", "steps": [
+        {"op": "add_link", "connection": ""}, {"op": "add_link", "connection": "   "},
+        {"op": "add_link", "connection": "udp:127.0.0.1:14550"},
+        {"op": "add_link", "connection": "bad:thing"}, {"op": "add_link", "connection": "fail:nothing"},
+        {"op": "add_link", "connection": "  udp:127.0.0.1:14551  "},
+        {"op": "add_link", "connection": "udp:127.0.0.1:14551"},
+        {"op": "add_link", "connection": "serial:/dev/ttyUSB1:57600"},
+        {"op": "add_link", "connection": "serial:/dev/ttyUSB1:115200"},
+        *[{"op": "add_link", "connection": f"tcp:127.0.0.1:{5760 + n}"} for n in range(7)],
+        {"op": "add_link", "connection": "tcp:127.0.0.1:9999"},
+        {"op": "in_use", "connection": "serial:/dev/ttyUSB1:9600", "except": "link-3"},
+        {"op": "in_use", "connection": "serial:/dev/ttyUSB1:9600", "except": "link-4"},
+        {"op": "serial_devices"}, snap, {"op": "config"},
+    ]})
+    out.append({"name": "fleet_suggestion_withdrawn", "steps": [
+        {"op": "store", "link": "main", "fields": {"link_suggestion": {"connection_string": "serial:/dev/ttyACM0:115200"}}},
+        {"op": "add_link", "connection": "serial:/dev/ttyACM1:115200"}, snap,
+        {"op": "add_link", "connection": "serial:/dev/ttyACM0:57600"}, snap,
+        {"op": "store", "link": "main", "fields": {"link_suggestion": {"connection_string": "udp:1.2.3.4:5"}}},
+        {"op": "add_link", "connection": "serial:/dev/ttyACM2:57600"}, snap,
+    ]})
+    out.append({"name": "fleet_remove_link_and_vehicle", "steps": [
+        {"op": "remove_link", "id": "main"}, {"op": "remove_link", "id": "link-9"},
+        {"op": "remove_vehicle", "key": "nonsense"}, {"op": "remove_vehicle", "key": "link-3:1"},
+        {"op": "remove_vehicle", "key": "main:1"},
+        bind(), fh(base_mode=129), {"op": "controlled", "link": "main", "system": 1},
+        {"op": "remove_vehicle", "key": "main:1"}, {"op": "remove_vehicle", "key": "main:2"},
+        {"op": "add_link", "connection": "udp:127.0.0.1:14551"}, {"op": "bind_extra", "id": "link-2", "system": 3, "component": 1},
+        {"op": "frame_extra", "id": "link-2", "spec": fh(link="link-2", system=3, base_mode=129)},
+        {"op": "controlled", "link": "link-2", "system": 3},
+        {"op": "set_meta", "key": "link-2:3", "name": "Mule"},
+        {"op": "select", "key": "link-2:3"}, snap,
+        {"op": "remove_vehicle", "key": "link-2:3"}, {"op": "remove_vehicle", "key": "link-2:3", "confirm": True},
+        snap, {"op": "config"},
+        adv(6), {"op": "remove_vehicle", "key": "main:1"}, snap,
+        fh(base_mode=129), {"op": "remove_vehicle", "key": "main:1", "confirm": True}, snap, {"op": "config"},
+        {"op": "add_link", "connection": "udp:127.0.0.1:14553"}, {"op": "remove_link", "id": "link-2"}, snap,
+    ]})
+    out.append({"name": "fleet_remove_main_with_fallback", "steps": [
+        bind(), fh(base_mode=1), {"op": "controlled", "link": "main", "system": 1},
+        {"op": "add_link", "connection": "udp:127.0.0.1:14551"}, {"op": "bind_extra", "id": "link-2", "system": 2, "component": 1},
+        {"op": "frame_extra", "id": "link-2", "spec": fh(link="link-2", system=2, base_mode=1)},
+        {"op": "controlled", "link": "link-2", "system": 2},
+        {"op": "set_meta", "key": "main:1", "name": "Alpha", "color": "#112233"},
+        {"op": "remove_vehicle", "key": "main:1"}, snap, {"op": "config"},
+        {"op": "select", "key": "link-2:2"}, snap,
+        {"op": "remove_link", "id": "link-2"}, snap,
+    ]})
+    out.append({"name": "fleet_set_meta", "steps": [
+        {"op": "set_meta", "key": "bad"}, {"op": "set_meta", "key": "main:0", "name": "x"},
+        {"op": "set_meta", "key": "main:256", "name": "x"}, {"op": "set_meta", "key": "link-1000:1", "name": "x"},
+        bind(), fh(),
+        {"op": "set_meta", "key": "main:1", "name": "   Big    Red\tOne  "}, snap, {"op": "config"},
+        {"op": "set_meta", "key": "main:1", "name": "x" * 60}, {"op": "config"},
+        {"op": "set_meta", "key": "main:1", "color": "red"}, {"op": "set_meta", "key": "main:1", "color": "#12345"},
+        {"op": "set_meta", "key": "main:1", "color": 5}, {"op": "set_meta", "key": "main:1", "color": "#abcdef"},
+        {"op": "set_meta", "key": "main:1", "color": " #ABCDEF "}, {"op": "config"},
+        {"op": "set_meta", "key": "main:1", "color": ""}, {"op": "config"},
+        {"op": "set_meta", "key": "main:1", "color": "#ABCDEF", "name": ""}, {"op": "config"},
+        {"op": "set_meta", "key": "main:1", "name": None, "color": None}, {"op": "config"},
+        {"op": "set_meta", "key": "main:1", "name": 7}, {"op": "config"},
+        {"op": "set_meta", "key": "main:1", "color": None, "name": "Named"}, {"op": "config"},
+        {"op": "set_meta", "key": "main:1", "color": "", "name": ""}, {"op": "config"},
+    ]})
+    out.append({"name": "fleet_meta_trim", "steps": [
+        *[{"op": "set_meta", "key": f"main:{n}", "color": "#%06X" % n} for n in range(1, 41)],
+        *[{"op": "set_meta", "key": f"link-2:{n}", "name": f"Named {n}"} for n in range(1, 31)],
+        {"op": "config"},
+        {"op": "set_meta", "key": "link-3:1", "name": "last"}, {"op": "config"},
+        *[{"op": "set_meta", "key": f"link-3:{n}", "name": f"Over {n}"} for n in range(2, 80)],
+        {"op": "config"},
+    ]})
+    out.append({"name": "fleet_select", "steps": [
+        {"op": "select", "key": "x"}, {"op": "select", "key": "link-5:1"}, {"op": "select", "key": "main:1"},
+        bind(), fh(), {"op": "select", "key": "main:1"}, {"op": "select", "key": "main:2"},
+        {"op": "controlled", "link": "main", "system": 4}, {"op": "select", "key": "main:1"},
+        {"op": "controlled", "link": "main", "system": 1}, {"op": "select", "key": "main:1"},
+        {"op": "add_link", "connection": "udp:127.0.0.1:14551"}, {"op": "bind_extra", "id": "link-2", "system": 1, "component": 1},
+        {"op": "frame_extra", "id": "link-2", "spec": fh(link="link-2")},
+        {"op": "select", "key": "link-2:1"}, {"op": "select", "key": "link-2:1"}, snap,
+        {"op": "controlled", "link": "link-2", "system": 1}, {"op": "select", "key": "main:1"}, snap,
+        {"op": "controlled", "link": "main", "system": None}, {"op": "select", "key": "main:1"}, snap,
+        {"op": "controlled", "link": "link-2", "system": None}, {"op": "select", "key": "link-2:1"}, snap,
+    ]})
+    out.append({"name": "fleet_notifications", "steps": [
+        bind(), fh(), {"op": "controlled", "link": "main", "system": 1}, {"op": "collect"},
+        {"op": "add_link", "connection": "udp:127.0.0.1:14551"}, {"op": "bind_extra", "id": "link-2", "system": 2, "component": 1},
+        {"op": "frame_extra", "id": "link-2", "spec": fh(link="link-2", system=2)}, {"op": "collect"},
+        {"op": "frame_extra", "id": "link-2", "spec": ff("STATUSTEXT", {"severity": 4, "text": "Low battery"}, link="link-2", system=2)},
+        {"op": "frame_extra", "id": "link-2", "spec": ff("STATUSTEXT", {"severity": 2, "text": "Failsafe"}, link="link-2", system=2)},
+        ff("STATUSTEXT", {"severity": 2, "text": "Own failsafe"}), {"op": "collect"}, snap,
+        {"op": "frame_extra", "id": "link-2", "spec": ff("STATUSTEXT", {"severity": 4, "text": "Low battery"}, link="link-2", system=2)},
+        {"op": "collect"}, adv(31), {"op": "frame_extra", "id": "link-2", "spec": ff("STATUSTEXT", {"severity": 4, "text": "Low battery"}, link="link-2", system=2)},
+        {"op": "collect"}, snap,
+        adv(25), {"op": "frame_extra", "id": "link-2", "spec": ff("STATUSTEXT", {"severity": 4, "text": "Low battery"}, link="link-2", system=2)},
+        {"op": "frame_extra", "id": "link-2", "spec": ff("STATUSTEXT", {"severity": 3, "text": "Level three"}, link="link-2", system=2)},
+        {"op": "frame_extra", "id": "link-2", "spec": ff("STATUSTEXT", {"severity": 5, "text": "Level five"}, link="link-2", system=2)},
+        {"op": "collect"}, snap, adv(6), {"op": "collect"}, snap, adv(1), {"op": "collect"},
+        {"op": "frame_extra", "id": "link-2", "spec": fh(link="link-2", system=2)}, {"op": "collect"}, snap,
+        adv(6), fh(), {"op": "collect"}, adv(6), {"op": "collect"}, snap,
+        *[{"op": "frame_extra", "id": "link-2", "spec": ff("STATUSTEXT", {"severity": 4, "text": f"Msg {i}"}, link="link-2", system=2)} for i in range(30)],
+        {"op": "collect"}, snap,
+        {"op": "remove_link", "id": "link-2"}, {"op": "add_link", "connection": "udp:127.0.0.1:14560"},
+        {"op": "bind_extra", "id": "link-2", "system": 2, "component": 1},
+        {"op": "frame_extra", "id": "link-2", "spec": fh(link="link-2", system=2)}, {"op": "collect"}, snap,
+        {"op": "controlled", "link": "main", "system": None}, {"op": "select", "key": "link-2:2"}, {"op": "collect"},
+    ]})
+    out.append({"name": "fleet_publish", "steps": [
+        bind(), fh(), {"op": "publish", "force": False}, {"op": "listener", "name": "a"},
+        {"op": "publish", "force": False}, {"op": "publish", "force": False},
+        fgp(473977000, 85455000), {"op": "publish", "force": False}, {"op": "publish", "force": True},
+        {"op": "listener", "name": "b"}, {"op": "publish", "force": True},
+        {"op": "set_meta", "key": "main:1", "name": "Hawk"}, {"op": "publish", "force": False},
+        {"op": "remove_listener", "name": "a"}, fgp(473977100, 85455000), {"op": "publish", "force": False},
+        {"op": "remove_listener", "name": "b"}, fgp(473977200, 85455000), {"op": "publish", "force": False},
+    ]})
+    out.append({"name": "fleet_load_and_config", "steps": [
+        {"op": "config"},
+        {"op": "load", "block": {"links": [
+            {"id": "link-2", "connection": " udp:127.0.0.1:1 "}, {"id": "link-2", "connection": "udp:x:2"},
+            {"id": "link-3", "connection": "udp:127.0.0.1:1"}, {"id": "bad", "connection": "udp:y"},
+            {"id": "link-4", "connection": ""}, {"id": "link-5"}, "junk", {"id": 4, "connection": "a"},
+            {"id": "link-6", "connection": "tcp:z:1"}],
+            "vehicles": {"main:1": {"name": " A  B ", "color": "#abcdef"}, "main:300": {"name": "x"},
+                         "link-2:2": {"name": ""}, "link-2:3": {"color": "nope"}, "link-2:4": "junk",
+                         "main:2": {"name": "ok", "extra": 1}},
+            "theme_vehicle": "main:1", "shared_links": True}},
+        {"op": "config"}, {"op": "load", "block": "nothing"}, {"op": "config"}, {"op": "load", "block": {"links": "ab", "vehicles": []}},
+        {"op": "config"},
+        {"op": "load", "block": {"theme_vehicle": "main:9"}}, {"op": "config"},
+        {"op": "load", "block": {"theme_vehicle": "nope"}}, {"op": "config"},
+        {"op": "load", "block": {"links": [{"id": "link-2", "connection": "udp:127.0.0.1:14570"}],
+                                 "vehicles": {"link-2:1": {"name": "Remembered"}}}},
+        {"op": "start"}, snap, {"op": "stop"}, snap,
+    ]})
+    raws = [
+        None, 5, "x", [], {}, {"links": []},
+        {"links": [{"id": f"link-{n}", "connection": f"udp:h:{n}"} for n in range(2, 14)]},
+        {"links": [{"id": "link-2\n", "connection": "udp:h:1"}], "theme_vehicle": "main:1\n"},
+        {"vehicles": {f"main:{n}": {"name": f"n{n}"} for n in range(1, 70)}},
+        {"vehicles": {"main:1": {"name": "a"}}, "theme_vehicle": "link-12:255"},
+        {"theme_vehicle": "link-1234:1"}, {"theme_vehicle": 5}, {"theme_vehicle": "main:01"},
+    ]
+    cleans = [
+        ("name", [None, 5, "", "  a   b  ", "x" * 41, "\u00e4" * 50, "a\u00a0b", "a\x1cb"]),
+        ("color", [None, 5, "", "#abc", "#abcdefg", " #aBcDeF ", "#GGGGGG", "abcdef", "#abcdef\n"]),
+        ("key", [None, 5, "main:1", "main:255", "main:256", "main:0", "main:001", "link-2:3", "link-2:3\n",
+                 "link-:3", "link-1234:1", "Main:1", "main:", ":1", "main:1:2"]),
+    ]
+    out.append({"name": "coerce_and_clean", "steps": [{"op": "coerce", "raw": raw} for raw in raws]
+                + [{"op": "clean", "fn": fn, "value": value} for fn, values in cleans for value in values]})
+    out.append({"name": "fleet_rtcm_fanout", "steps": [
+        {"op": "inject", "frame": "d3000a"}, {"op": "connected"},
+        {"op": "add_link", "connection": "udp:127.0.0.1:14551"}, {"op": "add_link", "connection": "udp:127.0.0.1:14552"},
+        {"op": "link_connected", "link": "link-3", "value": False}, {"op": "inject", "frame": "d30001"},
+        {"op": "link_accept", "link": "main", "value": False}, {"op": "inject", "frame": "d30002"},
+        {"op": "link_connected", "link": "main", "value": False}, {"op": "link_connected", "link": "link-3", "value": True},
+        {"op": "connected"}, {"op": "link_connected", "link": "link-3", "value": False},
+        {"op": "link_connected", "link": "link-2", "value": False}, {"op": "connected"},
+    ]})
+    return out
+
+
+def fleet_cases() -> list[dict]:
+    from corvus_link import dialect_v2  # noqa: F401  (the message classes)
+
+    import logging
+
+    logging.getLogger("corvus.fleet").disabled = True
+    ref = fleet_ref()
+    Bridge = fleet_bridge_class(ref)
+    out = []
+    for sc in fleet_scenarios():
+        clock = Clock()
+        clock.t = 1000.0
+        log: list = []
+        stores: dict = {}
+        bridges: dict = {}
+
+        def bridge_factory(store, connection):
+            if connection.startswith("fail:"):
+                raise RuntimeError("no such device")
+            link = f"pending-{len(bridges)}"
+            bridge = Bridge(link, connection, log)
+            return bridge
+
+        def store_factory():
+            return FleetStoreStub(log, "pending")
+
+        main_store = FleetStoreStub(log, "main")
+        main_bridge = Bridge("main", "udp:127.0.0.1:14550", log)
+        stores["main"], bridges["main"] = main_store, main_bridge
+
+        def persist(config):
+            log.append(["persist", config])
+
+        def named_factory(store, connection, bridge_factory=bridge_factory):
+            bridge = bridge_factory(store, connection)
+            return bridge
+
+        results = []
+        with mock.patch("time.monotonic", lambda clock=clock: clock.t):
+            fleet = ref.Fleet(main_bridge, main_store, bridge_factory=named_factory,
+                              store_factory=store_factory, persist=persist)
+            listeners: dict = {}
+
+            def link_of(name):
+                if name in bridges:
+                    return bridges[name]
+                return fleet.link(name).bridge
+
+            def register(link):
+                real = fleet.link(link)
+                if real is not None:
+                    bridges[link] = real.bridge
+                    real.bridge.link = link
+                    real.store.link = link
+
+            def tracker_frame(spec, link_name):
+                bridge = link_of(link_name)
+                fields = {k: (v.encode("utf-8") if isinstance(v, str) else v) for k, v in spec["fields"].items()}
+                msg = receive_message(spec["name"], fields, spec.get("system", 1), spec.get("component", 1))
+                bridge.fleet_tracker.observe(msg, vehicle_heartbeat=spec.get("vh", False))
+
+            for step in sc["steps"]:
+                before = len(log)
+                op = step["op"]
+                result = None
+                if op == "advance":
+                    clock.t += step["seconds"]
+                elif op == "bind":
+                    link_of(step["link"]).fleet_tracker.bind(step["system"], step["component"])
+                elif op == "bind_extra":
+                    register(step["id"])
+                    link_of(step["id"]).fleet_tracker.bind(step["system"], step["component"])
+                elif op == "frame":
+                    tracker_frame(step, step["link"])
+                elif op == "frame_extra":
+                    register(step["id"])
+                    tracker_frame(step["spec"], step["id"])
+                elif op == "forget":
+                    link_of(step["link"]).fleet_tracker.forget()
+                elif op == "systems":
+                    result = link_of(step["link"]).fleet_tracker.systems()
+                elif op == "events":
+                    last, fresh = link_of(step["link"]).fleet_tracker.events_since(step["since"])
+                    result = {"last": last, "fresh": [list(e) for e in fresh]}
+                elif op == "controlled":
+                    link_of(step["link"]).controlled = step["system"]
+                elif op == "store":
+                    fleet.link(step["link"]).store.snap.update(step["fields"])
+                elif op == "add_link":
+                    result = list(fleet.add_link(step["connection"]))
+                    for lid in ("link-%d" % n for n in range(2, 12)):
+                        register(lid)
+                elif op == "remove_link":
+                    result = fleet.remove_link(step["id"])
+                elif op == "remove_vehicle":
+                    result = list(fleet.remove_vehicle(step["key"], step.get("confirm", False)))
+                elif op == "select":
+                    result = fleet.select(step["key"])
+                elif op == "set_meta":
+                    kwargs = {k: step[k] for k in ("name", "color") if k in step}
+                    result = fleet.set_meta(step["key"], **kwargs)
+                elif op == "snapshot":
+                    result = fleet.snapshot()
+                elif op == "config":
+                    result = fleet.to_config()
+                elif op == "load":
+                    fleet.load(step["block"])
+                elif op == "collect":
+                    fleet.collect_events()
+                elif op == "publish":
+                    fleet._publish(step["force"])
+                elif op == "listener":
+                    name = step["name"]
+                    listeners[name] = lambda snapshot, name=name: log.append(["listener", name, snapshot])
+                    fleet.add_listener(listeners[name])
+                elif op == "remove_listener":
+                    fleet.remove_listener(listeners[step["name"]])
+                elif op == "in_use":
+                    result = fleet.connection_in_use(step["connection"], step["except"])
+                elif op == "serial_devices":
+                    result = fleet.extra_serial_devices()
+                elif op == "start":
+                    fleet.start()
+                    for lid in ("link-%d" % n for n in range(2, 12)):
+                        register(lid)
+                    fleet.stop()
+                elif op == "stop":
+                    pass
+                elif op == "coerce":
+                    result = ref.coerce_config(step["raw"])
+                elif op == "clean":
+                    fn = {"name": ref.clean_name, "color": ref.clean_color, "key": ref.parse_vehicle_key}[step["fn"]]
+                    result = fn(step["value"])
+                elif op == "inject":
+                    rtcm = ref.RtcmFanout(main_bridge, fleet)
+                    result = rtcm.inject_rtcm(bytes.fromhex(step["frame"]))
+                elif op == "connected":
+                    result = ref.RtcmFanout(main_bridge, fleet).is_connected()
+                elif op == "link_connected":
+                    link_of(step["link"]).connected = step["value"]
+                elif op == "link_accept":
+                    link_of(step["link"]).accept = step["value"]
+                else:
+                    raise SystemExit(op)
+                results.append({"result": result, "log": log[before:], "active": fleet._active_link,
+                                "t": round(clock.t - 1000.0, 6)})
+        out.append({"scenario": clean(sc), "expected": clean({"steps": results, "final": {}})})
+    return out
+
+
 COMMANDS = {"params_cases.json": cases, "logs_cases.json": logs_cases, "shell_cases.json": shell_cases,
             "ftp_cases.json": ftp_cases, "flight_cases.json": flight_cases,
             "setup_cases.json": setup_cases,
@@ -3993,7 +4521,8 @@ COMMANDS = {"params_cases.json": cases, "logs_cases.json": logs_cases, "shell_ca
             "status_cases.json": status_cases,
             "requests_cases.json": requests_cases,
             "tlog_cases.json": tlog_cases,
-            "rtcm_cases.json": rtcm_cases}
+            "rtcm_cases.json": rtcm_cases,
+            "fleet_cases.json": fleet_cases}
 
 
 def main(argv: list[str]) -> int:

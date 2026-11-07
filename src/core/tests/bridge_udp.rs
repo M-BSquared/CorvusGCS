@@ -205,6 +205,13 @@ fn the_bridge_flies_a_simulated_vehicle_over_udp() {
         store.get("altitude_agl").is_some_and(|v| v.as_f64() == Some(30.2))
     });
     assert_eq!(store.get("heading").unwrap().as_f64(), Some(180.5));
+    assert_eq!(bridge.controlled_system(), Some(1));
+    let listed = bridge.fleet_tracker().systems(None);
+    assert_eq!(listed.len(), 1, "the vehicle is on the list");
+    assert_eq!(listed[0]["sysid"], 1);
+    assert_eq!(listed[0]["type"], "QUADROTOR");
+    assert_eq!(listed[0]["stack"], "px4");
+    assert_eq!(listed[0]["stale"], false);
 
     wait_for("the vehicle's words", Duration::from_secs(5), || {
         console

@@ -27,6 +27,7 @@ use serde_json::{json, Map, Value};
 
 use crate::clock;
 use crate::dialect::{dialect_for_id, dialect_for_stack, Dialect, ModeCommand, Stack};
+use crate::fleet::FleetTracker;
 use crate::priority_lock::PriorityLock;
 use crate::protocol::flight::{FlightEngine, FlightHost, FlightSnapshot};
 use crate::protocol::missions::{
@@ -90,6 +91,71 @@ pub fn split_serial_connection(conn: &str) -> (String, u32) {
         }
     }
     (rest.to_string(), DEFAULT_SERIAL_BAUD)
+}
+
+const VALID_PREFIXES: [&str; 7] = ["udp:", "udpin:", "udpout:", "udpbcast:", "tcp:", "tcpin:", "serial:"];
+
+/// Why `connection` is not a usable connection string, or Ok. Checked before a
+/// working link is torn down for it.
+pub fn validate_connection(connection: &str) -> Result<(), String> {
+    if connection.is_empty() {
+        return Err("connection must be a non-empty string".into());
+    }
+    if !VALID_PREFIXES.iter().any(|p| connection.starts_with(p)) {
+        return Err(format!(
+            "connection must start with one of: {}",
+            VALID_PREFIXES.join(", ")
+        ));
+    }
+    if connection.starts_with("serial:") {
+        let (device, baud) = split_serial_connection(connection);
+        if device.is_empty() {
+            return Err("serial connection requires a device path".into());
+        }
+        if baud == 0 {
+            return Err("serial connection requires a numeric baud rate".into());
+        }
+    }
+    Ok(())
+}
+
+impl crate::fleet::FleetBridge for Bridge {
+    fn fleet_tracker(&self) -> &FleetTracker {
+        Bridge::fleet_tracker(self)
+    }
+
+    fn connection_string(&self) -> String {
+        Bridge::connection_string(self).to_string()
+    }
+
+    fn controlled_system(&self) -> Option<i64> {
+        Bridge::controlled_system(self)
+    }
+
+    fn validate_connection(&self, connection: &str) -> Result<(), String> {
+        validate_connection(connection)
+    }
+
+    fn serial_device(&self) -> String {
+        Bridge::serial_device(self)
+    }
+
+    fn start(&self) -> Result<(), String> {
+        Bridge::start(self);
+        Ok(())
+    }
+
+    fn stop(&self) {
+        Bridge::stop(self);
+    }
+
+    fn is_connected(&self) -> bool {
+        Bridge::is_connected(self)
+    }
+
+    fn inject_rtcm(&self, frame: &[u8]) -> bool {
+        Bridge::inject_rtcm(self, frame)
+    }
 }
 
 /// Exponential backoff with jitter between reconnect cycles: base times
@@ -160,6 +226,7 @@ pub struct Shared {
     tlog: TlogSession,
     flight: FlightEngine,
     engines: Engines,
+    fleet_tracker: FleetTracker,
 }
 
 /// One link to one vehicle.
@@ -212,6 +279,7 @@ impl Bridge {
                 tlog: TlogSession::new(),
                 flight: FlightEngine::new(),
                 engines: Engines::new(),
+                fleet_tracker: FleetTracker::new(),
             }),
         }
     }
@@ -276,6 +344,26 @@ impl Bridge {
 
     pub fn connection_string(&self) -> &str {
         &self.shared.config.connection
+    }
+
+    /// What the vehicle on this link last said about itself, for the list.
+    pub fn fleet_tracker(&self) -> &FleetTracker {
+        &self.shared.fleet_tracker
+    }
+
+    /// The system this link flies, or None while it flies none.
+    pub fn controlled_system(&self) -> Option<i64> {
+        self.shared.link_ready().then(|| i64::from(self.shared.st().target.0))
+    }
+
+    /// The serial device the link holds, "" for a network link.
+    pub fn serial_device(&self) -> String {
+        let conn = &self.shared.config.connection;
+        if conn.starts_with("serial:") {
+            split_serial_connection(conn).0
+        } else {
+            String::new()
+        }
     }
 
     pub fn last_error(&self) -> String {
@@ -627,6 +715,19 @@ impl Shared {
         }
         self.receive.reset_ignored_systems();
         let target = self.st().target;
+        // The vehicle list is this one vehicle from now on; whatever the link
+        // carried before (another aircraft on the same radio) is gone.
+        self.fleet_tracker.bind(i64::from(target.0), i64::from(target.1));
+        self.fleet_tracker.observe(
+            &Frame {
+                payload: Payload::Message(&hb),
+                system: i64::from(system),
+                component: i64::from(component),
+                raw: None,
+            },
+            true,
+            None,
+        );
         let autopilot = hb.get("autopilot").and_then(Wv::as_i64).unwrap_or(0);
         let mav_type = hb.get("type").and_then(Wv::as_i64).unwrap_or(0);
         ReceiveHost::latch_dialect(self.as_ref(), autopilot, mav_type);
@@ -1422,7 +1523,9 @@ impl ReceiveHost for Shared {
     fn set_home_alt_amsl(&self, metres: f64) {
         self.st().home_alt = Some(metres);
     }
-    fn observe_fleet(&self, _frame: &Frame, _vehicle_heartbeat: bool) {}
+    fn observe_fleet(&self, frame: &Frame, vehicle_heartbeat: bool) {
+        self.fleet_tracker.observe(frame, vehicle_heartbeat, None);
+    }
     fn write_tlog(&self, frame: &Frame) {
         self.tlog.write_tlog(frame.raw);
     }
@@ -2094,6 +2197,28 @@ impl Bridge {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn connection_strings_are_validated_like_python() {
+        assert_eq!(
+            validate_connection(""),
+            Err("connection must be a non-empty string".into())
+        );
+        assert_eq!(
+            validate_connection("http://x"),
+            Err("connection must start with one of: udp:, udpin:, udpout:, udpbcast:, tcp:, tcpin:, serial:".into())
+        );
+        assert_eq!(
+            validate_connection("serial:"),
+            Err("serial connection requires a device path".into())
+        );
+        assert_eq!(
+            validate_connection("serial:/dev/x:0"),
+            Err("serial connection requires a numeric baud rate".into())
+        );
+        assert!(validate_connection("serial:/dev/ttyUSB0:57600").is_ok());
+        assert!(validate_connection("udpin:0.0.0.0:14550").is_ok());
+    }
 
     #[test]
     fn serial_strings_split_like_python() {
