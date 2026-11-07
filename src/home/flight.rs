@@ -258,6 +258,7 @@ pub struct FlightBar {
     modes: Arc<Mutex<Vec<Mode>>>,
     outcome: Arc<Mutex<Outcome>>,
     takeoff_open: bool,
+    takeoff_fresh: bool,
     takeoff_alt: f64,
     takeoff_text: String,
     mode_open: bool,
@@ -279,6 +280,7 @@ impl FlightBar {
             modes: Arc::default(),
             outcome: Arc::default(),
             takeoff_open: false,
+            takeoff_fresh: false,
             takeoff_alt: 10.0,
             takeoff_text: String::new(),
             mode_open: false,
@@ -532,6 +534,7 @@ impl FlightBar {
                     }
                     Command::Takeoff => {
                         self.takeoff_open = !self.takeoff_open;
+                        self.takeoff_fresh = self.takeoff_open;
                         self.takeoff_text = units.format_length(self.takeoff_alt, 0, false, true);
                         self.mode_open = false;
                     }
@@ -1021,8 +1024,8 @@ impl FlightBar {
     fn takeoff_card(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, area: Rect, anchor: Rect, units: &Units) {
         let w = 260.0;
         let title = style::galley(ui, "TAKEOFF ALTITUDE", 11.0, Weight::W600, style::text_2(), 1.0);
-        let confirm_h = 10.0 * 2.0 + 15.0;
-        let h = 14.0 + 20.0 + 12.0 + 30.0 + 12.0 + confirm_h + 14.0;
+        let confirm_h = 8.0 * 2.0 + 15.0;
+        let h = 12.0 + 20.0 + 8.0 + 30.0 + 10.0 + confirm_h + 12.0;
         let left = anchor.left().min(area.right() - w - 14.0).max(area.left());
         let card = Rect::from_min_size(Pos2::new(left, anchor.bottom() + 1.0 + BAR_PAD + 16.0), Vec2::new(w, h));
         let mut confirm = false;
@@ -1033,7 +1036,7 @@ impl FlightBar {
                 let painter = ui.painter().clone();
                 style::glass_panel(&painter, "takeoff", card, style::RADIUS, 0.6);
                 ui.allocate_rect(card, egui::Sense::click_and_drag());
-                let inner = card.shrink(14.0);
+                let inner = card.shrink(12.0);
                 painter.galley(
                     Pos2::new(inner.left(), inner.top() + 10.0 - title.size().y / 2.0),
                     title,
@@ -1061,7 +1064,7 @@ impl FlightBar {
                 }
 
                 // The slider row: the track takes what the entry leaves.
-                let row_y = inner.top() + 20.0 + 12.0 + 15.0;
+                let row_y = inner.top() + 20.0 + 8.0 + 15.0;
                 let unit_w = 18.0f32.max(
                     style::galley(ui, units.length.symbol, 12.0, Weight::W600, style::text_2(), 0.0)
                         .size()
@@ -1093,13 +1096,29 @@ impl FlightBar {
 
                 // The entry: 64 px, 15 px semibold green, right aligned.
                 let entry = Rect::from_min_size(Pos2::new(track.max + 10.0, row_y - 15.0), Vec2::new(entry_w, 30.0));
+                let entry_id = ui.scope_id().with("takeoffentry");
+                if self.takeoff_fresh {
+                    if ui.memory(|m| m.has_focus(entry_id)) {
+                        self.takeoff_fresh = false;
+                    } else {
+                        ui.memory_mut(|m| m.request_focus(entry_id));
+                        let mut st = egui::TextEdit::load_state(ctx, entry_id).unwrap_or_default();
+                        let end = self.takeoff_text.chars().count();
+                        st.cursor.set_char_range(Some(egui::text::CCursorRange::two(
+                            egui::text::CCursor::new(0),
+                            egui::text::CCursor::new(end),
+                        )));
+                        st.store(ctx, entry_id);
+                        ctx.request_repaint();
+                    }
+                }
                 let typed = TextField::new(&mut self.takeoff_text)
                     .font(15.0, Weight::W600)
                     .color(style::healthy())
                     .focus_color(style::healthy())
                     .pad(6.0, 6.0)
                     .align_right()
-                    .show(ui, entry, "takeoffentry");
+                    .show_with_id(ui, entry, entry_id);
                 if typed.changed() {
                     if let Some(m) = altitude_from_entry(
                         &self.takeoff_text,
@@ -1156,9 +1175,33 @@ impl FlightBar {
                 if resp.clicked() && !busy {
                     confirm = true;
                 }
+                if !busy
+                    && !confirm
+                    && ui.input(|i| i.key_pressed(egui::Key::Enter))
+                    && altitude_from_entry(&self.takeoff_text, |v| v, f64::MIN, f64::MAX).is_some()
+                {
+                    confirm = true;
+                }
+                let (esc, press) = ui.input(|i| {
+                    (
+                        i.key_pressed(egui::Key::Escape),
+                        i.pointer.any_pressed().then(|| i.pointer.interact_pos()).flatten(),
+                    )
+                });
+                if esc || press.is_some_and(|p| !card.contains(p) && !anchor.contains(p)) {
+                    self.takeoff_open = false;
+                }
             });
         if confirm {
             self.takeoff_open = false;
+            if let Some(m) = altitude_from_entry(
+                &self.takeoff_text,
+                |v| v / units.length.per_si,
+                TAKEOFF_MIN_M,
+                TAKEOFF_MAX_M,
+            ) {
+                self.takeoff_alt = m;
+            }
             let alt = self.takeoff_alt;
             self.send(
                 ctx,

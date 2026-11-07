@@ -5,16 +5,17 @@
 #   ./run.sh --web [PORT] [MAVLINK_CONNECTION]   # the Qt window around the web UI
 #   ./run.sh --desktop-entry      # Linux: add this checkout to the app launcher
 #
-# The desktop app is the native Rust interface (Cargo.toml and src/). It starts the
-# backend (serve.py, from .venv) as its child and takes it down on every way
-# out. It is built with cargo from the repository root, whose rust-toolchain.toml
-# pins the Rust it needs; rustup installs that on the first run.
+# The desktop app is the native Rust interface (Cargo.toml and src/), built with
+# cargo from the repository root, whose rust-toolchain.toml pins the Rust it
+# needs; rustup installs that on the first run. Nothing else is needed once the
+# backend is part of that workspace (a `corvus_core` member in Cargo.toml).
 #
-# The first run creates .venv from a Python >= 3.12 and installs the `dev`
-# group from pyproject.toml into it. Later runs re-install only when
-# pyproject.toml has changed since, so relaunching on a field laptop needs no
-# network — and when an update is due but the network is not there, the app
-# still starts on the set already installed.
+# Until then the interface starts python/serve.py as its child, and only then
+# does this script create .venv from a Python >= 3.12, install the `dev` group
+# of python/pyproject.toml and build corvus_link into it. It is skipped with
+# --server (a backend elsewhere) and never needed by a Rust-only checkout.
+# Later runs re-install only when pyproject.toml or src/link changed, and an
+# update that fails offline still starts on the set already installed.
 #
 # $CORVUS_PYTHON picks the interpreter the venv is created from.
 
@@ -76,6 +77,15 @@ py_ok() {  # <interpreter> -> 0 if it is Python >= 3.12
     "$1" -c 'import sys; sys.exit(sys.version_info < (3, 12))' >/dev/null 2>&1
 }
 
+needs_python() {  # the backend is still python/serve.py, and no --server was given
+    grep -q "corvus_core" "$REPO_DIR/Cargo.toml" && return 1
+    local a
+    for a in "$@"; do [ "$a" = "--server" ] && return 1; done
+    [ -f "$REPO_DIR/python/serve.py" ]
+}
+
+ensure_venv() {
+
 if [ ! -x "$PY" ]; then
     BASE="${CORVUS_PYTHON:-}"
     if [ -z "$BASE" ]; then
@@ -123,10 +133,11 @@ if [ "$WANT" != "$HAVE" ]; then
         exit 1
     fi
 fi
+}
 
-# The web interface in its Qt window, kept while the native one is completed.
 if [ "${1:-}" = "--web" ]; then
     shift
+    ensure_venv
     # exec, so SIGINT/SIGTERM reach corvus/app.py's own handlers directly.
     exec "$PY" "$REPO_DIR/python/corvus/app.py" "$@"
 fi
@@ -136,10 +147,17 @@ command -v cargo >/dev/null 2>&1 || {
     exit 1
 }
 # cargo is a no-op when nothing changed. Its own output goes to the terminal:
-# the first build compiles for a couple of minutes.
-( cd "$REPO_DIR" && cargo build --release --quiet )
-BIN="$REPO_DIR/target/release/corvus-gcs"
+# the first build compiles for a couple of minutes. The `fast` profile
+# (Cargo.toml) is release code without LTO and with incremental builds;
+# CORVUS_PROFILE=release runs exactly what a bundle ships.
+PROFILE="${CORVUS_PROFILE:-fast}"
+( cd "$REPO_DIR" && cargo build --profile "$PROFILE" --bin corvus-gcs --quiet )
+BIN="$REPO_DIR/target/$PROFILE/corvus-gcs"
 [ -x "$BIN" ] || BIN="$BIN.exe"
 # exec, so SIGINT/SIGTERM reach the interface's own handlers directly, which
 # take the backend down.
-CORVUS_APP_ID=corvus-gcs-dev exec "$BIN" --root "$REPO_DIR" --python "$PY" "$@"
+if needs_python "$@"; then
+    ensure_venv
+    CORVUS_APP_ID=corvus-gcs-dev exec "$BIN" --root "$REPO_DIR" --python "$PY" "$@"
+fi
+CORVUS_APP_ID=corvus-gcs-dev exec "$BIN" "$@"

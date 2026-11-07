@@ -16,6 +16,7 @@ use crate::ui::card;
 use crate::ui::kit;
 use crate::ui::style::{self, Weight};
 
+const MAC: bool = cfg!(target_os = "macos");
 const COLS: f32 = 80.0;
 const ROWS: f32 = 20.0;
 const MIN: Vec2 = Vec2::new(320.0, 160.0);
@@ -38,6 +39,7 @@ pub struct TermWindow {
     pos: Pos2,
     size: Vec2,
     maximized: Option<(Pos2, Vec2)>,
+    pinned: bool,
     /// In a native window of its own, not a frame in the app.
     pub popped: bool,
 }
@@ -72,6 +74,7 @@ impl TermWindow {
             pos,
             size,
             maximized: None,
+            pinned: false,
             popped: !crate::app::popout::in_app(),
         }
     }
@@ -84,7 +87,7 @@ impl TermWindow {
         let key = format!("term:{}", self.name);
         let title = format!("{} \u{b7} {}", self.title, self.host);
         let size = self.size;
-        let (out, popped) = crate::app::popout::show(ctx, &key, &title, size, |c| self.frame(c, true));
+        let (out, popped) = crate::app::popout::show_titlebar(ctx, &key, &title, size, |c| self.frame(c, true));
         if popped.embedded {
             self.popped = false;
         }
@@ -142,24 +145,45 @@ impl TermWindow {
                         sw: 0,
                         se: 0,
                     },
-                    style::glass(0.6),
+                    style::glass(0.35),
                 );
                 painter.hline(bar.x_range(), bar.bottom() - 0.5, Stroke::new(1.0, style::border()));
                 let bar_resp = ui.interact(bar, ui.scope_id().with("termbar"), egui::Sense::click_and_drag());
                 if bar_resp.dragged() && self.maximized.is_none() && !popped {
                     dragged = bar_resp.drag_delta();
                 }
+                if popped && bar_resp.drag_started_by(egui::PointerButton::Primary) {
+                    ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
+                }
                 if bar_resp.double_clicked() && !popped {
                     self.toggle_max(rect);
                 }
+                if bar_resp.double_clicked() && popped && !MAC {
+                    let on = ui.ctx().input(|i| i.viewport().maximized.unwrap_or(false));
+                    ui.ctx().send_viewport_cmd(egui::ViewportCommand::Maximized(!on));
+                }
+                if popped && !MAC {
+                    crate::app::popout::resize_edges(ui.ctx());
+                }
+                let lights = popped && MAC;
                 crate::ui::icons::paint(
                     ui,
                     "square-terminal",
-                    Rect::from_center_size(Pos2::new(bar.left() + 10.0 + 7.0, bar.center().y), Vec2::splat(14.0)),
+                    Rect::from_center_size(
+                        Pos2::new(bar.left() + if lights { 78.0 } else { 10.0 } + 7.0, bar.center().y),
+                        Vec2::splat(14.0),
+                    ),
                     style::text_2(),
                 );
-                let tx = bar.left() + 10.0 + 14.0 + 8.0;
-                let tools_w = if popped { 3.0 } else { 4.0 } * 24.0 + 2.0 + 6.0;
+                let tx = bar.left() + if lights { 78.0 } else { 10.0 } + 14.0 + 8.0;
+                let n_tools = if !popped {
+                    4.0
+                } else if MAC {
+                    3.0
+                } else {
+                    6.0
+                };
+                let tools_w = n_tools * 24.0 + 2.0 + 6.0;
                 let status_alive = !self.session.is_closed();
                 let status = if status_alive { "CONNECTED" } else { "OFFLINE" };
                 let sc = if status_alive {
@@ -188,18 +212,68 @@ impl TermWindow {
                     style::text_3(),
                 );
                 let mut bx = bar.right() - 6.0 - 24.0;
+                if !lights {
+                    if kit::icon_btn(
+                        ui,
+                        Rect::from_min_size(Pos2::new(bx, bar.center().y - 12.0), Vec2::splat(24.0)),
+                        "x",
+                        "Close the window. What is running keeps running",
+                        false,
+                        "termclose",
+                    ) {
+                        out = Out::Close;
+                    }
+                    bx -= 25.0;
+                }
+                if popped && !MAC {
+                    let on = ui.ctx().input(|i| i.viewport().maximized.unwrap_or(false));
+                    if kit::icon_btn(
+                        ui,
+                        Rect::from_min_size(Pos2::new(bx, bar.center().y - 12.0), Vec2::splat(24.0)),
+                        if on { "minimize-2" } else { "maximize-2" },
+                        if on { "Restore" } else { "Maximize" },
+                        false,
+                        "termwinmax",
+                    ) {
+                        ui.ctx().send_viewport_cmd(egui::ViewportCommand::Maximized(!on));
+                    }
+                    bx -= 25.0;
+                    if kit::icon_btn(
+                        ui,
+                        Rect::from_min_size(Pos2::new(bx, bar.center().y - 12.0), Vec2::splat(24.0)),
+                        "minus",
+                        "Minimize",
+                        false,
+                        "termwinmin",
+                    ) {
+                        ui.ctx().send_viewport_cmd(egui::ViewportCommand::Minimized(true));
+                    }
+                    bx -= 25.0;
+                }
+                let dr = Rect::from_min_size(Pos2::new(bx, bar.center().y - 12.0), Vec2::splat(24.0));
+                let hover = ui.rect_contains_pointer(dr);
                 if kit::icon_btn(
                     ui,
-                    Rect::from_min_size(Pos2::new(bx, bar.center().y - 12.0), Vec2::splat(24.0)),
-                    "x",
-                    "Close the window. What is running keeps running",
+                    dr,
+                    "power",
+                    "Disconnect. This stops what is running",
                     false,
-                    "termclose",
+                    "termdisc",
                 ) {
-                    out = Out::Close;
+                    out = Out::Disconnect;
+                }
+                if hover {
+                    icons_hot(ui, dr);
                 }
                 bx -= 25.0;
                 if popped {
+                    crate::app::popout::pin_button(
+                        ui,
+                        Rect::from_min_size(Pos2::new(bx, bar.center().y - 12.0), Vec2::splat(24.0)),
+                        &mut self.pinned,
+                        &self.name,
+                    );
+                    bx -= 25.0;
                     if kit::icon_btn(
                         ui,
                         Rect::from_min_size(Pos2::new(bx, bar.center().y - 12.0), Vec2::splat(24.0)),
@@ -242,22 +316,6 @@ impl TermWindow {
                         self.popped = true;
                     }
                 }
-                bx -= 25.0;
-                let dr = Rect::from_min_size(Pos2::new(bx, bar.center().y - 12.0), Vec2::splat(24.0));
-                let hover = ui.rect_contains_pointer(dr);
-                if kit::icon_btn(
-                    ui,
-                    dr,
-                    "power",
-                    "Disconnect. This stops what is running",
-                    false,
-                    "termdisc",
-                ) {
-                    out = Out::Disconnect;
-                }
-                if hover {
-                    icons_hot(ui, dr);
-                }
                 if self.maximized.is_none() && !popped {
                     let grip = Rect::from_min_size(rect.right_bottom() - Vec2::splat(16.0), Vec2::splat(16.0));
                     let gr = ui.interact(grip, ui.scope_id().with("termgrip"), egui::Sense::drag());
@@ -277,7 +335,25 @@ impl TermWindow {
                         );
                     }
                 }
-                painter.set(bg, card::window(rect, 0.97, style::border_strong()));
+                painter.set(
+                    bg,
+                    card::window_filled(
+                        "termwin",
+                        rect,
+                        terminal_fill(if popped {
+                            if crate::app::popout::solid_window() {
+                                1.0
+                            } else {
+                                0.5
+                            }
+                        } else if crate::app::popout::solid_terminals() {
+                            1.0
+                        } else {
+                            0.6
+                        }),
+                        style::border_strong(),
+                    ),
+                );
             });
         if self.maximized.is_none() && !popped {
             self.pos += dragged;
@@ -301,4 +377,11 @@ fn icons_hot(ui: &egui::Ui, r: Rect) {
         Rect::from_center_size(r.center(), Vec2::splat(15.0)),
         style::critical(),
     );
+}
+
+/// `color-mix(in srgb, var(--ssh-bg) N%, transparent)`: the frosted
+/// terminal's tint.
+fn terminal_fill(alpha: f32) -> egui::Color32 {
+    let c = crate::term::view::background();
+    egui::Color32::from_rgba_unmultiplied(c.r(), c.g(), c.b(), (alpha * 255.0).round() as u8)
 }

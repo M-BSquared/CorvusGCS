@@ -215,7 +215,7 @@ by tests whose expected values are dumped from the Python
 | `src/notify/mod.rs` | the notification board, its read and dismiss rules, the command dedupe and the toasts (`python/src/js/topbar.js`) |
 | `src/notify/overlay.rs` | the NOTIFICATIONS pill, the board and the toast stack |
 | `src/api/src/i18n/mod.rs`, `src/api/src/i18n/table.rs`, `src/api/src/i18n/files.rs` | the interface language (see "Languages" below): `tr`, `tr_fmt`, the table with `{name}` patterns, the language files compiled in and the operator's folder |
-| `src/lang/*.json` | the four languages (en, de, fr, dl), the web interface's own files; `src/lang/native/` holds the few texts only this interface builds (a count of areas, the board's header and a few vehicle messages), merged under the language like a plugin's file, so the web's files stay as they are; the Map Entities and Schwalby plugins' files sit in their own `lang/` folders |
+| `src/lang/*.json` | the four languages (en, de, fr, dl), one file each; the Map Entities and Schwalby plugins' files sit in their own `lang/` folders |
 | `src/api/src/ui/frost.rs` | the frosted glass under every `.glass` surface |
 | `src/api/src/ui/fonts.rs`, `src/api/src/ui/icons.rs`, `src/api/build.rs` | Inter, JetBrains Mono and the Lucide icons, from the web's own files |
 

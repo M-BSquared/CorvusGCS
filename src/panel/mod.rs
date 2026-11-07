@@ -29,6 +29,11 @@ use crate::ui::style::{self, Weight};
 /// The grip's range.
 const MIN_WIDTH: f32 = 320.0;
 const MAX_WIDTH: f32 = 560.0;
+
+/// `clampPanelWidth`: at most 560 px and 60 percent of the window, never under 320.
+fn ceiling(window: f32) -> f32 {
+    MIN_WIDTH.max(MAX_WIDTH.min((window * 0.6).floor()))
+}
 /// `--panel-w-collapsed`: the handle alone.
 pub const HANDLE: f32 = 24.0;
 
@@ -79,6 +84,8 @@ pub struct Panel {
     /// The handle was pressed: the window width no longer folds it.
     pub user_toggled: bool,
     active: Tab,
+    /// Where the tab strip is scrolling to, in points from its left end.
+    tab_target: f32,
     pub console_tab: bool,
     pub ssh_tab: bool,
     link: LinkTab,
@@ -123,6 +130,7 @@ impl Panel {
             collapsed: false,
             user_toggled: false,
             active: Tab::Link,
+            tab_target: 0.0,
             console_tab: flag("console_tab"),
             ssh_tab: flag("ssh_tab"),
             ssh_list: None,
@@ -164,7 +172,8 @@ impl Panel {
         if self.collapsed {
             HANDLE
         } else {
-            self.width.unwrap_or_else(|| vw.panel_width())
+            self.width
+                .map_or_else(|| vw.panel_width(), |w| w.clamp(MIN_WIDTH, ceiling(vw.width)))
         }
     }
 
@@ -264,7 +273,8 @@ impl Panel {
                 .on_hover_cursor(egui::CursorIcon::ResizeColumn);
             if gresp.dragged() {
                 let now = self.width.unwrap_or(rect.width());
-                self.width = Some((now - gresp.drag_delta().x).clamp(MIN_WIDTH, MAX_WIDTH));
+                self.width =
+                    Some((now - gresp.drag_delta().x).clamp(MIN_WIDTH, ceiling(ui.ctx().content_rect().width())));
             }
             if gresp.double_clicked() {
                 self.width = None;
@@ -295,12 +305,44 @@ impl Panel {
             .map(|t| style::galley(ui, &t.caption(plugins), 11.0, Weight::W600, style::text_3(), 0.9))
             .collect();
         let natural: f32 = galleys.iter().map(|g| g.size().x + 20.0).sum::<f32>() + 2.0 * (shown.len() as f32 - 1.0);
-        let extra = ((strip.width() - 24.0 - natural) / shown.len() as f32).max(0.0);
-        let mut x = strip.left() + 12.0;
+        let full = strip.width() - 24.0;
+        let arrow_w = 22.0 + 2.0;
+        let id = ui.scope_id().with("tabscroll");
+        let shown_off = ui.ctx().animate_value_with_time(id, self.tab_target, 0.18);
+        let max0 = (natural - full).max(0.0);
+        let left_on = max0 > 1.0 && shown_off > 1.0;
+        let right_on = max0 > 1.0 && shown_off < max0 - 1.0;
+        let view_w = full - arrow_w * (left_on as u8 as f32 + right_on as u8 as f32);
+        let max = (natural - view_w).max(0.0);
+        self.tab_target = self.tab_target.clamp(0.0, max);
+        let view = Rect::from_min_size(
+            Pos2::new(
+                strip.left() + 12.0 + if left_on { arrow_w } else { 0.0 },
+                strip.top() + 8.0,
+            ),
+            Vec2::new(view_w, tab_h),
+        );
+        if max > 1.0 && ui.rect_contains_pointer(strip) {
+            let d = ui.input(|i| i.smooth_scroll_delta);
+            let amount = if d.y.abs() > d.x.abs() { d.y } else { d.x };
+            if amount != 0.0 {
+                self.tab_target = (self.tab_target - amount).clamp(0.0, max);
+                ui.ctx().request_repaint();
+            }
+        }
+        let extra = if max0 > 0.0 {
+            0.0
+        } else {
+            (full - natural) / shown.len() as f32
+        };
+        let tab_painter = painter.with_clip_rect(view);
+        let mut x = view.left() - shown_off.min(max);
+        let mut bring: Option<(f32, f32)> = None;
         for (i, t) in shown.iter().enumerate() {
             let w = galleys[i].size().x + 20.0 + extra;
-            let r = Rect::from_min_size(Pos2::new(x, strip.top() + 8.0), Vec2::new(w, tab_h));
-            let resp = ui.interact(r, ui.scope_id().with(("tab", i)), egui::Sense::click());
+            let r = Rect::from_min_size(Pos2::new(x, view.top()), Vec2::new(w, tab_h));
+            let hit = r.intersect(view);
+            let resp = ui.interact(hit, ui.scope_id().with(("tab", i)), egui::Sense::click());
             let active = *t == self.active;
             let color = if active {
                 style::accent()
@@ -310,7 +352,7 @@ impl Panel {
                 style::text_3()
             };
             if resp.hovered() && !active {
-                painter.rect_filled(
+                tab_painter.rect_filled(
                     r,
                     egui::CornerRadius {
                         nw: 6,
@@ -322,21 +364,65 @@ impl Panel {
                 );
             }
             if active {
-                painter.hline(r.x_range(), r.bottom() - 1.0, Stroke::new(2.0, style::accent()));
+                tab_painter.hline(r.x_range(), r.bottom() - 1.0, Stroke::new(2.0, style::accent()));
             }
             let g = style::galley(ui, &t.caption(plugins), 11.0, Weight::W600, color, 0.9);
-            painter.galley(
+            tab_painter.galley(
                 Pos2::new(r.center().x - g.size().x / 2.0, r.center().y - 1.0 - g.size().y / 2.0),
                 g,
                 color,
             );
             if resp.clicked() {
                 self.active = *t;
+                bring = Some((x - view.left() + shown_off.min(max), w));
                 if *t == Tab::Ssh {
                     self.load_ssh(ui.ctx());
                 }
             }
             x += w + 2.0;
+        }
+        if let Some((start, w)) = bring {
+            if start < self.tab_target {
+                self.tab_target = start.max(0.0);
+            } else if start + w > self.tab_target + view_w {
+                self.tab_target = (start + w - view_w).min(max);
+            }
+        }
+        let radius = egui::CornerRadius {
+            nw: 6,
+            ne: 6,
+            sw: 0,
+            se: 0,
+        };
+        for (on, dir) in [(left_on, -1.0_f32), (right_on, 1.0)] {
+            if !on {
+                continue;
+            }
+            let ar = if dir < 0.0 {
+                Rect::from_min_size(Pos2::new(strip.left() + 12.0, view.top()), Vec2::new(22.0, tab_h))
+            } else {
+                Rect::from_min_size(
+                    Pos2::new(strip.right() - 12.0 - 22.0, view.top()),
+                    Vec2::new(22.0, tab_h),
+                )
+            };
+            let resp = ui.interact(ar, ui.scope_id().with(("tabarrow", dir as i32)), egui::Sense::click());
+            if resp.hovered() {
+                painter.rect_filled(ar, radius, style::surface_hover());
+            }
+            icons::paint(
+                ui,
+                if dir < 0.0 { "chevron-left" } else { "chevron-right" },
+                Rect::from_center_size(ar.center(), Vec2::splat(14.0)),
+                if resp.hovered() {
+                    style::text_1()
+                } else {
+                    style::text_3()
+                },
+            );
+            if resp.clicked() {
+                self.tab_target = (self.tab_target + dir * (view_w * 0.6).max(80.0)).clamp(0.0, max);
+            }
         }
 
         let content = Rect::from_min_max(Pos2::new(body.left(), strip.bottom()), body.max);

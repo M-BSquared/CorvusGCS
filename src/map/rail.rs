@@ -130,6 +130,8 @@ pub struct MapRail {
     three_panel: bool,
     three_hover: Option<f64>,
     pub measure: bool,
+    /// Settings, Map: the downloaded areas button; off by default.
+    pub regions_button: bool,
     /// The mission planner's rail: Fit instead of 3D and the ruler, and the
     /// centre button goes to the aircraft without following it.
     pub planner: bool,
@@ -157,7 +159,10 @@ impl MapRail {
     /// Draws the rail and the two buttons inside `area` (the map view).
     pub fn show(&mut self, ui: &mut egui::Ui, area: Rect, map: &mut Map, state: &Value) {
         let painter = ui.painter().clone();
-        let list = items(self.measure, self.planner, !self.cameras.list.is_empty());
+        let mut list = items(self.measure, self.planner, !self.cameras.list.is_empty());
+        if !self.regions_button {
+            list.retain(|i| *i != Item::Regions);
+        }
         let h = 12.0
             + list
                 .iter()
@@ -240,7 +245,7 @@ impl MapRail {
                     Item::Layers => self.layers_open = !self.layers_open,
                     Item::ThreeD => {
                         let on = !map.three_d();
-                        map.set_three_d(on);
+                        map.tilt_three_d(on);
                     }
                     Item::Measure => {
                         let on = !map.measure.active;

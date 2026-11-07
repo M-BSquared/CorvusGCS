@@ -37,6 +37,14 @@ const FIRST_FIX_ZOOM: f64 = 16.0;
 /// The follow dead zone, as a share of the map: the aircraft moves freely
 /// inside it and the map pans only once it leaves.
 const FOLLOW_BOX_FRACTION: f32 = 0.4;
+/// The box is never smaller than this (a small window would re-centre on every
+/// twitch) nor larger than this share of the map (the aircraft could never leave).
+const FOLLOW_BOX_MIN_PX: f32 = 140.0;
+const FOLLOW_BOX_MAX_FRACTION: f32 = 0.8;
+/// The time constant of the follow pan: about 700 ms to settle, as the web's ease.
+const FOLLOW_EASE_S: f64 = 0.16;
+/// An aircraft further than this many viewports from the middle is jumped to.
+const FOLLOW_JUMP_VIEWPORTS: f32 = 1.0;
 const DEFAULT_SOURCE: &str = "satellite";
 
 pub(crate) struct CorvusTiles {
@@ -129,6 +137,11 @@ pub fn past_colors(look: &TrackLook, hex: &str, count: usize) -> Vec<Color32> {
         .collect()
 }
 
+/// What one press of a zoom button changes, in zoom levels.
+pub const ZOOM_STEP: f64 = 0.5;
+/// The time constant of the eased zoom, in seconds.
+const ZOOM_EASE_S: f64 = 0.09;
+
 /// The map and what it remembers between frames.
 pub struct Map {
     server: Server,
@@ -138,12 +151,14 @@ pub struct Map {
     pub source: String,
     tiles: Option<HttpTiles>,
     memory: MapMemory,
+    zoom_goal: Option<f64>,
     attribution: &'static str,
     credit: credit::Credit,
     pub track: Track,
     first_fix: bool,
     /// Follows the aircraft until the operator drags the map.
     pub follow: bool,
+    follow_easing: bool,
     /// The marker's heading, eased like the web marker.
     heading: Option<f32>,
     /// The downloaded areas, outlined while `regions_visible`.
@@ -169,6 +184,8 @@ pub struct Map {
     /// 3D mode: the tilted view, made when it is first switched on.
     three: Option<Map3d>,
     three_d: bool,
+    /// Tilting back to the flat map; 3D is left when it is flat.
+    leaving: bool,
     /// Longitude, latitude and zoom of the flat view's centre, as last drawn.
     view: Option<(f64, f64, f64)>,
     /// The mission planner is on this map: no flown track and no home mark
@@ -210,11 +227,13 @@ impl Map {
             source: String::new(),
             tiles: None,
             memory,
+            zoom_goal: None,
             attribution: "",
             credit: credit::Credit::default(),
             track: Track::default(),
             first_fix: true,
             follow: true,
+            follow_easing: false,
             heading: None,
             regions: Vec::new(),
             regions_visible: false,
@@ -232,6 +251,7 @@ impl Map {
             saved_rev: 0,
             three: None,
             three_d: false,
+            leaving: false,
             view: None,
             planner: false,
             bottom_lift: 0.0,
@@ -249,6 +269,15 @@ impl Map {
             .and_then(Value::as_array)
             .cloned()
             .unwrap_or_default();
+        let usable = |id: &str| {
+            providers
+                .iter()
+                .find(|p| p.get("id").and_then(Value::as_str) == Some(id))
+                .is_none_or(|p| {
+                    let flag = |k: &str| p.get(k).and_then(Value::as_bool).unwrap_or(false);
+                    !flag("token_required") || flag("token_set")
+                })
+        };
         let provider_label = |id: &str| {
             providers
                 .iter()
@@ -264,6 +293,9 @@ impl Map {
                 list.iter()
                     .filter_map(|s| {
                         let id = s.get("id")?.as_str()?.to_string();
+                        if !usable(s.get("provider").and_then(Value::as_str).unwrap_or("")) {
+                            return None;
+                        }
                         let label = s.get("label").and_then(Value::as_str).unwrap_or(&id).to_string();
                         let prov = provider_label(s.get("provider").and_then(Value::as_str).unwrap_or(""));
                         Some((id, label, prov))
@@ -313,9 +345,26 @@ impl Map {
     }
 
     /// Whether the map is in 3D mode.
-    #[allow(dead_code)]
     pub fn three_d(&self) -> bool {
-        self.three_d
+        self.three_d && !self.leaving
+    }
+
+    /// The rail's 3D button: tilts in, or tilts out and then leaves 3D.
+    pub fn tilt_three_d(&mut self, on: bool) {
+        if on {
+            self.leaving = false;
+            if !self.three_d {
+                self.set_three_d(true);
+            }
+            if let Some(t) = self.three.as_mut() {
+                t.tilt_in();
+            }
+        } else if self.three_d {
+            self.leaving = true;
+            if let Some(t) = self.three.as_mut() {
+                t.tilt_out();
+            }
+        }
     }
 
     /// Switches 3D mode on or off; the view stays where it is looking.
@@ -375,7 +424,6 @@ impl Map {
             return;
         };
         t.set_source(&self.source, max_zoom);
-        t.credit_h = self.credit.height();
         t.follow_sources(&self.sources);
         if let (true, Some((lng, lat))) = (follow, vehicle) {
             t.cam.lng = lng;
@@ -389,8 +437,7 @@ impl Map {
         let (track_color, _) = crate::map::others::line_colors(flown_hex.as_deref().unwrap_or(""), false, 0);
         let past_colors = past_colors(&self.look, flown_hex.as_deref().unwrap_or(""), self.track.past.len());
         let vehicle_color = self.others.flown_color.unwrap_or_else(style::vehicle);
-        let fence = self.env.get();
-        let fence_outline = (fence.show_on_map && fence.polygon.len() >= 3).then_some(fence.polygon);
+        let flat = self.leaving && t.is_flat();
         let input = t.show(
             ui,
             rect,
@@ -405,9 +452,14 @@ impl Map {
                 track_color,
                 past_colors,
                 in_air: self.look.in_air,
-                fence: fence_outline.as_deref(),
             },
         );
+        if flat {
+            self.leaving = false;
+            self.set_three_d(false);
+            ui.ctx().request_repaint();
+            return;
+        }
         if input.dragged {
             self.follow = false;
             self.credit.fold();
@@ -423,6 +475,25 @@ impl Map {
                     self.others.click = Some(id);
                     marker_hit = true;
                 }
+            }
+            if self.measure.active {
+                if let Some(p) = input.hover.filter(|_| input.over) {
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair);
+                    if let Some(g) = t.pick(rect_c, p) {
+                        self.measure.hover(g);
+                    }
+                }
+                if let Some((g, secondary)) = input.click {
+                    if secondary {
+                        self.measure.back();
+                    } else {
+                        self.measure.click(g);
+                    }
+                }
+                if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                    self.measure.back();
+                }
+                paint_measure(&painter, ui, &at, &self.measure);
             }
             if !self.planner {
                 if let Some((g, secondary)) = input.click {
@@ -444,21 +515,35 @@ impl Map {
         self.paint_attribution(ui, rect);
     }
 
-    /// Zooms one step in or out.
+    /// Zooms one step in or out: half a level, eased over the next frames.
     pub fn zoom(&mut self, by: i32) {
-        let _ = if by > 0 {
-            self.memory.zoom_in()
-        } else {
-            self.memory.zoom_out()
-        };
+        if self.three_d {
+            if let Some(t) = self.three.as_mut() {
+                t.zoom_by(f64::from(by.signum()) * ZOOM_STEP);
+            }
+            return;
+        }
+        let from = self.zoom_goal.unwrap_or_else(|| self.memory.zoom());
+        self.zoom_goal = Some(from + f64::from(by.signum()) * ZOOM_STEP);
+    }
+
+    /// Moves the zoom towards the goal a button press set.
+    fn ease_zoom(&mut self, ctx: &egui::Context) {
+        let Some(goal) = self.zoom_goal else { return };
+        let dt = f64::from(ctx.input(|i| i.stable_dt)).clamp(0.001, 0.1);
+        let now = self.memory.zoom();
+        let next = now + (goal - now) * (1.0 - (-dt / ZOOM_EASE_S).exp());
+        let done = (goal - now).abs() < 0.004;
+        if self.memory.set_zoom(if done { goal } else { next }).is_err() || done {
+            self.zoom_goal = None;
+        }
+        ctx.request_repaint();
     }
 
     /// Centres on the aircraft and follows it again.
     pub fn recenter(&mut self, state: &Value) {
         self.follow = true;
-        if let Some((lng, lat)) = real_fix(state.get("position")) {
-            self.memory.center_at(walkers::lon_lat(lng, lat));
-        }
+        self.follow_easing = real_fix(state.get("position")).is_some();
     }
 
     /// Reads the tracks of the last run (`restoreTrack`), unless Settings
@@ -644,6 +729,7 @@ impl Map {
     /// `show` with a page's own layer drawn over the aircraft.
     pub fn show_with(&mut self, ui: &mut egui::Ui, state: &Value, overlay: Option<&mut (dyn Overlay + '_)>) {
         let now = ui.input(|i| i.time);
+        self.ease_zoom(&ui.ctx().clone());
         self.poll_regions(&ui.ctx().clone(), now);
         let terrain = self.terrain_ids();
         let regions = if self.regions_visible {
@@ -742,25 +828,61 @@ impl Map {
         }
         if response.dragged() {
             self.follow = false;
+            self.follow_easing = false;
             self.credit.fold();
+        }
+        if !self.follow {
+            self.follow_easing = false;
         }
         if let Some((lng, lat)) = vehicle {
             if self.follow && !self.planner {
-                self.keep_in_view(response.rect, lng, lat);
+                self.keep_in_view(ui, response.rect, lng, lat);
             }
         }
         self.paint_attribution(ui, response.rect);
     }
 
-    /// Pans when the aircraft leaves the dead zone in the middle of the map.
-    fn keep_in_view(&mut self, rect: egui::Rect, lng: f64, lat: f64) {
-        let projector = Projector::new(rect, &self.memory, walkers::lon_lat(lng, lat));
-        let at = projector.project(walkers::lon_lat(lng, lat));
-        let p = at.to_pos2();
-        let zone = egui::Rect::from_center_size(rect.center(), rect.size() * FOLLOW_BOX_FRACTION);
-        if !zone.contains(p) {
-            self.memory.center_at(walkers::lon_lat(lng, lat));
+    /// Pans when the aircraft leaves the dead zone in the middle of the map,
+    /// eased towards the aircraft until it is in the middle, and jumps only
+    /// when it is more than a viewport away.
+    fn keep_in_view(&mut self, ui: &egui::Ui, rect: egui::Rect, lng: f64, lat: f64) {
+        let target = walkers::lon_lat(lng, lat);
+        let projector = Projector::new(rect, &self.memory, target);
+        let p = projector.project(target).to_pos2();
+        let off = p - rect.center();
+        if !off.x.is_finite() || !off.y.is_finite() {
+            return;
         }
+        let size = rect.size();
+        if off.x.abs() > size.x * FOLLOW_JUMP_VIEWPORTS || off.y.abs() > size.y * FOLLOW_JUMP_VIEWPORTS {
+            self.follow_easing = false;
+            self.memory.center_at(target);
+            return;
+        }
+        if !self.follow_easing {
+            let half = |s: f32| {
+                (s * FOLLOW_BOX_FRACTION)
+                    .max(FOLLOW_BOX_MIN_PX)
+                    .min(s * FOLLOW_BOX_MAX_FRACTION)
+                    / 2.0
+            };
+            if off.x.abs() <= half(size.x) && off.y.abs() <= half(size.y) {
+                return;
+            }
+            self.follow_easing = true;
+        }
+        if off.length() < 1.0 || ui.style().animation_time <= 0.0 {
+            self.follow_easing = false;
+            self.memory.center_at(target);
+            return;
+        }
+        let dt = f64::from(ui.input(|i| i.stable_dt)).clamp(0.001, 0.1);
+        let k = 1.0 - (-dt / FOLLOW_EASE_S).exp();
+        let from = projector.unproject(rect.center().to_vec2());
+        let step = |a: f64, b: f64| a + (b - a) * k;
+        self.memory
+            .center_at(walkers::lon_lat(step(from.x(), lng), step(from.y(), lat)));
+        ui.ctx().request_repaint();
     }
 
     /// What the 3D map draws on the ground besides the track: the geofence
@@ -769,20 +891,7 @@ impl Map {
     fn three_shapes(&self) -> Vec<crate::plugins::shapes::Shape> {
         let mut out = Vec::new();
         if let Some(poly) = fence_outline(&self.env.get()) {
-            out.push(crate::plugins::shapes::Shape {
-                owner: "geofence",
-                key: "corvus-geofence".into(),
-                kind: crate::plugins::shapes::Kind::Polygon {
-                    pts: poly,
-                    fill_opacity: 0.06,
-                    outline: 3.0,
-                    dashed: true,
-                },
-                color: style::warning(),
-                width: 3.0,
-                opacity: 1.0,
-                visible: true,
-            });
+            out.push(fence_shape(poly));
         }
         out.extend(self.plugins.shapes().iter().cloned());
         out
@@ -805,6 +914,25 @@ impl Map {
         self.saved_at = None;
         self.save_tracks();
         self.tiles = None;
+    }
+}
+
+/// The geofence as `setPolygonOverlay` draws it: --warning, 3 px, dashed,
+/// filled at 6 percent, on a casing in the page background.
+fn fence_shape(pts: Vec<[f64; 2]>) -> crate::plugins::shapes::Shape {
+    crate::plugins::shapes::Shape {
+        owner: "geofence",
+        key: "corvus-geofence".into(),
+        kind: crate::plugins::shapes::Kind::Polygon {
+            pts,
+            fill_opacity: 0.06,
+            outline: 3.0,
+            dashed: true,
+        },
+        color: style::warning(),
+        width: 3.0,
+        opacity: 1.0,
+        visible: true,
     }
 }
 
@@ -1023,33 +1151,19 @@ impl Plugin for Layers<'_, '_> {
         let rect = response.rect;
         let painter = ui.painter_at(rect);
         if let Some(poly) = &self.outline {
-            // setPolygonOverlay: --warning, 3 px, dashed 2 to 1.5, fill at 6 percent
-            let pts: Vec<Pos2> = poly
-                .iter()
-                .map(|c| {
-                    screen(
-                        projector,
-                        rect,
-                        &Point {
-                            lng: c[0],
-                            lat: c[1],
-                            alt: None,
-                        },
-                    )
-                })
-                .collect();
-            let warning = style::warning();
-            let mut mesh = egui::Mesh::default();
-            for p in &pts {
-                mesh.colored_vertex(*p, warning.gamma_multiply(0.06));
-            }
-            for t in crate::setup::geofence_card::triangulate(&pts) {
-                mesh.add_triangle(t[0] as u32, t[1] as u32, t[2] as u32);
-            }
-            painter.add(mesh);
-            let mut closed = pts.clone();
-            closed.push(pts[0]);
-            painter.extend(Shape::dashed_line(&closed, Stroke::new(3.0, warning), 6.0, 4.5));
+            let shape = fence_shape(poly.clone());
+            let project = |c: [f64; 2]| {
+                Some(screen(
+                    projector,
+                    rect,
+                    &Point {
+                        lng: c[0],
+                        lat: c[1],
+                        alt: None,
+                    },
+                ))
+            };
+            crate::plugins::shapes::paint_areas(&painter, &project, &[shape]);
         }
         for r in &self.regions {
             paint_region(&painter, projector, rect, r);
@@ -1155,7 +1269,18 @@ impl Plugin for Layers<'_, '_> {
         }
         if self.measure.active {
             drive_measure(ui, response, projector, self.measure);
-            paint_measure(&painter, ui, projector, rect, self.measure);
+            let at = |p: [f64; 2]| {
+                Some(screen(
+                    projector,
+                    rect,
+                    &Point {
+                        lng: p[0],
+                        lat: p[1],
+                        alt: None,
+                    },
+                ))
+            };
+            paint_measure(&painter, ui, &at, self.measure);
         }
         if let Some(overlay) = self.overlay.as_mut() {
             overlay.run(ui, response, projector, memory.zoom());
@@ -1206,33 +1331,42 @@ fn drive_measure(
 fn paint_measure(
     painter: &egui::Painter,
     ui: &egui::Ui,
-    projector: &Projector,
-    rect: egui::Rect,
+    at: &dyn Fn([f64; 2]) -> Option<Pos2>,
     m: &crate::map::measure::Measure,
 ) {
-    let at = |p: [f64; 2]| {
-        screen(
-            projector,
-            rect,
-            &Point {
-                lng: p[0],
-                lat: p[1],
-                alt: None,
-            },
-        )
-    };
     let accent = style::accent();
     if let Some(line) = m.line() {
-        let (a, b) = (at(line.from), at(line.to));
-        painter.line_segment([a, b], Stroke::new(6.0, Color32::from_black_alpha(140)));
-        painter.line_segment([a, b], Stroke::new(3.0, accent));
+        const STEPS: usize = 48;
+        let path: Vec<Option<Pos2>> = (0..=STEPS)
+            .map(|i| {
+                let t = i as f64 / STEPS as f64;
+                at([
+                    line.from[0] + (line.to[0] - line.from[0]) * t,
+                    line.from[1] + (line.to[1] - line.from[1]) * t,
+                ])
+            })
+            .collect();
+        let seen: Vec<Pos2> = path.iter().flatten().copied().collect();
+        if seen.is_empty() {
+            return paint_measure_points(painter, at, m);
+        }
+        for w in path.windows(2) {
+            if let [Some(p), Some(q)] = w {
+                painter.line_segment([*p, *q], Stroke::new(6.0, Color32::from_black_alpha(140)));
+            }
+        }
+        for w in path.windows(2) {
+            if let [Some(p), Some(q)] = w {
+                painter.line_segment([*p, *q], Stroke::new(3.0, accent));
+            }
+        }
         let (dist, heading) = m.label(&line);
         let dg = painter.layout_no_wrap(dist, style::font(12.0, style::Weight::W600), style::text_1());
         let hg = painter.layout_no_wrap(heading.clone(), style::font(11.0, style::Weight::W500), style::text_2());
         let gap = if heading.is_empty() { 0.0 } else { 6.0 };
         let w = dg.size().x + gap + hg.size().x + 16.0 + 2.0;
         let h = dg.size().y.max(hg.size().y) + 6.0 + 2.0;
-        let mid = at(crate::map::measure::midpoint(line.from, line.to));
+        let mid = at(crate::map::measure::midpoint(line.from, line.to)).unwrap_or(seen[seen.len() / 2]);
         let chip = egui::Rect::from_min_size(Pos2::new(mid.x - w / 2.0, mid.y - 10.0 - h), Vec2::new(w, h));
         card::paint(
             painter,
@@ -1251,12 +1385,20 @@ fn paint_measure(
             style::text_2(),
         );
     }
-    for p in m.points() {
-        let c = at(*p);
+    paint_measure_points(painter, at, m);
+    let _ = ui;
+}
+
+fn paint_measure_points(
+    painter: &egui::Painter,
+    at: &dyn Fn([f64; 2]) -> Option<Pos2>,
+    m: &crate::map::measure::Measure,
+) {
+    let accent = style::accent();
+    for c in m.points().iter().filter_map(|p| at(*p)) {
         painter.circle_filled(c, 5.5 + 1.25, accent);
         painter.circle_filled(c, 5.5 - 1.25, Color32::WHITE);
     }
-    let _ = ui;
 }
 
 #[cfg(test)]
@@ -1368,11 +1510,13 @@ mod tests {
             source: String::new(),
             tiles: None,
             memory: MapMemory::default(),
+            zoom_goal: None,
             attribution: "",
             credit: credit::Credit::default(),
             track: Track::default(),
             first_fix: true,
             follow: true,
+            follow_easing: false,
             heading: None,
             regions: Vec::new(),
             regions_visible: false,
@@ -1390,6 +1534,7 @@ mod tests {
             saved_rev: 0,
             three: None,
             three_d: false,
+            leaving: false,
             view: None,
             planner: false,
             bottom_lift: 0.0,

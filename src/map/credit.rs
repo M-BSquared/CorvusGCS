@@ -5,7 +5,7 @@
 //! The web asks MapLibre for `compact: true`, which keeps the credit folded
 //! into a round glass disc with Lucide's `info` at every map width (the
 //! 640 px rule is only for a control without that option). A click opens it
-//! into a pill with the text, wrapped at `46ch`; unfolded, only the icon
+//! into a pill with the text on one line (the web wraps at `46ch`, here it grows to the text); unfolded, only the icon
 //! folds it again, so a link in the text still works. Dragging the map folds
 //! it. Hover warms the folded disc towards the accent, the icon alone while
 //! open. Only colours animate (160 ms), never the width.
@@ -27,9 +27,6 @@ const GAP: f32 = 6.0;
 const PAD_RIGHT: f32 = 9.0;
 const SIZE: f32 = 10.0;
 const LINE: f32 = 1.4;
-/// `max-width: min(46ch, 40vw)`.
-const CH_MAX: f32 = 46.0;
-const VW_FRACTION: f32 = 0.40;
 const FADE: f32 = 0.16;
 
 /// What is kept of the control between frames.
@@ -43,11 +40,6 @@ pub struct Credit {
 /// The side of the folded disc.
 pub fn disc_size() -> f32 {
     ICON + 2.0 * PAD + 2.0 * BORDER
-}
-
-/// The widest the credit text may be: `min(46ch, 40vw)`.
-pub fn text_max_width(ch: f32, viewport_width: f32) -> f32 {
-    (CH_MAX * ch).min(VW_FRACTION * viewport_width).max(1.0)
 }
 
 /// The open pill around a text block of `text`.
@@ -75,6 +67,7 @@ impl Credit {
     }
 
     /// Height of the control as it was drawn, 25 px folded.
+    #[cfg(test)]
     pub fn height(&self) -> f32 {
         if self.height > 0.0 {
             self.height
@@ -97,9 +90,9 @@ impl Credit {
             self.height = 0.0;
             return;
         }
-        let ch = style::galley(ui, "0", SIZE, Weight::W400, Color32::WHITE, 0.0).size().x;
-        let viewport = ui.ctx().content_rect().width();
-        let max_w = text_max_width(ch, viewport).min((rect.width() - 2.0 * INSET - 30.0).max(40.0));
+        // One line: the pill grows to the text and wraps only when the map
+        // itself is too narrow for it.
+        let max_w = (rect.width() - 2.0 * INSET - (open_size(Vec2::ZERO).x)).max(40.0);
         let text_g = crate::ui::kit::wrapped_weight(ui, text, SIZE, Weight::W400, style::text_1(), max_w, LINE);
         let size = if self.open {
             open_size(text_g.size())
@@ -112,7 +105,10 @@ impl Credit {
             size,
         );
         let icon = Rect::from_center_size(
-            Pos2::new(pill.left() + BORDER + PAD + ICON / 2.0, pill.center().y),
+            Pos2::new(
+                pill.left() + BORDER + PAD + ICON / 2.0,
+                pill.bottom() - disc_size() / 2.0,
+            ),
             Vec2::splat(ICON),
         );
         let hit = if self.open { icon.expand(PAD) } else { pill };
@@ -169,12 +165,6 @@ mod tests {
         assert_eq!(one.y, 25.0);
         assert_eq!(one.x, 2.0 + 4.0 + 15.0 + 6.0 + 100.0 + 9.0);
         assert_eq!(open_size(Vec2::new(100.0, 42.0)).y, 52.0);
-    }
-
-    #[test]
-    fn the_text_is_wrapped_at_46ch_or_40_percent_of_the_window() {
-        assert_eq!(text_max_width(6.0, 1440.0), 276.0);
-        assert_eq!(text_max_width(6.0, 400.0), 160.0);
     }
 
     #[test]

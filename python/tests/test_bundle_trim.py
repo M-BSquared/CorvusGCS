@@ -171,8 +171,8 @@ def test_every_build_script_runs_the_trim_and_ships_no_qt():
         assert "qt_bundle.py" not in text and "PySide6" not in text, script
         assert "pyproject.toml:headless" in text, script
     windows = (ROOT.parent / "build-windows.ps1").read_text()
-    assert windows.index("-m PyInstaller") < windows.index("tools\\bundle_trim.py")
-    assert '"--exclude-module", "lxml"' in windows
+    assert "tools\\bundle_trim.py" in windows
+    assert "PyInstaller" not in windows.replace("No PyInstaller", "")
 
 
 def test_the_app_no_longer_steers_pymavlink():

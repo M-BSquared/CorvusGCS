@@ -10,7 +10,7 @@
 #
 # Usage:
 #   ./release.sh              # test, tag, push to every remote
-#   ./release.sh --no-verify  # skip the local pytest/ruff/frontend gate
+#   ./release.sh --no-verify  # skip the local cargo (and, while it exists, Python) gate
 #   ./release.sh --dry-run    # print what would happen; push nothing
 #
 # Re-run safely: an existing local or remote tag for the current VERSION is
@@ -49,7 +49,7 @@ echo "Branch:  $BRANCH"
 # would ship in the build artifacts (which package the working tree, not just
 # HEAD) without ever having been committed to the version it claims to be.
 # Untracked files are not part of any build script's copy list (they take
-# corvus/, src/, assets/ and VERSION by name) and are ignored here on purpose
+# src/, assets/ and VERSION by name) and are ignored here on purpose
 # — an untracked root-level working note must not block a release.
 if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
     echo "release.sh: tracked files have uncommitted changes — commit or stash first" >&2
@@ -64,16 +64,25 @@ if git rev-parse "$TAG" >/dev/null 2>&1; then
 fi
 
 if (( VERIFY )); then
-    # The dev venv run.sh creates carries pytest and ruff; a checkout that
-    # never ran it falls back to whatever python3 is on PATH.
+    echo "--- cargo fmt"
+    cargo fmt --all -- --check
+    echo "--- cargo clippy"
+    cargo clippy --workspace --all-targets --locked -- -D warnings
+    echo "--- cargo test"
+    cargo test --workspace --locked
+    # python/ is the reference until it is deleted. A checkout without it, or
+    # without the dev venv run.sh creates, has nothing more to run.
     PY="$REPO_DIR/.venv/bin/python"
-    [[ -x "$PY" ]] || PY=python3
-    echo "--- pytest"
-    "$PY" -m pytest -q
-    echo "--- ruff"
-    "$PY" -m ruff check corvus serve.py tests plugins
-    echo "--- frontend"
-    node tools/frontend_tests.js
+    if [[ -d python && -x "$PY" ]]; then
+        echo "--- pytest"
+        (cd python && "$PY" -m pytest -q)
+        echo "--- ruff"
+        (cd python && "$PY" -m ruff check corvus serve.py tests plugins)
+        echo "--- frontend"
+        (cd python && node tools/frontend_tests.js)
+    else
+        echo "--- no python/ or .venv: skipping the Python gate"
+    fi
 else
     echo "--- skipping tests (--no-verify)"
 fi

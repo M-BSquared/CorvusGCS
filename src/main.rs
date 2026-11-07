@@ -1,11 +1,14 @@
 //! Corvus GCS, the native desktop interface.
 //!
-//!     corvus-gcs                         run the backend in this process and show it
+//!     corvus-gcs                         start the Python backend (serve.py) as a child and show it
+//!     corvus-gcs --core                  run `corvus_core` in this process instead (still partial)
 //!     corvus-gcs --server http://h:8080  connect to a backend elsewhere
-//!     corvus-gcs --root DIR --python PY  run the Python backend (serve.py) as a child instead
+//!     corvus-gcs --root DIR --python PY  say where serve.py and its Python are
 //!
-//! The backend is `corvus_core`, started in this process and stopped on every
-//! way out; see `net::backend`.
+//! `corvus_core` answers only what is ported (`src/BACKEND_PORT.md`); every
+//! other route says "Not available in this build", so it is opt in until the
+//! port is complete. Either backend is stopped on every way out; see
+//! `net::backend`.
 
 mod analysis;
 mod app;
@@ -47,6 +50,7 @@ static CONTEXT: OnceLock<egui::Context> = OnceLock::new();
 
 #[derive(Debug, Default)]
 struct Args {
+    core: bool,
     server: Option<String>,
     root: Option<PathBuf>,
     python: Option<PathBuf>,
@@ -63,10 +67,11 @@ fn parse_args() -> Result<Args, String> {
             "--server" => args.server = Some(value("--server")?),
             "--root" => args.root = Some(PathBuf::from(value("--root")?)),
             "--python" => args.python = Some(PathBuf::from(value("--python")?)),
+            "--core" => args.core = true,
             "--page" => args.page = Some(value("--page")?),
             "--scroll" => args.scroll = value("--scroll")?.parse().ok(),
             "-h" | "--help" => {
-                println!("usage: corvus-gcs [--server http://host:port] [--root DIR] [--python PATH] (the last two run the Python backend) [--page setup|TILE|safety:SENSOR|mission|mission:NAME|settings|logs|analysis] [--scroll PX]");
+                println!("usage: corvus-gcs [--core] [--server http://host:port] [--root DIR] [--python PATH] (where serve.py is) [--page setup|TILE|safety:SENSOR|mission|mission:NAME|settings|logs|analysis] [--scroll PX]");
                 std::process::exit(0);
             }
             other => return Err(format!("unknown argument {other}")),
@@ -114,7 +119,7 @@ fn main() -> ExitCode {
                 return ExitCode::from(2);
             }
         },
-        None if args.root.is_none() && args.python.is_none() => match net::backend::Backend::start_core() {
+        None if args.core => match net::backend::Backend::start_core() {
             Ok(b) => {
                 let s = b.server().clone();
                 local = Some(b);
@@ -126,25 +131,39 @@ fn main() -> ExitCode {
             }
         },
         None => {
-            let start = args.root.clone().unwrap_or_else(|| {
-                std::env::current_exe()
-                    .ok()
-                    .and_then(|p| p.parent().map(PathBuf::from))
-                    .unwrap_or_else(|| PathBuf::from("."))
-            });
-            let started = net::backend::Launch::find(&start, args.python.clone()).and_then(|launch| {
-                let port = net::backend::free_port().map_err(|e| format!("no free port: {e}"))?;
-                net::backend::Backend::start(&launch, port)
-            });
-            match started {
-                Ok(b) => {
-                    let s = b.server().clone();
-                    local = Some(b);
-                    s
-                }
-                Err(e) => {
-                    eprintln!("corvus-gcs: {e}");
-                    return ExitCode::FAILURE;
+            if let Some(peer) = net::backend::running_peer() {
+                eprintln!("corvus-gcs: Corvus is already running, joining it at {}", peer.url());
+                peer
+            } else {
+                let start = args.root.clone().unwrap_or_else(|| {
+                    std::env::current_exe()
+                        .ok()
+                        .and_then(|p| p.parent().map(PathBuf::from))
+                        .unwrap_or_else(|| PathBuf::from("."))
+                });
+                // A bundle carries its backend: frozen beside the executable on
+                // Windows. A checkout, or flags that say where it is, use serve.py.
+                let bundled = (args.root.is_none() && args.python.is_none())
+                    .then(|| net::backend::Launch::bundled(&start))
+                    .flatten();
+                let found = match bundled {
+                    Some(launch) => Ok(launch),
+                    None => net::backend::Launch::find(&start, args.python.clone()),
+                };
+                let started = found.and_then(|launch| {
+                    let port = net::backend::free_port().map_err(|e| format!("no free port: {e}"))?;
+                    net::backend::Backend::start(&launch, port)
+                });
+                match started {
+                    Ok(b) => {
+                        let s = b.server().clone();
+                        local = Some(b);
+                        s
+                    }
+                    Err(e) => {
+                        eprintln!("corvus-gcs: {e}");
+                        return ExitCode::FAILURE;
+                    }
                 }
             }
         }

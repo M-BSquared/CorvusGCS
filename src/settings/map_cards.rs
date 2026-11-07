@@ -6,7 +6,7 @@
 use eframe::egui::{self, Pos2, Rect, Stroke, Vec2};
 use serde_json::{json, Value};
 
-use super::tabs::{MEASURE, TRACK};
+use super::tabs::{MEASURE, REGIONS, TRACK};
 use super::{model, refused, Dialog, SettingsPage};
 use crate::ui::chip::Chip;
 use crate::ui::form::{self, Form, CONTROL_H};
@@ -52,6 +52,10 @@ impl SettingsPage {
                 let on = model::flag(&self.cfg, "ui", MEASURE.key, MEASURE.default);
                 if let Some(v) = form::switch(ui, f, "measure", MEASURE.label, MEASURE.hint, on) {
                     self.write(ui.ctx(), model::patch("ui", MEASURE.key, json!(v)), true);
+                }
+                let on = model::flag(&self.cfg, "ui", REGIONS.key, REGIONS.default);
+                if let Some(v) = form::switch(ui, f, "regions", REGIONS.label, REGIONS.hint, on) {
+                    self.write(ui.ctx(), model::patch("ui", REGIONS.key, json!(v)), true);
                 }
             });
             let rate = model::map_rate(&self.cfg).to_string();

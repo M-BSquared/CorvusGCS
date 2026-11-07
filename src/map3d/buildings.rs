@@ -20,10 +20,17 @@ use crate::map3d::gpu::{MeshData, FLOATS};
 pub const CELL_Z: u8 = 15;
 /// `BUILDING_MIN_ZOOM`: under it the extrusions are slivers.
 pub const MIN_ZOOM: f64 = 14.0;
-/// `BUILDING_MAX_CELLS`.
-pub const MAX_CELLS: usize = 36;
+/// `BUILDING_MAX_CELLS`, lower than the web's 36: a cell is a mesh of tens of
+/// thousands of vertices, and the far ones are specks.
+pub const MAX_CELLS: usize = 16;
 /// What one cell extrudes at most.
-pub const MAX_DRAWN: usize = 4000;
+pub const MAX_DRAWN: usize = 2500;
+/// Outlines with more points than this are left out: ear clipping grows with
+/// the cube of the points, and such an outline is a map artefact.
+const MAX_RING: usize = 80;
+/// How far a wall reaches below the ground under its lowest corner, in
+/// metres, so a slope or a coarse ground mesh shows no gap under it.
+const FOUNDATION: f64 = 2.0;
 /// `BUILDING_RETRY_MS`.
 pub const RETRY_SECS: u64 = 3;
 /// `BUILDING_COLOR`.
@@ -69,7 +76,7 @@ fn feature(f: &Value) -> Option<Building> {
     if pts.len() > 1 && pts.first() == pts.last() {
         pts.pop();
     }
-    if pts.len() < 3 {
+    if pts.len() < 3 || pts.len() > MAX_RING {
         return None;
     }
     let num = |k: &str| f.pointer(&format!("/properties/{k}")).and_then(Value::as_f64);
@@ -142,7 +149,9 @@ fn centroid(ring: &[(f64, f64)]) -> (f64, f64) {
 /// Walls and roofs of one cell as a mesh around `origin` (web mercator
 /// metres). `ground` gives the terrain height at a position; the mesh is
 /// only worth building once it knows it for the first building, which
-/// `None` here reports. Each wall darkens toward its foot, which is the only
+/// `None` here reports. A building stands on the lowest ground under its
+/// outline and its walls reach `FOUNDATION` below that, so on a slope it is
+/// set into the hill and does not float over the low side. Each wall darkens toward its foot, which is the only
 /// cue that these are volumes (`fill-extrusion-vertical-gradient`), and
 /// walls facing north-west are lit a little more.
 pub fn cell_mesh(list: &[Building], origin: (f64, f64), ground: &dyn Fn(f64, f64) -> Option<f64>) -> Option<MeshData> {
@@ -155,7 +164,11 @@ pub fn cell_mesh(list: &[Building], origin: (f64, f64), ground: &dyn Fn(f64, f64
     let mut resolved = false;
     for b in list.iter().take(MAX_DRAWN) {
         let (lng, lat) = centroid(&b.ring);
-        let g = match ground(lng, lat) {
+        let low = std::iter::once((lng, lat))
+            .chain(b.ring.iter().copied())
+            .filter_map(|(x, y)| ground(x, y))
+            .fold(None, |m: Option<f64>, h| Some(m.map_or(h, |m| m.min(h))));
+        let g = match low {
             Some(g) => {
                 resolved = true;
                 g
@@ -163,7 +176,12 @@ pub fn cell_mesh(list: &[Building], origin: (f64, f64), ground: &dyn Fn(f64, f64
             None if resolved => continue,
             None => return None,
         };
-        let (base, top) = (g + b.min_height, g + b.height);
+        let top = g + b.height;
+        let base = if b.min_height > 0.0 {
+            g + b.min_height
+        } else {
+            g - FOUNDATION
+        };
         let ring: Vec<(f64, f64)> = b
             .ring
             .iter()
@@ -298,9 +316,35 @@ mod tests {
             (top - 533.8).abs() < 1e-3,
             "the tallest roof is 13.8 m over the ground: {top}"
         );
-        // Nothing is under the ground, and nothing floats.
+        // The walls reach the foundation depth under the ground, and no further.
         let low = m.verts.chunks(FLOATS).map(|v| v[2]).fold(f32::MAX, f32::min);
-        assert!((low - 520.0).abs() < 1e-3, "{low}");
+        assert!((low - (520.0 - FOUNDATION as f32)).abs() < 1e-3, "{low}");
+    }
+
+    #[test]
+    fn a_house_on_a_slope_stands_on_its_lowest_corner() {
+        let b = Building {
+            ring: vec![(11.0, 48.0), (11.001, 48.0), (11.001, 48.001), (11.0, 48.001)],
+            height: 10.0,
+            min_height: 0.0,
+        };
+        let origin = mercator(11.0, 48.0);
+        let slope = |lng: f64, _: f64| Some(500.0 + (lng - 11.0) * 20_000.0);
+        let m = cell_mesh(&[b], origin, &slope).unwrap();
+        let top = m.verts.chunks(FLOATS).map(|v| v[2]).fold(0.0f32, f32::max);
+        assert!((top - 510.0).abs() < 1e-3, "the roof is 10 m over the low side: {top}");
+    }
+
+    #[test]
+    fn a_huge_outline_is_left_out() {
+        let ring: Vec<(f64, f64)> = (0..200)
+            .map(|i| {
+                let a = f64::from(i) / 200.0 * std::f64::consts::TAU;
+                (11.0 + a.cos() * 1e-3, 48.0 + a.sin() * 1e-3)
+            })
+            .collect();
+        let doc = serde_json::json!({"features": [{"geometry": {"coordinates": [ring]}, "properties": {}}]});
+        assert!(decode(doc.to_string().as_bytes()).unwrap().is_empty());
     }
 
     #[test]

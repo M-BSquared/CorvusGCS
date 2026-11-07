@@ -165,6 +165,13 @@ pub(super) const MEASURE: Sw = ui_sw(
     "On (the default), the ruler button sits in the map's right-hand bar. Press it, click a start and an end point, and the map shows the distance and heading between them. Escape or a right click clears the line, and a second one turns the tool off. Off, the button is gone.",
 );
 
+pub(super) const REGIONS: Sw = ui_sw(
+    "regions_button",
+    false,
+    "Show the downloaded areas button",
+    "Off (the default), the map's right-hand bar has no button for the downloaded areas. You can still outline them from the Offline map dialog, under Downloaded areas. On, the button sits in the bar and switches the outlines on and off.",
+);
+
 const APP_ICON: [Sw; 2] = [
     ui_sw(
         "inverted_app_icon",
@@ -543,7 +550,7 @@ mod tests {
             .chain(&HUD)
             .chain(&TRACK)
             .chain(&APP_ICON)
-            .chain([&MISSION, &NOTIFICATIONS, &TOP_BAR_DOTS, &COMPASS, &MEASURE])
+            .chain([&MISSION, &NOTIFICATIONS, &TOP_BAR_DOTS, &COMPASS, &MEASURE, &REGIONS])
         {
             assert!(!keys.contains(&s.key), "{}", s.key);
             keys.push(s.key);
@@ -554,7 +561,7 @@ mod tests {
             );
         }
         let by = |k: &str| {
-            [&MISSION, &MEASURE, &COMPASS, &TOP_BAR_DOTS]
+            [&MISSION, &MEASURE, &REGIONS, &COMPASS, &TOP_BAR_DOTS]
                 .into_iter()
                 .chain(&SIDE_PANEL)
                 .chain(&HUD)

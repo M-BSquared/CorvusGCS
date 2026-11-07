@@ -218,7 +218,7 @@ fn grid(
                     p,
                     rect,
                     Look::custom(
-                        if hover { style::glass(0.95) } else { style::glass(0.82) },
+                        style::panel_fill(if hover { 0.95 } else { 0.82 }, hover),
                         if hover { style::tint(0.15) } else { style::tint(0.09) },
                         style::RADIUS_BTN,
                     ),

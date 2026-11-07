@@ -52,6 +52,12 @@ regex = "1"
 # no GTK or Qt is linked): a person picks a file instead of typing its path.
 rfd = "0.17"
 
+[target.'cfg(target_os = "macos")'.dependencies]
+# Finds the window of a terminal to blur what is behind it (app/vibrancy.rs).
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSResponder", "NSView", "NSWindow", "NSVisualEffectView", "NSAppearance", "NSGraphics"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString", "NSArray"] }
+
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 

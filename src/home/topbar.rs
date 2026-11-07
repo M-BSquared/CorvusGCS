@@ -740,20 +740,25 @@ pub fn show(
         }
         x += w;
     }
-    // The NOTIFICATIONS block closes the row, as the last of blocks().
+    // The NOTIFICATIONS block and the company logo are anchored to the right
+    // edge, the logo in the corner, whatever the blocks leave free.
+    let notif_w = widths[1 + laid.len()];
+    let mut right = rect.right() - pad_r;
+    if let Some(c) = company {
+        let w = widths.get(2 + laid.len()).copied().unwrap_or(0.0);
+        right -= w;
+        crate::home::company::paint(ui, rect, right, c, vw.max600);
+        right -= 2.0;
+    }
     let (_, note_clicked) = crate::notify::overlay::block(
         ui,
         rect,
-        x + 3.0 - 1.0 + 1.0,
+        (right - notif_w).max(x + 3.0),
         notifications,
         board_open,
-        Some(widths[1 + laid.len()]),
+        Some(notif_w),
     );
     clicked.notifications = note_clicked;
-    if let Some(c) = company {
-        let at = x + 3.0 + widths[1 + laid.len()] + 2.0;
-        crate::home::company::paint(ui, rect, at, c, vw.max600);
-    }
     clicked
 }
 

@@ -11,7 +11,7 @@
 
 pub mod model;
 
-use eframe::egui::{self, Color32, Pos2, Rect, Stroke, Vec2};
+use eframe::egui::{self, Pos2, Rect, Stroke, Vec2};
 use serde_json::{json, Value};
 
 use crate::net::bg::Pending;
@@ -187,11 +187,7 @@ impl Session {
             .show(ctx, |ui| {
                 ui.set_clip_rect(screen);
                 ui.allocate_rect(screen, egui::Sense::click());
-                ui.painter().rect_filled(
-                    screen,
-                    0,
-                    Color32::from_black_alpha(if style::is_dark() { 150 } else { 90 }),
-                );
+                crate::ui::modal::backdrop(ui, "welcome", screen);
                 let bg = ui.painter().add(egui::Shape::Noop);
                 let (ix, iw) = (panel.left() + 26.0, width - 52.0);
                 let y = panel.top() + 26.0;
@@ -204,16 +200,13 @@ impl Session {
                 height = rect.height();
                 ui.painter().set(
                     bg,
-                    egui::Shape::Vec(vec![
-                        egui::Shape::Rect(style::shadow_pop().as_shape(rect, 18)),
-                        egui::Shape::rect_filled(rect, 18, style::glass(0.96)),
-                        egui::Shape::rect_stroke(
-                            rect,
-                            18,
-                            Stroke::new(1.0, style::tint(0.06)),
-                            egui::StrokeKind::Inside,
-                        ),
-                    ]),
+                    crate::ui::card::sheet(
+                        "welcome",
+                        rect,
+                        18,
+                        style::glass(style::modal_fill()),
+                        style::tint(0.06),
+                    ),
                 );
             });
         self.height = height;

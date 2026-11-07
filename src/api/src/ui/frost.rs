@@ -308,6 +308,18 @@ pub fn draw_backdrop(painter: &egui::Painter, id: u64, rect: Rect, radius: Corne
     }));
 }
 
+/// `copy_backdrop` as a shape, for a slot reserved before the content.
+pub fn copy_shape(rect: Rect, id: u64, filter: Filter) -> egui::Shape {
+    egui::Shape::Callback(callback(rect, move |info, gl| unsafe { copy(&info, gl, id, filter) }))
+}
+
+/// `draw_backdrop` as a shape.
+pub fn draw_shape(rect: Rect, id: u64, radius: CornerRadius, filter: Filter) -> egui::Shape {
+    egui::Shape::Callback(callback(rect, move |info, gl| unsafe {
+        draw(&info, gl, id, radius, filter)
+    }))
+}
+
 /// Frees the GL objects. Called with the context on the way out.
 pub fn destroy(gl: &glow::Context) {
     let mut guard = RESOURCES.lock().unwrap_or_else(|e| e.into_inner());

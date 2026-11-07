@@ -494,6 +494,7 @@ impl TilesCard {
         self.take_answers(ctx, map, now);
         let mut close = false;
         let mut action: Option<usize> = None;
+        let outlined = map.regions_visible;
         let height = ctx.content_rect().height();
         let close_asked = modal::show(ctx, "tilesdialog", modal::Size::Lg, "Offline map", |ui, x, y, w| {
             let mut cy = y;
@@ -720,7 +721,14 @@ impl TilesCard {
                 ui.painter()
                     .galley(Pos2::new(x + w - cg.size().x, cy), cg, style::text_3());
             }
-            cy += hg.size().y + 12.0;
+            cy += hg.size().y + 10.0;
+            let sg = style::galley(ui, "Outline them on the map", 12.0, Weight::W400, style::text_2(), 0.0);
+            ui.painter()
+                .galley(Pos2::new(x + 2.0, cy + (22.0 - sg.size().y) / 2.0), sg, style::text_2());
+            if crate::ui::toggle::switch(ui, Pos2::new(x + w - 38.0, cy), outlined, true, "tilesoutline") {
+                action = Some(11);
+            }
+            cy += 22.0 + 12.0;
             if self.regions.is_empty() {
                 let g = kit::wrapped_weight(
                     ui,
@@ -767,6 +775,7 @@ impl TilesCard {
             Some(0) => self.start_download(ctx, map),
             Some(1) => self.cancel(ctx, &server),
             Some(10) => self.capture(map, area),
+            Some(11) => map.set_regions_visible(!outlined),
             Some(100) => {}
             _ => {}
         }

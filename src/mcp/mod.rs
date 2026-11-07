@@ -21,7 +21,7 @@
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use eframe::egui::{self, Pos2, Rect, Stroke, Vec2};
+use eframe::egui::{self, Pos2, Rect, Vec2};
 use serde_json::{json, Value};
 
 use crate::net::http::{self, Server};
@@ -396,9 +396,7 @@ impl Mcp {
                 let r = Rect::from_min_size(Pos2::new(host.center().x - w / 2.0, top), Vec2::new(w, h));
                 let painter = ui.painter().clone();
                 let border = if b.level == "control" { style::critical() } else { style::warning() };
-                painter.add(style::shadow_pop().as_shape(r, 255));
-                painter.rect_filled(r, 255, style::glass(0.8));
-                painter.rect_stroke(r, 255, Stroke::new(1.0, border), egui::StrokeKind::Inside);
+                painter.add(crate::ui::card::sheet("mcp-banner", r, 255, style::glass(0.8), border));
                 let t = ui.input(|i| i.time) as f32;
                 let pulse = if b.level == "on" { 1.0 } else { 0.675 + 0.325 * (t * std::f32::consts::TAU).cos() };
                 let dot = if b.level == "control" { style::critical() } else { style::warning() };

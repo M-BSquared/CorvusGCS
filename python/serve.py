@@ -46,6 +46,29 @@ def _stop_all(server) -> None:
     from corvus.server import stop_backend
     stop_backend(server, logger)
 
+def _watch_parent(shutting_down: threading.Event) -> None:
+    """Stop when the app that started this backend is gone.
+
+    The native app names itself in ``CORVUS_PARENT_PID``. If it dies without
+    a chance to send SIGTERM (a crash, SIGKILL), the backend would otherwise
+    stay behind holding the instance lock, and the next start would find
+    Corvus "already running". Unix only: a Windows child is not re-parented,
+    so the parent id never changes there.
+    """
+    raw = os.environ.get("CORVUS_PARENT_PID", "").strip()
+    if not raw.isdigit() or os.name != "posix":
+        return
+    parent = int(raw)
+
+    def _poll() -> None:
+        while not shutting_down.wait(2.0):
+            if os.getppid() != parent:
+                logger.warning("the app that started this backend is gone; stopping")
+                shutting_down.set()
+
+    threading.Thread(target=_poll, name="parent-watch", daemon=True).start()
+
+
 def main() -> int:
     cfg = load_config()
     cfg_path = default_config_path()
@@ -153,6 +176,8 @@ def main() -> int:
 
     server_thread = threading.Thread(target=server.serve_forever, name="http-server", daemon=True)
     server_thread.start()
+
+    _watch_parent(shutting_down)
 
     # Bounded exit. After the stop sequence we prefer a clean sys.exit(0),
     # but stuck daemon threads (or a QtWebEngine child in app mode) can

@@ -359,6 +359,42 @@ pub fn glass(a: f32) -> Color32 {
     rgba(palette().glass_rgb, a)
 }
 
+static IN_MODAL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Set while a dialog draws its body: `.modal` swaps `--panel-fill` for
+/// `--modal-card-fill`.
+pub fn set_in_modal(on: bool) {
+    IN_MODAL.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// `--panel-fill` (`hover`: `--panel-fill-hover`) for a card at the page's
+/// `alpha` / `hover_alpha`; inside a dark dialog the white wash of
+/// `--modal-card-fill` instead, which reads as a pane on the sheet.
+pub fn panel_fill(alpha: f32, hover: bool) -> Color32 {
+    if IN_MODAL.load(std::sync::atomic::Ordering::Relaxed) && is_dark() {
+        return tint(if hover { 0.08 } else { 0.05 });
+    }
+    glass(alpha)
+}
+
+/// `--modal-fill`.
+pub fn modal_fill() -> f32 {
+    if is_dark() {
+        0.6
+    } else {
+        0.7
+    }
+}
+
+/// `--scrim`.
+pub fn scrim() -> Color32 {
+    if is_dark() {
+        Color32::from_black_alpha(77)
+    } else {
+        Color32::from_rgba_unmultiplied(22, 28, 38, 89)
+    }
+}
+
 /// `rgb(var(--input-rgb) / a)`: recessed field wells.
 pub fn input(a: f32) -> Color32 {
     rgba(palette().input_rgb, a)
