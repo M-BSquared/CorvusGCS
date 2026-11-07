@@ -396,6 +396,16 @@ fn utc_clock(usec: i64) -> Option<String> {
     ))
 }
 
+/// The name of a MAV_TYPE, `TYPE_n` for one nobody listed.
+pub fn mav_type_name(key: i64) -> String {
+    name_of(MAV_TYPE, key, "TYPE_")
+}
+
+/// The name of a MAV_AUTOPILOT, `AP_n` for one nobody listed.
+pub fn mav_autopilot_name(key: i64) -> String {
+    name_of(MAV_AUTOPILOT, key, "AP_")
+}
+
 fn name_of(table: &[(i64, &str)], key: i64, prefix: &str) -> String {
     table
         .iter()
@@ -469,6 +479,11 @@ impl ReceivePath {
         let mut systems: Vec<i64> = self.st().ignored_systems.iter().copied().collect();
         systems.sort_unstable();
         systems
+    }
+
+    /// Forgets which other systems the console was told about (a new link).
+    pub fn reset_ignored_systems(&self) {
+        self.st().ignored_systems.clear();
     }
 
     pub fn pending_commands(&self) -> usize {
