@@ -929,6 +929,280 @@ def battery_cases() -> None:
     write("battery_cases.json", clean_nan(out))
 
 
+def _item(kind, **kw):
+    base = {"type": kind}
+    if kind != "rtl":
+        base.update({"lat": 47.5, "lon": 8.5, "alt": 30})
+    base.update(kw)
+    return base
+
+
+def _full_plan() -> dict:
+    return {
+        "name": "My Plan! /../ v2", "aircraft": "multirotor", "speed": 5,
+        "home": {"lat": 47.4, "lon": 8.4, "elevation": 410.5}, "start_at_vehicle": True,
+        "items": [
+            _item("takeoff", alt=20, pitch=10),
+            _item("waypoint", lat=47.501, lon=8.502, hold=5, accept_radius=3, speed=8, name="  Gate\t Aä  "),
+            _item("loiter_turns", lat=47.502, lon=8.505, turns=2.5, radius=30, direction=-1, speed=8),
+            _item("loiter_time", lat=47.503, lon=8.507, seconds=45, radius=80, direction=0),
+            _item("waypoint", lat=47.504, lon=8.509, speed=5),
+            _item("land", lat=47.5, lon=8.5, alt=77, approach_alt=25, speed=3.5, name="Home"),
+            _item("rtl"),
+        ],
+    }
+
+
+def _planner_plans() -> list:
+    plans: list = [
+        {"items": []}, {"items": [], "name": ""}, {"items": [], "name": "../../etc/passwd"},
+        {"items": [], "name": "  .hidden. "}, {"items": [], "name": "a" * 100}, {"items": [], "name": 5},
+        {"items": [], "name": "café ☃ x"}, {"items": [], "name": "a__b..c--d  e"},
+        _full_plan(),
+        {**_full_plan(), "aircraft": "fixed_wing"}, {**_full_plan(), "aircraft": "vtol"},
+        {**_full_plan(), "aircraft": "rover"}, {**_full_plan(), "aircraft": "boat"}, {**_full_plan(), "aircraft": 3},
+        {**_full_plan(), "start_at_vehicle": 1}, {**_full_plan(), "start_at_vehicle": False},
+        {**_full_plan(), "speed": None}, {**_full_plan(), "home": None},
+        {"items": [_item("land", approach_alt=25)], "aircraft": "multirotor", "speed": 5},
+        {"items": [_item("waypoint", speed=5), _item("waypoint", speed=5), _item("waypoint", speed=6),
+                   _item("waypoint", speed=5)], "speed": 5},
+        {"items": [_item("waypoint", speed=2), _item("loiter_turns", turns=3, radius=12.5, direction=1),
+                   _item("loiter_turns", turns=0, radius=1, direction=-1), _item("land")]},
+        {"items": [_item("loiter_turns", lat=0.0, lon=0.0, turns=1, radius=15, direction=1),
+                   _item("loiter_turns", lat=80, lon=-179.99, turns=4, radius=3000, direction=-1)]},
+        {"items": [_item("takeoff", pitch=None, alt=None)]},
+        {"items": [{"type": "waypoint", "lat": 1, "lon": 2, "alt": 3, "hold": None, "accept_radius": None}]},
+    ]
+    bad_items: list = [
+        5, None, [], "x", {}, {"type": None}, {"type": 5}, {"type": 1.5}, {"type": "x"}, {"type": "it's"},
+        {"type": 'say "hi"'}, {"type": ["a", 1]}, {"type": {"a": True}}, {"type": True}, {"type": "WAYPOINT"},
+        {"type": "waypoint"}, {"type": "waypoint", "lat": 1}, {"type": "waypoint", "lat": 91, "lon": 0, "alt": 0},
+        {"type": "waypoint", "lat": True, "lon": 0, "alt": 0}, {"type": "waypoint", "lat": "1", "lon": 0, "alt": 0},
+        {"type": "waypoint", "lat": 0, "lon": 181, "alt": 0}, {"type": "waypoint", "lat": 0, "lon": None, "alt": 0},
+        {"type": "waypoint", "lat": 0, "lon": 0}, {"type": "waypoint", "lat": 0, "lon": 0, "alt": -100.5},
+        {"type": "waypoint", "lat": 0, "lon": 0, "alt": 1000.5}, {"type": "waypoint", "lat": 0, "lon": 0, "alt": -100},
+        {"type": "waypoint", "lat": 0, "lon": 0, "alt": 1000}, {"type": "waypoint", "lat": 0, "lon": 0, "alt": False},
+        {"type": "waypoint", "lat": 0, "lon": 0, "alt": 5, "hold": -1}, {"type": "waypoint", "lat": 0, "lon": 0, "alt": 5, "hold": 3601},
+        {"type": "waypoint", "lat": 0, "lon": 0, "alt": 5, "hold": "5"}, {"type": "waypoint", "lat": 0, "lon": 0, "alt": 5, "accept_radius": 1000.5},
+        {"type": "waypoint", "lat": 0, "lon": 0, "alt": 5, "speed": 0.4}, {"type": "waypoint", "lat": 0, "lon": 0, "alt": 5, "speed": 100.1},
+        {"type": "waypoint", "lat": 0, "lon": 0, "alt": 5, "speed": 0.5}, {"type": "waypoint", "lat": 0, "lon": 0, "alt": 5, "speed": "fast"},
+        {"type": "takeoff", "lat": 0, "lon": 0, "alt": 5, "pitch": 45.5}, {"type": "takeoff", "lat": 0, "lon": 0, "alt": 5, "pitch": -0.5},
+        {"type": "loiter_turns", "lat": 0, "lon": 0, "alt": 5, "turns": 100.5}, {"type": "loiter_turns", "lat": 0, "lon": 0, "alt": 5, "radius": 0.5},
+        {"type": "loiter_turns", "lat": 0, "lon": 0, "alt": 5, "radius": 10000.5}, {"type": "loiter_turns", "lat": 0, "lon": 0, "alt": 5, "direction": 2},
+        {"type": "loiter_turns", "lat": 0, "lon": 0, "alt": 5, "direction": 0.5}, {"type": "loiter_turns", "lat": 0, "lon": 0, "alt": 5, "direction": -0.3},
+        {"type": "loiter_time", "lat": 0, "lon": 0, "alt": 5, "seconds": 3601}, {"type": "loiter_time", "lat": 0, "lon": 0, "alt": 5, "seconds": 0},
+        {"type": "land", "lat": 0, "lon": 0, "alt": 999}, {"type": "land", "lat": 0, "lon": 0, "approach_alt": 2.9},
+        {"type": "land", "lat": 0, "lon": 0, "approach_alt": 1000.5}, {"type": "land", "lat": 0, "lon": 0, "approach_alt": "x"},
+        {"type": "land", "lat": 0, "lon": 0, "approach_alt": 3}, {"type": "waypoint", "lat": 0, "lon": 0, "alt": 5, "approach_alt": 1},
+        {"type": "rtl"}, {"type": "rtl", "lat": "junk", "speed": 3}, {"type": "rtl", "speed": 200},
+        {"type": "waypoint", "lat": 0, "lon": 0, "alt": 5, "name": 5}, {"type": "waypoint", "lat": 0, "lon": 0, "alt": 5, "name": "\x00\x07\x7f"},
+        {"type": "waypoint", "lat": 0, "lon": 0, "alt": 5, "name": "x" * 60}, {"type": "waypoint", "lat": 0, "lon": 0, "alt": 5, "name": "a b c\u0085d"},
+    ]
+    for bad in bad_items:
+        plans.append({"items": [_item("waypoint"), bad]})
+    plans += [
+        5, None, "plan", [], {}, {"items": None}, {"items": "x"}, {"items": {}},
+        {"items": [_item("waypoint")] * 255}, {"items": [_item("waypoint")] * 256},
+        {"items": [_item("waypoint", speed=1 + i / 10) for i in range(200)]},
+        {"items": [_item("waypoint", speed=1 + i / 10) for i in range(254)]},
+        {"items": [], "home": 5}, {"items": [], "home": []}, {"items": [], "home": {}},
+        {"items": [], "home": {"lat": 1}}, {"items": [], "home": {"lat": 91, "lon": 1}},
+        {"items": [], "home": {"lat": 1, "lon": 2}}, {"items": [], "home": {"lat": 1, "lon": 2, "elevation": "x"}},
+        {"items": [], "home": {"lat": 1, "lon": 2, "elevation": -5}}, {"items": [], "home": {"lat": True, "lon": 2}},
+        {"items": [], "speed": 0}, {"items": [], "speed": 0.5}, {"items": [], "speed": 100}, {"items": [], "speed": 101},
+        {"items": [], "speed": "5"}, {"items": [], "speed": True},
+        {"items": [], "extra": 1, "version": 7},
+    ]
+    return plans
+
+
+def _ds(command, lat=47.5, lon=8.5, alt=30.0, frame=3, params=(None, None, None, None)):
+    return {"command": command, "frame": frame, "lat": lat, "lon": lon, "alt": alt, "params": list(params)}
+
+
+def planner_cases() -> None:
+    import math
+    import os
+    import tempfile
+
+    from corvus import geofence as G
+    from corvus import mission as M
+
+    def nanify(value):
+        if value is None:
+            return float("nan")
+        return value
+
+    def plan_item_json(item):
+        return {"command": item["command"], "lat": item["lat"], "lon": item["lon"], "alt": item["alt"],
+                "params": list(item["params"]), "item": item.get("item")}
+
+    out: dict = {}
+    names = [None, 5, "", " ", "abc", "My Flight 1", "../../x", "a/b\\c", "..", "...a...", "café", "a" * 80,
+             "  spaced   out  ", "tab\tname", "dot.name.json", "name_with-dash", "☃", "a\nb", ["x"], {"a": 1}]
+    out["safe_names"] = [[n, M.safe_plan_name(n)] for n in names]
+    points = names + ["\x00\x01", "a b", "a  b", "  x\u0085y ", "äöü" * 20, "z" * 41, "x\x7fy", "a\x9fb",
+                      "​zero", "a\x1cb", "tab\t\tx"]
+    out["point_names"] = [[n, M.clean_point_name(n)] for n in points]
+    out["refused"] = [[{str(k): v for k, v in table.items()}, M.refused_item_types(table)]
+                      for table in ({}, {16: "no", 18: "no loiter"}, {18: "x", 22: "y", 178: "speed", 999: "z"})]
+    out["labels"] = [[c, M.label_of_command(c)] for c in (16, 18, 19, 20, 21, 22, 178, 0, 5001, -1)]
+
+    validated = []
+    out["validate"] = []
+    for raw in _planner_plans():
+        plan, error = M.validate_plan(raw)
+        out["validate"].append([raw, {"plan": plan, "error": error}])
+        if plan is not None:
+            validated.append(plan)
+    out["to_items"] = []
+    out["distance"] = []
+    circles_in = []
+    for plan in validated:
+        items = M.plan_to_items(plan)
+        out["to_items"].append([plan, [plan_item_json(i) for i in items]])
+        out["distance"].append([plan, M.plan_distance_m(plan)])
+        circles_in.append(items)
+    out["circles"] = [[[plan_item_json(i) for i in items], [plan_item_json(i) for i in M.lower_circles(items)]]
+                      for items in circles_in if any(i["command"] == 18 for i in items)]
+    odd = [
+        [{"command": 18, "lat": 10.0, "lon": 20.0, "alt": 5.0, "params": [2.0, 0.0, -15.0, 0.0], "item": 3}],
+        [{"command": 16, "lat": 10.001, "lon": 20.0, "alt": 5.0, "params": [0.0, 0.0, 0.0, float("nan")], "item": 0},
+         {"command": 18, "lat": 10.0, "lon": 20.0, "alt": 5.0, "params": [1.0, 0.0, 40.0, 0.0], "item": 1}],
+        [{"command": 178, "lat": 0.0, "lon": 0.0, "alt": 0.0, "params": [1.0, 5.0, -1.0, 0.0], "item": 0},
+         {"command": 18, "lat": 89.9, "lon": 20.0, "alt": 5.0, "params": [0.5, 0.0, 400.0, 0.0], "item": 1}],
+        [{"command": 18, "lat": 10.0, "lon": 20.0, "alt": 5.0, "params": [1.0, 0.0, 0.0, 0.0], "item": 1}],
+        [{"command": 18, "lat": 10.0, "lon": 20.0, "alt": 5.0, "params": [0.0, 0.0, 12.0, 0.0], "item": 1}],
+        [{"command": 18, "lat": 10.0, "lon": 20.0, "alt": 5.0, "params": [1.0, 0.0, 200.0, 0.0], "item": None}],
+        [{"command": 20, "lat": 0.0, "lon": 0.0, "alt": 0.0, "params": [0.0, 0.0, 0.0, 0.0], "item": 0},
+         {"command": 18, "lat": 10.0, "lon": 20.0, "alt": 5.0, "params": [1.0, 0.0, 12.0, 0.0], "item": 1}],
+    ]
+    out["circles"] += [[[plan_item_json(i) for i in items], [plan_item_json(i) for i in M.lower_circles(items)]] for items in odd]
+
+    back = [
+        ([], None, None), ([_ds(22, params=(0, 0, 0, float("nan")))], None, None),
+        ([_ds(22, 0.0, 0.0)], None, None), ([_ds(22, 0.0, 0.0)], {"lat": 47.0, "lon": 8.0}, None),
+        ([_ds(16), _ds(22, 0.0, 0.0), _ds(21, 0.0, 0.0, 0.0)], None, None),
+        ([_ds(178, params=(1, 5, -1, 0)), _ds(16, params=(5, 3, 0, float("nan"))), _ds(178, params=(1, 8, -1, 0)),
+          _ds(16, 47.6, 8.6, 40.0), _ds(21, 47.7, 8.7, 0.0)], {"lat": 47.0, "lon": 8.0}, 410.0),
+        ([_ds(178, params=(1, -1, -1, 0)), _ds(178, params=(1, 0, -1, 0)), _ds(16), _ds(178, params=(1, 0.1, -1, 0)),
+          _ds(178, params=(1, 500, -1, 0)), _ds(16)], None, None),
+        ([_ds(16, alt=520.0, frame=0)], None, None), ([_ds(16, alt=520.0, frame=0)], None, 410.0),
+        ([_ds(16, alt=520.0, frame=5)], {"lat": 1.0, "lon": 2.0}, 410.0), ([_ds(16, frame=10)], None, None),
+        ([_ds(16, frame=11), _ds(16, frame=2), _ds(16, frame=6), _ds(16, frame=3)], None, None),
+        ([_ds(16, alt=5000.0), _ds(16, alt=-500.0), _ds(21, alt=70.0)], None, None),
+        ([_ds(18, params=(2, 0, -25, 0)), _ds(18, params=(500, 0, 0, 0)), _ds(18, params=(1, 0, 20000, 0)),
+          _ds(19, params=(7000, 0, 5, 0))], None, None),
+        ([_ds(16, params=(9999, 9999, 0, 0)), _ds(22, params=(0, 0, 0, 0)), _ds(22, params=(99, 0, 0, 0))], None, None),
+        ([_ds(999), _ds(5001), _ds(20, 0.0, 0.0, 0.0), _ds(16)], None, None),
+        ([_ds(16, float("nan"), 3.0), _ds(16, 4.0, float("inf")), _ds(16, 5.0, 6.0, float("nan"))], {"lat": 1.0, "lon": 1.0}, None),
+        ([_ds(178, params=(1, 6, -1, 0)), _ds(178, params=(1, 7, -1, 0)), _ds(16), _ds(16)], None, None),
+        ([_ds(16, 1.0, 2.0)] * 260, None, None),
+    ]
+    out["back"] = []
+    for items, home, home_alt in back:
+        result = M.items_to_plan(items, home=home, home_alt_amsl=home_alt)
+        out["back"].append([{"items": [dict(i, params=[None if (isinstance(x, float) and not math.isfinite(x)) else x
+                                                         for x in i["params"]]) if False else
+                                      {**i, "params": [None if (isinstance(x, float) and x != x) else x for x in i["params"]],
+                                       "lat": None if isinstance(i["lat"], float) and not math.isfinite(i["lat"]) else i["lat"],
+                                       "lon": None if isinstance(i["lon"], float) and not math.isfinite(i["lon"]) else i["lon"],
+                                       "alt": None if isinstance(i["alt"], float) and not math.isfinite(i["alt"]) else i["alt"]}
+                                      for i in items],
+                             "home": home, "home_alt": home_alt}, result])
+    legs = [({"lat": 0, "lon": 0}, {"lat": 0, "lon": 0}), ({"lat": 47.5, "lon": 8.5}, {"lat": 47.6, "lon": 8.7}),
+            ({"lat": -90, "lon": 0}, {"lat": 90, "lon": 0}), ({"lat": 0, "lon": -180}, {"lat": 0, "lon": 180}),
+            ({"lat": 10, "lon": 10}, {"lat": -10, "lon": -170})]
+    out["legs"] = [[a, b, M.leg_distance_m(a, b)] for a, b in legs]
+
+    # The file store, on a fresh folder.
+    steps = [
+        {"op": "list"}, {"op": "read", "name": "nothing"}, {"op": "read", "name": "../x"}, {"op": "remove", "name": "nothing"},
+        {"op": "remove", "name": "../x"}, {"op": "write", "name": "My Flight", "plan": validated[8]},
+        {"op": "write", "name": "../evil", "plan": validated[0]}, {"op": "write", "name": "", "plan": validated[8]},
+        {"op": "write", "name": "", "plan": {"name": "", "items": []}}, {"op": "write", "name": "café plan", "plan": validated[9]},
+        {"op": "write", "name": "pt", "plan": M.validate_plan({"items": [_item("waypoint", name="äö ☃")]})[0]},
+        {"op": "files"}, {"op": "touch_all"}, {"op": "touch", "file": "My Flight.json", "mtime": 1000},
+        {"op": "touch", "file": "evil.json", "mtime": 3000}, {"op": "touch", "file": "Mission.json", "mtime": 2000},
+        {"op": "touch", "file": "caf plan.json", "mtime": 2000}, {"op": "touch", "file": "pt.json", "mtime": 500},
+        {"op": "raw", "file": "broken.json", "text": "{not json"}, {"op": "raw", "file": "invalid.json", "text": "{\"items\": 5}"},
+        {"op": "raw", "file": "array.json", "text": "[1, 2]"}, {"op": "raw", "file": "notes.txt", "text": "hi"},
+        {"op": "raw", "file": ".hidden.json", "text": json.dumps({"items": []})},
+        {"op": "list"}, {"op": "read", "name": "My Flight"}, {"op": "read", "name": "broken"}, {"op": "read", "name": "invalid"},
+        {"op": "read", "name": "  My Flight  "}, {"op": "remove", "name": "My Flight"}, {"op": "remove", "name": "My Flight"},
+        {"op": "list"}, {"op": "files"},
+    ]
+    results = []
+    with tempfile.TemporaryDirectory() as tmp:
+        directory = os.path.join(tmp, "missions")
+        for step in steps:
+            op = step["op"]
+            if op == "list":
+                result = M.list_plans(directory)
+            elif op == "read":
+                result = M.read_plan(directory, step["name"])
+            elif op == "remove":
+                result = M.remove_plan(directory, step["name"])
+            elif op == "write":
+                stored = M.write_plan(directory, step["name"], step["plan"])
+                with open(os.path.join(directory, stored + ".json"), encoding="utf-8") as handle:
+                    result = {"stored": stored, "text": handle.read()}
+            elif op == "touch":
+                os.utime(os.path.join(directory, step["file"]), (step["mtime"], step["mtime"]))
+                result = None
+            elif op == "touch_all":
+                for index, entry in enumerate(sorted(os.listdir(directory))):
+                    os.utime(os.path.join(directory, entry), (7000 + index * 100, 7000 + index * 100))
+                result = None
+            elif op == "raw":
+                with open(os.path.join(directory, step["file"]), "w", encoding="utf-8") as handle:
+                    handle.write(step["text"])
+                os.utime(os.path.join(directory, step["file"]), (100, 100))
+                result = None
+            elif op == "files":
+                result = sorted(os.listdir(directory))
+            results.append(result)
+    out["store"] = {"steps": steps, "results": results}
+    out["missions_dir"] = [[c, M.missions_dir(c)] for c in ("/data/plans", " /data/x ")]
+    out["missions_dir_default"] = [M.missions_dir(c).endswith(os.path.join(".corvus", "missions")) for c in ("", "  ")]
+
+    # The geofence.
+    big = [[i, 0.0] for i in range(65)]
+    polygons = [
+        None, [], "x", 5, {}, [[1, 2]], [[1, 2], [3, 4]], [[0, 0], [1, 0], [1, 1]], [[0, 0], [1, 0], [1, 1], [0, 0]],
+        [[0, 0], [1, 1], [1, 0], [0, 1]], [[0, 0], [2, 0], [2, 2], [0, 2], [0, 0]], [[0, 0], [2, 2], [2, 0], [0, 2], [0, 0]],
+        [[0, 0, 5], [1, 0, 5], [1, 1, 5]], [[0, 0], [1], [1, 1]], [[0, 0], "ab", [1, 1]], [[0, 0], [True, 1], [1, 1]],
+        [[0, 0], [181, 1], [1, 1]], [[0, 0], [1, 91], [1, 1]], [[0, 0], [1, "x"], [1, 1]], [[0, 0], [None, 1], [1, 1]],
+        [[-180, -90], [180, -90], [180, 90]], [[0.5, 0.5]] * 3, [[0, 0], [0, 0]], big[:64], big,
+        [[0, 0], [4, 0], [4, 4], [2, 0.0001], [0, 4]], [[0, 0], [1, 0], [1, 1], [1, 0.5], [0, 1]],
+        [[10, 10], [20, 10], [20, 20], [10, 20], [15, 15], [10, 10]],
+    ]
+    out["polygons"] = []
+    for raw in polygons:
+        polygon, error = G.validate_polygon(raw)
+        out["polygons"].append([raw, {"polygon": polygon, "error": error}])
+    out["fence_items"] = [[p, G.fence_items(p)] for p in ([[8.5, 47.5], [8.6, 47.5], [8.6, 47.6]], [[1, 2], [3, 4], [5, 6], [7, 8]])]
+    states = [
+        {"polygon": [[1, 2], [3, 4], [5, 6]], "show_on_map": False}, {"polygon": [], "show_on_map": True}, {},
+        {"show_on_map": None}, {"polygon": None, "show_on_map": 0}, {"polygon": [[0, 0], [1, 0], [1, 1]], "show_on_map": 1},
+    ]
+    out["geofence_files"] = []
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, "sub", "geofence.json")
+        out["geofence_files"].append(["load", None, G.load(path)])
+        for state in states:
+            G.save(state, path)
+            with open(path, encoding="utf-8") as handle:
+                text = handle.read()
+            out["geofence_files"].append(["save", state, {"text": text, "loaded": G.load(path)}])
+        for raw in ("{broken", "[1]", "{\"polygon\": [[0,0],[1,1]], \"show_on_map\": \"yes\"}",
+                    "{\"polygon\": [[0,0],[1,0],[1,1],[0,0]], \"show_on_map\": false}", "{\"polygon\": 5}", ""):
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write(raw)
+            out["geofence_files"].append(["raw", raw, G.load(path)])
+    write("planner_cases.json", clean_nan(out))
+
+
 def clean_nan(x):
     if isinstance(x, float) and x != x:
         return "nan"
@@ -941,7 +1215,7 @@ def clean_nan(x):
 
 COMMANDS = {"routes": routes, "store": store, "buffers": buffers, "config": config_cases,
             "partial": partial_cases, "bundle": bundle_cases, "languages": languages_cases, "http": http_cases,
-            "dialect": dialect_cases, "battery": battery_cases}
+            "dialect": dialect_cases, "battery": battery_cases, "planner": planner_cases}
 
 
 def main(argv: list[str]) -> int:

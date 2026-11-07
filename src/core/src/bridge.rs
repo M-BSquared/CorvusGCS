@@ -2056,11 +2056,10 @@ impl MissionHost for Shared {
             .retain(|(i, _)| *i != id);
     }
     fn lower_circles(&self, items: &[PlanItem]) -> Vec<PlanItem> {
-        // The planner (`mission.py`) is not ported: a Circle goes up as it is.
-        items.to_vec()
+        crate::mission::lower_circles(items)
     }
-    fn items_to_plan(&self, items: &[DownloadedItem], _home: Option<(f64, f64)>, _home_alt: Option<f64>) -> Value {
-        json!({"plan_index": (0..items.len()).collect::<Vec<_>>()})
+    fn items_to_plan(&self, items: &[DownloadedItem], home: Option<(f64, f64)>, home_alt: Option<f64>) -> Value {
+        crate::mission::items_to_plan(items, home, home_alt, "Vehicle mission")
     }
 }
 
