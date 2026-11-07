@@ -83,6 +83,7 @@ pub mod clock;
 pub mod config;
 pub mod dialect;
 pub mod fleet;
+pub mod forwarder;
 pub mod json;
 pub mod languages;
 pub mod lock;

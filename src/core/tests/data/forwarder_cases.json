@@ -1,0 +1,3636 @@
+{
+ "cases": [
+  {
+   "scenario": {
+    "name": "mirror_basic",
+    "peers": [
+     "A"
+    ],
+    "config": {
+     "host": "127.0.0.1",
+     "port": "$A",
+     "listen_host": "127.0.0.1",
+     "listen_port": 0
+    },
+    "steps": [
+     {
+      "op": "start"
+     },
+     {
+      "op": "status"
+     },
+     {
+      "op": "feed",
+      "raw": "fd0300000101010000000102030000"
+     },
+     {
+      "op": "feed",
+      "raw": "fd0900000201010000000102030405060708090000"
+     },
+     {
+      "op": "feed",
+      "raw": "fe050301010001020304050000"
+     },
+     {
+      "op": "wait",
+      "key": "frames_sent",
+      "at_least": 3
+     },
+     {
+      "op": "recv",
+      "peer": "A"
+     },
+     {
+      "op": "status"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "log": [
+       [
+        "info",
+        "MAVLink forwarding: mirroring to 127.0.0.1:A, listening on 127.0.0.1:L (commands from other stations: blocked)"
+       ]
+      ]
+     },
+     {
+      "result": {
+       "running": true,
+       "host": "127.0.0.1",
+       "port": "A",
+       "listen_host": "127.0.0.1",
+       "listen_port": "L",
+       "listen_port_requested": 0,
+       "allow_commands": false,
+       "endpoints": [
+        "127.0.0.1:A"
+       ],
+       "peers": [],
+       "targets": [
+        "127.0.0.1:A"
+       ],
+       "frames_sent": 0,
+       "datagrams_received": 0,
+       "frames_injected": 0,
+       "dropped": 0,
+       "sysid_conflict": false,
+       "commands_refused": 0,
+       "commands_refused_from": [],
+       "loop_blocked": "",
+       "notice": "",
+       "error": ""
+      },
+      "log": []
+     },
+     {
+      "result": null,
+      "log": []
+     },
+     {
+      "result": null,
+      "log": []
+     },
+     {
+      "result": null,
+      "log": []
+     },
+     {
+      "result": true,
+      "log": []
+     },
+     {
+      "result": [
+       "fd0300000101010000000102030000",
+       "fd0900000201010000000102030405060708090000",
+       "fe050301010001020304050000"
+      ],
+      "log": []
+     },
+     {
+      "result": {
+       "running": true,
+       "host": "127.0.0.1",
+       "port": "A",
+       "listen_host": "127.0.0.1",
+       "listen_port": "L",
+       "listen_port_requested": 0,
+       "allow_commands": false,
+       "endpoints": [
+        "127.0.0.1:A"
+       ],
+       "peers": [],
+       "targets": [
+        "127.0.0.1:A"
+       ],
+       "frames_sent": 3,
+       "datagrams_received": 0,
+       "frames_injected": 0,
+       "dropped": 0,
+       "sysid_conflict": false,
+       "commands_refused": 0,
+       "commands_refused_from": [],
+       "loop_blocked": "",
+       "notice": "",
+       "error": ""
+      },
+      "log": []
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "feed_edge_cases",
+    "peers": [
+     "A"
+    ],
+    "config": {
+     "host": "127.0.0.1",
+     "port": "$A",
+     "listen_host": "127.0.0.1",
+     "listen_port": 0
+    },
+    "steps": [
+     {
+      "op": "feed",
+      "raw": "fd0300000101010000000102030000"
+     },
+     {
+      "op": "status"
+     },
+     {
+      "op": "start"
+     },
+     {
+      "op": "feed",
+      "raw": ""
+     },
+     {
+      "op": "feed",
+      "raw": "fd0300000101010000000102030000"
+     },
+     {
+      "op": "wait",
+      "key": "frames_sent",
+      "at_least": 1
+     },
+     {
+      "op": "recv",
+      "peer": "A"
+     },
+     {
+      "op": "start"
+     },
+     {
+      "op": "status"
+     },
+     {
+      "op": "stop"
+     },
+     {
+      "op": "feed",
+      "raw": "fd0300000101010000000102030000"
+     },
+     {
+      "op": "stop"
+     },
+     {
+      "op": "status"
+     },
+     {
+      "op": "recv",
+      "peer": "A"
+     },
+     {
+      "op": "start"
+     },
+     {
+      "op": "feed",
+      "raw": "fd0900000201010000000102030405060708090000"
+     },
+     {
+      "op": "wait",
+      "key": "frames_sent",
+      "at_least": 2
+     },
+     {
+      "op": "recv",
+      "peer": "A"
+     },
+     {
+      "op": "status"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "log": []
+     },
+     {
+      "result": {
+       "running": false,
+       "host": "127.0.0.1",
+       "port": "A",
+       "listen_host": "127.0.0.1",
+       "listen_port": 0,
+       "listen_port_requested": 0,
+       "allow_commands": false,
+       "endpoints": [
+        "127.0.0.1:A"
+       ],
+       "peers": [],
+       "targets": [],
+       "frames_sent": 0,
+       "datagrams_received": 0,
+       "frames_injected": 0,
+       "dropped": 0,
+       "sysid_conflict": false,
+       "commands_refused": 0,
+       "commands_refused_from": [],
+       "loop_blocked": "",
+       "notice": "",
+       "error": ""
+      },
+      "log": []
+     },
+     {
+      "result": true,
+      "log": [
+       [
+        "info",
+        "MAVLink forwarding: mirroring to 127.0.0.1:A, listening on 127.0.0.1:L (commands from other stations: blocked)"
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "log": []
+     },
+     {
+      "result": null,
+      "log": []
+     },
+     {
+      "result": true,
+      "log": []
+     },
+     {
+      "result": [
+       "fd0300000101010000000102030000"
+      ],
+      "log": []
+     },
+     {
+      "result": true,
+      "log": []
+     },
+     {
+      "result": {
+       "running": true,
+       "host": "127.0.0.1",
+       "port": "A",
+       "listen_host": "127.0.0.1",
+       "listen_port": "L",
+       "listen_port_requested": 0,
+       "allow_commands": false,
+       "endpoints": [
+        "127.0.0.1:A"
+       ],
+       "peers": [],
+       "targets": [
+        "127.0.0.1:A"
+       ],
+       "frames_sent": 1,
+       "datagrams_received": 0,
+       "frames_injected": 0,
+       "dropped": 0,
+       "sysid_conflict": false,
+       "commands_refused": 0,
+       "commands_refused_from": [],
+       "loop_blocked": "",
+       "notice": "",
+       "error": ""
+      },
+      "log": []
+     },
+     {
+      "result": null,
+      "log": []
+     },
+     {
+      "result": null,
+      "log": []
+     },
+     {
+      "result": null,
+      "log": []
+     },
+     {
+      "result": {
+       "running": false,
+       "host": "127.0.0.1",
+       "port": "A",
+       "listen_host": "127.0.0.1",
+       "listen_port": 0,
+       "listen_port_requested": 0,
+       "allow_commands": false,
+       "endpoints": [
+        "127.0.0.1:A"
+       ],
+       "peers": [],
+       "targets": [
+        "127.0.0.1:A"
+       ],
+       "frames_sent": 1,
+       "datagrams_received": 0,
+       "frames_injected": 0,
+       "dropped": 0,
+       "sysid_conflict": false,
+       "commands_refused": 0,
+       "commands_refused_from": [],
+       "loop_blocked": "",
+       "notice": "",
+       "error": ""
+      },
+      "log": []
+     },
+     {
+      "result": [],
+      "log": []
+     },
+     {
+      "result": true,
+      "log": [
+       [
+        "info",
+        "MAVLink forwarding: mirroring to 127.0.0.1:A, listening on 127.0.0.1:L (commands from other stations: blocked)"
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "log": []
+     },
+     {
+      "result": true,
+      "log": []
+     },
+     {
+      "result": [
+       "fd0900000201010000000102030405060708090000"
+      ],
+      "log": []
+     },
+     {
+      "result": {
+       "running": true,
+       "host": "127.0.0.1",
+       "port": "A",
+       "listen_host": "127.0.0.1",
+       "listen_port": "L",
+       "listen_port_requested": 0,
+       "allow_commands": false,
+       "endpoints": [
+        "127.0.0.1:A"
+       ],
+       "peers": [],
+       "targets": [
+        "127.0.0.1:A"
+       ],
+       "frames_sent": 2,
+       "datagrams_received": 0,
+       "frames_injected": 0,
+       "dropped": 0,
+       "sysid_conflict": false,
+       "commands_refused": 0,
+       "commands_refused_from": [],
+       "loop_blocked": "",
+       "notice": "",
+       "error": ""
+      },
+      "log": []
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "dialled_in_peer_is_mirrored_to",
+    "peers": [
+     "A",
+     "B",
+     "C"
+    ],
+    "config": {
+     "host": "127.0.0.1",
+     "port": "$A",
+     "listen_host": "127.0.0.1",
+     "listen_port": 0
+    },
+    "steps": [
+     {
+      "op": "start"
+     },
+     {
+      "op": "send",
+      "peer": "C",
+      "data": "00ff12345678"
+     },
+     {
+      "op": "wait",
+      "key": "datagrams_received",
+      "at_least": 1
+     },
+     {
+      "op": "status"
+     },
+     {
+      "op": "send",
+      "peer": "B",
+      "data": "fd0300000101010000000102030000"
+     },
+     {
+      "op": "wait",
+      "key": "datagrams_received",
+      "at_least": 2
+     },
+     {
+      "op": "status"
+     },
+     {
+      "op": "feed",
+      "raw": "fd0900000201010000000102030405060708090000"
+     },
+     {
+      "op": "wait",
+      "key": "frames_sent",
+      "at_least": 2
+     },
+     {
+      "op": "recv",
+      "peer": "A"
+     },
+     {
+      "op": "recv",
+      "peer": "B"
+     },
+     {
+      "op": "recv",
+      "peer": "C"
+     },
+     {
+      "op": "injected"
+     },
+     {
+      "op": "status"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "log": [
+       [
+        "info",
+        "MAVLink forwarding: mirroring to 127.0.0.1:A, listening on 127.0.0.1:L (commands from other stations: blocked)"
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "log": []
+     },
+     {
+      "result": true,
+      "log": []
+     },
+     {
+      "result": {
+       "running": true,
+       "host": "127.0.0.1",
+       "port": "A",
+       "listen_host": "127.0.0.1",
+       "listen_port": "L",
+       "listen_port_requested": 0,
+       "allow_commands": false,
+       "endpoints": [
+        "127.0.0.1:A"
+       ],
+       "peers": [],
+       "targets": [
+        "127.0.0.1:A"
+       ],
+       "frames_sent": 0,
+       "datagrams_received": 1,
+       "frames_injected": 0,
+       "dropped": 0,
+       "sysid_conflict": false,
+       "commands_refused": 0,
+       "commands_refused_from": [],
+       "loop_blocked": "",
+       "notice": "",
+       "error": ""
+      },
+      "log": []
+     },
+     {
+      "result": null,
+      "log": []
+     },
+     {
+      "result": true,
+      "log": []
+     },
+     {
+      "result": {
+       "running": true,
+       "host": "127.0.0.1",
+       "port": "A",
+       "listen_host": "127.0.0.1",
+       "listen_port": "L",
+       "listen_port_requested": 0,
+       "allow_commands": false,
+       "endpoints": [
+        "127.0.0.1:A"
+       ],
+       "peers": [
+        "127.0.0.1:B"
+       ],
+       "targets": [
+        "127.0.0.1:A",
+        "127.0.0.1:B"
+       ],
+       "frames_sent": 0,
+       "datagrams_received": 2,
+       "frames_injected": 0,
+       "dropped": 0,
+       "sysid_conflict": false,
+       "commands_refused": 0,
+       "commands_refused_from": [],
+       "loop_blocked": "",
+       "notice": "",
+       "error": ""
+      },
+      "log": []
+     },
+     {
+      "result": null,
+      "log": []
+     },
+     {
+      "result": true,
+      "log": []
+     },
+     {
+      "result": [
+       "fd0900000201010000000102030405060708090000"
+      ],
+      "log": []
+     },
+     {
+      "result": [
+       "fd0900000201010000000102030405060708090000"
+      ],
+      "log": []
+     },
+     {
+      "result": [],
+      "log": []
+     },
+     {
+      "result": [],
+      "log": []
+     },
+     {
+      "result": {
+       "running": true,
+       "host": "127.0.0.1",
+       "port": "A",
+       "listen_host": "127.0.0.1",
+       "listen_port": "L",
+       "listen_port_requested": 0,
+       "allow_commands": false,
+       "endpoints": [
+        "127.0.0.1:A"
+       ],
+       "peers": [
+        "127.0.0.1:B"
+       ],
+       "targets": [
+        "127.0.0.1:A",
+        "127.0.0.1:B"
+       ],
+       "frames_sent": 2,
+       "datagrams_received": 2,
+       "frames_injected": 0,
+       "dropped": 0,
+       "sysid_conflict": false,
+       "commands_refused": 0,
+       "commands_refused_from": [],
+       "loop_blocked": "",
+       "notice": "",
+       "error": ""
+      },
+      "log": []
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "commands_from_configured_endpoints_only",
+    "peers": [
+     "A",
+     "B"
+    ],
+    "config": {
+     "host": "127.0.0.1",
+     "port": "$A",
+     "listen_host": "127.0.0.1",
+     "listen_port": 0,
+     "allow_commands": true
+    },
+    "steps": [
+     {
+      "op": "start"
+     },
+     {
+      "op": "send",
+      "peer": "A",
+      "data": "fd0300000101010000000102030000"
+     },
+     {
+      "op": "wait",
+      "key": "frames_injected",
+      "at_least": 1
+     },
+     {
+      "op": "send",
+      "peer": "B",
+      "data": "fd0900000201010000000102030405060708090000"
+     },
+     {
+      "op": "wait",
+      "key": "commands_refused",
+      "at_least": 1
+     },
+     {
+      "op": "send",
+      "peer": "B",
+      "data": "fe050301010001020304050000"
+     },
+     {
+      "op": "wait",
+      "key": "commands_refused",
+      "at_least": 2
+     },
+     {
+      "op": "send",
+      "peer": "A",
+      "data": "fd0900000201010000000102030405060708090000fe050301010001020304050000"
+     },
+     {
+      "op": "wait",
+      "key": "frames_injected",
+      "at_least": 3
+     },
+     {
+      "op": "injected"
+     },
+     {
+      "op": "status"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "log": [
+       [
+        "info",
+        "MAVLink forwarding: mirroring to 127.0.0.1:A, listening on 127.0.0.1:L (commands from other stations: allowed)"
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "log": []
+     },
+     {
+      "result": true,
+      "log": []
+     },
+     {
+      "result": null,
+      "log": [
+       [
+        "warning",
+        "refusing to forward commands from 127.0.0.1:B. Commanding is allowed only from the configured endpoints (127.0.0.1:A). Add it to the forwarding endpoint list if this station should be able to command the aircraft."
+       ]
+      ]
+     },
+     {
+      "result": true,
+      "log": []
+     },
+     {
+      "result": null,
+      "log": []
+     },
+     {
+      "result": true,
+      "log": []
+     },
+     {
+      "result": null,
+      "log": []
+     },
+     {
+      "result": true,
+      "log": []
+     },
+     {
+      "result": [
+       "fd0300000101010000000102030000",
+       "fd0900000201010000000102030405060708090000",
+       "fe050301010001020304050000"
+      ],
+      "log": []
+     },
+     {
+      "result": {
+       "running": true,
+       "host": "127.0.0.1",
+       "port": "A",
+       "listen_host": "127.0.0.1",
+       "listen_port": "L",
+       "listen_port_requested": 0,
+       "allow_commands": true,
+       "endpoints": [
+        "127.0.0.1:A"
+       ],
+       "peers": [
+        "127.0.0.1:A",
+        "127.0.0.1:B"
+       ],
+       "targets": [
+        "127.0.0.1:A",
+        "127.0.0.1:B"
+       ],
+       "frames_sent": 0,
+       "datagrams_received": 4,
+       "frames_injected": 3,
+       "dropped": 0,
+       "sysid_conflict": false,
+       "commands_refused": 2,
+       "commands_refused_from": [
+        "127.0.0.1:B"
+       ],
+       "loop_blocked": "",
+       "notice": "",
+       "error": ""
+      },
+      "log": []
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "commands_off_by_default",
+    "peers": [
+     "A"
+    ],
+    "config": {
+     "host": "127.0.0.1",
+     "port": "$A",
+     "listen_host": "127.0.0.1",
+     "listen_port": 0
+    },
+    "steps": [
+     {
+      "op": "start"
+     },
+     {
+      "op": "send",
+      "peer": "A",
+      "data": "fd0300000101010000000102030000"
+     },
+     {
+      "op": "wait",
+      "key": "datagrams_received",
+      "at_least": 1
+     },
+     {
+      "op": "injected"
+     },
+     {
+      "op": "status"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "log": [
+       [
+        "info",
+        "MAVLink forwarding: mirroring to 127.0.0.1:A, listening on 127.0.0.1:L (commands from other stations: blocked)"
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "log": []
+     },
+     {
+      "result": true,
+      "log": []
+     },
+     {
+      "result": [],
+      "log": []
+     },
+     {
+      "result": {
+       "running": true,
+       "host": "127.0.0.1",
+       "port": "A",
+       "listen_host": "127.0.0.1",
+       "listen_port": "L",
+       "listen_port_requested": 0,
+       "allow_commands": false,
+       "endpoints": [
+        "127.0.0.1:A"
+       ],
+       "peers": [
+        "127.0.0.1:A"
+       ],
+       "targets": [
+        "127.0.0.1:A"
+       ],
+       "frames_sent": 0,
+       "datagrams_received": 1,
+       "frames_injected": 0,
+       "dropped": 0,
+       "sysid_conflict": false,
+       "commands_refused": 0,
+       "commands_refused_from": [],
+       "loop_blocked": "",
+       "notice": "",
+       "error": ""
+      },
+      "log": []
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "inject_refused_is_not_counted",
+    "peers": [
+     "A"
+    ],
+    "config": {
+     "host": "127.0.0.1",
+     "port": "$A",
+     "listen_host": "127.0.0.1",
+     "listen_port": 0,
+     "allow_commands": true
+    },
+    "inject_result": false,
+    "steps": [
+     {
+      "op": "start"
+     },
+     {
+      "op": "send",
+      "peer": "A",
+      "data": "fd0300000101010000000102030000"
+     },
+     {
+      "op": "wait",
+      "key": "datagrams_received",
+      "at_least": 1
+     },
+     {
+      "op": "settle"
+     },
+     {
+      "op": "injected"
+     },
+     {
+      "op": "status"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "log": [
+       [
+        "info",
+        "MAVLink forwarding: mirroring to 127.0.0.1:A, listening on 127.0.0.1:L (commands from other stations: allowed)"
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "log": []
+     },
+     {
+      "result": true,
+      "log": []
+     },
+     {
+      "result": null,
+      "log": []
+     },
+     {
+      "result": [
+       "fd0300000101010000000102030000"
+      ],
+      "log": []
+     },
+     {
+      "result": {
+       "running": true,
+       "host": "127.0.0.1",
+       "port": "A",
+       "listen_host": "127.0.0.1",
+       "listen_port": "L",
+       "listen_port_requested": 0,
+       "allow_commands": true,
+       "endpoints": [
+        "127.0.0.1:A"
+       ],
+       "peers": [
+        "127.0.0.1:A"
+       ],
+       "targets": [
+        "127.0.0.1:A"
+       ],
+       "frames_sent": 0,
+       "datagrams_received": 1,
+       "frames_injected": 0,
+       "dropped": 0,
+       "sysid_conflict": false,
+       "commands_refused": 0,
+       "commands_refused_from": [],
+       "loop_blocked": "",
+       "notice": "",
+       "error": ""
+      },
+      "log": []
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "our_own_system_id",
+    "peers": [
+     "A",
+     "B"
+    ],
+    "config": {
+     "host": "127.0.0.1",
+     "port": "$A",
+     "listen_host": "127.0.0.1",
+     "listen_port": 0,
+     "allow_commands": true
+    },
+    "steps": [
+     {
+      "op": "start"
+     },
+     {
+      "op": "send",
+      "peer": "A",
+      "data": "fd03000000fe010000000102030000"
+     },
+     {
+      "op": "wait",
+      "key": "datagrams_received",
+      "at_least": 1
+     },
+     {
+      "op": "settle"
+     },
+     {
+      "op": "status"
+     },
+     {
+      "op": "send",
+      "peer": "A",
+      "data": "fe0300fe01000102030000"
+     },
+     {
+      "op": "wait",
+      "key": "datagrams_received",
+      "at_least": 2
+     },
+     {
+      "op": "send",
+      "peer": "A",
+      "data": "fd03000000ff010000000102030000"
+     },
+     {
+      "op": "wait",
+      "key": "frames_injected",
+      "at_least": 1
+     },
+     {
+      "op": "injected"
+     },
+     {
+      "op": "status"
+     },
+     {
+      "op": "send",
+      "peer": "B",
+      "data": "fd03000000fe010000000102030000"
+     },
+     {
+      "op": "wait",
+      "key": "datagrams_received",
+      "at_least": 4
+     },
+     {
+      "op": "settle"
+     },
+     {
+      "op": "status"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "log": [
+       [
+        "info",
+        "MAVLink forwarding: mirroring to 127.0.0.1:A, listening on 127.0.0.1:L (commands from other stations: allowed)"
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "log": [
+       [
+        "warning",
+        "the other station is transmitting as MAVLink system 254, the same id Corvus uses. Give it its own (QGroundControl: Application Settings \u2192 MAVLink \u2192 Ground Station system ID)"
+       ]
+      ]
+     },
+     {
+      "result": true,
+      "log": []
+     },
+     {
+      "result": null,
+      "log": []
+     },
+     {
+      "result": {
+       "running": true,
+       "host": "127.0.0.1",
+       "port": "A",
+       "listen_host": "127.0.0.1",
+       "listen_port": "L",
+       "listen_port_requested": 0,
+       "allow_commands": true,
+       "endpoints": [
+        "127.0.0.1:A"
+       ],
+       "peers": [
+        "127.0.0.1:A"
+       ],
+       "targets": [
+        "127.0.0.1:A"
+       ],
+       "frames_sent": 0,
+       "datagrams_received": 1,
+       "frames_injected": 0,
+       "dropped": 0,
+       "sysid_conflict": true,
+       "commands_refused": 0,
+       "commands_refused_from": [],
+       "loop_blocked": "",
+       "notice": "",
+       "error": ""
+      },
+      "log": []
+     },
+     {
+      "result": null,
+      "log": []
+     },
+     {
+      "result": true,
+      "log": []
+     },
+     {
+      "result": null,
+      "log": []
+     },
+     {
+      "result": true,
+      "log": []
+     },
+     {
+      "result": [
+       "fd03000000ff010000000102030000"
+      ],
+      "log": []
+     },
+     {
+      "result": {
+       "running": true,
+       "host": "127.0.0.1",
+       "port": "A",
+       "listen_host": "127.0.0.1",
+       "listen_port": "L",
+       "listen_port_requested": 0,
+       "allow_commands": true,
+       "endpoints": [
+        "127.0.0.1:A"
+       ],
+       "peers": [
+        "127.0.0.1:A"
+       ],
+       "targets": [
+        "127.0.0.1:A"
+       ],
+       "frames_sent": 0,
+       "datagrams_received": 3,
+       "frames_injected": 1,
+       "dropped": 0,
+       "sysid_conflict": true,
+       "commands_refused": 0,
+       "commands_refused_from": [],
+       "loop_blocked": "",
+       "notice": "",
+       "error": ""
+      },
+      "log": []
+     },
+     {
+      "result": null,
+      "log": [
+       [
+        "warning",
+        "refusing to forward commands from 127.0.0.1:B. Commanding is allowed only from the configured endpoints (127.0.0.1:A). Add it to the forwarding endpoint list if this station should be able to command the aircraft."
+       ]
+      ]
+     },
+     {
+      "result": true,
+      "log": []
+     },
+     {
+      "result": null,
+      "log": []
+     },
+     {
+      "result": {
+       "running": true,
+       "host": "127.0.0.1",
+       "port": "A",
+       "listen_host": "127.0.0.1",
+       "listen_port": "L",
+       "listen_port_requested": 0,
+       "allow_commands": true,
+       "endpoints": [
+        "127.0.0.1:A"
+       ],
+       "peers": [
+        "127.0.0.1:A",
+        "127.0.0.1:B"
+       ],
+       "targets": [
+        "127.0.0.1:A",
+        "127.0.0.1:B"
+       ],
+       "frames_sent": 0,
+       "datagrams_received": 4,
+       "frames_injected": 1,
+       "dropped": 0,
+       "sysid_conflict": true,
+       "commands_refused": 1,
+       "commands_refused_from": [
+        "127.0.0.1:B"
+       ],
+       "loop_blocked": "",
+       "notice": "",
+       "error": ""
+      },
+      "log": []
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "frames_split_and_resynchronised",
+    "peers": [
+     "A"
+    ],
+    "config": {
+     "host": "127.0.0.1",
+     "port": "$A",
+     "listen_host": "127.0.0.1",
+     "listen_port": 0,
+     "allow_commands": true
+    },
+    "steps": [
+     {
+      "op": "start"
+     },
+     {
+      "op": "send",
+      "peer": "A",
+      "data": "fd09000002"
+     },
+     {
+      "op": "wait",
+      "key": "datagrams_received",
+      "at_least": 1
+     },
+     {
+      "op": "settle"
+     },
+     {
+      "op": "injected"
+     },
+     {
+      "op": "status"
+     },
+     {
+      "op": "send",
+      "peer": "A",
+      "data": "01010000000102030405060708090000"
+     },
+     {
+      "op": "wait",
+      "key": "frames_injected",
+      "at_least": 1
+     },
+     {
+      "op": "send",
+      "peer": "A",
+      "data": "0102fd0300000101010000000102030000aafe050301010001020304050000fd"
+     },
+     {
+      "op": "wait",
+      "key": "frames_injected",
+      "at_least": 3
+     },
+     {
+      "op": "send",
+      "peer": "A",
+      "data": "03fdff00000901010000000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff0000"
+     },
+     {
+      "op": "wait",
+      "key": "datagrams_received",
+      "at_least": 4
+     },
+     {
+      "op": "settle"
+     },
+     {
+      "op": "injected"
+     },
+     {
+      "op": "status"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "log": [
+       [
+        "info",
+        "MAVLink forwarding: mirroring to 127.0.0.1:A, listening on 127.0.0.1:L (commands from other stations: allowed)"
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "log": []
+     },
+     {
+      "result": true,
+      "log": []
+     },
+     {
+      "result": null,
+      "log": []
+     },
+     {
+      "result": [],
+      "log": []
+     },
+     {
+      "result": {
+       "running": true,
+       "host": "127.0.0.1",
+       "port": "A",
+       "listen_host": "127.0.0.1",
+       "listen_port": "L",
+       "listen_port_requested": 0,
+       "allow_commands": true,
+       "endpoints": [
+        "127.0.0.1:A"
+       ],
+       "peers": [],
+       "targets": [
+        "127.0.0.1:A"
+       ],
+       "frames_sent": 0,
+       "datagrams_received": 1,
+       "frames_injected": 0,
+       "dropped": 0,
+       "sysid_conflict": false,
+       "commands_refused": 0,
+       "commands_refused_from": [],
+       "loop_blocked": "",
+       "notice": "",
+       "error": ""
+      },
+      "log": []
+     },
+     {
+      "result": null,
+      "log": []
+     },
+     {
+      "result": true,
+      "log": []
+     },
+     {
+      "result": null,
+      "log": []
+     },
+     {
+      "result": true,
+      "log": []
+     },
+     {
+      "result": null,
+      "log": []
+     },
+     {
+      "result": true,
+      "log": []
+     },
+     {
+      "result": null,
+      "log": []
+     },
+     {
+      "result": [
+       "fd0900000201010000000102030405060708090000",
+       "fd0300000101010000000102030000",
+       "fe050301010001020304050000",
+       "fd03fdff00000901010000000102030405060708090a0b0c0d0e0f10"
+      ],
+      "log": []
+     },
+     {
+      "result": {
+       "running": true,
+       "host": "127.0.0.1",
+       "port": "A",
+       "listen_host": "127.0.0.1",
+       "listen_port": "L",
+       "listen_port_requested": 0,
+       "allow_commands": true,
+       "endpoints": [
+        "127.0.0.1:A"
+       ],
+       "peers": [
+        "127.0.0.1:A"
+       ],
+       "targets": [
+        "127.0.0.1:A"
+       ],
+       "frames_sent": 0,
+       "datagrams_received": 4,
+       "frames_injected": 4,
+       "dropped": 0,
+       "sysid_conflict": false,
+       "commands_refused": 0,
+       "commands_refused_from": [],
+       "loop_blocked": "",
+       "notice": "",
+       "error": ""
+      },
+      "log": []
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "signed_and_v1_frames",
+    "peers": [
+     "A"
+    ],
+    "config": {
+     "host": "127.0.0.1",
+     "port": "$A",
+     "listen_host": "127.0.0.1",
+     "listen_port": 0,
+     "allow_commands": true
+    },
+    "steps": [
+     {
+      "op": "start"
+     },
+     {
+      "op": "send",
+      "peer": "A",
+      "data": "fd04010000010100000001020304000000000000000000000000000000"
+     },
+     {
+      "op": "wait",
+      "key": "frames_injected",
+      "at_least": 1
+     },
+     {
+      "op": "send",
+      "peer": "A",
+      "data": "fe00000101000000"
+     },
+     {
+      "op": "wait",
+      "key": "frames_injected",
+      "at_least": 2
+     },
+     {
+      "op": "send",
+      "peer": "A",
+      "data": "fdfa01000001010000000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fa000000000000000000000000000000"
+     },
+     {
+      "op": "wait",
+      "key": "datagrams_received",
+      "at_least": 3
+     },
+     {
+      "op": "settle"
+     },
+     {
+      "op": "injected"
+     },
+     {
+      "op": "status"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "log": [
+       [
+        "info",
+        "MAVLink forwarding: mirroring to 127.0.0.1:A, listening on 127.0.0.1:L (commands from other stations: allowed)"
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "log": []
+     },
+     {
+      "result": true,
+      "log": []
+     },
+     {
+      "result": null,
+      "log": []
+     },
+     {
+      "result": true,
+      "log": []
+     },
+     {
+      "result": null,
+      "log": []
+     },
+     {
+      "result": true,
+      "log": []
+     },
+     {
+      "result": null,
+      "log": []
+     },
+     {
+      "result": [
+       "fd04010000010100000001020304000000000000000000000000000000",
+       "fe00000101000000",
+       "fdfa01000001010000000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fa000000000000000000000000000000"
+      ],
+      "log": []
+     },
+     {
+      "result": {
+       "running": true,
+       "host": "127.0.0.1",
+       "port": "A",
+       "listen_host": "127.0.0.1",
+       "listen_port": "L",
+       "listen_port_requested": 0,
+       "allow_commands": true,
+       "endpoints": [
+        "127.0.0.1:A"
+       ],
+       "peers": [
+        "127.0.0.1:A"
+       ],
+       "targets": [
+        "127.0.0.1:A"
+       ],
+       "frames_sent": 0,
+       "datagrams_received": 3,
+       "frames_injected": 3,
+       "dropped": 0,
+       "sysid_conflict": false,
+       "commands_refused": 0,
+       "commands_refused_from": [],
+       "loop_blocked": "",
+       "notice": "",
+       "error": ""
+      },
+      "log": []
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "listen_port_busy",
+    "peers": [
+     "A"
+    ],
+    "busy": "BUSY",
+    "config": {
+     "host": "127.0.0.1",
+     "port": "$A",
+     "listen_host": "127.0.0.1",
+     "listen_port": "$BUSY"
+    },
+    "steps": [
+     {
+      "op": "start"
+     },
+     {
+      "op": "status"
+     },
+     {
+      "op": "feed",
+      "raw": "fd0300000101010000000102030000"
+     },
+     {
+      "op": "wait",
+      "key": "frames_sent",
+      "at_least": 1
+     },
+     {
+      "op": "recv",
+      "peer": "A"
+     },
+     {
+      "op": "stop"
+     },
+     {
+      "op": "start"
+     },
+     {
+      "op": "status"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "log": [
+       [
+        "warning",
+        "MAVLink forwarding: port BUSY was busy, listening on 127.0.0.1:L instead"
+       ],
+       [
+        "info",
+        "MAVLink forwarding: mirroring to 127.0.0.1:A, listening on 127.0.0.1:L (commands from other stations: blocked)"
+       ]
+      ]
+     },
+     {
+      "result": {
+       "running": true,
+       "host": "127.0.0.1",
+       "port": "A",
+       "listen_host": "127.0.0.1",
+       "listen_port": "L",
+       "listen_port_requested": "BUSY",
+       "allow_commands": false,
+       "endpoints": [
+        "127.0.0.1:A"
+       ],
+       "peers": [],
+       "targets": [
+        "127.0.0.1:A"
+       ],
+       "frames_sent": 0,
+       "datagrams_received": 0,
+       "frames_injected": 0,
+       "dropped": 0,
+       "sysid_conflict": false,
+       "commands_refused": 0,
+       "commands_refused_from": [],
+       "loop_blocked": "",
+       "notice": "port BUSY was busy, listening on 127.0.0.1:L instead",
+       "error": ""
+      },
+      "log": []
+     },
+     {
+      "result": null,
+      "log": []
+     },
+     {
+      "result": true,
+      "log": []
+     },
+     {
+      "result": [
+       "fd0300000101010000000102030000"
+      ],
+      "log": []
+     },
+     {
+      "result": null,
+      "log": []
+     },
+     {
+      "result": true,
+      "log": [
+       [
+        "warning",
+        "MAVLink forwarding: port BUSY was busy, listening on 127.0.0.1:L instead"
+       ],
+       [
+        "info",
+        "MAVLink forwarding: mirroring to 127.0.0.1:A, listening on 127.0.0.1:L (commands from other stations: blocked)"
+       ]
+      ]
+     },
+     {
+      "result": {
+       "running": true,
+       "host": "127.0.0.1",
+       "port": "A",
+       "listen_host": "127.0.0.1",
+       "listen_port": "L",
+       "listen_port_requested": "BUSY",
+       "allow_commands": false,
+       "endpoints": [
+        "127.0.0.1:A"
+       ],
+       "peers": [],
+       "targets": [
+        "127.0.0.1:A"
+       ],
+       "frames_sent": 1,
+       "datagrams_received": 0,
+       "frames_injected": 0,
+       "dropped": 0,
+       "sysid_conflict": false,
+       "commands_refused": 0,
+       "commands_refused_from": [],
+       "loop_blocked": "",
+       "notice": "port BUSY was busy, listening on 127.0.0.1:L instead",
+       "error": ""
+      },
+      "log": []
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "listen_port_chosen",
+    "peers": [
+     "A"
+    ],
+    "free": "F",
+    "config": {
+     "host": "127.0.0.1",
+     "port": "$A",
+     "listen_host": "127.0.0.1",
+     "listen_port": "$F"
+    },
+    "steps": [
+     {
+      "op": "start"
+     },
+     {
+      "op": "status"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "log": [
+       [
+        "info",
+        "MAVLink forwarding: mirroring to 127.0.0.1:A, listening on 127.0.0.1:L (commands from other stations: blocked)"
+       ]
+      ]
+     },
+     {
+      "result": {
+       "running": true,
+       "host": "127.0.0.1",
+       "port": "A",
+       "listen_host": "127.0.0.1",
+       "listen_port": "L",
+       "listen_port_requested": "L",
+       "allow_commands": false,
+       "endpoints": [
+        "127.0.0.1:A"
+       ],
+       "peers": [],
+       "targets": [
+        "127.0.0.1:A"
+       ],
+       "frames_sent": 0,
+       "datagrams_received": 0,
+       "frames_injected": 0,
+       "dropped": 0,
+       "sysid_conflict": false,
+       "commands_refused": 0,
+       "commands_refused_from": [],
+       "loop_blocked": "",
+       "notice": "",
+       "error": ""
+      },
+      "log": []
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "endpoint_list_is_cleaned",
+    "peers": [
+     "A",
+     "B"
+    ],
+    "free": "F",
+    "config": {
+     "host": "127.0.0.1",
+     "port": "$A",
+     "listen_host": "127.0.0.1",
+     "listen_port": "$F",
+     "endpoints": [
+      "127.0.0.1:{A}",
+      "localhost:{A}",
+      "127.0.0.1:{B}",
+      "127.0.0.1:{F}",
+      "x:99999",
+      ":123",
+      "host:abc",
+      "",
+      "  127.0.0.1:{B}  ",
+      "127.0.0.1:0",
+      "127.0.0.1:+{B}",
+      "127.0.0.1: {B}"
+     ]
+    },
+    "steps": [
+     {
+      "op": "start"
+     },
+     {
+      "op": "status"
+     },
+     {
+      "op": "feed",
+      "raw": "fd0300000101010000000102030000"
+     },
+     {
+      "op": "wait",
+      "key": "frames_sent",
+      "at_least": 2
+     },
+     {
+      "op": "recv",
+      "peer": "A"
+     },
+     {
+      "op": "recv",
+      "peer": "B"
+     },
+     {
+      "op": "status"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "log": [
+       [
+        "warning",
+        "forward endpoint :123:14550 does not resolve"
+       ],
+       [
+        "info",
+        "MAVLink forwarding: mirroring to 127.0.0.1:A, localhost:A, 127.0.0.1:B, :123:14550, listening on 127.0.0.1:L (commands from other stations: blocked)"
+       ]
+      ]
+     },
+     {
+      "result": {
+       "running": true,
+       "host": "127.0.0.1",
+       "port": "A",
+       "listen_host": "127.0.0.1",
+       "listen_port": "L",
+       "listen_port_requested": "L",
+       "allow_commands": false,
+       "endpoints": [
+        "127.0.0.1:A",
+        "localhost:A",
+        "127.0.0.1:B",
+        ":123:14550"
+       ],
+       "peers": [],
+       "targets": [
+        "127.0.0.1:A",
+        "127.0.0.1:B"
+       ],
+       "frames_sent": 0,
+       "datagrams_received": 0,
+       "frames_injected": 0,
+       "dropped": 0,
+       "sysid_conflict": false,
+       "commands_refused": 0,
+       "commands_refused_from": [],
+       "loop_blocked": "",
+       "notice": "",
+       "error": ""
+      },
+      "log": []
+     },
+     {
+      "result": null,
+      "log": []
+     },
+     {
+      "result": true,
+      "log": []
+     },
+     {
+      "result": [
+       "fd0300000101010000000102030000"
+      ],
+      "log": []
+     },
+     {
+      "result": [
+       "fd0300000101010000000102030000"
+      ],
+      "log": []
+     },
+     {
+      "result": {
+       "running": true,
+       "host": "127.0.0.1",
+       "port": "A",
+       "listen_host": "127.0.0.1",
+       "listen_port": "L",
+       "listen_port_requested": "L",
+       "allow_commands": false,
+       "endpoints": [
+        "127.0.0.1:A",
+        "localhost:A",
+        "127.0.0.1:B",
+        ":123:14550"
+       ],
+       "peers": [],
+       "targets": [
+        "127.0.0.1:A",
+        "127.0.0.1:B"
+       ],
+       "frames_sent": 2,
+       "datagrams_received": 0,
+       "frames_injected": 0,
+       "dropped": 0,
+       "sysid_conflict": false,
+       "commands_refused": 0,
+       "commands_refused_from": [],
+       "loop_blocked": "",
+       "notice": "",
+       "error": ""
+      },
+      "log": []
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "peer_expires",
+    "peers": [
+     "A",
+     "B"
+    ],
+    "config": {
+     "host": "127.0.0.1",
+     "port": "$A",
+     "listen_host": "127.0.0.1",
+     "listen_port": 0
+    },
+    "steps": [
+     {
+      "op": "start"
+     },
+     {
+      "op": "send",
+      "peer": "B",
+      "data": "fd0300000101010000000102030000"
+     },
+     {
+      "op": "wait",
+      "key": "datagrams_received",
+      "at_least": 1
+     },
+     {
+      "op": "status"
+     },
+     {
+      "op": "skip",
+      "seconds": 29.0
+     },
+     {
+      "op": "status"
+     },
+     {
+      "op": "skip",
+      "seconds": 2.0
+     },
+     {
+      "op": "status"
+     },
+     {
+      "op": "feed",
+      "raw": "fd0900000201010000000102030405060708090000"
+     },
+     {
+      "op": "wait",
+      "key": "frames_sent",
+      "at_least": 1
+     },
+     {
+      "op": "recv",
+      "peer": "A"
+     },
+     {
+      "op": "recv",
+      "peer": "B"
+     },
+     {
+      "op": "send",
+      "peer": "B",
+      "data": "fe050301010001020304050000"
+     },
+     {
+      "op": "wait",
+      "key": "datagrams_received",
+      "at_least": 2
+     },
+     {
+      "op": "status"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "log": [
+       [
+        "info",
+        "MAVLink forwarding: mirroring to 127.0.0.1:A, listening on 127.0.0.1:L (commands from other stations: blocked)"
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "log": []
+     },
+     {
+      "result": true,
+      "log": []
+     },
+     {
+      "result": {
+       "running": true,
+       "host": "127.0.0.1",
+       "port": "A",
+       "listen_host": "127.0.0.1",
+       "listen_port": "L",
+       "listen_port_requested": 0,
+       "allow_commands": false,
+       "endpoints": [
+        "127.0.0.1:A"
+       ],
+       "peers": [
+        "127.0.0.1:B"
+       ],
+       "targets": [
+        "127.0.0.1:A",
+        "127.0.0.1:B"
+       ],
+       "frames_sent": 0,
+       "datagrams_received": 1,
+       "frames_injected": 0,
+       "dropped": 0,
+       "sysid_conflict": false,
+       "commands_refused": 0,
+       "commands_refused_from": [],
+       "loop_blocked": "",
+       "notice": "",
+       "error": ""
+      },
+      "log": []
+     },
+     {
+      "result": null,
+      "log": []
+     },
+     {
+      "result": {
+       "running": true,
+       "host": "127.0.0.1",
+       "port": "A",
+       "listen_host": "127.0.0.1",
+       "listen_port": "L",
+       "listen_port_requested": 0,
+       "allow_commands": false,
+       "endpoints": [
+        "127.0.0.1:A"
+       ],
+       "peers": [
+        "127.0.0.1:B"
+       ],
+       "targets": [
+        "127.0.0.1:A",
+        "127.0.0.1:B"
+       ],
+       "frames_sent": 0,
+       "datagrams_received": 1,
+       "frames_injected": 0,
+       "dropped": 0,
+       "sysid_conflict": false,
+       "commands_refused": 0,
+       "commands_refused_from": [],
+       "loop_blocked": "",
+       "notice": "",
+       "error": ""
+      },
+      "log": []
+     },
+     {
+      "result": null,
+      "log": []
+     },
+     {
+      "result": {
+       "running": true,
+       "host": "127.0.0.1",
+       "port": "A",
+       "listen_host": "127.0.0.1",
+       "listen_port": "L",
+       "listen_port_requested": 0,
+       "allow_commands": false,
+       "endpoints": [
+        "127.0.0.1:A"
+       ],
+       "peers": [],
+       "targets": [
+        "127.0.0.1:A"
+       ],
+       "frames_sent": 0,
+       "datagrams_received": 1,
+       "frames_injected": 0,
+       "dropped": 0,
+       "sysid_conflict": false,
+       "commands_refused": 0,
+       "commands_refused_from": [],
+       "loop_blocked": "",
+       "notice": "",
+       "error": ""
+      },
+      "log": []
+     },
+     {
+      "result": null,
+      "log": []
+     },
+     {
+      "result": true,
+      "log": []
+     },
+     {
+      "result": [
+       "fd0900000201010000000102030405060708090000"
+      ],
+      "log": []
+     },
+     {
+      "result": [],
+      "log": []
+     },
+     {
+      "result": null,
+      "log": []
+     },
+     {
+      "result": true,
+      "log": []
+     },
+     {
+      "result": {
+       "running": true,
+       "host": "127.0.0.1",
+       "port": "A",
+       "listen_host": "127.0.0.1",
+       "listen_port": "L",
+       "listen_port_requested": 0,
+       "allow_commands": false,
+       "endpoints": [
+        "127.0.0.1:A"
+       ],
+       "peers": [
+        "127.0.0.1:B"
+       ],
+       "targets": [
+        "127.0.0.1:A",
+        "127.0.0.1:B"
+       ],
+       "frames_sent": 1,
+       "datagrams_received": 2,
+       "frames_injected": 0,
+       "dropped": 0,
+       "sysid_conflict": false,
+       "commands_refused": 0,
+       "commands_refused_from": [],
+       "loop_blocked": "",
+       "notice": "",
+       "error": ""
+      },
+      "log": []
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "vehicle_link_is_not_mirrored_to",
+    "peers": [
+     "A",
+     "V"
+    ],
+    "config": {
+     "host": "127.0.0.1",
+     "port": "$V",
+     "listen_host": "127.0.0.1",
+     "listen_port": 0,
+     "endpoints": [
+      "127.0.0.1:{A}"
+     ]
+    },
+    "link": [
+     "127.0.0.1",
+     "$V"
+    ],
+    "steps": [
+     {
+      "op": "start"
+     },
+     {
+      "op": "status"
+     },
+     {
+      "op": "feed",
+      "raw": "fd0300000101010000000102030000"
+     },
+     {
+      "op": "wait",
+      "key": "frames_sent",
+      "at_least": 1
+     },
+     {
+      "op": "recv",
+      "peer": "A"
+     },
+     {
+      "op": "recv",
+      "peer": "V"
+     },
+     {
+      "op": "status"
+     },
+     {
+      "op": "send",
+      "peer": "V",
+      "data": "fd0900000201010000000102030405060708090000"
+     },
+     {
+      "op": "settle"
+     },
+     {
+      "op": "status"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "log": [
+       [
+        "info",
+        "MAVLink forwarding: mirroring to 127.0.0.1:V, 127.0.0.1:A, listening on 127.0.0.1:L (commands from other stations: blocked)"
+       ]
+      ]
+     },
+     {
+      "result": {
+       "running": true,
+       "host": "127.0.0.1",
+       "port": "V",
+       "listen_host": "127.0.0.1",
+       "listen_port": "L",
+       "listen_port_requested": 0,
+       "allow_commands": false,
+       "endpoints": [
+        "127.0.0.1:V",
+        "127.0.0.1:A"
+       ],
+       "peers": [],
+       "targets": [
+        "127.0.0.1:A"
+       ],
+       "frames_sent": 0,
+       "datagrams_received": 0,
+       "frames_injected": 0,
+       "dropped": 0,
+       "sysid_conflict": false,
+       "commands_refused": 0,
+       "commands_refused_from": [],
+       "loop_blocked": "127.0.0.1:V",
+       "notice": "Not mirroring to 127.0.0.1:V: Corvus receives the vehicle on that port, so every frame would come straight back. Choose another forwarding port, for example 14560, and set the other station's UDP link to it.",
+       "error": ""
+      },
+      "log": [
+       [
+        "warning",
+        "not forwarding to 127.0.0.1:V: that is the port Corvus receives the vehicle on, so every frame would come straight back. Set forwarding to another port (for example 14560) and point the other station's UDP link at it."
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "log": []
+     },
+     {
+      "result": true,
+      "log": []
+     },
+     {
+      "result": [
+       "fd0300000101010000000102030000"
+      ],
+      "log": []
+     },
+     {
+      "result": [],
+      "log": []
+     },
+     {
+      "result": {
+       "running": true,
+       "host": "127.0.0.1",
+       "port": "V",
+       "listen_host": "127.0.0.1",
+       "listen_port": "L",
+       "listen_port_requested": 0,
+       "allow_commands": false,
+       "endpoints": [
+        "127.0.0.1:V",
+        "127.0.0.1:A"
+       ],
+       "peers": [],
+       "targets": [
+        "127.0.0.1:A"
+       ],
+       "frames_sent": 1,
+       "datagrams_received": 0,
+       "frames_injected": 0,
+       "dropped": 0,
+       "sysid_conflict": false,
+       "commands_refused": 0,
+       "commands_refused_from": [],
+       "loop_blocked": "127.0.0.1:V",
+       "notice": "Not mirroring to 127.0.0.1:V: Corvus receives the vehicle on that port, so every frame would come straight back. Choose another forwarding port, for example 14560, and set the other station's UDP link to it.",
+       "error": ""
+      },
+      "log": []
+     },
+     {
+      "result": null,
+      "log": []
+     },
+     {
+      "result": null,
+      "log": []
+     },
+     {
+      "result": {
+       "running": true,
+       "host": "127.0.0.1",
+       "port": "V",
+       "listen_host": "127.0.0.1",
+       "listen_port": "L",
+       "listen_port_requested": 0,
+       "allow_commands": false,
+       "endpoints": [
+        "127.0.0.1:V",
+        "127.0.0.1:A"
+       ],
+       "peers": [],
+       "targets": [
+        "127.0.0.1:A"
+       ],
+       "frames_sent": 1,
+       "datagrams_received": 0,
+       "frames_injected": 0,
+       "dropped": 0,
+       "sysid_conflict": false,
+       "commands_refused": 0,
+       "commands_refused_from": [],
+       "loop_blocked": "127.0.0.1:V",
+       "notice": "Not mirroring to 127.0.0.1:V: Corvus receives the vehicle on that port, so every frame would come straight back. Choose another forwarding port, for example 14560, and set the other station's UDP link to it.",
+       "error": ""
+      },
+      "log": []
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "vehicle_link_wildcard_host",
+    "peers": [
+     "A",
+     "V"
+    ],
+    "config": {
+     "host": "127.0.0.1",
+     "port": "$V",
+     "listen_host": "127.0.0.1",
+     "listen_port": 0,
+     "endpoints": [
+      "127.0.0.1:{A}"
+     ]
+    },
+    "link": [
+     "0.0.0.0",
+     "$V"
+    ],
+    "steps": [
+     {
+      "op": "start"
+     },
+     {
+      "op": "feed",
+      "raw": "fd0300000101010000000102030000"
+     },
+     {
+      "op": "wait",
+      "key": "frames_sent",
+      "at_least": 1
+     },
+     {
+      "op": "recv",
+      "peer": "V"
+     },
+     {
+      "op": "status"
+     },
+     {
+      "op": "send",
+      "peer": "V",
+      "data": "fd0900000201010000000102030405060708090000"
+     },
+     {
+      "op": "settle"
+     },
+     {
+      "op": "status"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "log": [
+       [
+        "info",
+        "MAVLink forwarding: mirroring to 127.0.0.1:V, 127.0.0.1:A, listening on 127.0.0.1:L (commands from other stations: blocked)"
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "log": [
+       [
+        "warning",
+        "not forwarding to 127.0.0.1:V: that is the port Corvus receives the vehicle on, so every frame would come straight back. Set forwarding to another port (for example 14560) and point the other station's UDP link at it."
+       ]
+      ]
+     },
+     {
+      "result": true,
+      "log": []
+     },
+     {
+      "result": [],
+      "log": []
+     },
+     {
+      "result": {
+       "running": true,
+       "host": "127.0.0.1",
+       "port": "V",
+       "listen_host": "127.0.0.1",
+       "listen_port": "L",
+       "listen_port_requested": 0,
+       "allow_commands": false,
+       "endpoints": [
+        "127.0.0.1:V",
+        "127.0.0.1:A"
+       ],
+       "peers": [],
+       "targets": [
+        "127.0.0.1:A"
+       ],
+       "frames_sent": 1,
+       "datagrams_received": 0,
+       "frames_injected": 0,
+       "dropped": 0,
+       "sysid_conflict": false,
+       "commands_refused": 0,
+       "commands_refused_from": [],
+       "loop_blocked": "127.0.0.1:V",
+       "notice": "Not mirroring to 127.0.0.1:V: Corvus receives the vehicle on that port, so every frame would come straight back. Choose another forwarding port, for example 14560, and set the other station's UDP link to it.",
+       "error": ""
+      },
+      "log": []
+     },
+     {
+      "result": null,
+      "log": []
+     },
+     {
+      "result": null,
+      "log": []
+     },
+     {
+      "result": {
+       "running": true,
+       "host": "127.0.0.1",
+       "port": "V",
+       "listen_host": "127.0.0.1",
+       "listen_port": "L",
+       "listen_port_requested": 0,
+       "allow_commands": false,
+       "endpoints": [
+        "127.0.0.1:V",
+        "127.0.0.1:A"
+       ],
+       "peers": [],
+       "targets": [
+        "127.0.0.1:A"
+       ],
+       "frames_sent": 1,
+       "datagrams_received": 0,
+       "frames_injected": 0,
+       "dropped": 0,
+       "sysid_conflict": false,
+       "commands_refused": 0,
+       "commands_refused_from": [],
+       "loop_blocked": "127.0.0.1:V",
+       "notice": "Not mirroring to 127.0.0.1:V: Corvus receives the vehicle on that port, so every frame would come straight back. Choose another forwarding port, for example 14560, and set the other station's UDP link to it.",
+       "error": ""
+      },
+      "log": []
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "vehicle_link_elsewhere",
+    "peers": [
+     "A",
+     "V"
+    ],
+    "config": {
+     "host": "127.0.0.1",
+     "port": "$A",
+     "listen_host": "127.0.0.1",
+     "listen_port": 0
+    },
+    "link": [
+     "10.1.2.3",
+     "$V"
+    ],
+    "steps": [
+     {
+      "op": "start"
+     },
+     {
+      "op": "feed",
+      "raw": "fd0300000101010000000102030000"
+     },
+     {
+      "op": "wait",
+      "key": "frames_sent",
+      "at_least": 1
+     },
+     {
+      "op": "recv",
+      "peer": "A"
+     },
+     {
+      "op": "status"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "log": [
+       [
+        "info",
+        "MAVLink forwarding: mirroring to 127.0.0.1:A, listening on 127.0.0.1:L (commands from other stations: blocked)"
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "log": []
+     },
+     {
+      "result": true,
+      "log": []
+     },
+     {
+      "result": [
+       "fd0300000101010000000102030000"
+      ],
+      "log": []
+     },
+     {
+      "result": {
+       "running": true,
+       "host": "127.0.0.1",
+       "port": "A",
+       "listen_host": "127.0.0.1",
+       "listen_port": "L",
+       "listen_port_requested": 0,
+       "allow_commands": false,
+       "endpoints": [
+        "127.0.0.1:A"
+       ],
+       "peers": [],
+       "targets": [
+        "127.0.0.1:A"
+       ],
+       "frames_sent": 1,
+       "datagrams_received": 0,
+       "frames_injected": 0,
+       "dropped": 0,
+       "sysid_conflict": false,
+       "commands_refused": 0,
+       "commands_refused_from": [],
+       "loop_blocked": "",
+       "notice": "",
+       "error": ""
+      },
+      "log": []
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "link_address_unavailable",
+    "peers": [
+     "A"
+    ],
+    "config": {
+     "host": "127.0.0.1",
+     "port": "$A",
+     "listen_host": "127.0.0.1",
+     "listen_port": 0
+    },
+    "link": null,
+    "steps": [
+     {
+      "op": "start"
+     },
+     {
+      "op": "feed",
+      "raw": "fd0300000101010000000102030000"
+     },
+     {
+      "op": "wait",
+      "key": "frames_sent",
+      "at_least": 1
+     },
+     {
+      "op": "recv",
+      "peer": "A"
+     },
+     {
+      "op": "status"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "log": [
+       [
+        "info",
+        "MAVLink forwarding: mirroring to 127.0.0.1:A, listening on 127.0.0.1:L (commands from other stations: blocked)"
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "log": []
+     },
+     {
+      "result": true,
+      "log": []
+     },
+     {
+      "result": [
+       "fd0300000101010000000102030000"
+      ],
+      "log": []
+     },
+     {
+      "result": {
+       "running": true,
+       "host": "127.0.0.1",
+       "port": "A",
+       "listen_host": "127.0.0.1",
+       "listen_port": "L",
+       "listen_port_requested": 0,
+       "allow_commands": false,
+       "endpoints": [
+        "127.0.0.1:A"
+       ],
+       "peers": [],
+       "targets": [
+        "127.0.0.1:A"
+       ],
+       "frames_sent": 1,
+       "datagrams_received": 0,
+       "frames_injected": 0,
+       "dropped": 0,
+       "sysid_conflict": false,
+       "commands_refused": 0,
+       "commands_refused_from": [],
+       "loop_blocked": "",
+       "notice": "",
+       "error": ""
+      },
+      "log": []
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "name_that_does_not_resolve",
+    "peers": [
+     "A"
+    ],
+    "config": {
+     "host": "127.0.0.1",
+     "port": "$A",
+     "listen_host": "127.0.0.1",
+     "listen_port": 0,
+     "endpoints": [
+      "no-such-host.invalid:14550",
+      "localhost:{A}"
+     ]
+    },
+    "steps": [
+     {
+      "op": "start"
+     },
+     {
+      "op": "status"
+     },
+     {
+      "op": "feed",
+      "raw": "fd0300000101010000000102030000"
+     },
+     {
+      "op": "wait",
+      "key": "frames_sent",
+      "at_least": 1
+     },
+     {
+      "op": "recv",
+      "peer": "A"
+     },
+     {
+      "op": "skip",
+      "seconds": 31.0
+     },
+     {
+      "op": "feed",
+      "raw": "fd0900000201010000000102030405060708090000"
+     },
+     {
+      "op": "wait",
+      "key": "frames_sent",
+      "at_least": 2
+     },
+     {
+      "op": "recv",
+      "peer": "A"
+     },
+     {
+      "op": "status"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "log": [
+       [
+        "warning",
+        "forward endpoint no-such-host.invalid:14550 does not resolve"
+       ],
+       [
+        "info",
+        "MAVLink forwarding: mirroring to 127.0.0.1:A, no-such-host.invalid:14550, localhost:A, listening on 127.0.0.1:L (commands from other stations: blocked)"
+       ]
+      ]
+     },
+     {
+      "result": {
+       "running": true,
+       "host": "127.0.0.1",
+       "port": "A",
+       "listen_host": "127.0.0.1",
+       "listen_port": "L",
+       "listen_port_requested": 0,
+       "allow_commands": false,
+       "endpoints": [
+        "127.0.0.1:A",
+        "no-such-host.invalid:14550",
+        "localhost:A"
+       ],
+       "peers": [],
+       "targets": [
+        "127.0.0.1:A"
+       ],
+       "frames_sent": 0,
+       "datagrams_received": 0,
+       "frames_injected": 0,
+       "dropped": 0,
+       "sysid_conflict": false,
+       "commands_refused": 0,
+       "commands_refused_from": [],
+       "loop_blocked": "",
+       "notice": "",
+       "error": ""
+      },
+      "log": []
+     },
+     {
+      "result": null,
+      "log": []
+     },
+     {
+      "result": true,
+      "log": []
+     },
+     {
+      "result": [
+       "fd0300000101010000000102030000"
+      ],
+      "log": []
+     },
+     {
+      "result": null,
+      "log": []
+     },
+     {
+      "result": null,
+      "log": [
+       [
+        "warning",
+        "forward endpoint no-such-host.invalid:14550 does not resolve"
+       ]
+      ]
+     },
+     {
+      "result": true,
+      "log": []
+     },
+     {
+      "result": [
+       "fd0900000201010000000102030405060708090000"
+      ],
+      "log": []
+     },
+     {
+      "result": {
+       "running": true,
+       "host": "127.0.0.1",
+       "port": "A",
+       "listen_host": "127.0.0.1",
+       "listen_port": "L",
+       "listen_port_requested": 0,
+       "allow_commands": false,
+       "endpoints": [
+        "127.0.0.1:A",
+        "no-such-host.invalid:14550",
+        "localhost:A"
+       ],
+       "peers": [],
+       "targets": [
+        "127.0.0.1:A"
+       ],
+       "frames_sent": 2,
+       "datagrams_received": 0,
+       "frames_injected": 0,
+       "dropped": 0,
+       "sysid_conflict": false,
+       "commands_refused": 0,
+       "commands_refused_from": [],
+       "loop_blocked": "",
+       "notice": "",
+       "error": ""
+      },
+      "log": []
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "restart_keeps_counters",
+    "peers": [
+     "A",
+     "B"
+    ],
+    "config": {
+     "host": "127.0.0.1",
+     "port": "$A",
+     "listen_host": "127.0.0.1",
+     "listen_port": 0
+    },
+    "steps": [
+     {
+      "op": "start"
+     },
+     {
+      "op": "send",
+      "peer": "B",
+      "data": "fd0300000101010000000102030000"
+     },
+     {
+      "op": "wait",
+      "key": "datagrams_received",
+      "at_least": 1
+     },
+     {
+      "op": "feed",
+      "raw": "fd0900000201010000000102030405060708090000"
+     },
+     {
+      "op": "wait",
+      "key": "frames_sent",
+      "at_least": 2
+     },
+     {
+      "op": "stop"
+     },
+     {
+      "op": "status"
+     },
+     {
+      "op": "start"
+     },
+     {
+      "op": "status"
+     },
+     {
+      "op": "feed",
+      "raw": "fe050301010001020304050000"
+     },
+     {
+      "op": "wait",
+      "key": "frames_sent",
+      "at_least": 3
+     },
+     {
+      "op": "recv",
+      "peer": "A"
+     },
+     {
+      "op": "recv",
+      "peer": "B"
+     },
+     {
+      "op": "status"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "log": [
+       [
+        "info",
+        "MAVLink forwarding: mirroring to 127.0.0.1:A, listening on 127.0.0.1:L (commands from other stations: blocked)"
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "log": []
+     },
+     {
+      "result": true,
+      "log": []
+     },
+     {
+      "result": null,
+      "log": []
+     },
+     {
+      "result": true,
+      "log": []
+     },
+     {
+      "result": null,
+      "log": []
+     },
+     {
+      "result": {
+       "running": false,
+       "host": "127.0.0.1",
+       "port": "A",
+       "listen_host": "127.0.0.1",
+       "listen_port": 0,
+       "listen_port_requested": 0,
+       "allow_commands": false,
+       "endpoints": [
+        "127.0.0.1:A"
+       ],
+       "peers": [],
+       "targets": [
+        "127.0.0.1:A"
+       ],
+       "frames_sent": 2,
+       "datagrams_received": 1,
+       "frames_injected": 0,
+       "dropped": 0,
+       "sysid_conflict": false,
+       "commands_refused": 0,
+       "commands_refused_from": [],
+       "loop_blocked": "",
+       "notice": "",
+       "error": ""
+      },
+      "log": []
+     },
+     {
+      "result": true,
+      "log": [
+       [
+        "info",
+        "MAVLink forwarding: mirroring to 127.0.0.1:A, listening on 127.0.0.1:L (commands from other stations: blocked)"
+       ]
+      ]
+     },
+     {
+      "result": {
+       "running": true,
+       "host": "127.0.0.1",
+       "port": "A",
+       "listen_host": "127.0.0.1",
+       "listen_port": "L",
+       "listen_port_requested": 0,
+       "allow_commands": false,
+       "endpoints": [
+        "127.0.0.1:A"
+       ],
+       "peers": [],
+       "targets": [
+        "127.0.0.1:A"
+       ],
+       "frames_sent": 2,
+       "datagrams_received": 1,
+       "frames_injected": 0,
+       "dropped": 0,
+       "sysid_conflict": false,
+       "commands_refused": 0,
+       "commands_refused_from": [],
+       "loop_blocked": "",
+       "notice": "",
+       "error": ""
+      },
+      "log": []
+     },
+     {
+      "result": null,
+      "log": []
+     },
+     {
+      "result": true,
+      "log": []
+     },
+     {
+      "result": [
+       "fd0900000201010000000102030405060708090000",
+       "fe050301010001020304050000"
+      ],
+      "log": []
+     },
+     {
+      "result": [
+       "fd0900000201010000000102030405060708090000"
+      ],
+      "log": []
+     },
+     {
+      "result": {
+       "running": true,
+       "host": "127.0.0.1",
+       "port": "A",
+       "listen_host": "127.0.0.1",
+       "listen_port": "L",
+       "listen_port_requested": 0,
+       "allow_commands": false,
+       "endpoints": [
+        "127.0.0.1:A"
+       ],
+       "peers": [],
+       "targets": [
+        "127.0.0.1:A"
+       ],
+       "frames_sent": 3,
+       "datagrams_received": 1,
+       "frames_injected": 0,
+       "dropped": 0,
+       "sysid_conflict": false,
+       "commands_refused": 0,
+       "commands_refused_from": [],
+       "loop_blocked": "",
+       "notice": "",
+       "error": ""
+      },
+      "log": []
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "endpoint_parsing",
+    "peers": [
+     "A"
+    ],
+    "config": {
+     "host": "127.0.0.1",
+     "port": "$A",
+     "listen_host": "127.0.0.1",
+     "listen_port": 0
+    },
+    "steps": [
+     {
+      "op": "parse",
+      "text": "host",
+      "default": 14550
+     },
+     {
+      "op": "parse",
+      "text": "host:1",
+      "default": 14550
+     },
+     {
+      "op": "parse",
+      "text": "host:65535",
+      "default": 14550
+     },
+     {
+      "op": "parse",
+      "text": "host:65536",
+      "default": 14550
+     },
+     {
+      "op": "parse",
+      "text": "host:0",
+      "default": 14550
+     },
+     {
+      "op": "parse",
+      "text": "host:-1",
+      "default": 14550
+     },
+     {
+      "op": "parse",
+      "text": ":1",
+      "default": 14550
+     },
+     {
+      "op": "parse",
+      "text": "a:b:5",
+      "default": 14550
+     },
+     {
+      "op": "parse",
+      "text": "[::1]:14550",
+      "default": 14550
+     },
+     {
+      "op": "parse",
+      "text": "  h : 12 ",
+      "default": 14550
+     },
+     {
+      "op": "parse",
+      "text": "h:1_2",
+      "default": 14550
+     },
+     {
+      "op": "parse",
+      "text": "h:_12",
+      "default": 14550
+     },
+     {
+      "op": "parse",
+      "text": "h:12_",
+      "default": 14550
+     },
+     {
+      "op": "parse",
+      "text": "h:1__2",
+      "default": 14550
+     },
+     {
+      "op": "parse",
+      "text": "h:+7",
+      "default": 14550
+     },
+     {
+      "op": "parse",
+      "text": "h:",
+      "default": 99
+     },
+     {
+      "op": "parse",
+      "text": "",
+      "default": 14550
+     },
+     {
+      "op": "parse",
+      "text": "   ",
+      "default": 14550
+     },
+     {
+      "op": "parse",
+      "text": "::1",
+      "default": 14550
+     },
+     {
+      "op": "parse",
+      "text": "h: 7",
+      "default": 14550
+     },
+     {
+      "op": "split",
+      "data": ""
+     },
+     {
+      "op": "split",
+      "data": "fd"
+     },
+     {
+      "op": "split",
+      "data": "fdff"
+     },
+     {
+      "op": "split",
+      "data": "fd0300000101010000000102030000"
+     },
+     {
+      "op": "split",
+      "data": "fd0300000101010000000102030000fd0900000201010000000102030405060708090000"
+     },
+     {
+      "op": "split",
+      "data": "fd0900"
+     },
+     {
+      "op": "split",
+      "data": "00fd030000010101000000010203000000"
+     },
+     {
+      "op": "split",
+      "data": "fe050301010001020304050000fd03"
+     },
+     {
+      "op": "split",
+      "data": "fe"
+     },
+     {
+      "op": "split",
+      "data": "fe00"
+     },
+     {
+      "op": "split",
+      "data": "fe00000000000000"
+     },
+     {
+      "op": "split",
+      "data": "fd030100000101000000010203000000000000000000000000000000"
+     },
+     {
+      "op": "split",
+      "data": "fdff00000001010000000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff0000"
+     },
+     {
+      "op": "split",
+      "data": "fdfc00000001010000000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfc0000fd0300000101010000000102030000"
+     },
+     {
+      "op": "source",
+      "data": ""
+     },
+     {
+      "op": "source",
+      "data": "fd0300000101010000000102030000"
+     },
+     {
+      "op": "source",
+      "data": "fe050301010001020304050000"
+     },
+     {
+      "op": "source",
+      "data": "fd03000000fe010000000102030000"
+     },
+     {
+      "op": "source",
+      "data": "fe0102"
+     },
+     {
+      "op": "source",
+      "data": "fd01020304050607"
+     },
+     {
+      "op": "source",
+      "data": "fd0102030405"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": [
+       "host",
+       14550
+      ],
+      "log": []
+     },
+     {
+      "result": [
+       "host",
+       1
+      ],
+      "log": []
+     },
+     {
+      "result": [
+       "host",
+       65535
+      ],
+      "log": []
+     },
+     {
+      "result": null,
+      "log": []
+     },
+     {
+      "result": null,
+      "log": []
+     },
+     {
+      "result": null,
+      "log": []
+     },
+     {
+      "result": [
+       ":1",
+       14550
+      ],
+      "log": []
+     },
+     {
+      "result": [
+       "a:b",
+       5
+      ],
+      "log": []
+     },
+     {
+      "result": [
+       "[::1]",
+       14550
+      ],
+      "log": []
+     },
+     {
+      "result": [
+       "h ",
+       12
+      ],
+      "log": []
+     },
+     {
+      "result": [
+       "h",
+       12
+      ],
+      "log": []
+     },
+     {
+      "result": null,
+      "log": []
+     },
+     {
+      "result": null,
+      "log": []
+     },
+     {
+      "result": null,
+      "log": []
+     },
+     {
+      "result": [
+       "h",
+       7
+      ],
+      "log": []
+     },
+     {
+      "result": [
+       "h",
+       99
+      ],
+      "log": []
+     },
+     {
+      "result": null,
+      "log": []
+     },
+     {
+      "result": null,
+      "log": []
+     },
+     {
+      "result": [
+       ":",
+       1
+      ],
+      "log": []
+     },
+     {
+      "result": [
+       "h",
+       7
+      ],
+      "log": []
+     },
+     {
+      "result": {
+       "frames": [],
+       "rest": ""
+      },
+      "log": []
+     },
+     {
+      "result": {
+       "frames": [],
+       "rest": "fd"
+      },
+      "log": []
+     },
+     {
+      "result": {
+       "frames": [],
+       "rest": "fdff"
+      },
+      "log": []
+     },
+     {
+      "result": {
+       "frames": [
+        "fd0300000101010000000102030000"
+       ],
+       "rest": ""
+      },
+      "log": []
+     },
+     {
+      "result": {
+       "frames": [
+        "fd0300000101010000000102030000",
+        "fd0900000201010000000102030405060708090000"
+       ],
+       "rest": ""
+      },
+      "log": []
+     },
+     {
+      "result": {
+       "frames": [],
+       "rest": "fd0900"
+      },
+      "log": []
+     },
+     {
+      "result": {
+       "frames": [
+        "fd0300000101010000000102030000"
+       ],
+       "rest": ""
+      },
+      "log": []
+     },
+     {
+      "result": {
+       "frames": [
+        "fe050301010001020304050000"
+       ],
+       "rest": "fd03"
+      },
+      "log": []
+     },
+     {
+      "result": {
+       "frames": [],
+       "rest": "fe"
+      },
+      "log": []
+     },
+     {
+      "result": {
+       "frames": [],
+       "rest": "fe00"
+      },
+      "log": []
+     },
+     {
+      "result": {
+       "frames": [
+        "fe00000000000000"
+       ],
+       "rest": ""
+      },
+      "log": []
+     },
+     {
+      "result": {
+       "frames": [
+        "fd030100000101000000010203000000000000000000000000000000"
+       ],
+       "rest": ""
+      },
+      "log": []
+     },
+     {
+      "result": {
+       "frames": [
+        "fdff00000001010000000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff0000"
+       ],
+       "rest": ""
+      },
+      "log": []
+     },
+     {
+      "result": {
+       "frames": [
+        "fdfc00000001010000000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfc0000",
+        "fd0300000101010000000102030000"
+       ],
+       "rest": ""
+      },
+      "log": []
+     },
+     {
+      "result": 0,
+      "log": []
+     },
+     {
+      "result": 1,
+      "log": []
+     },
+     {
+      "result": 1,
+      "log": []
+     },
+     {
+      "result": 254,
+      "log": []
+     },
+     {
+      "result": 0,
+      "log": []
+     },
+     {
+      "result": 5,
+      "log": []
+     },
+     {
+      "result": 0,
+      "log": []
+     }
+    ],
+    "final": {}
+   }
+  }
+ ]
+}

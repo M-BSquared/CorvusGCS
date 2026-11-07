@@ -227,6 +227,7 @@ pub struct Shared {
     flight: FlightEngine,
     engines: Engines,
     fleet_tracker: FleetTracker,
+    inject_refused_warned: AtomicBool,
 }
 
 /// One link to one vehicle.
@@ -280,6 +281,7 @@ impl Bridge {
                 flight: FlightEngine::new(),
                 engines: Engines::new(),
                 fleet_tracker: FleetTracker::new(),
+                inject_refused_warned: AtomicBool::new(false),
             }),
         }
     }
@@ -397,6 +399,48 @@ impl Bridge {
 
     pub fn hold(&self) -> bool {
         self.shared.flight.hold(self.shared.as_ref())
+    }
+
+    /// Where a UDP link that listens is bound, else None. The forwarder asks,
+    /// so it never mirrors into this socket.
+    pub fn local_udp_address(&self) -> Option<(String, u16)> {
+        let connection = &self.shared.config.connection;
+        if !(connection.starts_with("udp:") || connection.starts_with("udpin:")) {
+            return None;
+        }
+        let addr = self.shared.conn()?.local_addr()?;
+        Some((addr.ip().to_string(), addr.port()))
+    }
+
+    /// Writes one already framed MAVLink message straight to the aircraft: the
+    /// entry point of a second ground station. The bytes go through untouched
+    /// so its own sequence numbers, system id and signature reach the vehicle.
+    /// A frame under Corvus' own id or the vehicle's is refused (what a
+    /// forwarding loop hands back).
+    pub fn inject_raw(&self, frame: &[u8]) -> bool {
+        let sh = &self.shared;
+        let Some(conn) = sh.conn() else { return false };
+        if frame.is_empty() {
+            return false;
+        }
+        let source = crate::forwarder::frame_source_system(frame);
+        let vehicle = sh.st().target.0;
+        if source == GCS_SYSTEM_ID || source == vehicle {
+            if !sh.inject_refused_warned.swap(true, Ordering::SeqCst) {
+                let whose = if source == GCS_SYSTEM_ID {
+                    "Corvus' own id"
+                } else {
+                    "the vehicle's id"
+                };
+                sh.log_line(
+                    "warning",
+                    &format!("not forwarding frames from system {source} to the vehicle: that is {whose}"),
+                );
+            }
+            return false;
+        }
+        let _guard = sh.send_lock.lock().unwrap_or_else(|e| e.into_inner());
+        conn.write_raw(frame).is_ok()
     }
 
     pub fn inject_rtcm(&self, frame: &[u8]) -> bool {

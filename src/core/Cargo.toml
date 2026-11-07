@@ -25,6 +25,8 @@ sha1 = "0.10"
 getrandom = "0.3"
 # corvus-core, the headless binary, stops cleanly on SIGINT and SIGTERM.
 ctrlc = { version = "3", features = ["termination"] }
+# The forwarder binds its UDP socket with SO_REUSEADDR as Python did; the link crate already builds it.
+socket2 = { version = "0.5", features = ["all"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

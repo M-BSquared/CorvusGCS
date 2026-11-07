@@ -576,6 +576,18 @@ impl Connection {
         Ok(())
     }
 
+    /// Writes bytes exactly as given (a second station's own frames, with its
+    /// sequence numbers and signature), counted like a sent frame.
+    pub fn write_raw(&self, buf: &[u8]) -> io::Result<()> {
+        if self.is_closed() {
+            return Err(gone("the connection is closed"));
+        }
+        self.write_bytes(buf)?;
+        self.bump(FRAMES_TX, 1);
+        self.bump(BYTES_TX, buf.len() as u64);
+        Ok(())
+    }
+
     /// Where a UDP link points or listens: its bound address.
     pub fn local_addr(&self) -> Option<std::net::SocketAddr> {
         match &self.link {

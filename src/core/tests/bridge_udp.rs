@@ -361,3 +361,78 @@ fn the_other_protocols_run_on_the_same_link() {
     drop(vehicle);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn the_forwarder_mirrors_a_real_link_and_injects_a_configured_stations_command() {
+    use corvus_core::forwarder::{Forwarder, ForwarderConfig};
+    use corvus_core::link::plain::frame::{encode, Proto};
+
+    let port = free_port();
+    let dir = std::env::temp_dir().join(format!("corvus-forward-udp-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let store = Arc::new(VehicleStateStore::new());
+    let bridge = Bridge::new(
+        Arc::clone(&store),
+        BridgeConfig::new(&format!("udp:127.0.0.1:{port}"), dir.join("logs")),
+    );
+    let station = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+    station.set_read_timeout(Some(Duration::from_millis(300))).unwrap();
+    let station_port = station.local_addr().unwrap().port();
+    let cfg = ForwarderConfig {
+        port: station_port,
+        listen_port: 0,
+        allow_commands: true,
+        ..ForwarderConfig::default()
+    };
+    let forwarder = Forwarder::for_bridge(cfg, &bridge, Arc::new(|_, _| {}));
+    assert!(forwarder.start());
+    forwarder.attach(&bridge);
+    bridge.start();
+    let vehicle = Vehicle::start(port);
+    wait_for("the vehicle", Duration::from_secs(15), || {
+        store.get("connected").is_some_and(|v| v == true)
+    });
+
+    let mut buf = vec![0u8; 2048];
+    let mut mirrored = 0;
+    let end = Instant::now() + Duration::from_secs(5);
+    while mirrored < 3 && Instant::now() < end {
+        if let Ok((n, _)) = station.recv_from(&mut buf) {
+            assert_eq!(buf[0], 0xFD, "a MAVLink 2 frame as the vehicle sent it");
+            assert!(n > 10);
+            mirrored += 1;
+        }
+    }
+    assert!(mirrored >= 3, "the station hears the vehicle ({mirrored} frames)");
+
+    let command = Message::named("COMMAND_LONG", Wire::V2)
+        .unwrap()
+        .with("target_system", Value::Int(1))
+        .with("target_component", Value::Int(1))
+        .with("command", Value::Int(176))
+        .with("param1", Value::Float(1.0));
+    let frame = encode(Proto::V2, 7, 255, 190, &command, None).unwrap();
+    let listen = forwarder.listen_address();
+    station.send_to(&frame, format!("{}:{}", listen.0, listen.1)).unwrap();
+    wait_for("the station's command at the vehicle", Duration::from_secs(5), || {
+        vehicle.commands.lock().unwrap().contains(&176)
+    });
+    assert_eq!(forwarder.status()["frames_injected"], 1);
+
+    let own = encode(Proto::V2, 8, 254, 190, &command, None).unwrap();
+    station.send_to(&own, format!("{}:{}", listen.0, listen.1)).unwrap();
+    wait_for("the refusal", Duration::from_secs(5), || {
+        forwarder.status()["sysid_conflict"] == true
+    });
+    assert_eq!(
+        forwarder.status()["frames_injected"],
+        1,
+        "a frame under Corvus' id is never injected"
+    );
+
+    Forwarder::detach(&bridge);
+    forwarder.stop();
+    bridge.stop();
+    drop(vehicle);
+    let _ = std::fs::remove_dir_all(&dir);
+}

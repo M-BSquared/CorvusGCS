@@ -4511,6 +4511,288 @@ def fleet_cases() -> list[dict]:
     return out
 
 
+# ------------------------------------------------------------ forwarder ----
+
+def fwd_ref():
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
+    from tests.reference import mavlink_forwarder_python as ref
+    return ref
+
+
+def fwd_frame(version=2, system=1, length=3, signed=False, seq=0) -> str:
+    """A framed MAVLink message by its header alone; the forwarder checks only framing."""
+    payload = bytes(range(1, length + 1))
+    if version == 1:
+        raw = bytes([0xFE, length, seq, system, 1, 0]) + payload + b"\x00\x00"
+    else:
+        raw = bytes([0xFD, length, 1 if signed else 0, 0, seq, system, 1, 0, 0, 0]) + payload + b"\x00\x00"
+        if signed:
+            raw += bytes(13)
+    return raw.hex()
+
+
+def fwd_scenarios() -> list[dict]:
+    wait = lambda key, n: {"op": "wait", "key": key, "at_least": n}
+    status = {"op": "status"}
+    base = {"host": "127.0.0.1", "port": "$A", "listen_host": "127.0.0.1", "listen_port": 0}
+    f1, f2, f3 = fwd_frame(seq=1), fwd_frame(seq=2, length=9), fwd_frame(version=1, seq=3, length=5)
+    out = []
+    out.append({"name": "mirror_basic", "peers": ["A"], "config": base, "steps": [
+        {"op": "start"}, status, {"op": "feed", "raw": f1}, {"op": "feed", "raw": f2}, {"op": "feed", "raw": f3},
+        wait("frames_sent", 3), {"op": "recv", "peer": "A"}, status,
+    ]})
+    out.append({"name": "feed_edge_cases", "peers": ["A"], "config": base, "steps": [
+        {"op": "feed", "raw": f1}, status, {"op": "start"}, {"op": "feed", "raw": ""}, {"op": "feed", "raw": f1},
+        wait("frames_sent", 1), {"op": "recv", "peer": "A"}, {"op": "start"}, status,
+        {"op": "stop"}, {"op": "feed", "raw": f1}, {"op": "stop"}, status, {"op": "recv", "peer": "A"},
+        {"op": "start"}, {"op": "feed", "raw": f2}, wait("frames_sent", 2), {"op": "recv", "peer": "A"}, status,
+    ]})
+    out.append({"name": "dialled_in_peer_is_mirrored_to", "peers": ["A", "B", "C"], "config": base, "steps": [
+        {"op": "start"}, {"op": "send", "peer": "C", "data": "00ff12345678"}, wait("datagrams_received", 1), status,
+        {"op": "send", "peer": "B", "data": f1}, wait("datagrams_received", 2), status,
+        {"op": "feed", "raw": f2}, wait("frames_sent", 2), {"op": "recv", "peer": "A"}, {"op": "recv", "peer": "B"},
+        {"op": "recv", "peer": "C"}, {"op": "injected"}, status,
+    ]})
+    out.append({"name": "commands_from_configured_endpoints_only", "peers": ["A", "B"],
+                "config": {**base, "allow_commands": True}, "steps": [
+        {"op": "start"}, {"op": "send", "peer": "A", "data": f1}, wait("frames_injected", 1),
+        {"op": "send", "peer": "B", "data": f2}, wait("commands_refused", 1),
+        {"op": "send", "peer": "B", "data": f3}, wait("commands_refused", 2),
+        {"op": "send", "peer": "A", "data": f2 + f3}, wait("frames_injected", 3), {"op": "injected"}, status,
+    ]})
+    out.append({"name": "commands_off_by_default", "peers": ["A"], "config": base, "steps": [
+        {"op": "start"}, {"op": "send", "peer": "A", "data": f1}, wait("datagrams_received", 1), {"op": "injected"}, status,
+    ]})
+    out.append({"name": "inject_refused_is_not_counted", "peers": ["A"],
+                "config": {**base, "allow_commands": True}, "inject_result": False, "steps": [
+        {"op": "start"}, {"op": "send", "peer": "A", "data": f1}, wait("datagrams_received", 1), {"op": "settle"},
+        {"op": "injected"}, status,
+    ]})
+    out.append({"name": "our_own_system_id", "peers": ["A", "B"], "config": {**base, "allow_commands": True}, "steps": [
+        {"op": "start"}, {"op": "send", "peer": "A", "data": fwd_frame(system=254)}, wait("datagrams_received", 1),
+        {"op": "settle"}, status, {"op": "send", "peer": "A", "data": fwd_frame(system=254, version=1)},
+        wait("datagrams_received", 2), {"op": "send", "peer": "A", "data": fwd_frame(system=255)},
+        wait("frames_injected", 1), {"op": "injected"}, status,
+        {"op": "send", "peer": "B", "data": fwd_frame(system=254)}, wait("datagrams_received", 4), {"op": "settle"}, status,
+    ]})
+    out.append({"name": "frames_split_and_resynchronised", "peers": ["A"], "config": {**base, "allow_commands": True}, "steps": [
+        {"op": "start"}, {"op": "send", "peer": "A", "data": f2[:10]}, wait("datagrams_received", 1), {"op": "settle"},
+        {"op": "injected"}, status, {"op": "send", "peer": "A", "data": f2[10:]}, wait("frames_injected", 1),
+        {"op": "send", "peer": "A", "data": "0102" + f1 + "aa" + f3 + "fd"}, wait("frames_injected", 3),
+        {"op": "send", "peer": "A", "data": "03" + fwd_frame(length=255, seq=9)}, wait("datagrams_received", 4),
+        {"op": "settle"}, {"op": "injected"}, status,
+    ]})
+    out.append({"name": "signed_and_v1_frames", "peers": ["A"], "config": {**base, "allow_commands": True}, "steps": [
+        {"op": "start"}, {"op": "send", "peer": "A", "data": fwd_frame(signed=True, length=4)},
+        wait("frames_injected", 1), {"op": "send", "peer": "A", "data": fwd_frame(version=1, length=0)},
+        wait("frames_injected", 2), {"op": "send", "peer": "A", "data": fwd_frame(signed=True, length=250)},
+        wait("datagrams_received", 3), {"op": "settle"}, {"op": "injected"}, status,
+    ]})
+    out.append({"name": "listen_port_busy", "peers": ["A"], "busy": "BUSY",
+                "config": {**base, "listen_port": "$BUSY"}, "steps": [
+        {"op": "start"}, status, {"op": "feed", "raw": f1}, wait("frames_sent", 1), {"op": "recv", "peer": "A"},
+        {"op": "stop"}, {"op": "start"}, status,
+    ]})
+    out.append({"name": "listen_port_chosen", "peers": ["A"], "free": "F",
+                "config": {**base, "listen_port": "$F"}, "steps": [{"op": "start"}, status]})
+    out.append({"name": "endpoint_list_is_cleaned", "peers": ["A", "B"], "free": "F", "config": {
+        **base, "listen_port": "$F", "endpoints": [
+            "127.0.0.1:{A}", "localhost:{A}", "127.0.0.1:{B}", "127.0.0.1:{F}", "x:99999", ":123", "host:abc", "",
+            "  127.0.0.1:{B}  ", "127.0.0.1:0", "127.0.0.1:+{B}", "127.0.0.1: {B}"]},
+        "steps": [{"op": "start"}, status, {"op": "feed", "raw": f1}, wait("frames_sent", 2), {"op": "recv", "peer": "A"},
+                  {"op": "recv", "peer": "B"}, status]})
+    out.append({"name": "peer_expires", "peers": ["A", "B"], "config": base, "steps": [
+        {"op": "start"}, {"op": "send", "peer": "B", "data": f1}, wait("datagrams_received", 1), status,
+        {"op": "skip", "seconds": 29.0}, status, {"op": "skip", "seconds": 2.0}, status,
+        {"op": "feed", "raw": f2}, wait("frames_sent", 1), {"op": "recv", "peer": "A"}, {"op": "recv", "peer": "B"},
+        {"op": "send", "peer": "B", "data": f3}, wait("datagrams_received", 2), status,
+    ]})
+    out.append({"name": "vehicle_link_is_not_mirrored_to", "peers": ["A", "V"], "config": {
+        **base, "port": "$V", "endpoints": ["127.0.0.1:{A}"]}, "link": ["127.0.0.1", "$V"], "steps": [
+        {"op": "start"}, status, {"op": "feed", "raw": f1}, wait("frames_sent", 1), {"op": "recv", "peer": "A"},
+        {"op": "recv", "peer": "V"}, status, {"op": "send", "peer": "V", "data": f2}, {"op": "settle"}, status,
+    ]})
+    out.append({"name": "vehicle_link_wildcard_host", "peers": ["A", "V"], "config": {
+        **base, "port": "$V", "endpoints": ["127.0.0.1:{A}"]}, "link": ["0.0.0.0", "$V"], "steps": [
+        {"op": "start"}, {"op": "feed", "raw": f1}, wait("frames_sent", 1), {"op": "recv", "peer": "V"}, status,
+        {"op": "send", "peer": "V", "data": f2}, {"op": "settle"}, status,
+    ]})
+    out.append({"name": "vehicle_link_elsewhere", "peers": ["A", "V"], "config": base, "link": ["10.1.2.3", "$V"], "steps": [
+        {"op": "start"}, {"op": "feed", "raw": f1}, wait("frames_sent", 1), {"op": "recv", "peer": "A"}, status,
+    ]})
+    out.append({"name": "link_address_unavailable", "peers": ["A"], "config": base, "link": None, "steps": [
+        {"op": "start"}, {"op": "feed", "raw": f1}, wait("frames_sent", 1), {"op": "recv", "peer": "A"}, status,
+    ]})
+    out.append({"name": "name_that_does_not_resolve", "peers": ["A"], "config": {
+        **base, "endpoints": ["no-such-host.invalid:14550", "localhost:{A}"]}, "steps": [
+        {"op": "start"}, status, {"op": "feed", "raw": f1}, wait("frames_sent", 1), {"op": "recv", "peer": "A"},
+        {"op": "skip", "seconds": 31.0}, {"op": "feed", "raw": f2}, wait("frames_sent", 2), {"op": "recv", "peer": "A"}, status,
+    ]})
+    out.append({"name": "restart_keeps_counters", "peers": ["A", "B"], "config": base, "steps": [
+        {"op": "start"}, {"op": "send", "peer": "B", "data": f1}, wait("datagrams_received", 1),
+        {"op": "feed", "raw": f2}, wait("frames_sent", 2), {"op": "stop"}, status, {"op": "start"}, status,
+        {"op": "feed", "raw": f3}, wait("frames_sent", 3), {"op": "recv", "peer": "A"}, {"op": "recv", "peer": "B"}, status,
+    ]})
+    out.append({"name": "endpoint_parsing", "peers": ["A"], "config": base, "steps": [
+        {"op": "parse", "text": t, "default": d} for t, d in [
+            ("host", 14550), ("host:1", 14550), ("host:65535", 14550), ("host:65536", 14550), ("host:0", 14550),
+            ("host:-1", 14550), (":1", 14550), ("a:b:5", 14550), ("[::1]:14550", 14550), ("  h : 12 ", 14550),
+            ("h:1_2", 14550), ("h:_12", 14550), ("h:12_", 14550), ("h:1__2", 14550), ("h:+7", 14550),
+            ("h:", 99), ("", 14550), ("   ", 14550), ("::1", 14550), ("h: 7", 14550),
+        ]] + [{"op": "split", "data": d} for d in [
+            "", "fd", "fdff", f1, f1 + f2, f2[:6], "00" + f1 + "00", f3 + f1[:4], "fe", "fe00", "fe0000000000" "0000",
+            fwd_frame(signed=True), fwd_frame(length=255), fwd_frame(length=252) + f1]] + [
+        {"op": "source", "data": d} for d in ["", f1, f3, fwd_frame(system=254), "fe0102", "fd01020304050607", "fd0102030405"]]})
+    return out
+
+
+def fwd_cases() -> list[dict]:
+    import logging
+    import re
+    import socket
+    import time as real_time
+
+    ref = fwd_ref()
+    cases = []
+    for sc in fwd_scenarios():
+        offset = [0.0]
+        names: dict = {}
+        socks: dict = {}
+
+        def tokens(value):
+            if isinstance(value, str):
+                if value.startswith("$") and value[1:] in names:
+                    return names[value[1:]]
+                return re.sub(r"\{(\w+)\}", lambda m: str(names[m.group(1)]), value)
+            if isinstance(value, list):
+                return [tokens(v) for v in value]
+            if isinstance(value, dict):
+                return {k: tokens(v) for k, v in value.items()}
+            return value
+
+        def normalise(value):
+            by_port = {port: name for name, port in names.items()}
+            if isinstance(value, str):
+                value = re.sub(r":(\d+)\b", lambda m: ":" + by_port.get(int(m.group(1)), m.group(1)), value)
+                return re.sub(r"\bport (\d+)\b", lambda m: "port " + by_port.get(int(m.group(1)), m.group(1)), value)
+            if isinstance(value, list):
+                return [normalise(v) for v in value]
+            if isinstance(value, dict):
+                return {k: (by_port[v] if k in ("port", "listen_port", "listen_port_requested") and v in by_port and v != 0
+                            else normalise(v)) for k, v in value.items()}
+            return value
+
+        for name in sc["peers"]:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            sock.bind(("127.0.0.1", 0))
+            sock.settimeout(0.15)
+            socks[name], names[name] = sock, sock.getsockname()[1]
+        if sc.get("busy"):
+            busy = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            busy.bind(("127.0.0.1", 0))
+            socks["BUSY"], names["BUSY"] = busy, busy.getsockname()[1]
+        if sc.get("free"):
+            probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            probe.bind(("127.0.0.1", 0))
+            names[sc["free"]] = probe.getsockname()[1]
+            probe.close()
+        injected: list = []
+        lines: list = []
+
+        class Capture(logging.Handler):
+            def emit(self, record):
+                lines.append([record.levelname.lower(), record.getMessage()])
+
+        logger = logging.getLogger("corvus.forward")
+        handler = Capture()
+        old_level = logger.level
+        logger.addHandler(handler)
+        logger.setLevel(logging.INFO)
+        real_monotonic = real_time.monotonic
+        results = []
+        fwd = None
+        try:
+            with mock.patch("time.monotonic", lambda: real_monotonic() + offset[0]):
+                cfg = tokens(sc["config"])
+                link = tokens(sc["link"]) if "link" in sc and sc["link"] is not None else None
+                link_address = (lambda: tuple(link)) if link else None
+                if "link" in sc and sc["link"] is None:
+                    def link_address():
+                        raise OSError("no address yet")
+                result_of = sc.get("inject_result", True)
+
+                def inject(frame, injected=injected):
+                    injected.append(bytes(frame).hex())
+                    return result_of
+
+                fwd = ref.MavlinkForwarder(
+                    inject, host=cfg["host"], port=cfg["port"], listen_host=cfg["listen_host"],
+                    listen_port=cfg["listen_port"], endpoints=cfg.get("endpoints", ()),
+                    allow_commands=cfg.get("allow_commands", False), link_address=link_address)
+                for step in sc["steps"]:
+                    before = len(lines)
+                    op = step["op"]
+                    result = None
+                    if op == "start":
+                        result = fwd.start()
+                        if fwd._bound:
+                            names["L"] = fwd.listen_address()[1]
+                    elif op == "stop":
+                        fwd.stop()
+                    elif op == "feed":
+                        fwd.feed(bytes.fromhex(step["raw"]))
+                    elif op == "status":
+                        result = fwd.status()
+                    elif op == "send":
+                        socks[step["peer"]].sendto(bytes.fromhex(step["data"]), ("127.0.0.1", fwd.listen_address()[1]))
+                    elif op == "recv":
+                        got = []
+                        while True:
+                            try:
+                                data, _ = socks[step["peer"]].recvfrom(65535)
+                            except TimeoutError:
+                                break
+                            got.append(data.hex())
+                        result = got
+                    elif op == "wait":
+                        deadline = real_monotonic() + 3.0
+                        ok = False
+                        while real_monotonic() < deadline:
+                            if fwd.status()[step["key"]] >= step["at_least"]:
+                                ok = True
+                                break
+                            real_time.sleep(0.01)
+                        real_time.sleep(0.08)
+                        result = ok
+                    elif op == "settle":
+                        real_time.sleep(0.3)
+                    elif op == "injected":
+                        result = list(injected)
+                    elif op == "skip":
+                        offset[0] += step["seconds"]
+                    elif op == "parse":
+                        result = ref.parse_endpoint(step["text"], step["default"])
+                    elif op == "split":
+                        frames, rest = ref.split_frames(bytes.fromhex(step["data"]))
+                        result = {"frames": [f.hex() for f in frames], "rest": rest.hex()}
+                    elif op == "source":
+                        result = ref.frame_source_system(bytes.fromhex(step["data"]))
+                    else:
+                        raise SystemExit(op)
+                    real_time.sleep(0.02)
+                    new_lines = [[lvl, re.sub(r"( does not resolve) \(.*\)$", r"\1", text)] for lvl, text in lines[before:]]
+                    results.append({"result": normalise(result), "log": normalise(new_lines)})
+        finally:
+            if fwd is not None:
+                fwd.stop()
+            logger.removeHandler(handler)
+            logger.setLevel(old_level)
+            for sock in socks.values():
+                sock.close()
+        cases.append({"scenario": clean(sc), "expected": clean({"steps": results, "final": {}})})
+    return cases
+
+
 COMMANDS = {"params_cases.json": cases, "logs_cases.json": logs_cases, "shell_cases.json": shell_cases,
             "ftp_cases.json": ftp_cases, "flight_cases.json": flight_cases,
             "setup_cases.json": setup_cases,
@@ -4522,7 +4804,8 @@ COMMANDS = {"params_cases.json": cases, "logs_cases.json": logs_cases, "shell_ca
             "requests_cases.json": requests_cases,
             "tlog_cases.json": tlog_cases,
             "rtcm_cases.json": rtcm_cases,
-            "fleet_cases.json": fleet_cases}
+            "fleet_cases.json": fleet_cases,
+            "forwarder_cases.json": fwd_cases}
 
 
 def main(argv: list[str]) -> int:
