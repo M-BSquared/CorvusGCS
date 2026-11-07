@@ -11,6 +11,7 @@ Android app as well. `src/link/` is the MAVLink crate (PyO3, its own
 src/main.rs            entry point, arguments, signals
 src/app/               the window: layout, rail, page switching, responsive widths
 src/net/ data/         the backend child, SSE, telemetry, track (the HTTP client and units are in src/api)
+src/core/              corvus_core: the backend as a library (router, internal_call, state store, settings, HTTP server)
 src/api/               the crate plugins build on: ui, i18n, net::http, plugin (trait, options, shapes)
 src/home/ map/ map3d/  the Home page: flight bar, HUD, top bar, the 2D and the 3D map
 src/mission/ setup/    the Mission planner and the Setup pages
@@ -24,9 +25,9 @@ It is a client of the backend's HTTP/SSE API, the same one the web interface
 uses, so the backend does not change for it:
 
 ```bash
-cargo run --release                                   # start serve.py here and show it
+cargo run --release                                   # run the backend (corvus_core) in this process and show it
 cargo run --release -- --server http://10.0.0.5:8080  # a backend elsewhere
-cargo run --release -- --root DIR --python PATH       # where serve.py is, what runs it
+cargo run --release -- --root DIR --python PATH       # run the Python backend (serve.py) as a child instead, the reference
 cargo run --release -- --page motors --scroll 560     # open on a page (setup, any tile such as battery or motors, safety:SENSOR, mission, mission:NAME, settings, logs, analysis), scrolled
 # looking at it without a hand on the mouse
 CORVUS_GUI_SHOT=out.png cargo run -- --page motors     # save the window's own pixels after 9 s and quit
@@ -39,16 +40,54 @@ CORVUS_GUI_3D_PANEL=1 CORVUS_GUI_3D=1 cargo run         # with the 3D panel (bui
 CORVUS_GUI_SOAK=1 cargo run --release                   # the window drives itself: pages, map, 3D, language (src/app/soak.rs)
 ```
 
-Locally, `serve.py` runs as a child on a free port. Every way out (window
-closed, SIGINT, SIGTERM) sends it SIGTERM, which runs its own teardown, and
-SIGKILL if it is still there after 8 s. If the window does not close within
-10 s of a signal, the child is killed and the process exits.
+Locally the backend is `corvus_core` in this process, with its HTTP server on a
+free loopback port that the interface's client reads (a second Corvus on this
+computer is refused unless `CORVUS_ALLOW_MULTI=1`). Every way out (window
+closed, SIGINT, SIGTERM) stops the core, which joins every thread it started. A
+route of an area that is not ported yet answers `501 Not available in this
+build`, which a page shows as its error text. With `--root` or `--python` the
+Python backend runs as a child instead: every way out sends it SIGTERM, which
+runs its own teardown, and SIGKILL if it is still there after 8 s. If the window
+does not close within 10 s of a signal, the child is killed and the process
+exits.
+
+## The core (`src/core`, crate `corvus_core`)
+
+The backend of the Python program (`python/corvus`) becomes this library
+(plan: `src/BACKEND_PORT.md`). The foundation is the router, the state store,
+settings under `~/.corvus`, the instance lock, the version, the languages and
+the optional HTTP server; every other area (vehicle, map data, logs and
+firmware, peripherals, AI and plugins) is a module that registers its routes
+through the contract below, in its own folder, and is held to the Python routes
+by tests whose expected values are dumped from the Python
+(`python/tools/dump_core_cases.py`).
+
+| | |
+| --- | --- |
+| `Module` | `name`, `register(&mut Registry)`, `start(&Core)`, `stop(&Core)`. `register` only declares; threads start in `start` and are all joined in `stop`, which runs in reverse order on the way out. |
+| `Registry` | `get`, `post` (a JSON object in `req.payload()`), `post_with` (another cap, or a raw body for an upload), `delete`, `get_pattern` (`/api/tiles/{source}/{z:d}/{x:d}/{y:d}.png`, `{rest*}`), `guard` (a refusal before every non-GET handler, for HTTP and in process alike), `service`. A route registered twice fails the build. |
+| `Request` | `method`, `path`, `query` (`parse_qs`: `query.get("code")`), `headers`, `body`, `peer`, `origin`, `param("z")`, `payload()`. |
+| `Response` | `json`, `json_status`, `error(status, text)` (`{"error": text}`), `not_ok` (`{"ok": false, "error": text}`), `bytes`, `empty`, `sse(Box<dyn SseStream>)`. |
+| `Core::internal_call(method, path, payload)` | runs an endpoint in process and returns `(status, JSON)`: the same handler, validation and guards a request has. An AI tool and the interface use it; nothing reaches the link around a route. |
+| `Core::service::<T>()` | a value another area published (`reg.service(Arc<T>)`). |
+| `Core::wait_stopping(d)`, `is_stopping()` | what a loop sleeps on, so shutdown does not wait for it. |
+| `VehicleStateStore` (`core.store()`) | the Python store's fields (the 100+ keys of `tests/data/state_defaults.json`, dumped from `state_store.py`, in that order), `update(pairs)` (unknown keys ignored), `merge_warning`, `resolve_warnings`, `clear_warnings`, `forget_vehicle`, `heartbeat`, `set_disconnected`, `is_stale`, `snapshot()` (an `Arc<Map>` cached per `version()`), `history`, `add_listener` / `remove_listener`. Listeners get the latest snapshot at most every 1/30 s, at once for the keys in `IMMEDIATE_KEYS`; they run on the writer's thread without the lock. `core.service::<StoreHub>()` is the main store, the one being flown and the `?vehicle=` resolver the fleet module sets. |
+| Event streams | `GET /api/telemetry` (event `state`, latest wins, each version serialised once), `GET /api/events?topics=a,b&job=ID` (one event name per topic, `ping` every 15 s) and `Core::topic_stream` for the single-topic forms. An area registers a topic: `reg.topic(Topic::new("fleet", 1, \|core, sink, job\| Binding { unbind, initial }).shaped(f))`; `sink.put_latest`, `put_fifo` and `put_console` are the three drop policies of `sse_buffers.py`. |
+| `Settings` (`core.settings()`) | the live `~/.corvus/config.json` (`config.rs`: the same files, coercion and bytes as `config.py`): `get()` is a snapshot, `update(core, \|cfg\| ...)` is one read-modify-write that saves atomically (mode 0600) and tells the listeners, `apply_partial` is `POST /api/config`. An area's block (`battery`, `remote_id`, `rtk`, `video`, `checklists`, `fleet`, `mcp`) is coerced by `reg.config_block(key, f)` and passes through as an object until then. `reg.on_config(f)` hears every change. |
+| Also owned | `GET /api/version`, `GET`/`POST /api/config`, `GET`/`POST /api/welcome`, `GET /api/languages`, `GET /api/languages/strings` (compiled-in languages, `~/.corvus/languages`, plugin `lang/` folders from `reg.language_roots`), `bundle.rs` (settings export/import: sections, redact, merge, parse; the routes are the plugins area's), `lock.rs` (`core.claim_instance()`, `CORVUS_ALLOW_MULTI`, the same lock file as Python), `priority_lock.rs` (the bridge's command lock: re-entrant, aborts first). |
+| HTTP (`Http` module, `http/`) | optional: `CoreBuilder::new(o).module(Http::new(HttpOptions { port: 8000, .. }))`; `core.service::<HttpInfo>()` says where it listens. Standard library only, one thread per connection, HTTP/1.0 and close like Python's server; static files from `Options::web_root`; the CORS, Host, cross-site and header rules of `server.py` (`http/security.rs`, held to values dumped from Python); `POST/GET/DELETE /mcp` gated by loopback, the switch and the bearer token (`McpEndpoint`, which the AI module registers as `McpHandle`; `TokenStore` is `~/.corvus/mcp-token`). Event streams are `Response::sse(Box<dyn SseStream>)`; a WebSocket is `Response::upgrade(req, \|ws\| ...)`, whose closure runs on the connection thread and must return once `core.is_stopping()`. No async runtime exists anywhere. |
+| Tests in Python | the program is Rust; the tests that hold it to the original stay Python. `python/tools/dump_core_cases.py` dumps expected values from the Python code into `src/core/tests/data/*.json` (`--check` fails when one is stale), and `python/tests/test_core_routes.py` starts `serve.py` and the headless `corvus-core` binary (`src/core/src/bin`, `cargo build -p corvus_core --bin corvus-core`) on identical state folders and diffs their answers through `python/tools/route_harness.py` (`Pair`, `compare_get`, `compare_post`, `diff_json`). An area adds its routes to a test there and reuses the helper. |
+| MAVLink | `corvus_core::link` is `corvus_link` without its Python layer (`default-features = false`, a path dependency; `src/link` stays outside the workspace with its own lock for maturin): the dialect tables, the transports and `link::plain` (message, codec, frames, signing). The Vehicle area builds its bridge on it. |
+| Battery (`corvus_core::battery`) | `battery.py` in Rust: chemistry tables, settings coercion, cell count from the pack voltage, sag correction, state of charge from the cell curve, the drain rate fit behind the time to empty. Held to Python by `dump_core_cases.py battery`: about 2 500 estimates over settings, voltages and currents, plus the settings, cell, rest voltage, charge and drain grids, played by `tests/battery_cases.rs`. |
+| Dialect (`corvus_core::dialect`) | `autopilot.py` in Rust: the one place that tells PX4 from ArduPilot (mode tables and decoding, takeoff order and frame, calibration, motor test, autotune, mission start, status text events, capabilities). Held to Python by `python/tools/dump_core_cases.py dialect`, a matrix of about 10 000 answers over the three stacks, 48 vehicle types and 10 firmware versions, played by `tests/dialect_cases.rs`. |
+| Protocols (`corvus_core::protocol`) | the MAVLink protocols in plain Rust on `corvus_link::plain`, each the twin of an engine in `src/link/protocol` (kept in Python until `python/` goes). An engine owns its state and decisions and asks a host trait for what belongs to the bridge (link send, ready, armed, clock, listeners, error text); it never holds its lock across a host call. `protocol::params::ParamEngine` (download with the lossy link watchdog, named reads, confirmed writes, verify, batch upload) with `ParamHost`; `protocol::link_host::LinkHost` is the host over a `plain::connection::Connection`. Also done: `protocol::logs` (13 scenarios), `protocol::shell` (19 scenarios) `protocol::ftp` (19 scenarios) and `protocol::flight` (mode, arm, takeoff in both stacks' orders, land, RTL, home, plugin commands, velocity, fly to points, mission start; 105 scenarios, held to `tests/reference/mavlink_flight_python.py` on a scripted vehicle and a fake clock), `protocol::setup` (calibration, motor test, autotune in both stacks' styles, reboot, bootloader; 56 scenarios on `tests/reference/mavlink_setup_python.py`), `protocol::telemetry` (battery detail and estimate, GNSS jamming and spoofing, controller setpoints, transmitter channels, link quality and jitter, stream rates; 33 scenarios on `tests/reference/mavlink_telemetry_python.py`), `protocol::missions` (upload with MISSION_COUNT retries and the vehicle's verdict, download with restarts, the receive side, which item the vehicle flies, fence upload; 92 scenarios on `tests/reference/mavlink_missions_python.py` against a scripted vehicle on a fake clock), each with its host trait (`RequestHost`, `ShellHost`, `FtpHost`, `FlightHost`, `SetupHost`, `TelemetryHost`, `MissionHost`) and `protocol::remote_id` (the identity coerced like Python's `int()`, `float()` and `str()`, the four OPEN_DRONE_ID messages, the arm status, the page's broadcast status; 20 scenarios on `tests/reference/mavlink_remote_id_python.py`, about 60 identities through `settings`), with `RemoteIdHost`, and `protocol::receive` (the bridge core's receive path: the dispatcher that turns every frame into store updates and hand overs, the duplicate window, who a frame may come from, the fleet and ignored systems, a reboot under a live link, and the COMMAND_LONG and COMMAND_INT transaction with its ACK registry, retries, IN_PROGRESS and interim results; 66 scenarios on `tests/reference/mavlink_bridge_receive_python.py`), with `ReceiveHost`, and `protocol::status` (STATUSTEXT chunk reassembly, the vehicle events a line reports, the kill switch from its line, a failing check or a pass, and the preflight report requests; 42 scenarios on `tests/reference/mavlink_bridge_status_python.py`), with `StatusHost`, and `protocol::requests` (the stream and interval tables for a cable and for a radio, the fallback decided from the ACKs, the home and version requests, the GCS authority check, applying a signing key; 37 scenarios on `tests/reference/mavlink_bridge_requests_python.py`), with `RequestsHost`. The planner (`mission.py`: plan to items, circles as waypoints, items back to a plan) is the host's to answer and is not part of these engines. Held to the Python engines by the other 29 scenarios dumped by `python/tools/dump_protocol_cases.py` (the sent messages, listener statuses, error texts, results, fake clock time and cache all equal), and run over real UDP against a simulated vehicle. The next protocol copies that pattern: a Python scenario dump, a fake host, the engine. |
+| 501 | every route the Python server answers that no module registered answers `501 {"error": "Not available in this build"}` (`unported.rs`, from `tests/data/python_routes.json`). Registering the route takes it over, with nothing else to edit. The interface shows the 501 as an offline notice. |
 
 ## What is here
 
 | | |
 | --- | --- |
-| `src/net/backend.rs` | starts and stops `serve.py` |
+| `src/net/backend.rs` | starts the core in this process (or `serve.py` as a child with `--root`/`--python`) and stops it |
 | `src/api/src/net/http.rs` | a small HTTP/1.1 client, with a read timeout per read so a stream reader can stop |
 | `src/net/sse.rs` | server-sent events |
 | `src/data/telemetry.rs` | the `/api/telemetry` reader thread and the latest state |

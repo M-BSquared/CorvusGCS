@@ -179,7 +179,7 @@ impl Udp {
         buf.truncate(n);
         if self.server {
             let mut clients = lock(&self.clients);
-            let now = crate::wire::frame::now();
+            let now = crate::plain::time::now();
             match clients.0.iter().position(|a| *a == addr) {
                 Some(i) => clients.1[i] = now,
                 None => {
@@ -201,7 +201,7 @@ impl Udp {
     fn try_write(&self, buf: &[u8]) -> io::Result<()> {
         let sock = self.socket()?;
         if self.server {
-            let now = crate::wire::frame::now();
+            let now = crate::plain::time::now();
             let mut clients = lock(&self.clients);
             let count = clients.0.len();
             let mut remove = Vec::new();

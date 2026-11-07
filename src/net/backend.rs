@@ -1,11 +1,18 @@
-//! The Corvus backend (`serve.py`) as a child of this app.
+//! The Corvus backend this app talks to.
 //!
-//! The field laptop is rebooted between flights, so the app must never leave
-//! a server behind: on every way out (window closed, SIGINT, SIGTERM, a
-//! panic unwinding through `main`) the child gets SIGTERM, which runs its own
-//! teardown (links, tlogs, bridges), then SIGKILL if it has not gone within
-//! the grace period. `serve.py` handles SIGTERM itself; it is told nothing
-//! else.
+//! By default it is `corvus_core` running in this very process, with its
+//! HTTP server on a free loopback port that the interface's client reads
+//! (the first step of the port; an area that is ported gets called directly
+//! later). An area that is not ported yet answers 501 "Not available in this
+//! build", which the pages show as their error text.
+//!
+//! The Python backend (`serve.py`) stays available as a child with `--root`
+//! or `--python`, as the reference to compare against. The field laptop is
+//! rebooted between flights, so the app must never leave a server behind: on
+//! every way out (window closed, SIGINT, SIGTERM, a panic unwinding through
+//! `main`) the core is stopped, which joins every thread it started, or the
+//! child gets SIGTERM, which runs its own teardown (links, tlogs, bridges),
+//! then SIGKILL if it has not gone within the grace period.
 
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -92,6 +99,7 @@ impl Launch {
 
     /// The frozen backend beside the executable, when this is a bundle that
     /// carries one: `<dir>/backend/corvus-backend` (`.exe` on Windows).
+    #[allow(dead_code)] // the Windows bundle still carries it until the packaging switches to the core
     pub fn bundled(exe_dir: &Path) -> Option<Launch> {
         let root = exe_dir.join("backend");
         let exe = root.join(if cfg!(windows) {
@@ -110,6 +118,7 @@ impl Launch {
 /// A running backend.
 pub struct Backend {
     child: Option<Child>,
+    core: Option<corvus_core::Core>,
     server: Server,
 }
 
@@ -119,6 +128,31 @@ pub fn free_port() -> std::io::Result<u16> {
 }
 
 impl Backend {
+    /// Starts the core in this process, serving on a free loopback port. A
+    /// second Corvus on this computer is refused (`CORVUS_ALLOW_MULTI=1`
+    /// allows it), the way `serve.py` refuses it.
+    pub fn start_core() -> Result<Backend, String> {
+        let options = corvus_core::Options::default();
+        let core = corvus_core::CoreBuilder::new(options)
+            .module(corvus_core::Http::new(corvus_core::HttpOptions {
+                port: 0,
+                ..corvus_core::HttpOptions::default()
+            }))
+            .build()?;
+        core.claim_instance()?;
+        core.start().map_err(|e| format!("could not start the backend: {e}"))?;
+        let port = core
+            .service::<corvus_core::HttpInfo>()
+            .and_then(|i| i.addr())
+            .map(|a| a.port())
+            .ok_or("the backend has no port")?;
+        Ok(Backend {
+            child: None,
+            core: Some(core),
+            server: Server::local(port),
+        })
+    }
+
     /// Starts `serve.py <port>` and waits until it answers.
     pub fn start(launch: &Launch, port: u16) -> Result<Backend, String> {
         let mut command = match &launch.frozen {
@@ -140,6 +174,7 @@ impl Backend {
         CHILD_PID.store(child.id(), Ordering::SeqCst);
         let mut backend = Backend {
             child: Some(child),
+            core: None,
             server: Server::local(port),
         };
         backend.wait_ready()?;
@@ -178,8 +213,12 @@ impl Backend {
         }
     }
 
-    /// SIGTERM, wait up to the grace period, then SIGKILL. Idempotent.
+    /// Stops the core (every thread it started is joined), or sends the
+    /// child SIGTERM, waits up to the grace period, then SIGKILL. Idempotent.
     pub fn stop(&mut self) {
+        if let Some(core) = self.core.take() {
+            core.stop();
+        }
         let Some(mut child) = self.child.take() else { return };
         CHILD_PID.store(0, Ordering::SeqCst);
         terminate(child.id());
@@ -276,6 +315,7 @@ mod tests {
         std::thread::sleep(Duration::from_millis(300));
         let mut b = Backend {
             child: Some(child),
+            core: None,
             server: Server::local(1),
         };
         let begun = Instant::now();
@@ -340,10 +380,63 @@ mod tests {
         let child = Command::new("sleep").arg("60").spawn().unwrap();
         let mut b = Backend {
             child: Some(child),
+            core: None,
             server: Server::local(1),
         };
         let begun = Instant::now();
         b.stop();
         assert!(begun.elapsed() < Duration::from_secs(1));
+    }
+
+    fn core_in(dir: &str) -> Result<Backend, String> {
+        let dir = std::env::temp_dir().join(format!("corvus-backend-{dir}-{}", std::process::id()));
+        let core = corvus_core::CoreBuilder::new(corvus_core::Options::in_dir(&dir))
+            .module(corvus_core::Http::new(corvus_core::HttpOptions {
+                port: 0,
+                ..corvus_core::HttpOptions::default()
+            }))
+            .build()?;
+        core.claim_instance()?;
+        core.start().map_err(|e| e.to_string())?;
+        let port = core
+            .service::<corvus_core::HttpInfo>()
+            .and_then(|i| i.addr())
+            .map(|a| a.port())
+            .unwrap();
+        Ok(Backend {
+            child: None,
+            core: Some(core),
+            server: Server::local(port),
+        })
+    }
+
+    #[test]
+    fn the_core_answers_the_interface_client_and_unported_areas_say_so() {
+        let _ =
+            std::fs::remove_dir_all(std::env::temp_dir().join(format!("corvus-backend-client-{}", std::process::id())));
+        let mut b = core_in("client").unwrap();
+        let v = http::get_json(b.server(), "/api/version").unwrap();
+        assert_eq!(v["product"], "Corvus GCS");
+        let err = http::get_json(b.server(), "/api/mavlink/modes").unwrap_err();
+        assert_eq!(err, "Not available in this build");
+        let err = http::post_json(b.server(), "/api/mavlink/arm", &serde_json::json!({})).unwrap_err();
+        assert_eq!(err, "Not available in this build");
+        let port = b.server().url();
+        b.stop();
+        b.stop();
+        assert!(
+            http::get_json(&Server::parse(&port).unwrap(), "/api/version").is_err(),
+            "the core is gone"
+        );
+    }
+
+    #[test]
+    fn a_second_backend_on_the_same_state_is_refused() {
+        let _ =
+            std::fs::remove_dir_all(std::env::temp_dir().join(format!("corvus-backend-twice-{}", std::process::id())));
+        let first = core_in("twice").unwrap();
+        let second = core_in("twice").err().expect("refused");
+        assert!(second.starts_with("CORVUS GCS is already running"), "{second}");
+        drop(first);
     }
 }

@@ -1,0 +1,1794 @@
+{
+  "default_path_tail": [
+    ".corvus",
+    "config.json"
+  ],
+  "max_bytes": 16777216,
+  "defaults": {
+    "mavlink_connection": "udp:0.0.0.0:14550",
+    "http_port": 8000,
+    "tile_cache_dir": "",
+    "tlog_dir": "",
+    "params_dir": "",
+    "firmware_dir": "",
+    "log_download_dir": "",
+    "missions_dir": "",
+    "ssh_connections": []
+  },
+  "too_big": {
+    "mavlink_connection": "udp:0.0.0.0:14550",
+    "http_port": 8000,
+    "tile_cache_dir": "",
+    "tlog_dir": "",
+    "params_dir": "",
+    "firmware_dir": "",
+    "log_download_dir": "",
+    "missions_dir": "",
+    "ssh_connections": []
+  },
+  "field_order": [
+    "mavlink_connection",
+    "http_port",
+    "tile_cache_dir",
+    "tlog_dir",
+    "params_dir",
+    "firmware_dir",
+    "log_download_dir",
+    "missions_dir",
+    "tile_sources",
+    "stream_rates",
+    "ssh_connections",
+    "theme",
+    "language",
+    "map",
+    "map_tokens",
+    "branding",
+    "controls",
+    "ui",
+    "forwarding",
+    "autoconnect",
+    "updates",
+    "battery",
+    "remote_id",
+    "rtk",
+    "video",
+    "plugins",
+    "parameters",
+    "review",
+    "checklists",
+    "fleet",
+    "mcp"
+  ],
+  "cases": [
+    {
+      "name": "empty_object",
+      "text": "{}",
+      "loaded": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": []
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": []
+      },
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 8000,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": []\n}\n"
+    },
+    {
+      "name": "scalars",
+      "text": "{\"mavlink_connection\": \"  udp:127.0.0.1:14551 \", \"http_port\": \"8123\", \"tile_cache_dir\": \"/t\", \"tlog_dir\": 3, \"params_dir\": \"\", \"firmware_dir\": \"/f\", \"log_download_dir\": \"/l\", \"missions_dir\": \"/m\"}",
+      "loaded": {
+        "mavlink_connection": "udp:127.0.0.1:14551",
+        "http_port": 8123,
+        "tile_cache_dir": "/t",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "/f",
+        "log_download_dir": "/l",
+        "missions_dir": "/m",
+        "ssh_connections": []
+      },
+      "public": {
+        "mavlink_connection": "udp:127.0.0.1:14551",
+        "http_port": 8123,
+        "tile_cache_dir": "/t",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "/f",
+        "log_download_dir": "/l",
+        "missions_dir": "/m",
+        "ssh_connections": []
+      },
+      "saved": "{\n  \"mavlink_connection\": \"udp:127.0.0.1:14551\",\n  \"http_port\": 8123,\n  \"tile_cache_dir\": \"/t\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"/f\",\n  \"log_download_dir\": \"/l\",\n  \"missions_dir\": \"/m\",\n  \"ssh_connections\": []\n}\n"
+    },
+    {
+      "name": "scalars_bad",
+      "text": "{\"mavlink_connection\": \"   \", \"http_port\": 70000, \"tile_cache_dir\": null, \"missions_dir\": [\"x\"]}",
+      "loaded": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": []
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": []
+      },
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 8000,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": []\n}\n"
+    },
+    {
+      "name": "port_forms",
+      "text": "{\"http_port\": 22.7}",
+      "loaded": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 22,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": []
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 22,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": []
+      },
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 22,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": []\n}\n"
+    },
+    {
+      "name": "port_bool",
+      "text": "{\"http_port\": true}",
+      "loaded": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": []
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": []
+      },
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 8000,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": []\n}\n"
+    },
+    {
+      "name": "port_negative",
+      "text": "{\"http_port\": -1}",
+      "loaded": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": []
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": []
+      },
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 8000,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": []\n}\n"
+    },
+    {
+      "name": "port_underscore",
+      "text": "{\"http_port\": \"1_0\"}",
+      "loaded": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 10,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": []
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 10,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": []
+      },
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 10,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": []\n}\n"
+    },
+    {
+      "name": "port_zero",
+      "text": "{\"http_port\": 0}",
+      "loaded": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 0,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": []
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 0,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": []
+      },
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 0,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": []\n}\n"
+    },
+    {
+      "name": "dicts",
+      "text": "{\"tile_sources\": {\"a\": {\"url\": \"x\"}}, \"stream_rates\": {\"ATTITUDE\": 10}}",
+      "loaded": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "tile_sources": {
+          "a": {
+            "url": "x"
+          }
+        },
+        "stream_rates": {
+          "ATTITUDE": 10
+        },
+        "ssh_connections": []
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "tile_sources": {
+          "a": {
+            "url": "x"
+          }
+        },
+        "stream_rates": {
+          "ATTITUDE": 10
+        },
+        "ssh_connections": []
+      },
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 8000,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"tile_sources\": {\n    \"a\": {\n      \"url\": \"x\"\n    }\n  },\n  \"stream_rates\": {\n    \"ATTITUDE\": 10\n  },\n  \"ssh_connections\": []\n}\n"
+    },
+    {
+      "name": "dicts_bad",
+      "text": "{\"tile_sources\": [], \"stream_rates\": \"x\"}",
+      "loaded": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": []
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": []
+      },
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 8000,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": []\n}\n"
+    },
+    {
+      "name": "ssh",
+      "text": "{\"ssh_connections\": [{\"name\": \"a\", \"host\": \"h\", \"port\": \"2222\", \"username\": \"u\", \"key_path\": \"/k\", \"password\": \"p\"}, {\"name\": \"b\", \"port\": 0, \"extra\": 1}, {\"name\": \"\", \"host\": \"x\"}, 5, {\"host\": \"nameless\"}, {\"name\": \"a\", \"host\": \"later\", \"port\": 22.0}, {\"name\": \"c\", \"host\": 3, \"username\": null, \"key_path\": 4, \"password\": false}]}",
+      "loaded": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": [
+          {
+            "name": "a",
+            "host": "later",
+            "port": 22,
+            "username": "",
+            "key_path": "",
+            "password": ""
+          },
+          {
+            "name": "b",
+            "host": "",
+            "port": 22,
+            "username": "",
+            "key_path": "",
+            "password": ""
+          },
+          {
+            "name": "c",
+            "host": "",
+            "port": 22,
+            "username": "",
+            "key_path": "",
+            "password": ""
+          }
+        ]
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": [
+          {
+            "name": "a",
+            "host": "later",
+            "port": 22,
+            "username": "",
+            "key_path": ""
+          },
+          {
+            "name": "b",
+            "host": "",
+            "port": 22,
+            "username": "",
+            "key_path": ""
+          },
+          {
+            "name": "c",
+            "host": "",
+            "port": 22,
+            "username": "",
+            "key_path": ""
+          }
+        ]
+      },
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 8000,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": [\n    {\n      \"name\": \"a\",\n      \"host\": \"later\",\n      \"port\": 22,\n      \"username\": \"\",\n      \"key_path\": \"\",\n      \"password\": \"\"\n    },\n    {\n      \"name\": \"b\",\n      \"host\": \"\",\n      \"port\": 22,\n      \"username\": \"\",\n      \"key_path\": \"\",\n      \"password\": \"\"\n    },\n    {\n      \"name\": \"c\",\n      \"host\": \"\",\n      \"port\": 22,\n      \"username\": \"\",\n      \"key_path\": \"\",\n      \"password\": \"\"\n    }\n  ]\n}\n"
+    },
+    {
+      "name": "ssh_not_a_list",
+      "text": "{\"ssh_connections\": {\"a\": 1}}",
+      "loaded": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": []
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": []
+      },
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 8000,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": []\n}\n"
+    },
+    {
+      "name": "theme",
+      "text": "{\"theme\": {\"name\": \"green\", \"accent\": \"#fff\", \"other\": \"x\"}}",
+      "loaded": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": [],
+        "theme": {
+          "name": "green",
+          "accent": "#fff"
+        }
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": [],
+        "theme": {
+          "name": "green",
+          "accent": "#fff"
+        }
+      },
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 8000,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": [],\n  \"theme\": {\n    \"name\": \"green\",\n    \"accent\": \"#fff\"\n  }\n}\n"
+    },
+    {
+      "name": "theme_empty",
+      "text": "{\"theme\": {\"name\": 3}}",
+      "loaded": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": []
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": []
+      },
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 8000,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": []\n}\n"
+    },
+    {
+      "name": "language",
+      "text": "{\"language\": \"pt-BR\"}",
+      "loaded": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": [],
+        "language": "pt-BR"
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": [],
+        "language": "pt-BR"
+      },
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 8000,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": [],\n  \"language\": \"pt-BR\"\n}\n"
+    },
+    {
+      "name": "language_bad",
+      "text": "{\"language\": \"Deutsch\"}",
+      "loaded": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": []
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": []
+      },
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 8000,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": []\n}\n"
+    },
+    {
+      "name": "language_three_parts",
+      "text": "{\"language\": \"zh-Hant-TW\"}",
+      "loaded": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": [],
+        "language": "zh-Hant-TW"
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": [],
+        "language": "zh-Hant-TW"
+      },
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 8000,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": [],\n  \"language\": \"zh-Hant-TW\"\n}\n"
+    },
+    {
+      "name": "language_too_long",
+      "text": "{\"language\": \"de-abcdefghi\"}",
+      "loaded": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": []
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": []
+      },
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 8000,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": []\n}\n"
+    },
+    {
+      "name": "map",
+      "text": "{\"map\": {\"base_layer\": \"esri\", \"provider\": \"esri\", \"three_d\": \"full\", \"three_d_detail\": \"simple\", \"terrain_source\": \"auto\", \"junk\": \"x\", \"zoom\": 3}}",
+      "loaded": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": [],
+        "map": {
+          "base_layer": "esri",
+          "provider": "esri",
+          "three_d": "full",
+          "three_d_detail": "simple",
+          "terrain_source": "auto"
+        }
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": [],
+        "map": {
+          "base_layer": "esri",
+          "provider": "esri",
+          "three_d": "full",
+          "three_d_detail": "simple",
+          "terrain_source": "auto"
+        }
+      },
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 8000,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": [],\n  \"map\": {\n    \"base_layer\": \"esri\",\n    \"provider\": \"esri\",\n    \"three_d\": \"full\",\n    \"three_d_detail\": \"simple\",\n    \"terrain_source\": \"auto\"\n  }\n}\n"
+    },
+    {
+      "name": "map_tokens",
+      "text": "{\"map_tokens\": {\"mapbox\": \"  pk.abc-DEF_1~2 \", \"bing\": \"has space\", \"esri\": \"\", \"google\": 5, \"\": \"k\", \"long\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"maxlen\": \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\", \"uni\": \"k\\u00e9y\"}}",
+      "loaded": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": [],
+        "map_tokens": {
+          "mapbox": "pk.abc-DEF_1~2",
+          "maxlen": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": []
+      },
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 8000,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": [],\n  \"map_tokens\": {\n    \"mapbox\": \"pk.abc-DEF_1~2\",\n    \"maxlen\": \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"\n  }\n}\n"
+    },
+    {
+      "name": "branding",
+      "text": "{\"branding\": {\"logo\": \"unibw.png\", \"x\": \"y\"}}",
+      "loaded": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": [],
+        "branding": {
+          "logo": "unibw.png"
+        }
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": [],
+        "branding": {
+          "logo": "unibw.png"
+        }
+      },
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 8000,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": [],\n  \"branding\": {\n    \"logo\": \"unibw.png\"\n  }\n}\n"
+    },
+    {
+      "name": "controls",
+      "text": "{\"controls\": {\"virtual_joystick\": true, \"gamepad\": \"true\", \"arrow_keys\": false, \"wasd_keys\": 1, \"key_gain\": 0.5}}",
+      "loaded": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": [],
+        "controls": {
+          "virtual_joystick": true,
+          "arrow_keys": false,
+          "key_gain": 0.5
+        }
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": [],
+        "controls": {
+          "virtual_joystick": true,
+          "arrow_keys": false,
+          "key_gain": 0.5
+        }
+      },
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 8000,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": [],\n  \"controls\": {\n    \"virtual_joystick\": true,\n    \"arrow_keys\": false,\n    \"key_gain\": 0.5\n  }\n}\n"
+    },
+    {
+      "name": "controls_gain_clamped",
+      "text": "{\"controls\": {\"key_gain\": 5}}",
+      "loaded": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": [],
+        "controls": {
+          "key_gain": 1.0
+        }
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": [],
+        "controls": {
+          "key_gain": 1.0
+        }
+      },
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 8000,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": [],\n  \"controls\": {\n    \"key_gain\": 1.0\n  }\n}\n"
+    },
+    {
+      "name": "controls_gain_low",
+      "text": "{\"controls\": {\"key_gain\": 0}}",
+      "loaded": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": [],
+        "controls": {
+          "key_gain": 0.05
+        }
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": [],
+        "controls": {
+          "key_gain": 0.05
+        }
+      },
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 8000,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": [],\n  \"controls\": {\n    \"key_gain\": 0.05\n  }\n}\n"
+    },
+    {
+      "name": "controls_gain_bool",
+      "text": "{\"controls\": {\"key_gain\": true}}",
+      "loaded": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": []
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": []
+      },
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 8000,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": []\n}\n"
+    },
+    {
+      "name": "controls_empty",
+      "text": "{\"controls\": {\"gamepad\": \"yes\"}}",
+      "loaded": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": []
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": []
+      },
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 8000,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": []\n}\n"
+    },
+    {
+      "name": "forwarding",
+      "text": "{\"forwarding\": {\"enabled\": true, \"allow_commands\": \"true\", \"host\": \" 10.0.0.2 \", \"listen_host\": \"  \", \"port\": 14551, \"listen_port\": 0, \"endpoints\": [\" udp:1.2.3.4:5 \", \"\", 7, \"tcp:x:1\"]}}",
+      "loaded": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": [],
+        "forwarding": {
+          "enabled": true,
+          "host": "10.0.0.2",
+          "port": 14551,
+          "listen_port": 0,
+          "endpoints": [
+            "udp:1.2.3.4:5",
+            "tcp:x:1"
+          ]
+        }
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": [],
+        "forwarding": {
+          "enabled": true,
+          "host": "10.0.0.2",
+          "port": 14551,
+          "listen_port": 0,
+          "endpoints": [
+            "udp:1.2.3.4:5",
+            "tcp:x:1"
+          ]
+        }
+      },
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 8000,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": [],\n  \"forwarding\": {\n    \"enabled\": true,\n    \"host\": \"10.0.0.2\",\n    \"port\": 14551,\n    \"listen_port\": 0,\n    \"endpoints\": [\n      \"udp:1.2.3.4:5\",\n      \"tcp:x:1\"\n    ]\n  }\n}\n"
+    },
+    {
+      "name": "forwarding_ports",
+      "text": "{\"forwarding\": {\"port\": 0, \"listen_port\": 70000}}",
+      "loaded": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": []
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": []
+      },
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 8000,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": []\n}\n"
+    },
+    {
+      "name": "forwarding_float_port",
+      "text": "{\"forwarding\": {\"port\": 14551.0, \"enabled\": false}}",
+      "loaded": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": [],
+        "forwarding": {
+          "enabled": false
+        }
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": [],
+        "forwarding": {
+          "enabled": false
+        }
+      },
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 8000,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": [],\n  \"forwarding\": {\n    \"enabled\": false\n  }\n}\n"
+    },
+    {
+      "name": "autoconnect",
+      "text": "{\"autoconnect\": {\"enabled\": false, \"usb\": \"no\", \"sik\": true, \"udp_fallback\": null}}",
+      "loaded": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": [],
+        "autoconnect": {
+          "enabled": false,
+          "sik": true
+        }
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": [],
+        "autoconnect": {
+          "enabled": false,
+          "sik": true
+        }
+      },
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 8000,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": [],\n  \"autoconnect\": {\n    \"enabled\": false,\n    \"sik\": true\n  }\n}\n"
+    },
+    {
+      "name": "autoconnect_empty",
+      "text": "{\"autoconnect\": {\"usb\": 1}}",
+      "loaded": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": []
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": []
+      },
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 8000,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": []\n}\n"
+    },
+    {
+      "name": "ui",
+      "text": "{\"ui\": {\"scale\": 1, \"units\": {\"length\": \"ft\", \"distance\": \"mi\", \"speed\": \"x\", \"temperature\": \"f\", \"other\": \"m\"}, \"topbar_altitude\": \"relative\", \"map_animation_rate\": 30.0, \"inverted_app_icon\": true, \"app_icon_backplate\": \"no\", \"mission_page\": true, \"measure_tool\": false, \"ssh_tab\": false, \"plugin_tabs\": true, \"flight_hud\": false, \"track_in_air\": true, \"hud_square\": true, \"topbar_show_rangefinder\": true, \"takeoff_land_split\": true, \"windows_in_app\": true}}",
+      "loaded": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": [],
+        "ui": {
+          "units": {
+            "length": "ft",
+            "distance": "mi",
+            "temperature": "f"
+          },
+          "topbar_altitude": "relative",
+          "map_animation_rate": 30,
+          "scale": 1.0,
+          "inverted_app_icon": true,
+          "mission_page": true,
+          "takeoff_land_split": true,
+          "windows_in_app": true,
+          "track_in_air": true,
+          "flight_hud": false,
+          "hud_square": true,
+          "topbar_show_rangefinder": true,
+          "measure_tool": false,
+          "ssh_tab": false,
+          "plugin_tabs": true
+        }
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": [],
+        "ui": {
+          "units": {
+            "length": "ft",
+            "distance": "mi",
+            "temperature": "f"
+          },
+          "topbar_altitude": "relative",
+          "map_animation_rate": 30,
+          "scale": 1.0,
+          "inverted_app_icon": true,
+          "mission_page": true,
+          "takeoff_land_split": true,
+          "windows_in_app": true,
+          "track_in_air": true,
+          "flight_hud": false,
+          "hud_square": true,
+          "topbar_show_rangefinder": true,
+          "measure_tool": false,
+          "ssh_tab": false,
+          "plugin_tabs": true
+        }
+      },
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 8000,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": [],\n  \"ui\": {\n    \"units\": {\n      \"length\": \"ft\",\n      \"distance\": \"mi\",\n      \"temperature\": \"f\"\n    },\n    \"topbar_altitude\": \"relative\",\n    \"map_animation_rate\": 30,\n    \"scale\": 1.0,\n    \"inverted_app_icon\": true,\n    \"mission_page\": true,\n    \"takeoff_land_split\": true,\n    \"windows_in_app\": true,\n    \"track_in_air\": true,\n    \"flight_hud\": false,\n    \"hud_square\": true,\n    \"topbar_show_rangefinder\": true,\n    \"measure_tool\": false,\n    \"ssh_tab\": false,\n    \"plugin_tabs\": true\n  }\n}\n"
+    },
+    {
+      "name": "ui_scale_clamped",
+      "text": "{\"ui\": {\"scale\": 99}}",
+      "loaded": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": [],
+        "ui": {
+          "scale": 3.0
+        }
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": [],
+        "ui": {
+          "scale": 3.0
+        }
+      },
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 8000,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": [],\n  \"ui\": {\n    \"scale\": 3.0\n  }\n}\n"
+    },
+    {
+      "name": "ui_scale_low",
+      "text": "{\"ui\": {\"scale\": 0.1}}",
+      "loaded": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": [],
+        "ui": {
+          "scale": 0.5
+        }
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": [],
+        "ui": {
+          "scale": 0.5
+        }
+      },
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 8000,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": [],\n  \"ui\": {\n    \"scale\": 0.5\n  }\n}\n"
+    },
+    {
+      "name": "ui_scale_bool",
+      "text": "{\"ui\": {\"scale\": true, \"map_animation_rate\": true}}",
+      "loaded": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": []
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": []
+      },
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 8000,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": []\n}\n"
+    },
+    {
+      "name": "ui_rate_bad",
+      "text": "{\"ui\": {\"map_animation_rate\": 45}}",
+      "loaded": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": []
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": []
+      },
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 8000,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": []\n}\n"
+    },
+    {
+      "name": "ui_bad_units",
+      "text": "{\"ui\": {\"units\": {\"length\": \"furlong\"}, \"topbar_altitude\": \"agl\"}}",
+      "loaded": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": []
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": []
+      },
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 8000,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": []\n}\n"
+    },
+    {
+      "name": "updates",
+      "text": "{\"updates\": {\"check\": false, \"skipped\": \"v2026.09.27\"}}",
+      "loaded": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": [],
+        "updates": {
+          "check": false,
+          "skipped": "2026.09.27"
+        }
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": [],
+        "updates": {
+          "check": false,
+          "skipped": "2026.09.27"
+        }
+      },
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 8000,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": [],\n  \"updates\": {\n    \"check\": false,\n    \"skipped\": \"2026.09.27\"\n  }\n}\n"
+    },
+    {
+      "name": "updates_bad",
+      "text": "{\"updates\": {\"check\": \"no\", \"skipped\": \"nightly\"}}",
+      "loaded": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": []
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": []
+      },
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 8000,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": []\n}\n"
+    },
+    {
+      "name": "updates_spaces",
+      "text": "{\"updates\": {\"skipped\": \" 2026.09 \"}}",
+      "loaded": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": [],
+        "updates": {
+          "skipped": "2026.09"
+        }
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": [],
+        "updates": {
+          "skipped": "2026.09"
+        }
+      },
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 8000,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": [],\n  \"updates\": {\n    \"skipped\": \"2026.09\"\n  }\n}\n"
+    },
+    {
+      "name": "plugins",
+      "text": "{\"plugins\": {\"a\": {\"x\": 1}, \"b\": 3, \"\": {\"y\": 1}}}",
+      "loaded": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": [],
+        "plugins": {
+          "a": {
+            "x": 1
+          }
+        }
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": [],
+        "plugins": {
+          "a": {
+            "x": 1
+          }
+        }
+      },
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 8000,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": [],\n  \"plugins\": {\n    \"a\": {\n      \"x\": 1\n    }\n  }\n}\n"
+    },
+    {
+      "name": "parameters",
+      "text": "{\"parameters\": {\"cache_defaults\": true, \"x\": 1}}",
+      "loaded": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": [],
+        "parameters": {
+          "cache_defaults": true
+        }
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": [],
+        "parameters": {
+          "cache_defaults": true
+        }
+      },
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 8000,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": [],\n  \"parameters\": {\n    \"cache_defaults\": true\n  }\n}\n"
+    },
+    {
+      "name": "parameters_bad",
+      "text": "{\"parameters\": {\"cache_defaults\": \"yes\"}}",
+      "loaded": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": []
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": []
+      },
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 8000,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": []\n}\n"
+    },
+    {
+      "name": "review",
+      "text": "{\"review\": {\"sensitivity\": \" STRICT \"}}",
+      "loaded": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": [],
+        "review": {
+          "sensitivity": "strict"
+        }
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": [],
+        "review": {
+          "sensitivity": "strict"
+        }
+      },
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 8000,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": [],\n  \"review\": {\n    \"sensitivity\": \"strict\"\n  }\n}\n"
+    },
+    {
+      "name": "review_bad",
+      "text": "{\"review\": {\"sensitivity\": \"wild\"}}",
+      "loaded": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": []
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": []
+      },
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 8000,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": []\n}\n"
+    },
+    {
+      "name": "area_blocks_canonical",
+      "text": "{\"mcp\": {\"enabled\": true, \"permissions\": {\"control\": false}}, \"fleet\": {\"links\": [{\"id\": \"link-2\", \"connection\": \"serial:/dev/ttyUSB1:57600\"}]}}",
+      "loaded": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": [],
+        "fleet": {
+          "links": [
+            {
+              "id": "link-2",
+              "connection": "serial:/dev/ttyUSB1:57600"
+            }
+          ]
+        },
+        "mcp": {
+          "enabled": true,
+          "permissions": {
+            "control": false
+          }
+        }
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": [],
+        "fleet": {
+          "links": [
+            {
+              "id": "link-2",
+              "connection": "serial:/dev/ttyUSB1:57600"
+            }
+          ]
+        },
+        "mcp": {
+          "enabled": true,
+          "permissions": {
+            "control": false
+          }
+        }
+      },
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 8000,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": [],\n  \"fleet\": {\n    \"links\": [\n      {\n        \"id\": \"link-2\",\n        \"connection\": \"serial:/dev/ttyUSB1:57600\"\n      }\n    ]\n  },\n  \"mcp\": {\n    \"enabled\": true,\n    \"permissions\": {\n      \"control\": false\n    }\n  }\n}\n"
+    },
+    {
+      "name": "secrets",
+      "text": "{\"ssh_connections\": [{\"name\": \"a\", \"host\": \"h\", \"password\": \"pw\"}], \"map_tokens\": {\"mapbox\": \"tok\"}}",
+      "loaded": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": [
+          {
+            "name": "a",
+            "host": "h",
+            "port": 22,
+            "username": "",
+            "key_path": "",
+            "password": "pw"
+          }
+        ],
+        "map_tokens": {
+          "mapbox": "tok"
+        }
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": [
+          {
+            "name": "a",
+            "host": "h",
+            "port": 22,
+            "username": "",
+            "key_path": ""
+          }
+        ]
+      },
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 8000,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": [\n    {\n      \"name\": \"a\",\n      \"host\": \"h\",\n      \"port\": 22,\n      \"username\": \"\",\n      \"key_path\": \"\",\n      \"password\": \"pw\"\n    }\n  ],\n  \"map_tokens\": {\n    \"mapbox\": \"tok\"\n  }\n}\n"
+    },
+    {
+      "name": "unknown_keys",
+      "text": "{\"nope\": 1, \"http_port\": 9000}",
+      "loaded": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 9000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": []
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 9000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": []
+      },
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 9000,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": []\n}\n"
+    },
+    {
+      "name": "order",
+      "text": "{\"ui\": {\"scale\": 2}, \"http_port\": 1, \"mavlink_connection\": \"udp:a:1\"}",
+      "loaded": {
+        "mavlink_connection": "udp:a:1",
+        "http_port": 1,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": [],
+        "ui": {
+          "scale": 2.0
+        }
+      },
+      "public": {
+        "mavlink_connection": "udp:a:1",
+        "http_port": 1,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": [],
+        "ui": {
+          "scale": 2.0
+        }
+      },
+      "saved": "{\n  \"mavlink_connection\": \"udp:a:1\",\n  \"http_port\": 1,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": [],\n  \"ui\": {\n    \"scale\": 2.0\n  }\n}\n"
+    },
+    {
+      "name": "not_an_object",
+      "text": "[1, 2]",
+      "loaded": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": []
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": []
+      },
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 8000,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": []\n}\n"
+    },
+    {
+      "name": "text_malformed",
+      "text": "{",
+      "loaded": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": []
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": []
+      },
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 8000,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": []\n}\n"
+    },
+    {
+      "name": "text_nan",
+      "text": "{\"http_port\": NaN}",
+      "loaded": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": []
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": []
+      },
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 8000,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": []\n}\n"
+    },
+    {
+      "name": "text_empty",
+      "text": "",
+      "loaded": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": []
+      },
+      "public": {
+        "mavlink_connection": "udp:0.0.0.0:14550",
+        "http_port": 8000,
+        "tile_cache_dir": "",
+        "tlog_dir": "",
+        "params_dir": "",
+        "firmware_dir": "",
+        "log_download_dir": "",
+        "missions_dir": "",
+        "ssh_connections": []
+      },
+      "saved": "{\n  \"mavlink_connection\": \"udp:0.0.0.0:14550\",\n  \"http_port\": 8000,\n  \"tile_cache_dir\": \"\",\n  \"tlog_dir\": \"\",\n  \"params_dir\": \"\",\n  \"firmware_dir\": \"\",\n  \"log_download_dir\": \"\",\n  \"missions_dir\": \"\",\n  \"ssh_connections\": []\n}\n"
+    }
+  ]
+}

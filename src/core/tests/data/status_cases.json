@@ -1,0 +1,6308 @@
+{
+ "cases": [
+  {
+   "scenario": {
+    "name": "severities",
+    "steps": [
+     {
+      "op": "text",
+      "text": "hello",
+      "severity": 0
+     },
+     {
+      "op": "text",
+      "text": "hello",
+      "severity": 1
+     },
+     {
+      "op": "text",
+      "text": "hello",
+      "severity": 2
+     },
+     {
+      "op": "text",
+      "text": "hello",
+      "severity": 3
+     },
+     {
+      "op": "text",
+      "text": "hello",
+      "severity": 4
+     },
+     {
+      "op": "text",
+      "text": "hello",
+      "severity": 5
+     },
+     {
+      "op": "text",
+      "text": "hello",
+      "severity": 6
+     },
+     {
+      "op": "text",
+      "text": "hello",
+      "severity": 7
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "hello",
+        "critical"
+       ],
+       [
+        "warning",
+        "hello",
+        "critical",
+        null
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "hello",
+        "critical"
+       ],
+       [
+        "warning",
+        "hello",
+        "critical",
+        null
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "hello",
+        "critical"
+       ],
+       [
+        "warning",
+        "hello",
+        "critical",
+        null
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "hello",
+        "critical"
+       ],
+       [
+        "warning",
+        "hello",
+        "critical",
+        null
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "hello",
+        "warning"
+       ],
+       [
+        "warning",
+        "hello",
+        "warning",
+        null
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "hello",
+        "warning"
+       ],
+       [
+        "warning",
+        "hello",
+        "warning",
+        null
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "hello",
+        "info"
+       ],
+       [
+        "warning",
+        "hello",
+        "info",
+        null
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "hello",
+        "info"
+       ],
+       [
+        "warning",
+        "hello",
+        "info",
+        null
+       ]
+      ],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "text_is_cut_at_the_nul_and_stripped",
+    "steps": [
+     {
+      "op": "text",
+      "text": "tab ends the event\t",
+      "severity": 6
+     },
+     {
+      "op": "text",
+      "text": "spaces   ",
+      "severity": 6
+     },
+     {
+      "op": "text",
+      "text": "nul\u0000after",
+      "severity": 6
+     },
+     {
+      "op": "text",
+      "text": "",
+      "severity": 6
+     },
+     {
+      "op": "text",
+      "text": "\u001c\u001dodd end\u001f",
+      "severity": 6
+     },
+     {
+      "op": "text",
+      "text": "caf\u00e9 \u2713",
+      "severity": 6
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "tab ends the event",
+        "info"
+       ],
+       [
+        "warning",
+        "tab ends the event",
+        "info",
+        null
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "spaces",
+        "info"
+       ],
+       [
+        "warning",
+        "spaces",
+        "info",
+        null
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "nul",
+        "info"
+       ],
+       [
+        "warning",
+        "nul",
+        "info",
+        null
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "",
+        "info"
+       ],
+       [
+        "warning",
+        "",
+        "info",
+        null
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "\u001c\u001dodd end",
+        "info"
+       ],
+       [
+        "warning",
+        "\u001c\u001dodd end",
+        "info",
+        null
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "caf\u00e9 \u2713",
+        "info"
+       ],
+       [
+        "warning",
+        "caf\u00e9 \u2713",
+        "info",
+        null
+       ]
+      ],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "events_px4",
+    "steps": [
+     {
+      "op": "text",
+      "text": "Kill engaged",
+      "severity": 6
+     },
+     {
+      "op": "text",
+      "text": "Kill disengaged",
+      "severity": 6
+     },
+     {
+      "op": "text",
+      "text": "Disarmed by landing",
+      "severity": 6
+     },
+     {
+      "op": "text",
+      "text": "Disarmed by failsafe",
+      "severity": 4
+     },
+     {
+      "op": "text",
+      "text": "kill-switch engaged",
+      "severity": 2
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "Kill engaged",
+        "info"
+       ],
+       [
+        "update",
+        {
+         "kill_switch": true
+        }
+       ],
+       [
+        "warning",
+        "Kill switch engaged. Motors stopped",
+        "critical",
+        "kill"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "Kill disengaged",
+        "info"
+       ],
+       [
+        "warning",
+        "Kill switch released",
+        "info",
+        "unkill"
+       ],
+       [
+        "update",
+        {
+         "kill_switch": false,
+         "flight_termination": false
+        }
+       ],
+       [
+        "resolve_warnings",
+        [
+         "kill"
+        ]
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "Disarmed by landing",
+        "info"
+       ],
+       [
+        "warning",
+        "Disarmed by auto disarm after landing",
+        "info",
+        "disarm"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "Disarmed by failsafe",
+        "warning"
+       ],
+       [
+        "warning",
+        "Disarmed by a failsafe",
+        "warning",
+        "disarm"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "kill-switch engaged",
+        "critical"
+       ],
+       [
+        "update",
+        {
+         "kill_switch": true
+        }
+       ],
+       [
+        "warning",
+        "Kill switch engaged. Motors stopped",
+        "critical",
+        "kill"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "reasons": [],
+       "reason_at": 0.0,
+       "requested_at": 0.0,
+       "kill_evidence": 1000.0,
+       "partials": 0,
+       "report_kill": false,
+       "report_started": 0.0,
+       "last": null,
+       "snapshot": {
+        "kill_switch": true,
+        "flight_termination": false
+       }
+      },
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "events_ardupilot",
+    "stack": "ardupilot",
+    "steps": [
+     {
+      "op": "text",
+      "text": "RC7: MotorEStop HIGH",
+      "severity": 6
+     },
+     {
+      "op": "text",
+      "text": "RC7: MotorEStop LOW",
+      "severity": 6
+     },
+     {
+      "op": "text",
+      "text": "RC12: MotorEStop HIGH",
+      "severity": 2
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "RC7: MotorEStop HIGH",
+        "info"
+       ],
+       [
+        "update",
+        {
+         "kill_switch": true
+        }
+       ],
+       [
+        "warning",
+        "Emergency stop engaged. Motors stopped",
+        "critical",
+        "kill"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "RC7: MotorEStop LOW",
+        "info"
+       ],
+       [
+        "warning",
+        "Emergency stop released",
+        "info",
+        "unkill"
+       ],
+       [
+        "update",
+        {
+         "kill_switch": false,
+         "flight_termination": false
+        }
+       ],
+       [
+        "resolve_warnings",
+        [
+         "kill"
+        ]
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "RC12: MotorEStop HIGH",
+        "critical"
+       ],
+       [
+        "update",
+        {
+         "kill_switch": true
+        }
+       ],
+       [
+        "warning",
+        "Emergency stop engaged. Motors stopped",
+        "critical",
+        "kill"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "reasons": [],
+       "reason_at": 0.0,
+       "requested_at": 0.0,
+       "kill_evidence": 1000.0,
+       "partials": 0,
+       "report_kill": false,
+       "report_started": 0.0,
+       "last": null,
+       "snapshot": {
+        "kill_switch": true,
+        "flight_termination": false
+       }
+      },
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "events_worst_level_wins",
+    "steps": [
+     {
+      "op": "text",
+      "text": "Kill engaged",
+      "severity": 2
+     },
+     {
+      "op": "text",
+      "text": "Kill disengaged",
+      "severity": 6
+     },
+     {
+      "op": "text",
+      "text": "Disarmed by landing",
+      "severity": 2
+     },
+     {
+      "op": "text",
+      "text": "Disarmed by landing",
+      "severity": 6
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "Kill engaged",
+        "critical"
+       ],
+       [
+        "update",
+        {
+         "kill_switch": true
+        }
+       ],
+       [
+        "warning",
+        "Kill switch engaged. Motors stopped",
+        "critical",
+        "kill"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "Kill disengaged",
+        "info"
+       ],
+       [
+        "warning",
+        "Kill switch released",
+        "info",
+        "unkill"
+       ],
+       [
+        "update",
+        {
+         "kill_switch": false,
+         "flight_termination": false
+        }
+       ],
+       [
+        "resolve_warnings",
+        [
+         "kill"
+        ]
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "Disarmed by landing",
+        "critical"
+       ],
+       [
+        "warning",
+        "Disarmed by auto disarm after landing",
+        "critical",
+        "disarm"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "Disarmed by landing",
+        "info"
+       ],
+       [
+        "warning",
+        "Disarmed by auto disarm after landing",
+        "info",
+        "disarm"
+       ]
+      ],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "unkill_clears_the_termination",
+    "snapshot": {
+     "kill_switch": true,
+     "flight_termination": true
+    },
+    "steps": [
+     {
+      "op": "text",
+      "text": "Kill disengaged",
+      "severity": 6
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "Kill disengaged",
+        "info"
+       ],
+       [
+        "warning",
+        "Kill switch released",
+        "info",
+        "unkill"
+       ],
+       [
+        "update",
+        {
+         "kill_switch": false,
+         "flight_termination": false
+        }
+       ],
+       [
+        "resolve_warnings",
+        [
+         "kill"
+        ]
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "reasons": [],
+       "reason_at": 0.0,
+       "requested_at": 0.0,
+       "kill_evidence": 0.0,
+       "partials": 0,
+       "report_kill": false,
+       "report_started": 0.0,
+       "last": null,
+       "snapshot": {
+        "kill_switch": false,
+        "flight_termination": false
+       }
+      },
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "unkill_without_the_switch",
+    "snapshot": {
+     "flight_termination": true
+    },
+    "steps": [
+     {
+      "op": "text",
+      "text": "Kill disengaged",
+      "severity": 6
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "Kill disengaged",
+        "info"
+       ],
+       [
+        "warning",
+        "Kill switch released",
+        "info",
+        "unkill"
+       ],
+       [
+        "update",
+        {
+         "kill_switch": false
+        }
+       ],
+       [
+        "resolve_warnings",
+        [
+         "kill"
+        ]
+       ]
+      ],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "routine_lines_stay_off_the_board",
+    "steps": [
+     {
+      "op": "text",
+      "text": "[logger] Opened full log file",
+      "severity": 6
+     },
+     {
+      "op": "text",
+      "text": "[logger] Opened full log file",
+      "severity": 4
+     },
+     {
+      "op": "text",
+      "text": "Calibration done",
+      "severity": 6
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "[logger] Opened full log file",
+        "info"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "[logger] Opened full log file",
+        "warning"
+       ],
+       [
+        "warning",
+        "[logger] Opened full log file",
+        "warning",
+        null
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "Calibration done",
+        "info"
+       ],
+       [
+        "warning",
+        "Calibration done",
+        "info",
+        null
+       ]
+      ],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "routine_lines_ardupilot",
+    "stack": "ardupilot",
+    "steps": [
+     {
+      "op": "text",
+      "text": "[logger] Opened full log file",
+      "severity": 6
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "[logger] Opened full log file",
+        "info"
+       ],
+       [
+        "warning",
+        "[logger] Opened full log file",
+        "info",
+        null
+       ]
+      ],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "prearm_failures_px4",
+    "steps": [
+     {
+      "op": "text",
+      "text": "Preflight Fail: Compass 0 uncalibrated",
+      "severity": 4
+     },
+     {
+      "op": "text",
+      "text": "Preflight Fail: Compass 0 uncalibrated",
+      "severity": 4
+     },
+     {
+      "op": "text",
+      "text": "Preflight Fail: Baro 0 missing",
+      "severity": 4
+     },
+     {
+      "op": "text",
+      "text": "Preflight Fail: ",
+      "severity": 4
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "Preflight Fail: Compass 0 uncalibrated",
+        "warning"
+       ],
+       [
+        "update",
+        {
+         "prearm_reasons": [
+          "Compass 0 uncalibrated"
+         ]
+        }
+       ],
+       [
+        "warning",
+        "Preflight Fail: Compass 0 uncalibrated",
+        "warning",
+        "prearm"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "Preflight Fail: Compass 0 uncalibrated",
+        "warning"
+       ],
+       [
+        "warning",
+        "Preflight Fail: Compass 0 uncalibrated",
+        "warning",
+        "prearm"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "Preflight Fail: Baro 0 missing",
+        "warning"
+       ],
+       [
+        "update",
+        {
+         "prearm_reasons": [
+          "Compass 0 uncalibrated",
+          "Baro 0 missing"
+         ]
+        }
+       ],
+       [
+        "warning",
+        "Preflight Fail: Baro 0 missing",
+        "warning",
+        "prearm"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "Preflight Fail:",
+        "warning"
+       ],
+       [
+        "warning",
+        "Preflight Fail:",
+        "warning",
+        null
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "reasons": [
+        "Compass 0 uncalibrated",
+        "Baro 0 missing"
+       ],
+       "reason_at": 1000.0,
+       "requested_at": 0.0,
+       "kill_evidence": 0.0,
+       "partials": 0,
+       "report_kill": false,
+       "report_started": 1000.0,
+       "last": null,
+       "snapshot": {
+        "prearm_reasons": [
+         "Compass 0 uncalibrated",
+         "Baro 0 missing"
+        ]
+       }
+      },
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "prearm_failures_ardupilot",
+    "stack": "ardupilot",
+    "steps": [
+     {
+      "op": "text",
+      "text": "PreArm: Compass not calibrated",
+      "severity": 4
+     },
+     {
+      "op": "text",
+      "text": "Arm: Throttle not zero",
+      "severity": 4
+     },
+     {
+      "op": "text",
+      "text": "PreArm:",
+      "severity": 4
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "PreArm: Compass not calibrated",
+        "warning"
+       ],
+       [
+        "update",
+        {
+         "prearm_reasons": [
+          "Compass not calibrated"
+         ]
+        }
+       ],
+       [
+        "warning",
+        "PreArm: Compass not calibrated",
+        "warning",
+        "prearm"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "Arm: Throttle not zero",
+        "warning"
+       ],
+       [
+        "update",
+        {
+         "prearm_reasons": [
+          "Compass not calibrated",
+          "Throttle not zero"
+         ]
+        }
+       ],
+       [
+        "warning",
+        "Arm: Throttle not zero",
+        "warning",
+        "prearm"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "PreArm:",
+        "warning"
+       ],
+       [
+        "warning",
+        "PreArm:",
+        "warning",
+        null
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "reasons": [
+        "Compass not calibrated",
+        "Throttle not zero"
+       ],
+       "reason_at": 1000.0,
+       "requested_at": 0.0,
+       "kill_evidence": 0.0,
+       "partials": 0,
+       "report_kill": false,
+       "report_started": 1000.0,
+       "last": null,
+       "snapshot": {
+        "prearm_reasons": [
+         "Compass not calibrated",
+         "Throttle not zero"
+        ]
+       }
+      },
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "prearm_reasons_are_capped",
+    "steps": [
+     {
+      "op": "text",
+      "text": "Preflight Fail: reason 0",
+      "severity": 4
+     },
+     {
+      "op": "text",
+      "text": "Preflight Fail: reason 1",
+      "severity": 4
+     },
+     {
+      "op": "text",
+      "text": "Preflight Fail: reason 2",
+      "severity": 4
+     },
+     {
+      "op": "text",
+      "text": "Preflight Fail: reason 3",
+      "severity": 4
+     },
+     {
+      "op": "text",
+      "text": "Preflight Fail: reason 4",
+      "severity": 4
+     },
+     {
+      "op": "text",
+      "text": "Preflight Fail: reason 5",
+      "severity": 4
+     },
+     {
+      "op": "text",
+      "text": "Preflight Fail: reason 6",
+      "severity": 4
+     },
+     {
+      "op": "text",
+      "text": "Preflight Fail: reason 7",
+      "severity": 4
+     },
+     {
+      "op": "text",
+      "text": "Preflight Fail: reason 8",
+      "severity": 4
+     },
+     {
+      "op": "text",
+      "text": "Preflight Fail: reason 9",
+      "severity": 4
+     },
+     {
+      "op": "text",
+      "text": "Preflight Fail: reason 10",
+      "severity": 4
+     },
+     {
+      "op": "text",
+      "text": "Preflight Fail: reason 11",
+      "severity": 4
+     },
+     {
+      "op": "text",
+      "text": "Preflight Fail: reason 12",
+      "severity": 4
+     },
+     {
+      "op": "text",
+      "text": "Preflight Fail: reason 13",
+      "severity": 4
+     },
+     {
+      "op": "text",
+      "text": "Preflight Fail: reason 14",
+      "severity": 4
+     },
+     {
+      "op": "text",
+      "text": "Preflight Fail: reason 15",
+      "severity": 4
+     },
+     {
+      "op": "text",
+      "text": "Preflight Fail: reason 16",
+      "severity": 4
+     },
+     {
+      "op": "text",
+      "text": "Preflight Fail: reason 17",
+      "severity": 4
+     },
+     {
+      "op": "text",
+      "text": "Preflight Fail: reason 18",
+      "severity": 4
+     },
+     {
+      "op": "text",
+      "text": "Preflight Fail: reason 19",
+      "severity": 4
+     },
+     {
+      "op": "text",
+      "text": "Preflight Fail: reason 20",
+      "severity": 4
+     },
+     {
+      "op": "text",
+      "text": "Preflight Fail: reason 21",
+      "severity": 4
+     },
+     {
+      "op": "text",
+      "text": "Preflight Fail: reason 22",
+      "severity": 4
+     },
+     {
+      "op": "text",
+      "text": "Preflight Fail: reason 23",
+      "severity": 4
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "Preflight Fail: reason 0",
+        "warning"
+       ],
+       [
+        "update",
+        {
+         "prearm_reasons": [
+          "reason 0"
+         ]
+        }
+       ],
+       [
+        "warning",
+        "Preflight Fail: reason 0",
+        "warning",
+        "prearm"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "Preflight Fail: reason 1",
+        "warning"
+       ],
+       [
+        "update",
+        {
+         "prearm_reasons": [
+          "reason 0",
+          "reason 1"
+         ]
+        }
+       ],
+       [
+        "warning",
+        "Preflight Fail: reason 1",
+        "warning",
+        "prearm"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "Preflight Fail: reason 2",
+        "warning"
+       ],
+       [
+        "update",
+        {
+         "prearm_reasons": [
+          "reason 0",
+          "reason 1",
+          "reason 2"
+         ]
+        }
+       ],
+       [
+        "warning",
+        "Preflight Fail: reason 2",
+        "warning",
+        "prearm"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "Preflight Fail: reason 3",
+        "warning"
+       ],
+       [
+        "update",
+        {
+         "prearm_reasons": [
+          "reason 0",
+          "reason 1",
+          "reason 2",
+          "reason 3"
+         ]
+        }
+       ],
+       [
+        "warning",
+        "Preflight Fail: reason 3",
+        "warning",
+        "prearm"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "Preflight Fail: reason 4",
+        "warning"
+       ],
+       [
+        "update",
+        {
+         "prearm_reasons": [
+          "reason 0",
+          "reason 1",
+          "reason 2",
+          "reason 3",
+          "reason 4"
+         ]
+        }
+       ],
+       [
+        "warning",
+        "Preflight Fail: reason 4",
+        "warning",
+        "prearm"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "Preflight Fail: reason 5",
+        "warning"
+       ],
+       [
+        "update",
+        {
+         "prearm_reasons": [
+          "reason 0",
+          "reason 1",
+          "reason 2",
+          "reason 3",
+          "reason 4",
+          "reason 5"
+         ]
+        }
+       ],
+       [
+        "warning",
+        "Preflight Fail: reason 5",
+        "warning",
+        "prearm"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "Preflight Fail: reason 6",
+        "warning"
+       ],
+       [
+        "update",
+        {
+         "prearm_reasons": [
+          "reason 0",
+          "reason 1",
+          "reason 2",
+          "reason 3",
+          "reason 4",
+          "reason 5",
+          "reason 6"
+         ]
+        }
+       ],
+       [
+        "warning",
+        "Preflight Fail: reason 6",
+        "warning",
+        "prearm"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "Preflight Fail: reason 7",
+        "warning"
+       ],
+       [
+        "update",
+        {
+         "prearm_reasons": [
+          "reason 0",
+          "reason 1",
+          "reason 2",
+          "reason 3",
+          "reason 4",
+          "reason 5",
+          "reason 6",
+          "reason 7"
+         ]
+        }
+       ],
+       [
+        "warning",
+        "Preflight Fail: reason 7",
+        "warning",
+        "prearm"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "Preflight Fail: reason 8",
+        "warning"
+       ],
+       [
+        "update",
+        {
+         "prearm_reasons": [
+          "reason 0",
+          "reason 1",
+          "reason 2",
+          "reason 3",
+          "reason 4",
+          "reason 5",
+          "reason 6",
+          "reason 7",
+          "reason 8"
+         ]
+        }
+       ],
+       [
+        "warning",
+        "Preflight Fail: reason 8",
+        "warning",
+        "prearm"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "Preflight Fail: reason 9",
+        "warning"
+       ],
+       [
+        "update",
+        {
+         "prearm_reasons": [
+          "reason 0",
+          "reason 1",
+          "reason 2",
+          "reason 3",
+          "reason 4",
+          "reason 5",
+          "reason 6",
+          "reason 7",
+          "reason 8",
+          "reason 9"
+         ]
+        }
+       ],
+       [
+        "warning",
+        "Preflight Fail: reason 9",
+        "warning",
+        "prearm"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "Preflight Fail: reason 10",
+        "warning"
+       ],
+       [
+        "update",
+        {
+         "prearm_reasons": [
+          "reason 0",
+          "reason 1",
+          "reason 2",
+          "reason 3",
+          "reason 4",
+          "reason 5",
+          "reason 6",
+          "reason 7",
+          "reason 8",
+          "reason 9",
+          "reason 10"
+         ]
+        }
+       ],
+       [
+        "warning",
+        "Preflight Fail: reason 10",
+        "warning",
+        "prearm"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "Preflight Fail: reason 11",
+        "warning"
+       ],
+       [
+        "update",
+        {
+         "prearm_reasons": [
+          "reason 0",
+          "reason 1",
+          "reason 2",
+          "reason 3",
+          "reason 4",
+          "reason 5",
+          "reason 6",
+          "reason 7",
+          "reason 8",
+          "reason 9",
+          "reason 10",
+          "reason 11"
+         ]
+        }
+       ],
+       [
+        "warning",
+        "Preflight Fail: reason 11",
+        "warning",
+        "prearm"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "Preflight Fail: reason 12",
+        "warning"
+       ],
+       [
+        "update",
+        {
+         "prearm_reasons": [
+          "reason 0",
+          "reason 1",
+          "reason 2",
+          "reason 3",
+          "reason 4",
+          "reason 5",
+          "reason 6",
+          "reason 7",
+          "reason 8",
+          "reason 9",
+          "reason 10",
+          "reason 11",
+          "reason 12"
+         ]
+        }
+       ],
+       [
+        "warning",
+        "Preflight Fail: reason 12",
+        "warning",
+        "prearm"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "Preflight Fail: reason 13",
+        "warning"
+       ],
+       [
+        "update",
+        {
+         "prearm_reasons": [
+          "reason 0",
+          "reason 1",
+          "reason 2",
+          "reason 3",
+          "reason 4",
+          "reason 5",
+          "reason 6",
+          "reason 7",
+          "reason 8",
+          "reason 9",
+          "reason 10",
+          "reason 11",
+          "reason 12",
+          "reason 13"
+         ]
+        }
+       ],
+       [
+        "warning",
+        "Preflight Fail: reason 13",
+        "warning",
+        "prearm"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "Preflight Fail: reason 14",
+        "warning"
+       ],
+       [
+        "update",
+        {
+         "prearm_reasons": [
+          "reason 0",
+          "reason 1",
+          "reason 2",
+          "reason 3",
+          "reason 4",
+          "reason 5",
+          "reason 6",
+          "reason 7",
+          "reason 8",
+          "reason 9",
+          "reason 10",
+          "reason 11",
+          "reason 12",
+          "reason 13",
+          "reason 14"
+         ]
+        }
+       ],
+       [
+        "warning",
+        "Preflight Fail: reason 14",
+        "warning",
+        "prearm"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "Preflight Fail: reason 15",
+        "warning"
+       ],
+       [
+        "update",
+        {
+         "prearm_reasons": [
+          "reason 0",
+          "reason 1",
+          "reason 2",
+          "reason 3",
+          "reason 4",
+          "reason 5",
+          "reason 6",
+          "reason 7",
+          "reason 8",
+          "reason 9",
+          "reason 10",
+          "reason 11",
+          "reason 12",
+          "reason 13",
+          "reason 14",
+          "reason 15"
+         ]
+        }
+       ],
+       [
+        "warning",
+        "Preflight Fail: reason 15",
+        "warning",
+        "prearm"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "Preflight Fail: reason 16",
+        "warning"
+       ],
+       [
+        "update",
+        {
+         "prearm_reasons": [
+          "reason 0",
+          "reason 1",
+          "reason 2",
+          "reason 3",
+          "reason 4",
+          "reason 5",
+          "reason 6",
+          "reason 7",
+          "reason 8",
+          "reason 9",
+          "reason 10",
+          "reason 11",
+          "reason 12",
+          "reason 13",
+          "reason 14",
+          "reason 15",
+          "reason 16"
+         ]
+        }
+       ],
+       [
+        "warning",
+        "Preflight Fail: reason 16",
+        "warning",
+        "prearm"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "Preflight Fail: reason 17",
+        "warning"
+       ],
+       [
+        "update",
+        {
+         "prearm_reasons": [
+          "reason 0",
+          "reason 1",
+          "reason 2",
+          "reason 3",
+          "reason 4",
+          "reason 5",
+          "reason 6",
+          "reason 7",
+          "reason 8",
+          "reason 9",
+          "reason 10",
+          "reason 11",
+          "reason 12",
+          "reason 13",
+          "reason 14",
+          "reason 15",
+          "reason 16",
+          "reason 17"
+         ]
+        }
+       ],
+       [
+        "warning",
+        "Preflight Fail: reason 17",
+        "warning",
+        "prearm"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "Preflight Fail: reason 18",
+        "warning"
+       ],
+       [
+        "update",
+        {
+         "prearm_reasons": [
+          "reason 0",
+          "reason 1",
+          "reason 2",
+          "reason 3",
+          "reason 4",
+          "reason 5",
+          "reason 6",
+          "reason 7",
+          "reason 8",
+          "reason 9",
+          "reason 10",
+          "reason 11",
+          "reason 12",
+          "reason 13",
+          "reason 14",
+          "reason 15",
+          "reason 16",
+          "reason 17",
+          "reason 18"
+         ]
+        }
+       ],
+       [
+        "warning",
+        "Preflight Fail: reason 18",
+        "warning",
+        "prearm"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "Preflight Fail: reason 19",
+        "warning"
+       ],
+       [
+        "update",
+        {
+         "prearm_reasons": [
+          "reason 0",
+          "reason 1",
+          "reason 2",
+          "reason 3",
+          "reason 4",
+          "reason 5",
+          "reason 6",
+          "reason 7",
+          "reason 8",
+          "reason 9",
+          "reason 10",
+          "reason 11",
+          "reason 12",
+          "reason 13",
+          "reason 14",
+          "reason 15",
+          "reason 16",
+          "reason 17",
+          "reason 18",
+          "reason 19"
+         ]
+        }
+       ],
+       [
+        "warning",
+        "Preflight Fail: reason 19",
+        "warning",
+        "prearm"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "Preflight Fail: reason 20",
+        "warning"
+       ],
+       [
+        "warning",
+        "Preflight Fail: reason 20",
+        "warning",
+        "prearm"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "Preflight Fail: reason 21",
+        "warning"
+       ],
+       [
+        "warning",
+        "Preflight Fail: reason 21",
+        "warning",
+        "prearm"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "Preflight Fail: reason 22",
+        "warning"
+       ],
+       [
+        "warning",
+        "Preflight Fail: reason 22",
+        "warning",
+        "prearm"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "Preflight Fail: reason 23",
+        "warning"
+       ],
+       [
+        "warning",
+        "Preflight Fail: reason 23",
+        "warning",
+        "prearm"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "reasons": [
+        "reason 0",
+        "reason 1",
+        "reason 2",
+        "reason 3",
+        "reason 4",
+        "reason 5",
+        "reason 6",
+        "reason 7",
+        "reason 8",
+        "reason 9",
+        "reason 10",
+        "reason 11",
+        "reason 12",
+        "reason 13",
+        "reason 14",
+        "reason 15",
+        "reason 16",
+        "reason 17",
+        "reason 18",
+        "reason 19"
+       ],
+       "reason_at": 1000.0,
+       "requested_at": 0.0,
+       "kill_evidence": 0.0,
+       "partials": 0,
+       "report_kill": false,
+       "report_started": 1000.0,
+       "last": null,
+       "snapshot": {
+        "prearm_reasons": [
+         "reason 0",
+         "reason 1",
+         "reason 2",
+         "reason 3",
+         "reason 4",
+         "reason 5",
+         "reason 6",
+         "reason 7",
+         "reason 8",
+         "reason 9",
+         "reason 10",
+         "reason 11",
+         "reason 12",
+         "reason 13",
+         "reason 14",
+         "reason 15",
+         "reason 16",
+         "reason 17",
+         "reason 18",
+         "reason 19"
+        ]
+       }
+      },
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "a_new_report_starts_after_a_gap",
+    "steps": [
+     {
+      "op": "text",
+      "text": "Preflight Fail: first",
+      "severity": 4
+     },
+     {
+      "op": "advance",
+      "seconds": 1.0
+     },
+     {
+      "op": "text",
+      "text": "Preflight Fail: second",
+      "severity": 4
+     },
+     {
+      "op": "state"
+     },
+     {
+      "op": "advance",
+      "seconds": 2.5
+     },
+     {
+      "op": "text",
+      "text": "Preflight Fail: third",
+      "severity": 4
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "Preflight Fail: first",
+        "warning"
+       ],
+       [
+        "update",
+        {
+         "prearm_reasons": [
+          "first"
+         ]
+        }
+       ],
+       [
+        "warning",
+        "Preflight Fail: first",
+        "warning",
+        "prearm"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 1.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "Preflight Fail: second",
+        "warning"
+       ],
+       [
+        "update",
+        {
+         "prearm_reasons": [
+          "first",
+          "second"
+         ]
+        }
+       ],
+       [
+        "warning",
+        "Preflight Fail: second",
+        "warning",
+        "prearm"
+       ]
+      ],
+      "t": 1.0
+     },
+     {
+      "result": {
+       "reasons": [
+        "first",
+        "second"
+       ],
+       "reason_at": 1001.0,
+       "requested_at": 0.0,
+       "kill_evidence": 0.0,
+       "partials": 0,
+       "report_kill": false,
+       "report_started": 1000.0,
+       "last": null,
+       "snapshot": {
+        "prearm_reasons": [
+         "first",
+         "second"
+        ]
+       }
+      },
+      "events": [],
+      "t": 1.0
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 3.5
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "Preflight Fail: third",
+        "warning"
+       ],
+       [
+        "update",
+        {
+         "prearm_reasons": [
+          "third"
+         ]
+        }
+       ],
+       [
+        "warning",
+        "Preflight Fail: third",
+        "warning",
+        "prearm"
+       ]
+      ],
+      "t": 3.5
+     },
+     {
+      "result": {
+       "reasons": [
+        "third"
+       ],
+       "reason_at": 1003.5,
+       "requested_at": 0.0,
+       "kill_evidence": 0.0,
+       "partials": 0,
+       "report_kill": false,
+       "report_started": 1003.5,
+       "last": null,
+       "snapshot": {
+        "prearm_reasons": [
+         "third"
+        ]
+       }
+      },
+      "events": [],
+      "t": 3.5
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "kill_named_by_a_failing_check",
+    "steps": [
+     {
+      "op": "text",
+      "text": "Preflight Fail: Kill switch engaged",
+      "severity": 4
+     },
+     {
+      "op": "state"
+     },
+     {
+      "op": "text",
+      "text": "Preflight Fail: Kill switch engaged",
+      "severity": 4
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "Preflight Fail: Kill switch engaged",
+        "warning"
+       ],
+       [
+        "update",
+        {
+         "prearm_reasons": [
+          "Kill switch engaged"
+         ]
+        }
+       ],
+       [
+        "update",
+        {
+         "kill_switch": true
+        }
+       ],
+       [
+        "warning",
+        "Kill switch engaged. Motors stopped",
+        "critical",
+        "kill"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "reasons": [
+        "Kill switch engaged"
+       ],
+       "reason_at": 1000.0,
+       "requested_at": 0.0,
+       "kill_evidence": 1000.0,
+       "partials": 0,
+       "report_kill": true,
+       "report_started": 1000.0,
+       "last": null,
+       "snapshot": {
+        "prearm_reasons": [
+         "Kill switch engaged"
+        ],
+        "kill_switch": true
+       }
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "Preflight Fail: Kill switch engaged",
+        "warning"
+       ]
+      ],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "kill_named_by_a_check_when_the_switch_is_known",
+    "snapshot": {
+     "kill_switch": true
+    },
+    "steps": [
+     {
+      "op": "text",
+      "text": "Preflight Fail: Kill switch engaged",
+      "severity": 4
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "Preflight Fail: Kill switch engaged",
+        "warning"
+       ],
+       [
+        "update",
+        {
+         "prearm_reasons": [
+          "Kill switch engaged"
+         ]
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "reasons": [
+        "Kill switch engaged"
+       ],
+       "reason_at": 1000.0,
+       "requested_at": 0.0,
+       "kill_evidence": 1000.0,
+       "partials": 0,
+       "report_kill": true,
+       "report_started": 1000.0,
+       "last": null,
+       "snapshot": {
+        "kill_switch": true,
+        "prearm_reasons": [
+         "Kill switch engaged"
+        ]
+       }
+      },
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "kill_named_by_a_check_ardupilot",
+    "stack": "ardupilot",
+    "steps": [
+     {
+      "op": "text",
+      "text": "PreArm: Motors Emergency Stopped",
+      "severity": 4
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "PreArm: Motors Emergency Stopped",
+        "warning"
+       ],
+       [
+        "update",
+        {
+         "prearm_reasons": [
+          "Motors Emergency Stopped"
+         ]
+        }
+       ],
+       [
+        "update",
+        {
+         "kill_switch": true
+        }
+       ],
+       [
+        "warning",
+        "Emergency stop engaged. Motors stopped",
+        "critical",
+        "kill"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "reasons": [
+        "Motors Emergency Stopped"
+       ],
+       "reason_at": 1000.0,
+       "requested_at": 0.0,
+       "kill_evidence": 1000.0,
+       "partials": 0,
+       "report_kill": true,
+       "report_started": 1000.0,
+       "last": null,
+       "snapshot": {
+        "prearm_reasons": [
+         "Motors Emergency Stopped"
+        ],
+        "kill_switch": true
+       }
+      },
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "chunks_in_order",
+    "steps": [
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 5,
+      "seq": 0
+     },
+     {
+      "op": "text",
+      "text": "BBBBBBBBBBBBBBBBBBBB",
+      "severity": 6,
+      "id": 5,
+      "seq": 1
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABBBBBBBBBBBBBBBBBBBB",
+        "info"
+       ],
+       [
+        "warning",
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABBBBBBBBBBBBBBBBBBBB",
+        "info",
+        null
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "reasons": [],
+       "reason_at": 0.0,
+       "requested_at": 0.0,
+       "kill_evidence": 0.0,
+       "partials": 0,
+       "report_kill": false,
+       "report_started": 0.0,
+       "last": null,
+       "snapshot": {}
+      },
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "chunks_out_of_order",
+    "steps": [
+     {
+      "op": "text",
+      "text": "BBBBBBBBBBBBBBBBBBBB",
+      "severity": 6,
+      "id": 6,
+      "seq": 1
+     },
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 6,
+      "seq": 0
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABBBBBBBBBBBBBBBBBBBB",
+        "info"
+       ],
+       [
+        "warning",
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABBBBBBBBBBBBBBBBBBBB",
+        "info",
+        null
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "reasons": [],
+       "reason_at": 0.0,
+       "requested_at": 0.0,
+       "kill_evidence": 0.0,
+       "partials": 0,
+       "report_kill": false,
+       "report_started": 0.0,
+       "last": null,
+       "snapshot": {}
+      },
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "chunks_three",
+    "steps": [
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 7,
+      "seq": 0
+     },
+     {
+      "op": "text",
+      "text": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+      "severity": 3,
+      "id": 7,
+      "seq": 1
+     },
+     {
+      "op": "text",
+      "text": "CCCCC",
+      "severity": 5,
+      "id": 7,
+      "seq": 2
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBCCCCC",
+        "critical"
+       ],
+       [
+        "warning",
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBCCCCC",
+        "critical",
+        null
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "reasons": [],
+       "reason_at": 0.0,
+       "requested_at": 0.0,
+       "kill_evidence": 0.0,
+       "partials": 0,
+       "report_kill": false,
+       "report_started": 0.0,
+       "last": null,
+       "snapshot": {}
+      },
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "chunks_missing_one",
+    "steps": [
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 8,
+      "seq": 0
+     },
+     {
+      "op": "text",
+      "text": "CCCCC",
+      "severity": 6,
+      "id": 8,
+      "seq": 2
+     },
+     {
+      "op": "state"
+     },
+     {
+      "op": "text",
+      "text": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+      "severity": 6,
+      "id": 8,
+      "seq": 1
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "reasons": [],
+       "reason_at": 0.0,
+       "requested_at": 0.0,
+       "kill_evidence": 0.0,
+       "partials": 1,
+       "report_kill": false,
+       "report_started": 0.0,
+       "last": null,
+       "snapshot": {}
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBCCCCC",
+        "info"
+       ],
+       [
+        "warning",
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBCCCCC",
+        "info",
+        null
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "reasons": [],
+       "reason_at": 0.0,
+       "requested_at": 0.0,
+       "kill_evidence": 0.0,
+       "partials": 0,
+       "report_kill": false,
+       "report_started": 0.0,
+       "last": null,
+       "snapshot": {}
+      },
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "chunks_from_two_senders",
+    "steps": [
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 9,
+      "seq": 0,
+      "system": 1,
+      "component": 1
+     },
+     {
+      "op": "text",
+      "text": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+      "severity": 6,
+      "id": 9,
+      "seq": 0,
+      "system": 2,
+      "component": 1
+     },
+     {
+      "op": "text",
+      "text": "BBBBB",
+      "severity": 6,
+      "id": 9,
+      "seq": 1,
+      "system": 1,
+      "component": 1
+     },
+     {
+      "op": "text",
+      "text": "YYYYY",
+      "severity": 6,
+      "id": 9,
+      "seq": 1,
+      "system": 2,
+      "component": 1
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABBBBB",
+        "info"
+       ],
+       [
+        "warning",
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABBBBB",
+        "info",
+        null
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXYYYYY",
+        "info"
+       ],
+       [
+        "warning",
+        "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXYYYYY",
+        "info",
+        null
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "reasons": [],
+       "reason_at": 0.0,
+       "requested_at": 0.0,
+       "kill_evidence": 0.0,
+       "partials": 0,
+       "report_kill": false,
+       "report_started": 0.0,
+       "last": null,
+       "snapshot": {}
+      },
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "chunks_time_out",
+    "steps": [
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 10,
+      "seq": 0
+     },
+     {
+      "op": "state"
+     },
+     {
+      "op": "advance",
+      "seconds": 11.0
+     },
+     {
+      "op": "text",
+      "text": "ZZZZZ",
+      "severity": 6,
+      "id": 11,
+      "seq": 0
+     },
+     {
+      "op": "state"
+     },
+     {
+      "op": "cleanup"
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "reasons": [],
+       "reason_at": 0.0,
+       "requested_at": 0.0,
+       "kill_evidence": 0.0,
+       "partials": 1,
+       "report_kill": false,
+       "report_started": 0.0,
+       "last": null,
+       "snapshot": {}
+      },
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 11.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "ZZZZZ",
+        "info"
+       ],
+       [
+        "warning",
+        "ZZZZZ",
+        "info",
+        null
+       ]
+      ],
+      "t": 11.0
+     },
+     {
+      "result": {
+       "reasons": [],
+       "reason_at": 0.0,
+       "requested_at": 0.0,
+       "kill_evidence": 0.0,
+       "partials": 0,
+       "report_kill": false,
+       "report_started": 0.0,
+       "last": null,
+       "snapshot": {}
+      },
+      "events": [],
+      "t": 11.0
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 11.0
+     },
+     {
+      "result": {
+       "reasons": [],
+       "reason_at": 0.0,
+       "requested_at": 0.0,
+       "kill_evidence": 0.0,
+       "partials": 0,
+       "report_kill": false,
+       "report_started": 0.0,
+       "last": null,
+       "snapshot": {}
+      },
+      "events": [],
+      "t": 11.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "chunks_complete_without_a_terminator",
+    "steps": [
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 12,
+      "seq": 0
+     },
+     {
+      "op": "text",
+      "text": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+      "severity": 6,
+      "id": 12,
+      "seq": 1
+     },
+     {
+      "op": "text",
+      "text": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+      "severity": 6,
+      "id": 12,
+      "seq": 2
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "reasons": [],
+       "reason_at": 0.0,
+       "requested_at": 0.0,
+       "kill_evidence": 0.0,
+       "partials": 1,
+       "report_kill": false,
+       "report_started": 0.0,
+       "last": null,
+       "snapshot": {}
+      },
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "chunks_are_capped",
+    "steps": [
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 100,
+      "seq": 0
+     },
+     {
+      "op": "advance",
+      "seconds": 0.01
+     },
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 101,
+      "seq": 0
+     },
+     {
+      "op": "advance",
+      "seconds": 0.01
+     },
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 102,
+      "seq": 0
+     },
+     {
+      "op": "advance",
+      "seconds": 0.01
+     },
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 103,
+      "seq": 0
+     },
+     {
+      "op": "advance",
+      "seconds": 0.01
+     },
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 104,
+      "seq": 0
+     },
+     {
+      "op": "advance",
+      "seconds": 0.01
+     },
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 105,
+      "seq": 0
+     },
+     {
+      "op": "advance",
+      "seconds": 0.01
+     },
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 106,
+      "seq": 0
+     },
+     {
+      "op": "advance",
+      "seconds": 0.01
+     },
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 107,
+      "seq": 0
+     },
+     {
+      "op": "advance",
+      "seconds": 0.01
+     },
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 108,
+      "seq": 0
+     },
+     {
+      "op": "advance",
+      "seconds": 0.01
+     },
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 109,
+      "seq": 0
+     },
+     {
+      "op": "advance",
+      "seconds": 0.01
+     },
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 110,
+      "seq": 0
+     },
+     {
+      "op": "advance",
+      "seconds": 0.01
+     },
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 111,
+      "seq": 0
+     },
+     {
+      "op": "advance",
+      "seconds": 0.01
+     },
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 112,
+      "seq": 0
+     },
+     {
+      "op": "advance",
+      "seconds": 0.01
+     },
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 113,
+      "seq": 0
+     },
+     {
+      "op": "advance",
+      "seconds": 0.01
+     },
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 114,
+      "seq": 0
+     },
+     {
+      "op": "advance",
+      "seconds": 0.01
+     },
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 115,
+      "seq": 0
+     },
+     {
+      "op": "advance",
+      "seconds": 0.01
+     },
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 116,
+      "seq": 0
+     },
+     {
+      "op": "advance",
+      "seconds": 0.01
+     },
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 117,
+      "seq": 0
+     },
+     {
+      "op": "advance",
+      "seconds": 0.01
+     },
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 118,
+      "seq": 0
+     },
+     {
+      "op": "advance",
+      "seconds": 0.01
+     },
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 119,
+      "seq": 0
+     },
+     {
+      "op": "advance",
+      "seconds": 0.01
+     },
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 120,
+      "seq": 0
+     },
+     {
+      "op": "advance",
+      "seconds": 0.01
+     },
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 121,
+      "seq": 0
+     },
+     {
+      "op": "advance",
+      "seconds": 0.01
+     },
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 122,
+      "seq": 0
+     },
+     {
+      "op": "advance",
+      "seconds": 0.01
+     },
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 123,
+      "seq": 0
+     },
+     {
+      "op": "advance",
+      "seconds": 0.01
+     },
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 124,
+      "seq": 0
+     },
+     {
+      "op": "advance",
+      "seconds": 0.01
+     },
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 125,
+      "seq": 0
+     },
+     {
+      "op": "advance",
+      "seconds": 0.01
+     },
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 126,
+      "seq": 0
+     },
+     {
+      "op": "advance",
+      "seconds": 0.01
+     },
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 127,
+      "seq": 0
+     },
+     {
+      "op": "advance",
+      "seconds": 0.01
+     },
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 128,
+      "seq": 0
+     },
+     {
+      "op": "advance",
+      "seconds": 0.01
+     },
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 129,
+      "seq": 0
+     },
+     {
+      "op": "advance",
+      "seconds": 0.01
+     },
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 130,
+      "seq": 0
+     },
+     {
+      "op": "advance",
+      "seconds": 0.01
+     },
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 131,
+      "seq": 0
+     },
+     {
+      "op": "advance",
+      "seconds": 0.01
+     },
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 132,
+      "seq": 0
+     },
+     {
+      "op": "advance",
+      "seconds": 0.01
+     },
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 133,
+      "seq": 0
+     },
+     {
+      "op": "advance",
+      "seconds": 0.01
+     },
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 134,
+      "seq": 0
+     },
+     {
+      "op": "advance",
+      "seconds": 0.01
+     },
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 135,
+      "seq": 0
+     },
+     {
+      "op": "advance",
+      "seconds": 0.01
+     },
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 136,
+      "seq": 0
+     },
+     {
+      "op": "advance",
+      "seconds": 0.01
+     },
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 137,
+      "seq": 0
+     },
+     {
+      "op": "advance",
+      "seconds": 0.01
+     },
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 138,
+      "seq": 0
+     },
+     {
+      "op": "advance",
+      "seconds": 0.01
+     },
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 139,
+      "seq": 0
+     },
+     {
+      "op": "advance",
+      "seconds": 0.01
+     },
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 140,
+      "seq": 0
+     },
+     {
+      "op": "advance",
+      "seconds": 0.01
+     },
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 141,
+      "seq": 0
+     },
+     {
+      "op": "advance",
+      "seconds": 0.01
+     },
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 142,
+      "seq": 0
+     },
+     {
+      "op": "advance",
+      "seconds": 0.01
+     },
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 143,
+      "seq": 0
+     },
+     {
+      "op": "advance",
+      "seconds": 0.01
+     },
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 144,
+      "seq": 0
+     },
+     {
+      "op": "advance",
+      "seconds": 0.01
+     },
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 145,
+      "seq": 0
+     },
+     {
+      "op": "advance",
+      "seconds": 0.01
+     },
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 146,
+      "seq": 0
+     },
+     {
+      "op": "advance",
+      "seconds": 0.01
+     },
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 147,
+      "seq": 0
+     },
+     {
+      "op": "advance",
+      "seconds": 0.01
+     },
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 148,
+      "seq": 0
+     },
+     {
+      "op": "advance",
+      "seconds": 0.01
+     },
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 149,
+      "seq": 0
+     },
+     {
+      "op": "advance",
+      "seconds": 0.01
+     },
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 150,
+      "seq": 0
+     },
+     {
+      "op": "advance",
+      "seconds": 0.01
+     },
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 151,
+      "seq": 0
+     },
+     {
+      "op": "advance",
+      "seconds": 0.01
+     },
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 152,
+      "seq": 0
+     },
+     {
+      "op": "advance",
+      "seconds": 0.01
+     },
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 153,
+      "seq": 0
+     },
+     {
+      "op": "advance",
+      "seconds": 0.01
+     },
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 154,
+      "seq": 0
+     },
+     {
+      "op": "advance",
+      "seconds": 0.01
+     },
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 155,
+      "seq": 0
+     },
+     {
+      "op": "advance",
+      "seconds": 0.01
+     },
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 156,
+      "seq": 0
+     },
+     {
+      "op": "advance",
+      "seconds": 0.01
+     },
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 157,
+      "seq": 0
+     },
+     {
+      "op": "advance",
+      "seconds": 0.01
+     },
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 158,
+      "seq": 0
+     },
+     {
+      "op": "advance",
+      "seconds": 0.01
+     },
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 159,
+      "seq": 0
+     },
+     {
+      "op": "advance",
+      "seconds": 0.01
+     },
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 160,
+      "seq": 0
+     },
+     {
+      "op": "advance",
+      "seconds": 0.01
+     },
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 161,
+      "seq": 0
+     },
+     {
+      "op": "advance",
+      "seconds": 0.01
+     },
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 162,
+      "seq": 0
+     },
+     {
+      "op": "advance",
+      "seconds": 0.01
+     },
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 163,
+      "seq": 0
+     },
+     {
+      "op": "advance",
+      "seconds": 0.01
+     },
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 164,
+      "seq": 0
+     },
+     {
+      "op": "advance",
+      "seconds": 0.01
+     },
+     {
+      "op": "text",
+      "text": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "severity": 6,
+      "id": 165,
+      "seq": 0
+     },
+     {
+      "op": "advance",
+      "seconds": 0.01
+     },
+     {
+      "op": "state"
+     },
+     {
+      "op": "text",
+      "text": "BBBBB",
+      "severity": 6,
+      "id": 100,
+      "seq": 1
+     },
+     {
+      "op": "text",
+      "text": "BBBBB",
+      "severity": 6,
+      "id": 165,
+      "seq": 1
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.01
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.01
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.02
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.02
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.03
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.03
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.04
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.04
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.05
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.05
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.06
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.06
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.07
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.07
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.08
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.08
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.09
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.09
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.1
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.1
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.11
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.11
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.12
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.12
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.13
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.13
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.14
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.14
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.15
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.15
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.16
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.16
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.17
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.17
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.18
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.18
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.19
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.19
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.2
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.2
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.21
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.21
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.22
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.22
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.23
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.23
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.24
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.24
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.25
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.25
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.26
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.26
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.27
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.27
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.28
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.28
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.29
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.29
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.3
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.3
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.31
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.31
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.32
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.32
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.33
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.33
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.34
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.34
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.35
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.35
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.36
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.36
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.37
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.37
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.38
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.38
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.39
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.39
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.4
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.4
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.41
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.41
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.42
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.42
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.43
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.43
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.44
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.44
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.45
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.45
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.46
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.46
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.47
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.47
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.48
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.48
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.49
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.49
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.5
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.5
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.51
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.51
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.52
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.52
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.53
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.53
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.54
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.54
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.55
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.55
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.56
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.56
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.57
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.57
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.58
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.58
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.59
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.59
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.6
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.6
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.61
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.61
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.62
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.62
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.63
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.63
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.64
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.64
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.65
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.65
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.66
+     },
+     {
+      "result": {
+       "reasons": [],
+       "reason_at": 0.0,
+       "requested_at": 0.0,
+       "kill_evidence": 0.0,
+       "partials": 64,
+       "report_kill": false,
+       "report_started": 0.0,
+       "last": null,
+       "snapshot": {}
+      },
+      "events": [],
+      "t": 0.66
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.66
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABBBBB",
+        "info"
+       ],
+       [
+        "warning",
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABBBBB",
+        "info",
+        null
+       ]
+      ],
+      "t": 0.66
+     },
+     {
+      "result": {
+       "reasons": [],
+       "reason_at": 0.0,
+       "requested_at": 0.0,
+       "kill_evidence": 0.0,
+       "partials": 63,
+       "report_kill": false,
+       "report_started": 0.0,
+       "last": null,
+       "snapshot": {}
+      },
+      "events": [],
+      "t": 0.66
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "chunk_with_a_known_event",
+    "steps": [
+     {
+      "op": "text",
+      "text": "Kill ",
+      "severity": 6,
+      "id": 13,
+      "seq": 0
+     },
+     {
+      "op": "text",
+      "text": "engaged",
+      "severity": 6,
+      "id": 13,
+      "seq": 1
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "Kill",
+        "info"
+       ],
+       [
+        "warning",
+        "Kill",
+        "info",
+        null
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "prearm_pass_clears_the_reasons",
+    "steps": [
+     {
+      "op": "text",
+      "text": "Preflight Fail: Compass",
+      "severity": 4
+     },
+     {
+      "op": "prearm",
+      "value": true
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "Preflight Fail: Compass",
+        "warning"
+       ],
+       [
+        "update",
+        {
+         "prearm_reasons": [
+          "Compass"
+         ]
+        }
+       ],
+       [
+        "warning",
+        "Preflight Fail: Compass",
+        "warning",
+        "prearm"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "prearm_reasons": []
+        }
+       ],
+       [
+        "resolve_warnings",
+        [
+         "prearm"
+        ]
+       ],
+       [
+        "resolve_warnings",
+        [
+         "kill"
+        ]
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "reasons": [],
+       "reason_at": 0.0,
+       "requested_at": 0.0,
+       "kill_evidence": 0.0,
+       "partials": 0,
+       "report_kill": false,
+       "report_started": 1000.0,
+       "last": true,
+       "snapshot": {
+        "prearm_reasons": []
+       }
+      },
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "prearm_pass_releases_the_kill_switch_after_settling",
+    "snapshot": {
+     "kill_switch": true,
+     "flight_termination": true
+    },
+    "steps": [
+     {
+      "op": "kill_evidence",
+      "at": 1000.0
+     },
+     {
+      "op": "prearm",
+      "value": true
+     },
+     {
+      "op": "advance",
+      "seconds": 3.0
+     },
+     {
+      "op": "prearm",
+      "value": true
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "resolve_warnings",
+        [
+         "prearm"
+        ]
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 3.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "resolve_warnings",
+        [
+         "prearm"
+        ]
+       ],
+       [
+        "update",
+        {
+         "kill_switch": false,
+         "flight_termination": false
+        }
+       ],
+       [
+        "resolve_warnings",
+        [
+         "kill"
+        ]
+       ]
+      ],
+      "t": 3.0
+     },
+     {
+      "result": {
+       "reasons": [],
+       "reason_at": 0.0,
+       "requested_at": 0.0,
+       "kill_evidence": 1000.0,
+       "partials": 0,
+       "report_kill": false,
+       "report_started": 0.0,
+       "last": true,
+       "snapshot": {
+        "kill_switch": false,
+        "flight_termination": false
+       }
+      },
+      "events": [],
+      "t": 3.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "prearm_pass_armed_says_nothing_about_the_switch",
+    "snapshot": {
+     "kill_switch": true,
+     "armed": true
+    },
+    "steps": [
+     {
+      "op": "prearm",
+      "value": true
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "resolve_warnings",
+        [
+         "prearm"
+        ]
+       ]
+      ],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "prearm_pass_resolves_the_kill_warning",
+    "steps": [
+     {
+      "op": "prearm",
+      "value": true
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "resolve_warnings",
+        [
+         "prearm"
+        ]
+       ],
+       [
+        "resolve_warnings",
+        [
+         "kill"
+        ]
+       ]
+      ],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "prearm_none_is_ignored",
+    "steps": [
+     {
+      "op": "prearm",
+      "value": null
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "reasons": [],
+       "reason_at": 0.0,
+       "requested_at": 0.0,
+       "kill_evidence": 0.0,
+       "partials": 0,
+       "report_kill": false,
+       "report_started": 0.0,
+       "last": null,
+       "snapshot": {}
+      },
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "prearm_refused_asks_for_the_report",
+    "steps": [
+     {
+      "op": "advance",
+      "seconds": 31.0
+     },
+     {
+      "op": "prearm",
+      "value": false
+     },
+     {
+      "op": "prearm",
+      "value": false
+     },
+     {
+      "op": "advance",
+      "seconds": 31.0
+     },
+     {
+      "op": "prearm",
+      "value": false
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [],
+      "t": 31.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "send",
+        "command_long_send",
+        [
+         1,
+         1,
+         401,
+         0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ]
+       ]
+      ],
+      "t": 31.0
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 31.0
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 62.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "send",
+        "command_long_send",
+        [
+         1,
+         1,
+         401,
+         0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ]
+       ]
+      ],
+      "t": 62.0
+     },
+     {
+      "result": {
+       "reasons": [],
+       "reason_at": 0.0,
+       "requested_at": 1062.0,
+       "kill_evidence": 0.0,
+       "partials": 0,
+       "report_kill": false,
+       "report_started": 0.0,
+       "last": false,
+       "snapshot": {}
+      },
+      "events": [],
+      "t": 62.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "prearm_refused_with_reasons_does_not_ask",
+    "steps": [
+     {
+      "op": "text",
+      "text": "Preflight Fail: Compass",
+      "severity": 4
+     },
+     {
+      "op": "advance",
+      "seconds": 40.0
+     },
+     {
+      "op": "prearm",
+      "value": false
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "Preflight Fail: Compass",
+        "warning"
+       ],
+       [
+        "update",
+        {
+         "prearm_reasons": [
+          "Compass"
+         ]
+        }
+       ],
+       [
+        "warning",
+        "Preflight Fail: Compass",
+        "warning",
+        "prearm"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 40.0
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 40.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "prearm_turning_bad_asks_at_once",
+    "steps": [
+     {
+      "op": "advance",
+      "seconds": 5.0
+     },
+     {
+      "op": "prearm",
+      "value": true
+     },
+     {
+      "op": "prearm",
+      "value": false
+     },
+     {
+      "op": "advance",
+      "seconds": 1.0
+     },
+     {
+      "op": "prearm",
+      "value": true
+     },
+     {
+      "op": "prearm",
+      "value": false
+     },
+     {
+      "op": "advance",
+      "seconds": 2.5
+     },
+     {
+      "op": "prearm",
+      "value": true
+     },
+     {
+      "op": "prearm",
+      "value": false
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [],
+      "t": 5.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "resolve_warnings",
+        [
+         "prearm"
+        ]
+       ],
+       [
+        "resolve_warnings",
+        [
+         "kill"
+        ]
+       ]
+      ],
+      "t": 5.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "send",
+        "command_long_send",
+        [
+         1,
+         1,
+         401,
+         0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ]
+       ]
+      ],
+      "t": 5.0
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 6.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "resolve_warnings",
+        [
+         "prearm"
+        ]
+       ],
+       [
+        "resolve_warnings",
+        [
+         "kill"
+        ]
+       ]
+      ],
+      "t": 6.0
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 6.0
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 8.5
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "resolve_warnings",
+        [
+         "prearm"
+        ]
+       ],
+       [
+        "resolve_warnings",
+        [
+         "kill"
+        ]
+       ]
+      ],
+      "t": 8.5
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "send",
+        "command_long_send",
+        [
+         1,
+         1,
+         401,
+         0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ]
+       ]
+      ],
+      "t": 8.5
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "prearm_turning_bad_while_armed",
+    "snapshot": {
+     "armed": true
+    },
+    "steps": [
+     {
+      "op": "advance",
+      "seconds": 5.0
+     },
+     {
+      "op": "prearm",
+      "value": true
+     },
+     {
+      "op": "prearm",
+      "value": false
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [],
+      "t": 5.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "resolve_warnings",
+        [
+         "prearm"
+        ]
+       ]
+      ],
+      "t": 5.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "send",
+        "command_long_send",
+        [
+         1,
+         1,
+         401,
+         0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ]
+       ]
+      ],
+      "t": 5.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "kill_is_rechecked_on_ardupilot",
+    "stack": "ardupilot",
+    "snapshot": {
+     "kill_switch": true
+    },
+    "steps": [
+     {
+      "op": "kill_evidence",
+      "at": 1000.0
+     },
+     {
+      "op": "advance",
+      "seconds": 4.0
+     },
+     {
+      "op": "prearm",
+      "value": false
+     },
+     {
+      "op": "advance",
+      "seconds": 4.5
+     },
+     {
+      "op": "prearm",
+      "value": false
+     },
+     {
+      "op": "advance",
+      "seconds": 1.5
+     },
+     {
+      "op": "prearm",
+      "value": false
+     },
+     {
+      "op": "advance",
+      "seconds": 5.0
+     },
+     {
+      "op": "prearm",
+      "value": false
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 4.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "send",
+        "command_long_send",
+        [
+         1,
+         1,
+         401,
+         0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ]
+       ]
+      ],
+      "t": 4.0
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 8.5
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 8.5
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 10.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "send",
+        "command_long_send",
+        [
+         1,
+         1,
+         401,
+         0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ]
+       ]
+      ],
+      "t": 10.0
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 15.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "send",
+        "command_long_send",
+        [
+         1,
+         1,
+         401,
+         0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ]
+       ]
+      ],
+      "t": 15.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "kill_is_not_rechecked_on_px4",
+    "snapshot": {
+     "kill_switch": true
+    },
+    "steps": [
+     {
+      "op": "kill_evidence",
+      "at": 1000.0
+     },
+     {
+      "op": "advance",
+      "seconds": 6.0
+     },
+     {
+      "op": "prearm",
+      "value": false
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 6.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "send",
+        "command_long_send",
+        [
+         1,
+         1,
+         401,
+         0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ]
+       ]
+      ],
+      "t": 6.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "a_whole_report_without_the_kill_releases_it",
+    "stack": "ardupilot",
+    "snapshot": {
+     "kill_switch": true
+    },
+    "steps": [
+     {
+      "op": "kill_evidence",
+      "at": 990.0
+     },
+     {
+      "op": "advance",
+      "seconds": 10.0
+     },
+     {
+      "op": "prearm",
+      "value": false
+     },
+     {
+      "op": "advance",
+      "seconds": 0.5
+     },
+     {
+      "op": "text",
+      "text": "PreArm: Compass not calibrated",
+      "severity": 4
+     },
+     {
+      "op": "advance",
+      "seconds": 3.0
+     },
+     {
+      "op": "prearm",
+      "value": false
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 10.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "send",
+        "command_long_send",
+        [
+         1,
+         1,
+         401,
+         0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ]
+       ]
+      ],
+      "t": 10.0
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 10.5
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "PreArm: Compass not calibrated",
+        "warning"
+       ],
+       [
+        "update",
+        {
+         "prearm_reasons": [
+          "Compass not calibrated"
+         ]
+        }
+       ],
+       [
+        "warning",
+        "PreArm: Compass not calibrated",
+        "warning",
+        "prearm"
+       ]
+      ],
+      "t": 10.5
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 13.5
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "kill_switch": false,
+         "flight_termination": false
+        }
+       ],
+       [
+        "resolve_warnings",
+        [
+         "kill"
+        ]
+       ]
+      ],
+      "t": 13.5
+     },
+     {
+      "result": {
+       "reasons": [
+        "Compass not calibrated"
+       ],
+       "reason_at": 1010.5,
+       "requested_at": 1010.0,
+       "kill_evidence": 990.0,
+       "partials": 0,
+       "report_kill": false,
+       "report_started": 1010.5,
+       "last": false,
+       "snapshot": {
+        "kill_switch": false,
+        "prearm_reasons": [
+         "Compass not calibrated"
+        ],
+        "flight_termination": false
+       }
+      },
+      "events": [],
+      "t": 13.5
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "a_report_naming_the_kill_keeps_it",
+    "stack": "ardupilot",
+    "snapshot": {
+     "kill_switch": true
+    },
+    "steps": [
+     {
+      "op": "kill_evidence",
+      "at": 990.0
+     },
+     {
+      "op": "advance",
+      "seconds": 10.0
+     },
+     {
+      "op": "prearm",
+      "value": false
+     },
+     {
+      "op": "advance",
+      "seconds": 0.5
+     },
+     {
+      "op": "text",
+      "text": "PreArm: Motors Emergency Stopped",
+      "severity": 4
+     },
+     {
+      "op": "advance",
+      "seconds": 3.0
+     },
+     {
+      "op": "prearm",
+      "value": false
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 10.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "send",
+        "command_long_send",
+        [
+         1,
+         1,
+         401,
+         0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ]
+       ]
+      ],
+      "t": 10.0
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 10.5
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "PreArm: Motors Emergency Stopped",
+        "warning"
+       ],
+       [
+        "update",
+        {
+         "prearm_reasons": [
+          "Motors Emergency Stopped"
+         ]
+        }
+       ]
+      ],
+      "t": 10.5
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 13.5
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 13.5
+     },
+     {
+      "result": {
+       "reasons": [
+        "Motors Emergency Stopped"
+       ],
+       "reason_at": 1010.5,
+       "requested_at": 1010.0,
+       "kill_evidence": 1010.5,
+       "partials": 0,
+       "report_kill": true,
+       "report_started": 1010.5,
+       "last": false,
+       "snapshot": {
+        "kill_switch": true,
+        "prearm_reasons": [
+         "Motors Emergency Stopped"
+        ]
+       }
+      },
+      "events": [],
+      "t": 13.5
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "a_report_still_arriving_is_not_judged",
+    "stack": "ardupilot",
+    "snapshot": {
+     "kill_switch": true
+    },
+    "steps": [
+     {
+      "op": "kill_evidence",
+      "at": 990.0
+     },
+     {
+      "op": "advance",
+      "seconds": 10.0
+     },
+     {
+      "op": "prearm",
+      "value": false
+     },
+     {
+      "op": "advance",
+      "seconds": 0.5
+     },
+     {
+      "op": "text",
+      "text": "PreArm: Compass not calibrated",
+      "severity": 4
+     },
+     {
+      "op": "advance",
+      "seconds": 1.0
+     },
+     {
+      "op": "prearm",
+      "value": false
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 10.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "send",
+        "command_long_send",
+        [
+         1,
+         1,
+         401,
+         0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ]
+       ]
+      ],
+      "t": 10.0
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 10.5
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "PreArm: Compass not calibrated",
+        "warning"
+       ],
+       [
+        "update",
+        {
+         "prearm_reasons": [
+          "Compass not calibrated"
+         ]
+        }
+       ],
+       [
+        "warning",
+        "PreArm: Compass not calibrated",
+        "warning",
+        "prearm"
+       ]
+      ],
+      "t": 10.5
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 11.5
+     },
+     {
+      "result": null,
+      "events": [],
+      "t": 11.5
+     },
+     {
+      "result": {
+       "reasons": [
+        "Compass not calibrated"
+       ],
+       "reason_at": 1010.5,
+       "requested_at": 1010.0,
+       "kill_evidence": 990.0,
+       "partials": 0,
+       "report_kill": false,
+       "report_started": 1010.5,
+       "last": false,
+       "snapshot": {
+        "kill_switch": true,
+        "prearm_reasons": [
+         "Compass not calibrated"
+        ]
+       }
+      },
+      "events": [],
+      "t": 11.5
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "report_request",
+    "steps": [
+     {
+      "op": "request"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "send",
+        "command_long_send",
+        [
+         1,
+         1,
+         401,
+         0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ]
+       ]
+      ],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "report_request_without_a_link",
+    "no_connection": true,
+    "steps": [
+     {
+      "op": "request"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "report_request_fails",
+    "send_fails": true,
+    "steps": [
+     {
+      "op": "request"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "log",
+        "debug",
+        "prearm report request failed: boom"
+       ]
+      ],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "clearing_the_reasons",
+    "steps": [
+     {
+      "op": "text",
+      "text": "Preflight Fail: Compass",
+      "severity": 4
+     },
+     {
+      "op": "clear"
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "console",
+        "STATUSTEXT",
+        "Preflight Fail: Compass",
+        "warning"
+       ],
+       [
+        "update",
+        {
+         "prearm_reasons": [
+          "Compass"
+         ]
+        }
+       ],
+       [
+        "warning",
+        "Preflight Fail: Compass",
+        "warning",
+        "prearm"
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": null,
+      "events": [
+       [
+        "update",
+        {
+         "prearm_reasons": []
+        }
+       ]
+      ],
+      "t": 0.0
+     },
+     {
+      "result": {
+       "reasons": [],
+       "reason_at": 0.0,
+       "requested_at": 0.0,
+       "kill_evidence": 0.0,
+       "partials": 0,
+       "report_kill": false,
+       "report_started": 1000.0,
+       "last": null,
+       "snapshot": {
+        "prearm_reasons": []
+       }
+      },
+      "events": [],
+      "t": 0.0
+     }
+    ],
+    "final": {}
+   }
+  }
+ ]
+}

@@ -12,8 +12,8 @@ build = "build.rs"
 # made of (the API plugins build on and the plugins themselves). src/link is
 # the MAVLink extension module: it has its own toolchain, lock and maturin
 # build, and stays out.
-members = ["src/api", "src/plugins/vibration", "src/plugins/ssh-launcher", "src/plugins/map-entities", "src/plugins/schwalby"]
-default-members = [".", "src/api", "src/plugins/vibration", "src/plugins/ssh-launcher", "src/plugins/map-entities", "src/plugins/schwalby"]
+members = ["src/core", "src/api", "src/plugins/vibration", "src/plugins/ssh-launcher", "src/plugins/map-entities", "src/plugins/schwalby"]
+default-members = [".", "src/core", "src/api", "src/plugins/vibration", "src/plugins/ssh-launcher", "src/plugins/map-entities", "src/plugins/schwalby"]
 exclude = ["src/link"]
 
 [[bin]]
@@ -22,6 +22,8 @@ path = "src/main.rs"
 
 [dependencies]
 corvus_api = { path = "src/api" }
+# The backend, in this process.
+corvus_core = { path = "src/core" }
 # One line for each folder of src/plugins (build.rs checks this and makes the list).
 corvus_plugin_vibration = { path = "src/plugins/vibration" }
 corvus_plugin_ssh_launcher = { path = "src/plugins/ssh-launcher" }
