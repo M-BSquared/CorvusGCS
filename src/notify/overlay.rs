@@ -234,6 +234,7 @@ pub fn board(ctx: &egui::Context, screen: Rect, top: f32, board: &mut Board, now
     if !board.open {
         return None;
     }
+    let board_marks = board.marks;
     let summary = board.summary(now);
     let unread: std::collections::HashSet<&String> = summary.unread.iter().collect();
     let pos = Pos2::new(screen.right() - 12.0 - WIDTH, top + 10.0);
@@ -241,10 +242,13 @@ pub fn board(ctx: &egui::Context, screen: Rect, top: f32, board: &mut Board, now
     let mut dismiss: Option<String> = None;
     let mut close = false;
     let mut clear = false;
-    egui::Area::new(egui::Id::unique("warningsboard"))
+    let rise = kit::enter(ctx, "warningsboard", 0.18);
+    egui::Area::new(egui::Id::NULL.with("warningsboard-area"))
         .order(egui::Order::Foreground)
         .fixed_pos(pos)
         .show(ctx, |ui| {
+            kit::enter_layer(ui.ctx(), ui.layer_id(), rise);
+            ui.set_opacity(rise);
             let painter = ui.painter().clone();
             let total = summary.items.len();
             let title = format!("{total} Notification{}", if total == 1 { "" } else { "s" });
@@ -367,7 +371,7 @@ pub fn board(ctx: &egui::Context, screen: Rect, top: f32, board: &mut Board, now
                             (msg, 12.0, Weight::W400, msg_c),
                             (&meta, 10.0, style::text_3()),
                             is_read || n.resolved,
-                            !is_read && !n.resolved,
+                            board_marks && !is_read && !n.resolved,
                             key.clone(),
                             false,
                         );
@@ -401,13 +405,17 @@ pub fn toasts(ctx: &egui::Context, screen: Rect, top: f32, board: &mut Board) {
         return;
     }
     let toasts = board.toasts.clone();
+    let marks = board.marks;
     let mut close = Vec::new();
     let mut open_board = false;
     let pos = Pos2::new(screen.right() - 12.0 - WIDTH, top);
-    egui::Area::new(egui::Id::unique("toaststack"))
+    let rise = kit::enter(ctx, "toaststack", 0.18);
+    egui::Area::new(egui::Id::NULL.with("toaststack-area"))
         .order(egui::Order::Tooltip)
         .fixed_pos(pos)
         .show(ctx, |ui| {
+            kit::enter_layer(ui.ctx(), ui.layer_id(), rise);
+            ui.set_opacity(rise);
             let painter = ui.painter().clone();
             let mut y = pos.y;
             for t in &toasts {
@@ -420,7 +428,7 @@ pub fn toasts(ctx: &egui::Context, screen: Rect, top: f32, board: &mut Board) {
                     (&t.title, 12.0, Weight::W600, style::text_1()),
                     (&t.text, 12.0, style::text_2()),
                     false,
-                    true,
+                    marks,
                     ("toast", t.id),
                     true,
                 );
@@ -436,7 +444,7 @@ pub fn toasts(ctx: &egui::Context, screen: Rect, top: f32, board: &mut Board) {
                     (&t.title, 12.0, Weight::W600, style::text_1()),
                     (&t.text, 12.0, style::text_2()),
                     false,
-                    true,
+                    marks,
                     ("toast", t.id),
                     false,
                 );

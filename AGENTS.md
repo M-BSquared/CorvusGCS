@@ -158,7 +158,7 @@ until a tool and its permission are added there on purpose.
 Corvus GCS ships as a self-contained desktop artifact per platform. Every
 artifact is the native Rust interface (`Cargo.toml` and `src/`, egui, built with
 cargo) plus the backend it starts as its child (`serve.py` with a bundled
-CPython, or frozen by PyInstaller on Windows); all of them derive their version
+CPython, python.org's embeddable CPython on Windows); all of them derive their version
 from the one `VERSION` read at build time. The Qt window around the web
 interface (`corvus/app.py`, `./run.sh --web`) stays in the repository for
 development until the native interface has every page; no bundle ships it.
@@ -168,9 +168,9 @@ the current host and fails loudly rather than pretending to cross-build.
 
 | Platform | Script | Artifact | Notes |
 | --- | --- | --- | --- |
-| Linux x86_64 | `./build.sh` -> `build-appimage.sh` | `dist/Corvus_GCS-<version>-x86_64.AppImage` | `appimagetool`, bundled CPython + the Rust interface |
+| Linux x86_64 | `./build.sh` -> `build-appimage.sh`, `build-deb.sh` | `dist/Corvus_GCS-<version>-x86_64.AppImage` and `dist/Corvus_GCS-<version>-amd64.deb` | one AppDir (bundled CPython + the Rust interface) packed twice; `--no-deb` / `--deb-only`; the .deb installs under `/opt/corvus-gcs` |
 | macOS (arm64 / x86_64) | `./build.sh --dmg` -> `build-macos-app.sh` | `dist/Corvus GCS.app` (+ `dist/Corvus_GCS-<version>-macOS-<arch>.dmg`) | relocatable framework CPython, ad-hoc codesigned |
-| Windows x64 | `.\build-windows.ps1 [-Zip]` | `dist\Corvus GCS\` (+ `dist\Corvus_GCS-<version>-windows-x64.zip`) | PyInstaller, not a hand-relocated interpreter; `./build.sh` from a Windows shell points here rather than cross-building |
+| Windows x64 | `.\build-windows.ps1 [-Zip]` | `dist\Corvus GCS\` (+ `dist\Corvus_GCS-<version>-windows-x64.zip`) | python.org's embeddable CPython laid out by the script (no PyInstaller); `./build.sh` from a Windows shell points here rather than cross-building |
 
 CI is GitHub Actions only: `.github/workflows/build.yml` (test + test-windows +
 lint + frontend + appimage + macos-app + windows-app + release) calls the same
@@ -402,7 +402,7 @@ logs.
 - **Dependencies:** stdlib first. Justify any third-party add. Every Python
   package — runtime, test, lint and build tooling — is named in
   `pyproject.toml`'s `[dependency-groups]` (`headless`, `app`, `test`, `lint`,
-  `dev`, `package-windows`) and nowhere else; every installer reads it with
+  `dev`) and nowhere else; every installer reads it with
   `pip install --group`. No `requirements*.txt`, no conda environment file —
   `tests/test_packaging_single_source.py` fails if one comes back.
   (`requirements.lock` is the one exception, and it is generated, never

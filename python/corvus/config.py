@@ -125,6 +125,7 @@ class CorvusConfig:
     "track_earlier_flights": true, "track_rainbow": false,
     "track_clear_on_restart": false, "track_in_air": true,
     "flight_hud": true, "hud_square": false, "measure_tool": true,
+    "regions_button": false,
     "console_tab": true, "ssh_tab": true,
     "plugin_tabs": false, "units": {"length":
     "m", "distance": "km", "speed": "ms", "temperature": "c"}}`` — the multiplier
@@ -722,6 +723,10 @@ def _coerce_ui(raw: Any) -> dict[str, Any] | None:
     control rail. On unless turned off, like ``flight_hud``: a config that has
     never been asked must not take a button away.
 
+    ``regions_button`` puts the downloaded areas button in the Home map's
+    control rail. Off unless asked for; the Offline map dialog outlines the
+    areas either way.
+
     ``hud_square`` gives the flight HUD square corners instead of the rounded
     top the window has by default. Off unless asked for. It changes only the
     corners, never where the HUD or its control bar sit.
@@ -765,7 +770,7 @@ def _coerce_ui(raw: Any) -> dict[str, Any] | None:
                 "track_in_air", "flight_hud", "hud_square",
                 "topbar_show_altitude", "topbar_show_groundspeed", "topbar_show_vspeed",
                 "topbar_show_rangefinder",
-                "measure_tool", "console_tab", "ssh_tab", "plugin_tabs"):
+                "measure_tool", "regions_button", "console_tab", "ssh_tab", "plugin_tabs"):
         if isinstance(raw.get(key), bool):
             out[key] = raw[key]
     return out or None

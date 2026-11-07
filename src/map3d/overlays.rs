@@ -19,11 +19,11 @@ const PIECE_M: f64 = 30.0;
 /// The most points one line is made of.
 const MAX_POINTS: usize = 800;
 /// An area is cut into triangles with sides no longer than this (metres)...
-const FILL_EDGE_M: f64 = 80.0;
+const FILL_EDGE_M: f64 = 30.0;
 /// ...and into at most this many.
-const MAX_TRIANGLES: usize = 6000;
+const MAX_TRIANGLES: usize = 20000;
 /// How far above the ground the overlay lies, in metres.
-const LIFT_M: f64 = 1.0;
+const LIFT_M: f64 = 2.0;
 
 /// `pts` with points between them, one every `piece` metres at most, in
 /// longitude and latitude. `metres` says how far apart two places are.
@@ -197,8 +197,12 @@ impl Map3d {
             vec![line.to_vec()]
         };
         let bg = rgb(crate::ui::style::bg());
-        for (w, color, alpha) in [(width + 2.4, bg, 0.45 * s.opacity), (width, rgb(s.color), s.opacity)] {
-            for run in &runs {
+        let solid = [line.to_vec()];
+        for (w, color, alpha, parts) in [
+            (width + 2.4, bg, 0.45 * s.opacity, &solid[..]),
+            (width, rgb(s.color), s.opacity, &runs[..]),
+        ] {
+            for run in parts {
                 if let Some((verts, indices)) = ribbon::build(run, w, &self.cam, self.cam.ground) {
                     items.push(item(centre, verts, indices, color, alpha));
                 }

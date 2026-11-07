@@ -1,4 +1,4 @@
-//! The flight HUD at the bottom right of the map: compass, attitude
+//! The flight HUD at the bottom left of the map: compass, attitude
 //! indicator and six readouts, drawn from the web HUD's own geometry
 //! (python/src/js/instruments.js, the SVGs in index.html, flight.css).
 //!
@@ -161,7 +161,7 @@ impl Hud {
 
     fn look(&self) -> Look {
         Look {
-            compact: self.place.flag("compact"),
+            compact: self.place.flag_or("compact", true),
             readouts: !self
                 .place
                 .extra
@@ -295,7 +295,7 @@ impl Hud {
     }
 
     /// Draws the panel in `host` (the map): where it was left, or at the
-    /// bottom right `inset` from the edges. `hud_w` is `--hud-w`.
+    /// bottom left `inset` from the edges. `hud_w` is `--hud-w`.
     #[allow(clippy::too_many_arguments)]
     pub fn show(
         &mut self,
@@ -312,10 +312,10 @@ impl Hud {
             return;
         }
         let look = self.look();
-        let pinned = self.place.flag("pinned");
+        let pinned = self.place.flag_or("pinned", true);
         let width = look.width(hud_w);
         let size = Vec2::new(width, Hud::height(ui, width, single, &look));
-        let default = mapwindow::corner(host, size, None, Some(inset), None, Some(inset));
+        let default = mapwindow::corner(host, size, Some(inset), None, None, Some(inset));
         let rect = self.place.rect(host, size, default);
         let painter = ui.painter().clone();
         let top = look.top_corner(hud_w, single);
@@ -863,6 +863,7 @@ mod tests {
         let mut p = super::Placement::from_path(Some(path.clone()));
         p.set_flag("compact", true);
         p.set_flag("readouts", false);
+        p.set_flag("collapsed", false);
         let h = super::Hud {
             place: super::Placement::from_path(Some(path)),
             ..Default::default()
@@ -872,6 +873,7 @@ mod tests {
         // Absent means shown: a panel saved before the control existed.
         let fresh = super::Hud::default();
         assert!(fresh.look().readouts);
+        assert!(fresh.look().compact && !fresh.look().collapsed && fresh.place.flag_or("pinned", true));
         let _ = std::fs::remove_dir_all(dir);
         let _: Value = Value::Null;
     }

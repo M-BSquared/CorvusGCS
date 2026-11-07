@@ -4,6 +4,7 @@
 
 pub mod nav;
 pub mod popout;
+pub mod vibrancy;
 pub mod responsive;
 pub mod soak;
 pub mod touch;
@@ -143,11 +144,13 @@ impl App {
         self.units = e.units;
         self.mission_page = e.mission_page;
         self.rail.measure = e.measure_tool;
+        self.rail.regions_button = e.regions_button;
         self.panel.console_tab = e.console_tab;
         self.panel.ssh_tab = e.ssh_tab;
         self.control.set_config(e.controls);
         self.hud.visible = e.flight_hud;
         self.hud.square = e.hud_square;
+        self.board.marks = e.notification_marks;
     }
 
     /// What the map's camera button asked of the camera windows.
@@ -455,11 +458,10 @@ impl App {
                     map_ui.set_clip_rect(main);
                     self.map.measure.units = self.units;
                     self.map.show(&mut map_ui, &state);
-                    let inset = if vw.max959 { 12.0 } else { 16.0 };
                     self.hud.show(
                         &mut map_ui,
                         main,
-                        inset,
+                        8.0,
                         &state,
                         &self.units,
                         now,
@@ -665,10 +667,24 @@ impl App {
     }
 }
 
+const WHEEL_GAIN: f32 = 0.5;
+
 impl eframe::App for App {
+    fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
+        egui::Rgba::TRANSPARENT.to_array()
+    }
+
+
     /// `CORVUS_GUI_HOVER=x,y` holds the pointer there, so a hover card or a
     /// hint can be looked at without a hand on the mouse.
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+        for event in &mut raw_input.events {
+            if let egui::Event::MouseWheel { delta, modifiers, .. } = event {
+                if !(modifiers.ctrl || modifiers.command) {
+                    *delta *= WHEEL_GAIN;
+                }
+            }
+        }
         self.shoot(ctx, raw_input);
         let now = raw_input.time.unwrap_or(0.0);
         self.soak_tick(ctx, now);
@@ -836,6 +852,7 @@ pub fn run(
     let mission_page =
         ui_flag("mission_page", false) || page.is_some_and(|p| p == "mission" || p.starts_with("mission:"));
     let measure = ui_flag("measure_tool", true);
+    let regions_button = ui_flag("regions_button", false);
     // The interface size (Settings > Interface), as --ui-scale zooms the page.
     let scale = config
         .get("ui")
@@ -895,6 +912,7 @@ pub fn run(
                 let e = settings::Effects::of(&config);
                 flight.split = e.takeoff_land_split;
                 popout::set_in_app(e.windows_in_app);
+                popout::set_solid_terminals(e.solid_terminals);
                 flight.shrink = e.flight_bar_shrink;
             }
             ctx.set_zoom_factor(scale);
@@ -902,6 +920,7 @@ pub fn run(
             let plugins = Registry::new(server.clone(), &ctx, &config);
             let mut rail = MapRail::default();
             rail.measure = measure;
+            rail.regions_button = regions_button;
             let logo = logo_source();
             Ok(Box::new(App {
                 server: server.clone(),
@@ -927,7 +946,11 @@ pub fn run(
                 },
                 fleet: crate::fleet::Fleet::start(server.clone(), &ctx),
                 fleet_dialog: Default::default(),
-                board: Board::default(),
+                board: {
+                    let mut b = Board::default();
+                    b.marks = settings::Effects::of(&config).notification_marks;
+                    b
+                },
                 telemetry,
                 units,
                 top_speeds: Default::default(),

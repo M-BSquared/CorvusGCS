@@ -56,7 +56,7 @@ impl Look {
     fn colours(self) -> (Color32, Color32) {
         match self {
             Look::Panel => (style::surface_2(), style::border()),
-            Look::Page => (style::glass(0.82), style::tint(0.09)),
+            Look::Page => (style::panel_fill(0.82, false), style::tint(0.09)),
             Look::Inset | Look::Note | Look::Tone(Tone::Plain) => (style::surface_2(), style::border_soft()),
             Look::Raised => (style::surface_2(), style::border()),
             Look::Quiet => (style::surface_1(), style::border_soft()),
@@ -83,13 +83,33 @@ pub fn paint(painter: &Painter, rect: Rect, look: Look) {
     painter.rect_stroke(rect, look.radius(), Stroke::new(1.0, line), egui::StrokeKind::Inside);
 }
 
-/// The surface of a floating window: the pop shadow, the glass at `alpha`
-/// and a 1 px border in `line`, 12 px round. Put it in a `reserve`d slot.
-pub fn window(rect: Rect, alpha: f32, line: Color32) -> Shape {
+/// The surface of a floating window: the pop shadow, the frosted backdrop
+/// (`--blur-soft`), the glass at `alpha` and a 1 px border in `line`, 12 px
+/// round. Put it in a `reserve`d slot; `key` names its backdrop texture.
+pub fn window(key: impl std::hash::Hash, rect: Rect, alpha: f32, line: Color32) -> Shape {
+    window_filled(key, rect, style::glass(alpha), line)
+}
+
+/// `window` with its own fill colour (a frosted terminal is tinted with the
+/// terminal's ground, not the glass).
+pub fn window_filled(key: impl std::hash::Hash, rect: Rect, fill: Color32, line: Color32) -> Shape {
+    sheet(key, rect, 12, fill, line)
+}
+
+/// A frosted sheet of corner `radius`: `window_filled` for a surface that is
+/// rounder than a window.
+pub fn sheet(key: impl std::hash::Hash, rect: Rect, radius: u8, fill: Color32, line: Color32) -> Shape {
+    use std::hash::{BuildHasher, BuildHasherDefault};
+    let id = BuildHasherDefault::<std::collections::hash_map::DefaultHasher>::default().hash_one(key);
+    let reach = rect.expand(1.0);
+    let wide = egui::CornerRadius::same(radius.saturating_add(1));
+    let filter = crate::ui::frost::soft();
     Shape::Vec(vec![
-        Shape::Rect(style::shadow_pop().as_shape(rect, 12)),
-        Shape::rect_filled(rect, 12, style::glass(alpha)),
-        Shape::rect_stroke(rect, 12, Stroke::new(1.0, line), egui::StrokeKind::Inside),
+        crate::ui::frost::copy_shape(reach, id, filter),
+        Shape::Rect(style::shadow_pop().as_shape(rect, radius)),
+        crate::ui::frost::draw_shape(reach, id, wide, filter),
+        Shape::rect_filled(rect, radius, fill),
+        Shape::rect_stroke(rect, radius, Stroke::new(1.0, line), egui::StrokeKind::Inside),
     ])
 }
 

@@ -7,9 +7,26 @@
 # packs them with appimagetool. No Qt, no web engine. No conda on the build
 # host; only stdlib python3 -m venv + pip, and a Rust toolchain (rustup, cargo).
 #
+# The same AppDir is also packed as a Debian package (build-deb.sh, installed
+# under /opt/corvus-gcs), so one assembly feeds both Linux artifacts.
+#
+#   ./build-appimage.sh             AppImage and .deb
+#   ./build-appimage.sh --no-deb    AppImage only
+#   ./build-appimage.sh --deb-only  .deb only (no appimagetool download)
+#
 # Version is read exclusively from the repo-root VERSION file — never hardcoded.
 
 set -euo pipefail
+
+WANT_APPIMAGE=1
+WANT_DEB=1
+for arg in "$@"; do
+    case "$arg" in
+        --no-deb)   WANT_DEB=0 ;;
+        --deb-only) WANT_APPIMAGE=0 ;;
+        *) echo "ERROR: unknown argument '$arg' (--no-deb, --deb-only)" >&2; exit 1 ;;
+    esac
+done
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VERSION="$(cat "$REPO_DIR/VERSION")"
@@ -349,6 +366,17 @@ fi
 mkdir -p "$APPDIR/usr/share/icons/hicolor/256x256/apps"
 cp -a "$ICON" "$APPDIR/usr/share/icons/hicolor/256x256/apps/corvus-gcs.png"
 ln -sf corvus-gcs.png "$APPDIR/.DirIcon"
+
+# ---- 7b. the Debian package ---------------------------------------------------
+if [ "$WANT_DEB" -eq 1 ]; then
+    "$REPO_DIR/build-deb.sh" "$APPDIR"
+fi
+if [ "$WANT_APPIMAGE" -eq 0 ]; then
+    SUCCESS=1
+    echo ""
+    echo ">>> Built the .deb only (--deb-only)"
+    exit 0
+fi
 
 # ---- 8. obtain appimagetool + the static type-2 runtime ---------------------
 # AppImageKit's appimagetool is retired and embeds the old runtime, which links

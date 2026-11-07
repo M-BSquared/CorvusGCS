@@ -507,11 +507,10 @@ pub fn paint_areas(painter: &egui::Painter, project: Project<'_>, shapes: &[Shap
 fn stroke_line(painter: &egui::Painter, pts: &[Pos2], s: &Shape, dashed: bool, width: f32) {
     let casing = Stroke::new(width + 2.4, faded(bg(), 0.45 * s.opacity));
     let line = Stroke::new(width, faded(s.color, s.opacity));
+    painter.add(Paint::line(pts.to_vec(), casing));
     if dashed {
-        painter.extend(Paint::dashed_line(pts, casing, 2.0 * width, 1.5 * width));
         painter.extend(Paint::dashed_line(pts, line, 2.0 * width, 1.5 * width));
     } else {
-        painter.add(Paint::line(pts.to_vec(), casing));
         painter.add(Paint::line(pts.to_vec(), line));
     }
 }

@@ -1,18 +1,18 @@
 # =============================================================================
 # Corvus GCS - build the Windows distributable.
 #
-# The Linux and macOS scripts hand-roll a relocatable interpreter because both
-# platforms make that the shortest honest path: an AppImage is a squashfs of a
-# tree you lay out yourself, and a .app is a directory with rules about where
-# dylibs may point. Windows has neither constraint and one well-trodden tool,
-# so the backend (serve.py) is frozen with PyInstaller rather than reinventing
-# the same 300 lines in PowerShell. The interface is the Rust app
-# (Cargo.toml and src/, built with cargo), which starts that backend as its child.
-# The result is the same shape as the other two: one directory that runs on a
-# machine with no Python and no internet.
+# No PyInstaller. The interface is the Rust app (Cargo.toml and src/, built
+# with cargo, one .exe). Until the backend is ported to Rust it starts
+# python\serve.py as its child, and that runs on python.org's embeddable
+# CPython: a zip of the interpreter that needs no installer, laid out beside the
+# packages pip resolved and the backend's own files. Nothing is frozen or
+# unpacked at launch, so it starts as fast as a folder can. Once the backend is
+# part of the Rust workspace (see src\BACKEND_PORT.md) the whole backend\
+# folder and every Python step below disappear and the folder is the .exe.
 #
 #   Corvus GCS\Corvus GCS.exe      the interface
-#   Corvus GCSackend\            the frozen backend, started by the interface
+#   Corvus GCS\backend\             serve.py, corvus\, src\, plugins\, assets\
+#   Corvus GCS\backend\python\      the embedded interpreter + site-packages
 #
 #   Windows x64  ->  dist\Corvus GCS\Corvus GCS.exe
 #                ->  Corvus_GCS-<version>-windows-x64.zip   (with -Zip)
@@ -23,10 +23,8 @@
 # Version is read exclusively from the repo-root VERSION file - never
 # hardcoded, exactly as build-appimage.sh and build-macos-app.sh do.
 #
-# Why onedir and not --onefile: --onefile unpacks the whole backend into a
-# temp directory on every launch, which costs several seconds and defeats the
-# "ready to fly in seconds" property the project is built around. A folder
-# starts immediately.
+# A folder and not a self-extracting single file: unpacking into a temp
+# directory on every launch costs seconds the field laptop should not spend.
 # =============================================================================
 
 [CmdletBinding()]
@@ -72,10 +70,11 @@ if ($Missing.Count -gt 0) {
            ($Missing -join ", ") + " - restore them (git checkout -- <path>) and run this again.")
 }
 
-# ---- 1. interpreter ---------------------------------------------------------
-# A conda interpreter cannot be packaged reliably (its DLLs live outside the
-# prefix), which is the same rejection build-macos-app.sh makes and for the
-# same reason. Say so plainly rather than failing deep inside PyInstaller.
+
+# ---- 1. build interpreter ----------------------------------------------------
+# Only used to resolve and build the packages (pip, maturin); the shipped
+# interpreter is the embeddable zip below. A conda interpreter is rejected for
+# the same reason build-macos-app.sh rejects it.
 if (-not $Python) {
     $Python = (Get-Command python -ErrorAction SilentlyContinue).Source
 }
@@ -85,57 +84,30 @@ if (-not $Python) {
 $pyInfo = & $Python -c @"
 import sys, json
 print(json.dumps({
+    'full': '%d.%d.%d' % sys.version_info[:3],
     'version': '%d.%d' % sys.version_info[:2],
     'conda': 'conda' in sys.version.lower() or 'Continuum' in sys.version,
     'bits': 64 if sys.maxsize > 2**32 else 32,
 }))
 "@ | ConvertFrom-Json
 
-if ($pyInfo.conda) {
-    throw "$Python is a conda interpreter; it cannot be packaged. Use a python.org build."
-}
-if ($pyInfo.bits -ne 64) {
-    throw "$Python is 32-bit. Corvus ships x64 only; install the 64-bit python.org build."
-}
-# 3.12 is the floor pyproject.toml declares and the version CI tests.
-# Nothing checked this before, so the shipped .exe could be built on an
-# interpreter older than anything the suite had ever run against.
+if ($pyInfo.conda) { throw "$Python is a conda interpreter; use a python.org build." }
+if ($pyInfo.bits -ne 64) { throw "$Python is 32-bit. Corvus ships x64 only." }
 $pyParts = $pyInfo.version.Split(".")
 if ([int]$pyParts[0] -lt 3 -or ([int]$pyParts[0] -eq 3 -and [int]$pyParts[1] -lt 12)) {
-    throw "$Python is Python $($pyInfo.version); Corvus requires >= 3.12. Install it from python.org, or pass -Python <path>."
+    throw "$Python is Python $($pyInfo.version); Corvus requires >= 3.12."
 }
-Write-Host ">>> Interpreter: $Python (Python $($pyInfo.version), x64)"
+Write-Host ">>> Build interpreter: $Python (Python $($pyInfo.full), x64)"
 
-# ---- 2. build venv ----------------------------------------------------------
-# Kept out of the developer's own environment: the build installs PyInstaller
-# and the runtime deps, and doing that to whatever interpreter happens to be on
-# PATH is how a machine ends up unable to reproduce its own release.
+# ---- 2. packages -------------------------------------------------------------
 $VenvDir = Join-Path $BuildDir "venv"
 $VenvPy = Join-Path $VenvDir "Scripts\python.exe"
-if (-not (Test-Path $VenvPy)) {
-    Write-Host ">>> Creating build venv in $VenvDir ..."
-    New-Item -ItemType Directory -Force -Path $BuildDir | Out-Null
-    & $Python -m venv $VenvDir
-    if ($LASTEXITCODE -ne 0 -or -not (Test-Path $VenvPy)) {
-        throw "could not create the build venv at $VenvDir"
-    }
-}
-
-# The runtime list is pyproject.toml's `headless` group, which every other
-# installer also reads. The build-time tool - PyInstaller - is its
-# `package-windows` group: named in the same file, never shipped as a runtime
-# dependency.
-#
-# Which runtime source, in order: $env:CORVUS_REQUIREMENTS, then
-# requirements.lock if the repo has one, then the `headless` group. The lock is
-# what makes a release rebuildable - the group states floors, so installing
-# from it in six months resolves to whatever is newest then. Every build
-# writes the set it actually installed to dist\*.lock; promoting one to
-# requirements.lock at tag time pins the next rebuild to it.
-#
-# "${Pyproject}:headless", braced: unbraced, PowerShell would read "$Pyproject:app"
-# as a scope-qualified variable named app and pass pip an empty string.
+New-Item -ItemType Directory -Force -Path $BuildDir | Out-Null
 $Pyproject = Join-Path $RepoDir "python\pyproject.toml"
+$LinkSrc = Join-Path $RepoDir "src\link"
+
+# The stamp covers what the venv is made from, so a second build with the same
+# pyproject.toml, corvus_link sources and requirements installs nothing.
 $Requirements = $env:CORVUS_REQUIREMENTS
 if (-not $Requirements) {
     $RepoLock = Join-Path $RepoDir "requirements.lock"
@@ -149,146 +121,133 @@ if ($Requirements) {
     $DepsArgs = @("--group", "${Pyproject}:headless")
     $DepsLabel = "pyproject.toml [headless]"
 }
+$hashInputs = @($Pyproject) + (Get-ChildItem -Recurse -File $LinkSrc |
+    Where-Object { $_.FullName -notmatch '\\target\\' } | ForEach-Object { $_.FullName })
+if ($Requirements) { $hashInputs += $Requirements }
+$Stamp = (($hashInputs | Sort-Object | ForEach-Object { (Get-FileHash $_ -Algorithm SHA256).Hash }) -join "") + $pyInfo.full
+$StampFile = Join-Path $VenvDir ".corvus-deps"
+$Have = if (Test-Path $StampFile) { (Get-Content $StampFile -Raw).Trim() } else { "" }
+$StampHash = [System.BitConverter]::ToString(
+    [System.Security.Cryptography.SHA256]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes($Stamp))).Replace("-", "")
+
 $LockOut = Join-Path $DistDir "Corvus_GCS-$Version-windows-x64.lock"
-Write-Host ">>> Installing $DepsLabel plus pyproject.toml [package-windows] ..."
 $PipLog = Join-Path $BuildDir "pip.log"
-# pip >= 25.1 is what reads [dependency-groups]; a fresh venv ships older.
-& $VenvPy -m pip install --upgrade pip *>> $PipLog
-if ($LASTEXITCODE -eq 0) { & $VenvPy -m pip install @DepsArgs *>> $PipLog }
-if ($LASTEXITCODE -eq 0) { & $VenvPy -m pip install --group "${Pyproject}:package-windows" *>> $PipLog }
-# MAVLink is corvus_link, the Rust extension; building it needs cargo here.
-if ($LASTEXITCODE -eq 0) { & $VenvPy -m pip install (Join-Path $RepoDir "src\link") *>> $PipLog }
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "--- last 40 lines of $PipLog ---"
-    Get-Content $PipLog -Tail 40
-    throw "dependency install failed"
+if (-not (Test-Path $VenvPy) -or $Have -ne $StampHash) {
+    Write-Host ">>> Installing $DepsLabel and corvus_link (maturin, release) ..."
+    if (Test-Path $VenvDir) { Remove-Item -Recurse -Force $VenvDir }
+    & $Python -m venv $VenvDir
+    if ($LASTEXITCODE -ne 0) { throw "could not create the build venv at $VenvDir" }
+    # pip >= 25.1 is what reads [dependency-groups]; a fresh venv ships older.
+    & $VenvPy -m pip install --upgrade pip *>> $PipLog
+    if ($LASTEXITCODE -eq 0) { & $VenvPy -m pip install @DepsArgs *>> $PipLog }
+    # corvus_link is Rust (abi3, so it runs on any CPython 3.12.x).
+    if ($LASTEXITCODE -eq 0) { & $VenvPy -m pip install $LinkSrc *>> $PipLog }
+    if ($LASTEXITCODE -ne 0) {
+        Get-Content $PipLog -Tail 40
+        throw "dependency install failed; log: $PipLog"
+    }
+    $StampHash | Set-Content $StampFile
+} else {
+    Write-Host ">>> Packages unchanged since the last build; reusing $VenvDir"
 }
 
-# What went into THIS bundle, exactly. Ships beside the artifact so a rebuild
-# can be told to resolve to the same versions:
-#   copy dist\Corvus_GCS-<version>-windows-x64.lock requirements.lock
 New-Item -ItemType Directory -Force -Path $DistDir | Out-Null
 $Frozen = & $VenvPy -m pip freeze --all --exclude-editable --exclude corvus-link
 if ($LASTEXITCODE -eq 0) {
     @(
-        "# Corvus GCS $Version - Windows x64, python $($pyInfo.version)",
+        "# Corvus GCS $Version - Windows x64, python $($pyInfo.full)",
         "# The resolved runtime set this artifact was built from.",
         "# Install with: pip install -r <this file>"
     ) + $Frozen | Set-Content -Path $LockOut -Encoding UTF8
     Write-Host "    resolved set: $LockOut"
-} else {
-    Write-Host "WARNING: could not write $LockOut"
 }
 
-# ---- 3. backend entry point -------------------------------------------------
-# PyInstaller wants a script. serve.py is the backend's own entry, but a
-# windowed build has no console, so this stub gives both streams a file first
-# and then runs serve.py's main().
-$Entry = Join-Path $BuildDir "corvus_backend_main.py"
-$EntrySource = @'
-"""Frozen backend entry point. Generated by build-windows.ps1 - not used elsewhere."""
-import multiprocessing
-import os
-import sys
+# ---- 3. the embeddable interpreter -------------------------------------------
+# python.org's zip, cached in build\ (the build downloads once, the app never
+# needs the network). 3.12 stops getting Windows binaries once it is
+# security-only, so a host micro version without a zip falls back to
+# $EmbedFallback, which only has to be a 3.12.x release (corvus_link is abi3).
+$EmbedFallback = "3.12.10"
+$EmbedZip = $null
+foreach ($v in @($env:CORVUS_EMBED_VERSION, $pyInfo.full, $EmbedFallback) | Where-Object { $_ }) {
+    $cached = Join-Path $BuildDir "python-$v-embed-amd64.zip"
+    if (Test-Path $cached) { $EmbedZip = $cached; break }
+    try {
+        Invoke-WebRequest "https://www.python.org/ftp/python/$v/python-$v-embed-amd64.zip" -OutFile $cached -UseBasicParsing
+        $EmbedZip = $cached; break
+    } catch {
+        Remove-Item -Force $cached -ErrorAction SilentlyContinue
+        Write-Host "    no embeddable zip for $v, trying the next"
+    }
+}
+if (-not $EmbedZip) { throw "could not obtain python.org's embeddable CPython" }
+Write-Host ">>> Interpreter: $(Split-Path -Leaf $EmbedZip)"
 
-# A windowed build has no console, so sys.stdout and sys.stderr are None.
-# logging.basicConfig() writes to a stream, and a handler pointed at None
-# silently drops every line - which leaves an operator whose backend failed to
-# start with no way to find out why. Give both streams a file next to the rest
-# of Corvus' state before anything imports logging.
-if sys.stderr is None or sys.stdout is None:
-    try:
-        _dir = os.path.expanduser("~/.corvus")
-        os.makedirs(_dir, exist_ok=True)
-        _log = open(os.path.join(_dir, "corvus-gcs.log"), "a", encoding="utf-8",
-                    buffering=1)
-        if sys.stdout is None:
-            sys.stdout = _log
-        if sys.stderr is None:
-            sys.stderr = _log
-    except OSError:
-        pass  # a read-only home must not stop the backend from starting
-
-import serve  # noqa: E402 - must follow the stream fixup
-
-if __name__ == "__main__":
-    multiprocessing.freeze_support()
-    sys.exit(serve.main())
-'@
-Set-Content -Path $Entry -Value $EntrySource -Encoding UTF8
-
-# ---- 4. package -------------------------------------------------------------
-# corvus/version.py resolves VERSION as parent.parent of its own __file__, and
-# server.py resolves src/ the same way, so the three have to land beside the
-# package inside the bundle - which is exactly where "path;." puts them.
-Write-Host ">>> Running PyInstaller (the backend) ..."
+# ---- 4. assemble the folder ---------------------------------------------------
 if (Test-Path $AppDir) { Remove-Item -Recurse -Force $AppDir }
-$BackendDist = Join-Path $BuildDir "backend-dist"
-if (Test-Path $BackendDist) { Remove-Item -Recurse -Force $BackendDist }
+$Backend = Join-Path $AppDir "backend"
+$PyHome = Join-Path $Backend "python"
+New-Item -ItemType Directory -Force -Path $PyHome | Out-Null
+Expand-Archive -Path $EmbedZip -DestinationPath $PyHome -Force
 
-# Only the plugins .gitignore lets back in, without their tests\: a plugin
-# installed into plugins\ for development is not part of the release.
-$PluginStage = Join-Path $BuildDir "plugins"
-& $VenvPy (Join-Path $RepoDir "python\tools\bundle_plugins.py") $PluginStage
+# The ._pth file is the embeddable interpreter's whole search path (it ignores
+# PYTHONPATH and does not add the script's folder): the stdlib zip, itself,
+# the packages, and the backend root so `import corvus` resolves.
+$Pth = Get-ChildItem $PyHome -Filter "python*._pth" | Select-Object -First 1
+if (-not $Pth) { throw "the embeddable zip has no python*._pth" }
+$StdZip = [IO.Path]::GetFileNameWithoutExtension($Pth.Name) + ".zip"
+@($StdZip, ".", "Lib\site-packages", "..") | Set-Content -Path $Pth.FullName -Encoding ASCII
+
+# The packages are copied from the build venv, minus what only pip and the
+# build need.
+$Site = Join-Path $PyHome "Lib\site-packages"
+New-Item -ItemType Directory -Force -Path $Site | Out-Null
+$VenvSite = Join-Path $VenvDir "Lib\site-packages"
+& robocopy $VenvSite $Site /E /NFL /NDL /NJH /NJS /NP /XD __pycache__ pip pip-* setuptools _distutils_hack | Out-Null
+if ($LASTEXITCODE -ge 8) { throw "copying the packages failed (robocopy $LASTEXITCODE)" }
+$global:LASTEXITCODE = 0
+
+# lxml, pip and the pymavlink dialects but `all` (tools\bundle_trim.py), which
+# also fails when corvus_link or the `all` dialect is gone.
+Write-Host ">>> Trimming what the app never loads ..."
+& $VenvPy (Join-Path $RepoDir "python\tools\bundle_trim.py") $Site
+if ($LASTEXITCODE -ne 0) { throw "trimming the bundle failed" }
+
+# The backend's own files, beside each other: corvus\version.py resolves
+# VERSION and server.py resolves src\ as parent.parent of their package.
+Write-Host ">>> Copying application code ..."
+function Copy-Tree($from, $to) {
+    & robocopy $from $to /E /NFL /NDL /NJH /NJS /NP /XD __pycache__ | Out-Null
+    if ($LASTEXITCODE -ge 8) { throw "copying $from failed (robocopy $LASTEXITCODE)" }
+    $global:LASTEXITCODE = 0
+}
+Copy-Tree (Join-Path $RepoDir "python\corvus") (Join-Path $Backend "corvus")
+Copy-Tree (Join-Path $RepoDir "python\src") (Join-Path $Backend "src")
+# Only the plugins .gitignore lets back in, without their tests\.
+& $VenvPy (Join-Path $RepoDir "python\tools\bundle_plugins.py") (Join-Path $Backend "plugins")
 if ($LASTEXITCODE -ne 0) { throw "bundling the plugins failed" }
-
-# Only what the app reads from assets: the logos and licences. The README and
-# website screenshots stay in the repository.
-$AssetStage = Join-Path $BuildDir "assets"
-& $VenvPy (Join-Path $RepoDir "python\tools\bundle_assets.py") $AssetStage
+# Only what the app reads from assets: the logos and licences.
+& $VenvPy (Join-Path $RepoDir "python\tools\bundle_assets.py") (Join-Path $Backend "assets")
 if ($LASTEXITCODE -ne 0) { throw "bundling the assets failed" }
+Copy-Item (Join-Path $RepoDir "python\serve.py") (Join-Path $Backend "serve.py")
+Copy-Item (Join-Path $RepoDir "VERSION") (Join-Path $Backend "VERSION")
+# The Sustainable Use License requires that anyone who receives a copy of the
+# software also receives a copy of its terms.
+Copy-Item (Join-Path $RepoDir "LICENSE.md") (Join-Path $Backend "LICENSE.md")
+Copy-Item (Join-Path $RepoDir "LICENSE.md") (Join-Path $AppDir "LICENSE.md")
 
-$PyiArgs = @(
-    "--noconfirm", "--clean", "--windowed",
-    "--name", "corvus-backend",
-    "--distpath", $BackendDist,
-    "--workpath", (Join-Path $BuildDir "work"),
-    "--specpath", $BuildDir,
-    "--paths", (Join-Path $RepoDir "python"),
-    "--add-data", "$(Join-Path $RepoDir 'VERSION');.",
-    # The Sustainable Use License requires that anyone who receives a copy of
-    # the software also receives a copy of its terms. The .app and the AppImage
-    # have always shipped it; this bundle did not, which made the Windows
-    # artifact the one that did not satisfy its own licence.
-    "--add-data", "$(Join-Path $RepoDir 'LICENSE.md');.",
-    "--add-data", "$(Join-Path $RepoDir 'python\src');src",
-    "--add-data", "$AssetStage;assets",
-    # The plugins that ship with Corvus. plugin_registry.py resolves this root
-    # as a sibling of the package, the same way server.py resolves src\, so it
-    # lands beside them. Operator plugins live in %USERPROFILE%\.corvus\plugins
-    # and are never bundled.
-    "--add-data", "$PluginStage;plugins",
-    "--hidden-import", "serve",
-    # corvus_link registers corvus_link.mavutil at import time, which the
-    # analyser cannot see; collecting the package keeps the extension whole.
-    "--collect-all", "corvus_link"
-)
-# lxml came in with pymavlink and nothing Corvus ships loads it
-# (tools/bundle_trim.py).
-$PyiArgs += @("--exclude-module", "lxml")
-$PyiArgs += $Entry
-
-& $VenvPy -m PyInstaller @PyiArgs
-if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed" }
-
-$BackendExe = Join-Path $BackendDist "corvus-backend\corvus-backend.exe"
-if (-not (Test-Path $BackendExe)) { throw "expected $BackendExe, which PyInstaller did not produce" }
-
-# The folder the operator gets: the interface beside the backend it starts.
-New-Item -ItemType Directory -Force -Path $AppDir | Out-Null
-Move-Item (Join-Path $BackendDist "corvus-backend") (Join-Path $AppDir "backend")
-
-# The interface. rust-toolchain.toml at the repository root pins the Rust it needs,
-# so cargo runs from there and rustup fetches it on first use. The fonts and
-# icons are cut out of assets\ by its build.rs and the logos are read from
-# assets\, so the executable carries them. No version literal: the window
-# title asks the backend.
+# ---- 5. the interface ---------------------------------------------------------
+# rust-toolchain.toml at the repository root pins the Rust it needs, so cargo
+# runs from there and rustup fetches it on first use. The fonts and icons are
+# cut out of assets\ by its build.rs, so the executable carries them. The
+# target folder persists in build\, so a second build only recompiles what
+# changed.
 Write-Host ">>> Building the interface (Cargo.toml and src\, release) ..."
 $GuiLog = Join-Path $BuildDir "cargo-gui.log"
 Push-Location $RepoDir
 try {
     $env:CARGO_TARGET_DIR = Join-Path $BuildDir "cargo-gui"
-    & cargo build --release --locked *> $GuiLog
+    & cargo build --release --locked --bin corvus-gcs *> $GuiLog
     if ($LASTEXITCODE -ne 0) {
         Get-Content $GuiLog -Tail 30
         throw "the interface did not build; log: $GuiLog"
@@ -299,37 +258,29 @@ try {
 $Exe = Join-Path $AppDir "$AppName.exe"
 Copy-Item (Join-Path $BuildDir "cargo-gui\release\corvus-gcs.exe") $Exe
 
-# the bundled Python's data files PyInstaller collects and the app never reads:
-# lxml, pip and the pymavlink dialects but `all`.
-Write-Host ">>> Trimming what the app never loads ..."
-& $VenvPy (Join-Path $RepoDir "python\tools\bundle_trim.py") (Join-Path $AppDir "backend\_internal")
-if ($LASTEXITCODE -ne 0) { throw "trimming the bundle failed" }
-
-# ---- 5. verify --------------------------------------------------------------
-# The failure this catches is the one that matters: a bundle that builds and
-# then cannot import corvus_link or the backend on a machine without them.
-# It runs against the bundled interpreter payload, not the build venv.
+# ---- 6. verify ----------------------------------------------------------------
+# The failure this catches is a folder that builds and then cannot import
+# corvus_link or the backend on a machine without them. It runs the bundled
+# interpreter itself, not the build venv.
 if (-not $NoVerify) {
     Write-Host ">>> Verifying the bundle ..."
-    foreach ($needed in @("VERSION", "LICENSE.md", "src\index.html", "assets", "plugins")) {
-        $p = Join-Path $AppDir "backend\_internal\$needed"
+    foreach ($needed in @("VERSION", "LICENSE.md", "serve.py", "src\index.html", "assets", "plugins", "corvus", "python\python.exe")) {
+        $p = Join-Path $Backend $needed
         if (-not (Test-Path $p)) { throw "bundle is missing $needed (looked at $p)" }
     }
-    $stamped = (Get-Content (Join-Path $AppDir "backend\_internal\VERSION") -Raw).Trim()
-    if ($stamped -ne $Version) {
-        throw "bundled VERSION is '$stamped', expected '$Version'"
-    }
-    foreach ($exe in @($Exe, (Join-Path $AppDir "backend\corvus-backend.exe"))) {
-        if (-not (Test-Path $exe)) { throw "bundle is missing $exe" }
-    }
-    Write-Host "    payload     : VERSION, LICENSE.md, src\, assets\, plugins\ present and in sync"
+    $stamped = (Get-Content (Join-Path $Backend "VERSION") -Raw).Trim()
+    if ($stamped -ne $Version) { throw "bundled VERSION is '$stamped', expected '$Version'" }
+    $BundledPy = Join-Path $PyHome "python.exe"
+    & $BundledPy -I -c "import corvus_link, corvus.version as v, sys; sys.exit(0 if v.__version__ else 1)"
+    if ($LASTEXITCODE -ne 0) { throw "the bundled interpreter cannot import corvus_link and corvus" }
+    Write-Host "    payload     : VERSION, LICENSE.md, serve.py, src\, assets\, plugins\ present and importable"
 }
 
-# ---- 6. zip -----------------------------------------------------------------
+# ---- 7. zip -------------------------------------------------------------------
 if ($Zip) {
     Write-Host ">>> Zipping to $Zipfile ..."
     if (Test-Path $Zipfile) { Remove-Item -Force $Zipfile }
-    Compress-Archive -Path $AppDir -DestinationPath $Zipfile
+    Compress-Archive -Path $AppDir -DestinationPath $Zipfile -CompressionLevel Optimal
 }
 
 Write-Host ""

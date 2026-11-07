@@ -211,6 +211,8 @@ pub struct Board {
     pub open: bool,
     /// Set when the backend's own store should be cleared too.
     pub clear_remote: bool,
+    /// Draw the severity mark through the icon (Settings, Notifications).
+    pub marks: bool,
     remote: Vec<Notification>,
 }
 

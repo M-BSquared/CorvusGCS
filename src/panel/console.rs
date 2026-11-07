@@ -24,8 +24,6 @@ use crate::ui::icons;
 use crate::ui::kit;
 use crate::ui::style::{self, Weight};
 
-/// Texts only this interface has, so they are in `lang/native` and not in the
-/// web files the key test reads.
 const NEW_LINE: &str = "{a} new line";
 const NEW_LINES: &str = "{a} new lines";
 const MAX_LINES: usize = 2000;

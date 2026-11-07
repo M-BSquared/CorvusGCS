@@ -10,11 +10,16 @@
 #                 native egui interface every artifact ships.
 #   frontend    — the plain-node frontend assertions, tests/*.js and
 #                 plugins/<id>/tests/*.js, via python/tools/frontend_tests.js.
-#   appimage    — Linux x86_64 AppImage via ./build.sh   (-> build-appimage.sh).
+#   appimage    — Linux x86_64 AppImage and amd64 .deb via ./build.sh
+#                 (-> build-appimage.sh, build-deb.sh).
 #   macos-app   — macOS arm64 .app + .dmg via ./build.sh --dmg.
-#   windows-app — Windows x64 folder + zip via .\build-windows.ps1 (PyInstaller
-#                 for the backend, cargo for the interface).
-#   release     — on a version tag, attach all three artifacts to a GitHub Release.
+#   windows-app — Windows x64 folder + zip via .\build-windows.ps1 (python.org's
+#                 embeddable CPython for the backend, cargo for the interface).
+#   release     — on a version tag, attach every artifact to a GitHub Release.
+#
+# Every job that compiles Rust restores cargo's registry and target folders
+# (Swatinem/rust-cache), so a push that changes a few files recompiles those
+# and not the 300 crates beneath them.
 #
 # Packaging cannot be cross-built, so each artifact is produced on its own
 # runner. No version is hardcoded anywhere: the build scripts read the repo-root
@@ -55,6 +60,11 @@ jobs:
         working-directory: python
     steps:
       - uses: actions/checkout@v5
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+            src/link -> target
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
@@ -84,6 +94,11 @@ jobs:
         working-directory: python
     steps:
       - uses: actions/checkout@v5
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+            src/link -> target
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
@@ -141,6 +156,11 @@ jobs:
         working-directory: src/link
     steps:
       - uses: actions/checkout@v5
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+            src/link -> target
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
@@ -166,6 +186,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+            src/link -> target
       - name: Install the windowing headers
         run: |
           sudo apt-get update -y
@@ -202,6 +227,11 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v5
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> build/cargo-gui
+            src/link -> target
       # ubuntu-22.04's system python3 is 3.10; the AppImage bundles whatever
       # python3 is first on PATH, and build-appimage.sh refuses anything below
       # the 3.12 floor pyproject.toml declares. setup-python puts 3.12 there.
@@ -212,7 +242,7 @@ jobs:
         run: |
           sudo apt-get update -y
           sudo apt-get install -y --no-install-recommends \
-            wget rsync squashfs-tools imagemagick \
+            wget rsync squashfs-tools imagemagick dpkg-dev \
             libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
             libxkbcommon-dev libwayland-dev
       # The interface is built here with cargo (the repository root, whose
@@ -221,21 +251,22 @@ jobs:
       # appimagetool and its type-2 runtime are deliberately not cached: a
       # fixed cache key froze an old tool for good. Each build fetches the
       # current continuous release; the static runtime needs no FUSE 2 package.
-      - name: Build AppImage
+      - name: Build AppImage and .deb
         run: |
-          chmod +x build.sh build-appimage.sh
+          chmod +x build.sh build-appimage.sh build-deb.sh
           ./build.sh
       - name: Read version
         id: ver
         run: echo "version=$(cat VERSION)" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v6
         with:
-          name: Corvus_GCS-${{ steps.ver.outputs.version }}-x86_64-AppImage
+          name: Corvus_GCS-${{ steps.ver.outputs.version }}-linux-x86_64
           # The .lock beside it is the exact resolved dependency set this
           # AppImage was built from; pyproject.toml only states floors, so
           # it is the lock that makes a rebuild of this tag reproducible.
           path: |
             dist/Corvus_GCS-*-x86_64.AppImage
+            dist/Corvus_GCS-*-amd64.deb
             dist/Corvus_GCS-*-x86_64.lock
           if-no-files-found: error
           retention-days: 30
@@ -257,6 +288,11 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v5
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+            src/link -> target
       - name: Ensure a framework CPython
         # build-macos-app.sh requires a framework build (conda and some tool-cache
         # pythons are not relocatable into a .app) that runs as the host's own
@@ -320,14 +356,18 @@ jobs:
           retention-days: 30
 
   # --- Windows artifact ------------------------------------------------------
-  # PyInstaller for the backend rather than the hand-rolled relocatable
-  # interpreter the other two platforms need, and cargo for the interface —
-  # see the header of build-windows.ps1.
+  # python.org's embeddable CPython for the backend (no PyInstaller) and cargo
+  # for the interface; see the header of build-windows.ps1.
   windows-app:
     needs: [test-windows, frontend, rust-gui]
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+            src/link -> target
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'

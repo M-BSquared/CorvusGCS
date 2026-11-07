@@ -100,8 +100,9 @@ fn text_without_a_letter_is_left_alone() {
 
 #[test]
 fn plugin_texts_are_merged_under_the_language() {
+    files::add_plugin_files(&[("de", r#"{"strings":{"Plugin text":"Plugin-Text"}}"#)]);
     let de = files::plugin_strings("de");
-    assert!(!de.is_empty());
+    assert_eq!(de.get("Plugin text").map(String::as_str), Some("Plugin-Text"));
     assert!(files::plugin_strings("xx").is_empty());
 }
 

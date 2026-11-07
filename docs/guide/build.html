@@ -161,7 +161,7 @@
 </p>
 
 <h2 id="entry-points">Entry points</h2>
-<pre><code>./build.sh          # Linux: AppImage.  macOS: .app
+<pre><code>./build.sh          # Linux: AppImage and .deb.  macOS: .app
 ./build.sh --dmg    # macOS: also a .dmg</code></pre>
 <pre><code>.\build-windows.ps1 -Zip    # Windows: dist\Corvus GCS\ and a versioned .zip</code></pre>
 <p>
@@ -174,7 +174,7 @@
 <table>
   <thead><tr><th>Platform</th><th>Script</th><th>Result in <code>dist/</code></th></tr></thead>
   <tbody>
-    <tr><td>Linux x86_64</td><td><code>build-appimage.sh</code></td><td><code>Corvus_GCS-&lt;version&gt;-x86_64.AppImage</code></td></tr>
+    <tr><td>Linux x86_64</td><td><code>build-appimage.sh</code>, <code>build-deb.sh</code></td><td><code>Corvus_GCS-&lt;version&gt;-x86_64.AppImage</code> and <code>Corvus_GCS-&lt;version&gt;-amd64.deb</code></td></tr>
     <tr><td>macOS arm64 / x86_64</td><td><code>build-macos-app.sh</code></td><td><code>Corvus GCS.app</code>, and <code>Corvus_GCS-&lt;version&gt;-macOS-&lt;arch&gt;.dmg</code> with <code>--dmg</code></td></tr>
     <tr><td>Windows x64</td><td><code>build-windows.ps1</code></td><td><code>Corvus GCS\</code>, and <code>Corvus_GCS-&lt;version&gt;-windows-x64.zip</code> with <code>-Zip</code></td></tr>
   </tbody>
@@ -247,11 +247,12 @@
   DLLs live outside its own folder and cannot be packaged.
 </p>
 <p>
-  Unlike the other two, the Windows bundle is built with PyInstaller rather
-  than a hand relocated interpreter: Windows puts no constraint on where a DLL
-  may point, so there is nothing for the extra work to buy. PyInstaller freezes
-  the backend into <code>backend\corvus-backend.exe</code>, and the interface
-  (<code>Corvus GCS.exe</code>) beside it starts that as its child.
+  The Windows bundle is not frozen. The script lays out python.org's embeddable
+  CPython beside the packages pip resolved and the backend's own files, in
+  <code>backend\</code>, and the interface (<code>Corvus GCS.exe</code>, one
+  Rust program) starts <code>backend\python\python.exe serve.py</code> as its
+  child. Nothing is unpacked at launch. Once the backend is part of the Rust
+  program, <code>backend\</code> goes away and the folder is the executable.
 </p>
 
 <h2 id="rules">What every build guarantees</h2>
@@ -268,7 +269,7 @@
   GitHub Actions runs the tests on Linux and Windows, the linter, the frontend
   checks, and all three builds with the same scripts, in
   <code>.github/workflows/build.yml</code>. A tag <code>v&lt;version&gt;</code>
-  publishes the AppImage, the macOS disk image and the Windows zip as a GitHub
+  publishes the AppImage, the .deb, the macOS disk image and the Windows zip as a GitHub
   release. Build output (<code>build/</code>, <code>dist/</code>,
   <code>*.AppImage</code>, <code>*.dmg</code>, the Windows zip) is never
   committed.

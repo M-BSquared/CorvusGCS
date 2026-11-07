@@ -90,10 +90,22 @@ impl Launch {
         })
     }
 
-    /// The frozen backend beside the executable, when this is a bundle that
-    /// carries one: `<dir>/backend/corvus-backend` (`.exe` on Windows).
+    /// The backend beside the executable, when this is a bundle that carries
+    /// one: an embedded interpreter (`<dir>/backend/python/python.exe` on
+    /// Windows) running `<dir>/backend/serve.py`, or a frozen backend that runs
+    /// by itself (`<dir>/backend/corvus-backend`, `.exe` on Windows).
     pub fn bundled(exe_dir: &Path) -> Option<Launch> {
         let root = exe_dir.join("backend");
+        let python = root
+            .join("python")
+            .join(if cfg!(windows) { "python.exe" } else { "bin/python3" });
+        if python.is_file() && root.join("serve.py").is_file() {
+            return Some(Launch {
+                root,
+                python,
+                frozen: None,
+            });
+        }
         let exe = root.join(if cfg!(windows) {
             "corvus-backend.exe"
         } else {
@@ -130,6 +142,12 @@ impl Backend {
             }
         };
         let program = launch.frozen.as_ref().unwrap_or(&launch.python);
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            // No console window for a backend the operator never types into.
+            command.creation_flags(0x0800_0000);
+        }
         let child = command
             .arg(port.to_string())
             .env("CORVUS_PARENT_PID", std::process::id().to_string())
@@ -260,6 +278,24 @@ mod tests {
         std::fs::write(backend.join(name), "").unwrap();
         let launch = Launch::bundled(&dir).expect("found");
         assert_eq!(launch.frozen, Some(backend.join(name)));
+        assert_eq!(launch.root, backend);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn an_embedded_interpreter_beside_the_executable_is_found() {
+        let dir = std::env::temp_dir().join(format!("corvus-embedded-{}", std::process::id()));
+        let backend = dir.join("backend");
+        let python = backend
+            .join("python")
+            .join(if cfg!(windows) { "python.exe" } else { "bin/python3" });
+        std::fs::create_dir_all(python.parent().unwrap()).unwrap();
+        std::fs::write(&python, "").unwrap();
+        assert!(Launch::bundled(&dir).is_none(), "no serve.py yet");
+        std::fs::write(backend.join("serve.py"), "").unwrap();
+        let launch = Launch::bundled(&dir).expect("found");
+        assert_eq!(launch.python, python);
+        assert_eq!(launch.frozen, None);
         assert_eq!(launch.root, backend);
         std::fs::remove_dir_all(&dir).unwrap();
     }

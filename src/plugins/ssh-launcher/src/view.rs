@@ -1,6 +1,7 @@
 //! The shelf and the editor drawn (`.sshl-*` of `ssh-launcher.css`).
 
 use corvus_api::ui::tip::HoverTr;
+use corvus_api::ui::card;
 use eframe::egui::{self, Color32, Pos2, Rect, Stroke, Vec2};
 use serde_json::Value;
 
@@ -34,13 +35,7 @@ pub fn show(p: &mut SshLauncher, ui: &mut egui::Ui, area: Rect, h: &mut Host) ->
         f.skip(12.0);
         let g = kit::wrapped_weight(ui, &out, 12.0, Weight::W400, style::text_2(), f.w - 26.0, 1.5);
         let r = Rect::from_min_size(Pos2::new(f.x, f.y), Vec2::new(f.w, g.size().y.min(190.0) + 22.0));
-        ui.painter().rect_filled(r, style::RADIUS_BTN, style::surface_2());
-        ui.painter().rect_stroke(
-            r,
-            style::RADIUS_BTN,
-            Stroke::new(1.0, style::border_soft()),
-            egui::StrokeKind::Inside,
-        );
+        card::paint(ui.painter(), r, card::Look::Note);
         ui.painter()
             .with_clip_rect(r)
             .galley(Pos2::new(r.left() + 13.0, r.top() + 11.0), g, style::text_2());
@@ -611,18 +606,7 @@ fn new_connection(ui: &mut egui::Ui, f: &mut Form, c: &mut NewConn) {
         "Leave it empty to use user@host.", &mut c.name, &name_hint, false, false, "sshl-nc-name",
     );
     let rect = Rect::from_min_max(Pos2::new(f.x, top), Pos2::new(f.x + f.w, inner.y + 12.0));
-    ui.painter().set(
-        slot,
-        egui::Shape::Vec(vec![
-            egui::Shape::rect_filled(rect, style::RADIUS, style::glass(0.96)),
-            egui::Shape::rect_stroke(
-                rect,
-                style::RADIUS,
-                Stroke::new(1.0, style::tint(0.06)),
-                egui::StrokeKind::Inside,
-            ),
-        ]),
-    );
+    card::fill(ui.painter(), slot, rect, card::Look::Page);
     f.y = rect.bottom();
 }
 
@@ -641,13 +625,7 @@ fn preview_box(ui: &mut egui::Ui, f: &mut Form, line: &str) {
         kit::wrapped_weight(ui, text, 12.0, Weight::W400, color, f.w - 26.0, 1.5)
     };
     let r = f.rect(g.size().y + 22.0);
-    ui.painter().rect_filled(r, style::RADIUS_BTN, style::surface_2());
-    ui.painter().rect_stroke(
-        r,
-        style::RADIUS_BTN,
-        Stroke::new(1.0, style::border_soft()),
-        egui::StrokeKind::Inside,
-    );
+    card::paint(ui.painter(), r, card::Look::Note);
     ui.painter()
         .galley(Pos2::new(r.left() + 13.0, r.top() + 11.0), g, color);
     f.y = r.bottom();

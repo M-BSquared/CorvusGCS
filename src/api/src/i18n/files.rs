@@ -23,15 +23,6 @@ const BUNDLED: &[(&str, &str)] = &[
     ("dl", include_str!("../../../lang/dl.json")),
 ];
 
-/// The files of the plugins and `lang/native`, the texts only this interface
-/// has (the web's files stay as they are), by language code. A plugin's entry never wins
-/// over the program's own for the same English text.
-const PLUGIN_FILES: &[(&str, &str)] = &[
-    ("de", include_str!("../../../lang/native/de.json")),
-    ("fr", include_str!("../../../lang/native/fr.json")),
-    ("dl", include_str!("../../../lang/native/dl.json")),
-];
-
 /// One language file, validated.
 #[derive(Debug, Clone)]
 pub struct Language {
@@ -199,7 +190,7 @@ pub fn add_plugin_files(files: &'static [(&'static str, &'static str)]) -> bool 
 pub fn plugin_strings(code: &str) -> HashMap<String, String> {
     let mut out = HashMap::new();
     let extra = EXTRA_FILES.lock().unwrap_or_else(|p| p.into_inner()).clone();
-    for (c, body) in PLUGIN_FILES.iter().chain(extra.iter()) {
+    for (c, body) in extra.iter() {
         if *c != code {
             continue;
         }

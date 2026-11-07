@@ -81,11 +81,6 @@ dev = [
     { include-group = "test" },
     { include-group = "lint" },
 ]
-# Build-time only, for build-windows.ps1's build venv: the packager that
-# freezes the backend. Never shipped as a runtime dependency.
-package-windows = [
-    "pyinstaller>=6.3",
-]
 
 [tool.pytest.ini_options]
 # Each plugin keeps its own checks in plugins/<id>/tests/, so a plugin that is

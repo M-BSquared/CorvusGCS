@@ -61,6 +61,11 @@ impl Placement {
         self.extra.get(key) == Some(&Value::Bool(true))
     }
 
+    /// A flag with a default for a window nobody has changed yet.
+    pub fn flag_or(&self, key: &str, default: bool) -> bool {
+        self.extra.get(key).and_then(Value::as_bool).unwrap_or(default)
+    }
+
     pub fn set_flag(&mut self, key: &str, on: bool) {
         self.extra.insert(key.to_string(), Value::Bool(on));
         self.save();

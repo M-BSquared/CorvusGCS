@@ -252,6 +252,22 @@ impl Terrain {
         Some(tile.sample(u0 + (fx - tx as f64) * size, v0 + (fy - ty as f64) * size) as f64)
     }
 
+    /// The ground height at a position from the tile of zoom `zoom` itself,
+    /// `None` while that tile is not here. A coarser ancestor is not an
+    /// answer: a building placed by one would stay at the wrong height when
+    /// the real tile arrives.
+    pub fn exact_height_at(&self, lng: f64, lat: f64, zoom: u8) -> Option<f64> {
+        let z = zoom.min(self.spec.maxzoom);
+        let (mx, my) = crate::map3d::camera::mercator(lng, lat);
+        let world = 2.0 * std::f64::consts::PI * crate::map3d::camera::R;
+        let n = (1u64 << z) as f64;
+        let (fx, fy) = ((mx + world / 2.0) / world * n, (world / 2.0 - my) / world * n);
+        let (tx, ty) = (fx.floor().max(0.0) as u32, fy.floor().max(0.0) as u32);
+        let key: Key = (self.spec.id.clone(), z, tx, ty);
+        let tile = self.cache.get(&key)?;
+        Some(tile.sample(fx - tx as f64, fy - ty as f64) as f64)
+    }
+
     /// Drops every elevation tile held.
     pub fn clear(&self) {
         self.cache.clear();

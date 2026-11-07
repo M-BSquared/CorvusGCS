@@ -290,7 +290,8 @@ pub fn show(ui: &mut egui::Ui, st: &mut WindowState, host: Rect, below: f32, vie
                 }
                 body_h += rows.iter().map(|r| r.0).sum::<f32>() + (rows.len() as f32 - 1.0).max(0.0);
                 if complete {
-                    body_h += 6.0 + 14.0;
+                    let g = style::galley(ui, "All items checked", 12.0, Weight::W600, style::healthy(), 0.0);
+                    body_h += 6.0 + g.size().y.max(14.0) + 2.0;
                 }
             }
             _ => {
@@ -546,16 +547,22 @@ pub fn show(ui: &mut egui::Ui, st: &mut WindowState, host: Rect, below: f32, vie
                         y += h + 1.0;
                     }
                     if complete {
-                        y += 5.0;
+                        let g = style::galley(ui, "All items checked", 12.0, Weight::W600, style::healthy(), 0.0);
+                        let line = g.size().y.max(14.0);
                         icons::paint(
                             ui,
                             "circle-check",
-                            Rect::from_min_size(Pos2::new(origin.x + 4.0, y + 6.0), Vec2::splat(14.0)),
+                            Rect::from_min_size(
+                                Pos2::new(origin.x + 4.0, y + 6.0 + (line - 14.0) / 2.0),
+                                Vec2::splat(14.0),
+                            ),
                             style::healthy(),
                         );
-                        let g = style::galley(ui, "All items checked", 12.0, Weight::W600, style::healthy(), 0.0);
-                        ui.painter()
-                            .galley(Pos2::new(origin.x + 4.0 + 14.0 + 6.0, y + 6.0), g, style::healthy());
+                        ui.painter().galley(
+                            Pos2::new(origin.x + 4.0 + 14.0 + 6.0, y + 6.0 + (line - g.size().y) / 2.0),
+                            g,
+                            style::healthy(),
+                        );
                     }
                 }
                 _ => {

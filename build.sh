@@ -6,6 +6,7 @@
 # cross-build: a Linux AppImage needs a Linux host, a macOS .app needs a Mac.
 #
 #   Linux  x86_64  ->  ./build-appimage.sh    ->  Corvus_GCS-<version>-x86_64.AppImage
+#                                              +  Corvus_GCS-<version>-amd64.deb (build-deb.sh)
 #   macOS  arm64/x86_64 -> ./build-macos-app.sh -> dist/Corvus GCS.app
 #                                              (+ Corvus_GCS-<version>-macOS-<arch>.dmg)
 #
@@ -34,12 +35,15 @@ case "$OS" in
     Linux)
         SCRIPT="$REPO_DIR/build-appimage.sh"
         ARTIFACT="$REPO_DIR/dist/Corvus_GCS-${VERSION}-x86_64.AppImage"
-        # --dmg is macOS-only; the AppImage script rejects unknown args.
+        DEB="$REPO_DIR/dist/Corvus_GCS-${VERSION}-amd64.deb"
+        # --dmg is macOS-only; --no-deb and --deb-only go to the Linux script.
         ARGS=()
         for arg in "$@"; do
             case "$arg" in
-                --dmg) echo ">>> note: --dmg is macOS-only, ignoring on Linux" ;;
-                *)     ARGS+=("$arg") ;;
+                --dmg)      echo ">>> note: --dmg is macOS-only, ignoring on Linux" ;;
+                --no-deb)   DEB=""; ARGS+=("$arg") ;;
+                --deb-only) ARTIFACT="$DEB"; ARGS+=("$arg") ;;
+                *)          ARGS+=("$arg") ;;
             esac
         done
         ;;
@@ -78,4 +82,8 @@ echo ""
 
 [ -e "$ARTIFACT" ] || { echo "ERROR: expected artifact missing: $ARTIFACT" >&2; exit 1; }
 echo ""
-echo ">>> build.sh done — artifact: $ARTIFACT"
+if [ -n "${DEB:-}" ] && [ ! -e "$DEB" ]; then
+    echo "ERROR: expected artifact missing: $DEB" >&2
+    exit 1
+fi
+echo ">>> build.sh done — artifact: $ARTIFACT${DEB:+ and $DEB}"

@@ -40,10 +40,7 @@ INSTALLERS = {
     ROOT.parent / "run.sh": ['--group "$REPO_DIR/python/pyproject.toml:dev"'],
     ROOT.parent / "build-appimage.sh": ['--group "$REPO_DIR/python/pyproject.toml:headless"'],
     ROOT.parent / "build-macos-app.sh": ['--group "$REPO_DIR/python/pyproject.toml:headless"'],
-    ROOT.parent / "build-windows.ps1": [
-        '"--group", "${Pyproject}:headless"',
-        '--group "${Pyproject}:package-windows"',
-    ],
+    ROOT.parent / "build-windows.ps1": ['"--group", "${Pyproject}:headless"'],
     GITHUB_CI: ["pip install --group test", "pip install --group lint"],
 }
 
@@ -108,7 +105,7 @@ def test_every_installer_builds_corvus_link() -> None:
         ROOT.parent / "run.sh": '"$REPO_DIR/src/link"',
         ROOT.parent / "build-appimage.sh": '"$REPO_DIR/src/link"',
         ROOT.parent / "build-macos-app.sh": '"$REPO_DIR/src/link"',
-        ROOT.parent / "build-windows.ps1": '(Join-Path $RepoDir "src\\link")',
+        ROOT.parent / "build-windows.ps1": '$LinkSrc = Join-Path $RepoDir "src\\link"',
     }
     for path, needle in needles.items():
         assert needle in path.read_text(encoding="utf-8"), f"{path.name} does not build corvus_link"
@@ -195,13 +192,15 @@ def test_no_installer_hardcodes_the_dependency_list() -> None:
                     )
 
 
-def test_the_windows_build_tool_is_installed_where_it_is_used() -> None:
-    """PyInstaller freezes the backend; it is a pyproject group installed into
-    the same build venv that runs it, not a package CI puts on the host."""
-    assert set(_group("package-windows")) == {"pyinstaller"}
+def test_the_windows_build_does_not_freeze_the_backend() -> None:
+    """The backend runs on python.org's embeddable CPython, laid out by the
+    script; there is no PyInstaller, in the script, the groups or the CI job."""
+    assert "package-windows" not in _groups()
     ps1 = (ROOT.parent / "build-windows.ps1").read_text(encoding="utf-8")
-    assert "-m PyInstaller" in ps1 and "cargo build --release --locked" in ps1
-    assert "pyinstaller" not in GITHUB_CI.read_text(encoding="utf-8").split("windows-app:")[1].lower()
+    assert "PyInstaller" not in ps1.replace("No PyInstaller", "")
+    assert "embed-amd64.zip" in ps1 and "cargo build --release --locked" in ps1
+    job = GITHUB_CI.read_text(encoding="utf-8").split("windows-app:")[1].split("release:")[0]
+    assert "pip install pyinstaller" not in job.lower() and "-m PyInstaller" not in job
 
 
 def test_the_macos_build_no_longer_parses_yaml_with_a_regex() -> None:

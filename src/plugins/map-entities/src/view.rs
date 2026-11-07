@@ -11,6 +11,7 @@ use super::model::{
 use super::{Aim, MapEntities};
 use corvus_api::plugin::shapes::{hex, paint_glyph};
 use corvus_api::plugin::Host;
+use corvus_api::ui::card;
 use corvus_api::ui::field;
 use corvus_api::ui::kit::{self, Button, Choice, Variant};
 use corvus_api::ui::style::{self, Weight};
@@ -124,9 +125,7 @@ fn summary(p: &MapEntities, ui: &egui::Ui, x: f32, y: f32, w: f32) -> f32 {
             "bad" => (mix(style::border_soft(), style::critical(), 0.55), style::critical()),
             _ => (style::border_soft(), style::text_1()),
         };
-        ui.painter().rect_filled(r, style::RADIUS_BTN, style::surface_2());
-        ui.painter()
-            .rect_stroke(r, style::RADIUS_BTN, Stroke::new(1.0, line), StrokeKind::Inside);
+        card::paint(ui.painter(), r, card::Look::custom(style::surface_2(), line, style::RADIUS_BTN));
         let lg = style::galley(ui, &label.to_uppercase(), 9.5, Weight::W400, style::text_2(), 0.7);
         let vg = style::galley_mono(ui, value, 13.0, ink);
         ui.painter().galley(
@@ -288,9 +287,7 @@ fn kind_button(
     } else {
         (style::surface_2(), style::border_soft())
     };
-    ui.painter().rect_filled(r, style::RADIUS_BTN, fill);
-    ui.painter()
-        .rect_stroke(r, style::RADIUS_BTN, Stroke::new(1.0, line), StrokeKind::Inside);
+    card::paint(ui.painter(), r, card::Look::custom(fill, line, style::RADIUS_BTN));
     let ink = if main || active || resp.hovered() {
         style::text_1()
     } else {
@@ -343,13 +340,14 @@ fn hint(p: &mut MapEntities, ui: &mut egui::Ui, x: f32, y: f32, w: f32, pl: &sup
         Pos2::new(x, y),
         Vec2::new(w, 7.0 + row + 8.0 + sub.size().y + 7.0 + 2.0),
     );
-    ui.painter()
-        .rect_filled(r, style::RADIUS_BTN, mix(style::bg(), style::nav(), 0.10));
-    ui.painter().rect_stroke(
+    card::paint(
+        ui.painter(),
         r,
-        style::RADIUS_BTN,
-        Stroke::new(1.0, mix(style::border(), style::nav(), 0.55)),
-        StrokeKind::Inside,
+        card::Look::custom(
+            mix(style::bg(), style::nav(), 0.10),
+            mix(style::border(), style::nav(), 0.55),
+            style::RADIUS_BTN,
+        ),
     );
     ui.painter().galley(
         Pos2::new(r.left() + 10.0, r.top() + 8.0 + (row - g.size().y) / 2.0),
@@ -376,13 +374,7 @@ fn undo_bar(p: &mut MapEntities, ui: &mut egui::Ui, x: f32, y: f32, w: f32, h: &
     let many = u.items.len() > 1;
     let name = u.items.first().map(|i| i.0.name.clone()).unwrap_or_default();
     let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, 38.0));
-    ui.painter().rect_filled(r, style::RADIUS_BTN, style::surface_2());
-    ui.painter().rect_stroke(
-        r,
-        style::RADIUS_BTN,
-        Stroke::new(1.0, style::border()),
-        StrokeKind::Inside,
-    );
+    card::paint(ui.painter(), r, card::Look::Raised);
     let t = style::galley(
         ui,
         if many { "Deleted all" } else { "Deleted" },

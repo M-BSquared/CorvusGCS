@@ -247,6 +247,7 @@ pub struct VideoWindow {
     pos: Pos2,
     size: Vec2,
     maximized: bool,
+    pinned: bool,
     /// In a native window of its own, not a frame in the app.
     pub popped: bool,
 }
@@ -306,6 +307,7 @@ impl VideoWindow {
             ),
             size: DEF_SIZE,
             maximized: false,
+            pinned: false,
             popped: !crate::app::popout::in_app(),
         }
     }
@@ -439,7 +441,7 @@ impl VideoWindow {
                     style::text_2(),
                 );
                 let tx = bar.left() + 10.0 + 14.0 + 8.0;
-                let tools_w = if popped { 2.0 } else { 3.0 } * 24.0 + 1.0 + 6.0;
+                let tools_w = 3.0 * 24.0 + 1.0 + 6.0;
                 let (pill_text, tone) = pill(&local.state);
                 let sc = match tone {
                     "on" => style::healthy(),
@@ -481,6 +483,13 @@ impl VideoWindow {
                 }
                 bx -= 25.0;
                 if popped {
+                    crate::app::popout::pin_button(
+                        ui,
+                        Rect::from_min_size(Pos2::new(bx, bar.center().y - 12.0), Vec2::splat(24.0)),
+                        &mut self.pinned,
+                        &self.id,
+                    );
+                    bx -= 25.0;
                     if kit::icon_btn(
                         ui,
                         Rect::from_min_size(Pos2::new(bx, bar.center().y - 12.0), Vec2::splat(24.0)),
@@ -533,7 +542,7 @@ impl VideoWindow {
                         );
                     }
                 }
-                painter.set(bg, card::window(rect, 0.97, style::border_strong()));
+                painter.set(bg, card::window("videowin", rect, 0.97, style::border_strong()));
             });
         if toggle {
             self.maximized = !self.maximized;
