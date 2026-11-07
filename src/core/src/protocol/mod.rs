@@ -19,6 +19,7 @@ pub mod missions;
 pub mod params;
 pub mod receive;
 pub mod remote_id;
+pub mod requests;
 pub mod setup;
 pub mod shell;
 pub mod status;

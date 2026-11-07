@@ -1,0 +1,3330 @@
+{
+ "cases": [
+  {
+   "scenario": {
+    "name": "tables",
+    "steps": [
+     {
+      "op": "tables",
+      "slow": false
+     },
+     {
+      "op": "tables",
+      "slow": true
+     }
+    ],
+    "slow": true
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": {
+       "streams": [
+        [
+         2,
+         2
+        ],
+        [
+         6,
+         10
+        ],
+        [
+         10,
+         50
+        ],
+        [
+         11,
+         10
+        ],
+        [
+         12,
+         5
+        ],
+        [
+         1,
+         5
+        ],
+        [
+         3,
+         5
+        ]
+       ],
+       "intervals": [
+        [
+         30,
+         20000
+        ],
+        [
+         33,
+         100000
+        ],
+        [
+         74,
+         100000
+        ],
+        [
+         1,
+         1000000
+        ],
+        [
+         24,
+         1000000
+        ],
+        [
+         242,
+         1000000
+        ],
+        [
+         245,
+         1000000
+        ],
+        [
+         65,
+         200000
+        ],
+        [
+         147,
+         1000000
+        ],
+        [
+         42,
+         1000000
+        ],
+        [
+         2,
+         1000000
+        ]
+       ]
+      },
+      "events": []
+     },
+     {
+      "result": {
+       "streams": [
+        [
+         2,
+         2
+        ],
+        [
+         6,
+         5
+        ],
+        [
+         10,
+         10
+        ],
+        [
+         11,
+         5
+        ],
+        [
+         12,
+         2
+        ],
+        [
+         1,
+         0
+        ],
+        [
+         3,
+         0
+        ]
+       ],
+       "intervals": [
+        [
+         30,
+         100000
+        ],
+        [
+         33,
+         200000
+        ],
+        [
+         74,
+         200000
+        ],
+        [
+         1,
+         1000000
+        ],
+        [
+         24,
+         1000000
+        ],
+        [
+         242,
+         5000000
+        ],
+        [
+         245,
+         1000000
+        ],
+        [
+         147,
+         2000000
+        ],
+        [
+         42,
+         1000000
+        ],
+        [
+         2,
+         2000000
+        ]
+       ]
+      },
+      "events": []
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "streams_sent_once",
+    "steps": [
+     {
+      "op": "streams"
+     },
+     {
+      "op": "streams"
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "send",
+        "request_data_stream_send",
+        [
+         1,
+         1,
+         2,
+         2,
+         1
+        ]
+       ],
+       [
+        "send",
+        "request_data_stream_send",
+        [
+         1,
+         1,
+         6,
+         10,
+         1
+        ]
+       ],
+       [
+        "send",
+        "request_data_stream_send",
+        [
+         1,
+         1,
+         10,
+         50,
+         1
+        ]
+       ],
+       [
+        "send",
+        "request_data_stream_send",
+        [
+         1,
+         1,
+         11,
+         10,
+         1
+        ]
+       ],
+       [
+        "send",
+        "request_data_stream_send",
+        [
+         1,
+         1,
+         12,
+         5,
+         1
+        ]
+       ],
+       [
+        "send",
+        "request_data_stream_send",
+        [
+         1,
+         1,
+         1,
+         5,
+         1
+        ]
+       ],
+       [
+        "send",
+        "request_data_stream_send",
+        [
+         1,
+         1,
+         3,
+         5,
+         1
+        ]
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": {
+       "request_sent": true
+      },
+      "events": []
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "streams_on_a_radio",
+    "slow": true,
+    "steps": [
+     {
+      "op": "streams"
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "send",
+        "request_data_stream_send",
+        [
+         1,
+         1,
+         2,
+         2,
+         1
+        ]
+       ],
+       [
+        "send",
+        "request_data_stream_send",
+        [
+         1,
+         1,
+         6,
+         5,
+         1
+        ]
+       ],
+       [
+        "send",
+        "request_data_stream_send",
+        [
+         1,
+         1,
+         10,
+         10,
+         1
+        ]
+       ],
+       [
+        "send",
+        "request_data_stream_send",
+        [
+         1,
+         1,
+         11,
+         5,
+         1
+        ]
+       ],
+       [
+        "send",
+        "request_data_stream_send",
+        [
+         1,
+         1,
+         12,
+         2,
+         1
+        ]
+       ]
+      ]
+     },
+     {
+      "result": {
+       "request_sent": true
+      },
+      "events": []
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "streams_already_sent",
+    "request_sent": true,
+    "steps": [
+     {
+      "op": "streams"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": []
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "streams_without_a_link",
+    "no_connection": true,
+    "steps": [
+     {
+      "op": "streams"
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": {
+       "request_sent": false
+      },
+      "events": []
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "streams_fail_one_by_one",
+    "send_fails": "request_data_stream_send",
+    "steps": [
+     {
+      "op": "streams"
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "log",
+        "debug",
+        "REQUEST_DATA_STREAM 2 failed: boom"
+       ],
+       [
+        "log",
+        "debug",
+        "REQUEST_DATA_STREAM 6 failed: boom"
+       ],
+       [
+        "log",
+        "debug",
+        "REQUEST_DATA_STREAM 10 failed: boom"
+       ],
+       [
+        "log",
+        "debug",
+        "REQUEST_DATA_STREAM 11 failed: boom"
+       ],
+       [
+        "log",
+        "debug",
+        "REQUEST_DATA_STREAM 12 failed: boom"
+       ],
+       [
+        "log",
+        "debug",
+        "REQUEST_DATA_STREAM 1 failed: boom"
+       ],
+       [
+        "log",
+        "debug",
+        "REQUEST_DATA_STREAM 3 failed: boom"
+       ]
+      ]
+     },
+     {
+      "result": {
+       "request_sent": true
+      },
+      "events": []
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "intervals_accepted",
+    "steps": [
+     {
+      "op": "intervals"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        511,
+        [
+         30.0,
+         20000.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        511,
+        [
+         33.0,
+         100000.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        511,
+        [
+         74.0,
+         100000.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        511,
+        [
+         1.0,
+         1000000.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        511,
+        [
+         24.0,
+         1000000.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        511,
+        [
+         242.0,
+         1000000.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        511,
+        [
+         245.0,
+         1000000.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        511,
+        [
+         65.0,
+         200000.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        511,
+        [
+         147.0,
+         1000000.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        511,
+        [
+         42.0,
+         1000000.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        511,
+        [
+         2.0,
+         1000000.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1
+       ]
+      ]
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "intervals_on_a_radio",
+    "slow": true,
+    "steps": [
+     {
+      "op": "intervals"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        511,
+        [
+         30.0,
+         100000.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        511,
+        [
+         33.0,
+         200000.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        511,
+        [
+         74.0,
+         200000.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        511,
+        [
+         1.0,
+         1000000.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        511,
+        [
+         24.0,
+         1000000.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        511,
+        [
+         242.0,
+         5000000.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        511,
+        [
+         245.0,
+         1000000.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        511,
+        [
+         147.0,
+         2000000.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        511,
+        [
+         42.0,
+         1000000.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        511,
+        [
+         2.0,
+         2000000.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1
+       ]
+      ]
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "intervals_denied_for_one_message",
+    "results": {
+     "242": 2,
+     "24": 2
+    },
+    "steps": [
+     {
+      "op": "intervals"
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        511,
+        [
+         30.0,
+         20000.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        511,
+        [
+         33.0,
+         100000.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        511,
+        [
+         74.0,
+         100000.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        511,
+        [
+         1.0,
+         1000000.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        511,
+        [
+         24.0,
+         1000000.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1
+       ],
+       [
+        "error",
+        "Set message interval failed: DENIED"
+       ],
+       [
+        "log",
+        "debug",
+        "SET_MESSAGE_INTERVAL msg 24: result 2"
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        511,
+        [
+         242.0,
+         1000000.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1
+       ],
+       [
+        "error",
+        "Set message interval failed: DENIED"
+       ],
+       [
+        "log",
+        "debug",
+        "SET_MESSAGE_INTERVAL msg 242: result 2"
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        511,
+        [
+         245.0,
+         1000000.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        511,
+        [
+         65.0,
+         200000.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        511,
+        [
+         147.0,
+         1000000.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        511,
+        [
+         42.0,
+         1000000.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        511,
+        [
+         2.0,
+         1000000.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1
+       ]
+      ]
+     },
+     {
+      "result": {
+       "request_sent": false
+      },
+      "events": []
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "intervals_unsupported_falls_back",
+    "default_result": 3,
+    "steps": [
+     {
+      "op": "intervals"
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        511,
+        [
+         30.0,
+         20000.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1
+       ],
+       [
+        "error",
+        "Set message interval failed: UNSUPPORTED"
+       ],
+       [
+        "log",
+        "debug",
+        "SET_MESSAGE_INTERVAL msg 30: result 3"
+       ],
+       [
+        "log",
+        "info",
+        "SET_MESSAGE_INTERVAL unsupported (msg 30), falling back to REQUEST_DATA_STREAM for this connection"
+       ],
+       [
+        "send",
+        "request_data_stream_send",
+        [
+         1,
+         1,
+         2,
+         2,
+         1
+        ]
+       ],
+       [
+        "send",
+        "request_data_stream_send",
+        [
+         1,
+         1,
+         6,
+         10,
+         1
+        ]
+       ],
+       [
+        "send",
+        "request_data_stream_send",
+        [
+         1,
+         1,
+         10,
+         50,
+         1
+        ]
+       ],
+       [
+        "send",
+        "request_data_stream_send",
+        [
+         1,
+         1,
+         11,
+         10,
+         1
+        ]
+       ],
+       [
+        "send",
+        "request_data_stream_send",
+        [
+         1,
+         1,
+         12,
+         5,
+         1
+        ]
+       ],
+       [
+        "send",
+        "request_data_stream_send",
+        [
+         1,
+         1,
+         1,
+         5,
+         1
+        ]
+       ],
+       [
+        "send",
+        "request_data_stream_send",
+        [
+         1,
+         1,
+         3,
+         5,
+         1
+        ]
+       ]
+      ]
+     },
+     {
+      "result": {
+       "request_sent": true
+      },
+      "events": []
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "intervals_unsupported_later",
+    "results": {
+     "1": 3,
+     "30": 0,
+     "33": 0,
+     "74": 0
+    },
+    "steps": [
+     {
+      "op": "intervals"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        511,
+        [
+         30.0,
+         20000.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        511,
+        [
+         33.0,
+         100000.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        511,
+        [
+         74.0,
+         100000.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        511,
+        [
+         1.0,
+         1000000.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1
+       ],
+       [
+        "error",
+        "Set message interval failed: UNSUPPORTED"
+       ],
+       [
+        "log",
+        "debug",
+        "SET_MESSAGE_INTERVAL msg 1: result 3"
+       ],
+       [
+        "log",
+        "info",
+        "SET_MESSAGE_INTERVAL unsupported (msg 1), falling back to REQUEST_DATA_STREAM for this connection"
+       ],
+       [
+        "send",
+        "request_data_stream_send",
+        [
+         1,
+         1,
+         2,
+         2,
+         1
+        ]
+       ],
+       [
+        "send",
+        "request_data_stream_send",
+        [
+         1,
+         1,
+         6,
+         10,
+         1
+        ]
+       ],
+       [
+        "send",
+        "request_data_stream_send",
+        [
+         1,
+         1,
+         10,
+         50,
+         1
+        ]
+       ],
+       [
+        "send",
+        "request_data_stream_send",
+        [
+         1,
+         1,
+         11,
+         10,
+         1
+        ]
+       ],
+       [
+        "send",
+        "request_data_stream_send",
+        [
+         1,
+         1,
+         12,
+         5,
+         1
+        ]
+       ],
+       [
+        "send",
+        "request_data_stream_send",
+        [
+         1,
+         1,
+         1,
+         5,
+         1
+        ]
+       ],
+       [
+        "send",
+        "request_data_stream_send",
+        [
+         1,
+         1,
+         3,
+         5,
+         1
+        ]
+       ]
+      ]
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "intervals_without_acks_give_up",
+    "default_result": -1,
+    "steps": [
+     {
+      "op": "intervals"
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        511,
+        [
+         30.0,
+         20000.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1
+       ],
+       [
+        "error",
+        "Set message interval failed: ACK_TIMEOUT"
+       ],
+       [
+        "log",
+        "debug",
+        "SET_MESSAGE_INTERVAL msg 30: result -1"
+       ],
+       [
+        "send",
+        "request_data_stream_send",
+        [
+         1,
+         1,
+         2,
+         2,
+         1
+        ]
+       ],
+       [
+        "send",
+        "request_data_stream_send",
+        [
+         1,
+         1,
+         6,
+         10,
+         1
+        ]
+       ],
+       [
+        "send",
+        "request_data_stream_send",
+        [
+         1,
+         1,
+         10,
+         50,
+         1
+        ]
+       ],
+       [
+        "send",
+        "request_data_stream_send",
+        [
+         1,
+         1,
+         11,
+         10,
+         1
+        ]
+       ],
+       [
+        "send",
+        "request_data_stream_send",
+        [
+         1,
+         1,
+         12,
+         5,
+         1
+        ]
+       ],
+       [
+        "send",
+        "request_data_stream_send",
+        [
+         1,
+         1,
+         1,
+         5,
+         1
+        ]
+       ],
+       [
+        "send",
+        "request_data_stream_send",
+        [
+         1,
+         1,
+         3,
+         5,
+         1
+        ]
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        511,
+        [
+         33.0,
+         100000.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1
+       ],
+       [
+        "error",
+        "Set message interval failed: ACK_TIMEOUT"
+       ],
+       [
+        "log",
+        "debug",
+        "SET_MESSAGE_INTERVAL msg 33: result -1"
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        511,
+        [
+         74.0,
+         100000.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1
+       ],
+       [
+        "error",
+        "Set message interval failed: ACK_TIMEOUT"
+       ],
+       [
+        "log",
+        "debug",
+        "SET_MESSAGE_INTERVAL msg 74: result -1"
+       ],
+       [
+        "log",
+        "info",
+        "no COMMAND_ACK for 3 interval requests, leaving the rest to REQUEST_DATA_STREAM for this connection"
+       ]
+      ]
+     },
+     {
+      "result": {
+       "request_sent": true
+      },
+      "events": []
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "intervals_silence_then_answers",
+    "results": {
+     "30": -1,
+     "33": 0,
+     "74": -1,
+     "1": -1,
+     "24": 0,
+     "242": -1,
+     "245": 0
+    },
+    "steps": [
+     {
+      "op": "intervals"
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        511,
+        [
+         30.0,
+         20000.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1
+       ],
+       [
+        "error",
+        "Set message interval failed: ACK_TIMEOUT"
+       ],
+       [
+        "log",
+        "debug",
+        "SET_MESSAGE_INTERVAL msg 30: result -1"
+       ],
+       [
+        "send",
+        "request_data_stream_send",
+        [
+         1,
+         1,
+         2,
+         2,
+         1
+        ]
+       ],
+       [
+        "send",
+        "request_data_stream_send",
+        [
+         1,
+         1,
+         6,
+         10,
+         1
+        ]
+       ],
+       [
+        "send",
+        "request_data_stream_send",
+        [
+         1,
+         1,
+         10,
+         50,
+         1
+        ]
+       ],
+       [
+        "send",
+        "request_data_stream_send",
+        [
+         1,
+         1,
+         11,
+         10,
+         1
+        ]
+       ],
+       [
+        "send",
+        "request_data_stream_send",
+        [
+         1,
+         1,
+         12,
+         5,
+         1
+        ]
+       ],
+       [
+        "send",
+        "request_data_stream_send",
+        [
+         1,
+         1,
+         1,
+         5,
+         1
+        ]
+       ],
+       [
+        "send",
+        "request_data_stream_send",
+        [
+         1,
+         1,
+         3,
+         5,
+         1
+        ]
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        511,
+        [
+         33.0,
+         100000.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        511,
+        [
+         74.0,
+         100000.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1
+       ],
+       [
+        "error",
+        "Set message interval failed: ACK_TIMEOUT"
+       ],
+       [
+        "log",
+        "debug",
+        "SET_MESSAGE_INTERVAL msg 74: result -1"
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        511,
+        [
+         1.0,
+         1000000.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1
+       ],
+       [
+        "error",
+        "Set message interval failed: ACK_TIMEOUT"
+       ],
+       [
+        "log",
+        "debug",
+        "SET_MESSAGE_INTERVAL msg 1: result -1"
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        511,
+        [
+         24.0,
+         1000000.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        511,
+        [
+         242.0,
+         1000000.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1
+       ],
+       [
+        "error",
+        "Set message interval failed: ACK_TIMEOUT"
+       ],
+       [
+        "log",
+        "debug",
+        "SET_MESSAGE_INTERVAL msg 242: result -1"
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        511,
+        [
+         245.0,
+         1000000.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        511,
+        [
+         65.0,
+         200000.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        511,
+        [
+         147.0,
+         1000000.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        511,
+        [
+         42.0,
+         1000000.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1
+       ],
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        511,
+        [
+         2.0,
+         1000000.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1
+       ]
+      ]
+     },
+     {
+      "result": {
+       "request_sent": true
+      },
+      "events": []
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "intervals_link_torn_down",
+    "default_result": -2,
+    "steps": [
+     {
+      "op": "intervals"
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        511,
+        [
+         30.0,
+         20000.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1
+       ],
+       [
+        "error",
+        "Set message interval failed: DISCONNECTED"
+       ],
+       [
+        "log",
+        "debug",
+        "SET_MESSAGE_INTERVAL msg 30: result -2"
+       ]
+      ]
+     },
+     {
+      "result": {
+       "request_sent": false
+      },
+      "events": []
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "intervals_not_ready",
+    "ready": false,
+    "steps": [
+     {
+      "op": "intervals"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "error",
+        ""
+       ]
+      ]
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "intervals_radio_fallback",
+    "slow": true,
+    "default_result": 3,
+    "steps": [
+     {
+      "op": "intervals"
+     },
+     {
+      "op": "state"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        511,
+        [
+         30.0,
+         100000.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1
+       ],
+       [
+        "error",
+        "Set message interval failed: UNSUPPORTED"
+       ],
+       [
+        "log",
+        "debug",
+        "SET_MESSAGE_INTERVAL msg 30: result 3"
+       ],
+       [
+        "log",
+        "info",
+        "SET_MESSAGE_INTERVAL unsupported (msg 30), falling back to REQUEST_DATA_STREAM for this connection"
+       ],
+       [
+        "send",
+        "request_data_stream_send",
+        [
+         1,
+         1,
+         2,
+         2,
+         1
+        ]
+       ],
+       [
+        "send",
+        "request_data_stream_send",
+        [
+         1,
+         1,
+         6,
+         5,
+         1
+        ]
+       ],
+       [
+        "send",
+        "request_data_stream_send",
+        [
+         1,
+         1,
+         10,
+         10,
+         1
+        ]
+       ],
+       [
+        "send",
+        "request_data_stream_send",
+        [
+         1,
+         1,
+         11,
+         5,
+         1
+        ]
+       ],
+       [
+        "send",
+        "request_data_stream_send",
+        [
+         1,
+         1,
+         12,
+         2,
+         1
+        ]
+       ]
+      ]
+     },
+     {
+      "result": {
+       "request_sent": true
+      },
+      "events": []
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "set_interval_loud",
+    "steps": [
+     {
+      "op": "set_interval",
+      "id": 30,
+      "us": 20000,
+      "quiet": false
+     },
+     {
+      "op": "set_interval",
+      "id": 30,
+      "us": 20000,
+      "quiet": true
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": [
+       true,
+       0
+      ],
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        511,
+        [
+         30.0,
+         20000.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1
+       ],
+       [
+        "console",
+        "STREAM",
+        "Message 30 interval set to 20000 us",
+        "success"
+       ]
+      ]
+     },
+     {
+      "result": [
+       true,
+       0
+      ],
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        511,
+        [
+         30.0,
+         20000.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1
+       ]
+      ]
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "set_interval_refused",
+    "default_result": 2,
+    "steps": [
+     {
+      "op": "set_interval",
+      "id": 30,
+      "us": 20000,
+      "quiet": false
+     },
+     {
+      "op": "set_interval",
+      "id": 30,
+      "us": 20000,
+      "quiet": true
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": [
+       false,
+       2
+      ],
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        511,
+        [
+         30.0,
+         20000.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1
+       ],
+       [
+        "failure",
+        "Set message interval",
+        2
+       ]
+      ]
+     },
+     {
+      "result": [
+       false,
+       2
+      ],
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        511,
+        [
+         30.0,
+         20000.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1
+       ],
+       [
+        "error",
+        "Set message interval failed: DENIED"
+       ],
+       [
+        "log",
+        "debug",
+        "SET_MESSAGE_INTERVAL msg 30: result 2"
+       ]
+      ]
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "set_interval_odd_results",
+    "results": {
+     "30": 77
+    },
+    "steps": [
+     {
+      "op": "set_interval",
+      "id": 30,
+      "us": 20000,
+      "quiet": true
+     },
+     {
+      "op": "set_interval",
+      "id": 30,
+      "us": 20000,
+      "quiet": false
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": [
+       false,
+       77
+      ],
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        511,
+        [
+         30.0,
+         20000.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1
+       ],
+       [
+        "error",
+        "Set message interval failed: RESULT_77"
+       ],
+       [
+        "log",
+        "debug",
+        "SET_MESSAGE_INTERVAL msg 30: result 77"
+       ]
+      ]
+     },
+     {
+      "result": [
+       false,
+       77
+      ],
+      "events": [
+       [
+        "error",
+        ""
+       ],
+       [
+        "cmd",
+        511,
+        [
+         30.0,
+         20000.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ],
+        3.0,
+        1
+       ],
+       [
+        "failure",
+        "Set message interval",
+        77
+       ]
+      ]
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "set_interval_not_ready",
+    "ready": false,
+    "steps": [
+     {
+      "op": "set_interval",
+      "id": 30,
+      "us": 1,
+      "quiet": false
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": [
+       false,
+       -2
+      ],
+      "events": [
+       [
+        "error",
+        ""
+       ]
+      ]
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "home_request",
+    "steps": [
+     {
+      "op": "home"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "send",
+        "command_long_send",
+        [
+         1,
+         1,
+         512,
+         0,
+         242.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ]
+       ]
+      ]
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "home_request_without_a_link",
+    "no_connection": true,
+    "steps": [
+     {
+      "op": "home"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": []
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "home_request_fails",
+    "send_fails": true,
+    "steps": [
+     {
+      "op": "home"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "log",
+        "debug",
+        "HOME_POSITION request failed: boom"
+       ]
+      ]
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "version_request",
+    "steps": [
+     {
+      "op": "version"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "send",
+        "command_long_send",
+        [
+         1,
+         1,
+         512,
+         0,
+         148.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ]
+       ],
+       [
+        "send",
+        "command_long_send",
+        [
+         1,
+         1,
+         520,
+         0,
+         1.0,
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan",
+         "nan"
+        ]
+       ],
+       [
+        "send",
+        "autopilot_version_request_send",
+        [
+         1,
+         1
+        ]
+       ],
+       [
+        "call",
+        "schedule_version_retry"
+       ]
+      ]
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "version_request_without_a_link",
+    "no_connection": true,
+    "steps": [
+     {
+      "op": "version"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "schedule_version_retry"
+       ]
+      ]
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "version_request_fails",
+    "send_fails": true,
+    "steps": [
+     {
+      "op": "version"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "call",
+        "schedule_version_retry"
+       ]
+      ]
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "authority_px4_is_not_checked",
+    "params": {
+     "SYSID_MYGCS": 255
+    },
+    "steps": [
+     {
+      "op": "authority"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": []
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "authority_wrong",
+    "stack": "ardupilot",
+    "params": {
+     "SYSID_MYGCS": 255
+    },
+    "steps": [
+     {
+      "op": "authority"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "fetch",
+        [
+         "SYSID_MYGCS",
+         "MAV_GCS_SYSID"
+        ],
+        3.0
+       ],
+       [
+        "log",
+        "info",
+        "This vehicle only accepts stick input from ground station 255 (SYSID_MYGCS), and Corvus is 254, so the joystick will be ignored until SYSID_MYGCS is set to 254 in Parameters. Flight commands and mode changes are unaffected."
+       ],
+       [
+        "console",
+        "JOYSTICK",
+        "This vehicle only accepts stick input from ground station 255 (SYSID_MYGCS), and Corvus is 254, so the joystick will be ignored until SYSID_MYGCS is set to 254 in Parameters. Flight commands and mode changes are unaffected.",
+        "warning"
+       ],
+       [
+        "warning",
+        "This vehicle only accepts stick input from ground station 255 (SYSID_MYGCS), and Corvus is 254, so the joystick will be ignored until SYSID_MYGCS is set to 254 in Parameters. Flight commands and mode changes are unaffected.",
+        "warning"
+       ]
+      ]
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "authority_wrong_newer_name",
+    "stack": "ardupilot",
+    "params": {
+     "MAV_GCS_SYSID": 255.0
+    },
+    "steps": [
+     {
+      "op": "authority"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "fetch",
+        [
+         "SYSID_MYGCS",
+         "MAV_GCS_SYSID"
+        ],
+        3.0
+       ],
+       [
+        "log",
+        "info",
+        "This vehicle only accepts stick input from ground station 255 (MAV_GCS_SYSID), and Corvus is 254, so the joystick will be ignored until MAV_GCS_SYSID is set to 254 in Parameters. Flight commands and mode changes are unaffected."
+       ],
+       [
+        "console",
+        "JOYSTICK",
+        "This vehicle only accepts stick input from ground station 255 (MAV_GCS_SYSID), and Corvus is 254, so the joystick will be ignored until MAV_GCS_SYSID is set to 254 in Parameters. Flight commands and mode changes are unaffected.",
+        "warning"
+       ],
+       [
+        "warning",
+        "This vehicle only accepts stick input from ground station 255 (MAV_GCS_SYSID), and Corvus is 254, so the joystick will be ignored until MAV_GCS_SYSID is set to 254 in Parameters. Flight commands and mode changes are unaffected.",
+        "warning"
+       ]
+      ]
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "authority_right",
+    "stack": "ardupilot",
+    "params": {
+     "SYSID_MYGCS": 254
+    },
+    "steps": [
+     {
+      "op": "authority"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "fetch",
+        [
+         "SYSID_MYGCS",
+         "MAV_GCS_SYSID"
+        ],
+        3.0
+       ]
+      ]
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "authority_rounds",
+    "stack": "ardupilot",
+    "params": {
+     "SYSID_MYGCS": 254.4
+    },
+    "steps": [
+     {
+      "op": "authority"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "fetch",
+        [
+         "SYSID_MYGCS",
+         "MAV_GCS_SYSID"
+        ],
+        3.0
+       ]
+      ]
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "authority_first_name_wins",
+    "stack": "ardupilot",
+    "params": {
+     "SYSID_MYGCS": 254,
+     "MAV_GCS_SYSID": 255
+    },
+    "steps": [
+     {
+      "op": "authority"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "fetch",
+        [
+         "SYSID_MYGCS",
+         "MAV_GCS_SYSID"
+        ],
+        3.0
+       ]
+      ]
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "authority_no_answer",
+    "stack": "ardupilot",
+    "params": {},
+    "steps": [
+     {
+      "op": "authority"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": [
+       [
+        "fetch",
+        [
+         "SYSID_MYGCS",
+         "MAV_GCS_SYSID"
+        ],
+        3.0
+       ]
+      ]
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "authority_not_ready",
+    "stack": "ardupilot",
+    "ready": false,
+    "params": {
+     "SYSID_MYGCS": 255
+    },
+    "steps": [
+     {
+      "op": "authority"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": []
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "signing_off",
+    "signing": {
+     "none": true
+    },
+    "steps": [
+     {
+      "op": "signing"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": "ok",
+      "events": []
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "signing_on",
+    "signing": {
+     "key": "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
+    },
+    "steps": [
+     {
+      "op": "signing"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": "ok",
+      "events": [
+       [
+        "setup_signing",
+        "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
+        true,
+        true
+       ],
+       [
+        "log",
+        "info",
+        "MAVLink 2 signing enabled for udp:127.0.0.1:14550"
+       ],
+       [
+        "console",
+        "LINK",
+        "MAVLink signing enabled",
+        "success"
+       ]
+      ]
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "signing_switches_to_mavlink2_first",
+    "wire": "1.0",
+    "signing": {
+     "key": "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
+    },
+    "steps": [
+     {
+      "op": "signing"
+     },
+     {
+      "op": "signing"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": "ok",
+      "events": [
+       [
+        "switch_to_mavlink2",
+        "fd"
+       ],
+       [
+        "setup_signing",
+        "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
+        true,
+        true
+       ],
+       [
+        "log",
+        "info",
+        "MAVLink 2 signing enabled for udp:127.0.0.1:14550"
+       ],
+       [
+        "console",
+        "LINK",
+        "MAVLink signing enabled",
+        "success"
+       ]
+      ]
+     },
+     {
+      "result": "ok",
+      "events": [
+       [
+        "setup_signing",
+        "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
+        true,
+        true
+       ],
+       [
+        "log",
+        "info",
+        "MAVLink 2 signing enabled for udp:127.0.0.1:14550"
+       ],
+       [
+        "console",
+        "LINK",
+        "MAVLink signing enabled",
+        "success"
+       ]
+      ]
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "signing_key_unusable",
+    "signing": {
+     "error": "OSError",
+     "message": "no such file"
+    },
+    "steps": [
+     {
+      "op": "signing"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": "connection error: MAVLink signing key unusable: no such file",
+      "events": [
+       [
+        "log",
+        "error",
+        "MAVLink signing key unusable: no such file"
+       ],
+       [
+        "update",
+        {
+         "link_error": "MAVLink signing key unusable: no such file"
+        }
+       ]
+      ]
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "signing_key_wrong",
+    "signing": {
+     "error": "ValueError",
+     "message": "key must be 32 bytes"
+    },
+    "steps": [
+     {
+      "op": "signing"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": "connection error: MAVLink signing key unusable: key must be 32 bytes",
+      "events": [
+       [
+        "log",
+        "error",
+        "MAVLink signing key unusable: key must be 32 bytes"
+       ],
+       [
+        "update",
+        {
+         "link_error": "MAVLink signing key unusable: key must be 32 bytes"
+        }
+       ]
+      ]
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "signing_cannot_switch",
+    "wire": "1.0",
+    "switch_fails": true,
+    "signing": {
+     "key": "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
+    },
+    "steps": [
+     {
+      "op": "signing"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": "connection error: MAVLink signing could not be enabled: no v2 dialect",
+      "events": [
+       [
+        "log",
+        "error",
+        "MAVLink signing could not be enabled: no v2 dialect"
+       ],
+       [
+        "update",
+        {
+         "link_error": "MAVLink signing could not be enabled: no v2 dialect"
+        }
+       ]
+      ]
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "signing_cannot_be_set_up",
+    "setup_fails": true,
+    "signing": {
+     "key": "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
+    },
+    "steps": [
+     {
+      "op": "signing"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": "connection error: MAVLink signing could not be enabled: signing unsupported",
+      "events": [
+       [
+        "log",
+        "error",
+        "MAVLink signing could not be enabled: signing unsupported"
+       ],
+       [
+        "update",
+        {
+         "link_error": "MAVLink signing could not be enabled: signing unsupported"
+        }
+       ]
+      ]
+     }
+    ],
+    "final": {}
+   }
+  }
+ ]
+}

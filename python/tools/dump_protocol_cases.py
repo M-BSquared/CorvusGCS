@@ -3496,6 +3496,232 @@ def status_cases() -> list[dict]:
     return out
 
 
+# ------------------------------------------------------------- requests ----
+
+class RequestsMav:
+    def __init__(self, bridge) -> None:
+        self.bridge = bridge
+
+    def __getattr__(self, method):
+        def call(*args):
+            if self.bridge.sc.get("send_fails") in (method, True):
+                raise OSError("boom")
+            self.bridge.log.append(["send", method, list(args)])
+        return call
+
+
+def requests_bridge_class():
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
+    from corvus import autopilot as ap
+    from tests.reference import mavlink_bridge_requests_python as rq
+
+    class RequestsBridge(rq.RequestMixin):
+        _MSG_ID_HOME_POSITION = 242
+        _MSG_ID_AUTOPILOT_VERSION = 148
+        _GCS_AUTHORITY_PARAMS = ("SYSID_MYGCS", "MAV_GCS_SYSID")
+
+        def __init__(self, sc: dict) -> None:
+            self.sc = sc
+            self.log: list = []
+            self.counts: dict = {}
+            self._operation_lock = FlightLock()
+            self._send_lock = FlightSendLockPlain()
+            self._conn = None if sc.get("no_connection") else RequestsConn(self)
+            self._target_system = 1
+            self._target_component = 1
+            self._dialect = ap.dialect_for_stack(sc.get("stack", "px4"))
+            self._request_sent = sc.get("request_sent", False)
+            self._conn_str = sc.get("conn_str", "udp:127.0.0.1:14550")
+            self._store = type("Store", (), {"update": lambda s, **f: self.log.append(["update", f])})()
+
+        def _is_slow_link(self) -> bool:
+            return self.sc.get("slow", False)
+
+        def _connection_ready(self) -> bool:
+            return self.sc.get("ready", True)
+
+        def _set_command_error(self, text) -> None:
+            self.log.append(["error", text])
+
+        def _console_publish(self, name, text, level) -> None:
+            self.log.append(["console", name, text, level])
+
+        def _store_update_warning(self, text, level, event=None) -> None:
+            self.log.append(["warning", text, level])
+
+        def _command_failure(self, action, result) -> bool:
+            self.log.append(["failure", action, result])
+            return False
+
+        def _send_command_and_wait(self, command, params=None, timeout=3.0, retries=2, accept_in_progress=False,
+                                   interim=frozenset()):
+            self.log.append(["cmd", command, list(params), timeout, retries])
+            key = str(int(params[0])) if command == 511 else str(command)
+            plan = self.sc.get("results", {}).get(key, self.sc.get("default_result", 0))
+            if isinstance(plan, list):
+                n = self.counts.get(key, 0)
+                self.counts[key] = n + 1
+                return plan[min(n, len(plan) - 1)]
+            return plan
+
+        def fetch_params(self, names, timeout=3.0):
+            self.log.append(["fetch", list(names), timeout])
+            return {n: v for n, v in self.sc.get("params", {}).items() if n in names}
+
+        def _schedule_version_retry(self) -> None:
+            self.log.append(["call", "schedule_version_retry"])
+
+    class FlightSendLockPlain:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    class RequestsConn:
+        def __init__(self, bridge) -> None:
+            self.bridge = bridge
+            self.mav = RequestsMav(bridge)
+            self.WIRE_PROTOCOL_VERSION = bridge.sc.get("wire", "2.0")
+
+        def auto_mavlink_version(self, first):
+            if self.bridge.sc.get("switch_fails"):
+                raise RuntimeError("no v2 dialect")
+            self.bridge.log.append(["switch_to_mavlink2", first.hex()])
+            self.WIRE_PROTOCOL_VERSION = "2.0"
+
+        def setup_signing(self, key, sign_outgoing=False, allow_unsigned_callback=None):
+            if self.bridge.sc.get("setup_fails"):
+                raise RuntimeError("signing unsupported")
+            self.bridge.log.append(["setup_signing", key.hex(), sign_outgoing,
+                                    allow_unsigned_callback is rq._allow_unsigned_signed_link])
+
+    return RequestsBridge, rq
+
+
+def requests_scenarios() -> list[dict]:
+    AP = {"stack": "ardupilot"}
+    key = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
+    return [
+        {"name": "tables", "steps": [{"op": "tables", "slow": s} for s in (False, True)]},
+        {"name": "streams_sent_once", "steps": [{"op": "streams"}, {"op": "streams"}, {"op": "state"}]},
+        {"name": "streams_on_a_radio", "slow": True, "steps": [{"op": "streams"}, {"op": "state"}]},
+        {"name": "streams_already_sent", "request_sent": True, "steps": [{"op": "streams"}]},
+        {"name": "streams_without_a_link", "no_connection": True, "steps": [{"op": "streams"}, {"op": "state"}]},
+        {"name": "streams_fail_one_by_one", "send_fails": "request_data_stream_send", "steps": [{"op": "streams"}, {"op": "state"}]},
+        {"name": "intervals_accepted", "steps": [{"op": "intervals"}]},
+        {"name": "intervals_on_a_radio", "slow": True, "steps": [{"op": "intervals"}]},
+        {"name": "intervals_denied_for_one_message", "results": {"242": 2, "24": 2}, "steps": [{"op": "intervals"}, {"op": "state"}]},
+        {"name": "intervals_unsupported_falls_back", "default_result": 3, "steps": [{"op": "intervals"}, {"op": "state"}]},
+        {"name": "intervals_unsupported_later", "results": {"1": 3, "30": 0, "33": 0, "74": 0}, "steps": [{"op": "intervals"}]},
+        {"name": "intervals_without_acks_give_up", "default_result": -1, "steps": [{"op": "intervals"}, {"op": "state"}]},
+        {"name": "intervals_silence_then_answers", "results": {"30": -1, "33": 0, "74": -1, "1": -1, "24": 0, "242": -1, "245": 0},
+         "steps": [{"op": "intervals"}, {"op": "state"}]},
+        {"name": "intervals_link_torn_down", "default_result": -2, "steps": [{"op": "intervals"}, {"op": "state"}]},
+        {"name": "intervals_not_ready", "ready": False, "steps": [{"op": "intervals"}]},
+        {"name": "intervals_radio_fallback", "slow": True, "default_result": 3, "steps": [{"op": "intervals"}, {"op": "state"}]},
+        {"name": "set_interval_loud", "steps": [
+            {"op": "set_interval", "id": 30, "us": 20000, "quiet": False}, {"op": "set_interval", "id": 30, "us": 20000, "quiet": True}]},
+        {"name": "set_interval_refused", "default_result": 2, "steps": [
+            {"op": "set_interval", "id": 30, "us": 20000, "quiet": False}, {"op": "set_interval", "id": 30, "us": 20000, "quiet": True}]},
+        {"name": "set_interval_odd_results", "results": {"30": 77}, "steps": [
+            {"op": "set_interval", "id": 30, "us": 20000, "quiet": True}, {"op": "set_interval", "id": 30, "us": 20000, "quiet": False}]},
+        {"name": "set_interval_not_ready", "ready": False, "steps": [{"op": "set_interval", "id": 30, "us": 1, "quiet": False}]},
+        {"name": "home_request", "steps": [{"op": "home"}]},
+        {"name": "home_request_without_a_link", "no_connection": True, "steps": [{"op": "home"}]},
+        {"name": "home_request_fails", "send_fails": True, "steps": [{"op": "home"}]},
+        {"name": "version_request", "steps": [{"op": "version"}]},
+        {"name": "version_request_without_a_link", "no_connection": True, "steps": [{"op": "version"}]},
+        {"name": "version_request_fails", "send_fails": True, "steps": [{"op": "version"}]},
+        {"name": "authority_px4_is_not_checked", "params": {"SYSID_MYGCS": 255}, "steps": [{"op": "authority"}]},
+        {"name": "authority_wrong", **AP, "params": {"SYSID_MYGCS": 255}, "steps": [{"op": "authority"}]},
+        {"name": "authority_wrong_newer_name", **AP, "params": {"MAV_GCS_SYSID": 255.0}, "steps": [{"op": "authority"}]},
+        {"name": "authority_right", **AP, "params": {"SYSID_MYGCS": 254}, "steps": [{"op": "authority"}]},
+        {"name": "authority_rounds", **AP, "params": {"SYSID_MYGCS": 254.4}, "steps": [{"op": "authority"}]},
+        {"name": "authority_first_name_wins", **AP, "params": {"SYSID_MYGCS": 254, "MAV_GCS_SYSID": 255}, "steps": [{"op": "authority"}]},
+        {"name": "authority_no_answer", **AP, "params": {}, "steps": [{"op": "authority"}]},
+        {"name": "authority_not_ready", **AP, "ready": False, "params": {"SYSID_MYGCS": 255}, "steps": [{"op": "authority"}]},
+        {"name": "signing_off", "signing": {"none": True}, "steps": [{"op": "signing"}]},
+        {"name": "signing_on", "signing": {"key": key}, "steps": [{"op": "signing"}]},
+        {"name": "signing_switches_to_mavlink2_first", "wire": "1.0", "signing": {"key": key}, "steps": [{"op": "signing"}, {"op": "signing"}]},
+        {"name": "signing_key_unusable", "signing": {"error": "OSError", "message": "no such file"}, "steps": [{"op": "signing"}]},
+        {"name": "signing_key_wrong", "signing": {"error": "ValueError", "message": "key must be 32 bytes"}, "steps": [{"op": "signing"}]},
+        {"name": "signing_cannot_switch", "wire": "1.0", "switch_fails": True, "signing": {"key": key}, "steps": [{"op": "signing"}]},
+        {"name": "signing_cannot_be_set_up", "setup_fails": True, "signing": {"key": key}, "steps": [{"op": "signing"}]},
+    ]
+
+
+def requests_cases() -> list[dict]:
+    import logging
+
+    RequestsBridge, rq = requests_bridge_class()
+    out = []
+    for sc in requests_scenarios():
+        br = RequestsBridge(sc)
+
+        class Capture(logging.Handler):
+            def emit(self, record):
+                br.log.append(["log", record.levelname.lower(), record.getMessage()])
+
+        handler = Capture()
+        logger = logging.getLogger("corvus.mavlink")
+        logger.addHandler(handler)
+        old_level = logger.level
+        logger.setLevel(logging.DEBUG)
+
+        saved = rq._load_signing_key
+        spec = sc.get("signing", {})
+
+        def load_key(spec=spec):
+            if spec.get("error"):
+                raise {"OSError": OSError, "ValueError": ValueError}[spec["error"]](spec["message"])
+            if spec.get("key"):
+                return bytes.fromhex(spec["key"])
+            return None
+
+        rq._load_signing_key = load_key
+        results = []
+        try:
+            for step in sc["steps"]:
+                before = len(br.log)
+                op = step["op"]
+                result = None
+                if op == "tables":
+                    br.sc["slow"] = step["slow"]
+                    result = {"streams": [[k, v] for k, v in br._stream_rates().items()],
+                              "intervals": [[k, v] for k, v in br._message_intervals().items()]}
+                elif op == "streams":
+                    br._request_streams()
+                elif op == "intervals":
+                    br._request_message_intervals()
+                elif op == "set_interval":
+                    ok, code = br._set_message_interval(step["id"], step["us"], quiet=step["quiet"])
+                    result = [ok, code]
+                elif op == "home":
+                    br._request_home()
+                elif op == "version":
+                    br._request_version()
+                elif op == "authority":
+                    br._check_gcs_authority()
+                elif op == "signing":
+                    try:
+                        br._apply_signing()
+                        result = "ok"
+                    except ConnectionError as exc:
+                        result = f"connection error: {exc}"
+                elif op == "state":
+                    result = {"request_sent": br._request_sent}
+                else:
+                    raise SystemExit(op)
+                results.append({"result": result, "events": br.log[before:]})
+        finally:
+            rq._load_signing_key = saved
+            logger.removeHandler(handler)
+            logger.setLevel(old_level)
+        out.append({"scenario": clean(sc), "expected": clean({"steps": results, "final": {}})})
+    return out
+
+
 COMMANDS = {"params_cases.json": cases, "logs_cases.json": logs_cases, "shell_cases.json": shell_cases,
             "ftp_cases.json": ftp_cases, "flight_cases.json": flight_cases,
             "setup_cases.json": setup_cases,
@@ -3503,7 +3729,8 @@ COMMANDS = {"params_cases.json": cases, "logs_cases.json": logs_cases, "shell_ca
             "missions_cases.json": mission_cases,
             "remote_id_cases.json": rid_cases,
             "receive_cases.json": receive_cases,
-            "status_cases.json": status_cases}
+            "status_cases.json": status_cases,
+            "requests_cases.json": requests_cases}
 
 
 def main(argv: list[str]) -> int:
