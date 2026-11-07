@@ -22,6 +22,7 @@ struct Vehicle {
     thread: Option<std::thread::JoinHandle<()>>,
     armed: Arc<AtomicBool>,
     commands: Arc<Mutex<Vec<i64>>>,
+    received: Arc<Mutex<Vec<String>>>,
 }
 
 impl Vehicle {
@@ -29,7 +30,13 @@ impl Vehicle {
         let stop = Arc::new(AtomicBool::new(false));
         let armed = Arc::new(AtomicBool::new(false));
         let commands = Arc::new(Mutex::new(Vec::new()));
-        let (s, a, c) = (Arc::clone(&stop), Arc::clone(&armed), Arc::clone(&commands));
+        let received = Arc::new(Mutex::new(Vec::<String>::new()));
+        let (s, a, c, seen) = (
+            Arc::clone(&stop),
+            Arc::clone(&armed),
+            Arc::clone(&commands),
+            Arc::clone(&received),
+        );
         let thread = std::thread::spawn(move || {
             let opts = Options {
                 source_system: 1,
@@ -78,6 +85,51 @@ impl Vehicle {
                 };
                 for r in frames {
                     let Ok(msg) = r.message else { continue };
+                    seen.lock().unwrap().push(msg.name().to_string());
+                    match msg.name() {
+                        "PARAM_REQUEST_LIST" => {
+                            for (i, (name, value)) in
+                                [("BAT1_N_CELLS", 4.0f64), ("MPC_XY_VEL_MAX", 12.0)].iter().enumerate()
+                            {
+                                let mut id = name.as_bytes().to_vec();
+                                id.resize(16, 0);
+                                let pv = Message::named("PARAM_VALUE", Wire::V2)
+                                    .unwrap()
+                                    .with("param_id", Value::Bytes(id))
+                                    .with("param_value", Value::Float(*value))
+                                    .with("param_type", int(9))
+                                    .with("param_count", int(2))
+                                    .with("param_index", int(i as i64));
+                                let _ = conn.send(&pv);
+                            }
+                        }
+                        "MISSION_COUNT" => {
+                            let request = Message::named("MISSION_REQUEST_INT", Wire::V2)
+                                .unwrap()
+                                .with("target_system", int(254))
+                                .with("target_component", int(190))
+                                .with("seq", int(0));
+                            let _ = conn.send(&request);
+                        }
+                        "MISSION_ITEM_INT" => {
+                            let seq = msg.get("seq").and_then(Value::as_i64).unwrap();
+                            let reply = if seq + 1 < 2 {
+                                Message::named("MISSION_REQUEST_INT", Wire::V2)
+                                    .unwrap()
+                                    .with("target_system", int(254))
+                                    .with("target_component", int(190))
+                                    .with("seq", int(seq + 1))
+                            } else {
+                                Message::named("MISSION_ACK", Wire::V2)
+                                    .unwrap()
+                                    .with("target_system", int(254))
+                                    .with("target_component", int(190))
+                                    .with("type", int(0))
+                            };
+                            let _ = conn.send(&reply);
+                        }
+                        _ => {}
+                    }
                     if msg.name() != "COMMAND_LONG" {
                         continue;
                     }
@@ -99,6 +151,7 @@ impl Vehicle {
             thread: Some(thread),
             armed,
             commands,
+            received,
         }
     }
 }
@@ -212,6 +265,91 @@ fn the_bridge_can_be_stopped_and_started_again() {
     wait_for("the vehicle again", Duration::from_secs(15), || {
         store.get("connected").is_some_and(|v| v == true)
     });
+    bridge.stop();
+    drop(vehicle);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn the_other_protocols_run_on_the_same_link() {
+    use corvus_core::protocol::missions::PlanItem;
+
+    let port = free_port();
+    let dir = std::env::temp_dir().join(format!("corvus-bridge-protocols-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let store = Arc::new(VehicleStateStore::new());
+    let bridge = Bridge::new(
+        Arc::clone(&store),
+        BridgeConfig::new(&format!("udp:127.0.0.1:{port}"), dir.join("logs")),
+    );
+    bridge.start();
+    let vehicle = Vehicle::start(port);
+    wait_for("the vehicle", Duration::from_secs(15), || {
+        store.get("connected").is_some_and(|v| v == true)
+    });
+
+    assert!(bridge.request_param_list());
+    wait_for("the parameters", Duration::from_secs(10), || bridge.params().len() == 2);
+    let names: Vec<String> = bridge.params().iter().map(|e| e.name.clone()).collect();
+    assert!(names.contains(&"BAT1_N_CELLS".to_string()) && names.contains(&"MPC_XY_VEL_MAX".to_string()));
+
+    let plan = vec![
+        PlanItem {
+            command: 22,
+            lat: 48.1,
+            lon: 11.5,
+            alt: 20.0,
+            params: vec![0.0; 4],
+            item: Some(0),
+        },
+        PlanItem {
+            command: 16,
+            lat: 48.2,
+            lon: 11.6,
+            alt: 30.0,
+            params: vec![0.0; 4],
+            item: Some(1),
+        },
+    ];
+    assert!(
+        bridge.upload_mission_plan(&plan),
+        "the handshake ends in an accepted mission"
+    );
+    assert!(
+        vehicle
+            .received
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|n| *n == "MISSION_ITEM_INT")
+            .count()
+            >= 2
+    );
+
+    bridge.set_remote_id(Some(&serde_json::json!({
+        "enabled": true,
+        "basic_id": {"id_type": 1, "ua_type": 2, "uas_id": "ABC123"},
+    })));
+    let end = Instant::now() + Duration::from_secs(5);
+    while Instant::now() < end
+        && !vehicle
+            .received
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|n| n == "OPEN_DRONE_ID_BASIC_ID")
+    {
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    let seen: Vec<String> = vehicle.received.lock().unwrap().clone();
+    assert!(
+        seen.iter().any(|n| n == "OPEN_DRONE_ID_BASIC_ID"),
+        "Remote ID reached the vehicle: {} (saw {:?})",
+        bridge.remote_id_status(),
+        &seen[seen.len().saturating_sub(12)..]
+    );
+    assert_eq!(bridge.remote_id_status()["enabled"], true);
+
     bridge.stop();
     drop(vehicle);
     let _ = std::fs::remove_dir_all(&dir);

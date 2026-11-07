@@ -8,12 +8,11 @@
 //! GCS heartbeat and the two deferred one shot workers, and `stop` joins every
 //! one of them, so a rebooted field laptop never meets a zombie.
 //!
-//! Wired so far: the receive path and command transaction, status text and the
-//! kill switch, the bridge's own requests and signing, telemetry, the RTCM
-//! injection, the tlog, and the flight commands. Not wired yet, each a
-//! callback that does nothing: parameters, missions, FTP, logs, shell, setup
-//! and Remote ID (their engines exist in `protocol` and plug into the same
-//! host), the vehicle list, the forwarder and auto connect.
+//! Wired: the receive path and command transaction, status text and the kill
+//! switch, the bridge's own requests and signing, telemetry, the RTCM
+//! injection, the tlog, the flight commands, parameters, missions and the
+//! geofence, FTP, logs, shell, setup and Remote ID. Not wired yet: the vehicle
+//! list, the forwarder, auto connect and the planner behind `mission.py`.
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
@@ -160,6 +159,7 @@ pub struct Shared {
     rtcm: RtcmInjector,
     tlog: TlogSession,
     flight: FlightEngine,
+    engines: Engines,
 }
 
 /// One link to one vehicle.
@@ -211,6 +211,7 @@ impl Bridge {
                 rtcm: RtcmInjector::new(),
                 tlog: TlogSession::new(),
                 flight: FlightEngine::new(),
+                engines: Engines::new(),
             }),
         }
     }
@@ -252,6 +253,7 @@ impl Bridge {
         sh.stop_event.store(true, Ordering::SeqCst);
         sh.tlog.stop_tlog(sh.as_ref());
         sh.store.update([("link_status", json!("disconnected"))]);
+        sh.engines.shell.stop(sh.as_ref());
         // Mark the vehicle disconnected so every in-flight command bails.
         sh.store.set_disconnected();
         ReceiveHost::cancel_mission_upload(sh.as_ref());
@@ -260,6 +262,7 @@ impl Bridge {
             conn.close();
             sh.generation.fetch_add(1, Ordering::SeqCst);
         }
+        self.join_workers();
         let mut threads = sh.threads.lock().unwrap_or_else(|e| e.into_inner());
         join_bounded(threads.version_retry.take(), Duration::from_secs(2));
         join_bounded(threads.intervals.take(), Duration::from_secs(2));
@@ -542,6 +545,11 @@ impl Shared {
             st.position_home_alt = None;
         }
         self.status.forget_link();
+        self.engines.params.reset();
+        self.engines.shell.reset();
+        self.engines.remote_id.forget_session();
+        self.engines.missions.forget_link();
+        self.engines.missions.forget_vehicle_mission(self.as_ref(), "");
         self.store.update([("prearm_reasons", json!([]))]);
         // Forget the displayed home with the altitude reference: a home marker
         // has to be something the aircraft said in this session or nothing.
@@ -759,6 +767,8 @@ impl Shared {
                             component: i64::from(r.frame.compid),
                             raw: Some(&r.frame.raw),
                         };
+                        *self.engines.rx_source.lock().unwrap_or_else(|e| e.into_inner()) =
+                            (frame.system, frame.component);
                         self.receive.process_frame(self.as_ref(), &frame);
                     }
                 }
@@ -821,6 +831,14 @@ impl Shared {
                 continue;
             }
             self.send_gcs_heartbeat();
+            // Remote ID rides the heartbeat: both stacks want the identity at
+            // about 1 Hz and fail the pre-arm check when it stops, which is this
+            // loop's cadence and lifetime, and a second worker would be a
+            // second thing to join. The vehicle must be known: the identity is
+            // addressed to it.
+            if self.store.get("connected").is_some_and(|v| v.as_bool() == Some(true)) {
+                self.engines.remote_id.send_remote_id(self);
+            }
             self.interruptible_sleep(1.0);
         }
     }
@@ -1409,14 +1427,30 @@ impl ReceiveHost for Shared {
         self.tlog.write_tlog(frame.raw);
     }
     fn record_scope(&self, _frame: &Frame) {}
-    fn handle_autotune_ack(&self, _result: i64, _progress: i64) {}
-    fn handle_mission_request(&self, _msg: &Message, _as_int: bool) {}
-    fn handle_mission_ack(&self, _msg: &Message) {}
-    fn handle_mission_count(&self, _msg: &Message) {}
-    fn handle_mission_item(&self, _msg: &Message, _as_int: bool) {}
-    fn handle_mission_current(&self, _msg: &Message) {}
-    fn handle_mission_item_reached(&self, _msg: &Message) {}
-    fn handle_serial_control(&self, _msg: &Message) {}
+    fn handle_autotune_ack(&self, result: i64, progress: i64) {
+        self.engines.setup.handle_autotune_ack(self, result, progress);
+    }
+    fn handle_mission_request(&self, msg: &Message, as_int: bool) {
+        self.engines.missions.handle_mission_request(self, msg, as_int);
+    }
+    fn handle_mission_ack(&self, msg: &Message) {
+        self.engines.missions.handle_mission_ack(self, msg);
+    }
+    fn handle_mission_count(&self, msg: &Message) {
+        self.engines.missions.handle_mission_count(self, msg);
+    }
+    fn handle_mission_item(&self, msg: &Message, as_int: bool) {
+        self.engines.missions.handle_mission_item(self, msg, as_int);
+    }
+    fn handle_mission_current(&self, msg: &Message) {
+        self.engines.missions.handle_mission_current(self, msg);
+    }
+    fn handle_mission_item_reached(&self, msg: &Message) {
+        self.engines.missions.handle_mission_item_reached(self, msg);
+    }
+    fn handle_serial_control(&self, msg: &Message) {
+        self.engines.shell.handle(self, msg);
+    }
     fn handle_radio_status(&self, msg: &Message) {
         self.telemetry.handle_radio_status(self, msg);
     }
@@ -1426,7 +1460,9 @@ impl ReceiveHost for Shared {
             Payload::Unknown { data, .. } => self.telemetry.handle_gnss_integrity_frame(self, data),
         }
     }
-    fn handle_remote_id_arm_status(&self, _msg: &Message) {}
+    fn handle_remote_id_arm_status(&self, msg: &Message) {
+        self.engines.remote_id.handle_arm_status(msg);
+    }
     fn handle_battery_status(&self, msg: &Message) {
         self.telemetry.handle_battery_status(self, msg);
     }
@@ -1442,8 +1478,19 @@ impl ReceiveHost for Shared {
             },
         );
     }
-    fn handle_param_value(&self, _msg: &Message) {}
-    fn handle_ftp_message(&self, _msg: &Message) {}
+    fn handle_param_value(&self, msg: &Message) {
+        self.engines.params.handle_param_value(self, msg, None);
+    }
+    fn handle_ftp_message(&self, msg: &Message) {
+        let get = |k: &str| msg.get(k).and_then(Wv::as_i64).unwrap_or(0) as u8;
+        let payload: Vec<u8> = match msg.get("payload") {
+            Some(Wv::Array(items)) => items.iter().filter_map(Wv::as_i64).map(|v| v as u8).collect(),
+            _ => Vec::new(),
+        };
+        self.engines
+            .ftp
+            .handle_message(self, get("target_system"), get("target_component"), &payload);
+    }
     fn handle_rc_channels(&self, msg: &Message, raw: bool) {
         self.telemetry.handle_rc_channels(self, msg, raw);
     }
@@ -1486,7 +1533,9 @@ impl ReceiveHost for Shared {
             self.tlog.roll_tlog_on_disarm(&(me as Arc<dyn TlogHost>), armed);
         }
     }
-    fn reset_parameter_cache(&self) {}
+    fn reset_parameter_cache(&self) {
+        self.engines.params.reset();
+    }
     fn reset_param_metadata(&self) {}
     fn set_request_sent(&self, sent: bool) {
         self.st().request_sent = sent;
@@ -1508,7 +1557,538 @@ impl ReceiveHost for Shared {
             me.schedule_message_intervals();
         }
     }
-    fn cancel_mission_upload(&self) {}
+    fn cancel_mission_upload(&self) {
+        self.engines.missions.cancel_upload();
+    }
+}
+
+// ---------------------------------------------------- the other protocols
+
+use crate::protocol::ftp::{Cancel, FtpEngine, FtpError, FtpHost, FtpLimits};
+use crate::protocol::logs::LogEngine;
+use crate::protocol::missions::{ConsoleSub, DownloadedItem, MissionEngine, MissionHost, PlanItem};
+use crate::protocol::params::{Entry, ParamEngine, ParamHost, Status};
+use crate::protocol::remote_id::{RemoteIdEngine, RemoteIdHost};
+use crate::protocol::setup::{SetupEngine, SetupHost};
+use crate::protocol::shell::{ShellEngine, ShellHost, ShellLimits};
+use crate::protocol::RequestHost;
+
+type ParamListener = Box<dyn Fn(&Status) + Send + Sync>;
+
+/// The engines of the protocols that are not part of the receive path proper.
+pub struct Engines {
+    pub params: Arc<ParamEngine>,
+    pub logs: LogEngine,
+    pub shell: ShellEngine,
+    pub ftp: FtpEngine,
+    pub missions: MissionEngine,
+    pub setup: SetupEngine,
+    pub remote_id: RemoteIdEngine,
+    param_listeners: Mutex<Vec<ParamListener>>,
+    watchdog: Mutex<Option<JoinHandle<()>>>,
+    rx_source: Mutex<(i64, i64)>,
+}
+
+impl Engines {
+    fn new() -> Engines {
+        Engines {
+            params: Arc::new(ParamEngine::new()),
+            logs: LogEngine::new(),
+            shell: ShellEngine::new(ShellLimits {
+                line_max_chars: 8192,
+                backlog_chars: 65_536,
+                write_max_chars: 4096,
+            }),
+            ftp: FtpEngine::new(FtpLimits::default()),
+            missions: MissionEngine::new(),
+            setup: SetupEngine::new(),
+            remote_id: RemoteIdEngine::new(),
+            param_listeners: Mutex::new(Vec::new()),
+            watchdog: Mutex::new(None),
+            rx_source: Mutex::new((0, 0)),
+        }
+    }
+}
+
+impl Shared {
+    /// Is this frame addressed to us from the vehicle we talk to? The source of
+    /// the frame being dispatched is the one the receive thread noted.
+    fn frame_is_for_us(&self, msg: &Message) -> bool {
+        if self.conn().is_none() {
+            return false;
+        }
+        let (system, component) = *self.engines.rx_source.lock().unwrap_or_else(|e| e.into_inner());
+        let target = self.st().target;
+        if system != 0 && system != i64::from(target.0) {
+            return false;
+        }
+        if component != 0 && component != i64::from(target.1) {
+            return false;
+        }
+        let get = |k: &str| msg.get(k).and_then(Wv::as_i64).unwrap_or(0);
+        let (to_system, to_component) = (get("target_system"), get("target_component"));
+        let (mine_system, mine_component) = (i64::from(GCS_SYSTEM_ID), i64::from(GCS_COMPONENT_ID));
+        !(to_system != 0 && to_system != mine_system) && !(to_component != 0 && to_component != mine_component)
+    }
+}
+
+impl RequestHost for Shared {
+    fn connection_ready(&self) -> bool {
+        self.link_ready()
+    }
+    fn armed(&self) -> bool {
+        self.store.get("armed").is_some_and(|v| v.as_bool() == Some(true))
+    }
+    fn send(&self, msg: Message) -> Result<bool, String> {
+        self.do_send(msg)
+    }
+    fn target(&self) -> (u8, u8) {
+        self.st().target
+    }
+    fn set_error(&self, text: &str) {
+        self.set_last_error(text);
+    }
+    fn last_error(&self) -> String {
+        self.st().last_error.clone()
+    }
+    fn console(&self, source: &str, text: &str, level: &str) {
+        self.console_publish(source, text, level);
+    }
+    fn log(&self, level: &str, text: &str) {
+        self.log_line(level, text);
+    }
+}
+
+impl ParamHost for Shared {
+    fn now(&self) -> f64 {
+        clock::monotonic()
+    }
+    fn sleep(&self, seconds: f64) {
+        std::thread::sleep(Duration::from_secs_f64(seconds.max(0.0)));
+    }
+    fn interruptible_sleep(&self, seconds: f64) {
+        Shared::interruptible_sleep(self, seconds);
+    }
+    fn running(&self) -> bool {
+        self.running.load(Ordering::SeqCst)
+    }
+    fn stopping(&self) -> bool {
+        Shared::stopping(self)
+    }
+    fn encoding(&self) -> String {
+        let st = self.st();
+        if st.param_encoding_declared.is_empty() {
+            st.dialect.param_encoding().to_string()
+        } else {
+            st.param_encoding_declared.clone()
+        }
+    }
+    fn slow_link(&self) -> bool {
+        self.is_serial()
+    }
+    fn notify(&self, status: &Status) {
+        for f in self
+            .engines
+            .param_listeners
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .iter()
+        {
+            f(status);
+        }
+    }
+    fn start_watchdog(&self) {
+        let Some(me) = self.me.upgrade() else { return };
+        if !self.running.load(Ordering::SeqCst) {
+            return;
+        }
+        let mut slot = self.engines.watchdog.lock().unwrap_or_else(|e| e.into_inner());
+        if slot.as_ref().is_some_and(|t| !t.is_finished()) {
+            return;
+        }
+        let engine = Arc::clone(&self.engines.params);
+        *slot = std::thread::Builder::new()
+            .name("param-watchdog".into())
+            .spawn(move || engine.run_watchdog(me.as_ref()))
+            .ok();
+    }
+}
+
+impl ShellHost for Shared {
+    fn supports_shell(&self) -> bool {
+        self.st().dialect.supports_shell()
+    }
+    fn label(&self) -> String {
+        self.st().dialect.label().to_string()
+    }
+    fn command_failure(&self, action: &str, result: i64) -> bool {
+        FlightHost::command_failure(self, action, result)
+    }
+    fn ack_is_for_us(&self, msg: &Message) -> bool {
+        self.frame_is_for_us(msg)
+    }
+}
+
+impl FtpHost for Shared {
+    fn now(&self) -> f64 {
+        clock::monotonic()
+    }
+    fn slow_link(&self) -> bool {
+        self.is_serial()
+    }
+    fn stopping(&self) -> bool {
+        Shared::stopping(self)
+    }
+    fn connected(&self) -> bool {
+        self.conn().is_some()
+    }
+    fn send_ftp(&self, payload: &[u8]) -> Result<bool, String> {
+        let (system, component) = self.st().target;
+        let mut data: Vec<Wv> = payload.iter().map(|b| int(i64::from(*b))).collect();
+        data.resize(251, int(0));
+        let msg = Message::named("FILE_TRANSFER_PROTOCOL", corvus_link::plain::defs::Wire::V2)
+            .ok_or("this dialect has no FILE_TRANSFER_PROTOCOL")?
+            .with("target_network", int(0))
+            .with("target_system", int(i64::from(system)))
+            .with("target_component", int(i64::from(component)))
+            .with("payload", Wv::Array(data));
+        self.do_send(msg)
+    }
+    fn source(&self) -> (u8, u8) {
+        (GCS_SYSTEM_ID, GCS_COMPONENT_ID)
+    }
+    fn log(&self, level: &str, text: &str) {
+        self.log_line(level, text);
+    }
+}
+
+impl SetupHost for Shared {
+    fn connection_ready(&self) -> bool {
+        self.link_ready()
+    }
+    fn set_error(&self, text: &str) {
+        self.set_last_error(text);
+    }
+    fn console(&self, source: &str, text: &str, level: &str) {
+        self.console_publish(source, text, level);
+    }
+    fn command_failure(&self, action: &str, result: i64) -> bool {
+        FlightHost::command_failure(self, action, result)
+    }
+    fn lock(&self) -> &PriorityLock {
+        &self.op_lock
+    }
+    fn snapshot(&self) -> FlightSnapshot {
+        FlightHost::snapshot(self)
+    }
+    fn autotune_state(&self) -> String {
+        self.store
+            .get("autotune_state")
+            .and_then(|v| v.as_str().map(str::to_string))
+            .unwrap_or_default()
+    }
+    fn dialect(&self) -> Dialect {
+        self.st().dialect
+    }
+    fn mav_type(&self) -> i64 {
+        self.st().mav_type
+    }
+    fn send_command(
+        &self,
+        command: i64,
+        params: &[f64],
+        timeout: f64,
+        retries: i64,
+        accept_in_progress: bool,
+        interim: &[i64],
+    ) -> i64 {
+        self.receive
+            .send_command_and_wait(self, command, params, timeout, retries, accept_in_progress, interim)
+    }
+    fn update_autotune(&self, state: &str, progress: Option<i64>) {
+        let mut update = vec![("autotune_state", json!(state))];
+        if let Some(p) = progress {
+            update.push(("autotune_progress", json!(p)));
+        }
+        self.store.update(update);
+    }
+    fn merge_warning(&self, text: &str, level: &str) {
+        self.store.merge_warning(text, level, None, MAX_WARNINGS, None);
+    }
+    fn set_mode(&self, mode: &str) -> bool {
+        self.flight.set_mode(self, mode)
+    }
+    fn has_mode(&self, mode: &str) -> bool {
+        self.st().mode_values.iter().any(|(n, _)| n == mode)
+    }
+    fn reset_parameter_cache(&self) {
+        self.engines.params.reset();
+    }
+}
+
+impl RemoteIdHost for Shared {
+    fn link_supports_remote_id(&self) -> bool {
+        self.conn().is_some_and(|c| c.proto() == Proto::V2)
+    }
+    fn send(&self, msg: Message) -> Result<bool, String> {
+        self.do_send(msg)
+    }
+    fn target(&self) -> (u8, u8) {
+        self.st().target
+    }
+    fn now(&self) -> f64 {
+        clock::monotonic()
+    }
+    fn unix_now(&self) -> f64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs_f64())
+            .unwrap_or(0.0)
+    }
+}
+
+impl MissionHost for Shared {
+    fn connection_ready(&self) -> bool {
+        self.link_ready()
+    }
+    fn set_error(&self, text: &str) {
+        self.set_last_error(text);
+    }
+    fn console(&self, source: &str, text: &str, level: &str) {
+        self.console_publish(source, text, level);
+    }
+    fn log(&self, level: &str, text: &str) {
+        self.log_line(level, text);
+    }
+    fn command_failure(&self, action: &str, result: i64) -> bool {
+        FlightHost::command_failure(self, action, result)
+    }
+    fn lock(&self) -> &PriorityLock {
+        &self.op_lock
+    }
+    fn send(&self, msg: Message) -> Result<bool, String> {
+        self.do_send(msg)
+    }
+    fn target(&self) -> (u8, u8) {
+        self.st().target
+    }
+    fn ack_is_for_us(&self, msg: &Message) -> bool {
+        self.frame_is_for_us(msg)
+    }
+    fn now(&self) -> f64 {
+        clock::monotonic()
+    }
+    fn stopping(&self) -> bool {
+        Shared::stopping(self)
+    }
+    fn is_slow_link(&self) -> bool {
+        self.is_serial()
+    }
+    fn dialect(&self) -> Dialect {
+        self.st().dialect
+    }
+    fn mav_type(&self) -> i64 {
+        self.st().mav_type
+    }
+    fn store_update(&self, fields: Map<String, Value>) {
+        self.store.update(fields);
+    }
+    fn home(&self) -> Vec<f64> {
+        self.store_list("home")
+    }
+    fn home_alt_amsl(&self) -> Option<f64> {
+        self.st().home_alt
+    }
+    fn add_console_sub(&self, sub: ConsoleSub) -> u64 {
+        ReceiveHostConsole::add(self, sub)
+    }
+    fn remove_console_sub(&self, id: u64) {
+        self.subs
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .retain(|(i, _)| *i != id);
+    }
+    fn lower_circles(&self, items: &[PlanItem]) -> Vec<PlanItem> {
+        // The planner (`mission.py`) is not ported: a Circle goes up as it is.
+        items.to_vec()
+    }
+    fn items_to_plan(&self, items: &[DownloadedItem], _home: Option<(f64, f64)>, _home_alt: Option<f64>) -> Value {
+        json!({"plan_index": (0..items.len()).collect::<Vec<_>>()})
+    }
+}
+
+impl Bridge {
+    /// The engines of the other protocols, for the callers that drive them.
+    pub fn engines(&self) -> &Engines {
+        &self.shared.engines
+    }
+
+    /// Adds a listener to the parameter engine's progress and values.
+    pub fn add_param_listener(&self, f: impl Fn(&Status) + Send + Sync + 'static) {
+        self.shared
+            .engines
+            .param_listeners
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(Box::new(f));
+    }
+
+    /// Starts the full parameter download.
+    pub fn request_param_list(&self) -> bool {
+        let _gate = self.shared.op_lock.lock();
+        self.shared.engines.params.request_param_list(self.shared.as_ref())
+    }
+
+    pub fn param_status(&self) -> Status {
+        self.shared.engines.params.status()
+    }
+
+    pub fn params(&self) -> Vec<Entry> {
+        self.shared.engines.params.params()
+    }
+
+    /// A confirmed write of one parameter.
+    pub fn set_param(&self, name: &str, value: f64) -> bool {
+        let _gate = self.shared.op_lock.lock();
+        self.shared.engines.params.set_param(self.shared.as_ref(), name, value)
+    }
+
+    pub fn fetch_params(&self, names: &[String], timeout: f64) -> Vec<(String, f64)> {
+        self.shared
+            .engines
+            .params
+            .fetch_params(self.shared.as_ref(), names, timeout, false)
+            .into_iter()
+            .collect()
+    }
+
+    pub fn shell_command(&self, text: &str) -> bool {
+        let _gate = self.shared.op_lock.lock();
+        self.shared.engines.shell.send_command(self.shared.as_ref(), text)
+    }
+
+    pub fn shell_write(&self, text: &str) -> bool {
+        let _gate = self.shared.op_lock.lock();
+        self.shared.engines.shell.write(self.shared.as_ref(), text)
+    }
+
+    pub fn shell_stop(&self) {
+        self.shared.engines.shell.stop(self.shared.as_ref());
+    }
+
+    pub fn log_request_list(&self, start: i64, end: i64) -> bool {
+        let _gate = self.shared.op_lock.lock();
+        self.shared.engines.logs.request_list(self.shared.as_ref(), start, end)
+    }
+
+    pub fn log_request_data(&self, id: i64, offset: i64, count: i64) -> bool {
+        let _gate = self.shared.op_lock.lock();
+        self.shared
+            .engines
+            .logs
+            .request_data(self.shared.as_ref(), id, offset, count)
+    }
+
+    pub fn log_erase(&self) -> bool {
+        let _gate = self.shared.op_lock.lock();
+        self.shared.engines.logs.erase(self.shared.as_ref())
+    }
+
+    pub fn log_request_end(&self) -> bool {
+        let _gate = self.shared.op_lock.lock();
+        self.shared.engines.logs.request_end(self.shared.as_ref())
+    }
+
+    pub fn ftp_read_file(&self, path: &str, cancel: Option<Cancel>) -> Result<Vec<u8>, FtpError> {
+        self.shared
+            .engines
+            .ftp
+            .read_file(self.shared.as_ref(), path, None, cancel)
+    }
+
+    pub fn ftp_file_crc32(&self, path: &str) -> Result<u32, FtpError> {
+        self.shared.engines.ftp.file_crc32(self.shared.as_ref(), path, None)
+    }
+
+    pub fn calibrate(&self, sensor: &str) -> bool {
+        self.shared.engines.setup.calibrate(self.shared.as_ref(), sensor)
+    }
+
+    pub fn cancel_calibration(&self) -> bool {
+        self.shared.engines.setup.cancel_calibration(self.shared.as_ref())
+    }
+
+    pub fn motor_test(&self, motor: i64, throttle_pct: f64, duration_s: f64) -> bool {
+        self.shared
+            .engines
+            .setup
+            .motor_test(self.shared.as_ref(), motor, throttle_pct, duration_s)
+    }
+
+    pub fn stop_motor_test(&self) -> bool {
+        self.shared.engines.setup.stop_motor_test(self.shared.as_ref())
+    }
+
+    pub fn autotune(&self, axis: &str, enable: bool) -> bool {
+        self.shared.engines.setup.autotune(self.shared.as_ref(), axis, enable)
+    }
+
+    pub fn reboot_autopilot(&self) -> bool {
+        self.shared.engines.setup.reboot_autopilot(self.shared.as_ref())
+    }
+
+    pub fn upload_mission_plan(&self, items: &[PlanItem]) -> bool {
+        self.shared
+            .engines
+            .missions
+            .upload_mission_plan(self.shared.as_ref(), items)
+    }
+
+    pub fn download_mission(&self) -> Option<Value> {
+        self.shared.engines.missions.download_mission(self.shared.as_ref())
+    }
+
+    pub fn clear_mission(&self) -> bool {
+        self.shared.engines.missions.clear_mission(self.shared.as_ref())
+    }
+
+    pub fn start_mission(&self, count: i64) -> bool {
+        self.shared.flight.start_mission(self.shared.as_ref(), count)
+    }
+
+    pub fn fly_to_points(&self, points: &Value) -> bool {
+        self.shared.flight.fly_to_points(self.shared.as_ref(), points)
+    }
+
+    pub fn upload_fence(&self, polygon: &[(f64, f64)]) -> bool {
+        self.shared.engines.missions.upload_fence(self.shared.as_ref(), polygon)
+    }
+
+    pub fn clear_fence(&self) -> bool {
+        self.shared.engines.missions.clear_fence(self.shared.as_ref())
+    }
+
+    pub fn set_remote_id(&self, raw: Option<&Value>) -> Value {
+        self.shared.engines.remote_id.set_remote_id(raw)
+    }
+
+    pub fn remote_id_status(&self) -> Value {
+        self.shared.engines.remote_id.remote_id_status(self.shared.as_ref())
+    }
+
+    /// Stops the parameter watchdog with the rest; called from `stop`.
+    fn join_workers(&self) {
+        self.shared.engines.params.abort();
+        join_bounded(
+            self.shared
+                .engines
+                .watchdog
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .take(),
+            Duration::from_secs(2),
+        );
+    }
 }
 
 #[cfg(test)]

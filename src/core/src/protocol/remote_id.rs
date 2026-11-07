@@ -286,7 +286,16 @@ pub fn messages(identity: &RemoteId, target: (u8, u8), unix_seconds: f64) -> Vec
         addressed("OPEN_DRONE_ID_BASIC_ID")
             .with("id_type", int(identity.id_type))
             .with("ua_type", int(identity.ua_type))
-            .with("uas_id", bytes(&identity.uas_id, UAS_ID_MAX)),
+            // uint8_t[20] in the dialect, unlike the two char fields below.
+            .with(
+                "uas_id",
+                Wv::Array(
+                    fixed_bytes(&identity.uas_id, UAS_ID_MAX)
+                        .into_iter()
+                        .map(|b| int(i64::from(b)))
+                        .collect(),
+                ),
+            ),
         addressed("OPEN_DRONE_ID_OPERATOR_ID")
             .with("operator_id_type", int(identity.operator_id_type))
             .with("operator_id", bytes(&identity.operator_id, OPERATOR_ID_MAX)),

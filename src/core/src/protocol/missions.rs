@@ -524,6 +524,20 @@ impl MissionEngine {
         st.upload_type = upload_type;
     }
 
+    /// Wakes an upload that is waiting for its ACK with DISCONNECTED, so
+    /// shutdown cannot hang on it.
+    pub fn cancel_upload(&self) {
+        let pending = self.st().pending_ack.clone();
+        if let Some(pending) = pending {
+            let mut result = pending.result.lock().unwrap_or_else(|e| e.into_inner());
+            if result.is_none() {
+                *result = Some(-2);
+            }
+            drop(result);
+            pending.event.set();
+        }
+    }
+
     /// When the vehicle last asked for an item.
     pub fn last_request(&self) -> f64 {
         self.st().last_request
