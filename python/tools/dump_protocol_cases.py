@@ -3722,6 +3722,267 @@ def requests_cases() -> list[dict]:
     return out
 
 
+# ----------------------------------------------------------------- tlog ----
+
+class FakeRunning:
+    def __init__(self, value: bool) -> None:
+        self.value = value
+
+    def is_set(self) -> bool:
+        return self.value
+
+
+def tlog_bridge_class():
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
+    from tests.reference import mavlink_bridge_tlog_python as ref
+
+    class TlogBridge(ref.TlogSessionMixin):
+        def __init__(self, sc: dict) -> None:
+            self.sc = sc
+            self.log: list = []
+            self._running = FakeRunning(sc.get("running", True))
+            self._conn_str = sc.get("conn", "udp:127.0.0.1:14550")
+            self._tlog = None
+            self._tlog_armed = False
+            self._frame_sink = None
+
+        def _request_version(self) -> None:
+            self.log.append(["call", "request_version"])
+
+    return TlogBridge, ref
+
+
+def tlog_scenarios() -> list[dict]:
+    frames = ["fd0900000100010000000000", "fe0900", "aa" * 280, "00"]
+    return [
+        {"name": "one_session", "stamps": ["20260102-030405-000007"], "steps": [
+            {"op": "start"}, *[{"op": "frame", "raw": f} for f in frames], {"op": "stop"}, {"op": "files"}]},
+        {"name": "not_running", "running": False, "steps": [{"op": "start"}, {"op": "frame", "raw": "00"}, {"op": "stop"}, {"op": "files"}]},
+        {"name": "frames_without_a_session", "steps": [{"op": "frame", "raw": "00"}, {"op": "frame", "raw": None}]},
+        {"name": "empty_session_has_a_header", "stamps": ["20260102-030405-000001"], "steps": [{"op": "start"}, {"op": "stop"}, {"op": "files"}]},
+        {"name": "conn_in_the_header", "conn": "serial:/dev/ttyACM0 \u00e4\u00f6 \"x\" \U0001F680", "stamps": ["20260102-030405-000002"],
+         "steps": [{"op": "start"}, {"op": "stop"}, {"op": "files"}]},
+        {"name": "two_sessions_one_tick", "stamps": ["20260102-030405-000003", "20260102-030405-000003", "20260102-030405-000003"], "steps": [
+            {"op": "start"}, {"op": "frame", "raw": "01"}, {"op": "start"}, {"op": "frame", "raw": "02"}, {"op": "start"},
+            {"op": "frame", "raw": "03"}, {"op": "stop"}, {"op": "files"}]},
+        {"name": "start_closes_the_old_one", "stamps": ["20260102-030405-000004", "20260102-030406-000004"], "steps": [
+            {"op": "start"}, {"op": "frame", "raw": "0a"}, {"op": "start"}, {"op": "frame", "raw": "0b"}, {"op": "stop"}, {"op": "files"}]},
+        {"name": "rolls_on_disarm", "stamps": ["20260102-030405-000005", "20260102-030500-000005"], "steps": [
+            {"op": "start"}, {"op": "roll", "armed": False}, {"op": "frame", "raw": "01"}, {"op": "roll", "armed": True},
+            {"op": "frame", "raw": "02"}, {"op": "roll", "armed": True}, {"op": "roll", "armed": False}, {"op": "frame", "raw": "03"},
+            {"op": "roll", "armed": False}, {"op": "stop"}, {"op": "files"}]},
+        {"name": "no_roll_without_a_session", "steps": [{"op": "roll", "armed": True}, {"op": "roll", "armed": False}]},
+        {"name": "sink_gets_the_same_bytes", "stamps": ["20260102-030405-000006"], "steps": [
+            {"op": "sink"}, {"op": "frame", "raw": "aa"}, {"op": "start"}, {"op": "frame", "raw": "bb"}, {"op": "frame", "raw": None},
+            {"op": "stop"}, {"op": "frame", "raw": "cc"}, {"op": "files"}]},
+        {"name": "unusable_log_dir", "bad_dir": True, "steps": [{"op": "start"}, {"op": "frame", "raw": "00"}, {"op": "files"}]},
+        {"name": "stop_twice", "stamps": ["20260102-030405-000008"], "steps": [{"op": "start"}, {"op": "stop"}, {"op": "stop"}, {"op": "files"}]},
+    ]
+
+
+def _tlog_files(directory: pathlib.Path) -> dict:
+    import re
+
+    out = {}
+    for path in sorted(directory.iterdir()):
+        data = path.read_bytes()
+        magic = b"#CORVUS-TLOG "
+        head, _, body = data.partition(b"\n")
+        meta = json.loads(head[len(magic):]) if head.startswith(magic) else None
+        if meta:
+            from corvus.version import get_version
+
+            meta["version"] = "VERSION" if meta["version"] == get_version() else meta["version"]
+            meta["started_at"] = bool(re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d{6})?\+00:00", meta["started_at"]))
+        out[path.name] = {"meta": meta, "body": body.hex(), "header": head.hex() if meta is None else ""}
+    return out
+
+
+def tlog_cases() -> list[dict]:
+    import datetime
+    import logging
+    import tempfile
+
+    TlogBridge, ref = tlog_bridge_class()
+    out = []
+    for sc in tlog_scenarios():
+        br = TlogBridge(sc)
+        tmp = pathlib.Path(tempfile.mkdtemp(prefix="corvus-tlog-"))
+        log_dir = tmp / "logs"
+        if sc.get("bad_dir"):
+            tmp.joinpath("logs").write_text("not a folder")
+        stamps = list(sc.get("stamps", []))
+
+        class FakeNow:
+            @staticmethod
+            def now():
+                stamp = stamps.pop(0)
+                day, clock, micro = stamp.split("-")
+                return datetime.datetime(int(day[:4]), int(day[4:6]), int(day[6:]), int(clock[:2]), int(clock[2:4]),
+                                         int(clock[4:]), int(micro))
+
+        class Capture(logging.Handler):
+            def emit(self, record):
+                text = record.getMessage()
+                if text.startswith("tlog disabled"):
+                    text = "tlog disabled"
+                br.log.append(["log", record.levelname.lower(), text])
+
+        handler = Capture()
+        logger = logging.getLogger("corvus.mavlink")
+        logger.addHandler(handler)
+        old_level = logger.level
+        logger.setLevel(logging.DEBUG)
+        saved = (ref.default_log_dir, ref.datetime)
+        ref.default_log_dir = lambda: str(log_dir)
+        ref.datetime = type("DT", (), {"datetime": FakeNow})
+        sink_log: list = []
+        results = []
+        try:
+            for step in sc["steps"]:
+                before = len(br.log)
+                op = step["op"]
+                result = None
+                if op == "start":
+                    br._start_tlog()
+                    result = br._tlog is not None
+                elif op == "stop":
+                    br._stop_tlog()
+                elif op == "frame":
+                    msg = type("M", (), {})()
+                    if step["raw"] is not None:
+                        msg.get_msgbuf = lambda raw=bytes.fromhex(step["raw"]): raw
+                    br._write_tlog(msg)
+                elif op == "roll":
+                    br._roll_tlog_on_disarm(step["armed"])
+                    result = br._tlog is not None
+                elif op == "sink":
+                    br._frame_sink = lambda raw: sink_log.append(raw.hex())
+                elif op == "files":
+                    result = {"files": _tlog_files(log_dir) if log_dir.is_dir() else {}, "sink": list(sink_log)}
+                else:
+                    raise SystemExit(op)
+                results.append({"result": result, "events": br.log[before:]})
+        finally:
+            br._stop_tlog()
+            ref.default_log_dir, ref.datetime = saved
+            logger.removeHandler(handler)
+            logger.setLevel(old_level)
+        out.append({"scenario": clean(sc), "expected": clean({"steps": results, "final": {}})})
+    return out
+
+
+# ----------------------------------------------------------------- rtcm ----
+
+def rtcm_bridge_class():
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
+    from tests.reference import mavlink_bridge_rtcm_python as ref
+    from tests.reference import rtk_python as rtk
+
+    class Mav:
+        def __init__(self, bridge) -> None:
+            self.bridge = bridge
+
+        def gps_rtcm_data_send(self, flags, length, data):
+            b = self.bridge
+            if b.sc.get("fail_on") is not None and len([e for e in b.log if e[0] == "send"]) == b.sc["fail_on"]:
+                raise OSError("boom")
+            b.log.append(["send", flags, length, bytes(data).hex()])
+
+    class RtcmBridge(ref.RtcmInjectionMixin):
+        def __init__(self, sc, clock) -> None:
+            self.sc = sc
+            self.clock = clock
+            self.log: list = []
+            self._rtcm_lock = threading.Lock()
+            self._rtcm_sequence = 0
+            self._rtcm_bytes = 0
+            self._rtcm_messages = 0
+            self._rtcm_dropped = 0
+            self._rtcm_last_send = 0.0
+            self._send_lock = FlightSendLockPlain2()
+            self._conn = None if sc.get("no_connection") else type("Conn", (), {})()
+            if self._conn is not None:
+                self._conn.mav = Mav(self)
+
+        def _connection_ready(self) -> bool:
+            return self.sc.get("ready", True)
+
+    class FlightSendLockPlain2:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    return RtcmBridge, rtk
+
+
+def rtcm_scenarios() -> list[dict]:
+    frame = lambda n: bytes((i * 7 + 3) & 0xFF for i in range(n)).hex()
+    return [
+        {"name": "fragments", "steps": [{"op": "fragments", "frame": frame(n), "sequence": seq}
+                                         for n in (0, 1, 100, 179, 180, 181, 359, 360, 361, 539, 540, 541, 719, 720, 721, 1000)
+                                         for seq in (0, 5, 31, 32, 33)]},
+        {"name": "inject_small", "steps": [{"op": "inject", "frame": frame(100)}, {"op": "stats"}]},
+        {"name": "inject_fragmented", "steps": [{"op": "inject", "frame": frame(400)}, {"op": "inject", "frame": frame(360)}, {"op": "stats"}]},
+        {"name": "sequence_wraps", "steps": [*[{"op": "inject", "frame": frame(10)} for _ in range(34)], {"op": "stats"}]},
+        {"name": "too_long_is_dropped", "steps": [{"op": "inject", "frame": frame(720)}, {"op": "inject", "frame": frame(10)}, {"op": "stats"}]},
+        {"name": "empty_is_refused", "steps": [{"op": "inject", "frame": ""}, {"op": "stats"}]},
+        {"name": "not_ready", "ready": False, "steps": [{"op": "inject", "frame": frame(10)}, {"op": "stats"}]},
+        {"name": "link_closed", "no_connection": True, "steps": [{"op": "inject", "frame": frame(10)}, {"op": "stats"}]},
+        {"name": "a_fragment_fails", "fail_on": 1, "steps": [{"op": "inject", "frame": frame(400)}, {"op": "stats"}]},
+        {"name": "stats_age_and_forget", "steps": [
+            {"op": "inject", "frame": frame(10)}, {"op": "advance", "seconds": 2.5}, {"op": "stats"}, {"op": "forget"}, {"op": "stats"}]},
+    ]
+
+
+def rtcm_cases() -> list[dict]:
+    import logging
+
+    RtcmBridge, rtk = rtcm_bridge_class()
+    out = []
+    for sc in rtcm_scenarios():
+        clock = Clock()
+        clock.t = 1000.0
+        br = RtcmBridge(sc, clock)
+
+        class Capture(logging.Handler):
+            def emit(self, record):
+                br.log.append(["log", record.levelname.lower(), record.getMessage()])
+
+        handler = Capture()
+        logger = logging.getLogger("corvus.mavlink")
+        logger.addHandler(handler)
+        old_level = logger.level
+        logger.setLevel(logging.DEBUG)
+        results = []
+        try:
+            with mock.patch("time.monotonic", lambda clock=clock: clock.t):
+                for step in sc["steps"]:
+                    before = len(br.log)
+                    op = step["op"]
+                    result = None
+                    if op == "fragments":
+                        result = [[flags, data.hex()] for flags, data in rtk.fragments(bytes.fromhex(step["frame"]), step["sequence"])]
+                    elif op == "inject":
+                        result = br.inject_rtcm(bytes.fromhex(step["frame"]))
+                    elif op == "stats":
+                        result = br.rtcm_stats()
+                    elif op == "advance":
+                        clock.t += step["seconds"]
+                    elif op == "forget":
+                        br.forget_rtcm_session()
+                    else:
+                        raise SystemExit(op)
+                    results.append({"result": result, "events": br.log[before:]})
+        finally:
+            logger.removeHandler(handler)
+            logger.setLevel(old_level)
+        out.append({"scenario": clean(sc), "expected": clean({"steps": results, "final": {}})})
+    return out
+
+
 COMMANDS = {"params_cases.json": cases, "logs_cases.json": logs_cases, "shell_cases.json": shell_cases,
             "ftp_cases.json": ftp_cases, "flight_cases.json": flight_cases,
             "setup_cases.json": setup_cases,
@@ -3730,7 +3991,9 @@ COMMANDS = {"params_cases.json": cases, "logs_cases.json": logs_cases, "shell_ca
             "remote_id_cases.json": rid_cases,
             "receive_cases.json": receive_cases,
             "status_cases.json": status_cases,
-            "requests_cases.json": requests_cases}
+            "requests_cases.json": requests_cases,
+            "tlog_cases.json": tlog_cases,
+            "rtcm_cases.json": rtcm_cases}
 
 
 def main(argv: list[str]) -> int:

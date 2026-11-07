@@ -20,6 +20,7 @@ pub mod params;
 pub mod receive;
 pub mod remote_id;
 pub mod requests;
+pub mod rtcm;
 pub mod setup;
 pub mod shell;
 pub mod status;
@@ -47,4 +48,9 @@ pub(crate) fn targeted(name: &str, target: (u8, u8)) -> Message {
     let _ = m.set("target_system", Value::Int(target.0 as i128));
     let _ = m.set("target_component", Value::Int(target.1 as i128));
     m
+}
+
+/// A message with no addressee.
+pub(crate) fn targeted_none(name: &str) -> Message {
+    Message::named(name, Wire::V2).expect("the all dialect has this message")
 }

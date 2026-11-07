@@ -1,0 +1,818 @@
+{
+ "cases": [
+  {
+   "scenario": {
+    "name": "one_session",
+    "stamps": [
+     "20260102-030405-000007"
+    ],
+    "steps": [
+     {
+      "op": "start"
+     },
+     {
+      "op": "frame",
+      "raw": "fd0900000100010000000000"
+     },
+     {
+      "op": "frame",
+      "raw": "fe0900"
+     },
+     {
+      "op": "frame",
+      "raw": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     },
+     {
+      "op": "frame",
+      "raw": "00"
+     },
+     {
+      "op": "stop"
+     },
+     {
+      "op": "files"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": {
+       "files": {
+        "20260102-030405-000007.tlog": {
+         "meta": {
+          "product": "Corvus GCS",
+          "version": "VERSION",
+          "conn": "udp:127.0.0.1:14550",
+          "started_at": true,
+          "format": "mavlink-raw"
+         },
+         "body": "fd0900000100010000000000fe0900aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa00",
+         "header": ""
+        }
+       },
+       "sink": []
+      },
+      "events": []
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "not_running",
+    "running": false,
+    "steps": [
+     {
+      "op": "start"
+     },
+     {
+      "op": "frame",
+      "raw": "00"
+     },
+     {
+      "op": "stop"
+     },
+     {
+      "op": "files"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": {
+       "files": {},
+       "sink": []
+      },
+      "events": []
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "frames_without_a_session",
+    "steps": [
+     {
+      "op": "frame",
+      "raw": "00"
+     },
+     {
+      "op": "frame",
+      "raw": null
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "empty_session_has_a_header",
+    "stamps": [
+     "20260102-030405-000001"
+    ],
+    "steps": [
+     {
+      "op": "start"
+     },
+     {
+      "op": "stop"
+     },
+     {
+      "op": "files"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": {
+       "files": {
+        "20260102-030405-000001.tlog": {
+         "meta": {
+          "product": "Corvus GCS",
+          "version": "VERSION",
+          "conn": "udp:127.0.0.1:14550",
+          "started_at": true,
+          "format": "mavlink-raw"
+         },
+         "body": "",
+         "header": ""
+        }
+       },
+       "sink": []
+      },
+      "events": []
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "conn_in_the_header",
+    "conn": "serial:/dev/ttyACM0 \u00e4\u00f6 \"x\" \ud83d\ude80",
+    "stamps": [
+     "20260102-030405-000002"
+    ],
+    "steps": [
+     {
+      "op": "start"
+     },
+     {
+      "op": "stop"
+     },
+     {
+      "op": "files"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": {
+       "files": {
+        "20260102-030405-000002.tlog": {
+         "meta": {
+          "product": "Corvus GCS",
+          "version": "VERSION",
+          "conn": "serial:/dev/ttyACM0 \u00e4\u00f6 \"x\" \ud83d\ude80",
+          "started_at": true,
+          "format": "mavlink-raw"
+         },
+         "body": "",
+         "header": ""
+        }
+       },
+       "sink": []
+      },
+      "events": []
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "two_sessions_one_tick",
+    "stamps": [
+     "20260102-030405-000003",
+     "20260102-030405-000003",
+     "20260102-030405-000003"
+    ],
+    "steps": [
+     {
+      "op": "start"
+     },
+     {
+      "op": "frame",
+      "raw": "01"
+     },
+     {
+      "op": "start"
+     },
+     {
+      "op": "frame",
+      "raw": "02"
+     },
+     {
+      "op": "start"
+     },
+     {
+      "op": "frame",
+      "raw": "03"
+     },
+     {
+      "op": "stop"
+     },
+     {
+      "op": "files"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": true,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": true,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": {
+       "files": {
+        "20260102-030405-000003.tlog": {
+         "meta": {
+          "product": "Corvus GCS",
+          "version": "VERSION",
+          "conn": "udp:127.0.0.1:14550",
+          "started_at": true,
+          "format": "mavlink-raw"
+         },
+         "body": "01",
+         "header": ""
+        },
+        "20260102-030405-000003_01.tlog": {
+         "meta": {
+          "product": "Corvus GCS",
+          "version": "VERSION",
+          "conn": "udp:127.0.0.1:14550",
+          "started_at": true,
+          "format": "mavlink-raw"
+         },
+         "body": "02",
+         "header": ""
+        },
+        "20260102-030405-000003_02.tlog": {
+         "meta": {
+          "product": "Corvus GCS",
+          "version": "VERSION",
+          "conn": "udp:127.0.0.1:14550",
+          "started_at": true,
+          "format": "mavlink-raw"
+         },
+         "body": "03",
+         "header": ""
+        }
+       },
+       "sink": []
+      },
+      "events": []
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "start_closes_the_old_one",
+    "stamps": [
+     "20260102-030405-000004",
+     "20260102-030406-000004"
+    ],
+    "steps": [
+     {
+      "op": "start"
+     },
+     {
+      "op": "frame",
+      "raw": "0a"
+     },
+     {
+      "op": "start"
+     },
+     {
+      "op": "frame",
+      "raw": "0b"
+     },
+     {
+      "op": "stop"
+     },
+     {
+      "op": "files"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": true,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": {
+       "files": {
+        "20260102-030405-000004.tlog": {
+         "meta": {
+          "product": "Corvus GCS",
+          "version": "VERSION",
+          "conn": "udp:127.0.0.1:14550",
+          "started_at": true,
+          "format": "mavlink-raw"
+         },
+         "body": "0a",
+         "header": ""
+        },
+        "20260102-030406-000004.tlog": {
+         "meta": {
+          "product": "Corvus GCS",
+          "version": "VERSION",
+          "conn": "udp:127.0.0.1:14550",
+          "started_at": true,
+          "format": "mavlink-raw"
+         },
+         "body": "0b",
+         "header": ""
+        }
+       },
+       "sink": []
+      },
+      "events": []
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "rolls_on_disarm",
+    "stamps": [
+     "20260102-030405-000005",
+     "20260102-030500-000005"
+    ],
+    "steps": [
+     {
+      "op": "start"
+     },
+     {
+      "op": "roll",
+      "armed": false
+     },
+     {
+      "op": "frame",
+      "raw": "01"
+     },
+     {
+      "op": "roll",
+      "armed": true
+     },
+     {
+      "op": "frame",
+      "raw": "02"
+     },
+     {
+      "op": "roll",
+      "armed": true
+     },
+     {
+      "op": "roll",
+      "armed": false
+     },
+     {
+      "op": "frame",
+      "raw": "03"
+     },
+     {
+      "op": "roll",
+      "armed": false
+     },
+     {
+      "op": "stop"
+     },
+     {
+      "op": "files"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": []
+     },
+     {
+      "result": true,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": true,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": true,
+      "events": []
+     },
+     {
+      "result": true,
+      "events": [
+       [
+        "call",
+        "request_version"
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": true,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": {
+       "files": {
+        "20260102-030405-000005.tlog": {
+         "meta": {
+          "product": "Corvus GCS",
+          "version": "VERSION",
+          "conn": "udp:127.0.0.1:14550",
+          "started_at": true,
+          "format": "mavlink-raw"
+         },
+         "body": "0102",
+         "header": ""
+        },
+        "20260102-030500-000005.tlog": {
+         "meta": {
+          "product": "Corvus GCS",
+          "version": "VERSION",
+          "conn": "udp:127.0.0.1:14550",
+          "started_at": true,
+          "format": "mavlink-raw"
+         },
+         "body": "03",
+         "header": ""
+        }
+       },
+       "sink": []
+      },
+      "events": []
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "no_roll_without_a_session",
+    "steps": [
+     {
+      "op": "roll",
+      "armed": true
+     },
+     {
+      "op": "roll",
+      "armed": false
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": []
+     },
+     {
+      "result": false,
+      "events": []
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "sink_gets_the_same_bytes",
+    "stamps": [
+     "20260102-030405-000006"
+    ],
+    "steps": [
+     {
+      "op": "sink"
+     },
+     {
+      "op": "frame",
+      "raw": "aa"
+     },
+     {
+      "op": "start"
+     },
+     {
+      "op": "frame",
+      "raw": "bb"
+     },
+     {
+      "op": "frame",
+      "raw": null
+     },
+     {
+      "op": "stop"
+     },
+     {
+      "op": "frame",
+      "raw": "cc"
+     },
+     {
+      "op": "files"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": true,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": {
+       "files": {
+        "20260102-030405-000006.tlog": {
+         "meta": {
+          "product": "Corvus GCS",
+          "version": "VERSION",
+          "conn": "udp:127.0.0.1:14550",
+          "started_at": true,
+          "format": "mavlink-raw"
+         },
+         "body": "bb",
+         "header": ""
+        }
+       },
+       "sink": [
+        "aa",
+        "bb",
+        "cc"
+       ]
+      },
+      "events": []
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "unusable_log_dir",
+    "bad_dir": true,
+    "steps": [
+     {
+      "op": "start"
+     },
+     {
+      "op": "frame",
+      "raw": "00"
+     },
+     {
+      "op": "files"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": false,
+      "events": [
+       [
+        "log",
+        "warning",
+        "tlog disabled"
+       ]
+      ]
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": {
+       "files": {},
+       "sink": []
+      },
+      "events": []
+     }
+    ],
+    "final": {}
+   }
+  },
+  {
+   "scenario": {
+    "name": "stop_twice",
+    "stamps": [
+     "20260102-030405-000008"
+    ],
+    "steps": [
+     {
+      "op": "start"
+     },
+     {
+      "op": "stop"
+     },
+     {
+      "op": "stop"
+     },
+     {
+      "op": "files"
+     }
+    ]
+   },
+   "expected": {
+    "steps": [
+     {
+      "result": true,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": null,
+      "events": []
+     },
+     {
+      "result": {
+       "files": {
+        "20260102-030405-000008.tlog": {
+         "meta": {
+          "product": "Corvus GCS",
+          "version": "VERSION",
+          "conn": "udp:127.0.0.1:14550",
+          "started_at": true,
+          "format": "mavlink-raw"
+         },
+         "body": "",
+         "header": ""
+        }
+       },
+       "sink": []
+      },
+      "events": []
+     }
+    ],
+    "final": {}
+   }
+  }
+ ]
+}

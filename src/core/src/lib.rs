@@ -90,6 +90,7 @@ pub mod protocol;
 pub mod request;
 pub mod response;
 pub mod store;
+pub mod tlog;
 pub mod version;
 pub mod ws;
 
