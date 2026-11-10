@@ -1203,6 +1203,47 @@ def planner_cases() -> None:
     write("planner_cases.json", clean_nan(out))
 
 
+def serial_cases() -> None:
+    from corvus import serial_ports as S
+
+    devices = [
+        "", "  ", "/dev/ttyS0", "/dev/ttyS12", "/dev/ttyS", "/dev/ttyACM0", "/dev/ttyACM12", "/dev/ttyACM", "/dev/ttyUSB0",
+        "/dev/ttyUSB3", "/dev/ttyUSBx", "/dev/serial/by-id/usb-3D_Robotics_PX4_FMU_v2.x_0-if00",
+        "/dev/serial/by-id/usb-FTDI_FT232R-if00", "/dev/serial/by-id/usb-u-blox_AG_-_www.u-blox.com-if00",
+        "/dev/cu.usbmodem14201", "/dev/tty.usbmodem14201", "/dev/cu.usbserial-0001", "/dev/cu.SLAB_USBtoUART",
+        "/dev/cu.Bluetooth-Incoming-Port", "/dev/tty.Bluetooth-Incoming-Port", "/dev/cu.debug-console",
+        "/dev/cu.", "/dev/cu.a\nb", "COM3", "com7", "\\\\.\\COM12", "COM", "COMX", "/dev/pts/3", "/dev/pts/x", "/dev/ptyp0",
+        "/dev/ptyq1", "/dev/ptyxyz", "/dev/ttyp3", "/dev/ttypA", "/dev/null", "ttyACM0", " /dev/ttyACM1 ",
+    ]
+    hwids = [
+        "", "   ", "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1", "USB VID:PID=26ac:0011", "USB VID:PID=0483:DF11 SER=x",
+        "USB VID:PID=0483:5740", "USB VID:PID=0403:6001 SER=A5069RR4", "USB VID:PID=10C4:EA60", "USB VID:PID=1A86:7523",
+        "USB VID:PID=067B:2303", "USB VID:PID=1546:01A9 SER=", "USB VID:PID=152A:85C0", "USB VID:PID=1234:5678 SER=ab cd",
+        "VID:PID=ABCD:EF01", "USB VID:PID=ABC:DEF1", "USB VID:PID=ABCD:EF0", "usb vid:pid=26ac:0032  ser=zz", "n/a",
+        "PX4 FMU v5", "Hex Cube Orange", "SER=1", "USB VID:PID=26AC:0032SER=1",
+    ]
+    descriptions = ["", "PX4 BL FMU v5.x", "PX4 FMU v5.x", "Pixhawk 4", "u-blox GNSS receiver", "ZED-F9P", "SimpleRTK2B", "ArduPilot-BL",
+                    "Cube Orange-BL", "Cube Orange bl", "STM32 BOOTLOADER", "STM32 DFU in FS Mode", "dfuse", "my_dfu_port", "x-blx",
+                    "SiK radio", "septentrio mosaic", "bl fmu", "bl  fmu", "Bootloaders", "bootloader_x", "-bl", "a-bl2", "abl fmu"]
+    out = {"phantom": [[d, S.is_phantom_device(d)] for d in devices]}
+    out["bootloader"] = [[h, d, S.is_bootloader_port("/dev/x", h, d)] for h in hwids for d in descriptions]
+    out["rtk"] = [[h, d, S.is_rtk_device("/dev/x", h, d)] for h in hwids for d in descriptions]
+    out["hwid"] = [[h, S.classify_hwid(h)] for h in hwids + [d for d in descriptions]]
+    out["classify"] = [[dev, h, d, S.classify_serial_device(dev, h, d)]
+                       for dev in devices for h, d in ((h, descriptions[i % len(descriptions)]) for i, h in enumerate(hwids))]
+    out["identity"] = [[h, S.usb_identity(h)] for h in hwids]
+    conns = ["serial:/dev/ttyACM0:921600", "serial:/dev/ttyACM0", "serial:COM3:115200", "serial:", "serial:/dev/x:0", "serial:/dev/x:abc",
+             "serial:/dev/serial/by-path/pci-0:1.2:0", "serial:/dev/x:", "udp:1.2.3.4:5", "", "/dev/ttyUSB0:9600", "serial:/dev/x:+5"]
+    out["split"] = [[c, list(S.split_serial_connection(c))] for c in conns]
+    pairs = [("/dev/tty.usbmodem1", "/dev/cu.usbmodem1"), ("COM3", "\\\\.\\com3"), ("/nonexistent/a", "/NONEXISTENT/A"),
+             ("/nonexistent/a", "/nonexistent/b"), ("", ""), ("COM3", "COM4"), ("/dev/cu.x", "/dev/tty.x"), ("/dev/cu.x", "/dev/cu.y")]
+    out["same"] = [[a, b, S.same_port(a, b)] for a, b in pairs]
+    out["present"] = [[d, e, S.port_present(d, e)] for d, e in [
+        ("/nonexistent/a", ["/nonexistent/a"]), ("/nonexistent/a", ["/nonexistent/b"]), ("", ["x"]), ("COM3", ["com3"]),
+        ("COM9", []), ("/dev/null", []), ("/dev/tty.usbmodem1", ["/dev/cu.usbmodem1"]), ("  /nonexistent/a ", ["/nonexistent/a"])]]
+    write("serial_ports_cases.json", out)
+
+
 def clean_nan(x):
     if isinstance(x, float) and x != x:
         return "nan"
@@ -1215,7 +1256,7 @@ def clean_nan(x):
 
 COMMANDS = {"routes": routes, "store": store, "buffers": buffers, "config": config_cases,
             "partial": partial_cases, "bundle": bundle_cases, "languages": languages_cases, "http": http_cases,
-            "dialect": dialect_cases, "battery": battery_cases, "planner": planner_cases}
+            "dialect": dialect_cases, "battery": battery_cases, "planner": planner_cases, "serial": serial_cases}
 
 
 def main(argv: list[str]) -> int:

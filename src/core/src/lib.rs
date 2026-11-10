@@ -75,6 +75,7 @@
 
 pub use corvus_link as link;
 
+pub mod autoconnect;
 pub mod battery;
 pub mod bridge;
 pub mod buffer;

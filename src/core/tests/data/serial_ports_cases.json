@@ -1,0 +1,10916 @@
+{
+  "phantom": [
+    [
+      "",
+      true
+    ],
+    [
+      "  ",
+      true
+    ],
+    [
+      "/dev/ttyS0",
+      true
+    ],
+    [
+      "/dev/ttyS12",
+      true
+    ],
+    [
+      "/dev/ttyS",
+      false
+    ],
+    [
+      "/dev/ttyACM0",
+      false
+    ],
+    [
+      "/dev/ttyACM12",
+      false
+    ],
+    [
+      "/dev/ttyACM",
+      false
+    ],
+    [
+      "/dev/ttyUSB0",
+      false
+    ],
+    [
+      "/dev/ttyUSB3",
+      false
+    ],
+    [
+      "/dev/ttyUSBx",
+      false
+    ],
+    [
+      "/dev/serial/by-id/usb-3D_Robotics_PX4_FMU_v2.x_0-if00",
+      false
+    ],
+    [
+      "/dev/serial/by-id/usb-FTDI_FT232R-if00",
+      false
+    ],
+    [
+      "/dev/serial/by-id/usb-u-blox_AG_-_www.u-blox.com-if00",
+      false
+    ],
+    [
+      "/dev/cu.usbmodem14201",
+      false
+    ],
+    [
+      "/dev/tty.usbmodem14201",
+      false
+    ],
+    [
+      "/dev/cu.usbserial-0001",
+      false
+    ],
+    [
+      "/dev/cu.SLAB_USBtoUART",
+      false
+    ],
+    [
+      "/dev/cu.Bluetooth-Incoming-Port",
+      true
+    ],
+    [
+      "/dev/tty.Bluetooth-Incoming-Port",
+      true
+    ],
+    [
+      "/dev/cu.debug-console",
+      true
+    ],
+    [
+      "/dev/cu.",
+      false
+    ],
+    [
+      "/dev/cu.a\nb",
+      false
+    ],
+    [
+      "COM3",
+      false
+    ],
+    [
+      "com7",
+      false
+    ],
+    [
+      "\\\\.\\COM12",
+      false
+    ],
+    [
+      "COM",
+      false
+    ],
+    [
+      "COMX",
+      false
+    ],
+    [
+      "/dev/pts/3",
+      true
+    ],
+    [
+      "/dev/pts/x",
+      false
+    ],
+    [
+      "/dev/ptyp0",
+      true
+    ],
+    [
+      "/dev/ptyq1",
+      true
+    ],
+    [
+      "/dev/ptyxyz",
+      true
+    ],
+    [
+      "/dev/ttyp3",
+      true
+    ],
+    [
+      "/dev/ttypA",
+      false
+    ],
+    [
+      "/dev/null",
+      false
+    ],
+    [
+      "ttyACM0",
+      false
+    ],
+    [
+      " /dev/ttyACM1 ",
+      false
+    ]
+  ],
+  "bootloader": [
+    [
+      "",
+      "",
+      false
+    ],
+    [
+      "",
+      "PX4 BL FMU v5.x",
+      true
+    ],
+    [
+      "",
+      "PX4 FMU v5.x",
+      false
+    ],
+    [
+      "",
+      "Pixhawk 4",
+      false
+    ],
+    [
+      "",
+      "u-blox GNSS receiver",
+      false
+    ],
+    [
+      "",
+      "ZED-F9P",
+      false
+    ],
+    [
+      "",
+      "SimpleRTK2B",
+      false
+    ],
+    [
+      "",
+      "ArduPilot-BL",
+      true
+    ],
+    [
+      "",
+      "Cube Orange-BL",
+      true
+    ],
+    [
+      "",
+      "Cube Orange bl",
+      false
+    ],
+    [
+      "",
+      "STM32 BOOTLOADER",
+      true
+    ],
+    [
+      "",
+      "STM32 DFU in FS Mode",
+      true
+    ],
+    [
+      "",
+      "dfuse",
+      false
+    ],
+    [
+      "",
+      "my_dfu_port",
+      false
+    ],
+    [
+      "",
+      "x-blx",
+      false
+    ],
+    [
+      "",
+      "SiK radio",
+      false
+    ],
+    [
+      "",
+      "septentrio mosaic",
+      false
+    ],
+    [
+      "",
+      "bl fmu",
+      true
+    ],
+    [
+      "",
+      "bl  fmu",
+      false
+    ],
+    [
+      "",
+      "Bootloaders",
+      false
+    ],
+    [
+      "",
+      "bootloader_x",
+      false
+    ],
+    [
+      "",
+      "-bl",
+      true
+    ],
+    [
+      "",
+      "a-bl2",
+      false
+    ],
+    [
+      "",
+      "abl fmu",
+      false
+    ],
+    [
+      "   ",
+      "",
+      false
+    ],
+    [
+      "   ",
+      "PX4 BL FMU v5.x",
+      true
+    ],
+    [
+      "   ",
+      "PX4 FMU v5.x",
+      false
+    ],
+    [
+      "   ",
+      "Pixhawk 4",
+      false
+    ],
+    [
+      "   ",
+      "u-blox GNSS receiver",
+      false
+    ],
+    [
+      "   ",
+      "ZED-F9P",
+      false
+    ],
+    [
+      "   ",
+      "SimpleRTK2B",
+      false
+    ],
+    [
+      "   ",
+      "ArduPilot-BL",
+      true
+    ],
+    [
+      "   ",
+      "Cube Orange-BL",
+      true
+    ],
+    [
+      "   ",
+      "Cube Orange bl",
+      false
+    ],
+    [
+      "   ",
+      "STM32 BOOTLOADER",
+      true
+    ],
+    [
+      "   ",
+      "STM32 DFU in FS Mode",
+      true
+    ],
+    [
+      "   ",
+      "dfuse",
+      false
+    ],
+    [
+      "   ",
+      "my_dfu_port",
+      false
+    ],
+    [
+      "   ",
+      "x-blx",
+      false
+    ],
+    [
+      "   ",
+      "SiK radio",
+      false
+    ],
+    [
+      "   ",
+      "septentrio mosaic",
+      false
+    ],
+    [
+      "   ",
+      "bl fmu",
+      true
+    ],
+    [
+      "   ",
+      "bl  fmu",
+      false
+    ],
+    [
+      "   ",
+      "Bootloaders",
+      false
+    ],
+    [
+      "   ",
+      "bootloader_x",
+      false
+    ],
+    [
+      "   ",
+      "-bl",
+      true
+    ],
+    [
+      "   ",
+      "a-bl2",
+      false
+    ],
+    [
+      "   ",
+      "abl fmu",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "PX4 BL FMU v5.x",
+      true
+    ],
+    [
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "PX4 FMU v5.x",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "Pixhawk 4",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "u-blox GNSS receiver",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "ZED-F9P",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "SimpleRTK2B",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "ArduPilot-BL",
+      true
+    ],
+    [
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "Cube Orange-BL",
+      true
+    ],
+    [
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "Cube Orange bl",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "STM32 BOOTLOADER",
+      true
+    ],
+    [
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "STM32 DFU in FS Mode",
+      true
+    ],
+    [
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "dfuse",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "my_dfu_port",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "x-blx",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "SiK radio",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "septentrio mosaic",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "bl fmu",
+      true
+    ],
+    [
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "bl  fmu",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "Bootloaders",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "bootloader_x",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "-bl",
+      true
+    ],
+    [
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "a-bl2",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "abl fmu",
+      false
+    ],
+    [
+      "USB VID:PID=26ac:0011",
+      "",
+      false
+    ],
+    [
+      "USB VID:PID=26ac:0011",
+      "PX4 BL FMU v5.x",
+      true
+    ],
+    [
+      "USB VID:PID=26ac:0011",
+      "PX4 FMU v5.x",
+      false
+    ],
+    [
+      "USB VID:PID=26ac:0011",
+      "Pixhawk 4",
+      false
+    ],
+    [
+      "USB VID:PID=26ac:0011",
+      "u-blox GNSS receiver",
+      false
+    ],
+    [
+      "USB VID:PID=26ac:0011",
+      "ZED-F9P",
+      false
+    ],
+    [
+      "USB VID:PID=26ac:0011",
+      "SimpleRTK2B",
+      false
+    ],
+    [
+      "USB VID:PID=26ac:0011",
+      "ArduPilot-BL",
+      true
+    ],
+    [
+      "USB VID:PID=26ac:0011",
+      "Cube Orange-BL",
+      true
+    ],
+    [
+      "USB VID:PID=26ac:0011",
+      "Cube Orange bl",
+      false
+    ],
+    [
+      "USB VID:PID=26ac:0011",
+      "STM32 BOOTLOADER",
+      true
+    ],
+    [
+      "USB VID:PID=26ac:0011",
+      "STM32 DFU in FS Mode",
+      true
+    ],
+    [
+      "USB VID:PID=26ac:0011",
+      "dfuse",
+      false
+    ],
+    [
+      "USB VID:PID=26ac:0011",
+      "my_dfu_port",
+      false
+    ],
+    [
+      "USB VID:PID=26ac:0011",
+      "x-blx",
+      false
+    ],
+    [
+      "USB VID:PID=26ac:0011",
+      "SiK radio",
+      false
+    ],
+    [
+      "USB VID:PID=26ac:0011",
+      "septentrio mosaic",
+      false
+    ],
+    [
+      "USB VID:PID=26ac:0011",
+      "bl fmu",
+      true
+    ],
+    [
+      "USB VID:PID=26ac:0011",
+      "bl  fmu",
+      false
+    ],
+    [
+      "USB VID:PID=26ac:0011",
+      "Bootloaders",
+      false
+    ],
+    [
+      "USB VID:PID=26ac:0011",
+      "bootloader_x",
+      false
+    ],
+    [
+      "USB VID:PID=26ac:0011",
+      "-bl",
+      true
+    ],
+    [
+      "USB VID:PID=26ac:0011",
+      "a-bl2",
+      false
+    ],
+    [
+      "USB VID:PID=26ac:0011",
+      "abl fmu",
+      false
+    ],
+    [
+      "USB VID:PID=0483:DF11 SER=x",
+      "",
+      true
+    ],
+    [
+      "USB VID:PID=0483:DF11 SER=x",
+      "PX4 BL FMU v5.x",
+      true
+    ],
+    [
+      "USB VID:PID=0483:DF11 SER=x",
+      "PX4 FMU v5.x",
+      true
+    ],
+    [
+      "USB VID:PID=0483:DF11 SER=x",
+      "Pixhawk 4",
+      true
+    ],
+    [
+      "USB VID:PID=0483:DF11 SER=x",
+      "u-blox GNSS receiver",
+      true
+    ],
+    [
+      "USB VID:PID=0483:DF11 SER=x",
+      "ZED-F9P",
+      true
+    ],
+    [
+      "USB VID:PID=0483:DF11 SER=x",
+      "SimpleRTK2B",
+      true
+    ],
+    [
+      "USB VID:PID=0483:DF11 SER=x",
+      "ArduPilot-BL",
+      true
+    ],
+    [
+      "USB VID:PID=0483:DF11 SER=x",
+      "Cube Orange-BL",
+      true
+    ],
+    [
+      "USB VID:PID=0483:DF11 SER=x",
+      "Cube Orange bl",
+      true
+    ],
+    [
+      "USB VID:PID=0483:DF11 SER=x",
+      "STM32 BOOTLOADER",
+      true
+    ],
+    [
+      "USB VID:PID=0483:DF11 SER=x",
+      "STM32 DFU in FS Mode",
+      true
+    ],
+    [
+      "USB VID:PID=0483:DF11 SER=x",
+      "dfuse",
+      true
+    ],
+    [
+      "USB VID:PID=0483:DF11 SER=x",
+      "my_dfu_port",
+      true
+    ],
+    [
+      "USB VID:PID=0483:DF11 SER=x",
+      "x-blx",
+      true
+    ],
+    [
+      "USB VID:PID=0483:DF11 SER=x",
+      "SiK radio",
+      true
+    ],
+    [
+      "USB VID:PID=0483:DF11 SER=x",
+      "septentrio mosaic",
+      true
+    ],
+    [
+      "USB VID:PID=0483:DF11 SER=x",
+      "bl fmu",
+      true
+    ],
+    [
+      "USB VID:PID=0483:DF11 SER=x",
+      "bl  fmu",
+      true
+    ],
+    [
+      "USB VID:PID=0483:DF11 SER=x",
+      "Bootloaders",
+      true
+    ],
+    [
+      "USB VID:PID=0483:DF11 SER=x",
+      "bootloader_x",
+      true
+    ],
+    [
+      "USB VID:PID=0483:DF11 SER=x",
+      "-bl",
+      true
+    ],
+    [
+      "USB VID:PID=0483:DF11 SER=x",
+      "a-bl2",
+      true
+    ],
+    [
+      "USB VID:PID=0483:DF11 SER=x",
+      "abl fmu",
+      true
+    ],
+    [
+      "USB VID:PID=0483:5740",
+      "",
+      false
+    ],
+    [
+      "USB VID:PID=0483:5740",
+      "PX4 BL FMU v5.x",
+      true
+    ],
+    [
+      "USB VID:PID=0483:5740",
+      "PX4 FMU v5.x",
+      false
+    ],
+    [
+      "USB VID:PID=0483:5740",
+      "Pixhawk 4",
+      false
+    ],
+    [
+      "USB VID:PID=0483:5740",
+      "u-blox GNSS receiver",
+      false
+    ],
+    [
+      "USB VID:PID=0483:5740",
+      "ZED-F9P",
+      false
+    ],
+    [
+      "USB VID:PID=0483:5740",
+      "SimpleRTK2B",
+      false
+    ],
+    [
+      "USB VID:PID=0483:5740",
+      "ArduPilot-BL",
+      true
+    ],
+    [
+      "USB VID:PID=0483:5740",
+      "Cube Orange-BL",
+      true
+    ],
+    [
+      "USB VID:PID=0483:5740",
+      "Cube Orange bl",
+      false
+    ],
+    [
+      "USB VID:PID=0483:5740",
+      "STM32 BOOTLOADER",
+      true
+    ],
+    [
+      "USB VID:PID=0483:5740",
+      "STM32 DFU in FS Mode",
+      true
+    ],
+    [
+      "USB VID:PID=0483:5740",
+      "dfuse",
+      false
+    ],
+    [
+      "USB VID:PID=0483:5740",
+      "my_dfu_port",
+      false
+    ],
+    [
+      "USB VID:PID=0483:5740",
+      "x-blx",
+      false
+    ],
+    [
+      "USB VID:PID=0483:5740",
+      "SiK radio",
+      false
+    ],
+    [
+      "USB VID:PID=0483:5740",
+      "septentrio mosaic",
+      false
+    ],
+    [
+      "USB VID:PID=0483:5740",
+      "bl fmu",
+      true
+    ],
+    [
+      "USB VID:PID=0483:5740",
+      "bl  fmu",
+      false
+    ],
+    [
+      "USB VID:PID=0483:5740",
+      "Bootloaders",
+      false
+    ],
+    [
+      "USB VID:PID=0483:5740",
+      "bootloader_x",
+      false
+    ],
+    [
+      "USB VID:PID=0483:5740",
+      "-bl",
+      true
+    ],
+    [
+      "USB VID:PID=0483:5740",
+      "a-bl2",
+      false
+    ],
+    [
+      "USB VID:PID=0483:5740",
+      "abl fmu",
+      false
+    ],
+    [
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "",
+      false
+    ],
+    [
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "PX4 BL FMU v5.x",
+      true
+    ],
+    [
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "PX4 FMU v5.x",
+      false
+    ],
+    [
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "Pixhawk 4",
+      false
+    ],
+    [
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "u-blox GNSS receiver",
+      false
+    ],
+    [
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "ZED-F9P",
+      false
+    ],
+    [
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "SimpleRTK2B",
+      false
+    ],
+    [
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "ArduPilot-BL",
+      true
+    ],
+    [
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "Cube Orange-BL",
+      true
+    ],
+    [
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "Cube Orange bl",
+      false
+    ],
+    [
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "STM32 BOOTLOADER",
+      true
+    ],
+    [
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "STM32 DFU in FS Mode",
+      true
+    ],
+    [
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "dfuse",
+      false
+    ],
+    [
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "my_dfu_port",
+      false
+    ],
+    [
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "x-blx",
+      false
+    ],
+    [
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "SiK radio",
+      false
+    ],
+    [
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "septentrio mosaic",
+      false
+    ],
+    [
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "bl fmu",
+      true
+    ],
+    [
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "bl  fmu",
+      false
+    ],
+    [
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "Bootloaders",
+      false
+    ],
+    [
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "bootloader_x",
+      false
+    ],
+    [
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "-bl",
+      true
+    ],
+    [
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "a-bl2",
+      false
+    ],
+    [
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "abl fmu",
+      false
+    ],
+    [
+      "USB VID:PID=10C4:EA60",
+      "",
+      false
+    ],
+    [
+      "USB VID:PID=10C4:EA60",
+      "PX4 BL FMU v5.x",
+      true
+    ],
+    [
+      "USB VID:PID=10C4:EA60",
+      "PX4 FMU v5.x",
+      false
+    ],
+    [
+      "USB VID:PID=10C4:EA60",
+      "Pixhawk 4",
+      false
+    ],
+    [
+      "USB VID:PID=10C4:EA60",
+      "u-blox GNSS receiver",
+      false
+    ],
+    [
+      "USB VID:PID=10C4:EA60",
+      "ZED-F9P",
+      false
+    ],
+    [
+      "USB VID:PID=10C4:EA60",
+      "SimpleRTK2B",
+      false
+    ],
+    [
+      "USB VID:PID=10C4:EA60",
+      "ArduPilot-BL",
+      true
+    ],
+    [
+      "USB VID:PID=10C4:EA60",
+      "Cube Orange-BL",
+      true
+    ],
+    [
+      "USB VID:PID=10C4:EA60",
+      "Cube Orange bl",
+      false
+    ],
+    [
+      "USB VID:PID=10C4:EA60",
+      "STM32 BOOTLOADER",
+      true
+    ],
+    [
+      "USB VID:PID=10C4:EA60",
+      "STM32 DFU in FS Mode",
+      true
+    ],
+    [
+      "USB VID:PID=10C4:EA60",
+      "dfuse",
+      false
+    ],
+    [
+      "USB VID:PID=10C4:EA60",
+      "my_dfu_port",
+      false
+    ],
+    [
+      "USB VID:PID=10C4:EA60",
+      "x-blx",
+      false
+    ],
+    [
+      "USB VID:PID=10C4:EA60",
+      "SiK radio",
+      false
+    ],
+    [
+      "USB VID:PID=10C4:EA60",
+      "septentrio mosaic",
+      false
+    ],
+    [
+      "USB VID:PID=10C4:EA60",
+      "bl fmu",
+      true
+    ],
+    [
+      "USB VID:PID=10C4:EA60",
+      "bl  fmu",
+      false
+    ],
+    [
+      "USB VID:PID=10C4:EA60",
+      "Bootloaders",
+      false
+    ],
+    [
+      "USB VID:PID=10C4:EA60",
+      "bootloader_x",
+      false
+    ],
+    [
+      "USB VID:PID=10C4:EA60",
+      "-bl",
+      true
+    ],
+    [
+      "USB VID:PID=10C4:EA60",
+      "a-bl2",
+      false
+    ],
+    [
+      "USB VID:PID=10C4:EA60",
+      "abl fmu",
+      false
+    ],
+    [
+      "USB VID:PID=1A86:7523",
+      "",
+      false
+    ],
+    [
+      "USB VID:PID=1A86:7523",
+      "PX4 BL FMU v5.x",
+      true
+    ],
+    [
+      "USB VID:PID=1A86:7523",
+      "PX4 FMU v5.x",
+      false
+    ],
+    [
+      "USB VID:PID=1A86:7523",
+      "Pixhawk 4",
+      false
+    ],
+    [
+      "USB VID:PID=1A86:7523",
+      "u-blox GNSS receiver",
+      false
+    ],
+    [
+      "USB VID:PID=1A86:7523",
+      "ZED-F9P",
+      false
+    ],
+    [
+      "USB VID:PID=1A86:7523",
+      "SimpleRTK2B",
+      false
+    ],
+    [
+      "USB VID:PID=1A86:7523",
+      "ArduPilot-BL",
+      true
+    ],
+    [
+      "USB VID:PID=1A86:7523",
+      "Cube Orange-BL",
+      true
+    ],
+    [
+      "USB VID:PID=1A86:7523",
+      "Cube Orange bl",
+      false
+    ],
+    [
+      "USB VID:PID=1A86:7523",
+      "STM32 BOOTLOADER",
+      true
+    ],
+    [
+      "USB VID:PID=1A86:7523",
+      "STM32 DFU in FS Mode",
+      true
+    ],
+    [
+      "USB VID:PID=1A86:7523",
+      "dfuse",
+      false
+    ],
+    [
+      "USB VID:PID=1A86:7523",
+      "my_dfu_port",
+      false
+    ],
+    [
+      "USB VID:PID=1A86:7523",
+      "x-blx",
+      false
+    ],
+    [
+      "USB VID:PID=1A86:7523",
+      "SiK radio",
+      false
+    ],
+    [
+      "USB VID:PID=1A86:7523",
+      "septentrio mosaic",
+      false
+    ],
+    [
+      "USB VID:PID=1A86:7523",
+      "bl fmu",
+      true
+    ],
+    [
+      "USB VID:PID=1A86:7523",
+      "bl  fmu",
+      false
+    ],
+    [
+      "USB VID:PID=1A86:7523",
+      "Bootloaders",
+      false
+    ],
+    [
+      "USB VID:PID=1A86:7523",
+      "bootloader_x",
+      false
+    ],
+    [
+      "USB VID:PID=1A86:7523",
+      "-bl",
+      true
+    ],
+    [
+      "USB VID:PID=1A86:7523",
+      "a-bl2",
+      false
+    ],
+    [
+      "USB VID:PID=1A86:7523",
+      "abl fmu",
+      false
+    ],
+    [
+      "USB VID:PID=067B:2303",
+      "",
+      false
+    ],
+    [
+      "USB VID:PID=067B:2303",
+      "PX4 BL FMU v5.x",
+      true
+    ],
+    [
+      "USB VID:PID=067B:2303",
+      "PX4 FMU v5.x",
+      false
+    ],
+    [
+      "USB VID:PID=067B:2303",
+      "Pixhawk 4",
+      false
+    ],
+    [
+      "USB VID:PID=067B:2303",
+      "u-blox GNSS receiver",
+      false
+    ],
+    [
+      "USB VID:PID=067B:2303",
+      "ZED-F9P",
+      false
+    ],
+    [
+      "USB VID:PID=067B:2303",
+      "SimpleRTK2B",
+      false
+    ],
+    [
+      "USB VID:PID=067B:2303",
+      "ArduPilot-BL",
+      true
+    ],
+    [
+      "USB VID:PID=067B:2303",
+      "Cube Orange-BL",
+      true
+    ],
+    [
+      "USB VID:PID=067B:2303",
+      "Cube Orange bl",
+      false
+    ],
+    [
+      "USB VID:PID=067B:2303",
+      "STM32 BOOTLOADER",
+      true
+    ],
+    [
+      "USB VID:PID=067B:2303",
+      "STM32 DFU in FS Mode",
+      true
+    ],
+    [
+      "USB VID:PID=067B:2303",
+      "dfuse",
+      false
+    ],
+    [
+      "USB VID:PID=067B:2303",
+      "my_dfu_port",
+      false
+    ],
+    [
+      "USB VID:PID=067B:2303",
+      "x-blx",
+      false
+    ],
+    [
+      "USB VID:PID=067B:2303",
+      "SiK radio",
+      false
+    ],
+    [
+      "USB VID:PID=067B:2303",
+      "septentrio mosaic",
+      false
+    ],
+    [
+      "USB VID:PID=067B:2303",
+      "bl fmu",
+      true
+    ],
+    [
+      "USB VID:PID=067B:2303",
+      "bl  fmu",
+      false
+    ],
+    [
+      "USB VID:PID=067B:2303",
+      "Bootloaders",
+      false
+    ],
+    [
+      "USB VID:PID=067B:2303",
+      "bootloader_x",
+      false
+    ],
+    [
+      "USB VID:PID=067B:2303",
+      "-bl",
+      true
+    ],
+    [
+      "USB VID:PID=067B:2303",
+      "a-bl2",
+      false
+    ],
+    [
+      "USB VID:PID=067B:2303",
+      "abl fmu",
+      false
+    ],
+    [
+      "USB VID:PID=1546:01A9 SER=",
+      "",
+      false
+    ],
+    [
+      "USB VID:PID=1546:01A9 SER=",
+      "PX4 BL FMU v5.x",
+      true
+    ],
+    [
+      "USB VID:PID=1546:01A9 SER=",
+      "PX4 FMU v5.x",
+      false
+    ],
+    [
+      "USB VID:PID=1546:01A9 SER=",
+      "Pixhawk 4",
+      false
+    ],
+    [
+      "USB VID:PID=1546:01A9 SER=",
+      "u-blox GNSS receiver",
+      false
+    ],
+    [
+      "USB VID:PID=1546:01A9 SER=",
+      "ZED-F9P",
+      false
+    ],
+    [
+      "USB VID:PID=1546:01A9 SER=",
+      "SimpleRTK2B",
+      false
+    ],
+    [
+      "USB VID:PID=1546:01A9 SER=",
+      "ArduPilot-BL",
+      true
+    ],
+    [
+      "USB VID:PID=1546:01A9 SER=",
+      "Cube Orange-BL",
+      true
+    ],
+    [
+      "USB VID:PID=1546:01A9 SER=",
+      "Cube Orange bl",
+      false
+    ],
+    [
+      "USB VID:PID=1546:01A9 SER=",
+      "STM32 BOOTLOADER",
+      true
+    ],
+    [
+      "USB VID:PID=1546:01A9 SER=",
+      "STM32 DFU in FS Mode",
+      true
+    ],
+    [
+      "USB VID:PID=1546:01A9 SER=",
+      "dfuse",
+      false
+    ],
+    [
+      "USB VID:PID=1546:01A9 SER=",
+      "my_dfu_port",
+      false
+    ],
+    [
+      "USB VID:PID=1546:01A9 SER=",
+      "x-blx",
+      false
+    ],
+    [
+      "USB VID:PID=1546:01A9 SER=",
+      "SiK radio",
+      false
+    ],
+    [
+      "USB VID:PID=1546:01A9 SER=",
+      "septentrio mosaic",
+      false
+    ],
+    [
+      "USB VID:PID=1546:01A9 SER=",
+      "bl fmu",
+      true
+    ],
+    [
+      "USB VID:PID=1546:01A9 SER=",
+      "bl  fmu",
+      false
+    ],
+    [
+      "USB VID:PID=1546:01A9 SER=",
+      "Bootloaders",
+      false
+    ],
+    [
+      "USB VID:PID=1546:01A9 SER=",
+      "bootloader_x",
+      false
+    ],
+    [
+      "USB VID:PID=1546:01A9 SER=",
+      "-bl",
+      true
+    ],
+    [
+      "USB VID:PID=1546:01A9 SER=",
+      "a-bl2",
+      false
+    ],
+    [
+      "USB VID:PID=1546:01A9 SER=",
+      "abl fmu",
+      false
+    ],
+    [
+      "USB VID:PID=152A:85C0",
+      "",
+      false
+    ],
+    [
+      "USB VID:PID=152A:85C0",
+      "PX4 BL FMU v5.x",
+      true
+    ],
+    [
+      "USB VID:PID=152A:85C0",
+      "PX4 FMU v5.x",
+      false
+    ],
+    [
+      "USB VID:PID=152A:85C0",
+      "Pixhawk 4",
+      false
+    ],
+    [
+      "USB VID:PID=152A:85C0",
+      "u-blox GNSS receiver",
+      false
+    ],
+    [
+      "USB VID:PID=152A:85C0",
+      "ZED-F9P",
+      false
+    ],
+    [
+      "USB VID:PID=152A:85C0",
+      "SimpleRTK2B",
+      false
+    ],
+    [
+      "USB VID:PID=152A:85C0",
+      "ArduPilot-BL",
+      true
+    ],
+    [
+      "USB VID:PID=152A:85C0",
+      "Cube Orange-BL",
+      true
+    ],
+    [
+      "USB VID:PID=152A:85C0",
+      "Cube Orange bl",
+      false
+    ],
+    [
+      "USB VID:PID=152A:85C0",
+      "STM32 BOOTLOADER",
+      true
+    ],
+    [
+      "USB VID:PID=152A:85C0",
+      "STM32 DFU in FS Mode",
+      true
+    ],
+    [
+      "USB VID:PID=152A:85C0",
+      "dfuse",
+      false
+    ],
+    [
+      "USB VID:PID=152A:85C0",
+      "my_dfu_port",
+      false
+    ],
+    [
+      "USB VID:PID=152A:85C0",
+      "x-blx",
+      false
+    ],
+    [
+      "USB VID:PID=152A:85C0",
+      "SiK radio",
+      false
+    ],
+    [
+      "USB VID:PID=152A:85C0",
+      "septentrio mosaic",
+      false
+    ],
+    [
+      "USB VID:PID=152A:85C0",
+      "bl fmu",
+      true
+    ],
+    [
+      "USB VID:PID=152A:85C0",
+      "bl  fmu",
+      false
+    ],
+    [
+      "USB VID:PID=152A:85C0",
+      "Bootloaders",
+      false
+    ],
+    [
+      "USB VID:PID=152A:85C0",
+      "bootloader_x",
+      false
+    ],
+    [
+      "USB VID:PID=152A:85C0",
+      "-bl",
+      true
+    ],
+    [
+      "USB VID:PID=152A:85C0",
+      "a-bl2",
+      false
+    ],
+    [
+      "USB VID:PID=152A:85C0",
+      "abl fmu",
+      false
+    ],
+    [
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "",
+      false
+    ],
+    [
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "PX4 BL FMU v5.x",
+      true
+    ],
+    [
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "PX4 FMU v5.x",
+      false
+    ],
+    [
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "Pixhawk 4",
+      false
+    ],
+    [
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "u-blox GNSS receiver",
+      false
+    ],
+    [
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "ZED-F9P",
+      false
+    ],
+    [
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "SimpleRTK2B",
+      false
+    ],
+    [
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "ArduPilot-BL",
+      true
+    ],
+    [
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "Cube Orange-BL",
+      true
+    ],
+    [
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "Cube Orange bl",
+      false
+    ],
+    [
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "STM32 BOOTLOADER",
+      true
+    ],
+    [
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "STM32 DFU in FS Mode",
+      true
+    ],
+    [
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "dfuse",
+      false
+    ],
+    [
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "my_dfu_port",
+      false
+    ],
+    [
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "x-blx",
+      false
+    ],
+    [
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "SiK radio",
+      false
+    ],
+    [
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "septentrio mosaic",
+      false
+    ],
+    [
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "bl fmu",
+      true
+    ],
+    [
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "bl  fmu",
+      false
+    ],
+    [
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "Bootloaders",
+      false
+    ],
+    [
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "bootloader_x",
+      false
+    ],
+    [
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "-bl",
+      true
+    ],
+    [
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "a-bl2",
+      false
+    ],
+    [
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "abl fmu",
+      false
+    ],
+    [
+      "VID:PID=ABCD:EF01",
+      "",
+      false
+    ],
+    [
+      "VID:PID=ABCD:EF01",
+      "PX4 BL FMU v5.x",
+      true
+    ],
+    [
+      "VID:PID=ABCD:EF01",
+      "PX4 FMU v5.x",
+      false
+    ],
+    [
+      "VID:PID=ABCD:EF01",
+      "Pixhawk 4",
+      false
+    ],
+    [
+      "VID:PID=ABCD:EF01",
+      "u-blox GNSS receiver",
+      false
+    ],
+    [
+      "VID:PID=ABCD:EF01",
+      "ZED-F9P",
+      false
+    ],
+    [
+      "VID:PID=ABCD:EF01",
+      "SimpleRTK2B",
+      false
+    ],
+    [
+      "VID:PID=ABCD:EF01",
+      "ArduPilot-BL",
+      true
+    ],
+    [
+      "VID:PID=ABCD:EF01",
+      "Cube Orange-BL",
+      true
+    ],
+    [
+      "VID:PID=ABCD:EF01",
+      "Cube Orange bl",
+      false
+    ],
+    [
+      "VID:PID=ABCD:EF01",
+      "STM32 BOOTLOADER",
+      true
+    ],
+    [
+      "VID:PID=ABCD:EF01",
+      "STM32 DFU in FS Mode",
+      true
+    ],
+    [
+      "VID:PID=ABCD:EF01",
+      "dfuse",
+      false
+    ],
+    [
+      "VID:PID=ABCD:EF01",
+      "my_dfu_port",
+      false
+    ],
+    [
+      "VID:PID=ABCD:EF01",
+      "x-blx",
+      false
+    ],
+    [
+      "VID:PID=ABCD:EF01",
+      "SiK radio",
+      false
+    ],
+    [
+      "VID:PID=ABCD:EF01",
+      "septentrio mosaic",
+      false
+    ],
+    [
+      "VID:PID=ABCD:EF01",
+      "bl fmu",
+      true
+    ],
+    [
+      "VID:PID=ABCD:EF01",
+      "bl  fmu",
+      false
+    ],
+    [
+      "VID:PID=ABCD:EF01",
+      "Bootloaders",
+      false
+    ],
+    [
+      "VID:PID=ABCD:EF01",
+      "bootloader_x",
+      false
+    ],
+    [
+      "VID:PID=ABCD:EF01",
+      "-bl",
+      true
+    ],
+    [
+      "VID:PID=ABCD:EF01",
+      "a-bl2",
+      false
+    ],
+    [
+      "VID:PID=ABCD:EF01",
+      "abl fmu",
+      false
+    ],
+    [
+      "USB VID:PID=ABC:DEF1",
+      "",
+      false
+    ],
+    [
+      "USB VID:PID=ABC:DEF1",
+      "PX4 BL FMU v5.x",
+      true
+    ],
+    [
+      "USB VID:PID=ABC:DEF1",
+      "PX4 FMU v5.x",
+      false
+    ],
+    [
+      "USB VID:PID=ABC:DEF1",
+      "Pixhawk 4",
+      false
+    ],
+    [
+      "USB VID:PID=ABC:DEF1",
+      "u-blox GNSS receiver",
+      false
+    ],
+    [
+      "USB VID:PID=ABC:DEF1",
+      "ZED-F9P",
+      false
+    ],
+    [
+      "USB VID:PID=ABC:DEF1",
+      "SimpleRTK2B",
+      false
+    ],
+    [
+      "USB VID:PID=ABC:DEF1",
+      "ArduPilot-BL",
+      true
+    ],
+    [
+      "USB VID:PID=ABC:DEF1",
+      "Cube Orange-BL",
+      true
+    ],
+    [
+      "USB VID:PID=ABC:DEF1",
+      "Cube Orange bl",
+      false
+    ],
+    [
+      "USB VID:PID=ABC:DEF1",
+      "STM32 BOOTLOADER",
+      true
+    ],
+    [
+      "USB VID:PID=ABC:DEF1",
+      "STM32 DFU in FS Mode",
+      true
+    ],
+    [
+      "USB VID:PID=ABC:DEF1",
+      "dfuse",
+      false
+    ],
+    [
+      "USB VID:PID=ABC:DEF1",
+      "my_dfu_port",
+      false
+    ],
+    [
+      "USB VID:PID=ABC:DEF1",
+      "x-blx",
+      false
+    ],
+    [
+      "USB VID:PID=ABC:DEF1",
+      "SiK radio",
+      false
+    ],
+    [
+      "USB VID:PID=ABC:DEF1",
+      "septentrio mosaic",
+      false
+    ],
+    [
+      "USB VID:PID=ABC:DEF1",
+      "bl fmu",
+      true
+    ],
+    [
+      "USB VID:PID=ABC:DEF1",
+      "bl  fmu",
+      false
+    ],
+    [
+      "USB VID:PID=ABC:DEF1",
+      "Bootloaders",
+      false
+    ],
+    [
+      "USB VID:PID=ABC:DEF1",
+      "bootloader_x",
+      false
+    ],
+    [
+      "USB VID:PID=ABC:DEF1",
+      "-bl",
+      true
+    ],
+    [
+      "USB VID:PID=ABC:DEF1",
+      "a-bl2",
+      false
+    ],
+    [
+      "USB VID:PID=ABC:DEF1",
+      "abl fmu",
+      false
+    ],
+    [
+      "USB VID:PID=ABCD:EF0",
+      "",
+      false
+    ],
+    [
+      "USB VID:PID=ABCD:EF0",
+      "PX4 BL FMU v5.x",
+      true
+    ],
+    [
+      "USB VID:PID=ABCD:EF0",
+      "PX4 FMU v5.x",
+      false
+    ],
+    [
+      "USB VID:PID=ABCD:EF0",
+      "Pixhawk 4",
+      false
+    ],
+    [
+      "USB VID:PID=ABCD:EF0",
+      "u-blox GNSS receiver",
+      false
+    ],
+    [
+      "USB VID:PID=ABCD:EF0",
+      "ZED-F9P",
+      false
+    ],
+    [
+      "USB VID:PID=ABCD:EF0",
+      "SimpleRTK2B",
+      false
+    ],
+    [
+      "USB VID:PID=ABCD:EF0",
+      "ArduPilot-BL",
+      true
+    ],
+    [
+      "USB VID:PID=ABCD:EF0",
+      "Cube Orange-BL",
+      true
+    ],
+    [
+      "USB VID:PID=ABCD:EF0",
+      "Cube Orange bl",
+      false
+    ],
+    [
+      "USB VID:PID=ABCD:EF0",
+      "STM32 BOOTLOADER",
+      true
+    ],
+    [
+      "USB VID:PID=ABCD:EF0",
+      "STM32 DFU in FS Mode",
+      true
+    ],
+    [
+      "USB VID:PID=ABCD:EF0",
+      "dfuse",
+      false
+    ],
+    [
+      "USB VID:PID=ABCD:EF0",
+      "my_dfu_port",
+      false
+    ],
+    [
+      "USB VID:PID=ABCD:EF0",
+      "x-blx",
+      false
+    ],
+    [
+      "USB VID:PID=ABCD:EF0",
+      "SiK radio",
+      false
+    ],
+    [
+      "USB VID:PID=ABCD:EF0",
+      "septentrio mosaic",
+      false
+    ],
+    [
+      "USB VID:PID=ABCD:EF0",
+      "bl fmu",
+      true
+    ],
+    [
+      "USB VID:PID=ABCD:EF0",
+      "bl  fmu",
+      false
+    ],
+    [
+      "USB VID:PID=ABCD:EF0",
+      "Bootloaders",
+      false
+    ],
+    [
+      "USB VID:PID=ABCD:EF0",
+      "bootloader_x",
+      false
+    ],
+    [
+      "USB VID:PID=ABCD:EF0",
+      "-bl",
+      true
+    ],
+    [
+      "USB VID:PID=ABCD:EF0",
+      "a-bl2",
+      false
+    ],
+    [
+      "USB VID:PID=ABCD:EF0",
+      "abl fmu",
+      false
+    ],
+    [
+      "usb vid:pid=26ac:0032  ser=zz",
+      "",
+      false
+    ],
+    [
+      "usb vid:pid=26ac:0032  ser=zz",
+      "PX4 BL FMU v5.x",
+      true
+    ],
+    [
+      "usb vid:pid=26ac:0032  ser=zz",
+      "PX4 FMU v5.x",
+      false
+    ],
+    [
+      "usb vid:pid=26ac:0032  ser=zz",
+      "Pixhawk 4",
+      false
+    ],
+    [
+      "usb vid:pid=26ac:0032  ser=zz",
+      "u-blox GNSS receiver",
+      false
+    ],
+    [
+      "usb vid:pid=26ac:0032  ser=zz",
+      "ZED-F9P",
+      false
+    ],
+    [
+      "usb vid:pid=26ac:0032  ser=zz",
+      "SimpleRTK2B",
+      false
+    ],
+    [
+      "usb vid:pid=26ac:0032  ser=zz",
+      "ArduPilot-BL",
+      true
+    ],
+    [
+      "usb vid:pid=26ac:0032  ser=zz",
+      "Cube Orange-BL",
+      true
+    ],
+    [
+      "usb vid:pid=26ac:0032  ser=zz",
+      "Cube Orange bl",
+      false
+    ],
+    [
+      "usb vid:pid=26ac:0032  ser=zz",
+      "STM32 BOOTLOADER",
+      true
+    ],
+    [
+      "usb vid:pid=26ac:0032  ser=zz",
+      "STM32 DFU in FS Mode",
+      true
+    ],
+    [
+      "usb vid:pid=26ac:0032  ser=zz",
+      "dfuse",
+      false
+    ],
+    [
+      "usb vid:pid=26ac:0032  ser=zz",
+      "my_dfu_port",
+      false
+    ],
+    [
+      "usb vid:pid=26ac:0032  ser=zz",
+      "x-blx",
+      false
+    ],
+    [
+      "usb vid:pid=26ac:0032  ser=zz",
+      "SiK radio",
+      false
+    ],
+    [
+      "usb vid:pid=26ac:0032  ser=zz",
+      "septentrio mosaic",
+      false
+    ],
+    [
+      "usb vid:pid=26ac:0032  ser=zz",
+      "bl fmu",
+      true
+    ],
+    [
+      "usb vid:pid=26ac:0032  ser=zz",
+      "bl  fmu",
+      false
+    ],
+    [
+      "usb vid:pid=26ac:0032  ser=zz",
+      "Bootloaders",
+      false
+    ],
+    [
+      "usb vid:pid=26ac:0032  ser=zz",
+      "bootloader_x",
+      false
+    ],
+    [
+      "usb vid:pid=26ac:0032  ser=zz",
+      "-bl",
+      true
+    ],
+    [
+      "usb vid:pid=26ac:0032  ser=zz",
+      "a-bl2",
+      false
+    ],
+    [
+      "usb vid:pid=26ac:0032  ser=zz",
+      "abl fmu",
+      false
+    ],
+    [
+      "n/a",
+      "",
+      false
+    ],
+    [
+      "n/a",
+      "PX4 BL FMU v5.x",
+      true
+    ],
+    [
+      "n/a",
+      "PX4 FMU v5.x",
+      false
+    ],
+    [
+      "n/a",
+      "Pixhawk 4",
+      false
+    ],
+    [
+      "n/a",
+      "u-blox GNSS receiver",
+      false
+    ],
+    [
+      "n/a",
+      "ZED-F9P",
+      false
+    ],
+    [
+      "n/a",
+      "SimpleRTK2B",
+      false
+    ],
+    [
+      "n/a",
+      "ArduPilot-BL",
+      true
+    ],
+    [
+      "n/a",
+      "Cube Orange-BL",
+      true
+    ],
+    [
+      "n/a",
+      "Cube Orange bl",
+      false
+    ],
+    [
+      "n/a",
+      "STM32 BOOTLOADER",
+      true
+    ],
+    [
+      "n/a",
+      "STM32 DFU in FS Mode",
+      true
+    ],
+    [
+      "n/a",
+      "dfuse",
+      false
+    ],
+    [
+      "n/a",
+      "my_dfu_port",
+      false
+    ],
+    [
+      "n/a",
+      "x-blx",
+      false
+    ],
+    [
+      "n/a",
+      "SiK radio",
+      false
+    ],
+    [
+      "n/a",
+      "septentrio mosaic",
+      false
+    ],
+    [
+      "n/a",
+      "bl fmu",
+      true
+    ],
+    [
+      "n/a",
+      "bl  fmu",
+      false
+    ],
+    [
+      "n/a",
+      "Bootloaders",
+      false
+    ],
+    [
+      "n/a",
+      "bootloader_x",
+      false
+    ],
+    [
+      "n/a",
+      "-bl",
+      true
+    ],
+    [
+      "n/a",
+      "a-bl2",
+      false
+    ],
+    [
+      "n/a",
+      "abl fmu",
+      false
+    ],
+    [
+      "PX4 FMU v5",
+      "",
+      false
+    ],
+    [
+      "PX4 FMU v5",
+      "PX4 BL FMU v5.x",
+      true
+    ],
+    [
+      "PX4 FMU v5",
+      "PX4 FMU v5.x",
+      false
+    ],
+    [
+      "PX4 FMU v5",
+      "Pixhawk 4",
+      false
+    ],
+    [
+      "PX4 FMU v5",
+      "u-blox GNSS receiver",
+      false
+    ],
+    [
+      "PX4 FMU v5",
+      "ZED-F9P",
+      false
+    ],
+    [
+      "PX4 FMU v5",
+      "SimpleRTK2B",
+      false
+    ],
+    [
+      "PX4 FMU v5",
+      "ArduPilot-BL",
+      true
+    ],
+    [
+      "PX4 FMU v5",
+      "Cube Orange-BL",
+      true
+    ],
+    [
+      "PX4 FMU v5",
+      "Cube Orange bl",
+      false
+    ],
+    [
+      "PX4 FMU v5",
+      "STM32 BOOTLOADER",
+      true
+    ],
+    [
+      "PX4 FMU v5",
+      "STM32 DFU in FS Mode",
+      true
+    ],
+    [
+      "PX4 FMU v5",
+      "dfuse",
+      false
+    ],
+    [
+      "PX4 FMU v5",
+      "my_dfu_port",
+      false
+    ],
+    [
+      "PX4 FMU v5",
+      "x-blx",
+      false
+    ],
+    [
+      "PX4 FMU v5",
+      "SiK radio",
+      false
+    ],
+    [
+      "PX4 FMU v5",
+      "septentrio mosaic",
+      false
+    ],
+    [
+      "PX4 FMU v5",
+      "bl fmu",
+      true
+    ],
+    [
+      "PX4 FMU v5",
+      "bl  fmu",
+      false
+    ],
+    [
+      "PX4 FMU v5",
+      "Bootloaders",
+      false
+    ],
+    [
+      "PX4 FMU v5",
+      "bootloader_x",
+      false
+    ],
+    [
+      "PX4 FMU v5",
+      "-bl",
+      true
+    ],
+    [
+      "PX4 FMU v5",
+      "a-bl2",
+      false
+    ],
+    [
+      "PX4 FMU v5",
+      "abl fmu",
+      false
+    ],
+    [
+      "Hex Cube Orange",
+      "",
+      false
+    ],
+    [
+      "Hex Cube Orange",
+      "PX4 BL FMU v5.x",
+      true
+    ],
+    [
+      "Hex Cube Orange",
+      "PX4 FMU v5.x",
+      false
+    ],
+    [
+      "Hex Cube Orange",
+      "Pixhawk 4",
+      false
+    ],
+    [
+      "Hex Cube Orange",
+      "u-blox GNSS receiver",
+      false
+    ],
+    [
+      "Hex Cube Orange",
+      "ZED-F9P",
+      false
+    ],
+    [
+      "Hex Cube Orange",
+      "SimpleRTK2B",
+      false
+    ],
+    [
+      "Hex Cube Orange",
+      "ArduPilot-BL",
+      true
+    ],
+    [
+      "Hex Cube Orange",
+      "Cube Orange-BL",
+      true
+    ],
+    [
+      "Hex Cube Orange",
+      "Cube Orange bl",
+      false
+    ],
+    [
+      "Hex Cube Orange",
+      "STM32 BOOTLOADER",
+      true
+    ],
+    [
+      "Hex Cube Orange",
+      "STM32 DFU in FS Mode",
+      true
+    ],
+    [
+      "Hex Cube Orange",
+      "dfuse",
+      false
+    ],
+    [
+      "Hex Cube Orange",
+      "my_dfu_port",
+      false
+    ],
+    [
+      "Hex Cube Orange",
+      "x-blx",
+      false
+    ],
+    [
+      "Hex Cube Orange",
+      "SiK radio",
+      false
+    ],
+    [
+      "Hex Cube Orange",
+      "septentrio mosaic",
+      false
+    ],
+    [
+      "Hex Cube Orange",
+      "bl fmu",
+      true
+    ],
+    [
+      "Hex Cube Orange",
+      "bl  fmu",
+      false
+    ],
+    [
+      "Hex Cube Orange",
+      "Bootloaders",
+      false
+    ],
+    [
+      "Hex Cube Orange",
+      "bootloader_x",
+      false
+    ],
+    [
+      "Hex Cube Orange",
+      "-bl",
+      true
+    ],
+    [
+      "Hex Cube Orange",
+      "a-bl2",
+      false
+    ],
+    [
+      "Hex Cube Orange",
+      "abl fmu",
+      false
+    ],
+    [
+      "SER=1",
+      "",
+      false
+    ],
+    [
+      "SER=1",
+      "PX4 BL FMU v5.x",
+      true
+    ],
+    [
+      "SER=1",
+      "PX4 FMU v5.x",
+      false
+    ],
+    [
+      "SER=1",
+      "Pixhawk 4",
+      false
+    ],
+    [
+      "SER=1",
+      "u-blox GNSS receiver",
+      false
+    ],
+    [
+      "SER=1",
+      "ZED-F9P",
+      false
+    ],
+    [
+      "SER=1",
+      "SimpleRTK2B",
+      false
+    ],
+    [
+      "SER=1",
+      "ArduPilot-BL",
+      true
+    ],
+    [
+      "SER=1",
+      "Cube Orange-BL",
+      true
+    ],
+    [
+      "SER=1",
+      "Cube Orange bl",
+      false
+    ],
+    [
+      "SER=1",
+      "STM32 BOOTLOADER",
+      true
+    ],
+    [
+      "SER=1",
+      "STM32 DFU in FS Mode",
+      true
+    ],
+    [
+      "SER=1",
+      "dfuse",
+      false
+    ],
+    [
+      "SER=1",
+      "my_dfu_port",
+      false
+    ],
+    [
+      "SER=1",
+      "x-blx",
+      false
+    ],
+    [
+      "SER=1",
+      "SiK radio",
+      false
+    ],
+    [
+      "SER=1",
+      "septentrio mosaic",
+      false
+    ],
+    [
+      "SER=1",
+      "bl fmu",
+      true
+    ],
+    [
+      "SER=1",
+      "bl  fmu",
+      false
+    ],
+    [
+      "SER=1",
+      "Bootloaders",
+      false
+    ],
+    [
+      "SER=1",
+      "bootloader_x",
+      false
+    ],
+    [
+      "SER=1",
+      "-bl",
+      true
+    ],
+    [
+      "SER=1",
+      "a-bl2",
+      false
+    ],
+    [
+      "SER=1",
+      "abl fmu",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032SER=1",
+      "",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032SER=1",
+      "PX4 BL FMU v5.x",
+      true
+    ],
+    [
+      "USB VID:PID=26AC:0032SER=1",
+      "PX4 FMU v5.x",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032SER=1",
+      "Pixhawk 4",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032SER=1",
+      "u-blox GNSS receiver",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032SER=1",
+      "ZED-F9P",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032SER=1",
+      "SimpleRTK2B",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032SER=1",
+      "ArduPilot-BL",
+      true
+    ],
+    [
+      "USB VID:PID=26AC:0032SER=1",
+      "Cube Orange-BL",
+      true
+    ],
+    [
+      "USB VID:PID=26AC:0032SER=1",
+      "Cube Orange bl",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032SER=1",
+      "STM32 BOOTLOADER",
+      true
+    ],
+    [
+      "USB VID:PID=26AC:0032SER=1",
+      "STM32 DFU in FS Mode",
+      true
+    ],
+    [
+      "USB VID:PID=26AC:0032SER=1",
+      "dfuse",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032SER=1",
+      "my_dfu_port",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032SER=1",
+      "x-blx",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032SER=1",
+      "SiK radio",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032SER=1",
+      "septentrio mosaic",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032SER=1",
+      "bl fmu",
+      true
+    ],
+    [
+      "USB VID:PID=26AC:0032SER=1",
+      "bl  fmu",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032SER=1",
+      "Bootloaders",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032SER=1",
+      "bootloader_x",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032SER=1",
+      "-bl",
+      true
+    ],
+    [
+      "USB VID:PID=26AC:0032SER=1",
+      "a-bl2",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032SER=1",
+      "abl fmu",
+      false
+    ]
+  ],
+  "rtk": [
+    [
+      "",
+      "",
+      false
+    ],
+    [
+      "",
+      "PX4 BL FMU v5.x",
+      false
+    ],
+    [
+      "",
+      "PX4 FMU v5.x",
+      false
+    ],
+    [
+      "",
+      "Pixhawk 4",
+      false
+    ],
+    [
+      "",
+      "u-blox GNSS receiver",
+      true
+    ],
+    [
+      "",
+      "ZED-F9P",
+      true
+    ],
+    [
+      "",
+      "SimpleRTK2B",
+      true
+    ],
+    [
+      "",
+      "ArduPilot-BL",
+      false
+    ],
+    [
+      "",
+      "Cube Orange-BL",
+      false
+    ],
+    [
+      "",
+      "Cube Orange bl",
+      false
+    ],
+    [
+      "",
+      "STM32 BOOTLOADER",
+      false
+    ],
+    [
+      "",
+      "STM32 DFU in FS Mode",
+      false
+    ],
+    [
+      "",
+      "dfuse",
+      false
+    ],
+    [
+      "",
+      "my_dfu_port",
+      false
+    ],
+    [
+      "",
+      "x-blx",
+      false
+    ],
+    [
+      "",
+      "SiK radio",
+      false
+    ],
+    [
+      "",
+      "septentrio mosaic",
+      true
+    ],
+    [
+      "",
+      "bl fmu",
+      false
+    ],
+    [
+      "",
+      "bl  fmu",
+      false
+    ],
+    [
+      "",
+      "Bootloaders",
+      false
+    ],
+    [
+      "",
+      "bootloader_x",
+      false
+    ],
+    [
+      "",
+      "-bl",
+      false
+    ],
+    [
+      "",
+      "a-bl2",
+      false
+    ],
+    [
+      "",
+      "abl fmu",
+      false
+    ],
+    [
+      "   ",
+      "",
+      false
+    ],
+    [
+      "   ",
+      "PX4 BL FMU v5.x",
+      false
+    ],
+    [
+      "   ",
+      "PX4 FMU v5.x",
+      false
+    ],
+    [
+      "   ",
+      "Pixhawk 4",
+      false
+    ],
+    [
+      "   ",
+      "u-blox GNSS receiver",
+      true
+    ],
+    [
+      "   ",
+      "ZED-F9P",
+      true
+    ],
+    [
+      "   ",
+      "SimpleRTK2B",
+      true
+    ],
+    [
+      "   ",
+      "ArduPilot-BL",
+      false
+    ],
+    [
+      "   ",
+      "Cube Orange-BL",
+      false
+    ],
+    [
+      "   ",
+      "Cube Orange bl",
+      false
+    ],
+    [
+      "   ",
+      "STM32 BOOTLOADER",
+      false
+    ],
+    [
+      "   ",
+      "STM32 DFU in FS Mode",
+      false
+    ],
+    [
+      "   ",
+      "dfuse",
+      false
+    ],
+    [
+      "   ",
+      "my_dfu_port",
+      false
+    ],
+    [
+      "   ",
+      "x-blx",
+      false
+    ],
+    [
+      "   ",
+      "SiK radio",
+      false
+    ],
+    [
+      "   ",
+      "septentrio mosaic",
+      true
+    ],
+    [
+      "   ",
+      "bl fmu",
+      false
+    ],
+    [
+      "   ",
+      "bl  fmu",
+      false
+    ],
+    [
+      "   ",
+      "Bootloaders",
+      false
+    ],
+    [
+      "   ",
+      "bootloader_x",
+      false
+    ],
+    [
+      "   ",
+      "-bl",
+      false
+    ],
+    [
+      "   ",
+      "a-bl2",
+      false
+    ],
+    [
+      "   ",
+      "abl fmu",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "PX4 BL FMU v5.x",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "PX4 FMU v5.x",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "Pixhawk 4",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "u-blox GNSS receiver",
+      true
+    ],
+    [
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "ZED-F9P",
+      true
+    ],
+    [
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "SimpleRTK2B",
+      true
+    ],
+    [
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "ArduPilot-BL",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "Cube Orange-BL",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "Cube Orange bl",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "STM32 BOOTLOADER",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "STM32 DFU in FS Mode",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "dfuse",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "my_dfu_port",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "x-blx",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "SiK radio",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "septentrio mosaic",
+      true
+    ],
+    [
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "bl fmu",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "bl  fmu",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "Bootloaders",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "bootloader_x",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "-bl",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "a-bl2",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "abl fmu",
+      false
+    ],
+    [
+      "USB VID:PID=26ac:0011",
+      "",
+      false
+    ],
+    [
+      "USB VID:PID=26ac:0011",
+      "PX4 BL FMU v5.x",
+      false
+    ],
+    [
+      "USB VID:PID=26ac:0011",
+      "PX4 FMU v5.x",
+      false
+    ],
+    [
+      "USB VID:PID=26ac:0011",
+      "Pixhawk 4",
+      false
+    ],
+    [
+      "USB VID:PID=26ac:0011",
+      "u-blox GNSS receiver",
+      true
+    ],
+    [
+      "USB VID:PID=26ac:0011",
+      "ZED-F9P",
+      true
+    ],
+    [
+      "USB VID:PID=26ac:0011",
+      "SimpleRTK2B",
+      true
+    ],
+    [
+      "USB VID:PID=26ac:0011",
+      "ArduPilot-BL",
+      false
+    ],
+    [
+      "USB VID:PID=26ac:0011",
+      "Cube Orange-BL",
+      false
+    ],
+    [
+      "USB VID:PID=26ac:0011",
+      "Cube Orange bl",
+      false
+    ],
+    [
+      "USB VID:PID=26ac:0011",
+      "STM32 BOOTLOADER",
+      false
+    ],
+    [
+      "USB VID:PID=26ac:0011",
+      "STM32 DFU in FS Mode",
+      false
+    ],
+    [
+      "USB VID:PID=26ac:0011",
+      "dfuse",
+      false
+    ],
+    [
+      "USB VID:PID=26ac:0011",
+      "my_dfu_port",
+      false
+    ],
+    [
+      "USB VID:PID=26ac:0011",
+      "x-blx",
+      false
+    ],
+    [
+      "USB VID:PID=26ac:0011",
+      "SiK radio",
+      false
+    ],
+    [
+      "USB VID:PID=26ac:0011",
+      "septentrio mosaic",
+      true
+    ],
+    [
+      "USB VID:PID=26ac:0011",
+      "bl fmu",
+      false
+    ],
+    [
+      "USB VID:PID=26ac:0011",
+      "bl  fmu",
+      false
+    ],
+    [
+      "USB VID:PID=26ac:0011",
+      "Bootloaders",
+      false
+    ],
+    [
+      "USB VID:PID=26ac:0011",
+      "bootloader_x",
+      false
+    ],
+    [
+      "USB VID:PID=26ac:0011",
+      "-bl",
+      false
+    ],
+    [
+      "USB VID:PID=26ac:0011",
+      "a-bl2",
+      false
+    ],
+    [
+      "USB VID:PID=26ac:0011",
+      "abl fmu",
+      false
+    ],
+    [
+      "USB VID:PID=0483:DF11 SER=x",
+      "",
+      false
+    ],
+    [
+      "USB VID:PID=0483:DF11 SER=x",
+      "PX4 BL FMU v5.x",
+      false
+    ],
+    [
+      "USB VID:PID=0483:DF11 SER=x",
+      "PX4 FMU v5.x",
+      false
+    ],
+    [
+      "USB VID:PID=0483:DF11 SER=x",
+      "Pixhawk 4",
+      false
+    ],
+    [
+      "USB VID:PID=0483:DF11 SER=x",
+      "u-blox GNSS receiver",
+      true
+    ],
+    [
+      "USB VID:PID=0483:DF11 SER=x",
+      "ZED-F9P",
+      true
+    ],
+    [
+      "USB VID:PID=0483:DF11 SER=x",
+      "SimpleRTK2B",
+      true
+    ],
+    [
+      "USB VID:PID=0483:DF11 SER=x",
+      "ArduPilot-BL",
+      false
+    ],
+    [
+      "USB VID:PID=0483:DF11 SER=x",
+      "Cube Orange-BL",
+      false
+    ],
+    [
+      "USB VID:PID=0483:DF11 SER=x",
+      "Cube Orange bl",
+      false
+    ],
+    [
+      "USB VID:PID=0483:DF11 SER=x",
+      "STM32 BOOTLOADER",
+      false
+    ],
+    [
+      "USB VID:PID=0483:DF11 SER=x",
+      "STM32 DFU in FS Mode",
+      false
+    ],
+    [
+      "USB VID:PID=0483:DF11 SER=x",
+      "dfuse",
+      false
+    ],
+    [
+      "USB VID:PID=0483:DF11 SER=x",
+      "my_dfu_port",
+      false
+    ],
+    [
+      "USB VID:PID=0483:DF11 SER=x",
+      "x-blx",
+      false
+    ],
+    [
+      "USB VID:PID=0483:DF11 SER=x",
+      "SiK radio",
+      false
+    ],
+    [
+      "USB VID:PID=0483:DF11 SER=x",
+      "septentrio mosaic",
+      true
+    ],
+    [
+      "USB VID:PID=0483:DF11 SER=x",
+      "bl fmu",
+      false
+    ],
+    [
+      "USB VID:PID=0483:DF11 SER=x",
+      "bl  fmu",
+      false
+    ],
+    [
+      "USB VID:PID=0483:DF11 SER=x",
+      "Bootloaders",
+      false
+    ],
+    [
+      "USB VID:PID=0483:DF11 SER=x",
+      "bootloader_x",
+      false
+    ],
+    [
+      "USB VID:PID=0483:DF11 SER=x",
+      "-bl",
+      false
+    ],
+    [
+      "USB VID:PID=0483:DF11 SER=x",
+      "a-bl2",
+      false
+    ],
+    [
+      "USB VID:PID=0483:DF11 SER=x",
+      "abl fmu",
+      false
+    ],
+    [
+      "USB VID:PID=0483:5740",
+      "",
+      false
+    ],
+    [
+      "USB VID:PID=0483:5740",
+      "PX4 BL FMU v5.x",
+      false
+    ],
+    [
+      "USB VID:PID=0483:5740",
+      "PX4 FMU v5.x",
+      false
+    ],
+    [
+      "USB VID:PID=0483:5740",
+      "Pixhawk 4",
+      false
+    ],
+    [
+      "USB VID:PID=0483:5740",
+      "u-blox GNSS receiver",
+      true
+    ],
+    [
+      "USB VID:PID=0483:5740",
+      "ZED-F9P",
+      true
+    ],
+    [
+      "USB VID:PID=0483:5740",
+      "SimpleRTK2B",
+      true
+    ],
+    [
+      "USB VID:PID=0483:5740",
+      "ArduPilot-BL",
+      false
+    ],
+    [
+      "USB VID:PID=0483:5740",
+      "Cube Orange-BL",
+      false
+    ],
+    [
+      "USB VID:PID=0483:5740",
+      "Cube Orange bl",
+      false
+    ],
+    [
+      "USB VID:PID=0483:5740",
+      "STM32 BOOTLOADER",
+      false
+    ],
+    [
+      "USB VID:PID=0483:5740",
+      "STM32 DFU in FS Mode",
+      false
+    ],
+    [
+      "USB VID:PID=0483:5740",
+      "dfuse",
+      false
+    ],
+    [
+      "USB VID:PID=0483:5740",
+      "my_dfu_port",
+      false
+    ],
+    [
+      "USB VID:PID=0483:5740",
+      "x-blx",
+      false
+    ],
+    [
+      "USB VID:PID=0483:5740",
+      "SiK radio",
+      false
+    ],
+    [
+      "USB VID:PID=0483:5740",
+      "septentrio mosaic",
+      true
+    ],
+    [
+      "USB VID:PID=0483:5740",
+      "bl fmu",
+      false
+    ],
+    [
+      "USB VID:PID=0483:5740",
+      "bl  fmu",
+      false
+    ],
+    [
+      "USB VID:PID=0483:5740",
+      "Bootloaders",
+      false
+    ],
+    [
+      "USB VID:PID=0483:5740",
+      "bootloader_x",
+      false
+    ],
+    [
+      "USB VID:PID=0483:5740",
+      "-bl",
+      false
+    ],
+    [
+      "USB VID:PID=0483:5740",
+      "a-bl2",
+      false
+    ],
+    [
+      "USB VID:PID=0483:5740",
+      "abl fmu",
+      false
+    ],
+    [
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "",
+      false
+    ],
+    [
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "PX4 BL FMU v5.x",
+      false
+    ],
+    [
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "PX4 FMU v5.x",
+      false
+    ],
+    [
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "Pixhawk 4",
+      false
+    ],
+    [
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "u-blox GNSS receiver",
+      true
+    ],
+    [
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "ZED-F9P",
+      true
+    ],
+    [
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "SimpleRTK2B",
+      true
+    ],
+    [
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "ArduPilot-BL",
+      false
+    ],
+    [
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "Cube Orange-BL",
+      false
+    ],
+    [
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "Cube Orange bl",
+      false
+    ],
+    [
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "STM32 BOOTLOADER",
+      false
+    ],
+    [
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "STM32 DFU in FS Mode",
+      false
+    ],
+    [
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "dfuse",
+      false
+    ],
+    [
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "my_dfu_port",
+      false
+    ],
+    [
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "x-blx",
+      false
+    ],
+    [
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "SiK radio",
+      false
+    ],
+    [
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "septentrio mosaic",
+      true
+    ],
+    [
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "bl fmu",
+      false
+    ],
+    [
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "bl  fmu",
+      false
+    ],
+    [
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "Bootloaders",
+      false
+    ],
+    [
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "bootloader_x",
+      false
+    ],
+    [
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "-bl",
+      false
+    ],
+    [
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "a-bl2",
+      false
+    ],
+    [
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "abl fmu",
+      false
+    ],
+    [
+      "USB VID:PID=10C4:EA60",
+      "",
+      false
+    ],
+    [
+      "USB VID:PID=10C4:EA60",
+      "PX4 BL FMU v5.x",
+      false
+    ],
+    [
+      "USB VID:PID=10C4:EA60",
+      "PX4 FMU v5.x",
+      false
+    ],
+    [
+      "USB VID:PID=10C4:EA60",
+      "Pixhawk 4",
+      false
+    ],
+    [
+      "USB VID:PID=10C4:EA60",
+      "u-blox GNSS receiver",
+      true
+    ],
+    [
+      "USB VID:PID=10C4:EA60",
+      "ZED-F9P",
+      true
+    ],
+    [
+      "USB VID:PID=10C4:EA60",
+      "SimpleRTK2B",
+      true
+    ],
+    [
+      "USB VID:PID=10C4:EA60",
+      "ArduPilot-BL",
+      false
+    ],
+    [
+      "USB VID:PID=10C4:EA60",
+      "Cube Orange-BL",
+      false
+    ],
+    [
+      "USB VID:PID=10C4:EA60",
+      "Cube Orange bl",
+      false
+    ],
+    [
+      "USB VID:PID=10C4:EA60",
+      "STM32 BOOTLOADER",
+      false
+    ],
+    [
+      "USB VID:PID=10C4:EA60",
+      "STM32 DFU in FS Mode",
+      false
+    ],
+    [
+      "USB VID:PID=10C4:EA60",
+      "dfuse",
+      false
+    ],
+    [
+      "USB VID:PID=10C4:EA60",
+      "my_dfu_port",
+      false
+    ],
+    [
+      "USB VID:PID=10C4:EA60",
+      "x-blx",
+      false
+    ],
+    [
+      "USB VID:PID=10C4:EA60",
+      "SiK radio",
+      false
+    ],
+    [
+      "USB VID:PID=10C4:EA60",
+      "septentrio mosaic",
+      true
+    ],
+    [
+      "USB VID:PID=10C4:EA60",
+      "bl fmu",
+      false
+    ],
+    [
+      "USB VID:PID=10C4:EA60",
+      "bl  fmu",
+      false
+    ],
+    [
+      "USB VID:PID=10C4:EA60",
+      "Bootloaders",
+      false
+    ],
+    [
+      "USB VID:PID=10C4:EA60",
+      "bootloader_x",
+      false
+    ],
+    [
+      "USB VID:PID=10C4:EA60",
+      "-bl",
+      false
+    ],
+    [
+      "USB VID:PID=10C4:EA60",
+      "a-bl2",
+      false
+    ],
+    [
+      "USB VID:PID=10C4:EA60",
+      "abl fmu",
+      false
+    ],
+    [
+      "USB VID:PID=1A86:7523",
+      "",
+      false
+    ],
+    [
+      "USB VID:PID=1A86:7523",
+      "PX4 BL FMU v5.x",
+      false
+    ],
+    [
+      "USB VID:PID=1A86:7523",
+      "PX4 FMU v5.x",
+      false
+    ],
+    [
+      "USB VID:PID=1A86:7523",
+      "Pixhawk 4",
+      false
+    ],
+    [
+      "USB VID:PID=1A86:7523",
+      "u-blox GNSS receiver",
+      true
+    ],
+    [
+      "USB VID:PID=1A86:7523",
+      "ZED-F9P",
+      true
+    ],
+    [
+      "USB VID:PID=1A86:7523",
+      "SimpleRTK2B",
+      true
+    ],
+    [
+      "USB VID:PID=1A86:7523",
+      "ArduPilot-BL",
+      false
+    ],
+    [
+      "USB VID:PID=1A86:7523",
+      "Cube Orange-BL",
+      false
+    ],
+    [
+      "USB VID:PID=1A86:7523",
+      "Cube Orange bl",
+      false
+    ],
+    [
+      "USB VID:PID=1A86:7523",
+      "STM32 BOOTLOADER",
+      false
+    ],
+    [
+      "USB VID:PID=1A86:7523",
+      "STM32 DFU in FS Mode",
+      false
+    ],
+    [
+      "USB VID:PID=1A86:7523",
+      "dfuse",
+      false
+    ],
+    [
+      "USB VID:PID=1A86:7523",
+      "my_dfu_port",
+      false
+    ],
+    [
+      "USB VID:PID=1A86:7523",
+      "x-blx",
+      false
+    ],
+    [
+      "USB VID:PID=1A86:7523",
+      "SiK radio",
+      false
+    ],
+    [
+      "USB VID:PID=1A86:7523",
+      "septentrio mosaic",
+      true
+    ],
+    [
+      "USB VID:PID=1A86:7523",
+      "bl fmu",
+      false
+    ],
+    [
+      "USB VID:PID=1A86:7523",
+      "bl  fmu",
+      false
+    ],
+    [
+      "USB VID:PID=1A86:7523",
+      "Bootloaders",
+      false
+    ],
+    [
+      "USB VID:PID=1A86:7523",
+      "bootloader_x",
+      false
+    ],
+    [
+      "USB VID:PID=1A86:7523",
+      "-bl",
+      false
+    ],
+    [
+      "USB VID:PID=1A86:7523",
+      "a-bl2",
+      false
+    ],
+    [
+      "USB VID:PID=1A86:7523",
+      "abl fmu",
+      false
+    ],
+    [
+      "USB VID:PID=067B:2303",
+      "",
+      false
+    ],
+    [
+      "USB VID:PID=067B:2303",
+      "PX4 BL FMU v5.x",
+      false
+    ],
+    [
+      "USB VID:PID=067B:2303",
+      "PX4 FMU v5.x",
+      false
+    ],
+    [
+      "USB VID:PID=067B:2303",
+      "Pixhawk 4",
+      false
+    ],
+    [
+      "USB VID:PID=067B:2303",
+      "u-blox GNSS receiver",
+      true
+    ],
+    [
+      "USB VID:PID=067B:2303",
+      "ZED-F9P",
+      true
+    ],
+    [
+      "USB VID:PID=067B:2303",
+      "SimpleRTK2B",
+      true
+    ],
+    [
+      "USB VID:PID=067B:2303",
+      "ArduPilot-BL",
+      false
+    ],
+    [
+      "USB VID:PID=067B:2303",
+      "Cube Orange-BL",
+      false
+    ],
+    [
+      "USB VID:PID=067B:2303",
+      "Cube Orange bl",
+      false
+    ],
+    [
+      "USB VID:PID=067B:2303",
+      "STM32 BOOTLOADER",
+      false
+    ],
+    [
+      "USB VID:PID=067B:2303",
+      "STM32 DFU in FS Mode",
+      false
+    ],
+    [
+      "USB VID:PID=067B:2303",
+      "dfuse",
+      false
+    ],
+    [
+      "USB VID:PID=067B:2303",
+      "my_dfu_port",
+      false
+    ],
+    [
+      "USB VID:PID=067B:2303",
+      "x-blx",
+      false
+    ],
+    [
+      "USB VID:PID=067B:2303",
+      "SiK radio",
+      false
+    ],
+    [
+      "USB VID:PID=067B:2303",
+      "septentrio mosaic",
+      true
+    ],
+    [
+      "USB VID:PID=067B:2303",
+      "bl fmu",
+      false
+    ],
+    [
+      "USB VID:PID=067B:2303",
+      "bl  fmu",
+      false
+    ],
+    [
+      "USB VID:PID=067B:2303",
+      "Bootloaders",
+      false
+    ],
+    [
+      "USB VID:PID=067B:2303",
+      "bootloader_x",
+      false
+    ],
+    [
+      "USB VID:PID=067B:2303",
+      "-bl",
+      false
+    ],
+    [
+      "USB VID:PID=067B:2303",
+      "a-bl2",
+      false
+    ],
+    [
+      "USB VID:PID=067B:2303",
+      "abl fmu",
+      false
+    ],
+    [
+      "USB VID:PID=1546:01A9 SER=",
+      "",
+      true
+    ],
+    [
+      "USB VID:PID=1546:01A9 SER=",
+      "PX4 BL FMU v5.x",
+      true
+    ],
+    [
+      "USB VID:PID=1546:01A9 SER=",
+      "PX4 FMU v5.x",
+      true
+    ],
+    [
+      "USB VID:PID=1546:01A9 SER=",
+      "Pixhawk 4",
+      true
+    ],
+    [
+      "USB VID:PID=1546:01A9 SER=",
+      "u-blox GNSS receiver",
+      true
+    ],
+    [
+      "USB VID:PID=1546:01A9 SER=",
+      "ZED-F9P",
+      true
+    ],
+    [
+      "USB VID:PID=1546:01A9 SER=",
+      "SimpleRTK2B",
+      true
+    ],
+    [
+      "USB VID:PID=1546:01A9 SER=",
+      "ArduPilot-BL",
+      true
+    ],
+    [
+      "USB VID:PID=1546:01A9 SER=",
+      "Cube Orange-BL",
+      true
+    ],
+    [
+      "USB VID:PID=1546:01A9 SER=",
+      "Cube Orange bl",
+      true
+    ],
+    [
+      "USB VID:PID=1546:01A9 SER=",
+      "STM32 BOOTLOADER",
+      true
+    ],
+    [
+      "USB VID:PID=1546:01A9 SER=",
+      "STM32 DFU in FS Mode",
+      true
+    ],
+    [
+      "USB VID:PID=1546:01A9 SER=",
+      "dfuse",
+      true
+    ],
+    [
+      "USB VID:PID=1546:01A9 SER=",
+      "my_dfu_port",
+      true
+    ],
+    [
+      "USB VID:PID=1546:01A9 SER=",
+      "x-blx",
+      true
+    ],
+    [
+      "USB VID:PID=1546:01A9 SER=",
+      "SiK radio",
+      true
+    ],
+    [
+      "USB VID:PID=1546:01A9 SER=",
+      "septentrio mosaic",
+      true
+    ],
+    [
+      "USB VID:PID=1546:01A9 SER=",
+      "bl fmu",
+      true
+    ],
+    [
+      "USB VID:PID=1546:01A9 SER=",
+      "bl  fmu",
+      true
+    ],
+    [
+      "USB VID:PID=1546:01A9 SER=",
+      "Bootloaders",
+      true
+    ],
+    [
+      "USB VID:PID=1546:01A9 SER=",
+      "bootloader_x",
+      true
+    ],
+    [
+      "USB VID:PID=1546:01A9 SER=",
+      "-bl",
+      true
+    ],
+    [
+      "USB VID:PID=1546:01A9 SER=",
+      "a-bl2",
+      true
+    ],
+    [
+      "USB VID:PID=1546:01A9 SER=",
+      "abl fmu",
+      true
+    ],
+    [
+      "USB VID:PID=152A:85C0",
+      "",
+      true
+    ],
+    [
+      "USB VID:PID=152A:85C0",
+      "PX4 BL FMU v5.x",
+      true
+    ],
+    [
+      "USB VID:PID=152A:85C0",
+      "PX4 FMU v5.x",
+      true
+    ],
+    [
+      "USB VID:PID=152A:85C0",
+      "Pixhawk 4",
+      true
+    ],
+    [
+      "USB VID:PID=152A:85C0",
+      "u-blox GNSS receiver",
+      true
+    ],
+    [
+      "USB VID:PID=152A:85C0",
+      "ZED-F9P",
+      true
+    ],
+    [
+      "USB VID:PID=152A:85C0",
+      "SimpleRTK2B",
+      true
+    ],
+    [
+      "USB VID:PID=152A:85C0",
+      "ArduPilot-BL",
+      true
+    ],
+    [
+      "USB VID:PID=152A:85C0",
+      "Cube Orange-BL",
+      true
+    ],
+    [
+      "USB VID:PID=152A:85C0",
+      "Cube Orange bl",
+      true
+    ],
+    [
+      "USB VID:PID=152A:85C0",
+      "STM32 BOOTLOADER",
+      true
+    ],
+    [
+      "USB VID:PID=152A:85C0",
+      "STM32 DFU in FS Mode",
+      true
+    ],
+    [
+      "USB VID:PID=152A:85C0",
+      "dfuse",
+      true
+    ],
+    [
+      "USB VID:PID=152A:85C0",
+      "my_dfu_port",
+      true
+    ],
+    [
+      "USB VID:PID=152A:85C0",
+      "x-blx",
+      true
+    ],
+    [
+      "USB VID:PID=152A:85C0",
+      "SiK radio",
+      true
+    ],
+    [
+      "USB VID:PID=152A:85C0",
+      "septentrio mosaic",
+      true
+    ],
+    [
+      "USB VID:PID=152A:85C0",
+      "bl fmu",
+      true
+    ],
+    [
+      "USB VID:PID=152A:85C0",
+      "bl  fmu",
+      true
+    ],
+    [
+      "USB VID:PID=152A:85C0",
+      "Bootloaders",
+      true
+    ],
+    [
+      "USB VID:PID=152A:85C0",
+      "bootloader_x",
+      true
+    ],
+    [
+      "USB VID:PID=152A:85C0",
+      "-bl",
+      true
+    ],
+    [
+      "USB VID:PID=152A:85C0",
+      "a-bl2",
+      true
+    ],
+    [
+      "USB VID:PID=152A:85C0",
+      "abl fmu",
+      true
+    ],
+    [
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "",
+      false
+    ],
+    [
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "PX4 BL FMU v5.x",
+      false
+    ],
+    [
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "PX4 FMU v5.x",
+      false
+    ],
+    [
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "Pixhawk 4",
+      false
+    ],
+    [
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "u-blox GNSS receiver",
+      true
+    ],
+    [
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "ZED-F9P",
+      true
+    ],
+    [
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "SimpleRTK2B",
+      true
+    ],
+    [
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "ArduPilot-BL",
+      false
+    ],
+    [
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "Cube Orange-BL",
+      false
+    ],
+    [
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "Cube Orange bl",
+      false
+    ],
+    [
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "STM32 BOOTLOADER",
+      false
+    ],
+    [
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "STM32 DFU in FS Mode",
+      false
+    ],
+    [
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "dfuse",
+      false
+    ],
+    [
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "my_dfu_port",
+      false
+    ],
+    [
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "x-blx",
+      false
+    ],
+    [
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "SiK radio",
+      false
+    ],
+    [
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "septentrio mosaic",
+      true
+    ],
+    [
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "bl fmu",
+      false
+    ],
+    [
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "bl  fmu",
+      false
+    ],
+    [
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "Bootloaders",
+      false
+    ],
+    [
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "bootloader_x",
+      false
+    ],
+    [
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "-bl",
+      false
+    ],
+    [
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "a-bl2",
+      false
+    ],
+    [
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "abl fmu",
+      false
+    ],
+    [
+      "VID:PID=ABCD:EF01",
+      "",
+      false
+    ],
+    [
+      "VID:PID=ABCD:EF01",
+      "PX4 BL FMU v5.x",
+      false
+    ],
+    [
+      "VID:PID=ABCD:EF01",
+      "PX4 FMU v5.x",
+      false
+    ],
+    [
+      "VID:PID=ABCD:EF01",
+      "Pixhawk 4",
+      false
+    ],
+    [
+      "VID:PID=ABCD:EF01",
+      "u-blox GNSS receiver",
+      true
+    ],
+    [
+      "VID:PID=ABCD:EF01",
+      "ZED-F9P",
+      true
+    ],
+    [
+      "VID:PID=ABCD:EF01",
+      "SimpleRTK2B",
+      true
+    ],
+    [
+      "VID:PID=ABCD:EF01",
+      "ArduPilot-BL",
+      false
+    ],
+    [
+      "VID:PID=ABCD:EF01",
+      "Cube Orange-BL",
+      false
+    ],
+    [
+      "VID:PID=ABCD:EF01",
+      "Cube Orange bl",
+      false
+    ],
+    [
+      "VID:PID=ABCD:EF01",
+      "STM32 BOOTLOADER",
+      false
+    ],
+    [
+      "VID:PID=ABCD:EF01",
+      "STM32 DFU in FS Mode",
+      false
+    ],
+    [
+      "VID:PID=ABCD:EF01",
+      "dfuse",
+      false
+    ],
+    [
+      "VID:PID=ABCD:EF01",
+      "my_dfu_port",
+      false
+    ],
+    [
+      "VID:PID=ABCD:EF01",
+      "x-blx",
+      false
+    ],
+    [
+      "VID:PID=ABCD:EF01",
+      "SiK radio",
+      false
+    ],
+    [
+      "VID:PID=ABCD:EF01",
+      "septentrio mosaic",
+      true
+    ],
+    [
+      "VID:PID=ABCD:EF01",
+      "bl fmu",
+      false
+    ],
+    [
+      "VID:PID=ABCD:EF01",
+      "bl  fmu",
+      false
+    ],
+    [
+      "VID:PID=ABCD:EF01",
+      "Bootloaders",
+      false
+    ],
+    [
+      "VID:PID=ABCD:EF01",
+      "bootloader_x",
+      false
+    ],
+    [
+      "VID:PID=ABCD:EF01",
+      "-bl",
+      false
+    ],
+    [
+      "VID:PID=ABCD:EF01",
+      "a-bl2",
+      false
+    ],
+    [
+      "VID:PID=ABCD:EF01",
+      "abl fmu",
+      false
+    ],
+    [
+      "USB VID:PID=ABC:DEF1",
+      "",
+      false
+    ],
+    [
+      "USB VID:PID=ABC:DEF1",
+      "PX4 BL FMU v5.x",
+      false
+    ],
+    [
+      "USB VID:PID=ABC:DEF1",
+      "PX4 FMU v5.x",
+      false
+    ],
+    [
+      "USB VID:PID=ABC:DEF1",
+      "Pixhawk 4",
+      false
+    ],
+    [
+      "USB VID:PID=ABC:DEF1",
+      "u-blox GNSS receiver",
+      true
+    ],
+    [
+      "USB VID:PID=ABC:DEF1",
+      "ZED-F9P",
+      true
+    ],
+    [
+      "USB VID:PID=ABC:DEF1",
+      "SimpleRTK2B",
+      true
+    ],
+    [
+      "USB VID:PID=ABC:DEF1",
+      "ArduPilot-BL",
+      false
+    ],
+    [
+      "USB VID:PID=ABC:DEF1",
+      "Cube Orange-BL",
+      false
+    ],
+    [
+      "USB VID:PID=ABC:DEF1",
+      "Cube Orange bl",
+      false
+    ],
+    [
+      "USB VID:PID=ABC:DEF1",
+      "STM32 BOOTLOADER",
+      false
+    ],
+    [
+      "USB VID:PID=ABC:DEF1",
+      "STM32 DFU in FS Mode",
+      false
+    ],
+    [
+      "USB VID:PID=ABC:DEF1",
+      "dfuse",
+      false
+    ],
+    [
+      "USB VID:PID=ABC:DEF1",
+      "my_dfu_port",
+      false
+    ],
+    [
+      "USB VID:PID=ABC:DEF1",
+      "x-blx",
+      false
+    ],
+    [
+      "USB VID:PID=ABC:DEF1",
+      "SiK radio",
+      false
+    ],
+    [
+      "USB VID:PID=ABC:DEF1",
+      "septentrio mosaic",
+      true
+    ],
+    [
+      "USB VID:PID=ABC:DEF1",
+      "bl fmu",
+      false
+    ],
+    [
+      "USB VID:PID=ABC:DEF1",
+      "bl  fmu",
+      false
+    ],
+    [
+      "USB VID:PID=ABC:DEF1",
+      "Bootloaders",
+      false
+    ],
+    [
+      "USB VID:PID=ABC:DEF1",
+      "bootloader_x",
+      false
+    ],
+    [
+      "USB VID:PID=ABC:DEF1",
+      "-bl",
+      false
+    ],
+    [
+      "USB VID:PID=ABC:DEF1",
+      "a-bl2",
+      false
+    ],
+    [
+      "USB VID:PID=ABC:DEF1",
+      "abl fmu",
+      false
+    ],
+    [
+      "USB VID:PID=ABCD:EF0",
+      "",
+      false
+    ],
+    [
+      "USB VID:PID=ABCD:EF0",
+      "PX4 BL FMU v5.x",
+      false
+    ],
+    [
+      "USB VID:PID=ABCD:EF0",
+      "PX4 FMU v5.x",
+      false
+    ],
+    [
+      "USB VID:PID=ABCD:EF0",
+      "Pixhawk 4",
+      false
+    ],
+    [
+      "USB VID:PID=ABCD:EF0",
+      "u-blox GNSS receiver",
+      true
+    ],
+    [
+      "USB VID:PID=ABCD:EF0",
+      "ZED-F9P",
+      true
+    ],
+    [
+      "USB VID:PID=ABCD:EF0",
+      "SimpleRTK2B",
+      true
+    ],
+    [
+      "USB VID:PID=ABCD:EF0",
+      "ArduPilot-BL",
+      false
+    ],
+    [
+      "USB VID:PID=ABCD:EF0",
+      "Cube Orange-BL",
+      false
+    ],
+    [
+      "USB VID:PID=ABCD:EF0",
+      "Cube Orange bl",
+      false
+    ],
+    [
+      "USB VID:PID=ABCD:EF0",
+      "STM32 BOOTLOADER",
+      false
+    ],
+    [
+      "USB VID:PID=ABCD:EF0",
+      "STM32 DFU in FS Mode",
+      false
+    ],
+    [
+      "USB VID:PID=ABCD:EF0",
+      "dfuse",
+      false
+    ],
+    [
+      "USB VID:PID=ABCD:EF0",
+      "my_dfu_port",
+      false
+    ],
+    [
+      "USB VID:PID=ABCD:EF0",
+      "x-blx",
+      false
+    ],
+    [
+      "USB VID:PID=ABCD:EF0",
+      "SiK radio",
+      false
+    ],
+    [
+      "USB VID:PID=ABCD:EF0",
+      "septentrio mosaic",
+      true
+    ],
+    [
+      "USB VID:PID=ABCD:EF0",
+      "bl fmu",
+      false
+    ],
+    [
+      "USB VID:PID=ABCD:EF0",
+      "bl  fmu",
+      false
+    ],
+    [
+      "USB VID:PID=ABCD:EF0",
+      "Bootloaders",
+      false
+    ],
+    [
+      "USB VID:PID=ABCD:EF0",
+      "bootloader_x",
+      false
+    ],
+    [
+      "USB VID:PID=ABCD:EF0",
+      "-bl",
+      false
+    ],
+    [
+      "USB VID:PID=ABCD:EF0",
+      "a-bl2",
+      false
+    ],
+    [
+      "USB VID:PID=ABCD:EF0",
+      "abl fmu",
+      false
+    ],
+    [
+      "usb vid:pid=26ac:0032  ser=zz",
+      "",
+      false
+    ],
+    [
+      "usb vid:pid=26ac:0032  ser=zz",
+      "PX4 BL FMU v5.x",
+      false
+    ],
+    [
+      "usb vid:pid=26ac:0032  ser=zz",
+      "PX4 FMU v5.x",
+      false
+    ],
+    [
+      "usb vid:pid=26ac:0032  ser=zz",
+      "Pixhawk 4",
+      false
+    ],
+    [
+      "usb vid:pid=26ac:0032  ser=zz",
+      "u-blox GNSS receiver",
+      true
+    ],
+    [
+      "usb vid:pid=26ac:0032  ser=zz",
+      "ZED-F9P",
+      true
+    ],
+    [
+      "usb vid:pid=26ac:0032  ser=zz",
+      "SimpleRTK2B",
+      true
+    ],
+    [
+      "usb vid:pid=26ac:0032  ser=zz",
+      "ArduPilot-BL",
+      false
+    ],
+    [
+      "usb vid:pid=26ac:0032  ser=zz",
+      "Cube Orange-BL",
+      false
+    ],
+    [
+      "usb vid:pid=26ac:0032  ser=zz",
+      "Cube Orange bl",
+      false
+    ],
+    [
+      "usb vid:pid=26ac:0032  ser=zz",
+      "STM32 BOOTLOADER",
+      false
+    ],
+    [
+      "usb vid:pid=26ac:0032  ser=zz",
+      "STM32 DFU in FS Mode",
+      false
+    ],
+    [
+      "usb vid:pid=26ac:0032  ser=zz",
+      "dfuse",
+      false
+    ],
+    [
+      "usb vid:pid=26ac:0032  ser=zz",
+      "my_dfu_port",
+      false
+    ],
+    [
+      "usb vid:pid=26ac:0032  ser=zz",
+      "x-blx",
+      false
+    ],
+    [
+      "usb vid:pid=26ac:0032  ser=zz",
+      "SiK radio",
+      false
+    ],
+    [
+      "usb vid:pid=26ac:0032  ser=zz",
+      "septentrio mosaic",
+      true
+    ],
+    [
+      "usb vid:pid=26ac:0032  ser=zz",
+      "bl fmu",
+      false
+    ],
+    [
+      "usb vid:pid=26ac:0032  ser=zz",
+      "bl  fmu",
+      false
+    ],
+    [
+      "usb vid:pid=26ac:0032  ser=zz",
+      "Bootloaders",
+      false
+    ],
+    [
+      "usb vid:pid=26ac:0032  ser=zz",
+      "bootloader_x",
+      false
+    ],
+    [
+      "usb vid:pid=26ac:0032  ser=zz",
+      "-bl",
+      false
+    ],
+    [
+      "usb vid:pid=26ac:0032  ser=zz",
+      "a-bl2",
+      false
+    ],
+    [
+      "usb vid:pid=26ac:0032  ser=zz",
+      "abl fmu",
+      false
+    ],
+    [
+      "n/a",
+      "",
+      false
+    ],
+    [
+      "n/a",
+      "PX4 BL FMU v5.x",
+      false
+    ],
+    [
+      "n/a",
+      "PX4 FMU v5.x",
+      false
+    ],
+    [
+      "n/a",
+      "Pixhawk 4",
+      false
+    ],
+    [
+      "n/a",
+      "u-blox GNSS receiver",
+      true
+    ],
+    [
+      "n/a",
+      "ZED-F9P",
+      true
+    ],
+    [
+      "n/a",
+      "SimpleRTK2B",
+      true
+    ],
+    [
+      "n/a",
+      "ArduPilot-BL",
+      false
+    ],
+    [
+      "n/a",
+      "Cube Orange-BL",
+      false
+    ],
+    [
+      "n/a",
+      "Cube Orange bl",
+      false
+    ],
+    [
+      "n/a",
+      "STM32 BOOTLOADER",
+      false
+    ],
+    [
+      "n/a",
+      "STM32 DFU in FS Mode",
+      false
+    ],
+    [
+      "n/a",
+      "dfuse",
+      false
+    ],
+    [
+      "n/a",
+      "my_dfu_port",
+      false
+    ],
+    [
+      "n/a",
+      "x-blx",
+      false
+    ],
+    [
+      "n/a",
+      "SiK radio",
+      false
+    ],
+    [
+      "n/a",
+      "septentrio mosaic",
+      true
+    ],
+    [
+      "n/a",
+      "bl fmu",
+      false
+    ],
+    [
+      "n/a",
+      "bl  fmu",
+      false
+    ],
+    [
+      "n/a",
+      "Bootloaders",
+      false
+    ],
+    [
+      "n/a",
+      "bootloader_x",
+      false
+    ],
+    [
+      "n/a",
+      "-bl",
+      false
+    ],
+    [
+      "n/a",
+      "a-bl2",
+      false
+    ],
+    [
+      "n/a",
+      "abl fmu",
+      false
+    ],
+    [
+      "PX4 FMU v5",
+      "",
+      false
+    ],
+    [
+      "PX4 FMU v5",
+      "PX4 BL FMU v5.x",
+      false
+    ],
+    [
+      "PX4 FMU v5",
+      "PX4 FMU v5.x",
+      false
+    ],
+    [
+      "PX4 FMU v5",
+      "Pixhawk 4",
+      false
+    ],
+    [
+      "PX4 FMU v5",
+      "u-blox GNSS receiver",
+      true
+    ],
+    [
+      "PX4 FMU v5",
+      "ZED-F9P",
+      true
+    ],
+    [
+      "PX4 FMU v5",
+      "SimpleRTK2B",
+      true
+    ],
+    [
+      "PX4 FMU v5",
+      "ArduPilot-BL",
+      false
+    ],
+    [
+      "PX4 FMU v5",
+      "Cube Orange-BL",
+      false
+    ],
+    [
+      "PX4 FMU v5",
+      "Cube Orange bl",
+      false
+    ],
+    [
+      "PX4 FMU v5",
+      "STM32 BOOTLOADER",
+      false
+    ],
+    [
+      "PX4 FMU v5",
+      "STM32 DFU in FS Mode",
+      false
+    ],
+    [
+      "PX4 FMU v5",
+      "dfuse",
+      false
+    ],
+    [
+      "PX4 FMU v5",
+      "my_dfu_port",
+      false
+    ],
+    [
+      "PX4 FMU v5",
+      "x-blx",
+      false
+    ],
+    [
+      "PX4 FMU v5",
+      "SiK radio",
+      false
+    ],
+    [
+      "PX4 FMU v5",
+      "septentrio mosaic",
+      true
+    ],
+    [
+      "PX4 FMU v5",
+      "bl fmu",
+      false
+    ],
+    [
+      "PX4 FMU v5",
+      "bl  fmu",
+      false
+    ],
+    [
+      "PX4 FMU v5",
+      "Bootloaders",
+      false
+    ],
+    [
+      "PX4 FMU v5",
+      "bootloader_x",
+      false
+    ],
+    [
+      "PX4 FMU v5",
+      "-bl",
+      false
+    ],
+    [
+      "PX4 FMU v5",
+      "a-bl2",
+      false
+    ],
+    [
+      "PX4 FMU v5",
+      "abl fmu",
+      false
+    ],
+    [
+      "Hex Cube Orange",
+      "",
+      false
+    ],
+    [
+      "Hex Cube Orange",
+      "PX4 BL FMU v5.x",
+      false
+    ],
+    [
+      "Hex Cube Orange",
+      "PX4 FMU v5.x",
+      false
+    ],
+    [
+      "Hex Cube Orange",
+      "Pixhawk 4",
+      false
+    ],
+    [
+      "Hex Cube Orange",
+      "u-blox GNSS receiver",
+      true
+    ],
+    [
+      "Hex Cube Orange",
+      "ZED-F9P",
+      true
+    ],
+    [
+      "Hex Cube Orange",
+      "SimpleRTK2B",
+      true
+    ],
+    [
+      "Hex Cube Orange",
+      "ArduPilot-BL",
+      false
+    ],
+    [
+      "Hex Cube Orange",
+      "Cube Orange-BL",
+      false
+    ],
+    [
+      "Hex Cube Orange",
+      "Cube Orange bl",
+      false
+    ],
+    [
+      "Hex Cube Orange",
+      "STM32 BOOTLOADER",
+      false
+    ],
+    [
+      "Hex Cube Orange",
+      "STM32 DFU in FS Mode",
+      false
+    ],
+    [
+      "Hex Cube Orange",
+      "dfuse",
+      false
+    ],
+    [
+      "Hex Cube Orange",
+      "my_dfu_port",
+      false
+    ],
+    [
+      "Hex Cube Orange",
+      "x-blx",
+      false
+    ],
+    [
+      "Hex Cube Orange",
+      "SiK radio",
+      false
+    ],
+    [
+      "Hex Cube Orange",
+      "septentrio mosaic",
+      true
+    ],
+    [
+      "Hex Cube Orange",
+      "bl fmu",
+      false
+    ],
+    [
+      "Hex Cube Orange",
+      "bl  fmu",
+      false
+    ],
+    [
+      "Hex Cube Orange",
+      "Bootloaders",
+      false
+    ],
+    [
+      "Hex Cube Orange",
+      "bootloader_x",
+      false
+    ],
+    [
+      "Hex Cube Orange",
+      "-bl",
+      false
+    ],
+    [
+      "Hex Cube Orange",
+      "a-bl2",
+      false
+    ],
+    [
+      "Hex Cube Orange",
+      "abl fmu",
+      false
+    ],
+    [
+      "SER=1",
+      "",
+      false
+    ],
+    [
+      "SER=1",
+      "PX4 BL FMU v5.x",
+      false
+    ],
+    [
+      "SER=1",
+      "PX4 FMU v5.x",
+      false
+    ],
+    [
+      "SER=1",
+      "Pixhawk 4",
+      false
+    ],
+    [
+      "SER=1",
+      "u-blox GNSS receiver",
+      true
+    ],
+    [
+      "SER=1",
+      "ZED-F9P",
+      true
+    ],
+    [
+      "SER=1",
+      "SimpleRTK2B",
+      true
+    ],
+    [
+      "SER=1",
+      "ArduPilot-BL",
+      false
+    ],
+    [
+      "SER=1",
+      "Cube Orange-BL",
+      false
+    ],
+    [
+      "SER=1",
+      "Cube Orange bl",
+      false
+    ],
+    [
+      "SER=1",
+      "STM32 BOOTLOADER",
+      false
+    ],
+    [
+      "SER=1",
+      "STM32 DFU in FS Mode",
+      false
+    ],
+    [
+      "SER=1",
+      "dfuse",
+      false
+    ],
+    [
+      "SER=1",
+      "my_dfu_port",
+      false
+    ],
+    [
+      "SER=1",
+      "x-blx",
+      false
+    ],
+    [
+      "SER=1",
+      "SiK radio",
+      false
+    ],
+    [
+      "SER=1",
+      "septentrio mosaic",
+      true
+    ],
+    [
+      "SER=1",
+      "bl fmu",
+      false
+    ],
+    [
+      "SER=1",
+      "bl  fmu",
+      false
+    ],
+    [
+      "SER=1",
+      "Bootloaders",
+      false
+    ],
+    [
+      "SER=1",
+      "bootloader_x",
+      false
+    ],
+    [
+      "SER=1",
+      "-bl",
+      false
+    ],
+    [
+      "SER=1",
+      "a-bl2",
+      false
+    ],
+    [
+      "SER=1",
+      "abl fmu",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032SER=1",
+      "",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032SER=1",
+      "PX4 BL FMU v5.x",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032SER=1",
+      "PX4 FMU v5.x",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032SER=1",
+      "Pixhawk 4",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032SER=1",
+      "u-blox GNSS receiver",
+      true
+    ],
+    [
+      "USB VID:PID=26AC:0032SER=1",
+      "ZED-F9P",
+      true
+    ],
+    [
+      "USB VID:PID=26AC:0032SER=1",
+      "SimpleRTK2B",
+      true
+    ],
+    [
+      "USB VID:PID=26AC:0032SER=1",
+      "ArduPilot-BL",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032SER=1",
+      "Cube Orange-BL",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032SER=1",
+      "Cube Orange bl",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032SER=1",
+      "STM32 BOOTLOADER",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032SER=1",
+      "STM32 DFU in FS Mode",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032SER=1",
+      "dfuse",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032SER=1",
+      "my_dfu_port",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032SER=1",
+      "x-blx",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032SER=1",
+      "SiK radio",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032SER=1",
+      "septentrio mosaic",
+      true
+    ],
+    [
+      "USB VID:PID=26AC:0032SER=1",
+      "bl fmu",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032SER=1",
+      "bl  fmu",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032SER=1",
+      "Bootloaders",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032SER=1",
+      "bootloader_x",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032SER=1",
+      "-bl",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032SER=1",
+      "a-bl2",
+      false
+    ],
+    [
+      "USB VID:PID=26AC:0032SER=1",
+      "abl fmu",
+      false
+    ]
+  ],
+  "hwid": [
+    [
+      "",
+      "unknown"
+    ],
+    [
+      "   ",
+      "unknown"
+    ],
+    [
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "usb"
+    ],
+    [
+      "USB VID:PID=26ac:0011",
+      "usb"
+    ],
+    [
+      "USB VID:PID=0483:DF11 SER=x",
+      "usb"
+    ],
+    [
+      "USB VID:PID=0483:5740",
+      "usb"
+    ],
+    [
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "sik"
+    ],
+    [
+      "USB VID:PID=10C4:EA60",
+      "sik"
+    ],
+    [
+      "USB VID:PID=1A86:7523",
+      "sik"
+    ],
+    [
+      "USB VID:PID=067B:2303",
+      "sik"
+    ],
+    [
+      "USB VID:PID=1546:01A9 SER=",
+      "rtk"
+    ],
+    [
+      "USB VID:PID=152A:85C0",
+      "rtk"
+    ],
+    [
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "unknown"
+    ],
+    [
+      "VID:PID=ABCD:EF01",
+      "unknown"
+    ],
+    [
+      "USB VID:PID=ABC:DEF1",
+      "unknown"
+    ],
+    [
+      "USB VID:PID=ABCD:EF0",
+      "unknown"
+    ],
+    [
+      "usb vid:pid=26ac:0032  ser=zz",
+      "usb"
+    ],
+    [
+      "n/a",
+      "unknown"
+    ],
+    [
+      "PX4 FMU v5",
+      "usb"
+    ],
+    [
+      "Hex Cube Orange",
+      "usb"
+    ],
+    [
+      "SER=1",
+      "unknown"
+    ],
+    [
+      "USB VID:PID=26AC:0032SER=1",
+      "usb"
+    ],
+    [
+      "",
+      "unknown"
+    ],
+    [
+      "PX4 BL FMU v5.x",
+      "usb"
+    ],
+    [
+      "PX4 FMU v5.x",
+      "usb"
+    ],
+    [
+      "Pixhawk 4",
+      "usb"
+    ],
+    [
+      "u-blox GNSS receiver",
+      "rtk"
+    ],
+    [
+      "ZED-F9P",
+      "rtk"
+    ],
+    [
+      "SimpleRTK2B",
+      "rtk"
+    ],
+    [
+      "ArduPilot-BL",
+      "unknown"
+    ],
+    [
+      "Cube Orange-BL",
+      "unknown"
+    ],
+    [
+      "Cube Orange bl",
+      "unknown"
+    ],
+    [
+      "STM32 BOOTLOADER",
+      "unknown"
+    ],
+    [
+      "STM32 DFU in FS Mode",
+      "unknown"
+    ],
+    [
+      "dfuse",
+      "unknown"
+    ],
+    [
+      "my_dfu_port",
+      "unknown"
+    ],
+    [
+      "x-blx",
+      "unknown"
+    ],
+    [
+      "SiK radio",
+      "unknown"
+    ],
+    [
+      "septentrio mosaic",
+      "rtk"
+    ],
+    [
+      "bl fmu",
+      "usb"
+    ],
+    [
+      "bl  fmu",
+      "usb"
+    ],
+    [
+      "Bootloaders",
+      "unknown"
+    ],
+    [
+      "bootloader_x",
+      "unknown"
+    ],
+    [
+      "-bl",
+      "unknown"
+    ],
+    [
+      "a-bl2",
+      "unknown"
+    ],
+    [
+      "abl fmu",
+      "usb"
+    ]
+  ],
+  "classify": [
+    [
+      "",
+      "",
+      "",
+      "unknown"
+    ],
+    [
+      "",
+      "   ",
+      "PX4 BL FMU v5.x",
+      "unknown"
+    ],
+    [
+      "",
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "PX4 FMU v5.x",
+      "unknown"
+    ],
+    [
+      "",
+      "USB VID:PID=26ac:0011",
+      "Pixhawk 4",
+      "unknown"
+    ],
+    [
+      "",
+      "USB VID:PID=0483:DF11 SER=x",
+      "u-blox GNSS receiver",
+      "unknown"
+    ],
+    [
+      "",
+      "USB VID:PID=0483:5740",
+      "ZED-F9P",
+      "unknown"
+    ],
+    [
+      "",
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "SimpleRTK2B",
+      "unknown"
+    ],
+    [
+      "",
+      "USB VID:PID=10C4:EA60",
+      "ArduPilot-BL",
+      "unknown"
+    ],
+    [
+      "",
+      "USB VID:PID=1A86:7523",
+      "Cube Orange-BL",
+      "unknown"
+    ],
+    [
+      "",
+      "USB VID:PID=067B:2303",
+      "Cube Orange bl",
+      "unknown"
+    ],
+    [
+      "",
+      "USB VID:PID=1546:01A9 SER=",
+      "STM32 BOOTLOADER",
+      "unknown"
+    ],
+    [
+      "",
+      "USB VID:PID=152A:85C0",
+      "STM32 DFU in FS Mode",
+      "unknown"
+    ],
+    [
+      "",
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "dfuse",
+      "unknown"
+    ],
+    [
+      "",
+      "VID:PID=ABCD:EF01",
+      "my_dfu_port",
+      "unknown"
+    ],
+    [
+      "",
+      "USB VID:PID=ABC:DEF1",
+      "x-blx",
+      "unknown"
+    ],
+    [
+      "",
+      "USB VID:PID=ABCD:EF0",
+      "SiK radio",
+      "unknown"
+    ],
+    [
+      "",
+      "usb vid:pid=26ac:0032  ser=zz",
+      "septentrio mosaic",
+      "unknown"
+    ],
+    [
+      "",
+      "n/a",
+      "bl fmu",
+      "unknown"
+    ],
+    [
+      "",
+      "PX4 FMU v5",
+      "bl  fmu",
+      "unknown"
+    ],
+    [
+      "",
+      "Hex Cube Orange",
+      "Bootloaders",
+      "unknown"
+    ],
+    [
+      "",
+      "SER=1",
+      "bootloader_x",
+      "unknown"
+    ],
+    [
+      "",
+      "USB VID:PID=26AC:0032SER=1",
+      "-bl",
+      "unknown"
+    ],
+    [
+      "  ",
+      "",
+      "",
+      "unknown"
+    ],
+    [
+      "  ",
+      "   ",
+      "PX4 BL FMU v5.x",
+      "unknown"
+    ],
+    [
+      "  ",
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "PX4 FMU v5.x",
+      "unknown"
+    ],
+    [
+      "  ",
+      "USB VID:PID=26ac:0011",
+      "Pixhawk 4",
+      "unknown"
+    ],
+    [
+      "  ",
+      "USB VID:PID=0483:DF11 SER=x",
+      "u-blox GNSS receiver",
+      "unknown"
+    ],
+    [
+      "  ",
+      "USB VID:PID=0483:5740",
+      "ZED-F9P",
+      "unknown"
+    ],
+    [
+      "  ",
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "SimpleRTK2B",
+      "unknown"
+    ],
+    [
+      "  ",
+      "USB VID:PID=10C4:EA60",
+      "ArduPilot-BL",
+      "unknown"
+    ],
+    [
+      "  ",
+      "USB VID:PID=1A86:7523",
+      "Cube Orange-BL",
+      "unknown"
+    ],
+    [
+      "  ",
+      "USB VID:PID=067B:2303",
+      "Cube Orange bl",
+      "unknown"
+    ],
+    [
+      "  ",
+      "USB VID:PID=1546:01A9 SER=",
+      "STM32 BOOTLOADER",
+      "unknown"
+    ],
+    [
+      "  ",
+      "USB VID:PID=152A:85C0",
+      "STM32 DFU in FS Mode",
+      "unknown"
+    ],
+    [
+      "  ",
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "dfuse",
+      "unknown"
+    ],
+    [
+      "  ",
+      "VID:PID=ABCD:EF01",
+      "my_dfu_port",
+      "unknown"
+    ],
+    [
+      "  ",
+      "USB VID:PID=ABC:DEF1",
+      "x-blx",
+      "unknown"
+    ],
+    [
+      "  ",
+      "USB VID:PID=ABCD:EF0",
+      "SiK radio",
+      "unknown"
+    ],
+    [
+      "  ",
+      "usb vid:pid=26ac:0032  ser=zz",
+      "septentrio mosaic",
+      "unknown"
+    ],
+    [
+      "  ",
+      "n/a",
+      "bl fmu",
+      "unknown"
+    ],
+    [
+      "  ",
+      "PX4 FMU v5",
+      "bl  fmu",
+      "unknown"
+    ],
+    [
+      "  ",
+      "Hex Cube Orange",
+      "Bootloaders",
+      "unknown"
+    ],
+    [
+      "  ",
+      "SER=1",
+      "bootloader_x",
+      "unknown"
+    ],
+    [
+      "  ",
+      "USB VID:PID=26AC:0032SER=1",
+      "-bl",
+      "unknown"
+    ],
+    [
+      "/dev/ttyS0",
+      "",
+      "",
+      "unknown"
+    ],
+    [
+      "/dev/ttyS0",
+      "   ",
+      "PX4 BL FMU v5.x",
+      "unknown"
+    ],
+    [
+      "/dev/ttyS0",
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "PX4 FMU v5.x",
+      "unknown"
+    ],
+    [
+      "/dev/ttyS0",
+      "USB VID:PID=26ac:0011",
+      "Pixhawk 4",
+      "unknown"
+    ],
+    [
+      "/dev/ttyS0",
+      "USB VID:PID=0483:DF11 SER=x",
+      "u-blox GNSS receiver",
+      "rtk"
+    ],
+    [
+      "/dev/ttyS0",
+      "USB VID:PID=0483:5740",
+      "ZED-F9P",
+      "rtk"
+    ],
+    [
+      "/dev/ttyS0",
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "SimpleRTK2B",
+      "rtk"
+    ],
+    [
+      "/dev/ttyS0",
+      "USB VID:PID=10C4:EA60",
+      "ArduPilot-BL",
+      "unknown"
+    ],
+    [
+      "/dev/ttyS0",
+      "USB VID:PID=1A86:7523",
+      "Cube Orange-BL",
+      "unknown"
+    ],
+    [
+      "/dev/ttyS0",
+      "USB VID:PID=067B:2303",
+      "Cube Orange bl",
+      "unknown"
+    ],
+    [
+      "/dev/ttyS0",
+      "USB VID:PID=1546:01A9 SER=",
+      "STM32 BOOTLOADER",
+      "rtk"
+    ],
+    [
+      "/dev/ttyS0",
+      "USB VID:PID=152A:85C0",
+      "STM32 DFU in FS Mode",
+      "rtk"
+    ],
+    [
+      "/dev/ttyS0",
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "dfuse",
+      "unknown"
+    ],
+    [
+      "/dev/ttyS0",
+      "VID:PID=ABCD:EF01",
+      "my_dfu_port",
+      "unknown"
+    ],
+    [
+      "/dev/ttyS0",
+      "USB VID:PID=ABC:DEF1",
+      "x-blx",
+      "unknown"
+    ],
+    [
+      "/dev/ttyS0",
+      "USB VID:PID=ABCD:EF0",
+      "SiK radio",
+      "unknown"
+    ],
+    [
+      "/dev/ttyS0",
+      "usb vid:pid=26ac:0032  ser=zz",
+      "septentrio mosaic",
+      "rtk"
+    ],
+    [
+      "/dev/ttyS0",
+      "n/a",
+      "bl fmu",
+      "unknown"
+    ],
+    [
+      "/dev/ttyS0",
+      "PX4 FMU v5",
+      "bl  fmu",
+      "unknown"
+    ],
+    [
+      "/dev/ttyS0",
+      "Hex Cube Orange",
+      "Bootloaders",
+      "unknown"
+    ],
+    [
+      "/dev/ttyS0",
+      "SER=1",
+      "bootloader_x",
+      "unknown"
+    ],
+    [
+      "/dev/ttyS0",
+      "USB VID:PID=26AC:0032SER=1",
+      "-bl",
+      "unknown"
+    ],
+    [
+      "/dev/ttyS12",
+      "",
+      "",
+      "unknown"
+    ],
+    [
+      "/dev/ttyS12",
+      "   ",
+      "PX4 BL FMU v5.x",
+      "unknown"
+    ],
+    [
+      "/dev/ttyS12",
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "PX4 FMU v5.x",
+      "unknown"
+    ],
+    [
+      "/dev/ttyS12",
+      "USB VID:PID=26ac:0011",
+      "Pixhawk 4",
+      "unknown"
+    ],
+    [
+      "/dev/ttyS12",
+      "USB VID:PID=0483:DF11 SER=x",
+      "u-blox GNSS receiver",
+      "rtk"
+    ],
+    [
+      "/dev/ttyS12",
+      "USB VID:PID=0483:5740",
+      "ZED-F9P",
+      "rtk"
+    ],
+    [
+      "/dev/ttyS12",
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "SimpleRTK2B",
+      "rtk"
+    ],
+    [
+      "/dev/ttyS12",
+      "USB VID:PID=10C4:EA60",
+      "ArduPilot-BL",
+      "unknown"
+    ],
+    [
+      "/dev/ttyS12",
+      "USB VID:PID=1A86:7523",
+      "Cube Orange-BL",
+      "unknown"
+    ],
+    [
+      "/dev/ttyS12",
+      "USB VID:PID=067B:2303",
+      "Cube Orange bl",
+      "unknown"
+    ],
+    [
+      "/dev/ttyS12",
+      "USB VID:PID=1546:01A9 SER=",
+      "STM32 BOOTLOADER",
+      "rtk"
+    ],
+    [
+      "/dev/ttyS12",
+      "USB VID:PID=152A:85C0",
+      "STM32 DFU in FS Mode",
+      "rtk"
+    ],
+    [
+      "/dev/ttyS12",
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "dfuse",
+      "unknown"
+    ],
+    [
+      "/dev/ttyS12",
+      "VID:PID=ABCD:EF01",
+      "my_dfu_port",
+      "unknown"
+    ],
+    [
+      "/dev/ttyS12",
+      "USB VID:PID=ABC:DEF1",
+      "x-blx",
+      "unknown"
+    ],
+    [
+      "/dev/ttyS12",
+      "USB VID:PID=ABCD:EF0",
+      "SiK radio",
+      "unknown"
+    ],
+    [
+      "/dev/ttyS12",
+      "usb vid:pid=26ac:0032  ser=zz",
+      "septentrio mosaic",
+      "rtk"
+    ],
+    [
+      "/dev/ttyS12",
+      "n/a",
+      "bl fmu",
+      "unknown"
+    ],
+    [
+      "/dev/ttyS12",
+      "PX4 FMU v5",
+      "bl  fmu",
+      "unknown"
+    ],
+    [
+      "/dev/ttyS12",
+      "Hex Cube Orange",
+      "Bootloaders",
+      "unknown"
+    ],
+    [
+      "/dev/ttyS12",
+      "SER=1",
+      "bootloader_x",
+      "unknown"
+    ],
+    [
+      "/dev/ttyS12",
+      "USB VID:PID=26AC:0032SER=1",
+      "-bl",
+      "unknown"
+    ],
+    [
+      "/dev/ttyS",
+      "",
+      "",
+      "unknown"
+    ],
+    [
+      "/dev/ttyS",
+      "   ",
+      "PX4 BL FMU v5.x",
+      "unknown"
+    ],
+    [
+      "/dev/ttyS",
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "PX4 FMU v5.x",
+      "unknown"
+    ],
+    [
+      "/dev/ttyS",
+      "USB VID:PID=26ac:0011",
+      "Pixhawk 4",
+      "unknown"
+    ],
+    [
+      "/dev/ttyS",
+      "USB VID:PID=0483:DF11 SER=x",
+      "u-blox GNSS receiver",
+      "rtk"
+    ],
+    [
+      "/dev/ttyS",
+      "USB VID:PID=0483:5740",
+      "ZED-F9P",
+      "rtk"
+    ],
+    [
+      "/dev/ttyS",
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "SimpleRTK2B",
+      "rtk"
+    ],
+    [
+      "/dev/ttyS",
+      "USB VID:PID=10C4:EA60",
+      "ArduPilot-BL",
+      "unknown"
+    ],
+    [
+      "/dev/ttyS",
+      "USB VID:PID=1A86:7523",
+      "Cube Orange-BL",
+      "unknown"
+    ],
+    [
+      "/dev/ttyS",
+      "USB VID:PID=067B:2303",
+      "Cube Orange bl",
+      "unknown"
+    ],
+    [
+      "/dev/ttyS",
+      "USB VID:PID=1546:01A9 SER=",
+      "STM32 BOOTLOADER",
+      "rtk"
+    ],
+    [
+      "/dev/ttyS",
+      "USB VID:PID=152A:85C0",
+      "STM32 DFU in FS Mode",
+      "rtk"
+    ],
+    [
+      "/dev/ttyS",
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "dfuse",
+      "unknown"
+    ],
+    [
+      "/dev/ttyS",
+      "VID:PID=ABCD:EF01",
+      "my_dfu_port",
+      "unknown"
+    ],
+    [
+      "/dev/ttyS",
+      "USB VID:PID=ABC:DEF1",
+      "x-blx",
+      "unknown"
+    ],
+    [
+      "/dev/ttyS",
+      "USB VID:PID=ABCD:EF0",
+      "SiK radio",
+      "unknown"
+    ],
+    [
+      "/dev/ttyS",
+      "usb vid:pid=26ac:0032  ser=zz",
+      "septentrio mosaic",
+      "rtk"
+    ],
+    [
+      "/dev/ttyS",
+      "n/a",
+      "bl fmu",
+      "unknown"
+    ],
+    [
+      "/dev/ttyS",
+      "PX4 FMU v5",
+      "bl  fmu",
+      "unknown"
+    ],
+    [
+      "/dev/ttyS",
+      "Hex Cube Orange",
+      "Bootloaders",
+      "unknown"
+    ],
+    [
+      "/dev/ttyS",
+      "SER=1",
+      "bootloader_x",
+      "unknown"
+    ],
+    [
+      "/dev/ttyS",
+      "USB VID:PID=26AC:0032SER=1",
+      "-bl",
+      "unknown"
+    ],
+    [
+      "/dev/ttyACM0",
+      "",
+      "",
+      "usb"
+    ],
+    [
+      "/dev/ttyACM0",
+      "   ",
+      "PX4 BL FMU v5.x",
+      "usb"
+    ],
+    [
+      "/dev/ttyACM0",
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "PX4 FMU v5.x",
+      "usb"
+    ],
+    [
+      "/dev/ttyACM0",
+      "USB VID:PID=26ac:0011",
+      "Pixhawk 4",
+      "usb"
+    ],
+    [
+      "/dev/ttyACM0",
+      "USB VID:PID=0483:DF11 SER=x",
+      "u-blox GNSS receiver",
+      "rtk"
+    ],
+    [
+      "/dev/ttyACM0",
+      "USB VID:PID=0483:5740",
+      "ZED-F9P",
+      "rtk"
+    ],
+    [
+      "/dev/ttyACM0",
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "SimpleRTK2B",
+      "rtk"
+    ],
+    [
+      "/dev/ttyACM0",
+      "USB VID:PID=10C4:EA60",
+      "ArduPilot-BL",
+      "usb"
+    ],
+    [
+      "/dev/ttyACM0",
+      "USB VID:PID=1A86:7523",
+      "Cube Orange-BL",
+      "usb"
+    ],
+    [
+      "/dev/ttyACM0",
+      "USB VID:PID=067B:2303",
+      "Cube Orange bl",
+      "usb"
+    ],
+    [
+      "/dev/ttyACM0",
+      "USB VID:PID=1546:01A9 SER=",
+      "STM32 BOOTLOADER",
+      "rtk"
+    ],
+    [
+      "/dev/ttyACM0",
+      "USB VID:PID=152A:85C0",
+      "STM32 DFU in FS Mode",
+      "rtk"
+    ],
+    [
+      "/dev/ttyACM0",
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "dfuse",
+      "usb"
+    ],
+    [
+      "/dev/ttyACM0",
+      "VID:PID=ABCD:EF01",
+      "my_dfu_port",
+      "usb"
+    ],
+    [
+      "/dev/ttyACM0",
+      "USB VID:PID=ABC:DEF1",
+      "x-blx",
+      "usb"
+    ],
+    [
+      "/dev/ttyACM0",
+      "USB VID:PID=ABCD:EF0",
+      "SiK radio",
+      "usb"
+    ],
+    [
+      "/dev/ttyACM0",
+      "usb vid:pid=26ac:0032  ser=zz",
+      "septentrio mosaic",
+      "rtk"
+    ],
+    [
+      "/dev/ttyACM0",
+      "n/a",
+      "bl fmu",
+      "usb"
+    ],
+    [
+      "/dev/ttyACM0",
+      "PX4 FMU v5",
+      "bl  fmu",
+      "usb"
+    ],
+    [
+      "/dev/ttyACM0",
+      "Hex Cube Orange",
+      "Bootloaders",
+      "usb"
+    ],
+    [
+      "/dev/ttyACM0",
+      "SER=1",
+      "bootloader_x",
+      "usb"
+    ],
+    [
+      "/dev/ttyACM0",
+      "USB VID:PID=26AC:0032SER=1",
+      "-bl",
+      "usb"
+    ],
+    [
+      "/dev/ttyACM12",
+      "",
+      "",
+      "usb"
+    ],
+    [
+      "/dev/ttyACM12",
+      "   ",
+      "PX4 BL FMU v5.x",
+      "usb"
+    ],
+    [
+      "/dev/ttyACM12",
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "PX4 FMU v5.x",
+      "usb"
+    ],
+    [
+      "/dev/ttyACM12",
+      "USB VID:PID=26ac:0011",
+      "Pixhawk 4",
+      "usb"
+    ],
+    [
+      "/dev/ttyACM12",
+      "USB VID:PID=0483:DF11 SER=x",
+      "u-blox GNSS receiver",
+      "rtk"
+    ],
+    [
+      "/dev/ttyACM12",
+      "USB VID:PID=0483:5740",
+      "ZED-F9P",
+      "rtk"
+    ],
+    [
+      "/dev/ttyACM12",
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "SimpleRTK2B",
+      "rtk"
+    ],
+    [
+      "/dev/ttyACM12",
+      "USB VID:PID=10C4:EA60",
+      "ArduPilot-BL",
+      "usb"
+    ],
+    [
+      "/dev/ttyACM12",
+      "USB VID:PID=1A86:7523",
+      "Cube Orange-BL",
+      "usb"
+    ],
+    [
+      "/dev/ttyACM12",
+      "USB VID:PID=067B:2303",
+      "Cube Orange bl",
+      "usb"
+    ],
+    [
+      "/dev/ttyACM12",
+      "USB VID:PID=1546:01A9 SER=",
+      "STM32 BOOTLOADER",
+      "rtk"
+    ],
+    [
+      "/dev/ttyACM12",
+      "USB VID:PID=152A:85C0",
+      "STM32 DFU in FS Mode",
+      "rtk"
+    ],
+    [
+      "/dev/ttyACM12",
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "dfuse",
+      "usb"
+    ],
+    [
+      "/dev/ttyACM12",
+      "VID:PID=ABCD:EF01",
+      "my_dfu_port",
+      "usb"
+    ],
+    [
+      "/dev/ttyACM12",
+      "USB VID:PID=ABC:DEF1",
+      "x-blx",
+      "usb"
+    ],
+    [
+      "/dev/ttyACM12",
+      "USB VID:PID=ABCD:EF0",
+      "SiK radio",
+      "usb"
+    ],
+    [
+      "/dev/ttyACM12",
+      "usb vid:pid=26ac:0032  ser=zz",
+      "septentrio mosaic",
+      "rtk"
+    ],
+    [
+      "/dev/ttyACM12",
+      "n/a",
+      "bl fmu",
+      "usb"
+    ],
+    [
+      "/dev/ttyACM12",
+      "PX4 FMU v5",
+      "bl  fmu",
+      "usb"
+    ],
+    [
+      "/dev/ttyACM12",
+      "Hex Cube Orange",
+      "Bootloaders",
+      "usb"
+    ],
+    [
+      "/dev/ttyACM12",
+      "SER=1",
+      "bootloader_x",
+      "usb"
+    ],
+    [
+      "/dev/ttyACM12",
+      "USB VID:PID=26AC:0032SER=1",
+      "-bl",
+      "usb"
+    ],
+    [
+      "/dev/ttyACM",
+      "",
+      "",
+      "unknown"
+    ],
+    [
+      "/dev/ttyACM",
+      "   ",
+      "PX4 BL FMU v5.x",
+      "unknown"
+    ],
+    [
+      "/dev/ttyACM",
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "PX4 FMU v5.x",
+      "unknown"
+    ],
+    [
+      "/dev/ttyACM",
+      "USB VID:PID=26ac:0011",
+      "Pixhawk 4",
+      "unknown"
+    ],
+    [
+      "/dev/ttyACM",
+      "USB VID:PID=0483:DF11 SER=x",
+      "u-blox GNSS receiver",
+      "rtk"
+    ],
+    [
+      "/dev/ttyACM",
+      "USB VID:PID=0483:5740",
+      "ZED-F9P",
+      "rtk"
+    ],
+    [
+      "/dev/ttyACM",
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "SimpleRTK2B",
+      "rtk"
+    ],
+    [
+      "/dev/ttyACM",
+      "USB VID:PID=10C4:EA60",
+      "ArduPilot-BL",
+      "unknown"
+    ],
+    [
+      "/dev/ttyACM",
+      "USB VID:PID=1A86:7523",
+      "Cube Orange-BL",
+      "unknown"
+    ],
+    [
+      "/dev/ttyACM",
+      "USB VID:PID=067B:2303",
+      "Cube Orange bl",
+      "unknown"
+    ],
+    [
+      "/dev/ttyACM",
+      "USB VID:PID=1546:01A9 SER=",
+      "STM32 BOOTLOADER",
+      "rtk"
+    ],
+    [
+      "/dev/ttyACM",
+      "USB VID:PID=152A:85C0",
+      "STM32 DFU in FS Mode",
+      "rtk"
+    ],
+    [
+      "/dev/ttyACM",
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "dfuse",
+      "unknown"
+    ],
+    [
+      "/dev/ttyACM",
+      "VID:PID=ABCD:EF01",
+      "my_dfu_port",
+      "unknown"
+    ],
+    [
+      "/dev/ttyACM",
+      "USB VID:PID=ABC:DEF1",
+      "x-blx",
+      "unknown"
+    ],
+    [
+      "/dev/ttyACM",
+      "USB VID:PID=ABCD:EF0",
+      "SiK radio",
+      "unknown"
+    ],
+    [
+      "/dev/ttyACM",
+      "usb vid:pid=26ac:0032  ser=zz",
+      "septentrio mosaic",
+      "rtk"
+    ],
+    [
+      "/dev/ttyACM",
+      "n/a",
+      "bl fmu",
+      "unknown"
+    ],
+    [
+      "/dev/ttyACM",
+      "PX4 FMU v5",
+      "bl  fmu",
+      "unknown"
+    ],
+    [
+      "/dev/ttyACM",
+      "Hex Cube Orange",
+      "Bootloaders",
+      "unknown"
+    ],
+    [
+      "/dev/ttyACM",
+      "SER=1",
+      "bootloader_x",
+      "unknown"
+    ],
+    [
+      "/dev/ttyACM",
+      "USB VID:PID=26AC:0032SER=1",
+      "-bl",
+      "unknown"
+    ],
+    [
+      "/dev/ttyUSB0",
+      "",
+      "",
+      "sik"
+    ],
+    [
+      "/dev/ttyUSB0",
+      "   ",
+      "PX4 BL FMU v5.x",
+      "sik"
+    ],
+    [
+      "/dev/ttyUSB0",
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "PX4 FMU v5.x",
+      "sik"
+    ],
+    [
+      "/dev/ttyUSB0",
+      "USB VID:PID=26ac:0011",
+      "Pixhawk 4",
+      "sik"
+    ],
+    [
+      "/dev/ttyUSB0",
+      "USB VID:PID=0483:DF11 SER=x",
+      "u-blox GNSS receiver",
+      "rtk"
+    ],
+    [
+      "/dev/ttyUSB0",
+      "USB VID:PID=0483:5740",
+      "ZED-F9P",
+      "rtk"
+    ],
+    [
+      "/dev/ttyUSB0",
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "SimpleRTK2B",
+      "rtk"
+    ],
+    [
+      "/dev/ttyUSB0",
+      "USB VID:PID=10C4:EA60",
+      "ArduPilot-BL",
+      "sik"
+    ],
+    [
+      "/dev/ttyUSB0",
+      "USB VID:PID=1A86:7523",
+      "Cube Orange-BL",
+      "sik"
+    ],
+    [
+      "/dev/ttyUSB0",
+      "USB VID:PID=067B:2303",
+      "Cube Orange bl",
+      "sik"
+    ],
+    [
+      "/dev/ttyUSB0",
+      "USB VID:PID=1546:01A9 SER=",
+      "STM32 BOOTLOADER",
+      "rtk"
+    ],
+    [
+      "/dev/ttyUSB0",
+      "USB VID:PID=152A:85C0",
+      "STM32 DFU in FS Mode",
+      "rtk"
+    ],
+    [
+      "/dev/ttyUSB0",
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "dfuse",
+      "sik"
+    ],
+    [
+      "/dev/ttyUSB0",
+      "VID:PID=ABCD:EF01",
+      "my_dfu_port",
+      "sik"
+    ],
+    [
+      "/dev/ttyUSB0",
+      "USB VID:PID=ABC:DEF1",
+      "x-blx",
+      "sik"
+    ],
+    [
+      "/dev/ttyUSB0",
+      "USB VID:PID=ABCD:EF0",
+      "SiK radio",
+      "sik"
+    ],
+    [
+      "/dev/ttyUSB0",
+      "usb vid:pid=26ac:0032  ser=zz",
+      "septentrio mosaic",
+      "rtk"
+    ],
+    [
+      "/dev/ttyUSB0",
+      "n/a",
+      "bl fmu",
+      "sik"
+    ],
+    [
+      "/dev/ttyUSB0",
+      "PX4 FMU v5",
+      "bl  fmu",
+      "sik"
+    ],
+    [
+      "/dev/ttyUSB0",
+      "Hex Cube Orange",
+      "Bootloaders",
+      "sik"
+    ],
+    [
+      "/dev/ttyUSB0",
+      "SER=1",
+      "bootloader_x",
+      "sik"
+    ],
+    [
+      "/dev/ttyUSB0",
+      "USB VID:PID=26AC:0032SER=1",
+      "-bl",
+      "sik"
+    ],
+    [
+      "/dev/ttyUSB3",
+      "",
+      "",
+      "sik"
+    ],
+    [
+      "/dev/ttyUSB3",
+      "   ",
+      "PX4 BL FMU v5.x",
+      "sik"
+    ],
+    [
+      "/dev/ttyUSB3",
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "PX4 FMU v5.x",
+      "sik"
+    ],
+    [
+      "/dev/ttyUSB3",
+      "USB VID:PID=26ac:0011",
+      "Pixhawk 4",
+      "sik"
+    ],
+    [
+      "/dev/ttyUSB3",
+      "USB VID:PID=0483:DF11 SER=x",
+      "u-blox GNSS receiver",
+      "rtk"
+    ],
+    [
+      "/dev/ttyUSB3",
+      "USB VID:PID=0483:5740",
+      "ZED-F9P",
+      "rtk"
+    ],
+    [
+      "/dev/ttyUSB3",
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "SimpleRTK2B",
+      "rtk"
+    ],
+    [
+      "/dev/ttyUSB3",
+      "USB VID:PID=10C4:EA60",
+      "ArduPilot-BL",
+      "sik"
+    ],
+    [
+      "/dev/ttyUSB3",
+      "USB VID:PID=1A86:7523",
+      "Cube Orange-BL",
+      "sik"
+    ],
+    [
+      "/dev/ttyUSB3",
+      "USB VID:PID=067B:2303",
+      "Cube Orange bl",
+      "sik"
+    ],
+    [
+      "/dev/ttyUSB3",
+      "USB VID:PID=1546:01A9 SER=",
+      "STM32 BOOTLOADER",
+      "rtk"
+    ],
+    [
+      "/dev/ttyUSB3",
+      "USB VID:PID=152A:85C0",
+      "STM32 DFU in FS Mode",
+      "rtk"
+    ],
+    [
+      "/dev/ttyUSB3",
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "dfuse",
+      "sik"
+    ],
+    [
+      "/dev/ttyUSB3",
+      "VID:PID=ABCD:EF01",
+      "my_dfu_port",
+      "sik"
+    ],
+    [
+      "/dev/ttyUSB3",
+      "USB VID:PID=ABC:DEF1",
+      "x-blx",
+      "sik"
+    ],
+    [
+      "/dev/ttyUSB3",
+      "USB VID:PID=ABCD:EF0",
+      "SiK radio",
+      "sik"
+    ],
+    [
+      "/dev/ttyUSB3",
+      "usb vid:pid=26ac:0032  ser=zz",
+      "septentrio mosaic",
+      "rtk"
+    ],
+    [
+      "/dev/ttyUSB3",
+      "n/a",
+      "bl fmu",
+      "sik"
+    ],
+    [
+      "/dev/ttyUSB3",
+      "PX4 FMU v5",
+      "bl  fmu",
+      "sik"
+    ],
+    [
+      "/dev/ttyUSB3",
+      "Hex Cube Orange",
+      "Bootloaders",
+      "sik"
+    ],
+    [
+      "/dev/ttyUSB3",
+      "SER=1",
+      "bootloader_x",
+      "sik"
+    ],
+    [
+      "/dev/ttyUSB3",
+      "USB VID:PID=26AC:0032SER=1",
+      "-bl",
+      "sik"
+    ],
+    [
+      "/dev/ttyUSBx",
+      "",
+      "",
+      "unknown"
+    ],
+    [
+      "/dev/ttyUSBx",
+      "   ",
+      "PX4 BL FMU v5.x",
+      "unknown"
+    ],
+    [
+      "/dev/ttyUSBx",
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "PX4 FMU v5.x",
+      "unknown"
+    ],
+    [
+      "/dev/ttyUSBx",
+      "USB VID:PID=26ac:0011",
+      "Pixhawk 4",
+      "unknown"
+    ],
+    [
+      "/dev/ttyUSBx",
+      "USB VID:PID=0483:DF11 SER=x",
+      "u-blox GNSS receiver",
+      "rtk"
+    ],
+    [
+      "/dev/ttyUSBx",
+      "USB VID:PID=0483:5740",
+      "ZED-F9P",
+      "rtk"
+    ],
+    [
+      "/dev/ttyUSBx",
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "SimpleRTK2B",
+      "rtk"
+    ],
+    [
+      "/dev/ttyUSBx",
+      "USB VID:PID=10C4:EA60",
+      "ArduPilot-BL",
+      "unknown"
+    ],
+    [
+      "/dev/ttyUSBx",
+      "USB VID:PID=1A86:7523",
+      "Cube Orange-BL",
+      "unknown"
+    ],
+    [
+      "/dev/ttyUSBx",
+      "USB VID:PID=067B:2303",
+      "Cube Orange bl",
+      "unknown"
+    ],
+    [
+      "/dev/ttyUSBx",
+      "USB VID:PID=1546:01A9 SER=",
+      "STM32 BOOTLOADER",
+      "rtk"
+    ],
+    [
+      "/dev/ttyUSBx",
+      "USB VID:PID=152A:85C0",
+      "STM32 DFU in FS Mode",
+      "rtk"
+    ],
+    [
+      "/dev/ttyUSBx",
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "dfuse",
+      "unknown"
+    ],
+    [
+      "/dev/ttyUSBx",
+      "VID:PID=ABCD:EF01",
+      "my_dfu_port",
+      "unknown"
+    ],
+    [
+      "/dev/ttyUSBx",
+      "USB VID:PID=ABC:DEF1",
+      "x-blx",
+      "unknown"
+    ],
+    [
+      "/dev/ttyUSBx",
+      "USB VID:PID=ABCD:EF0",
+      "SiK radio",
+      "unknown"
+    ],
+    [
+      "/dev/ttyUSBx",
+      "usb vid:pid=26ac:0032  ser=zz",
+      "septentrio mosaic",
+      "rtk"
+    ],
+    [
+      "/dev/ttyUSBx",
+      "n/a",
+      "bl fmu",
+      "unknown"
+    ],
+    [
+      "/dev/ttyUSBx",
+      "PX4 FMU v5",
+      "bl  fmu",
+      "unknown"
+    ],
+    [
+      "/dev/ttyUSBx",
+      "Hex Cube Orange",
+      "Bootloaders",
+      "unknown"
+    ],
+    [
+      "/dev/ttyUSBx",
+      "SER=1",
+      "bootloader_x",
+      "unknown"
+    ],
+    [
+      "/dev/ttyUSBx",
+      "USB VID:PID=26AC:0032SER=1",
+      "-bl",
+      "unknown"
+    ],
+    [
+      "/dev/serial/by-id/usb-3D_Robotics_PX4_FMU_v2.x_0-if00",
+      "",
+      "",
+      "usb"
+    ],
+    [
+      "/dev/serial/by-id/usb-3D_Robotics_PX4_FMU_v2.x_0-if00",
+      "   ",
+      "PX4 BL FMU v5.x",
+      "usb"
+    ],
+    [
+      "/dev/serial/by-id/usb-3D_Robotics_PX4_FMU_v2.x_0-if00",
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "PX4 FMU v5.x",
+      "usb"
+    ],
+    [
+      "/dev/serial/by-id/usb-3D_Robotics_PX4_FMU_v2.x_0-if00",
+      "USB VID:PID=26ac:0011",
+      "Pixhawk 4",
+      "usb"
+    ],
+    [
+      "/dev/serial/by-id/usb-3D_Robotics_PX4_FMU_v2.x_0-if00",
+      "USB VID:PID=0483:DF11 SER=x",
+      "u-blox GNSS receiver",
+      "rtk"
+    ],
+    [
+      "/dev/serial/by-id/usb-3D_Robotics_PX4_FMU_v2.x_0-if00",
+      "USB VID:PID=0483:5740",
+      "ZED-F9P",
+      "rtk"
+    ],
+    [
+      "/dev/serial/by-id/usb-3D_Robotics_PX4_FMU_v2.x_0-if00",
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "SimpleRTK2B",
+      "rtk"
+    ],
+    [
+      "/dev/serial/by-id/usb-3D_Robotics_PX4_FMU_v2.x_0-if00",
+      "USB VID:PID=10C4:EA60",
+      "ArduPilot-BL",
+      "usb"
+    ],
+    [
+      "/dev/serial/by-id/usb-3D_Robotics_PX4_FMU_v2.x_0-if00",
+      "USB VID:PID=1A86:7523",
+      "Cube Orange-BL",
+      "usb"
+    ],
+    [
+      "/dev/serial/by-id/usb-3D_Robotics_PX4_FMU_v2.x_0-if00",
+      "USB VID:PID=067B:2303",
+      "Cube Orange bl",
+      "usb"
+    ],
+    [
+      "/dev/serial/by-id/usb-3D_Robotics_PX4_FMU_v2.x_0-if00",
+      "USB VID:PID=1546:01A9 SER=",
+      "STM32 BOOTLOADER",
+      "rtk"
+    ],
+    [
+      "/dev/serial/by-id/usb-3D_Robotics_PX4_FMU_v2.x_0-if00",
+      "USB VID:PID=152A:85C0",
+      "STM32 DFU in FS Mode",
+      "rtk"
+    ],
+    [
+      "/dev/serial/by-id/usb-3D_Robotics_PX4_FMU_v2.x_0-if00",
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "dfuse",
+      "usb"
+    ],
+    [
+      "/dev/serial/by-id/usb-3D_Robotics_PX4_FMU_v2.x_0-if00",
+      "VID:PID=ABCD:EF01",
+      "my_dfu_port",
+      "usb"
+    ],
+    [
+      "/dev/serial/by-id/usb-3D_Robotics_PX4_FMU_v2.x_0-if00",
+      "USB VID:PID=ABC:DEF1",
+      "x-blx",
+      "usb"
+    ],
+    [
+      "/dev/serial/by-id/usb-3D_Robotics_PX4_FMU_v2.x_0-if00",
+      "USB VID:PID=ABCD:EF0",
+      "SiK radio",
+      "usb"
+    ],
+    [
+      "/dev/serial/by-id/usb-3D_Robotics_PX4_FMU_v2.x_0-if00",
+      "usb vid:pid=26ac:0032  ser=zz",
+      "septentrio mosaic",
+      "rtk"
+    ],
+    [
+      "/dev/serial/by-id/usb-3D_Robotics_PX4_FMU_v2.x_0-if00",
+      "n/a",
+      "bl fmu",
+      "usb"
+    ],
+    [
+      "/dev/serial/by-id/usb-3D_Robotics_PX4_FMU_v2.x_0-if00",
+      "PX4 FMU v5",
+      "bl  fmu",
+      "usb"
+    ],
+    [
+      "/dev/serial/by-id/usb-3D_Robotics_PX4_FMU_v2.x_0-if00",
+      "Hex Cube Orange",
+      "Bootloaders",
+      "usb"
+    ],
+    [
+      "/dev/serial/by-id/usb-3D_Robotics_PX4_FMU_v2.x_0-if00",
+      "SER=1",
+      "bootloader_x",
+      "usb"
+    ],
+    [
+      "/dev/serial/by-id/usb-3D_Robotics_PX4_FMU_v2.x_0-if00",
+      "USB VID:PID=26AC:0032SER=1",
+      "-bl",
+      "usb"
+    ],
+    [
+      "/dev/serial/by-id/usb-FTDI_FT232R-if00",
+      "",
+      "",
+      "unknown"
+    ],
+    [
+      "/dev/serial/by-id/usb-FTDI_FT232R-if00",
+      "   ",
+      "PX4 BL FMU v5.x",
+      "unknown"
+    ],
+    [
+      "/dev/serial/by-id/usb-FTDI_FT232R-if00",
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "PX4 FMU v5.x",
+      "unknown"
+    ],
+    [
+      "/dev/serial/by-id/usb-FTDI_FT232R-if00",
+      "USB VID:PID=26ac:0011",
+      "Pixhawk 4",
+      "unknown"
+    ],
+    [
+      "/dev/serial/by-id/usb-FTDI_FT232R-if00",
+      "USB VID:PID=0483:DF11 SER=x",
+      "u-blox GNSS receiver",
+      "rtk"
+    ],
+    [
+      "/dev/serial/by-id/usb-FTDI_FT232R-if00",
+      "USB VID:PID=0483:5740",
+      "ZED-F9P",
+      "rtk"
+    ],
+    [
+      "/dev/serial/by-id/usb-FTDI_FT232R-if00",
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "SimpleRTK2B",
+      "rtk"
+    ],
+    [
+      "/dev/serial/by-id/usb-FTDI_FT232R-if00",
+      "USB VID:PID=10C4:EA60",
+      "ArduPilot-BL",
+      "unknown"
+    ],
+    [
+      "/dev/serial/by-id/usb-FTDI_FT232R-if00",
+      "USB VID:PID=1A86:7523",
+      "Cube Orange-BL",
+      "unknown"
+    ],
+    [
+      "/dev/serial/by-id/usb-FTDI_FT232R-if00",
+      "USB VID:PID=067B:2303",
+      "Cube Orange bl",
+      "unknown"
+    ],
+    [
+      "/dev/serial/by-id/usb-FTDI_FT232R-if00",
+      "USB VID:PID=1546:01A9 SER=",
+      "STM32 BOOTLOADER",
+      "rtk"
+    ],
+    [
+      "/dev/serial/by-id/usb-FTDI_FT232R-if00",
+      "USB VID:PID=152A:85C0",
+      "STM32 DFU in FS Mode",
+      "rtk"
+    ],
+    [
+      "/dev/serial/by-id/usb-FTDI_FT232R-if00",
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "dfuse",
+      "unknown"
+    ],
+    [
+      "/dev/serial/by-id/usb-FTDI_FT232R-if00",
+      "VID:PID=ABCD:EF01",
+      "my_dfu_port",
+      "unknown"
+    ],
+    [
+      "/dev/serial/by-id/usb-FTDI_FT232R-if00",
+      "USB VID:PID=ABC:DEF1",
+      "x-blx",
+      "unknown"
+    ],
+    [
+      "/dev/serial/by-id/usb-FTDI_FT232R-if00",
+      "USB VID:PID=ABCD:EF0",
+      "SiK radio",
+      "unknown"
+    ],
+    [
+      "/dev/serial/by-id/usb-FTDI_FT232R-if00",
+      "usb vid:pid=26ac:0032  ser=zz",
+      "septentrio mosaic",
+      "rtk"
+    ],
+    [
+      "/dev/serial/by-id/usb-FTDI_FT232R-if00",
+      "n/a",
+      "bl fmu",
+      "unknown"
+    ],
+    [
+      "/dev/serial/by-id/usb-FTDI_FT232R-if00",
+      "PX4 FMU v5",
+      "bl  fmu",
+      "unknown"
+    ],
+    [
+      "/dev/serial/by-id/usb-FTDI_FT232R-if00",
+      "Hex Cube Orange",
+      "Bootloaders",
+      "unknown"
+    ],
+    [
+      "/dev/serial/by-id/usb-FTDI_FT232R-if00",
+      "SER=1",
+      "bootloader_x",
+      "unknown"
+    ],
+    [
+      "/dev/serial/by-id/usb-FTDI_FT232R-if00",
+      "USB VID:PID=26AC:0032SER=1",
+      "-bl",
+      "unknown"
+    ],
+    [
+      "/dev/serial/by-id/usb-u-blox_AG_-_www.u-blox.com-if00",
+      "",
+      "",
+      "unknown"
+    ],
+    [
+      "/dev/serial/by-id/usb-u-blox_AG_-_www.u-blox.com-if00",
+      "   ",
+      "PX4 BL FMU v5.x",
+      "unknown"
+    ],
+    [
+      "/dev/serial/by-id/usb-u-blox_AG_-_www.u-blox.com-if00",
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "PX4 FMU v5.x",
+      "unknown"
+    ],
+    [
+      "/dev/serial/by-id/usb-u-blox_AG_-_www.u-blox.com-if00",
+      "USB VID:PID=26ac:0011",
+      "Pixhawk 4",
+      "unknown"
+    ],
+    [
+      "/dev/serial/by-id/usb-u-blox_AG_-_www.u-blox.com-if00",
+      "USB VID:PID=0483:DF11 SER=x",
+      "u-blox GNSS receiver",
+      "rtk"
+    ],
+    [
+      "/dev/serial/by-id/usb-u-blox_AG_-_www.u-blox.com-if00",
+      "USB VID:PID=0483:5740",
+      "ZED-F9P",
+      "rtk"
+    ],
+    [
+      "/dev/serial/by-id/usb-u-blox_AG_-_www.u-blox.com-if00",
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "SimpleRTK2B",
+      "rtk"
+    ],
+    [
+      "/dev/serial/by-id/usb-u-blox_AG_-_www.u-blox.com-if00",
+      "USB VID:PID=10C4:EA60",
+      "ArduPilot-BL",
+      "unknown"
+    ],
+    [
+      "/dev/serial/by-id/usb-u-blox_AG_-_www.u-blox.com-if00",
+      "USB VID:PID=1A86:7523",
+      "Cube Orange-BL",
+      "unknown"
+    ],
+    [
+      "/dev/serial/by-id/usb-u-blox_AG_-_www.u-blox.com-if00",
+      "USB VID:PID=067B:2303",
+      "Cube Orange bl",
+      "unknown"
+    ],
+    [
+      "/dev/serial/by-id/usb-u-blox_AG_-_www.u-blox.com-if00",
+      "USB VID:PID=1546:01A9 SER=",
+      "STM32 BOOTLOADER",
+      "rtk"
+    ],
+    [
+      "/dev/serial/by-id/usb-u-blox_AG_-_www.u-blox.com-if00",
+      "USB VID:PID=152A:85C0",
+      "STM32 DFU in FS Mode",
+      "rtk"
+    ],
+    [
+      "/dev/serial/by-id/usb-u-blox_AG_-_www.u-blox.com-if00",
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "dfuse",
+      "unknown"
+    ],
+    [
+      "/dev/serial/by-id/usb-u-blox_AG_-_www.u-blox.com-if00",
+      "VID:PID=ABCD:EF01",
+      "my_dfu_port",
+      "unknown"
+    ],
+    [
+      "/dev/serial/by-id/usb-u-blox_AG_-_www.u-blox.com-if00",
+      "USB VID:PID=ABC:DEF1",
+      "x-blx",
+      "unknown"
+    ],
+    [
+      "/dev/serial/by-id/usb-u-blox_AG_-_www.u-blox.com-if00",
+      "USB VID:PID=ABCD:EF0",
+      "SiK radio",
+      "unknown"
+    ],
+    [
+      "/dev/serial/by-id/usb-u-blox_AG_-_www.u-blox.com-if00",
+      "usb vid:pid=26ac:0032  ser=zz",
+      "septentrio mosaic",
+      "rtk"
+    ],
+    [
+      "/dev/serial/by-id/usb-u-blox_AG_-_www.u-blox.com-if00",
+      "n/a",
+      "bl fmu",
+      "unknown"
+    ],
+    [
+      "/dev/serial/by-id/usb-u-blox_AG_-_www.u-blox.com-if00",
+      "PX4 FMU v5",
+      "bl  fmu",
+      "unknown"
+    ],
+    [
+      "/dev/serial/by-id/usb-u-blox_AG_-_www.u-blox.com-if00",
+      "Hex Cube Orange",
+      "Bootloaders",
+      "unknown"
+    ],
+    [
+      "/dev/serial/by-id/usb-u-blox_AG_-_www.u-blox.com-if00",
+      "SER=1",
+      "bootloader_x",
+      "unknown"
+    ],
+    [
+      "/dev/serial/by-id/usb-u-blox_AG_-_www.u-blox.com-if00",
+      "USB VID:PID=26AC:0032SER=1",
+      "-bl",
+      "unknown"
+    ],
+    [
+      "/dev/cu.usbmodem14201",
+      "",
+      "",
+      "unknown"
+    ],
+    [
+      "/dev/cu.usbmodem14201",
+      "   ",
+      "PX4 BL FMU v5.x",
+      "usb"
+    ],
+    [
+      "/dev/cu.usbmodem14201",
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "PX4 FMU v5.x",
+      "usb"
+    ],
+    [
+      "/dev/cu.usbmodem14201",
+      "USB VID:PID=26ac:0011",
+      "Pixhawk 4",
+      "usb"
+    ],
+    [
+      "/dev/cu.usbmodem14201",
+      "USB VID:PID=0483:DF11 SER=x",
+      "u-blox GNSS receiver",
+      "rtk"
+    ],
+    [
+      "/dev/cu.usbmodem14201",
+      "USB VID:PID=0483:5740",
+      "ZED-F9P",
+      "rtk"
+    ],
+    [
+      "/dev/cu.usbmodem14201",
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "SimpleRTK2B",
+      "rtk"
+    ],
+    [
+      "/dev/cu.usbmodem14201",
+      "USB VID:PID=10C4:EA60",
+      "ArduPilot-BL",
+      "sik"
+    ],
+    [
+      "/dev/cu.usbmodem14201",
+      "USB VID:PID=1A86:7523",
+      "Cube Orange-BL",
+      "sik"
+    ],
+    [
+      "/dev/cu.usbmodem14201",
+      "USB VID:PID=067B:2303",
+      "Cube Orange bl",
+      "sik"
+    ],
+    [
+      "/dev/cu.usbmodem14201",
+      "USB VID:PID=1546:01A9 SER=",
+      "STM32 BOOTLOADER",
+      "rtk"
+    ],
+    [
+      "/dev/cu.usbmodem14201",
+      "USB VID:PID=152A:85C0",
+      "STM32 DFU in FS Mode",
+      "rtk"
+    ],
+    [
+      "/dev/cu.usbmodem14201",
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "dfuse",
+      "unknown"
+    ],
+    [
+      "/dev/cu.usbmodem14201",
+      "VID:PID=ABCD:EF01",
+      "my_dfu_port",
+      "unknown"
+    ],
+    [
+      "/dev/cu.usbmodem14201",
+      "USB VID:PID=ABC:DEF1",
+      "x-blx",
+      "unknown"
+    ],
+    [
+      "/dev/cu.usbmodem14201",
+      "USB VID:PID=ABCD:EF0",
+      "SiK radio",
+      "unknown"
+    ],
+    [
+      "/dev/cu.usbmodem14201",
+      "usb vid:pid=26ac:0032  ser=zz",
+      "septentrio mosaic",
+      "rtk"
+    ],
+    [
+      "/dev/cu.usbmodem14201",
+      "n/a",
+      "bl fmu",
+      "usb"
+    ],
+    [
+      "/dev/cu.usbmodem14201",
+      "PX4 FMU v5",
+      "bl  fmu",
+      "usb"
+    ],
+    [
+      "/dev/cu.usbmodem14201",
+      "Hex Cube Orange",
+      "Bootloaders",
+      "usb"
+    ],
+    [
+      "/dev/cu.usbmodem14201",
+      "SER=1",
+      "bootloader_x",
+      "unknown"
+    ],
+    [
+      "/dev/cu.usbmodem14201",
+      "USB VID:PID=26AC:0032SER=1",
+      "-bl",
+      "usb"
+    ],
+    [
+      "/dev/tty.usbmodem14201",
+      "",
+      "",
+      "unknown"
+    ],
+    [
+      "/dev/tty.usbmodem14201",
+      "   ",
+      "PX4 BL FMU v5.x",
+      "usb"
+    ],
+    [
+      "/dev/tty.usbmodem14201",
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "PX4 FMU v5.x",
+      "usb"
+    ],
+    [
+      "/dev/tty.usbmodem14201",
+      "USB VID:PID=26ac:0011",
+      "Pixhawk 4",
+      "usb"
+    ],
+    [
+      "/dev/tty.usbmodem14201",
+      "USB VID:PID=0483:DF11 SER=x",
+      "u-blox GNSS receiver",
+      "rtk"
+    ],
+    [
+      "/dev/tty.usbmodem14201",
+      "USB VID:PID=0483:5740",
+      "ZED-F9P",
+      "rtk"
+    ],
+    [
+      "/dev/tty.usbmodem14201",
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "SimpleRTK2B",
+      "rtk"
+    ],
+    [
+      "/dev/tty.usbmodem14201",
+      "USB VID:PID=10C4:EA60",
+      "ArduPilot-BL",
+      "sik"
+    ],
+    [
+      "/dev/tty.usbmodem14201",
+      "USB VID:PID=1A86:7523",
+      "Cube Orange-BL",
+      "sik"
+    ],
+    [
+      "/dev/tty.usbmodem14201",
+      "USB VID:PID=067B:2303",
+      "Cube Orange bl",
+      "sik"
+    ],
+    [
+      "/dev/tty.usbmodem14201",
+      "USB VID:PID=1546:01A9 SER=",
+      "STM32 BOOTLOADER",
+      "rtk"
+    ],
+    [
+      "/dev/tty.usbmodem14201",
+      "USB VID:PID=152A:85C0",
+      "STM32 DFU in FS Mode",
+      "rtk"
+    ],
+    [
+      "/dev/tty.usbmodem14201",
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "dfuse",
+      "unknown"
+    ],
+    [
+      "/dev/tty.usbmodem14201",
+      "VID:PID=ABCD:EF01",
+      "my_dfu_port",
+      "unknown"
+    ],
+    [
+      "/dev/tty.usbmodem14201",
+      "USB VID:PID=ABC:DEF1",
+      "x-blx",
+      "unknown"
+    ],
+    [
+      "/dev/tty.usbmodem14201",
+      "USB VID:PID=ABCD:EF0",
+      "SiK radio",
+      "unknown"
+    ],
+    [
+      "/dev/tty.usbmodem14201",
+      "usb vid:pid=26ac:0032  ser=zz",
+      "septentrio mosaic",
+      "rtk"
+    ],
+    [
+      "/dev/tty.usbmodem14201",
+      "n/a",
+      "bl fmu",
+      "usb"
+    ],
+    [
+      "/dev/tty.usbmodem14201",
+      "PX4 FMU v5",
+      "bl  fmu",
+      "usb"
+    ],
+    [
+      "/dev/tty.usbmodem14201",
+      "Hex Cube Orange",
+      "Bootloaders",
+      "usb"
+    ],
+    [
+      "/dev/tty.usbmodem14201",
+      "SER=1",
+      "bootloader_x",
+      "unknown"
+    ],
+    [
+      "/dev/tty.usbmodem14201",
+      "USB VID:PID=26AC:0032SER=1",
+      "-bl",
+      "usb"
+    ],
+    [
+      "/dev/cu.usbserial-0001",
+      "",
+      "",
+      "unknown"
+    ],
+    [
+      "/dev/cu.usbserial-0001",
+      "   ",
+      "PX4 BL FMU v5.x",
+      "usb"
+    ],
+    [
+      "/dev/cu.usbserial-0001",
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "PX4 FMU v5.x",
+      "usb"
+    ],
+    [
+      "/dev/cu.usbserial-0001",
+      "USB VID:PID=26ac:0011",
+      "Pixhawk 4",
+      "usb"
+    ],
+    [
+      "/dev/cu.usbserial-0001",
+      "USB VID:PID=0483:DF11 SER=x",
+      "u-blox GNSS receiver",
+      "rtk"
+    ],
+    [
+      "/dev/cu.usbserial-0001",
+      "USB VID:PID=0483:5740",
+      "ZED-F9P",
+      "rtk"
+    ],
+    [
+      "/dev/cu.usbserial-0001",
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "SimpleRTK2B",
+      "rtk"
+    ],
+    [
+      "/dev/cu.usbserial-0001",
+      "USB VID:PID=10C4:EA60",
+      "ArduPilot-BL",
+      "sik"
+    ],
+    [
+      "/dev/cu.usbserial-0001",
+      "USB VID:PID=1A86:7523",
+      "Cube Orange-BL",
+      "sik"
+    ],
+    [
+      "/dev/cu.usbserial-0001",
+      "USB VID:PID=067B:2303",
+      "Cube Orange bl",
+      "sik"
+    ],
+    [
+      "/dev/cu.usbserial-0001",
+      "USB VID:PID=1546:01A9 SER=",
+      "STM32 BOOTLOADER",
+      "rtk"
+    ],
+    [
+      "/dev/cu.usbserial-0001",
+      "USB VID:PID=152A:85C0",
+      "STM32 DFU in FS Mode",
+      "rtk"
+    ],
+    [
+      "/dev/cu.usbserial-0001",
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "dfuse",
+      "unknown"
+    ],
+    [
+      "/dev/cu.usbserial-0001",
+      "VID:PID=ABCD:EF01",
+      "my_dfu_port",
+      "unknown"
+    ],
+    [
+      "/dev/cu.usbserial-0001",
+      "USB VID:PID=ABC:DEF1",
+      "x-blx",
+      "unknown"
+    ],
+    [
+      "/dev/cu.usbserial-0001",
+      "USB VID:PID=ABCD:EF0",
+      "SiK radio",
+      "unknown"
+    ],
+    [
+      "/dev/cu.usbserial-0001",
+      "usb vid:pid=26ac:0032  ser=zz",
+      "septentrio mosaic",
+      "rtk"
+    ],
+    [
+      "/dev/cu.usbserial-0001",
+      "n/a",
+      "bl fmu",
+      "usb"
+    ],
+    [
+      "/dev/cu.usbserial-0001",
+      "PX4 FMU v5",
+      "bl  fmu",
+      "usb"
+    ],
+    [
+      "/dev/cu.usbserial-0001",
+      "Hex Cube Orange",
+      "Bootloaders",
+      "usb"
+    ],
+    [
+      "/dev/cu.usbserial-0001",
+      "SER=1",
+      "bootloader_x",
+      "unknown"
+    ],
+    [
+      "/dev/cu.usbserial-0001",
+      "USB VID:PID=26AC:0032SER=1",
+      "-bl",
+      "usb"
+    ],
+    [
+      "/dev/cu.SLAB_USBtoUART",
+      "",
+      "",
+      "unknown"
+    ],
+    [
+      "/dev/cu.SLAB_USBtoUART",
+      "   ",
+      "PX4 BL FMU v5.x",
+      "usb"
+    ],
+    [
+      "/dev/cu.SLAB_USBtoUART",
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "PX4 FMU v5.x",
+      "usb"
+    ],
+    [
+      "/dev/cu.SLAB_USBtoUART",
+      "USB VID:PID=26ac:0011",
+      "Pixhawk 4",
+      "usb"
+    ],
+    [
+      "/dev/cu.SLAB_USBtoUART",
+      "USB VID:PID=0483:DF11 SER=x",
+      "u-blox GNSS receiver",
+      "rtk"
+    ],
+    [
+      "/dev/cu.SLAB_USBtoUART",
+      "USB VID:PID=0483:5740",
+      "ZED-F9P",
+      "rtk"
+    ],
+    [
+      "/dev/cu.SLAB_USBtoUART",
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "SimpleRTK2B",
+      "rtk"
+    ],
+    [
+      "/dev/cu.SLAB_USBtoUART",
+      "USB VID:PID=10C4:EA60",
+      "ArduPilot-BL",
+      "sik"
+    ],
+    [
+      "/dev/cu.SLAB_USBtoUART",
+      "USB VID:PID=1A86:7523",
+      "Cube Orange-BL",
+      "sik"
+    ],
+    [
+      "/dev/cu.SLAB_USBtoUART",
+      "USB VID:PID=067B:2303",
+      "Cube Orange bl",
+      "sik"
+    ],
+    [
+      "/dev/cu.SLAB_USBtoUART",
+      "USB VID:PID=1546:01A9 SER=",
+      "STM32 BOOTLOADER",
+      "rtk"
+    ],
+    [
+      "/dev/cu.SLAB_USBtoUART",
+      "USB VID:PID=152A:85C0",
+      "STM32 DFU in FS Mode",
+      "rtk"
+    ],
+    [
+      "/dev/cu.SLAB_USBtoUART",
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "dfuse",
+      "unknown"
+    ],
+    [
+      "/dev/cu.SLAB_USBtoUART",
+      "VID:PID=ABCD:EF01",
+      "my_dfu_port",
+      "unknown"
+    ],
+    [
+      "/dev/cu.SLAB_USBtoUART",
+      "USB VID:PID=ABC:DEF1",
+      "x-blx",
+      "unknown"
+    ],
+    [
+      "/dev/cu.SLAB_USBtoUART",
+      "USB VID:PID=ABCD:EF0",
+      "SiK radio",
+      "unknown"
+    ],
+    [
+      "/dev/cu.SLAB_USBtoUART",
+      "usb vid:pid=26ac:0032  ser=zz",
+      "septentrio mosaic",
+      "rtk"
+    ],
+    [
+      "/dev/cu.SLAB_USBtoUART",
+      "n/a",
+      "bl fmu",
+      "usb"
+    ],
+    [
+      "/dev/cu.SLAB_USBtoUART",
+      "PX4 FMU v5",
+      "bl  fmu",
+      "usb"
+    ],
+    [
+      "/dev/cu.SLAB_USBtoUART",
+      "Hex Cube Orange",
+      "Bootloaders",
+      "usb"
+    ],
+    [
+      "/dev/cu.SLAB_USBtoUART",
+      "SER=1",
+      "bootloader_x",
+      "unknown"
+    ],
+    [
+      "/dev/cu.SLAB_USBtoUART",
+      "USB VID:PID=26AC:0032SER=1",
+      "-bl",
+      "usb"
+    ],
+    [
+      "/dev/cu.Bluetooth-Incoming-Port",
+      "",
+      "",
+      "unknown"
+    ],
+    [
+      "/dev/cu.Bluetooth-Incoming-Port",
+      "   ",
+      "PX4 BL FMU v5.x",
+      "usb"
+    ],
+    [
+      "/dev/cu.Bluetooth-Incoming-Port",
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "PX4 FMU v5.x",
+      "usb"
+    ],
+    [
+      "/dev/cu.Bluetooth-Incoming-Port",
+      "USB VID:PID=26ac:0011",
+      "Pixhawk 4",
+      "usb"
+    ],
+    [
+      "/dev/cu.Bluetooth-Incoming-Port",
+      "USB VID:PID=0483:DF11 SER=x",
+      "u-blox GNSS receiver",
+      "rtk"
+    ],
+    [
+      "/dev/cu.Bluetooth-Incoming-Port",
+      "USB VID:PID=0483:5740",
+      "ZED-F9P",
+      "rtk"
+    ],
+    [
+      "/dev/cu.Bluetooth-Incoming-Port",
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "SimpleRTK2B",
+      "rtk"
+    ],
+    [
+      "/dev/cu.Bluetooth-Incoming-Port",
+      "USB VID:PID=10C4:EA60",
+      "ArduPilot-BL",
+      "sik"
+    ],
+    [
+      "/dev/cu.Bluetooth-Incoming-Port",
+      "USB VID:PID=1A86:7523",
+      "Cube Orange-BL",
+      "sik"
+    ],
+    [
+      "/dev/cu.Bluetooth-Incoming-Port",
+      "USB VID:PID=067B:2303",
+      "Cube Orange bl",
+      "sik"
+    ],
+    [
+      "/dev/cu.Bluetooth-Incoming-Port",
+      "USB VID:PID=1546:01A9 SER=",
+      "STM32 BOOTLOADER",
+      "rtk"
+    ],
+    [
+      "/dev/cu.Bluetooth-Incoming-Port",
+      "USB VID:PID=152A:85C0",
+      "STM32 DFU in FS Mode",
+      "rtk"
+    ],
+    [
+      "/dev/cu.Bluetooth-Incoming-Port",
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "dfuse",
+      "unknown"
+    ],
+    [
+      "/dev/cu.Bluetooth-Incoming-Port",
+      "VID:PID=ABCD:EF01",
+      "my_dfu_port",
+      "unknown"
+    ],
+    [
+      "/dev/cu.Bluetooth-Incoming-Port",
+      "USB VID:PID=ABC:DEF1",
+      "x-blx",
+      "unknown"
+    ],
+    [
+      "/dev/cu.Bluetooth-Incoming-Port",
+      "USB VID:PID=ABCD:EF0",
+      "SiK radio",
+      "unknown"
+    ],
+    [
+      "/dev/cu.Bluetooth-Incoming-Port",
+      "usb vid:pid=26ac:0032  ser=zz",
+      "septentrio mosaic",
+      "rtk"
+    ],
+    [
+      "/dev/cu.Bluetooth-Incoming-Port",
+      "n/a",
+      "bl fmu",
+      "usb"
+    ],
+    [
+      "/dev/cu.Bluetooth-Incoming-Port",
+      "PX4 FMU v5",
+      "bl  fmu",
+      "usb"
+    ],
+    [
+      "/dev/cu.Bluetooth-Incoming-Port",
+      "Hex Cube Orange",
+      "Bootloaders",
+      "usb"
+    ],
+    [
+      "/dev/cu.Bluetooth-Incoming-Port",
+      "SER=1",
+      "bootloader_x",
+      "unknown"
+    ],
+    [
+      "/dev/cu.Bluetooth-Incoming-Port",
+      "USB VID:PID=26AC:0032SER=1",
+      "-bl",
+      "usb"
+    ],
+    [
+      "/dev/tty.Bluetooth-Incoming-Port",
+      "",
+      "",
+      "unknown"
+    ],
+    [
+      "/dev/tty.Bluetooth-Incoming-Port",
+      "   ",
+      "PX4 BL FMU v5.x",
+      "usb"
+    ],
+    [
+      "/dev/tty.Bluetooth-Incoming-Port",
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "PX4 FMU v5.x",
+      "usb"
+    ],
+    [
+      "/dev/tty.Bluetooth-Incoming-Port",
+      "USB VID:PID=26ac:0011",
+      "Pixhawk 4",
+      "usb"
+    ],
+    [
+      "/dev/tty.Bluetooth-Incoming-Port",
+      "USB VID:PID=0483:DF11 SER=x",
+      "u-blox GNSS receiver",
+      "rtk"
+    ],
+    [
+      "/dev/tty.Bluetooth-Incoming-Port",
+      "USB VID:PID=0483:5740",
+      "ZED-F9P",
+      "rtk"
+    ],
+    [
+      "/dev/tty.Bluetooth-Incoming-Port",
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "SimpleRTK2B",
+      "rtk"
+    ],
+    [
+      "/dev/tty.Bluetooth-Incoming-Port",
+      "USB VID:PID=10C4:EA60",
+      "ArduPilot-BL",
+      "sik"
+    ],
+    [
+      "/dev/tty.Bluetooth-Incoming-Port",
+      "USB VID:PID=1A86:7523",
+      "Cube Orange-BL",
+      "sik"
+    ],
+    [
+      "/dev/tty.Bluetooth-Incoming-Port",
+      "USB VID:PID=067B:2303",
+      "Cube Orange bl",
+      "sik"
+    ],
+    [
+      "/dev/tty.Bluetooth-Incoming-Port",
+      "USB VID:PID=1546:01A9 SER=",
+      "STM32 BOOTLOADER",
+      "rtk"
+    ],
+    [
+      "/dev/tty.Bluetooth-Incoming-Port",
+      "USB VID:PID=152A:85C0",
+      "STM32 DFU in FS Mode",
+      "rtk"
+    ],
+    [
+      "/dev/tty.Bluetooth-Incoming-Port",
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "dfuse",
+      "unknown"
+    ],
+    [
+      "/dev/tty.Bluetooth-Incoming-Port",
+      "VID:PID=ABCD:EF01",
+      "my_dfu_port",
+      "unknown"
+    ],
+    [
+      "/dev/tty.Bluetooth-Incoming-Port",
+      "USB VID:PID=ABC:DEF1",
+      "x-blx",
+      "unknown"
+    ],
+    [
+      "/dev/tty.Bluetooth-Incoming-Port",
+      "USB VID:PID=ABCD:EF0",
+      "SiK radio",
+      "unknown"
+    ],
+    [
+      "/dev/tty.Bluetooth-Incoming-Port",
+      "usb vid:pid=26ac:0032  ser=zz",
+      "septentrio mosaic",
+      "rtk"
+    ],
+    [
+      "/dev/tty.Bluetooth-Incoming-Port",
+      "n/a",
+      "bl fmu",
+      "usb"
+    ],
+    [
+      "/dev/tty.Bluetooth-Incoming-Port",
+      "PX4 FMU v5",
+      "bl  fmu",
+      "usb"
+    ],
+    [
+      "/dev/tty.Bluetooth-Incoming-Port",
+      "Hex Cube Orange",
+      "Bootloaders",
+      "usb"
+    ],
+    [
+      "/dev/tty.Bluetooth-Incoming-Port",
+      "SER=1",
+      "bootloader_x",
+      "unknown"
+    ],
+    [
+      "/dev/tty.Bluetooth-Incoming-Port",
+      "USB VID:PID=26AC:0032SER=1",
+      "-bl",
+      "usb"
+    ],
+    [
+      "/dev/cu.debug-console",
+      "",
+      "",
+      "unknown"
+    ],
+    [
+      "/dev/cu.debug-console",
+      "   ",
+      "PX4 BL FMU v5.x",
+      "usb"
+    ],
+    [
+      "/dev/cu.debug-console",
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "PX4 FMU v5.x",
+      "usb"
+    ],
+    [
+      "/dev/cu.debug-console",
+      "USB VID:PID=26ac:0011",
+      "Pixhawk 4",
+      "usb"
+    ],
+    [
+      "/dev/cu.debug-console",
+      "USB VID:PID=0483:DF11 SER=x",
+      "u-blox GNSS receiver",
+      "rtk"
+    ],
+    [
+      "/dev/cu.debug-console",
+      "USB VID:PID=0483:5740",
+      "ZED-F9P",
+      "rtk"
+    ],
+    [
+      "/dev/cu.debug-console",
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "SimpleRTK2B",
+      "rtk"
+    ],
+    [
+      "/dev/cu.debug-console",
+      "USB VID:PID=10C4:EA60",
+      "ArduPilot-BL",
+      "sik"
+    ],
+    [
+      "/dev/cu.debug-console",
+      "USB VID:PID=1A86:7523",
+      "Cube Orange-BL",
+      "sik"
+    ],
+    [
+      "/dev/cu.debug-console",
+      "USB VID:PID=067B:2303",
+      "Cube Orange bl",
+      "sik"
+    ],
+    [
+      "/dev/cu.debug-console",
+      "USB VID:PID=1546:01A9 SER=",
+      "STM32 BOOTLOADER",
+      "rtk"
+    ],
+    [
+      "/dev/cu.debug-console",
+      "USB VID:PID=152A:85C0",
+      "STM32 DFU in FS Mode",
+      "rtk"
+    ],
+    [
+      "/dev/cu.debug-console",
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "dfuse",
+      "unknown"
+    ],
+    [
+      "/dev/cu.debug-console",
+      "VID:PID=ABCD:EF01",
+      "my_dfu_port",
+      "unknown"
+    ],
+    [
+      "/dev/cu.debug-console",
+      "USB VID:PID=ABC:DEF1",
+      "x-blx",
+      "unknown"
+    ],
+    [
+      "/dev/cu.debug-console",
+      "USB VID:PID=ABCD:EF0",
+      "SiK radio",
+      "unknown"
+    ],
+    [
+      "/dev/cu.debug-console",
+      "usb vid:pid=26ac:0032  ser=zz",
+      "septentrio mosaic",
+      "rtk"
+    ],
+    [
+      "/dev/cu.debug-console",
+      "n/a",
+      "bl fmu",
+      "usb"
+    ],
+    [
+      "/dev/cu.debug-console",
+      "PX4 FMU v5",
+      "bl  fmu",
+      "usb"
+    ],
+    [
+      "/dev/cu.debug-console",
+      "Hex Cube Orange",
+      "Bootloaders",
+      "usb"
+    ],
+    [
+      "/dev/cu.debug-console",
+      "SER=1",
+      "bootloader_x",
+      "unknown"
+    ],
+    [
+      "/dev/cu.debug-console",
+      "USB VID:PID=26AC:0032SER=1",
+      "-bl",
+      "usb"
+    ],
+    [
+      "/dev/cu.",
+      "",
+      "",
+      "unknown"
+    ],
+    [
+      "/dev/cu.",
+      "   ",
+      "PX4 BL FMU v5.x",
+      "unknown"
+    ],
+    [
+      "/dev/cu.",
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "PX4 FMU v5.x",
+      "unknown"
+    ],
+    [
+      "/dev/cu.",
+      "USB VID:PID=26ac:0011",
+      "Pixhawk 4",
+      "unknown"
+    ],
+    [
+      "/dev/cu.",
+      "USB VID:PID=0483:DF11 SER=x",
+      "u-blox GNSS receiver",
+      "rtk"
+    ],
+    [
+      "/dev/cu.",
+      "USB VID:PID=0483:5740",
+      "ZED-F9P",
+      "rtk"
+    ],
+    [
+      "/dev/cu.",
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "SimpleRTK2B",
+      "rtk"
+    ],
+    [
+      "/dev/cu.",
+      "USB VID:PID=10C4:EA60",
+      "ArduPilot-BL",
+      "unknown"
+    ],
+    [
+      "/dev/cu.",
+      "USB VID:PID=1A86:7523",
+      "Cube Orange-BL",
+      "unknown"
+    ],
+    [
+      "/dev/cu.",
+      "USB VID:PID=067B:2303",
+      "Cube Orange bl",
+      "unknown"
+    ],
+    [
+      "/dev/cu.",
+      "USB VID:PID=1546:01A9 SER=",
+      "STM32 BOOTLOADER",
+      "rtk"
+    ],
+    [
+      "/dev/cu.",
+      "USB VID:PID=152A:85C0",
+      "STM32 DFU in FS Mode",
+      "rtk"
+    ],
+    [
+      "/dev/cu.",
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "dfuse",
+      "unknown"
+    ],
+    [
+      "/dev/cu.",
+      "VID:PID=ABCD:EF01",
+      "my_dfu_port",
+      "unknown"
+    ],
+    [
+      "/dev/cu.",
+      "USB VID:PID=ABC:DEF1",
+      "x-blx",
+      "unknown"
+    ],
+    [
+      "/dev/cu.",
+      "USB VID:PID=ABCD:EF0",
+      "SiK radio",
+      "unknown"
+    ],
+    [
+      "/dev/cu.",
+      "usb vid:pid=26ac:0032  ser=zz",
+      "septentrio mosaic",
+      "rtk"
+    ],
+    [
+      "/dev/cu.",
+      "n/a",
+      "bl fmu",
+      "unknown"
+    ],
+    [
+      "/dev/cu.",
+      "PX4 FMU v5",
+      "bl  fmu",
+      "unknown"
+    ],
+    [
+      "/dev/cu.",
+      "Hex Cube Orange",
+      "Bootloaders",
+      "unknown"
+    ],
+    [
+      "/dev/cu.",
+      "SER=1",
+      "bootloader_x",
+      "unknown"
+    ],
+    [
+      "/dev/cu.",
+      "USB VID:PID=26AC:0032SER=1",
+      "-bl",
+      "unknown"
+    ],
+    [
+      "/dev/cu.a\nb",
+      "",
+      "",
+      "unknown"
+    ],
+    [
+      "/dev/cu.a\nb",
+      "   ",
+      "PX4 BL FMU v5.x",
+      "unknown"
+    ],
+    [
+      "/dev/cu.a\nb",
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "PX4 FMU v5.x",
+      "unknown"
+    ],
+    [
+      "/dev/cu.a\nb",
+      "USB VID:PID=26ac:0011",
+      "Pixhawk 4",
+      "unknown"
+    ],
+    [
+      "/dev/cu.a\nb",
+      "USB VID:PID=0483:DF11 SER=x",
+      "u-blox GNSS receiver",
+      "rtk"
+    ],
+    [
+      "/dev/cu.a\nb",
+      "USB VID:PID=0483:5740",
+      "ZED-F9P",
+      "rtk"
+    ],
+    [
+      "/dev/cu.a\nb",
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "SimpleRTK2B",
+      "rtk"
+    ],
+    [
+      "/dev/cu.a\nb",
+      "USB VID:PID=10C4:EA60",
+      "ArduPilot-BL",
+      "unknown"
+    ],
+    [
+      "/dev/cu.a\nb",
+      "USB VID:PID=1A86:7523",
+      "Cube Orange-BL",
+      "unknown"
+    ],
+    [
+      "/dev/cu.a\nb",
+      "USB VID:PID=067B:2303",
+      "Cube Orange bl",
+      "unknown"
+    ],
+    [
+      "/dev/cu.a\nb",
+      "USB VID:PID=1546:01A9 SER=",
+      "STM32 BOOTLOADER",
+      "rtk"
+    ],
+    [
+      "/dev/cu.a\nb",
+      "USB VID:PID=152A:85C0",
+      "STM32 DFU in FS Mode",
+      "rtk"
+    ],
+    [
+      "/dev/cu.a\nb",
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "dfuse",
+      "unknown"
+    ],
+    [
+      "/dev/cu.a\nb",
+      "VID:PID=ABCD:EF01",
+      "my_dfu_port",
+      "unknown"
+    ],
+    [
+      "/dev/cu.a\nb",
+      "USB VID:PID=ABC:DEF1",
+      "x-blx",
+      "unknown"
+    ],
+    [
+      "/dev/cu.a\nb",
+      "USB VID:PID=ABCD:EF0",
+      "SiK radio",
+      "unknown"
+    ],
+    [
+      "/dev/cu.a\nb",
+      "usb vid:pid=26ac:0032  ser=zz",
+      "septentrio mosaic",
+      "rtk"
+    ],
+    [
+      "/dev/cu.a\nb",
+      "n/a",
+      "bl fmu",
+      "unknown"
+    ],
+    [
+      "/dev/cu.a\nb",
+      "PX4 FMU v5",
+      "bl  fmu",
+      "unknown"
+    ],
+    [
+      "/dev/cu.a\nb",
+      "Hex Cube Orange",
+      "Bootloaders",
+      "unknown"
+    ],
+    [
+      "/dev/cu.a\nb",
+      "SER=1",
+      "bootloader_x",
+      "unknown"
+    ],
+    [
+      "/dev/cu.a\nb",
+      "USB VID:PID=26AC:0032SER=1",
+      "-bl",
+      "unknown"
+    ],
+    [
+      "COM3",
+      "",
+      "",
+      "unknown"
+    ],
+    [
+      "COM3",
+      "   ",
+      "PX4 BL FMU v5.x",
+      "usb"
+    ],
+    [
+      "COM3",
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "PX4 FMU v5.x",
+      "usb"
+    ],
+    [
+      "COM3",
+      "USB VID:PID=26ac:0011",
+      "Pixhawk 4",
+      "usb"
+    ],
+    [
+      "COM3",
+      "USB VID:PID=0483:DF11 SER=x",
+      "u-blox GNSS receiver",
+      "rtk"
+    ],
+    [
+      "COM3",
+      "USB VID:PID=0483:5740",
+      "ZED-F9P",
+      "rtk"
+    ],
+    [
+      "COM3",
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "SimpleRTK2B",
+      "rtk"
+    ],
+    [
+      "COM3",
+      "USB VID:PID=10C4:EA60",
+      "ArduPilot-BL",
+      "sik"
+    ],
+    [
+      "COM3",
+      "USB VID:PID=1A86:7523",
+      "Cube Orange-BL",
+      "sik"
+    ],
+    [
+      "COM3",
+      "USB VID:PID=067B:2303",
+      "Cube Orange bl",
+      "sik"
+    ],
+    [
+      "COM3",
+      "USB VID:PID=1546:01A9 SER=",
+      "STM32 BOOTLOADER",
+      "rtk"
+    ],
+    [
+      "COM3",
+      "USB VID:PID=152A:85C0",
+      "STM32 DFU in FS Mode",
+      "rtk"
+    ],
+    [
+      "COM3",
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "dfuse",
+      "unknown"
+    ],
+    [
+      "COM3",
+      "VID:PID=ABCD:EF01",
+      "my_dfu_port",
+      "unknown"
+    ],
+    [
+      "COM3",
+      "USB VID:PID=ABC:DEF1",
+      "x-blx",
+      "unknown"
+    ],
+    [
+      "COM3",
+      "USB VID:PID=ABCD:EF0",
+      "SiK radio",
+      "unknown"
+    ],
+    [
+      "COM3",
+      "usb vid:pid=26ac:0032  ser=zz",
+      "septentrio mosaic",
+      "rtk"
+    ],
+    [
+      "COM3",
+      "n/a",
+      "bl fmu",
+      "usb"
+    ],
+    [
+      "COM3",
+      "PX4 FMU v5",
+      "bl  fmu",
+      "usb"
+    ],
+    [
+      "COM3",
+      "Hex Cube Orange",
+      "Bootloaders",
+      "usb"
+    ],
+    [
+      "COM3",
+      "SER=1",
+      "bootloader_x",
+      "unknown"
+    ],
+    [
+      "COM3",
+      "USB VID:PID=26AC:0032SER=1",
+      "-bl",
+      "usb"
+    ],
+    [
+      "com7",
+      "",
+      "",
+      "unknown"
+    ],
+    [
+      "com7",
+      "   ",
+      "PX4 BL FMU v5.x",
+      "usb"
+    ],
+    [
+      "com7",
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "PX4 FMU v5.x",
+      "usb"
+    ],
+    [
+      "com7",
+      "USB VID:PID=26ac:0011",
+      "Pixhawk 4",
+      "usb"
+    ],
+    [
+      "com7",
+      "USB VID:PID=0483:DF11 SER=x",
+      "u-blox GNSS receiver",
+      "rtk"
+    ],
+    [
+      "com7",
+      "USB VID:PID=0483:5740",
+      "ZED-F9P",
+      "rtk"
+    ],
+    [
+      "com7",
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "SimpleRTK2B",
+      "rtk"
+    ],
+    [
+      "com7",
+      "USB VID:PID=10C4:EA60",
+      "ArduPilot-BL",
+      "sik"
+    ],
+    [
+      "com7",
+      "USB VID:PID=1A86:7523",
+      "Cube Orange-BL",
+      "sik"
+    ],
+    [
+      "com7",
+      "USB VID:PID=067B:2303",
+      "Cube Orange bl",
+      "sik"
+    ],
+    [
+      "com7",
+      "USB VID:PID=1546:01A9 SER=",
+      "STM32 BOOTLOADER",
+      "rtk"
+    ],
+    [
+      "com7",
+      "USB VID:PID=152A:85C0",
+      "STM32 DFU in FS Mode",
+      "rtk"
+    ],
+    [
+      "com7",
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "dfuse",
+      "unknown"
+    ],
+    [
+      "com7",
+      "VID:PID=ABCD:EF01",
+      "my_dfu_port",
+      "unknown"
+    ],
+    [
+      "com7",
+      "USB VID:PID=ABC:DEF1",
+      "x-blx",
+      "unknown"
+    ],
+    [
+      "com7",
+      "USB VID:PID=ABCD:EF0",
+      "SiK radio",
+      "unknown"
+    ],
+    [
+      "com7",
+      "usb vid:pid=26ac:0032  ser=zz",
+      "septentrio mosaic",
+      "rtk"
+    ],
+    [
+      "com7",
+      "n/a",
+      "bl fmu",
+      "usb"
+    ],
+    [
+      "com7",
+      "PX4 FMU v5",
+      "bl  fmu",
+      "usb"
+    ],
+    [
+      "com7",
+      "Hex Cube Orange",
+      "Bootloaders",
+      "usb"
+    ],
+    [
+      "com7",
+      "SER=1",
+      "bootloader_x",
+      "unknown"
+    ],
+    [
+      "com7",
+      "USB VID:PID=26AC:0032SER=1",
+      "-bl",
+      "usb"
+    ],
+    [
+      "\\\\.\\COM12",
+      "",
+      "",
+      "unknown"
+    ],
+    [
+      "\\\\.\\COM12",
+      "   ",
+      "PX4 BL FMU v5.x",
+      "usb"
+    ],
+    [
+      "\\\\.\\COM12",
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "PX4 FMU v5.x",
+      "usb"
+    ],
+    [
+      "\\\\.\\COM12",
+      "USB VID:PID=26ac:0011",
+      "Pixhawk 4",
+      "usb"
+    ],
+    [
+      "\\\\.\\COM12",
+      "USB VID:PID=0483:DF11 SER=x",
+      "u-blox GNSS receiver",
+      "rtk"
+    ],
+    [
+      "\\\\.\\COM12",
+      "USB VID:PID=0483:5740",
+      "ZED-F9P",
+      "rtk"
+    ],
+    [
+      "\\\\.\\COM12",
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "SimpleRTK2B",
+      "rtk"
+    ],
+    [
+      "\\\\.\\COM12",
+      "USB VID:PID=10C4:EA60",
+      "ArduPilot-BL",
+      "sik"
+    ],
+    [
+      "\\\\.\\COM12",
+      "USB VID:PID=1A86:7523",
+      "Cube Orange-BL",
+      "sik"
+    ],
+    [
+      "\\\\.\\COM12",
+      "USB VID:PID=067B:2303",
+      "Cube Orange bl",
+      "sik"
+    ],
+    [
+      "\\\\.\\COM12",
+      "USB VID:PID=1546:01A9 SER=",
+      "STM32 BOOTLOADER",
+      "rtk"
+    ],
+    [
+      "\\\\.\\COM12",
+      "USB VID:PID=152A:85C0",
+      "STM32 DFU in FS Mode",
+      "rtk"
+    ],
+    [
+      "\\\\.\\COM12",
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "dfuse",
+      "unknown"
+    ],
+    [
+      "\\\\.\\COM12",
+      "VID:PID=ABCD:EF01",
+      "my_dfu_port",
+      "unknown"
+    ],
+    [
+      "\\\\.\\COM12",
+      "USB VID:PID=ABC:DEF1",
+      "x-blx",
+      "unknown"
+    ],
+    [
+      "\\\\.\\COM12",
+      "USB VID:PID=ABCD:EF0",
+      "SiK radio",
+      "unknown"
+    ],
+    [
+      "\\\\.\\COM12",
+      "usb vid:pid=26ac:0032  ser=zz",
+      "septentrio mosaic",
+      "rtk"
+    ],
+    [
+      "\\\\.\\COM12",
+      "n/a",
+      "bl fmu",
+      "usb"
+    ],
+    [
+      "\\\\.\\COM12",
+      "PX4 FMU v5",
+      "bl  fmu",
+      "usb"
+    ],
+    [
+      "\\\\.\\COM12",
+      "Hex Cube Orange",
+      "Bootloaders",
+      "usb"
+    ],
+    [
+      "\\\\.\\COM12",
+      "SER=1",
+      "bootloader_x",
+      "unknown"
+    ],
+    [
+      "\\\\.\\COM12",
+      "USB VID:PID=26AC:0032SER=1",
+      "-bl",
+      "usb"
+    ],
+    [
+      "COM",
+      "",
+      "",
+      "unknown"
+    ],
+    [
+      "COM",
+      "   ",
+      "PX4 BL FMU v5.x",
+      "unknown"
+    ],
+    [
+      "COM",
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "PX4 FMU v5.x",
+      "unknown"
+    ],
+    [
+      "COM",
+      "USB VID:PID=26ac:0011",
+      "Pixhawk 4",
+      "unknown"
+    ],
+    [
+      "COM",
+      "USB VID:PID=0483:DF11 SER=x",
+      "u-blox GNSS receiver",
+      "rtk"
+    ],
+    [
+      "COM",
+      "USB VID:PID=0483:5740",
+      "ZED-F9P",
+      "rtk"
+    ],
+    [
+      "COM",
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "SimpleRTK2B",
+      "rtk"
+    ],
+    [
+      "COM",
+      "USB VID:PID=10C4:EA60",
+      "ArduPilot-BL",
+      "unknown"
+    ],
+    [
+      "COM",
+      "USB VID:PID=1A86:7523",
+      "Cube Orange-BL",
+      "unknown"
+    ],
+    [
+      "COM",
+      "USB VID:PID=067B:2303",
+      "Cube Orange bl",
+      "unknown"
+    ],
+    [
+      "COM",
+      "USB VID:PID=1546:01A9 SER=",
+      "STM32 BOOTLOADER",
+      "rtk"
+    ],
+    [
+      "COM",
+      "USB VID:PID=152A:85C0",
+      "STM32 DFU in FS Mode",
+      "rtk"
+    ],
+    [
+      "COM",
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "dfuse",
+      "unknown"
+    ],
+    [
+      "COM",
+      "VID:PID=ABCD:EF01",
+      "my_dfu_port",
+      "unknown"
+    ],
+    [
+      "COM",
+      "USB VID:PID=ABC:DEF1",
+      "x-blx",
+      "unknown"
+    ],
+    [
+      "COM",
+      "USB VID:PID=ABCD:EF0",
+      "SiK radio",
+      "unknown"
+    ],
+    [
+      "COM",
+      "usb vid:pid=26ac:0032  ser=zz",
+      "septentrio mosaic",
+      "rtk"
+    ],
+    [
+      "COM",
+      "n/a",
+      "bl fmu",
+      "unknown"
+    ],
+    [
+      "COM",
+      "PX4 FMU v5",
+      "bl  fmu",
+      "unknown"
+    ],
+    [
+      "COM",
+      "Hex Cube Orange",
+      "Bootloaders",
+      "unknown"
+    ],
+    [
+      "COM",
+      "SER=1",
+      "bootloader_x",
+      "unknown"
+    ],
+    [
+      "COM",
+      "USB VID:PID=26AC:0032SER=1",
+      "-bl",
+      "unknown"
+    ],
+    [
+      "COMX",
+      "",
+      "",
+      "unknown"
+    ],
+    [
+      "COMX",
+      "   ",
+      "PX4 BL FMU v5.x",
+      "unknown"
+    ],
+    [
+      "COMX",
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "PX4 FMU v5.x",
+      "unknown"
+    ],
+    [
+      "COMX",
+      "USB VID:PID=26ac:0011",
+      "Pixhawk 4",
+      "unknown"
+    ],
+    [
+      "COMX",
+      "USB VID:PID=0483:DF11 SER=x",
+      "u-blox GNSS receiver",
+      "rtk"
+    ],
+    [
+      "COMX",
+      "USB VID:PID=0483:5740",
+      "ZED-F9P",
+      "rtk"
+    ],
+    [
+      "COMX",
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "SimpleRTK2B",
+      "rtk"
+    ],
+    [
+      "COMX",
+      "USB VID:PID=10C4:EA60",
+      "ArduPilot-BL",
+      "unknown"
+    ],
+    [
+      "COMX",
+      "USB VID:PID=1A86:7523",
+      "Cube Orange-BL",
+      "unknown"
+    ],
+    [
+      "COMX",
+      "USB VID:PID=067B:2303",
+      "Cube Orange bl",
+      "unknown"
+    ],
+    [
+      "COMX",
+      "USB VID:PID=1546:01A9 SER=",
+      "STM32 BOOTLOADER",
+      "rtk"
+    ],
+    [
+      "COMX",
+      "USB VID:PID=152A:85C0",
+      "STM32 DFU in FS Mode",
+      "rtk"
+    ],
+    [
+      "COMX",
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "dfuse",
+      "unknown"
+    ],
+    [
+      "COMX",
+      "VID:PID=ABCD:EF01",
+      "my_dfu_port",
+      "unknown"
+    ],
+    [
+      "COMX",
+      "USB VID:PID=ABC:DEF1",
+      "x-blx",
+      "unknown"
+    ],
+    [
+      "COMX",
+      "USB VID:PID=ABCD:EF0",
+      "SiK radio",
+      "unknown"
+    ],
+    [
+      "COMX",
+      "usb vid:pid=26ac:0032  ser=zz",
+      "septentrio mosaic",
+      "rtk"
+    ],
+    [
+      "COMX",
+      "n/a",
+      "bl fmu",
+      "unknown"
+    ],
+    [
+      "COMX",
+      "PX4 FMU v5",
+      "bl  fmu",
+      "unknown"
+    ],
+    [
+      "COMX",
+      "Hex Cube Orange",
+      "Bootloaders",
+      "unknown"
+    ],
+    [
+      "COMX",
+      "SER=1",
+      "bootloader_x",
+      "unknown"
+    ],
+    [
+      "COMX",
+      "USB VID:PID=26AC:0032SER=1",
+      "-bl",
+      "unknown"
+    ],
+    [
+      "/dev/pts/3",
+      "",
+      "",
+      "unknown"
+    ],
+    [
+      "/dev/pts/3",
+      "   ",
+      "PX4 BL FMU v5.x",
+      "unknown"
+    ],
+    [
+      "/dev/pts/3",
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "PX4 FMU v5.x",
+      "unknown"
+    ],
+    [
+      "/dev/pts/3",
+      "USB VID:PID=26ac:0011",
+      "Pixhawk 4",
+      "unknown"
+    ],
+    [
+      "/dev/pts/3",
+      "USB VID:PID=0483:DF11 SER=x",
+      "u-blox GNSS receiver",
+      "rtk"
+    ],
+    [
+      "/dev/pts/3",
+      "USB VID:PID=0483:5740",
+      "ZED-F9P",
+      "rtk"
+    ],
+    [
+      "/dev/pts/3",
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "SimpleRTK2B",
+      "rtk"
+    ],
+    [
+      "/dev/pts/3",
+      "USB VID:PID=10C4:EA60",
+      "ArduPilot-BL",
+      "unknown"
+    ],
+    [
+      "/dev/pts/3",
+      "USB VID:PID=1A86:7523",
+      "Cube Orange-BL",
+      "unknown"
+    ],
+    [
+      "/dev/pts/3",
+      "USB VID:PID=067B:2303",
+      "Cube Orange bl",
+      "unknown"
+    ],
+    [
+      "/dev/pts/3",
+      "USB VID:PID=1546:01A9 SER=",
+      "STM32 BOOTLOADER",
+      "rtk"
+    ],
+    [
+      "/dev/pts/3",
+      "USB VID:PID=152A:85C0",
+      "STM32 DFU in FS Mode",
+      "rtk"
+    ],
+    [
+      "/dev/pts/3",
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "dfuse",
+      "unknown"
+    ],
+    [
+      "/dev/pts/3",
+      "VID:PID=ABCD:EF01",
+      "my_dfu_port",
+      "unknown"
+    ],
+    [
+      "/dev/pts/3",
+      "USB VID:PID=ABC:DEF1",
+      "x-blx",
+      "unknown"
+    ],
+    [
+      "/dev/pts/3",
+      "USB VID:PID=ABCD:EF0",
+      "SiK radio",
+      "unknown"
+    ],
+    [
+      "/dev/pts/3",
+      "usb vid:pid=26ac:0032  ser=zz",
+      "septentrio mosaic",
+      "rtk"
+    ],
+    [
+      "/dev/pts/3",
+      "n/a",
+      "bl fmu",
+      "unknown"
+    ],
+    [
+      "/dev/pts/3",
+      "PX4 FMU v5",
+      "bl  fmu",
+      "unknown"
+    ],
+    [
+      "/dev/pts/3",
+      "Hex Cube Orange",
+      "Bootloaders",
+      "unknown"
+    ],
+    [
+      "/dev/pts/3",
+      "SER=1",
+      "bootloader_x",
+      "unknown"
+    ],
+    [
+      "/dev/pts/3",
+      "USB VID:PID=26AC:0032SER=1",
+      "-bl",
+      "unknown"
+    ],
+    [
+      "/dev/pts/x",
+      "",
+      "",
+      "unknown"
+    ],
+    [
+      "/dev/pts/x",
+      "   ",
+      "PX4 BL FMU v5.x",
+      "unknown"
+    ],
+    [
+      "/dev/pts/x",
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "PX4 FMU v5.x",
+      "unknown"
+    ],
+    [
+      "/dev/pts/x",
+      "USB VID:PID=26ac:0011",
+      "Pixhawk 4",
+      "unknown"
+    ],
+    [
+      "/dev/pts/x",
+      "USB VID:PID=0483:DF11 SER=x",
+      "u-blox GNSS receiver",
+      "rtk"
+    ],
+    [
+      "/dev/pts/x",
+      "USB VID:PID=0483:5740",
+      "ZED-F9P",
+      "rtk"
+    ],
+    [
+      "/dev/pts/x",
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "SimpleRTK2B",
+      "rtk"
+    ],
+    [
+      "/dev/pts/x",
+      "USB VID:PID=10C4:EA60",
+      "ArduPilot-BL",
+      "unknown"
+    ],
+    [
+      "/dev/pts/x",
+      "USB VID:PID=1A86:7523",
+      "Cube Orange-BL",
+      "unknown"
+    ],
+    [
+      "/dev/pts/x",
+      "USB VID:PID=067B:2303",
+      "Cube Orange bl",
+      "unknown"
+    ],
+    [
+      "/dev/pts/x",
+      "USB VID:PID=1546:01A9 SER=",
+      "STM32 BOOTLOADER",
+      "rtk"
+    ],
+    [
+      "/dev/pts/x",
+      "USB VID:PID=152A:85C0",
+      "STM32 DFU in FS Mode",
+      "rtk"
+    ],
+    [
+      "/dev/pts/x",
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "dfuse",
+      "unknown"
+    ],
+    [
+      "/dev/pts/x",
+      "VID:PID=ABCD:EF01",
+      "my_dfu_port",
+      "unknown"
+    ],
+    [
+      "/dev/pts/x",
+      "USB VID:PID=ABC:DEF1",
+      "x-blx",
+      "unknown"
+    ],
+    [
+      "/dev/pts/x",
+      "USB VID:PID=ABCD:EF0",
+      "SiK radio",
+      "unknown"
+    ],
+    [
+      "/dev/pts/x",
+      "usb vid:pid=26ac:0032  ser=zz",
+      "septentrio mosaic",
+      "rtk"
+    ],
+    [
+      "/dev/pts/x",
+      "n/a",
+      "bl fmu",
+      "unknown"
+    ],
+    [
+      "/dev/pts/x",
+      "PX4 FMU v5",
+      "bl  fmu",
+      "unknown"
+    ],
+    [
+      "/dev/pts/x",
+      "Hex Cube Orange",
+      "Bootloaders",
+      "unknown"
+    ],
+    [
+      "/dev/pts/x",
+      "SER=1",
+      "bootloader_x",
+      "unknown"
+    ],
+    [
+      "/dev/pts/x",
+      "USB VID:PID=26AC:0032SER=1",
+      "-bl",
+      "unknown"
+    ],
+    [
+      "/dev/ptyp0",
+      "",
+      "",
+      "unknown"
+    ],
+    [
+      "/dev/ptyp0",
+      "   ",
+      "PX4 BL FMU v5.x",
+      "unknown"
+    ],
+    [
+      "/dev/ptyp0",
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "PX4 FMU v5.x",
+      "unknown"
+    ],
+    [
+      "/dev/ptyp0",
+      "USB VID:PID=26ac:0011",
+      "Pixhawk 4",
+      "unknown"
+    ],
+    [
+      "/dev/ptyp0",
+      "USB VID:PID=0483:DF11 SER=x",
+      "u-blox GNSS receiver",
+      "rtk"
+    ],
+    [
+      "/dev/ptyp0",
+      "USB VID:PID=0483:5740",
+      "ZED-F9P",
+      "rtk"
+    ],
+    [
+      "/dev/ptyp0",
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "SimpleRTK2B",
+      "rtk"
+    ],
+    [
+      "/dev/ptyp0",
+      "USB VID:PID=10C4:EA60",
+      "ArduPilot-BL",
+      "unknown"
+    ],
+    [
+      "/dev/ptyp0",
+      "USB VID:PID=1A86:7523",
+      "Cube Orange-BL",
+      "unknown"
+    ],
+    [
+      "/dev/ptyp0",
+      "USB VID:PID=067B:2303",
+      "Cube Orange bl",
+      "unknown"
+    ],
+    [
+      "/dev/ptyp0",
+      "USB VID:PID=1546:01A9 SER=",
+      "STM32 BOOTLOADER",
+      "rtk"
+    ],
+    [
+      "/dev/ptyp0",
+      "USB VID:PID=152A:85C0",
+      "STM32 DFU in FS Mode",
+      "rtk"
+    ],
+    [
+      "/dev/ptyp0",
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "dfuse",
+      "unknown"
+    ],
+    [
+      "/dev/ptyp0",
+      "VID:PID=ABCD:EF01",
+      "my_dfu_port",
+      "unknown"
+    ],
+    [
+      "/dev/ptyp0",
+      "USB VID:PID=ABC:DEF1",
+      "x-blx",
+      "unknown"
+    ],
+    [
+      "/dev/ptyp0",
+      "USB VID:PID=ABCD:EF0",
+      "SiK radio",
+      "unknown"
+    ],
+    [
+      "/dev/ptyp0",
+      "usb vid:pid=26ac:0032  ser=zz",
+      "septentrio mosaic",
+      "rtk"
+    ],
+    [
+      "/dev/ptyp0",
+      "n/a",
+      "bl fmu",
+      "unknown"
+    ],
+    [
+      "/dev/ptyp0",
+      "PX4 FMU v5",
+      "bl  fmu",
+      "unknown"
+    ],
+    [
+      "/dev/ptyp0",
+      "Hex Cube Orange",
+      "Bootloaders",
+      "unknown"
+    ],
+    [
+      "/dev/ptyp0",
+      "SER=1",
+      "bootloader_x",
+      "unknown"
+    ],
+    [
+      "/dev/ptyp0",
+      "USB VID:PID=26AC:0032SER=1",
+      "-bl",
+      "unknown"
+    ],
+    [
+      "/dev/ptyq1",
+      "",
+      "",
+      "unknown"
+    ],
+    [
+      "/dev/ptyq1",
+      "   ",
+      "PX4 BL FMU v5.x",
+      "unknown"
+    ],
+    [
+      "/dev/ptyq1",
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "PX4 FMU v5.x",
+      "unknown"
+    ],
+    [
+      "/dev/ptyq1",
+      "USB VID:PID=26ac:0011",
+      "Pixhawk 4",
+      "unknown"
+    ],
+    [
+      "/dev/ptyq1",
+      "USB VID:PID=0483:DF11 SER=x",
+      "u-blox GNSS receiver",
+      "rtk"
+    ],
+    [
+      "/dev/ptyq1",
+      "USB VID:PID=0483:5740",
+      "ZED-F9P",
+      "rtk"
+    ],
+    [
+      "/dev/ptyq1",
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "SimpleRTK2B",
+      "rtk"
+    ],
+    [
+      "/dev/ptyq1",
+      "USB VID:PID=10C4:EA60",
+      "ArduPilot-BL",
+      "unknown"
+    ],
+    [
+      "/dev/ptyq1",
+      "USB VID:PID=1A86:7523",
+      "Cube Orange-BL",
+      "unknown"
+    ],
+    [
+      "/dev/ptyq1",
+      "USB VID:PID=067B:2303",
+      "Cube Orange bl",
+      "unknown"
+    ],
+    [
+      "/dev/ptyq1",
+      "USB VID:PID=1546:01A9 SER=",
+      "STM32 BOOTLOADER",
+      "rtk"
+    ],
+    [
+      "/dev/ptyq1",
+      "USB VID:PID=152A:85C0",
+      "STM32 DFU in FS Mode",
+      "rtk"
+    ],
+    [
+      "/dev/ptyq1",
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "dfuse",
+      "unknown"
+    ],
+    [
+      "/dev/ptyq1",
+      "VID:PID=ABCD:EF01",
+      "my_dfu_port",
+      "unknown"
+    ],
+    [
+      "/dev/ptyq1",
+      "USB VID:PID=ABC:DEF1",
+      "x-blx",
+      "unknown"
+    ],
+    [
+      "/dev/ptyq1",
+      "USB VID:PID=ABCD:EF0",
+      "SiK radio",
+      "unknown"
+    ],
+    [
+      "/dev/ptyq1",
+      "usb vid:pid=26ac:0032  ser=zz",
+      "septentrio mosaic",
+      "rtk"
+    ],
+    [
+      "/dev/ptyq1",
+      "n/a",
+      "bl fmu",
+      "unknown"
+    ],
+    [
+      "/dev/ptyq1",
+      "PX4 FMU v5",
+      "bl  fmu",
+      "unknown"
+    ],
+    [
+      "/dev/ptyq1",
+      "Hex Cube Orange",
+      "Bootloaders",
+      "unknown"
+    ],
+    [
+      "/dev/ptyq1",
+      "SER=1",
+      "bootloader_x",
+      "unknown"
+    ],
+    [
+      "/dev/ptyq1",
+      "USB VID:PID=26AC:0032SER=1",
+      "-bl",
+      "unknown"
+    ],
+    [
+      "/dev/ptyxyz",
+      "",
+      "",
+      "unknown"
+    ],
+    [
+      "/dev/ptyxyz",
+      "   ",
+      "PX4 BL FMU v5.x",
+      "unknown"
+    ],
+    [
+      "/dev/ptyxyz",
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "PX4 FMU v5.x",
+      "unknown"
+    ],
+    [
+      "/dev/ptyxyz",
+      "USB VID:PID=26ac:0011",
+      "Pixhawk 4",
+      "unknown"
+    ],
+    [
+      "/dev/ptyxyz",
+      "USB VID:PID=0483:DF11 SER=x",
+      "u-blox GNSS receiver",
+      "rtk"
+    ],
+    [
+      "/dev/ptyxyz",
+      "USB VID:PID=0483:5740",
+      "ZED-F9P",
+      "rtk"
+    ],
+    [
+      "/dev/ptyxyz",
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "SimpleRTK2B",
+      "rtk"
+    ],
+    [
+      "/dev/ptyxyz",
+      "USB VID:PID=10C4:EA60",
+      "ArduPilot-BL",
+      "unknown"
+    ],
+    [
+      "/dev/ptyxyz",
+      "USB VID:PID=1A86:7523",
+      "Cube Orange-BL",
+      "unknown"
+    ],
+    [
+      "/dev/ptyxyz",
+      "USB VID:PID=067B:2303",
+      "Cube Orange bl",
+      "unknown"
+    ],
+    [
+      "/dev/ptyxyz",
+      "USB VID:PID=1546:01A9 SER=",
+      "STM32 BOOTLOADER",
+      "rtk"
+    ],
+    [
+      "/dev/ptyxyz",
+      "USB VID:PID=152A:85C0",
+      "STM32 DFU in FS Mode",
+      "rtk"
+    ],
+    [
+      "/dev/ptyxyz",
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "dfuse",
+      "unknown"
+    ],
+    [
+      "/dev/ptyxyz",
+      "VID:PID=ABCD:EF01",
+      "my_dfu_port",
+      "unknown"
+    ],
+    [
+      "/dev/ptyxyz",
+      "USB VID:PID=ABC:DEF1",
+      "x-blx",
+      "unknown"
+    ],
+    [
+      "/dev/ptyxyz",
+      "USB VID:PID=ABCD:EF0",
+      "SiK radio",
+      "unknown"
+    ],
+    [
+      "/dev/ptyxyz",
+      "usb vid:pid=26ac:0032  ser=zz",
+      "septentrio mosaic",
+      "rtk"
+    ],
+    [
+      "/dev/ptyxyz",
+      "n/a",
+      "bl fmu",
+      "unknown"
+    ],
+    [
+      "/dev/ptyxyz",
+      "PX4 FMU v5",
+      "bl  fmu",
+      "unknown"
+    ],
+    [
+      "/dev/ptyxyz",
+      "Hex Cube Orange",
+      "Bootloaders",
+      "unknown"
+    ],
+    [
+      "/dev/ptyxyz",
+      "SER=1",
+      "bootloader_x",
+      "unknown"
+    ],
+    [
+      "/dev/ptyxyz",
+      "USB VID:PID=26AC:0032SER=1",
+      "-bl",
+      "unknown"
+    ],
+    [
+      "/dev/ttyp3",
+      "",
+      "",
+      "unknown"
+    ],
+    [
+      "/dev/ttyp3",
+      "   ",
+      "PX4 BL FMU v5.x",
+      "unknown"
+    ],
+    [
+      "/dev/ttyp3",
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "PX4 FMU v5.x",
+      "unknown"
+    ],
+    [
+      "/dev/ttyp3",
+      "USB VID:PID=26ac:0011",
+      "Pixhawk 4",
+      "unknown"
+    ],
+    [
+      "/dev/ttyp3",
+      "USB VID:PID=0483:DF11 SER=x",
+      "u-blox GNSS receiver",
+      "rtk"
+    ],
+    [
+      "/dev/ttyp3",
+      "USB VID:PID=0483:5740",
+      "ZED-F9P",
+      "rtk"
+    ],
+    [
+      "/dev/ttyp3",
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "SimpleRTK2B",
+      "rtk"
+    ],
+    [
+      "/dev/ttyp3",
+      "USB VID:PID=10C4:EA60",
+      "ArduPilot-BL",
+      "unknown"
+    ],
+    [
+      "/dev/ttyp3",
+      "USB VID:PID=1A86:7523",
+      "Cube Orange-BL",
+      "unknown"
+    ],
+    [
+      "/dev/ttyp3",
+      "USB VID:PID=067B:2303",
+      "Cube Orange bl",
+      "unknown"
+    ],
+    [
+      "/dev/ttyp3",
+      "USB VID:PID=1546:01A9 SER=",
+      "STM32 BOOTLOADER",
+      "rtk"
+    ],
+    [
+      "/dev/ttyp3",
+      "USB VID:PID=152A:85C0",
+      "STM32 DFU in FS Mode",
+      "rtk"
+    ],
+    [
+      "/dev/ttyp3",
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "dfuse",
+      "unknown"
+    ],
+    [
+      "/dev/ttyp3",
+      "VID:PID=ABCD:EF01",
+      "my_dfu_port",
+      "unknown"
+    ],
+    [
+      "/dev/ttyp3",
+      "USB VID:PID=ABC:DEF1",
+      "x-blx",
+      "unknown"
+    ],
+    [
+      "/dev/ttyp3",
+      "USB VID:PID=ABCD:EF0",
+      "SiK radio",
+      "unknown"
+    ],
+    [
+      "/dev/ttyp3",
+      "usb vid:pid=26ac:0032  ser=zz",
+      "septentrio mosaic",
+      "rtk"
+    ],
+    [
+      "/dev/ttyp3",
+      "n/a",
+      "bl fmu",
+      "unknown"
+    ],
+    [
+      "/dev/ttyp3",
+      "PX4 FMU v5",
+      "bl  fmu",
+      "unknown"
+    ],
+    [
+      "/dev/ttyp3",
+      "Hex Cube Orange",
+      "Bootloaders",
+      "unknown"
+    ],
+    [
+      "/dev/ttyp3",
+      "SER=1",
+      "bootloader_x",
+      "unknown"
+    ],
+    [
+      "/dev/ttyp3",
+      "USB VID:PID=26AC:0032SER=1",
+      "-bl",
+      "unknown"
+    ],
+    [
+      "/dev/ttypA",
+      "",
+      "",
+      "unknown"
+    ],
+    [
+      "/dev/ttypA",
+      "   ",
+      "PX4 BL FMU v5.x",
+      "unknown"
+    ],
+    [
+      "/dev/ttypA",
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "PX4 FMU v5.x",
+      "unknown"
+    ],
+    [
+      "/dev/ttypA",
+      "USB VID:PID=26ac:0011",
+      "Pixhawk 4",
+      "unknown"
+    ],
+    [
+      "/dev/ttypA",
+      "USB VID:PID=0483:DF11 SER=x",
+      "u-blox GNSS receiver",
+      "rtk"
+    ],
+    [
+      "/dev/ttypA",
+      "USB VID:PID=0483:5740",
+      "ZED-F9P",
+      "rtk"
+    ],
+    [
+      "/dev/ttypA",
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "SimpleRTK2B",
+      "rtk"
+    ],
+    [
+      "/dev/ttypA",
+      "USB VID:PID=10C4:EA60",
+      "ArduPilot-BL",
+      "unknown"
+    ],
+    [
+      "/dev/ttypA",
+      "USB VID:PID=1A86:7523",
+      "Cube Orange-BL",
+      "unknown"
+    ],
+    [
+      "/dev/ttypA",
+      "USB VID:PID=067B:2303",
+      "Cube Orange bl",
+      "unknown"
+    ],
+    [
+      "/dev/ttypA",
+      "USB VID:PID=1546:01A9 SER=",
+      "STM32 BOOTLOADER",
+      "rtk"
+    ],
+    [
+      "/dev/ttypA",
+      "USB VID:PID=152A:85C0",
+      "STM32 DFU in FS Mode",
+      "rtk"
+    ],
+    [
+      "/dev/ttypA",
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "dfuse",
+      "unknown"
+    ],
+    [
+      "/dev/ttypA",
+      "VID:PID=ABCD:EF01",
+      "my_dfu_port",
+      "unknown"
+    ],
+    [
+      "/dev/ttypA",
+      "USB VID:PID=ABC:DEF1",
+      "x-blx",
+      "unknown"
+    ],
+    [
+      "/dev/ttypA",
+      "USB VID:PID=ABCD:EF0",
+      "SiK radio",
+      "unknown"
+    ],
+    [
+      "/dev/ttypA",
+      "usb vid:pid=26ac:0032  ser=zz",
+      "septentrio mosaic",
+      "rtk"
+    ],
+    [
+      "/dev/ttypA",
+      "n/a",
+      "bl fmu",
+      "unknown"
+    ],
+    [
+      "/dev/ttypA",
+      "PX4 FMU v5",
+      "bl  fmu",
+      "unknown"
+    ],
+    [
+      "/dev/ttypA",
+      "Hex Cube Orange",
+      "Bootloaders",
+      "unknown"
+    ],
+    [
+      "/dev/ttypA",
+      "SER=1",
+      "bootloader_x",
+      "unknown"
+    ],
+    [
+      "/dev/ttypA",
+      "USB VID:PID=26AC:0032SER=1",
+      "-bl",
+      "unknown"
+    ],
+    [
+      "/dev/null",
+      "",
+      "",
+      "unknown"
+    ],
+    [
+      "/dev/null",
+      "   ",
+      "PX4 BL FMU v5.x",
+      "unknown"
+    ],
+    [
+      "/dev/null",
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "PX4 FMU v5.x",
+      "unknown"
+    ],
+    [
+      "/dev/null",
+      "USB VID:PID=26ac:0011",
+      "Pixhawk 4",
+      "unknown"
+    ],
+    [
+      "/dev/null",
+      "USB VID:PID=0483:DF11 SER=x",
+      "u-blox GNSS receiver",
+      "rtk"
+    ],
+    [
+      "/dev/null",
+      "USB VID:PID=0483:5740",
+      "ZED-F9P",
+      "rtk"
+    ],
+    [
+      "/dev/null",
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "SimpleRTK2B",
+      "rtk"
+    ],
+    [
+      "/dev/null",
+      "USB VID:PID=10C4:EA60",
+      "ArduPilot-BL",
+      "unknown"
+    ],
+    [
+      "/dev/null",
+      "USB VID:PID=1A86:7523",
+      "Cube Orange-BL",
+      "unknown"
+    ],
+    [
+      "/dev/null",
+      "USB VID:PID=067B:2303",
+      "Cube Orange bl",
+      "unknown"
+    ],
+    [
+      "/dev/null",
+      "USB VID:PID=1546:01A9 SER=",
+      "STM32 BOOTLOADER",
+      "rtk"
+    ],
+    [
+      "/dev/null",
+      "USB VID:PID=152A:85C0",
+      "STM32 DFU in FS Mode",
+      "rtk"
+    ],
+    [
+      "/dev/null",
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "dfuse",
+      "unknown"
+    ],
+    [
+      "/dev/null",
+      "VID:PID=ABCD:EF01",
+      "my_dfu_port",
+      "unknown"
+    ],
+    [
+      "/dev/null",
+      "USB VID:PID=ABC:DEF1",
+      "x-blx",
+      "unknown"
+    ],
+    [
+      "/dev/null",
+      "USB VID:PID=ABCD:EF0",
+      "SiK radio",
+      "unknown"
+    ],
+    [
+      "/dev/null",
+      "usb vid:pid=26ac:0032  ser=zz",
+      "septentrio mosaic",
+      "rtk"
+    ],
+    [
+      "/dev/null",
+      "n/a",
+      "bl fmu",
+      "unknown"
+    ],
+    [
+      "/dev/null",
+      "PX4 FMU v5",
+      "bl  fmu",
+      "unknown"
+    ],
+    [
+      "/dev/null",
+      "Hex Cube Orange",
+      "Bootloaders",
+      "unknown"
+    ],
+    [
+      "/dev/null",
+      "SER=1",
+      "bootloader_x",
+      "unknown"
+    ],
+    [
+      "/dev/null",
+      "USB VID:PID=26AC:0032SER=1",
+      "-bl",
+      "unknown"
+    ],
+    [
+      "ttyACM0",
+      "",
+      "",
+      "unknown"
+    ],
+    [
+      "ttyACM0",
+      "   ",
+      "PX4 BL FMU v5.x",
+      "unknown"
+    ],
+    [
+      "ttyACM0",
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "PX4 FMU v5.x",
+      "unknown"
+    ],
+    [
+      "ttyACM0",
+      "USB VID:PID=26ac:0011",
+      "Pixhawk 4",
+      "unknown"
+    ],
+    [
+      "ttyACM0",
+      "USB VID:PID=0483:DF11 SER=x",
+      "u-blox GNSS receiver",
+      "rtk"
+    ],
+    [
+      "ttyACM0",
+      "USB VID:PID=0483:5740",
+      "ZED-F9P",
+      "rtk"
+    ],
+    [
+      "ttyACM0",
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "SimpleRTK2B",
+      "rtk"
+    ],
+    [
+      "ttyACM0",
+      "USB VID:PID=10C4:EA60",
+      "ArduPilot-BL",
+      "unknown"
+    ],
+    [
+      "ttyACM0",
+      "USB VID:PID=1A86:7523",
+      "Cube Orange-BL",
+      "unknown"
+    ],
+    [
+      "ttyACM0",
+      "USB VID:PID=067B:2303",
+      "Cube Orange bl",
+      "unknown"
+    ],
+    [
+      "ttyACM0",
+      "USB VID:PID=1546:01A9 SER=",
+      "STM32 BOOTLOADER",
+      "rtk"
+    ],
+    [
+      "ttyACM0",
+      "USB VID:PID=152A:85C0",
+      "STM32 DFU in FS Mode",
+      "rtk"
+    ],
+    [
+      "ttyACM0",
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "dfuse",
+      "unknown"
+    ],
+    [
+      "ttyACM0",
+      "VID:PID=ABCD:EF01",
+      "my_dfu_port",
+      "unknown"
+    ],
+    [
+      "ttyACM0",
+      "USB VID:PID=ABC:DEF1",
+      "x-blx",
+      "unknown"
+    ],
+    [
+      "ttyACM0",
+      "USB VID:PID=ABCD:EF0",
+      "SiK radio",
+      "unknown"
+    ],
+    [
+      "ttyACM0",
+      "usb vid:pid=26ac:0032  ser=zz",
+      "septentrio mosaic",
+      "rtk"
+    ],
+    [
+      "ttyACM0",
+      "n/a",
+      "bl fmu",
+      "unknown"
+    ],
+    [
+      "ttyACM0",
+      "PX4 FMU v5",
+      "bl  fmu",
+      "unknown"
+    ],
+    [
+      "ttyACM0",
+      "Hex Cube Orange",
+      "Bootloaders",
+      "unknown"
+    ],
+    [
+      "ttyACM0",
+      "SER=1",
+      "bootloader_x",
+      "unknown"
+    ],
+    [
+      "ttyACM0",
+      "USB VID:PID=26AC:0032SER=1",
+      "-bl",
+      "unknown"
+    ],
+    [
+      " /dev/ttyACM1 ",
+      "",
+      "",
+      "usb"
+    ],
+    [
+      " /dev/ttyACM1 ",
+      "   ",
+      "PX4 BL FMU v5.x",
+      "usb"
+    ],
+    [
+      " /dev/ttyACM1 ",
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "PX4 FMU v5.x",
+      "usb"
+    ],
+    [
+      " /dev/ttyACM1 ",
+      "USB VID:PID=26ac:0011",
+      "Pixhawk 4",
+      "usb"
+    ],
+    [
+      " /dev/ttyACM1 ",
+      "USB VID:PID=0483:DF11 SER=x",
+      "u-blox GNSS receiver",
+      "rtk"
+    ],
+    [
+      " /dev/ttyACM1 ",
+      "USB VID:PID=0483:5740",
+      "ZED-F9P",
+      "rtk"
+    ],
+    [
+      " /dev/ttyACM1 ",
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "SimpleRTK2B",
+      "rtk"
+    ],
+    [
+      " /dev/ttyACM1 ",
+      "USB VID:PID=10C4:EA60",
+      "ArduPilot-BL",
+      "usb"
+    ],
+    [
+      " /dev/ttyACM1 ",
+      "USB VID:PID=1A86:7523",
+      "Cube Orange-BL",
+      "usb"
+    ],
+    [
+      " /dev/ttyACM1 ",
+      "USB VID:PID=067B:2303",
+      "Cube Orange bl",
+      "usb"
+    ],
+    [
+      " /dev/ttyACM1 ",
+      "USB VID:PID=1546:01A9 SER=",
+      "STM32 BOOTLOADER",
+      "rtk"
+    ],
+    [
+      " /dev/ttyACM1 ",
+      "USB VID:PID=152A:85C0",
+      "STM32 DFU in FS Mode",
+      "rtk"
+    ],
+    [
+      " /dev/ttyACM1 ",
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "dfuse",
+      "usb"
+    ],
+    [
+      " /dev/ttyACM1 ",
+      "VID:PID=ABCD:EF01",
+      "my_dfu_port",
+      "usb"
+    ],
+    [
+      " /dev/ttyACM1 ",
+      "USB VID:PID=ABC:DEF1",
+      "x-blx",
+      "usb"
+    ],
+    [
+      " /dev/ttyACM1 ",
+      "USB VID:PID=ABCD:EF0",
+      "SiK radio",
+      "usb"
+    ],
+    [
+      " /dev/ttyACM1 ",
+      "usb vid:pid=26ac:0032  ser=zz",
+      "septentrio mosaic",
+      "rtk"
+    ],
+    [
+      " /dev/ttyACM1 ",
+      "n/a",
+      "bl fmu",
+      "usb"
+    ],
+    [
+      " /dev/ttyACM1 ",
+      "PX4 FMU v5",
+      "bl  fmu",
+      "usb"
+    ],
+    [
+      " /dev/ttyACM1 ",
+      "Hex Cube Orange",
+      "Bootloaders",
+      "usb"
+    ],
+    [
+      " /dev/ttyACM1 ",
+      "SER=1",
+      "bootloader_x",
+      "usb"
+    ],
+    [
+      " /dev/ttyACM1 ",
+      "USB VID:PID=26AC:0032SER=1",
+      "-bl",
+      "usb"
+    ]
+  ],
+  "identity": [
+    [
+      "",
+      null
+    ],
+    [
+      "   ",
+      null
+    ],
+    [
+      "USB VID:PID=26AC:0032 SER=0001 LOCATION=20-1",
+      "26AC:0032/0001"
+    ],
+    [
+      "USB VID:PID=26ac:0011",
+      "26AC:0011/"
+    ],
+    [
+      "USB VID:PID=0483:DF11 SER=x",
+      "0483:DF11/x"
+    ],
+    [
+      "USB VID:PID=0483:5740",
+      "0483:5740/"
+    ],
+    [
+      "USB VID:PID=0403:6001 SER=A5069RR4",
+      "0403:6001/A5069RR4"
+    ],
+    [
+      "USB VID:PID=10C4:EA60",
+      "10C4:EA60/"
+    ],
+    [
+      "USB VID:PID=1A86:7523",
+      "1A86:7523/"
+    ],
+    [
+      "USB VID:PID=067B:2303",
+      "067B:2303/"
+    ],
+    [
+      "USB VID:PID=1546:01A9 SER=",
+      "1546:01A9/"
+    ],
+    [
+      "USB VID:PID=152A:85C0",
+      "152A:85C0/"
+    ],
+    [
+      "USB VID:PID=1234:5678 SER=ab cd",
+      "1234:5678/ab"
+    ],
+    [
+      "VID:PID=ABCD:EF01",
+      "ABCD:EF01/"
+    ],
+    [
+      "USB VID:PID=ABC:DEF1",
+      null
+    ],
+    [
+      "USB VID:PID=ABCD:EF0",
+      null
+    ],
+    [
+      "usb vid:pid=26ac:0032  ser=zz",
+      "26AC:0032/zz"
+    ],
+    [
+      "n/a",
+      null
+    ],
+    [
+      "PX4 FMU v5",
+      null
+    ],
+    [
+      "Hex Cube Orange",
+      null
+    ],
+    [
+      "SER=1",
+      null
+    ],
+    [
+      "USB VID:PID=26AC:0032SER=1",
+      "26AC:0032/"
+    ]
+  ],
+  "split": [
+    [
+      "serial:/dev/ttyACM0:921600",
+      [
+        "/dev/ttyACM0",
+        921600
+      ]
+    ],
+    [
+      "serial:/dev/ttyACM0",
+      [
+        "/dev/ttyACM0",
+        57600
+      ]
+    ],
+    [
+      "serial:COM3:115200",
+      [
+        "COM3",
+        115200
+      ]
+    ],
+    [
+      "serial:",
+      [
+        "",
+        57600
+      ]
+    ],
+    [
+      "serial:/dev/x:0",
+      [
+        "/dev/x",
+        0
+      ]
+    ],
+    [
+      "serial:/dev/x:abc",
+      [
+        "/dev/x:abc",
+        57600
+      ]
+    ],
+    [
+      "serial:/dev/serial/by-path/pci-0:1.2:0",
+      [
+        "/dev/serial/by-path/pci-0:1.2",
+        0
+      ]
+    ],
+    [
+      "serial:/dev/x:",
+      [
+        "/dev/x:",
+        57600
+      ]
+    ],
+    [
+      "udp:1.2.3.4:5",
+      [
+        "udp:1.2.3.4",
+        5
+      ]
+    ],
+    [
+      "",
+      [
+        "",
+        57600
+      ]
+    ],
+    [
+      "/dev/ttyUSB0:9600",
+      [
+        "/dev/ttyUSB0",
+        9600
+      ]
+    ],
+    [
+      "serial:/dev/x:+5",
+      [
+        "/dev/x:+5",
+        57600
+      ]
+    ]
+  ],
+  "same": [
+    [
+      "/dev/tty.usbmodem1",
+      "/dev/cu.usbmodem1",
+      true
+    ],
+    [
+      "COM3",
+      "\\\\.\\com3",
+      true
+    ],
+    [
+      "/nonexistent/a",
+      "/NONEXISTENT/A",
+      true
+    ],
+    [
+      "/nonexistent/a",
+      "/nonexistent/b",
+      false
+    ],
+    [
+      "",
+      "",
+      false
+    ],
+    [
+      "COM3",
+      "COM4",
+      false
+    ],
+    [
+      "/dev/cu.x",
+      "/dev/tty.x",
+      true
+    ],
+    [
+      "/dev/cu.x",
+      "/dev/cu.y",
+      false
+    ]
+  ],
+  "present": [
+    [
+      "/nonexistent/a",
+      [
+        "/nonexistent/a"
+      ],
+      true
+    ],
+    [
+      "/nonexistent/a",
+      [
+        "/nonexistent/b"
+      ],
+      false
+    ],
+    [
+      "",
+      [
+        "x"
+      ],
+      false
+    ],
+    [
+      "COM3",
+      [
+        "com3"
+      ],
+      true
+    ],
+    [
+      "COM9",
+      [],
+      false
+    ],
+    [
+      "/dev/null",
+      [],
+      true
+    ],
+    [
+      "/dev/tty.usbmodem1",
+      [
+        "/dev/cu.usbmodem1"
+      ],
+      true
+    ],
+    [
+      "  /nonexistent/a ",
+      [
+        "/nonexistent/a"
+      ],
+      true
+    ]
+  ]
+}

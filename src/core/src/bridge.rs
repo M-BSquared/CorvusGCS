@@ -205,6 +205,8 @@ struct State {
 pub struct Shared {
     me: std::sync::Weak<Shared>,
     config: BridgeConfig,
+    connection: RwLock<String>,
+    switch_lock: Mutex<()>,
     store: Arc<VehicleStateStore>,
     conn: RwLock<Option<Arc<Connection>>>,
     generation: AtomicU64,
@@ -241,6 +243,8 @@ impl Bridge {
         Bridge {
             shared: Arc::new_cyclic(|me| Shared {
                 me: me.clone(),
+                connection: RwLock::new(config.connection.clone()),
+                switch_lock: Mutex::new(()),
                 config,
                 store,
                 conn: RwLock::new(None),
@@ -344,8 +348,43 @@ impl Bridge {
         self.shared.link_ready()
     }
 
-    pub fn connection_string(&self) -> &str {
-        &self.shared.config.connection
+    pub fn connection_string(&self) -> String {
+        self.shared.connection()
+    }
+
+    /// Is the connect and receive cycle live (`start` without `stop`)? A link
+    /// that is reconnecting is running and not connected.
+    pub fn is_running(&self) -> bool {
+        self.shared.running.load(Ordering::SeqCst)
+    }
+
+    /// Why `connection` is not a usable connection string, before anything is
+    /// torn down for it.
+    pub fn validate_connection(&self, connection: &str) -> Result<(), String> {
+        validate_connection(connection)
+    }
+
+    /// Points the link at `connection`. Another link carries another vehicle,
+    /// so the vehicle list forgets the one it knew. Takes effect on the next
+    /// `start`.
+    pub fn set_connection(&self, connection: &str) -> Result<(), String> {
+        validate_connection(connection)?;
+        if self.shared.connection() != connection {
+            self.shared.fleet_tracker.forget();
+        }
+        *self.shared.connection.write().unwrap_or_else(|e| e.into_inner()) = connection.to_string();
+        Ok(())
+    }
+
+    /// Closes the link and opens it again on `connection` as one step. An
+    /// unusable spec is refused before anything is torn down.
+    pub fn switch_connection(&self, connection: &str) -> Result<(), String> {
+        validate_connection(connection)?;
+        let _one = self.shared.switch_lock.lock().unwrap_or_else(|e| e.into_inner());
+        self.stop();
+        self.set_connection(connection)?;
+        self.start();
+        Ok(())
     }
 
     /// What the vehicle on this link last said about itself, for the list.
@@ -360,7 +399,7 @@ impl Bridge {
 
     /// The serial device the link holds, "" for a network link.
     pub fn serial_device(&self) -> String {
-        let conn = &self.shared.config.connection;
+        let conn = &self.shared.connection();
         if conn.starts_with("serial:") {
             split_serial_connection(conn).0
         } else {
@@ -404,7 +443,7 @@ impl Bridge {
     /// Where a UDP link that listens is bound, else None. The forwarder asks,
     /// so it never mirrors into this socket.
     pub fn local_udp_address(&self) -> Option<(String, u16)> {
-        let connection = &self.shared.config.connection;
+        let connection = &self.shared.connection();
         if !(connection.starts_with("udp:") || connection.starts_with("udpin:")) {
             return None;
         }
@@ -515,7 +554,7 @@ impl Shared {
     }
 
     fn is_serial(&self) -> bool {
-        self.config.connection.starts_with("serial:")
+        self.connection().starts_with("serial:")
     }
 
     fn warn_timeout(&self) -> f64 {
@@ -542,6 +581,10 @@ impl Shared {
         } else {
             HEARTBEAT_TIMEOUT_UDP
         }
+    }
+
+    fn connection(&self) -> String {
+        self.connection.read().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     fn link_ready(&self) -> bool {
@@ -664,7 +707,7 @@ impl Shared {
     /// Opens the link and finds the vehicle. `Err` ends the cycle with the
     /// reason the operator sees.
     fn connect(self: &Arc<Self>, generation: u64) -> Result<(), String> {
-        let conn_str = self.config.connection.clone();
+        let conn_str = self.connection();
         self.log_line("info", &format!("Connecting to {conn_str} …"));
         {
             let mut st = self.st();
@@ -1099,7 +1142,7 @@ impl TlogHost for Shared {
         self.running.load(Ordering::SeqCst)
     }
     fn conn_string(&self) -> String {
-        self.config.connection.clone()
+        self.connection()
     }
     fn log_dir(&self) -> std::path::PathBuf {
         self.config.log_dir.clone()
@@ -1299,7 +1342,7 @@ impl RequestsHost for Shared {
         Ok(())
     }
     fn conn_string(&self) -> String {
-        self.config.connection.clone()
+        self.connection()
     }
 }
 

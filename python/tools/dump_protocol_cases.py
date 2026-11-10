@@ -4793,6 +4793,219 @@ def fwd_cases() -> list[dict]:
     return cases
 
 
+# ---------------------------------------------------------- autoconnect ----
+
+def ac_ref():
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
+    from tests.reference import autoconnect_python as ref
+    return ref
+
+
+AC_ROWS = {
+    "cable": [{"device": "/dev/ttyACM0", "description": "PX4 FMU v5.x", "hwid": "USB VID:PID=26AC:0032 SER=0001"}],
+    "cable_moved": [{"device": "/dev/ttyACM1", "description": "PX4 FMU v5.x", "hwid": "USB VID:PID=26AC:0032 SER=0001"}],
+    "two_cables": [{"device": "/dev/ttyACM1", "description": "", "hwid": "USB VID:PID=26AC:0032 SER=0002"},
+                   {"device": "/dev/ttyACM0", "description": "", "hwid": "USB VID:PID=26AC:0032 SER=0001"}],
+    "same_model_two": [{"device": "/dev/ttyACM1", "description": "", "hwid": "USB VID:PID=26AC:0032"},
+                       {"device": "/dev/ttyACM2", "description": "", "hwid": "USB VID:PID=26AC:0032"}],
+    "radio": [{"device": "/dev/ttyUSB0", "description": "SiK", "hwid": "USB VID:PID=0403:6015 SER=R1"}],
+    "radio_moved": [{"device": "/dev/ttyUSB1", "description": "SiK", "hwid": "USB VID:PID=0403:6015 SER=R1"}],
+    "cable_and_radio": [{"device": "/dev/ttyUSB0", "description": "", "hwid": ""},
+                        {"device": "/dev/ttyACM0", "description": "", "hwid": ""}],
+    "bootloader": [{"device": "/dev/ttyACM0", "description": "PX4 BL FMU v5.x", "hwid": "USB VID:PID=26AC:0032 SER=0001"}],
+    "bootloader_and_cable": [{"device": "/dev/ttyACM0", "description": "PX4 BL FMU v5.x", "hwid": "USB VID:PID=26AC:0011"},
+                             {"device": "/dev/ttyACM1", "description": "PX4 FMU v5.x", "hwid": "USB VID:PID=26AC:0032"}],
+    "rtk": [{"device": "/dev/ttyACM0", "description": "u-blox GNSS receiver", "hwid": "USB VID:PID=1546:01A9"}],
+    "phantoms": [{"device": "/dev/ttyS0", "description": "", "hwid": ""}, {"device": "/dev/cu.Bluetooth-Incoming-Port", "description": "", "hwid": ""},
+                 {"device": "", "description": "", "hwid": ""}, {"device": "/dev/pts/4", "description": "", "hwid": ""}],
+    "mac_cable": [{"device": "/dev/cu.usbmodem14201", "description": "PX4", "hwid": "USB VID:PID=26AC:0032 SER=0001"}],
+    "mac_no_descriptor": [{"device": "/dev/cu.usbmodem14201", "description": "", "hwid": ""}],
+    "none": [],
+}
+
+
+def ac_pure_cases() -> dict:
+    ref = ac_ref()
+    from corvus.mavlink_bridge import MavlinkBridge
+
+    dummy = MavlinkBridge.__new__(MavlinkBridge)
+    validator = dummy.validate_connection
+    out: dict = {"sets": AC_ROWS, "classify": [], "pick": [], "resolve": [], "suggest": []}
+    for name, rows in AC_ROWS.items():
+        ports = ref.classify_ports(rows)
+        out["classify"].append([name, [dict(device=p.device, description=p.description, hwid=p.hwid, kind=p.kind) for p in ports]])
+        for usb in (True, False):
+            for sik in (True, False):
+                pick = ref.pick_usb_serial(ports, usb_enabled=usb, sik_enabled=sik)
+                out["pick"].append([name, usb, sik, list(pick) if pick else None])
+    clis = [None, "", "  ", "udp:127.0.0.1:14550", " tcp:1.2.3.4:5760 ", "bogus", "serial:/dev/x:0"]
+    configs = [None, "", "udp:0.0.0.0:14551", "serial:/dev/ttyACM0:921600", "serial:/dev/ttyUSB0:115200", "nonsense", "serial:/dev/ttyACM9:9600"]
+    for name in ("cable", "two_cables", "radio", "cable_and_radio", "bootloader", "bootloader_and_cable", "rtk", "none", "phantoms"):
+        ports = ref.classify_ports(AC_ROWS[name])
+        for cli in clis[:4] + ["bogus"]:
+            for configured in configs:
+                for flags in ((True, True, True), (False, True, True), (True, False, False)):
+                    d = ref.resolve_startup_connection(
+                        cli, configured, ports, usb_enabled=flags[0], sik_enabled=flags[1],
+                        udp_fallback_enabled=flags[2], validator=validator)
+                    out["resolve"].append([name, cli, configured, list(flags),
+                                           [d.connection_string, d.reason, d.detail]])
+    d = ref.resolve_startup_connection(None, "bogus", [], udp_fallback_enabled=False, validator=validator)
+    out["resolve"].append(["none", None, "bogus", [True, True, False], [d.connection_string, d.reason, d.detail]])
+    d = ref.resolve_startup_connection(None, None, [], validator=None)
+    out["resolve"].append(["none", None, None, [True, True, True], [d.connection_string, d.reason, d.detail]])
+    snaps = [{}, {"link_connection": "serial:/dev/ttyACM0:115200"}, {"link_connection": "udp:1.2.3.4:5"},
+             {"link_connection": None}, {"link_connection": "serial:/dev/ttyUSB0:9600"}]
+    for name in ("cable", "radio", "cable_and_radio", "none", "bootloader"):
+        ports = ref.classify_ports(AC_ROWS[name])
+        for snap in snaps:
+            for enabled, manual, usb, sik in ((True, False, True, True), (False, False, True, True), (True, True, True, True),
+                                              (True, False, False, True), (True, False, True, False)):
+                session = ref.SessionState()
+                session.enabled, session.usb, session.sik = enabled, usb, sik
+                if manual:
+                    session.note_manual_connect()
+                sug = ref.suggest_connection(snap, ports, session)
+                out["suggest"].append([name, snap, [enabled, manual, usb, sik],
+                                       None if sug is None else [sug.connection_string, sug.kind, sug.device, sug.reason]])
+    return out
+
+
+def ac_watcher_scenarios() -> list[dict]:
+    t = {"op": "tick"}
+    ports = lambda name: {"op": "ports", "rows": AC_ROWS[name]}
+    snap = lambda **kw: {"op": "snapshot", "fields": kw}
+    return [
+        {"name": "dial_a_cable_when_idle", "conn": "udp:0.0.0.0:14550", "steps": [
+            ports("none"), snap(link_status="disconnected"), {"op": "stale", "value": True}, t,
+            ports("cable"), t, t, ports("none"), t, ports("cable"), t]},
+        {"name": "not_running_and_disabled", "conn": "udp:0.0.0.0:14550", "steps": [
+            {"op": "running", "value": False}, ports("cable"), t, {"op": "manual"}, t, {"op": "running", "value": True}, t,
+            {"op": "config", "block": {"enabled": False}}, t, {"op": "config", "block": None}, t]},
+        {"name": "suggest_while_connected", "conn": "udp:0.0.0.0:14550", "steps": [
+            snap(link_status="connected", link_connection="udp:0.0.0.0:14550"), {"op": "stale", "value": False},
+            ports("none"), t, ports("cable"), t, t, ports("cable_and_radio"), t, ports("none"), t, ports("cable"), t,
+            {"op": "manual"}, t]},
+        {"name": "reconnecting_but_fresh", "conn": "udp:0.0.0.0:14550", "steps": [
+            snap(link_status="reconnecting"), {"op": "stale", "value": False}, ports("cable"), t,
+            {"op": "stale", "value": True}, t]},
+        {"name": "bootloader_is_published_and_skipped", "conn": "udp:0.0.0.0:14550", "steps": [
+            snap(link_status="disconnected"), {"op": "stale", "value": True}, ports("bootloader"), t, t,
+            ports("bootloader_and_cable"), t, ports("none"), t]},
+        {"name": "rtk_and_phantoms_are_never_dialled", "conn": "udp:0.0.0.0:14550", "steps": [
+            snap(link_status="disconnected"), {"op": "stale", "value": True}, ports("rtk"), t, ports("phantoms"), t]},
+        {"name": "dial_keeps_the_known_baud", "conn": "serial:/dev/ttyACM0:921600", "steps": [
+            snap(link_status="disconnected"), {"op": "stale", "value": True}, ports("cable"), t, t]},
+        {"name": "follow_the_device_to_another_name", "conn": "serial:/dev/ttyACM0:115200", "steps": [
+            snap(link_status="connected", link_connection="serial:/dev/ttyACM0:115200"), {"op": "stale", "value": False},
+            ports("cable"), t, ports("cable_moved"), t, snap(link_status="reconnecting"), {"op": "stale", "value": True}, t, t,
+            ports("cable_moved"), t]},
+        {"name": "follow_with_manual_override", "conn": "serial:/dev/ttyUSB0:57600", "steps": [
+            snap(link_status="connected"), {"op": "stale", "value": False}, {"op": "manual"}, ports("radio"), t,
+            snap(link_status="disconnected"), ports("radio_moved"), t, t]},
+        {"name": "no_follow_when_ambiguous", "conn": "serial:/dev/ttyACM0:57600", "steps": [
+            snap(link_status="connected"), {"op": "stale", "value": False},
+            {"op": "ports", "rows": [{"device": "/dev/ttyACM0", "description": "", "hwid": "USB VID:PID=26AC:0032"}]}, t,
+            snap(link_status="disconnected"), {"op": "stale", "value": True}, ports("same_model_two"), t]},
+        {"name": "device_gone_while_still_connected", "conn": "serial:/dev/ttyACM0:57600", "steps": [
+            snap(link_status="connected"), {"op": "stale", "value": False}, ports("cable"), t, ports("none"), t]},
+        {"name": "ports_held_by_another_link_are_left_alone", "conn": "udp:0.0.0.0:14550", "steps": [
+            snap(link_status="disconnected"), {"op": "stale", "value": True}, ports("cable"), {"op": "busy", "devices": ["/dev/ttyACM0"]},
+            t, {"op": "busy", "devices": []}, t]},
+        {"name": "refused_connection_is_latched", "conn": "udp:0.0.0.0:14550", "steps": [
+            snap(link_status="disconnected"), {"op": "stale", "value": True},
+            {"op": "ports", "rows": [{"device": "/dev/ttyACM0 x", "description": "", "hwid": ""}]}, t,
+            {"op": "ports", "rows": [{"device": "/dev/ttyACM7", "description": "", "hwid": ""}]}, {"op": "switch_fails", "value": True}, t, t]},
+        {"name": "radio_when_no_cable_and_the_toggles", "conn": "udp:0.0.0.0:14550", "steps": [
+            snap(link_status="disconnected"), {"op": "stale", "value": True}, ports("radio"),
+            {"op": "config", "block": {"sik": False}}, t, {"op": "config", "block": {"usb": False, "sik": True}}, t,
+            ports("cable_and_radio"), t]},
+    ]
+
+
+def ac_watcher_cases() -> list[dict]:
+    import logging
+
+    ref = ac_ref()
+    from corvus.mavlink_bridge import MavlinkBridge
+
+    dummy = MavlinkBridge.__new__(MavlinkBridge)
+    out = []
+    for sc in ac_watcher_scenarios():
+        log: list = []
+        state = {"rows": [], "snapshot": {}, "stale": True, "running": True, "conn": sc["conn"], "busy": [], "fails": False}
+
+        class Bridge:
+            def is_running(self):
+                return state["running"]
+
+            def connection_string(self):
+                return state["conn"]
+
+            def validate_connection(self, conn):
+                dummy.validate_connection(conn)
+
+            def switch_connection(self, conn):
+                log.append(["switch", conn])
+                if state["fails"]:
+                    raise OSError("busy")
+                state["conn"] = conn
+
+        class Store:
+            def get_snapshot(self):
+                return dict(state["snapshot"])
+
+            def is_stale(self, timeout):
+                return state["stale"]
+
+            def update(self, **fields):
+                log.append(["store", fields])
+                state["snapshot"].update(fields)
+
+        session = ref.SessionState()
+        watcher = ref.AutoConnectWatcher(
+            bridge=Bridge(), store=Store(), session=session, list_ports_fn=lambda: state["rows"],
+            busy_devices_fn=lambda: state["busy"])
+        results = []
+        logging.disable(logging.CRITICAL)
+        try:
+            with mock.patch("time.time", lambda: 1234.5):
+                for step in sc["steps"]:
+                    before = len(log)
+                    op = step["op"]
+                    result = None
+                    if op == "tick":
+                        result = watcher.tick()
+                    elif op == "ports":
+                        state["rows"] = step["rows"]
+                    elif op == "snapshot":
+                        state["snapshot"].update(step["fields"])
+                    elif op == "stale":
+                        state["stale"] = step["value"]
+                    elif op == "running":
+                        state["running"] = step["value"]
+                    elif op == "busy":
+                        state["busy"] = step["devices"]
+                    elif op == "manual":
+                        session.note_manual_connect()
+                    elif op == "config":
+                        session.apply_config(step["block"])
+                    elif op == "switch_fails":
+                        state["fails"] = step["value"]
+                    else:
+                        raise SystemExit(op)
+                    results.append({"result": result, "log": log[before:], "conn": state["conn"], "session": session.as_dict(),
+                                    "last_dial": session.last_dial_key, "last_suggestion": session.last_suggestion_key})
+        finally:
+            logging.disable(logging.NOTSET)
+        out.append({"scenario": clean(sc), "expected": clean({"steps": results, "final": {}})})
+    return out
+
+
+def autoconnect_cases() -> list[dict]:
+    return [{"pure": ac_pure_cases()}] + ac_watcher_cases()
+
+
 COMMANDS = {"params_cases.json": cases, "logs_cases.json": logs_cases, "shell_cases.json": shell_cases,
             "ftp_cases.json": ftp_cases, "flight_cases.json": flight_cases,
             "setup_cases.json": setup_cases,
@@ -4805,7 +5018,8 @@ COMMANDS = {"params_cases.json": cases, "logs_cases.json": logs_cases, "shell_ca
             "tlog_cases.json": tlog_cases,
             "rtcm_cases.json": rtcm_cases,
             "fleet_cases.json": fleet_cases,
-            "forwarder_cases.json": fwd_cases}
+            "forwarder_cases.json": fwd_cases,
+            "autoconnect_cases.json": autoconnect_cases}
 
 
 def main(argv: list[str]) -> int:
