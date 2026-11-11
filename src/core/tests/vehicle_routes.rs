@@ -55,6 +55,12 @@ impl Vehicle {
                         .with("mavlink_version", int(3));
                     let _ = conn.send(&hb);
                 }
+                // A busy stream, as a real autopilot has: the heartbeat wait must read past it.
+                let _ = conn.send(
+                    &Message::named("GLOBAL_POSITION_INT", Wire::V2)
+                        .unwrap()
+                        .with("lat", int(481_234_567)),
+                );
                 let Ok(frames) = conn.recv(Duration::from_millis(50)) else {
                     break;
                 };

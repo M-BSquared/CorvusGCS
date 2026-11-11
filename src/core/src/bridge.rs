@@ -899,6 +899,7 @@ impl Shared {
                 Ok(frames) => frames,
                 Err(_) => return None,
             };
+            let nothing_came = got.is_empty();
             for r in got {
                 let Ok(msg) = r.message else { continue };
                 if msg.name() != "HEARTBEAT" {
@@ -923,7 +924,7 @@ impl Shared {
             }
             // A transport that answers "nothing" the instant it is asked is
             // not going to start answering differently.
-            if clock::monotonic() - from < wait_for / 2.0 {
+            if nothing_came && clock::monotonic() - from < wait_for / 2.0 {
                 return None;
             }
         }
@@ -1303,10 +1304,13 @@ impl RequestsHost for Shared {
         self.receive
             .send_command_and_wait(self, command, params, timeout, retries, false, &[])
     }
-    fn fetch_params(&self, names: &[&str], _timeout: f64) -> Vec<(String, f64)> {
-        // The parameter engine is not wired to the bridge yet.
-        let _ = names;
-        Vec::new()
+    fn fetch_params(&self, names: &[&str], timeout: f64) -> Vec<(String, f64)> {
+        let wanted: Vec<String> = names.iter().map(|n| (*n).to_string()).collect();
+        self.engines
+            .params
+            .fetch_params(self, &wanted, timeout, false)
+            .into_iter()
+            .collect()
     }
     fn schedule_version_retry(&self) {
         if let Some(me) = self.me.upgrade() {
@@ -1480,14 +1484,15 @@ impl FlightHost for Shared {
         };
         with_mission_home_slot(items, &dialect, &self.store_list("home"), home_alt)
     }
-    fn upload_mission(&self, _items: &[MissionItem]) -> i64 {
-        // The mission engine is not wired to the bridge yet.
-        -2
+    fn upload_mission(&self, items: &[MissionItem]) -> i64 {
+        self.engines.missions.upload_mission(self, items, 0)
     }
     fn mission_ack_to_result(&self, ack: i64) -> i64 {
         mission_ack_to_result(ack)
     }
-    fn note_vehicle_mission_cleared(&self) {}
+    fn note_vehicle_mission_cleared(&self) {
+        self.engines.missions.note_vehicle_mission(self, None);
+    }
 }
 
 impl Shared {
