@@ -463,3 +463,61 @@ def test_a_setup_or_parameter_read_with_nothing_connected_is_answered_as_python_
 def test_a_setup_or_parameter_write_with_nothing_connected_is_answered_as_python_answers_it(vehicle_pair, path, body) -> None:
     diffs = vehicle_pair.compare_post(path, body)
     assert not diffs, "\n".join(diffs)
+
+
+# ---- return profile, live messages, forwarding and Remote ID ----
+
+@pytest.mark.parametrize("path", [
+    "/api/mission/return", "/api/mavlink/scope", "/api/mavlink/scope?select=1:1:HEARTBEAT", "/api/remoteid",
+    "/api/remoteid/status", "/api/forwarding",
+])
+def test_the_return_scope_remote_id_and_forwarding_reads_answer_as_python_answers_them(vehicle_pair, path) -> None:
+    diffs = vehicle_pair.compare_get(path, ("since",))
+    assert not diffs, "\n".join(diffs)
+
+
+def test_forwarding_is_set_refused_and_kept_as_python_does_it() -> None:
+    import json
+
+    bodies = [
+        {"enabled": "yes"}, {"allow_commands": 1}, {"port": 0}, {"port": 70000}, {"port": True}, {"port": "x"},
+        {"listen_port": -1}, {"listen_port": 65536}, {"endpoints": "a"}, {"endpoints": [1]},
+        {"enabled": False, "allow_commands": True, "host": " 10.0.0.5 ", "port": 14560, "listen_host": "  ",
+         "endpoints": ["a:1", " ", "b"]},
+        {"enabled": False},
+        {"enabled": True, "listen_port": 0, "port": 14570, "endpoints": []},
+        {"enabled": False, "allow_commands": False},
+    ]
+    with harness.Pair(seed=harness.standard_seed()) as p:
+        diffs = p.compare_get("/api/forwarding")
+        for body in bodies:
+            diffs += p.compare_post("/api/forwarding", body, ("listen_port", "listen_host", "notice", "targets", "peers"))
+            diffs += p.compare_get("/api/forwarding", ("listen_port", "notice", "targets", "peers"))
+        assert not diffs, "\n".join(diffs)
+        py = json.loads((p.py.state_dir / "config.json").read_text())["forwarding"]
+        rs = json.loads((p.rs.state_dir / "config.json").read_text())["forwarding"]
+        assert py == rs, (py, rs)
+
+
+def test_the_scope_clear_answers_as_python_answers_it(vehicle_pair) -> None:
+    diffs = vehicle_pair.compare_post("/api/mavlink/scope/clear", {})
+    assert not diffs, "\n".join(diffs)
+
+
+@pytest.mark.parametrize("identity", [
+    {"enabled": True, "region": "eu", "basic_id": {"id_type": 1, "ua_type": 2, "uas_id": "1234ABCDE"},
+     "operator_id": {"operator_id": "FIN87astrdge12k8xyz"}, "system": {"classification_type": 1, "category_eu": 1}},
+    {"region": "faa", "basic_id": {"id_type": 2, "uas_id": "1234AB"}, "system": {"operator_location_type": 0}},
+    {"region": "eu", "basic_id": {"id_type": 1, "uas_id": "ab-OI"}, "operator_id": {"operator_id": "FIN-short"},
+     "system": {"operator_location_type": 2}},
+    {"region": "faa", "basic_id": {"id_type": 1, "uas_id": "ABCDX12345678901234567"},
+     "system": {"operator_location_type": 1}},
+    {"region": "eu", "basic_id": {"id_type": 1, "uas_id": "ABCD4WXYZ"}, "operator_id": {"operator_id": "FIN87astrdge12k8"},
+     "system": {"classification_type": 1, "category_eu": 0}},
+])
+def test_the_remote_id_page_judges_an_identity_as_python_does(identity) -> None:
+    seed = harness.standard_seed()
+    seed["config"]["remote_id"] = identity
+    with harness.Pair(seed=seed) as p:
+        diffs = p.compare_get("/api/remoteid") + p.compare_get("/api/remoteid/status")
+        assert not diffs, "\n".join(diffs)

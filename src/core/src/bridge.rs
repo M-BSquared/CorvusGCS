@@ -1621,7 +1621,13 @@ impl ReceiveHost for Shared {
     fn write_tlog(&self, frame: &Frame) {
         self.tlog.write_tlog(frame.raw);
     }
-    fn record_scope(&self, _frame: &Frame) {}
+    fn record_scope(&self, frame: &Frame) {
+        if let Payload::Message(m) = &frame.payload {
+            self.engines
+                .scope
+                .record(m, frame.system, frame.component, frame.raw.map_or(0, <[u8]>::len));
+        }
+    }
     fn handle_autotune_ack(&self, result: i64, progress: i64) {
         self.engines.setup.handle_autotune_ack(self, result, progress);
     }
@@ -1786,6 +1792,7 @@ pub struct Engines {
     watchdog: Mutex<Option<JoinHandle<()>>>,
     upload: Mutex<Option<JoinHandle<()>>>,
     metadata: crate::setup_schemas::MetadataFetch,
+    pub scope: crate::scope::MessageScope,
     rx_source: Mutex<(i64, i64)>,
 }
 
@@ -1807,6 +1814,7 @@ impl Engines {
             watchdog: Mutex::new(None),
             upload: Mutex::new(None),
             metadata: crate::setup_schemas::MetadataFetch::new(),
+            scope: crate::scope::MessageScope::new(),
             rx_source: Mutex::new((0, 0)),
         }
     }
@@ -2618,6 +2626,11 @@ impl Bridge {
 
     pub fn clear_fence(&self) -> bool {
         self.shared.engines.missions.clear_fence(self.shared.as_ref())
+    }
+
+    /// Installs the battery estimator settings and returns them resolved.
+    pub fn set_battery_settings(&self, raw: Option<&Value>) -> Value {
+        self.shared.telemetry.set_battery_settings(raw)
     }
 
     pub fn set_remote_id(&self, raw: Option<&Value>) -> Value {

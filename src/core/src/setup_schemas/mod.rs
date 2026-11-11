@@ -22,6 +22,8 @@ pub mod mounting;
 pub mod param_metadata;
 mod params_routes;
 pub mod rc;
+pub mod remote_id_page;
+mod remote_id_routes;
 mod routes;
 pub mod safety;
 mod tables;

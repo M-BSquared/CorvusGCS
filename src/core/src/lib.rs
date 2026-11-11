@@ -101,6 +101,7 @@ pub mod priority_lock;
 pub mod protocol;
 pub mod request;
 pub mod response;
+pub mod scope;
 pub mod serial_ports;
 pub mod setup_schemas;
 pub mod store;

@@ -143,7 +143,7 @@ def _wait_complete(flying, timeout=40.0):
     raise RuntimeError("the parameter download did not finish")
 
 
-SETUP_PAGES = ["/api/first-setup", "/api/params/metadata", "/api/params/metadata/cache", "/api/motors", "/api/rc", "/api/motors?fresh=1", "/api/rc?fresh=1", "/api/mounting?fresh=1",
+SETUP_PAGES = ["/api/remoteid", "/api/remoteid/status", "/api/mission/return", "/api/mission/return?fresh=1", "/api/first-setup", "/api/params/metadata", "/api/params/metadata/cache", "/api/motors", "/api/rc", "/api/motors?fresh=1", "/api/rc?fresh=1", "/api/mounting?fresh=1",
                "/api/tuning?fresh=1", "/api/safety?fresh=1"]
 
 
@@ -157,6 +157,17 @@ def test_the_setup_pages_and_the_parameter_routes_answer_as_python_answers_them(
 
     for path in SETUP_PAGES:
         step("GET", path)
+    harness.http("GET", flying["rust"] + "/api/mavlink/scope")
+    harness.http("GET", flying["python"] + "/api/mavlink/scope")
+    for _ in range(3):
+        time.sleep(1.5)
+        for name in ("python", "rust"):
+            harness.http("GET", flying[name] + "/api/mavlink/scope")
+    for name in ("python", "rust"):
+        scope = harness.http("GET", flying[name] + "/api/mavlink/scope?select=1:1:HEARTBEAT")[1]
+        assert scope["connected"] and any(r["name"] == "HEARTBEAT" for r in scope["rows"]), (name, scope)
+        assert scope["selected"] == "1:1:HEARTBEAT" and {f["name"] for f in scope["fields"]} >= {"type", "autopilot"}, name
+        assert harness.http("POST", flying[name] + "/api/mavlink/scope/clear", {})[1] == {"ok": True}
     step("POST", "/api/params/download", {})
     _wait_complete(flying)
     step("POST", "/api/params/metadata", {})

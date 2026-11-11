@@ -101,12 +101,6 @@ telemetry review).
 
 ### 0.1 Vehicle and control (`src/core/src/vehicle.rs`)
 
-* P1 `GET /api/mission/return`; `/api/mavlink/scope` (needs the vehicle's
-  `record_scope` hook).
-* P2 Register the routes of the forwarder (`/api/forwarding`) and of Remote ID
-  (`/api/remoteid*`); the engines exist.
-* P2 `Bridge::set_connection` and a way to ask whether the bridge runs, so SiK
-  on the link's own port can retune and restart it.
 * P3 Two root crate tests in `net::backend` take their port from
   `free_port()` and can collide when run in parallel.
 

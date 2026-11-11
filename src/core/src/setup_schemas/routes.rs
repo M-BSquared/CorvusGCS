@@ -50,6 +50,8 @@ impl Module for SetupSchemasModule {
         reg.get("/api/tuning", api_tuning);
         reg.get("/api/battery", api_battery);
         super::params_routes::register(reg);
+        reg.get("/api/remoteid", super::remote_id_routes::api_remote_id);
+        reg.get("/api/remoteid/status", super::remote_id_routes::api_remote_id_status);
         reg.get("/api/first-setup", super::first_setup_routes::api_first_setup);
         reg.post(
             "/api/first-setup/airframe",
