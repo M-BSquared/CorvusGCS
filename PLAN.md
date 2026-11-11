@@ -117,7 +117,7 @@ telemetry review).
 
 ### 0.2 Map data (`src/core/src/mapdata/`)
 
-* P1 Buildings and the Overpass cell, the
+* P1 The
   `MapDataModule` (resources in `start`, every thread joined in `stop`), its
   registration in `src/net/backend.rs` and `src/core/src/bin/corvus-core.rs`,
   the routes of `routes/tiles.py` and `routes/dem.py`, `/api/geocode`, the

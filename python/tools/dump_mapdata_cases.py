@@ -917,6 +917,165 @@ def custom_dem_cases() -> None:
         "errors": errors, "missing": missing, "closed": closed})
 
 
+def buildings_cases() -> None:
+    import gzip
+    import http.server
+    import tempfile
+    import threading
+    import time
+    import urllib.parse
+    from corvus import buildings as b
+
+    lengths = ["12", "12 m", "12,5", " 7.5m", "-3", "- 3", "abc", "", "1.2.3", "1e3", ".", "-", "12-4", 12, 12.5, True, None, [1], {"a": 1}, float("inf"), "99999999999999999999999999999999999999999999999"
+               + "9" * 300, "3 4", "0", "  8"]
+    parse = []
+    for v in lengths:
+        r = b._parse_length(v)
+        parse.append({"raw": v if not isinstance(v, float) or v == v and abs(v) != float("inf") else "inf-float",
+                      "value": r, "skip": isinstance(v, float) and abs(v) == float("inf")})
+    heights = [{}, {"height": "20"}, {"height": "1"}, {"height": "5000"}, {"building:levels": "3"},
+               {"building:levels": "0"}, {"building:levels": "-2", "height": "x"}, {"height": "10", "min_height": "4"},
+               {"height": "10", "min_height": "40"}, {"height": "10", "building:min_level": "1"},
+               {"height": "10", "min_height": "-5"}, {"building:min_level": "2"}, {"height": "4", "min_height": "3.5"},
+               {"height": "abc", "building:levels": "2"}, "notadict", None, [], {"height": 12.345},
+               {"min_height": "x", "building:min_level": "x", "height": "7"}]
+    hs = [{"tags": t, "result": list(b.building_height(t))} for t in heights]
+    bounds = [{"z": z, "x": x, "y": y, "bounds": list(b.cell_bounds(z, x, y))}
+              for z, x, y in [(15, 17430, 11376), (15, 0, 0), (14, 8715, 5688), (0, 0, 0), (15, 32767, 32767), (10, 100, 200)]]
+    cells = [{"lon": lo, "lat": la, "zoom": zm, "cell": list(b.cell_of(lo, la, zm))}
+             for lo, la, zm in [(11.5, 48.1, 15), (-180, 85.1, 15), (179.9999, -85.5, 15), (0, 0, 14), (11.5, 48.1, 14),
+                                (200, 10, 15), (-200, -10, 15), (11.5, 90, 15)]]
+    w, s_, e, n = b.cell_bounds(14, 8715, 5688)
+
+    def sq(lon, lat, d=0.0002, closed=True, n_pts=4):
+        pts = [(lon, lat), (lon + d, lat), (lon + d, lat + d), (lon, lat + d)]
+        if closed:
+            pts.append((lon, lat))
+        return [{"lon": x, "lat": y} for x, y in pts]
+
+    def way(i, geometry, tags):
+        return {"type": "way", "id": i, "tags": tags, "geometry": geometry}
+
+    elements = []
+    rnd = __import__("random").Random(11)
+    for i in range(12):
+        lon = w + (e - w) * rnd.random() * 0.9
+        lat = s_ + (n - s_) * rnd.random() * 0.9
+        tags = {"building": "yes"}
+        if i % 3 == 0:
+            tags["height"] = f"{rnd.randint(3, 60)} m"
+        if i % 3 == 1:
+            tags["building:levels"] = str(rnd.randint(1, 12))
+        if i % 4 == 0:
+            tags["min_height"] = "2"
+        elements.append(way(1000 + i, sq(round(lon, 7), round(lat, 7), closed=bool(i % 2)), tags))
+    elements += [
+        way(1000, sq(w + 0.001, s_ + 0.001), {"building": "yes", "height": "5"}),
+        way(2000, sq(w + 0.001, s_ + 0.001)[:3], {"building": "yes"}),
+        way(2001, [], {"building": "yes"}),
+        way(2002, sq(w + 0.002, s_ + 0.002), {"amenity": "x"}),
+        way(2003, sq(w + 0.002, s_ + 0.002), {"building": ""}),
+        way(2004, sq(w + 0.0025, s_ + 0.0025), "notdict"),
+        {"type": "node", "id": 5, "tags": {"building": "yes"}},
+        {"type": "way", "id": 2005, "tags": {"building": "yes"}, "geometry": [{"lon": 1}] * 5},
+        {"type": "way", "id": 2006, "tags": {"building": "roof"}, "geometry": [1, 2, 3, 4]},
+        "junk", None,
+        {"type": "relation", "id": 3000, "tags": {"building": "yes", "type": "multipolygon", "height": "14"},
+         "members": [{"role": "outer", "geometry": sq(e - 0.003, n - 0.003, 0.0004)},
+                     {"role": "inner", "geometry": sq(e - 0.0029, n - 0.0029, 0.0001)},
+                     {"role": "outer", "geometry": sq(e - 0.002, n - 0.002, 0.0003)},
+                     {"role": "outer", "geometry": [{"lon": 1, "lat": 2}]}, "bad"]},
+        {"type": "relation", "id": 3001, "tags": {"building": "yes"}, "members": "x"},
+        {"type": "way", "tags": {"building": "yes", "height": "9"}, "geometry": sq(w + 0.004, s_ + 0.004)},
+        {"type": "way", "tags": {"building": "yes", "height": "9"}, "geometry": sq(w + 0.004, s_ + 0.004)},
+        way(1000, sq(w + 0.005, s_ + 0.005), {"building": "yes", "height": "70"}),
+        {"type": "relation", "id": 1000, "tags": {"building": "yes"}, "members": [{"role": "outer", "geometry": sq(w + 0.006, s_ + 0.006)}]},
+        way(4000, [{"lon": 11.5, "lat": 48.1}, {"lon": 11.5003, "lat": 48.1}, {"lon": 11.5003, "lat": 48.1003}, {"lon": 11.5, "lat": 48.1003}],
+            {"building": "yes", "height": "4"}),
+        way(4001, [{"lon": w - 0.001, "lat": s_ - 0.001}, {"lon": w + 0.0004, "lat": s_ - 0.001}, {"lon": w + 0.0004, "lat": s_ + 0.0004},
+                   {"lon": w - 0.001, "lat": s_ + 0.0004}], {"building": "yes"}),
+    ]
+    payloads = [{"elements": elements}, {"elements": []}, {}, [], {"elements": "x"}, None,
+                {"elements": elements[:3], "remark": "runtime error: Query timed out"}]
+    geo = [{"overpass": p, "geojson": b.to_geojson(p)} for p in payloads]
+    remarks = [{"payload": r, "failed": b.overpass_failed(r)} for r in
+               [{}, [], "x", None, {"remark": ""}, {"remark": "  "}, {"remark": "runtime error: x"},
+                {"remark": "Query timed out"}, {"remark": "Out of memory"}, {"remark": "fine, nothing wrong"},
+                {"remark": 5}, {"elements": []}]]
+    block = (14, 8715, 5688)
+    split = b.split_by_cell(b.to_geojson(payloads[0]), b.cells_of_block(*block))
+    split_out = [{"cell": list(c), "collection": v} for c, v in split.items()]
+    split_other = b.split_by_cell(b.to_geojson(payloads[0]), [(15, 1, 1)])
+    split_edge = b.split_by_cell({"features": [
+        {"geometry": {"coordinates": [[[11.5, 48.1]]]}}, {"geometry": {"coordinates": []}}, {"geometry": {}}, {},
+        {"geometry": {"coordinates": [[[11.5, 48.1], [11.5002, 48.1], [11.5, 48.1]]]}},
+        {"geometry": {"coordinates": [[["a", 1], [2, 3]]]}}]}, b.cells_of_block(14, 8715, 5688))
+    queries = [{"bounds": list(bd), "query": b.overpass_query(*bd)} for bd in
+               [b.cell_bounds(14, 8715, 5688), (-0.000001, 1.5, 2.25, 3.0), (11.123456789, 48.987654321, 11.2, 49.0)]]
+    blocks = []
+    for bd in [(11.5, 48.1, 11.6, 48.2), (11.5, 48.1, 11.5, 48.1), (11.0, 47.9, 12.5, 48.6), (0, 0, 1, 1), (10, 10, 5, 5),
+               (-180, -90, 180, 90), (float("nan"), 0, 1, 1), (11.5, 48.1, 11.5001, 48.1001), (-0.5, -0.5, 0.5, 0.5)]:
+        gen = b.blocks_outward(bd)
+        first = []
+        for blk in gen:
+            first.append(list(blk))
+            if len(first) >= 120:
+                break
+        blocks.append({"bounds": [None if v != v else v for v in bd], "blocks": first, "nan": bd[0] != bd[0],
+                       "cells": [list(c) for c in b.cells_for_bounds(bd, 15)][:50] if (bd[2] - bd[0]) < 0.2 else None,
+                       "cell_count": len(b.cells_for_bounds(bd, 15)) if (bd[2] - bd[0]) < 0.2 else None})
+    spans = [{"z": z, "x": x, "y": y, "block": list(b.block_of(z, x, y)), "cells": [list(c) for c in b.cells_of_block(z, x, y)]}
+             for z, x, y in [(15, 17430, 11377), (14, 8715, 5688), (13, 1, 2), (16, 5, 5), (15, 0, 0)]]
+
+    # The service against a local Overpass.
+    seen: list[dict] = []
+    answer: dict = {"status": 200, "body": json.dumps(payloads[0]).encode()}
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_POST(self):  # noqa: N802
+            length = int(self.headers.get("Content-Length", "0"))
+            body = self.rfile.read(length)
+            seen.append({"path": self.path, "ctype": self.headers.get("Content-Type"), "ua": self.headers.get("User-Agent"),
+                         "form": urllib.parse.parse_qs(body.decode())})
+            self.send_response(answer["status"])
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(answer["body"])))
+            self.end_headers()
+            self.wfile.write(answer["body"])
+
+        def log_message(self, *args):
+            pass
+
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=srv.serve_forever, daemon=True)
+    thread.start()
+    service_out = {}
+    with tempfile.TemporaryDirectory() as tmp:
+        svc = b.BuildingService(str(pathlib.Path(tmp) / "b.sqlite"), url=f"http://127.0.0.1:{srv.server_port}/api",
+                                user_agent="CorvusTest", workers=1)
+        first = svc.lookup(15, 17430, 11376)
+        deadline = time.time() + 10
+        while svc.cache.get(15, 17430, 11376) is None and time.time() < deadline:
+            time.sleep(0.02)
+        time.sleep(0.1)
+        stored = {}
+        for c in b.cells_of_block(*block):
+            hit = svc.cache.get(*c)
+            stored[f"{c[0]}/{c[1]}/{c[2]}"] = None if hit is None else json.loads(gzip.decompress(hit[0]))
+        after = svc.lookup(15, 17430, 11376)
+        service_out = {"first": [first[0] is not None, first[1]], "after_coming": after[1],
+                       "requests": seen, "stored": stored, "stats": svc.stats()}
+        svc.close()
+    srv.shutdown()
+    srv.server_close()
+    write("mapdata_buildings_cases.json", {
+        "parse_length": parse, "heights": hs, "bounds": bounds, "cells": cells, "geojson": geo,
+        "failed": remarks, "block": list(block), "split": split_out,
+        "split_other": [{"cell": list(c), "collection": v} for c, v in split_other.items()],
+        "split_edge": [{"cell": list(c), "n": len(v["features"])} for c, v in split_edge.items()],
+        "queries": queries, "blocks": blocks, "spans": spans, "service": service_out})
+
+
 SECTIONS = {
     "tile_math": tile_math_cases,
     "tile_sources": tile_sources_cases,
@@ -926,6 +1085,7 @@ SECTIONS = {
     "dem_tiles": dem_tiles_cases,
     "dem_import": dem_import_cases,
     "custom_dem": custom_dem_cases,
+    "buildings": buildings_cases,
 }
 
 

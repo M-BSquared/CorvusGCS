@@ -4,6 +4,7 @@
 //! `custom_dem.py`, `buildings.py`, `crs.py`, `geocode.py`, `routes/tiles.py`
 //! and `routes/dem.py` of the Python program).
 
+pub mod buildings;
 pub mod crs;
 pub mod custom_dem;
 pub mod dem_import;
