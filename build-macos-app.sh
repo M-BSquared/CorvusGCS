@@ -11,7 +11,14 @@
 # Version is read exclusively from the repo-root VERSION file — never hardcoded.
 #
 # Usage:
-#   ./build-macos-app.sh [--dmg] [--no-verify]
+#   ./build-macos-app.sh [--dmg] [--no-verify] [--fast]
+#
+#   --fast   the `fast` cargo profile (release code, no LTO): minutes instead of
+#            more, for a bundle to try here. Never for a release.
+#
+# The interface is built into the repository's own target folder (or
+# $CARGO_TARGET_DIR), the one `./run.sh --release` and cargo use, so a second
+# build recompiles only what changed.
 #
 # Env:
 #   CORVUS_DIST        where the .app and .dmg are delivered (default: dist/)
@@ -30,20 +37,23 @@ APP_OUT="$DIST_DIR/$APP_NAME.app"
 # ownership claim macOS shows to the user, and it follows LICENSE.md.
 BUNDLE_ID="de.mbsquared.corvus.gcs"
 ARCH="$(uname -m)"
-# The oldest macOS the interface runs on. Both the Rust build and Info.plist
-# read it, so they cannot disagree.
-MIN_MACOS="12.0"
+# The oldest macOS the interface runs on. Cargo reads it from .cargo/config.toml
+# for every build and Info.plist from here, so they cannot disagree.
+MIN_MACOS="$(sed -n 's/^MACOSX_DEPLOYMENT_TARGET *= *"\(.*\)"/\1/p' "$REPO_DIR/.cargo/config.toml")"
+[ -n "$MIN_MACOS" ] || { echo "ERROR: MACOSX_DEPLOYMENT_TARGET is missing from .cargo/config.toml" >&2; exit 1; }
 DMG="$DIST_DIR/Corvus_GCS-${VERSION}-macOS-${ARCH}.dmg"
 CODESIGN_IDENTITY="${CODESIGN_IDENTITY:--}"
 
 MAKE_DMG=0
 VERIFY=1
+PROFILE=release
 while [ $# -gt 0 ]; do
     case "$1" in
         --dmg)        MAKE_DMG=1 ;;
         --no-verify)  VERIFY=0 ;;
+        --fast)       PROFILE=fast ;;
         -h|--help)
-            sed -n '2,19p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+            sed -n '2,25p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
             exit 0 ;;
         *) echo "ERROR: unknown argument: $1" >&2; exit 2 ;;
     esac
@@ -116,17 +126,17 @@ RES="$APP/Contents/Resources"
 # carries them; the languages, the version and the bundled plugins are
 # compiled in as well. corvus_link comes in without its `python` feature:
 # nothing here links PyO3 or a Python.
-echo ">>> Building the interface (release, locked) ..."
+echo ">>> Building the interface ($PROFILE profile, locked) ..."
 GUI_LOG="$BUILD_DIR/cargo-gui-macos.log"
 : > "$GUI_LOG"
-if ! ( cd "$REPO_DIR" \
-        && MACOSX_DEPLOYMENT_TARGET="$MIN_MACOS" CARGO_TARGET_DIR="$BUILD_DIR/cargo-gui" \
-           cargo build --release --locked ) >>"$GUI_LOG" 2>&1; then
+TARGET="${CARGO_TARGET_DIR:-$REPO_DIR/target}"
+if ! ( cd "$REPO_DIR" && CARGO_TARGET_DIR="$TARGET" \
+           cargo build --profile "$PROFILE" --locked --bin corvus-gcs ) >>"$GUI_LOG" 2>&1; then
     echo "ERROR: the interface did not build; log: $GUI_LOG" >&2
     tail -n 30 "$GUI_LOG" >&2 || true
     exit 1
 fi
-cp -X "$BUILD_DIR/cargo-gui/release/corvus-gcs" "$APP/Contents/MacOS/corvus-gcs"
+cp -X "$TARGET/$PROFILE/corvus-gcs" "$APP/Contents/MacOS/corvus-gcs"
 chmod 0755 "$APP/Contents/MacOS/corvus-gcs"
 
 # ---- 3. files that travel with it -------------------------------------------

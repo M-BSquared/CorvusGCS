@@ -278,8 +278,7 @@ impl WsClient {
                 return Ok(std::mem::take(&mut st.buffer));
             }
             let mut out = Vec::new();
-            loop {
-                let Some(ws) = st.ws.as_mut() else { break };
+            while let Some(ws) = st.ws.as_mut() {
                 match ws.read() {
                     Ok(Message::Binary(b)) => {
                         out.extend_from_slice(&b);

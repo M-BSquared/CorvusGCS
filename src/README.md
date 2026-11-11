@@ -3,9 +3,9 @@
 The Corvus GCS desktop interface as a native Rust app (egui/eframe), built
 from `Cargo.toml` and this `src/` folder at the repository root. It replaces
 the web interface in `python/src/`, page by page, and later becomes the
-Android app as well. `src/link/` is the MAVLink crate (its own `Cargo.toml`;
-the `python` feature adds the PyO3 layer the Python reference imports as
-`corvus_link`, and is off in every build of the program); see its README.
+Android app as well. `src/link/` is the MAVLink crate, a member of the same
+workspace (the `python` feature adds the PyO3 layer the Python reference imports
+as `corvus_link`, and is off in every build of the program); see its README.
 
 ```
 src/main.rs            entry point, arguments, signals
@@ -21,11 +21,36 @@ src/plugins/           the registry and one crate per bundled plugin (src/plugin
 src/link/              the MAVLink crate (corvus_link; its PyO3 layer is a feature only the Python reference uses)
 ```
 
+## Building and running
+
+```bash
+./run.sh                 # dev profile: incremental, optimised where a frame is drawn
+./run.sh --release       # what a bundle ships (thin LTO, one codegen unit)
+./run.sh --fast          # release code without LTO: minutes, not more
+cargo build --timings    # where a build spends its time
+```
+
+One workspace (`Cargo.toml`: the interface, `src/core`, `src/api`, `src/link`
+and one crate per plugin), one `Cargo.lock`, one `target/` and the one
+toolchain of `rust-toolchain.toml`, so `cargo run` works from a clean checkout.
+The profiles are in `Cargo.toml`: `dev` builds the interface and `corvus_api`
+at opt-level 1, the crates that draw every frame (egui, the image and font
+decoders, the rasteriser) at 3, and everything else, `corvus_core` and
+`corvus_link` included, at 0. An edit to the interface rebuilds in about 4 s,
+one to the core in about 7 s. `fast` is `release` with no LTO and parallel
+code generation. Dependencies and the features they get are named once in
+`[workspace.dependencies]`; eframe is built without its default features
+because they bring in wgpu, which the interface does not use (it draws with
+glow). The linker is the platform's own (Rust uses rust-lld on Linux x86_64).
+The macOS deployment target is in `.cargo/config.toml`, shared by cargo and
+`build-macos-app.sh`, so a bundle build and a dev build share their C
+dependencies. The packaging scripts build into this same `target/`.
+
 It is a client of the backend's HTTP/SSE API, the same one the web interface
 uses, so the backend does not change for it:
 
 ```bash
-cargo run --release                                   # run the backend (corvus_core) in this process and show it
+cargo run                                             # run the backend (corvus_core) in this process and show it (--release for the shipped build)
 cargo run --release -- --server http://10.0.0.5:8080  # a backend elsewhere
 cargo run --release -- --root DIR --python PATH       # run the Python backend (serve.py) as a child instead, the reference
 cargo run --release -- --page motors --scroll 560     # open on a page (setup, any tile such as battery or motors, safety:SENSOR, mission, mission:NAME, settings, logs, analysis), scrolled

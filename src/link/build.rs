@@ -321,10 +321,8 @@ fn parse_message(node: roxmltree::Node, version: i64, allow_extensions: bool) ->
         match child.tag_name().name() {
             "description" => m.description.push_str(&own_text(child)),
             "extensions" => m.extensions_start = Some(m.fields.len()),
-            "field" => {
-                if m.extensions_start.is_none() || allow_extensions {
-                    m.fields.push(parse_field(child, version));
-                }
+            "field" if m.extensions_start.is_none() || allow_extensions => {
+                m.fields.push(parse_field(child, version));
             }
             _ => {}
         }

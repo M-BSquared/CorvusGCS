@@ -14,6 +14,11 @@
 #   ./build-appimage.sh             AppImage and .deb
 #   ./build-appimage.sh --no-deb    AppImage only
 #   ./build-appimage.sh --deb-only  .deb only (no appimagetool download)
+#   ./build-appimage.sh --fast      the `fast` cargo profile (release code, no LTO) for a local try
+#
+# The interface is built into the repository's target folder (or
+# $CARGO_TARGET_DIR), the one `./run.sh --release` uses, so a second build
+# recompiles only what changed.
 #
 # Version is read exclusively from the repo-root VERSION file — never hardcoded.
 
@@ -21,11 +26,13 @@ set -euo pipefail
 
 WANT_APPIMAGE=1
 WANT_DEB=1
+PROFILE=release
 for arg in "$@"; do
     case "$arg" in
         --no-deb)   WANT_DEB=0 ;;
         --deb-only) WANT_APPIMAGE=0 ;;
-        *) echo "ERROR: unknown argument '$arg' (--no-deb, --deb-only)" >&2; exit 1 ;;
+        --fast)     PROFILE=fast ;;
+        *) echo "ERROR: unknown argument '$arg' (--no-deb, --deb-only, --fast)" >&2; exit 1 ;;
     esac
 done
 
@@ -114,18 +121,19 @@ rm -f "$OUTPUT"
 # languages, the version and the bundled plugins. It links the C
 # library and the OpenGL, X11 and Wayland libraries are opened at run time from
 # the host, which every desktop that can show a window has.
-echo ">>> Building the interface (Cargo.toml and src/, release) ..."
+echo ">>> Building the interface (Cargo.toml and src/, $PROFILE profile) ..."
 GUI_LOG="$BUILD_DIR/cargo-gui-linux.log"
 mkdir -p "$BUILD_DIR"
 : > "$GUI_LOG"
+TARGET="${CARGO_TARGET_DIR:-$REPO_DIR/target}"
 if ! ( cd "$REPO_DIR" \
-        && CARGO_TARGET_DIR="$BUILD_DIR/cargo-gui" cargo build --release --locked ) >>"$GUI_LOG" 2>&1; then
+        && CARGO_TARGET_DIR="$TARGET" cargo build --profile "$PROFILE" --locked --bin corvus-gcs ) >>"$GUI_LOG" 2>&1; then
     echo "ERROR: the interface did not build; log: $GUI_LOG" >&2
     tail -n 30 "$GUI_LOG" >&2 || true
     exit 1
 fi
 mkdir -p "$APPDIR/usr/bin"
-install -m 0755 "$BUILD_DIR/cargo-gui/release/corvus-gcs" "$APPDIR/usr/bin/corvus-gcs-ui"
+install -m 0755 "$TARGET/$PROFILE/corvus-gcs" "$APPDIR/usr/bin/corvus-gcs-ui"
 
 # ---- 3d. the system libraries the AppDir links but a clean host lacks ---------
 # Read from the binary's own DT_NEEDED entries: whatever the interface links

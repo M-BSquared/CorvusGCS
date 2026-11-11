@@ -24,7 +24,7 @@ sha1 = "0.10"
 # The MCP access token is 32 random bytes.
 getrandom = "0.3"
 # corvus-core, the headless binary, stops cleanly on SIGINT and SIGTERM.
-ctrlc = { version = "3", features = ["termination"] }
+ctrlc = { workspace = true }
 # Port enumeration (USB descriptors) for auto connect; the link crate already builds it.
 serialport = { version = "4", default-features = false }
 # The forwarder binds its UDP socket with SO_REUSEADDR as Python did; the link crate already builds it.
@@ -43,7 +43,7 @@ ureq = { version = "3", default-features = false, features = ["rustls", "platfor
 # in the lock file (a dependency of the interface's crates).
 memmap2 = "0.9"
 # Elevation tiles are PNG: flate2 is the zlib the Python decoder used.
-flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+flate2 = { workspace = true }
 # The update check reads the release list of GitHub over https: the one request the
 # core makes on its own. The same TLS stack corvus_link uses for wss (ring, so a
 # second provider elsewhere cannot make the choice ambiguous) and the system's
@@ -63,7 +63,7 @@ russh = { version = "0.65", default-features = false, features = ["ring", "rsa",
 tokio = { version = "1", default-features = false, features = ["rt", "net", "time", "sync", "io-util", "macros"] }
 
 [target.'cfg(unix)'.dependencies]
-libc = "0.2"
+libc = { workspace = true }
 
 [target.'cfg(any(target_os = "macos", windows))'.dependencies]
 # Lists the serial ports with their USB descriptor (IOKit, the Windows registry); Linux reads sysfs itself.

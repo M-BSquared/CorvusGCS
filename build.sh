@@ -11,7 +11,13 @@
 #                                              (+ Corvus_GCS-<version>-macOS-<arch>.dmg)
 #
 # Usage:
-#   ./build.sh [--dmg] [--no-verify] [-- <extra platform args>]
+#   ./build.sh [--dmg] [--no-deb] [--deb-only] [--fast] [--no-verify]
+#
+#   --fast      the `fast` cargo profile (release code without LTO): a bundle to
+#               try on this machine in minutes, never a release
+#   --dmg       macOS only
+#   --no-deb, --deb-only   Linux only
+#   --no-verify macOS only
 #
 # Unknown flags are passed through to the platform script. Flags that do not
 # apply to the current platform are dropped with a note, so the same CI
@@ -40,7 +46,7 @@ case "$OS" in
         ARGS=()
         for arg in "$@"; do
             case "$arg" in
-                --dmg)      echo ">>> note: --dmg is macOS-only, ignoring on Linux" ;;
+                --dmg|--no-verify) echo ">>> note: $arg is macOS-only, ignoring on Linux" ;;
                 --no-deb)   DEB=""; ARGS+=("$arg") ;;
                 --deb-only) ARTIFACT="$DEB"; ARGS+=("$arg") ;;
                 *)          ARGS+=("$arg") ;;

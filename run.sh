@@ -2,6 +2,8 @@
 # Corvus GCS — run the desktop app from source.
 #
 #   ./run.sh [corvus-gcs flags]    e.g. ./run.sh --page motors
+#   ./run.sh --release [flags]     the optimised build a bundle ships (slow to build)
+#   ./run.sh --fast [flags]        release code without LTO (a few minutes, not ten)
 #   ./run.sh --web [PORT] [MAVLINK_CONNECTION]   # the Qt window around the web UI
 #   ./run.sh --desktop-entry      # Linux: add this checkout to the app launcher
 #
@@ -129,6 +131,17 @@ if [ "$WANT" != "$HAVE" ]; then
 fi
 }
 
+# Leading build flags, before anything meant for the program.
+PROFILE=dev
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --release) PROFILE=release; shift ;;
+        --fast)    PROFILE=fast; shift ;;
+        *) break ;;
+    esac
+done
+PROFILE="${CORVUS_PROFILE:-$PROFILE}"
+
 if [ "${1:-}" = "--web" ]; then
     shift
     ensure_venv
@@ -141,12 +154,14 @@ command -v cargo >/dev/null 2>&1 || {
     exit 1
 }
 # cargo is a no-op when nothing changed. Its own output goes to the terminal:
-# the first build compiles for a couple of minutes. The `fast` profile
-# (Cargo.toml) is release code without LTO and with incremental builds;
-# CORVUS_PROFILE=release runs exactly what a bundle ships.
-PROFILE="${CORVUS_PROFILE:-fast}"
-( cd "$REPO_DIR" && cargo build --profile "$PROFILE" --bin corvus-gcs --quiet )
-BIN="$REPO_DIR/target/$PROFILE/corvus-gcs"
+# the first build compiles for a few minutes, a rebuild after an edit for
+# seconds. Profiles are in Cargo.toml: dev (the default) keeps the program
+# lightly optimised and rebuilds fast, `fast` is release code without LTO,
+# release is exactly what a bundle ships.
+if [ "$PROFILE" = "dev" ]; then PROFILE_ARGS=(); DIR=debug; else PROFILE_ARGS=(--profile "$PROFILE"); DIR="$PROFILE"; fi
+( cd "$REPO_DIR" && cargo build ${PROFILE_ARGS[@]+"${PROFILE_ARGS[@]}"} --bin corvus-gcs --quiet )
+TARGET="${CARGO_TARGET_DIR:-$REPO_DIR/target}"
+BIN="$TARGET/$DIR/corvus-gcs"
 [ -x "$BIN" ] || BIN="$BIN.exe"
 # exec, so SIGINT/SIGTERM reach the interface's own handlers directly, which
 # stop the core and join its threads.
