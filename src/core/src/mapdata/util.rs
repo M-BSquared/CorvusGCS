@@ -146,6 +146,90 @@ pub fn now_secs() -> i64 {
         .unwrap_or(0)
 }
 
+/// `int(value)` of a JSON value as Python would take it (`None` where Python
+/// would raise).
+pub fn json_int(v: &Value) -> Option<i64> {
+    match v {
+        Value::Number(n) => match n.as_i64() {
+            Some(i) => Some(i),
+            None => {
+                let f = n.as_f64()?;
+                (f.is_finite() && f.abs() < 9.2e18).then(|| f.trunc() as i64)
+            }
+        },
+        Value::String(s) => py_int(s),
+        Value::Bool(b) => Some(i64::from(*b)),
+        _ => None,
+    }
+}
+
+/// `str(value)` of a JSON value (`None`, `True`, `1.5`, ...).
+pub fn json_str(v: &Value) -> String {
+    match v {
+        Value::String(s) => s.clone(),
+        Value::Null => "None".into(),
+        Value::Bool(true) => "True".into(),
+        Value::Bool(false) => "False".into(),
+        Value::Number(n) => match n.as_i64() {
+            Some(i) => i.to_string(),
+            None => match n.as_f64() {
+                Some(f) if f.fract() == 0.0 && f.abs() < 1e16 => format!("{f:.1}"),
+                Some(f) => format!("{f}"),
+                None => n.to_string(),
+            },
+        },
+        other => other.to_string(),
+    }
+}
+
+/// `os.path.expanduser` for a leading `~`.
+pub fn expand_user(path: &str) -> String {
+    if path == "~" || path.starts_with("~/") {
+        let home = std::env::var("HOME")
+            .or_else(|_| std::env::var("USERPROFILE"))
+            .unwrap_or_default();
+        if !home.is_empty() {
+            return format!("{}{}", home.trim_end_matches('/'), &path[1..]);
+        }
+    }
+    path.to_string()
+}
+
+/// `os.path.normpath`: `.` and `..` and doubled separators folded lexically.
+pub fn normpath(path: &str) -> String {
+    if path.is_empty() {
+        return ".".into();
+    }
+    let rooted = path.starts_with('/');
+    let lead = if path.starts_with("//") && !path.starts_with("///") {
+        "//"
+    } else if rooted {
+        "/"
+    } else {
+        ""
+    };
+    let mut out: Vec<&str> = Vec::new();
+    for part in path.split('/') {
+        match part {
+            "" | "." => {}
+            ".." => {
+                if out.last().is_some_and(|l| *l != "..") {
+                    out.pop();
+                } else if !rooted {
+                    out.push("..");
+                }
+            }
+            p => out.push(p),
+        }
+    }
+    let joined = format!("{lead}{}", out.join("/"));
+    if joined.is_empty() {
+        ".".into()
+    } else {
+        joined
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -182,6 +266,25 @@ mod tests {
         assert_eq!(quote("a b/&é"), "a%20b%2F%26%C3%A9");
         assert_eq!(quote_plus("a b/&é"), "a+b%2F%26%C3%A9");
         assert_eq!(quote("A-z_0.9~"), "A-z_0.9~");
+    }
+
+    #[test]
+    fn paths_are_folded() {
+        assert_eq!(normpath("/a/b/../c//d/./"), "/a/c/d");
+        assert_eq!(normpath("a/../.."), "..");
+        assert_eq!(normpath("/.."), "/");
+        assert_eq!(normpath(""), ".");
+    }
+
+    #[test]
+    fn json_values_read_like_python() {
+        use serde_json::json;
+        assert_eq!(json_int(&json!(5.9)), Some(5));
+        assert_eq!(json_int(&json!("7")), Some(7));
+        assert_eq!(json_int(&json!(null)), None);
+        assert_eq!(json_str(&json!(null)), "None");
+        assert_eq!(json_str(&json!(1.0)), "1.0");
+        assert_eq!(json_str(&json!(true)), "True");
     }
 
     #[test]

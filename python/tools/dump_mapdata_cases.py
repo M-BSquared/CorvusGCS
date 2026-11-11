@@ -117,7 +117,184 @@ def geocode_cases() -> None:
     write("mapdata_geocode_cases.json", out)
 
 
+def _b64(b: bytes) -> str:
+    import base64
+    return base64.b64encode(b).decode()
+
+
+def tile_sources_cases() -> None:
+    from corvus import tile_sources as t
+
+    templates = [s["upstream"] for s in t.all_sources().values()] + [
+        t.GOOGLE_TILES_URL, "https://x/{z}/{x}/{y}?key={k}&a=b", "{q}{s}{k}{z}{y}{x}", "no tokens"]
+    tokens = ["", "pk.abc", "a&b#c{z}/x y", "\u00e9\u00fc", "~-._"]
+    tiles = [(0, 0, 0), (3, 5, 2), (10, 550, 340), (19, 270000, 180000), (22, 4194303, 4194303)]
+    urls = [{"template": tpl, "z": z, "x": x, "y": y, "token": tok,
+             "url": t.build_tile_url(tpl, z, x, y, tok)}
+            for tpl in templates for (z, x, y) in tiles for tok in tokens[:3]]
+    redact = ["https://a/b?key=sekret&c=d", "https://a/b?access_token=pk.1#frag", "plain",
+              "https://tile.googleapis.com/v1/2dtiles/1/2/3?session=abc&key=sekret",
+              "key=a&key=b", "https://x/?key=", "xkey=1&key=2", "https://x/?session=s1&session=s2",
+              "https://dev.virtualearth.net/REST/v1/Imagery/Metadata/Aerial?output=json&key=SECRET"]
+    blobs = [b"\x89PNG\r\n\x1a\n....", b"\xff\xd8\xff\xe0", b"RIFF\x00\x00\x00\x00WEBPVP8 ", b"GIF87a..", b"GIF89a", b"<html>",
+             b"", b"RIFF1234WEBX", b"\x89PNG"]
+    out = {
+        "sources": t.list_sources(), "terrain": t.list_terrain(), "providers": t.list_providers(),
+        "urls": urls, "redact": [{"in": r, "out": t.redact_url(r)} for r in redact],
+        "images": [{"blob": _b64(b), "image": t.looks_like_image(b)} for b in blobs],
+        "quadkeys": [{"z": z, "x": x, "y": y, "key": t.quadkey(z, x, y), "shard": t.server_shard(x, y)}
+                     for (z, x, y) in tiles],
+        "needs_token": {sid: t.needs_token(sid) for sid in [*t.all_sources(), "nope"]},
+        "token_required": {pid: t.token_required(pid) for pid in [*t.PROVIDERS, "nope"]},
+        "keyed": t.keyed_providers(),
+        "licensed": {sid: t.licensed(sid) for sid in [*t.TILE_SOURCES, *t.TERRAIN_SOURCES, "nope"]},
+        "sparse": {sid: t.sparse_above(sid) for sid in [*t.TILE_SOURCES, *t.TERRAIN_SOURCES]},
+        "provider_of": {sid: t.provider_of(sid) for sid in [*t.all_sources(), "nope"]},
+        "resolve": [{"provider": p, "style": st, "id": t.resolve_source(p, st)}
+                    for p in [*t.PROVIDERS, "nope"] for st in [None, "", "satellite", "streets", "hybrid", "topo", "x"]],
+        "get": {sid: (t.get(sid) is not None) for sid in [*t.all_sources(), "nope", ""]},
+        "defaults": [t.DEFAULT_TERRAIN, t.PREFERRED_TERRAIN, t.DEFAULT_PROVIDER],
+    }
+    write("mapdata_tile_sources_cases.json", out)
+
+
+def tile_cache_cases() -> None:
+    import os
+    import shutil
+    import tempfile
+
+    from corvus.tile_cache import TileCache, xyz_to_tms
+
+    def png(n: int) -> bytes:
+        return b"\x89PNG\r\n\x1a\n" + bytes([n % 256]) * (n % 7 + 3)
+
+    ops: list[dict] = [
+        {"op": "put_tile", "z": 3, "x": 4, "y": 2, "blob": _b64(png(1))},
+        {"op": "put_tile", "z": 3, "x": 4, "y": 3, "blob": _b64(png(2))},
+        {"op": "put_tile", "z": 3, "x": 5, "y": 2, "blob": _b64(b"")},
+        {"op": "get_tile", "z": 3, "x": 4, "y": 2},
+        {"op": "get_tile", "z": 3, "x": 4, "y": 4},
+        {"op": "has_tile", "z": 3, "x": 4, "y": 3},
+        {"op": "has_tile", "z": 3, "x": 9, "y": 3},
+        {"op": "put_tile", "z": 3, "x": 4, "y": 2, "blob": _b64(png(3))},
+        {"op": "get_tile", "z": 3, "x": 4, "y": 2},
+        {"op": "put_tiles", "tiles": [[5, i, j, _b64(png(i * 7 + j))] for i in range(4) for j in range(3)]
+                                     + [[5, 9, 9, _b64(b"")]]},
+        {"op": "put_tiles", "tiles": []},
+        {"op": "count_tiles", "ranges": [[5, 0, 3, 0, 2], [5, 1, 2, 1, 1], [3, 0, 7, 0, 7], [4, 0, 15, 0, 15]]},
+        {"op": "count_tiles", "ranges": []},
+        {"op": "stats"},
+        {"op": "delete_tiles", "tiles": [[5, 0, 0], [5, 3, 2], [5, 30, 30], [3, 4, 2]]},
+        {"op": "count_tiles", "ranges": [[5, 0, 3, 0, 2], [3, 0, 7, 0, 7]]},
+        {"op": "stats"},
+        {"op": "set_metadata", "name": "bounds", "value": "5.5, 47.2, 15.1, 55.0"},
+        {"op": "get_metadata", "name": "bounds"},
+        {"op": "bounds"},
+        {"op": "set_metadata", "name": "bounds", "value": "1,2,3"},
+        {"op": "bounds"},
+        {"op": "set_metadata", "name": "bounds", "value": "a,b,c,d"},
+        {"op": "bounds"},
+        {"op": "set_metadata", "name": "format", "value": "png"},
+        {"op": "get_metadata", "name": "format"},
+        {"op": "get_metadata", "name": "missing"},
+        {"op": "add_region", "region": {"id": "j1", "name": "Home", "source": "satellite", "w": 11.0, "s": 48.0,
+                                        "e": 11.5, "n": 48.5, "minzoom": 10, "maxzoom": 14, "tile_count": 12,
+                                        "created_at": "2026-01-02T03:04:05Z", "state": "running"}},
+        {"op": "add_region", "region": {"id": "j2", "name": "", "source": 5, "w": "1.5", "s": "x", "e": None,
+                                        "n": True, "minzoom": "7", "maxzoom": 8.9, "tile_count": [1],
+                                        "created_at": "2026-02-02T03:04:05Z", "extra": 1}},
+        {"op": "add_region", "region": {"id": "j3", "name": "Third", "created_at": "2026-02-02T03:04:05Z"}},
+        {"op": "add_region", "region": "not a dict"},
+        {"op": "list_regions", "normalize": True},
+        {"op": "get_region", "id": "j1"},
+        {"op": "get_region", "id": "nope"},
+        {"op": "update_region", "id": "j1", "fields": {"state": "done", "tile_count": 99}},
+        {"op": "update_region", "id": "j1", "fields": {"w": 3.0}},
+        {"op": "update_region", "id": "j1", "fields": {}},
+        {"op": "update_region", "id": "nope", "fields": {"name": "x"}},
+        {"op": "update_region", "id": "j2", "fields": {"name": "Renamed"}},
+        {"op": "get_region", "id": "j1"},
+        {"op": "remove_region", "id": "j3"},
+        {"op": "remove_region", "id": "j3"},
+        {"op": "list_regions", "normalize": True},
+    ]
+
+    def run(cache: TileCache, op: dict) -> object:
+        kind = op["op"]
+        import base64
+        if kind == "put_tile":
+            cache.put_tile(op["z"], op["x"], op["y"], base64.b64decode(op["blob"]))
+            return None
+        if kind == "get_tile":
+            blob = cache.get_tile(op["z"], op["x"], op["y"])
+            return None if blob is None else _b64(blob)
+        if kind == "has_tile":
+            return cache.has_tile(op["z"], op["x"], op["y"])
+        if kind == "put_tiles":
+            return cache.put_tiles((z, x, y, base64.b64decode(b)) for z, x, y, b in op["tiles"])
+        if kind == "count_tiles":
+            return cache.count_tiles([tuple(r) for r in op["ranges"]])
+        if kind == "stats":
+            return cache.stats()
+        if kind == "delete_tiles":
+            return cache.delete_tiles([tuple(t) for t in op["tiles"]])
+        if kind == "set_metadata":
+            cache.set_metadata(op["name"], op["value"])
+            return None
+        if kind == "get_metadata":
+            return cache.get_metadata(op["name"])
+        if kind == "bounds":
+            b = cache.bounds()
+            return list(b) if b else None
+        if kind == "add_region":
+            row = cache.add_region(op["region"])
+            return row
+        if kind == "list_regions":
+            return cache.list_regions()
+        if kind == "get_region":
+            return cache.get_region(op["id"])
+        if kind == "update_region":
+            return cache.update_region(op["id"], **op["fields"])
+        if kind == "remove_region":
+            return cache.remove_region(op["id"])
+        raise AssertionError(kind)
+
+    tmp = tempfile.mkdtemp()
+    try:
+        path = os.path.join(tmp, "satellite.mbtiles")
+        cache = TileCache(path)
+        steps = []
+        for op in ops:
+            result = run(cache, op)
+            if isinstance(result, dict) and "created_at" in result and op["op"] == "add_region":
+                if op["region"] == "not a dict" or "created_at" not in (op["region"] or {}):
+                    result = dict(result, created_at="<now>")
+            if op["op"] == "list_regions":
+                result = [dict(r, created_at="<now>") if r["created_at"][:2] == "20" and r["id"] == "" else r
+                          for r in result]
+            steps.append({"op": op, "result": result})
+        cache.close()
+        dest = DATA / "mapdata_cache_python.mbtiles"
+        if CHECK:
+            if not dest.is_file():
+                STALE.append(dest.name)
+        else:
+            shutil.copyfile(path, dest)
+            print(f"wrote {dest}")
+        direct = TileCache(path)
+        regions = [dict(r, created_at="<now>") if r["id"] == "" else r for r in direct.list_regions()]
+        final = {"stats": direct.stats(), "regions": regions,
+                 "tile": _b64(direct.get_tile(3, 4, 3)), "tms": xyz_to_tms(5, 1),
+                 "bounds": direct.get_metadata("bounds")}
+        direct.close()
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    write("mapdata_tile_cache_cases.json", {"steps": steps, "final": final})
+
+
 SECTIONS = {
+    "tile_sources": tile_sources_cases,
+    "tile_cache": tile_cache_cases,
     "crs": crs_cases,
     "geocode": geocode_cases,
 }

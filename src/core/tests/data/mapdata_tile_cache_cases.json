@@ -1,0 +1,785 @@
+{
+ "steps": [
+  {
+   "op": {
+    "op": "put_tile",
+    "z": 3,
+    "x": 4,
+    "y": 2,
+    "blob": "iVBORw0KGgoBAQEB"
+   },
+   "result": null
+  },
+  {
+   "op": {
+    "op": "put_tile",
+    "z": 3,
+    "x": 4,
+    "y": 3,
+    "blob": "iVBORw0KGgoCAgICAg=="
+   },
+   "result": null
+  },
+  {
+   "op": {
+    "op": "put_tile",
+    "z": 3,
+    "x": 5,
+    "y": 2,
+    "blob": ""
+   },
+   "result": null
+  },
+  {
+   "op": {
+    "op": "get_tile",
+    "z": 3,
+    "x": 4,
+    "y": 2
+   },
+   "result": "iVBORw0KGgoBAQEB"
+  },
+  {
+   "op": {
+    "op": "get_tile",
+    "z": 3,
+    "x": 4,
+    "y": 4
+   },
+   "result": null
+  },
+  {
+   "op": {
+    "op": "has_tile",
+    "z": 3,
+    "x": 4,
+    "y": 3
+   },
+   "result": true
+  },
+  {
+   "op": {
+    "op": "has_tile",
+    "z": 3,
+    "x": 9,
+    "y": 3
+   },
+   "result": false
+  },
+  {
+   "op": {
+    "op": "put_tile",
+    "z": 3,
+    "x": 4,
+    "y": 2,
+    "blob": "iVBORw0KGgoDAwMDAwM="
+   },
+   "result": null
+  },
+  {
+   "op": {
+    "op": "get_tile",
+    "z": 3,
+    "x": 4,
+    "y": 2
+   },
+   "result": "iVBORw0KGgoDAwMDAwM="
+  },
+  {
+   "op": {
+    "op": "put_tiles",
+    "tiles": [
+     [
+      5,
+      0,
+      0,
+      "iVBORw0KGgoAAAA="
+     ],
+     [
+      5,
+      0,
+      1,
+      "iVBORw0KGgoBAQEB"
+     ],
+     [
+      5,
+      0,
+      2,
+      "iVBORw0KGgoCAgICAg=="
+     ],
+     [
+      5,
+      1,
+      0,
+      "iVBORw0KGgoHBwc="
+     ],
+     [
+      5,
+      1,
+      1,
+      "iVBORw0KGgoICAgI"
+     ],
+     [
+      5,
+      1,
+      2,
+      "iVBORw0KGgoJCQkJCQ=="
+     ],
+     [
+      5,
+      2,
+      0,
+      "iVBORw0KGgoODg4="
+     ],
+     [
+      5,
+      2,
+      1,
+      "iVBORw0KGgoPDw8P"
+     ],
+     [
+      5,
+      2,
+      2,
+      "iVBORw0KGgoQEBAQEA=="
+     ],
+     [
+      5,
+      3,
+      0,
+      "iVBORw0KGgoVFRU="
+     ],
+     [
+      5,
+      3,
+      1,
+      "iVBORw0KGgoWFhYW"
+     ],
+     [
+      5,
+      3,
+      2,
+      "iVBORw0KGgoXFxcXFw=="
+     ],
+     [
+      5,
+      9,
+      9,
+      ""
+     ]
+    ]
+   },
+   "result": 12
+  },
+  {
+   "op": {
+    "op": "put_tiles",
+    "tiles": []
+   },
+   "result": 0
+  },
+  {
+   "op": {
+    "op": "count_tiles",
+    "ranges": [
+     [
+      5,
+      0,
+      3,
+      0,
+      2
+     ],
+     [
+      5,
+      1,
+      2,
+      1,
+      1
+     ],
+     [
+      3,
+      0,
+      7,
+      0,
+      7
+     ],
+     [
+      4,
+      0,
+      15,
+      0,
+      15
+     ]
+    ]
+   },
+   "result": 16
+  },
+  {
+   "op": {
+    "op": "count_tiles",
+    "ranges": []
+   },
+   "result": 0
+  },
+  {
+   "op": {
+    "op": "stats"
+   },
+   "result": {
+    "count": 14,
+    "minzoom": 3,
+    "maxzoom": 5
+   }
+  },
+  {
+   "op": {
+    "op": "delete_tiles",
+    "tiles": [
+     [
+      5,
+      0,
+      0
+     ],
+     [
+      5,
+      3,
+      2
+     ],
+     [
+      5,
+      30,
+      30
+     ],
+     [
+      3,
+      4,
+      2
+     ]
+    ]
+   },
+   "result": 3
+  },
+  {
+   "op": {
+    "op": "count_tiles",
+    "ranges": [
+     [
+      5,
+      0,
+      3,
+      0,
+      2
+     ],
+     [
+      3,
+      0,
+      7,
+      0,
+      7
+     ]
+    ]
+   },
+   "result": 11
+  },
+  {
+   "op": {
+    "op": "stats"
+   },
+   "result": {
+    "count": 11,
+    "minzoom": 3,
+    "maxzoom": 5
+   }
+  },
+  {
+   "op": {
+    "op": "set_metadata",
+    "name": "bounds",
+    "value": "5.5, 47.2, 15.1, 55.0"
+   },
+   "result": null
+  },
+  {
+   "op": {
+    "op": "get_metadata",
+    "name": "bounds"
+   },
+   "result": "5.5, 47.2, 15.1, 55.0"
+  },
+  {
+   "op": {
+    "op": "bounds"
+   },
+   "result": [
+    5.5,
+    47.2,
+    15.1,
+    55.0
+   ]
+  },
+  {
+   "op": {
+    "op": "set_metadata",
+    "name": "bounds",
+    "value": "1,2,3"
+   },
+   "result": null
+  },
+  {
+   "op": {
+    "op": "bounds"
+   },
+   "result": null
+  },
+  {
+   "op": {
+    "op": "set_metadata",
+    "name": "bounds",
+    "value": "a,b,c,d"
+   },
+   "result": null
+  },
+  {
+   "op": {
+    "op": "bounds"
+   },
+   "result": null
+  },
+  {
+   "op": {
+    "op": "set_metadata",
+    "name": "format",
+    "value": "png"
+   },
+   "result": null
+  },
+  {
+   "op": {
+    "op": "get_metadata",
+    "name": "format"
+   },
+   "result": "png"
+  },
+  {
+   "op": {
+    "op": "get_metadata",
+    "name": "missing"
+   },
+   "result": null
+  },
+  {
+   "op": {
+    "op": "add_region",
+    "region": {
+     "id": "j1",
+     "name": "Home",
+     "source": "satellite",
+     "w": 11.0,
+     "s": 48.0,
+     "e": 11.5,
+     "n": 48.5,
+     "minzoom": 10,
+     "maxzoom": 14,
+     "tile_count": 12,
+     "created_at": "2026-01-02T03:04:05Z",
+     "state": "running"
+    }
+   },
+   "result": {
+    "id": "j1",
+    "name": "Home",
+    "source": "satellite",
+    "w": 11.0,
+    "s": 48.0,
+    "e": 11.5,
+    "n": 48.5,
+    "minzoom": 10,
+    "maxzoom": 14,
+    "tile_count": 12,
+    "created_at": "2026-01-02T03:04:05Z",
+    "state": "running"
+   }
+  },
+  {
+   "op": {
+    "op": "add_region",
+    "region": {
+     "id": "j2",
+     "name": "",
+     "source": 5,
+     "w": "1.5",
+     "s": "x",
+     "e": null,
+     "n": true,
+     "minzoom": "7",
+     "maxzoom": 8.9,
+     "tile_count": [
+      1
+     ],
+     "created_at": "2026-02-02T03:04:05Z",
+     "extra": 1
+    }
+   },
+   "result": {
+    "id": "j2",
+    "name": "Region",
+    "source": "5",
+    "w": 1.5,
+    "s": 0.0,
+    "e": 0.0,
+    "n": 1.0,
+    "minzoom": 7,
+    "maxzoom": 8,
+    "tile_count": 0,
+    "created_at": "2026-02-02T03:04:05Z",
+    "state": "done"
+   }
+  },
+  {
+   "op": {
+    "op": "add_region",
+    "region": {
+     "id": "j3",
+     "name": "Third",
+     "created_at": "2026-02-02T03:04:05Z"
+    }
+   },
+   "result": {
+    "id": "j3",
+    "name": "Third",
+    "source": "",
+    "w": 0.0,
+    "s": 0.0,
+    "e": 0.0,
+    "n": 0.0,
+    "minzoom": 0,
+    "maxzoom": 0,
+    "tile_count": 0,
+    "created_at": "2026-02-02T03:04:05Z",
+    "state": "done"
+   }
+  },
+  {
+   "op": {
+    "op": "add_region",
+    "region": "not a dict"
+   },
+   "result": {
+    "id": "",
+    "name": "Region",
+    "source": "",
+    "w": 0.0,
+    "s": 0.0,
+    "e": 0.0,
+    "n": 0.0,
+    "minzoom": 0,
+    "maxzoom": 0,
+    "tile_count": 0,
+    "created_at": "<now>",
+    "state": "done"
+   }
+  },
+  {
+   "op": {
+    "op": "list_regions",
+    "normalize": true
+   },
+   "result": [
+    {
+     "id": "",
+     "name": "Region",
+     "source": "",
+     "bounds": {
+      "w": 0.0,
+      "s": 0.0,
+      "e": 0.0,
+      "n": 0.0
+     },
+     "minzoom": 0,
+     "maxzoom": 0,
+     "tile_count": 0,
+     "created_at": "<now>",
+     "state": "done"
+    },
+    {
+     "id": "j3",
+     "name": "Third",
+     "source": "",
+     "bounds": {
+      "w": 0.0,
+      "s": 0.0,
+      "e": 0.0,
+      "n": 0.0
+     },
+     "minzoom": 0,
+     "maxzoom": 0,
+     "tile_count": 0,
+     "created_at": "2026-02-02T03:04:05Z",
+     "state": "done"
+    },
+    {
+     "id": "j2",
+     "name": "Region",
+     "source": "5",
+     "bounds": {
+      "w": 1.5,
+      "s": 0.0,
+      "e": 0.0,
+      "n": 1.0
+     },
+     "minzoom": 7,
+     "maxzoom": 8,
+     "tile_count": 0,
+     "created_at": "2026-02-02T03:04:05Z",
+     "state": "done"
+    },
+    {
+     "id": "j1",
+     "name": "Home",
+     "source": "satellite",
+     "bounds": {
+      "w": 11.0,
+      "s": 48.0,
+      "e": 11.5,
+      "n": 48.5
+     },
+     "minzoom": 10,
+     "maxzoom": 14,
+     "tile_count": 12,
+     "created_at": "2026-01-02T03:04:05Z",
+     "state": "running"
+    }
+   ]
+  },
+  {
+   "op": {
+    "op": "get_region",
+    "id": "j1"
+   },
+   "result": {
+    "id": "j1",
+    "name": "Home",
+    "source": "satellite",
+    "bounds": {
+     "w": 11.0,
+     "s": 48.0,
+     "e": 11.5,
+     "n": 48.5
+    },
+    "minzoom": 10,
+    "maxzoom": 14,
+    "tile_count": 12,
+    "created_at": "2026-01-02T03:04:05Z",
+    "state": "running"
+   }
+  },
+  {
+   "op": {
+    "op": "get_region",
+    "id": "nope"
+   },
+   "result": null
+  },
+  {
+   "op": {
+    "op": "update_region",
+    "id": "j1",
+    "fields": {
+     "state": "done",
+     "tile_count": 99
+    }
+   },
+   "result": true
+  },
+  {
+   "op": {
+    "op": "update_region",
+    "id": "j1",
+    "fields": {
+     "w": 3.0
+    }
+   },
+   "result": false
+  },
+  {
+   "op": {
+    "op": "update_region",
+    "id": "j1",
+    "fields": {}
+   },
+   "result": false
+  },
+  {
+   "op": {
+    "op": "update_region",
+    "id": "nope",
+    "fields": {
+     "name": "x"
+    }
+   },
+   "result": false
+  },
+  {
+   "op": {
+    "op": "update_region",
+    "id": "j2",
+    "fields": {
+     "name": "Renamed"
+    }
+   },
+   "result": true
+  },
+  {
+   "op": {
+    "op": "get_region",
+    "id": "j1"
+   },
+   "result": {
+    "id": "j1",
+    "name": "Home",
+    "source": "satellite",
+    "bounds": {
+     "w": 11.0,
+     "s": 48.0,
+     "e": 11.5,
+     "n": 48.5
+    },
+    "minzoom": 10,
+    "maxzoom": 14,
+    "tile_count": 99,
+    "created_at": "2026-01-02T03:04:05Z",
+    "state": "done"
+   }
+  },
+  {
+   "op": {
+    "op": "remove_region",
+    "id": "j3"
+   },
+   "result": true
+  },
+  {
+   "op": {
+    "op": "remove_region",
+    "id": "j3"
+   },
+   "result": false
+  },
+  {
+   "op": {
+    "op": "list_regions",
+    "normalize": true
+   },
+   "result": [
+    {
+     "id": "",
+     "name": "Region",
+     "source": "",
+     "bounds": {
+      "w": 0.0,
+      "s": 0.0,
+      "e": 0.0,
+      "n": 0.0
+     },
+     "minzoom": 0,
+     "maxzoom": 0,
+     "tile_count": 0,
+     "created_at": "<now>",
+     "state": "done"
+    },
+    {
+     "id": "j2",
+     "name": "Renamed",
+     "source": "5",
+     "bounds": {
+      "w": 1.5,
+      "s": 0.0,
+      "e": 0.0,
+      "n": 1.0
+     },
+     "minzoom": 7,
+     "maxzoom": 8,
+     "tile_count": 0,
+     "created_at": "2026-02-02T03:04:05Z",
+     "state": "done"
+    },
+    {
+     "id": "j1",
+     "name": "Home",
+     "source": "satellite",
+     "bounds": {
+      "w": 11.0,
+      "s": 48.0,
+      "e": 11.5,
+      "n": 48.5
+     },
+     "minzoom": 10,
+     "maxzoom": 14,
+     "tile_count": 99,
+     "created_at": "2026-01-02T03:04:05Z",
+     "state": "done"
+    }
+   ]
+  }
+ ],
+ "final": {
+  "stats": {
+   "count": 11,
+   "minzoom": 3,
+   "maxzoom": 5
+  },
+  "regions": [
+   {
+    "id": "",
+    "name": "Region",
+    "source": "",
+    "bounds": {
+     "w": 0.0,
+     "s": 0.0,
+     "e": 0.0,
+     "n": 0.0
+    },
+    "minzoom": 0,
+    "maxzoom": 0,
+    "tile_count": 0,
+    "created_at": "<now>",
+    "state": "done"
+   },
+   {
+    "id": "j2",
+    "name": "Renamed",
+    "source": "5",
+    "bounds": {
+     "w": 1.5,
+     "s": 0.0,
+     "e": 0.0,
+     "n": 1.0
+    },
+    "minzoom": 7,
+    "maxzoom": 8,
+    "tile_count": 0,
+    "created_at": "2026-02-02T03:04:05Z",
+    "state": "done"
+   },
+   {
+    "id": "j1",
+    "name": "Home",
+    "source": "satellite",
+    "bounds": {
+     "w": 11.0,
+     "s": 48.0,
+     "e": 11.5,
+     "n": 48.5
+    },
+    "minzoom": 10,
+    "maxzoom": 14,
+    "tile_count": 99,
+    "created_at": "2026-01-02T03:04:05Z",
+    "state": "done"
+   }
+  ],
+  "tile": "iVBORw0KGgoCAgICAg==",
+  "tms": 30,
+  "bounds": "a,b,c,d"
+ }
+}

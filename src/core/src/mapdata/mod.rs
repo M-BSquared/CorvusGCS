@@ -7,4 +7,6 @@
 pub mod crs;
 pub mod fetch;
 pub mod geocode;
+pub mod tile_cache;
+pub mod tile_sources;
 pub mod util;
