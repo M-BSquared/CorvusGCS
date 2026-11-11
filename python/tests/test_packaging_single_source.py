@@ -101,7 +101,7 @@ def test_every_runtime_dependency_states_a_floor() -> None:
 def test_the_pipeline_checks_the_rust_side() -> None:
     """Formatting, clippy and the Rust unit tests run on every push."""
     text = GITHUB_CI.read_text(encoding="utf-8")
-    for needle in ("cargo fmt --check", "cargo clippy --all-targets -- -D warnings", "cargo test"):
+    for needle in ("cargo fmt --check", "cargo clippy --workspace --all-targets --locked -- -D warnings", "cargo test --workspace --locked"):
         assert needle in text, needle
 
 

@@ -35,10 +35,24 @@ if platform.system() != "Darwin":
     pytest.skip("the macOS bundle", allow_module_level=True)
 
 ROOT = Path(__file__).resolve().parent.parent
-BUNDLE = Path(os.environ.get("CORVUS_APP_BUNDLE", ROOT.parent / "dist" / "Corvus GCS.app"))
+_NAMED = os.environ.get("CORVUS_APP_BUNDLE")
+BUNDLE = Path(_NAMED) if _NAMED else ROOT.parent / "dist" / "Corvus GCS.app"
 
 if not BUNDLE.is_dir():
     pytest.skip(f"no bundle at {BUNDLE}; build one with ./build-macos-app.sh", allow_module_level=True)
+
+if not _NAMED:
+    # A bundle left in dist/ by an older build (it may still hold Python) says
+    # nothing about this tree; only one built from the current VERSION counts.
+    _built = BUNDLE / "Contents" / "Resources" / "VERSION"
+    _have = _built.read_text().strip() if _built.is_file() else "none"
+    _want = (ROOT.parent / "VERSION").read_text().strip()
+    if _have != _want:
+        pytest.skip(
+            f"{BUNDLE} is from version {_have}, this tree is {_want}; rebuild with "
+            "./build-macos-app.sh or name a fresh bundle in CORVUS_APP_BUNDLE",
+            allow_module_level=True,
+        )
 
 RES = BUNDLE / "Contents" / "Resources"
 EXE = BUNDLE / "Contents" / "MacOS" / "corvus-gcs"

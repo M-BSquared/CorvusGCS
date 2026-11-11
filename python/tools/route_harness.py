@@ -180,6 +180,7 @@ class PythonServer(_Server):
         env = dict(os.environ, HOME=str(self.state_dir.parent), USERPROFILE=str(self.state_dir.parent),
                    CORVUS_ALLOW_MULTI="1")
         env.pop("CORVUS_BIND", None)
+        env.pop("MAVLINK20", None)
         mav = f"udp:127.0.0.1:{free_port(socket.SOCK_DGRAM)}"
         self.proc = subprocess.Popen([sys.executable, "serve.py", str(self.port), mav], cwd=PYTHON_ROOT, env=env,
                                      stdout=self._log, stderr=subprocess.STDOUT)
