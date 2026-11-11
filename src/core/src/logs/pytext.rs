@@ -42,3 +42,17 @@ pub fn py_float_repr(x: f64) -> String {
         )
     }
 }
+
+/// `str(OSError)`: `[Errno 2] No such file or directory: 'path'`.
+pub fn os_error_text(e: &std::io::Error, path: Option<&std::path::Path>) -> String {
+    let full = e.to_string();
+    let strerror = match full.rfind(" (os error ") {
+        Some(at) => &full[..at],
+        None => full.as_str(),
+    };
+    match (e.raw_os_error(), path) {
+        (Some(code), Some(p)) => format!("[Errno {code}] {strerror}: '{}'", p.display()),
+        (Some(code), None) => format!("[Errno {code}] {strerror}"),
+        (None, _) => full,
+    }
+}

@@ -214,7 +214,65 @@ def ulog_cases() -> None:
     write("ulog_cases.json", cases)
 
 
-STEPS = {"ulog": ulog_cases}
+STORED_FLIGHTS = (
+    "clean_quad", "legacy_names", "climb_all_pinned", "vibration_throttle", "clipping", "clipping_legacy_counter",
+    "ekf_rejection", "estimator_resets", "failure_failsafe", "gps_lost_rc_lost", "battery_sag",
+    "battery_floor_unlogged", "cpu_dropouts_truncated", "ringing_rates", "attitude_offset_setpoint",
+    "mag_interference", "many_messages", "header_only", "no_global_reference", "frozen_clock",
+)
+
+
+def compact(data: object) -> str:
+    return json.dumps(data, separators=(",", ":"), ensure_ascii=False) + "\n"
+
+
+def flight_cases() -> None:
+    """Synthetic flights (tools/logs_kit.py) and what flight_review makes of them.
+
+    With CORVUS_DUMP_ALL=DIR every flight of the kit goes to DIR instead (for
+    ``cargo test -- --ignored`` with CORVUS_LOGS_FLIGHTS=DIR); nothing stored changes.
+    """
+    import os
+    from corvus import flight_review
+    sys.path.insert(0, str(HERE))
+    import logs_kit
+
+    made = logs_kit.build_flights()
+    index = []
+    scratch = os.environ.get("CORVUS_DUMP_ALL")
+    if scratch:
+        out = pathlib.Path(scratch)
+        out.mkdir(parents=True, exist_ok=True)
+        for name, make in made.items():
+            blob = make()
+            flight_review.clear_cache()
+            expected = {}
+            for sens in flight_review.SENSITIVITIES:
+                review = flight_review.review_bytes(blob, name + ".ulg", sens)
+                expected[sens] = wire(review if sens == "normal" else
+                                      {"summary": review["summary"], "findings": review["findings"]})
+            (out / f"{name}.ulg").write_bytes(blob)
+            (out / f"{name}.review.json").write_text(compact(expected), encoding="utf-8")
+            index.append(name)
+        (out / "index.json").write_text(json.dumps(index), encoding="utf-8")
+        return
+    for name in STORED_FLIGHTS:
+        blob = made[name]()
+        flight_review.clear_cache()
+        expected = {}
+        for sens in flight_review.SENSITIVITIES:
+            review = flight_review.review_bytes(blob, name + ".ulg", sens)
+            if sens == "normal":
+                expected[sens] = wire(review)
+            else:
+                expected[sens] = wire({"summary": review["summary"], "findings": review["findings"]})
+        write_bytes(DATA / "logs" / f"{name}.ulg", blob)
+        write_text(DATA / "logs" / f"{name}.review.json", compact(expected))
+        index.append(name)
+    write("logs/index.json", index)
+
+
+STEPS = {"ulog": ulog_cases, "flights": flight_cases}
 
 
 def main(argv: list[str]) -> int:
