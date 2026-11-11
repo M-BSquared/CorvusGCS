@@ -1,0 +1,1328 @@
+[
+  {
+    "in": null,
+    "out": null
+  },
+  {
+    "in": 5,
+    "out": null
+  },
+  {
+    "in": "x",
+    "out": null
+  },
+  {
+    "in": [],
+    "out": null
+  },
+  {
+    "in": {},
+    "out": null
+  },
+  {
+    "in": {
+      "enabled": true
+    },
+    "out": {
+      "enabled": true
+    }
+  },
+  {
+    "in": {
+      "enabled": "false"
+    },
+    "out": null
+  },
+  {
+    "in": {
+      "enabled": 1
+    },
+    "out": null
+  },
+  {
+    "in": {
+      "home_window": false,
+      "enabled": false
+    },
+    "out": {
+      "enabled": false,
+      "home_window": false
+    }
+  },
+  {
+    "in": {
+      "active": "abc"
+    },
+    "out": {
+      "active": "abc"
+    }
+  },
+  {
+    "in": {
+      "active": "a b"
+    },
+    "out": null
+  },
+  {
+    "in": {
+      "active": "abc\n"
+    },
+    "out": {
+      "active": "abc\n"
+    }
+  },
+  {
+    "in": {
+      "active": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    },
+    "out": {
+      "active": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    }
+  },
+  {
+    "in": {
+      "active": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    },
+    "out": null
+  },
+  {
+    "in": {
+      "active": ""
+    },
+    "out": null
+  },
+  {
+    "in": {
+      "lists": []
+    },
+    "out": {
+      "lists": []
+    }
+  },
+  {
+    "in": {
+      "lists": "no"
+    },
+    "out": null
+  },
+  {
+    "in": {
+      "lists": [
+        5,
+        null,
+        "x"
+      ]
+    },
+    "out": {
+      "lists": []
+    }
+  },
+  {
+    "in": {
+      "lists": [
+        {}
+      ]
+    },
+    "out": {
+      "lists": [
+        {
+          "id": "list1",
+          "name": "Checklist 1",
+          "items": []
+        }
+      ]
+    }
+  },
+  {
+    "in": {
+      "lists": [
+        {
+          "id": "a"
+        },
+        {
+          "id": "a"
+        },
+        {
+          "id": "a"
+        }
+      ]
+    },
+    "out": {
+      "lists": [
+        {
+          "id": "a",
+          "name": "Checklist 1",
+          "items": []
+        },
+        {
+          "id": "list2",
+          "name": "Checklist 2",
+          "items": []
+        },
+        {
+          "id": "list3",
+          "name": "Checklist 3",
+          "items": []
+        }
+      ]
+    }
+  },
+  {
+    "in": {
+      "lists": [
+        {
+          "id": "list2"
+        },
+        {},
+        {}
+      ]
+    },
+    "out": {
+      "lists": [
+        {
+          "id": "list2",
+          "name": "Checklist 1",
+          "items": []
+        },
+        {
+          "id": "list2_2",
+          "name": "Checklist 2",
+          "items": []
+        },
+        {
+          "id": "list3",
+          "name": "Checklist 3",
+          "items": []
+        }
+      ]
+    }
+  },
+  {
+    "in": {
+      "lists": [
+        {
+          "id": "bad id",
+          "name": "  Name \n two  "
+        }
+      ]
+    },
+    "out": {
+      "lists": [
+        {
+          "id": "list1",
+          "name": "Name two",
+          "items": []
+        }
+      ]
+    }
+  },
+  {
+    "in": {
+      "lists": [
+        {
+          "id": "ok\n",
+          "name": "nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn"
+        }
+      ]
+    },
+    "out": {
+      "lists": [
+        {
+          "id": "ok\n",
+          "name": "nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn",
+          "items": []
+        }
+      ]
+    }
+  },
+  {
+    "in": {
+      "lists": [
+        {
+          "name": 5,
+          "items": "x"
+        }
+      ]
+    },
+    "out": {
+      "lists": [
+        {
+          "id": "list1",
+          "name": "Checklist 1",
+          "items": []
+        }
+      ]
+    }
+  },
+  {
+    "in": {
+      "lists": [
+        {
+          "items": [
+            "a",
+            {
+              "text": "b",
+              "heading": true
+            },
+            {
+              "text": "c",
+              "heading": "yes"
+            },
+            {
+              "text": "  "
+            },
+            {
+              "text": "tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt"
+            },
+            7,
+            null,
+            {
+              "heading": true
+            },
+            "x\ty\u0000z  w",
+            {
+              "text": "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
+            }
+          ]
+        }
+      ]
+    },
+    "out": {
+      "lists": [
+        {
+          "id": "list1",
+          "name": "Checklist 1",
+          "items": [
+            {
+              "text": "a",
+              "heading": false
+            },
+            {
+              "text": "b",
+              "heading": true
+            },
+            {
+              "text": "c",
+              "heading": false
+            },
+            {
+              "text": "tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt",
+              "heading": false
+            },
+            {
+              "text": "x y z w",
+              "heading": false
+            },
+            {
+              "text": "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé",
+              "heading": false
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "in": {
+      "lists": [
+        {
+          "id": "l0"
+        },
+        {
+          "id": "l1"
+        },
+        {
+          "id": "l2"
+        },
+        {
+          "id": "l3"
+        },
+        {
+          "id": "l4"
+        },
+        {
+          "id": "l5"
+        },
+        {
+          "id": "l6"
+        },
+        {
+          "id": "l7"
+        },
+        {
+          "id": "l8"
+        },
+        {
+          "id": "l9"
+        },
+        {
+          "id": "l10"
+        },
+        {
+          "id": "l11"
+        },
+        {
+          "id": "l12"
+        },
+        {
+          "id": "l13"
+        },
+        {
+          "id": "l14"
+        },
+        {
+          "id": "l15"
+        },
+        {
+          "id": "l16"
+        },
+        {
+          "id": "l17"
+        },
+        {
+          "id": "l18"
+        },
+        {
+          "id": "l19"
+        },
+        {
+          "id": "l20"
+        },
+        {
+          "id": "l21"
+        },
+        {
+          "id": "l22"
+        },
+        {
+          "id": "l23"
+        },
+        {
+          "id": "l24"
+        },
+        {
+          "id": "l25"
+        },
+        {
+          "id": "l26"
+        },
+        {
+          "id": "l27"
+        },
+        {
+          "id": "l28"
+        },
+        {
+          "id": "l29"
+        },
+        {
+          "id": "l30"
+        },
+        {
+          "id": "l31"
+        },
+        {
+          "id": "l32"
+        },
+        {
+          "id": "l33"
+        },
+        {
+          "id": "l34"
+        },
+        {
+          "id": "l35"
+        },
+        {
+          "id": "l36"
+        },
+        {
+          "id": "l37"
+        },
+        {
+          "id": "l38"
+        },
+        {
+          "id": "l39"
+        }
+      ]
+    },
+    "out": {
+      "lists": [
+        {
+          "id": "l0",
+          "name": "Checklist 1",
+          "items": []
+        },
+        {
+          "id": "l1",
+          "name": "Checklist 2",
+          "items": []
+        },
+        {
+          "id": "l2",
+          "name": "Checklist 3",
+          "items": []
+        },
+        {
+          "id": "l3",
+          "name": "Checklist 4",
+          "items": []
+        },
+        {
+          "id": "l4",
+          "name": "Checklist 5",
+          "items": []
+        },
+        {
+          "id": "l5",
+          "name": "Checklist 6",
+          "items": []
+        },
+        {
+          "id": "l6",
+          "name": "Checklist 7",
+          "items": []
+        },
+        {
+          "id": "l7",
+          "name": "Checklist 8",
+          "items": []
+        },
+        {
+          "id": "l8",
+          "name": "Checklist 9",
+          "items": []
+        },
+        {
+          "id": "l9",
+          "name": "Checklist 10",
+          "items": []
+        },
+        {
+          "id": "l10",
+          "name": "Checklist 11",
+          "items": []
+        },
+        {
+          "id": "l11",
+          "name": "Checklist 12",
+          "items": []
+        },
+        {
+          "id": "l12",
+          "name": "Checklist 13",
+          "items": []
+        },
+        {
+          "id": "l13",
+          "name": "Checklist 14",
+          "items": []
+        },
+        {
+          "id": "l14",
+          "name": "Checklist 15",
+          "items": []
+        },
+        {
+          "id": "l15",
+          "name": "Checklist 16",
+          "items": []
+        },
+        {
+          "id": "l16",
+          "name": "Checklist 17",
+          "items": []
+        },
+        {
+          "id": "l17",
+          "name": "Checklist 18",
+          "items": []
+        },
+        {
+          "id": "l18",
+          "name": "Checklist 19",
+          "items": []
+        },
+        {
+          "id": "l19",
+          "name": "Checklist 20",
+          "items": []
+        },
+        {
+          "id": "l20",
+          "name": "Checklist 21",
+          "items": []
+        },
+        {
+          "id": "l21",
+          "name": "Checklist 22",
+          "items": []
+        },
+        {
+          "id": "l22",
+          "name": "Checklist 23",
+          "items": []
+        },
+        {
+          "id": "l23",
+          "name": "Checklist 24",
+          "items": []
+        },
+        {
+          "id": "l24",
+          "name": "Checklist 25",
+          "items": []
+        },
+        {
+          "id": "l25",
+          "name": "Checklist 26",
+          "items": []
+        },
+        {
+          "id": "l26",
+          "name": "Checklist 27",
+          "items": []
+        },
+        {
+          "id": "l27",
+          "name": "Checklist 28",
+          "items": []
+        },
+        {
+          "id": "l28",
+          "name": "Checklist 29",
+          "items": []
+        },
+        {
+          "id": "l29",
+          "name": "Checklist 30",
+          "items": []
+        },
+        {
+          "id": "l30",
+          "name": "Checklist 31",
+          "items": []
+        },
+        {
+          "id": "l31",
+          "name": "Checklist 32",
+          "items": []
+        }
+      ]
+    }
+  },
+  {
+    "in": {
+      "lists": [
+        {
+          "items": [
+            "i0",
+            "i1",
+            "i2",
+            "i3",
+            "i4",
+            "i5",
+            "i6",
+            "i7",
+            "i8",
+            "i9",
+            "i10",
+            "i11",
+            "i12",
+            "i13",
+            "i14",
+            "i15",
+            "i16",
+            "i17",
+            "i18",
+            "i19",
+            "i20",
+            "i21",
+            "i22",
+            "i23",
+            "i24",
+            "i25",
+            "i26",
+            "i27",
+            "i28",
+            "i29",
+            "i30",
+            "i31",
+            "i32",
+            "i33",
+            "i34",
+            "i35",
+            "i36",
+            "i37",
+            "i38",
+            "i39",
+            "i40",
+            "i41",
+            "i42",
+            "i43",
+            "i44",
+            "i45",
+            "i46",
+            "i47",
+            "i48",
+            "i49",
+            "i50",
+            "i51",
+            "i52",
+            "i53",
+            "i54",
+            "i55",
+            "i56",
+            "i57",
+            "i58",
+            "i59",
+            "i60",
+            "i61",
+            "i62",
+            "i63",
+            "i64",
+            "i65",
+            "i66",
+            "i67",
+            "i68",
+            "i69",
+            "i70",
+            "i71",
+            "i72",
+            "i73",
+            "i74",
+            "i75",
+            "i76",
+            "i77",
+            "i78",
+            "i79",
+            "i80",
+            "i81",
+            "i82",
+            "i83",
+            "i84",
+            "i85",
+            "i86",
+            "i87",
+            "i88",
+            "i89",
+            "i90",
+            "i91",
+            "i92",
+            "i93",
+            "i94",
+            "i95",
+            "i96",
+            "i97",
+            "i98",
+            "i99",
+            "i100",
+            "i101",
+            "i102",
+            "i103",
+            "i104",
+            "i105",
+            "i106",
+            "i107",
+            "i108",
+            "i109",
+            "i110",
+            "i111",
+            "i112",
+            "i113",
+            "i114",
+            "i115",
+            "i116",
+            "i117",
+            "i118",
+            "i119",
+            "i120",
+            "i121",
+            "i122",
+            "i123",
+            "i124",
+            "i125",
+            "i126",
+            "i127",
+            "i128",
+            "i129"
+          ]
+        }
+      ]
+    },
+    "out": {
+      "lists": [
+        {
+          "id": "list1",
+          "name": "Checklist 1",
+          "items": [
+            {
+              "text": "i0",
+              "heading": false
+            },
+            {
+              "text": "i1",
+              "heading": false
+            },
+            {
+              "text": "i2",
+              "heading": false
+            },
+            {
+              "text": "i3",
+              "heading": false
+            },
+            {
+              "text": "i4",
+              "heading": false
+            },
+            {
+              "text": "i5",
+              "heading": false
+            },
+            {
+              "text": "i6",
+              "heading": false
+            },
+            {
+              "text": "i7",
+              "heading": false
+            },
+            {
+              "text": "i8",
+              "heading": false
+            },
+            {
+              "text": "i9",
+              "heading": false
+            },
+            {
+              "text": "i10",
+              "heading": false
+            },
+            {
+              "text": "i11",
+              "heading": false
+            },
+            {
+              "text": "i12",
+              "heading": false
+            },
+            {
+              "text": "i13",
+              "heading": false
+            },
+            {
+              "text": "i14",
+              "heading": false
+            },
+            {
+              "text": "i15",
+              "heading": false
+            },
+            {
+              "text": "i16",
+              "heading": false
+            },
+            {
+              "text": "i17",
+              "heading": false
+            },
+            {
+              "text": "i18",
+              "heading": false
+            },
+            {
+              "text": "i19",
+              "heading": false
+            },
+            {
+              "text": "i20",
+              "heading": false
+            },
+            {
+              "text": "i21",
+              "heading": false
+            },
+            {
+              "text": "i22",
+              "heading": false
+            },
+            {
+              "text": "i23",
+              "heading": false
+            },
+            {
+              "text": "i24",
+              "heading": false
+            },
+            {
+              "text": "i25",
+              "heading": false
+            },
+            {
+              "text": "i26",
+              "heading": false
+            },
+            {
+              "text": "i27",
+              "heading": false
+            },
+            {
+              "text": "i28",
+              "heading": false
+            },
+            {
+              "text": "i29",
+              "heading": false
+            },
+            {
+              "text": "i30",
+              "heading": false
+            },
+            {
+              "text": "i31",
+              "heading": false
+            },
+            {
+              "text": "i32",
+              "heading": false
+            },
+            {
+              "text": "i33",
+              "heading": false
+            },
+            {
+              "text": "i34",
+              "heading": false
+            },
+            {
+              "text": "i35",
+              "heading": false
+            },
+            {
+              "text": "i36",
+              "heading": false
+            },
+            {
+              "text": "i37",
+              "heading": false
+            },
+            {
+              "text": "i38",
+              "heading": false
+            },
+            {
+              "text": "i39",
+              "heading": false
+            },
+            {
+              "text": "i40",
+              "heading": false
+            },
+            {
+              "text": "i41",
+              "heading": false
+            },
+            {
+              "text": "i42",
+              "heading": false
+            },
+            {
+              "text": "i43",
+              "heading": false
+            },
+            {
+              "text": "i44",
+              "heading": false
+            },
+            {
+              "text": "i45",
+              "heading": false
+            },
+            {
+              "text": "i46",
+              "heading": false
+            },
+            {
+              "text": "i47",
+              "heading": false
+            },
+            {
+              "text": "i48",
+              "heading": false
+            },
+            {
+              "text": "i49",
+              "heading": false
+            },
+            {
+              "text": "i50",
+              "heading": false
+            },
+            {
+              "text": "i51",
+              "heading": false
+            },
+            {
+              "text": "i52",
+              "heading": false
+            },
+            {
+              "text": "i53",
+              "heading": false
+            },
+            {
+              "text": "i54",
+              "heading": false
+            },
+            {
+              "text": "i55",
+              "heading": false
+            },
+            {
+              "text": "i56",
+              "heading": false
+            },
+            {
+              "text": "i57",
+              "heading": false
+            },
+            {
+              "text": "i58",
+              "heading": false
+            },
+            {
+              "text": "i59",
+              "heading": false
+            },
+            {
+              "text": "i60",
+              "heading": false
+            },
+            {
+              "text": "i61",
+              "heading": false
+            },
+            {
+              "text": "i62",
+              "heading": false
+            },
+            {
+              "text": "i63",
+              "heading": false
+            },
+            {
+              "text": "i64",
+              "heading": false
+            },
+            {
+              "text": "i65",
+              "heading": false
+            },
+            {
+              "text": "i66",
+              "heading": false
+            },
+            {
+              "text": "i67",
+              "heading": false
+            },
+            {
+              "text": "i68",
+              "heading": false
+            },
+            {
+              "text": "i69",
+              "heading": false
+            },
+            {
+              "text": "i70",
+              "heading": false
+            },
+            {
+              "text": "i71",
+              "heading": false
+            },
+            {
+              "text": "i72",
+              "heading": false
+            },
+            {
+              "text": "i73",
+              "heading": false
+            },
+            {
+              "text": "i74",
+              "heading": false
+            },
+            {
+              "text": "i75",
+              "heading": false
+            },
+            {
+              "text": "i76",
+              "heading": false
+            },
+            {
+              "text": "i77",
+              "heading": false
+            },
+            {
+              "text": "i78",
+              "heading": false
+            },
+            {
+              "text": "i79",
+              "heading": false
+            },
+            {
+              "text": "i80",
+              "heading": false
+            },
+            {
+              "text": "i81",
+              "heading": false
+            },
+            {
+              "text": "i82",
+              "heading": false
+            },
+            {
+              "text": "i83",
+              "heading": false
+            },
+            {
+              "text": "i84",
+              "heading": false
+            },
+            {
+              "text": "i85",
+              "heading": false
+            },
+            {
+              "text": "i86",
+              "heading": false
+            },
+            {
+              "text": "i87",
+              "heading": false
+            },
+            {
+              "text": "i88",
+              "heading": false
+            },
+            {
+              "text": "i89",
+              "heading": false
+            },
+            {
+              "text": "i90",
+              "heading": false
+            },
+            {
+              "text": "i91",
+              "heading": false
+            },
+            {
+              "text": "i92",
+              "heading": false
+            },
+            {
+              "text": "i93",
+              "heading": false
+            },
+            {
+              "text": "i94",
+              "heading": false
+            },
+            {
+              "text": "i95",
+              "heading": false
+            },
+            {
+              "text": "i96",
+              "heading": false
+            },
+            {
+              "text": "i97",
+              "heading": false
+            },
+            {
+              "text": "i98",
+              "heading": false
+            },
+            {
+              "text": "i99",
+              "heading": false
+            },
+            {
+              "text": "i100",
+              "heading": false
+            },
+            {
+              "text": "i101",
+              "heading": false
+            },
+            {
+              "text": "i102",
+              "heading": false
+            },
+            {
+              "text": "i103",
+              "heading": false
+            },
+            {
+              "text": "i104",
+              "heading": false
+            },
+            {
+              "text": "i105",
+              "heading": false
+            },
+            {
+              "text": "i106",
+              "heading": false
+            },
+            {
+              "text": "i107",
+              "heading": false
+            },
+            {
+              "text": "i108",
+              "heading": false
+            },
+            {
+              "text": "i109",
+              "heading": false
+            },
+            {
+              "text": "i110",
+              "heading": false
+            },
+            {
+              "text": "i111",
+              "heading": false
+            },
+            {
+              "text": "i112",
+              "heading": false
+            },
+            {
+              "text": "i113",
+              "heading": false
+            },
+            {
+              "text": "i114",
+              "heading": false
+            },
+            {
+              "text": "i115",
+              "heading": false
+            },
+            {
+              "text": "i116",
+              "heading": false
+            },
+            {
+              "text": "i117",
+              "heading": false
+            },
+            {
+              "text": "i118",
+              "heading": false
+            },
+            {
+              "text": "i119",
+              "heading": false
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "in": {
+      "enabled": true,
+      "home_window": true,
+      "active": "l1",
+      "lists": [
+        {
+          "id": "l1",
+          "name": "Preflight",
+          "items": [
+            "Battery",
+            {
+              "text": "Props",
+              "heading": false
+            }
+          ]
+        }
+      ],
+      "extra": 1
+    },
+    "out": {
+      "enabled": true,
+      "home_window": true,
+      "lists": [
+        {
+          "id": "l1",
+          "name": "Preflight",
+          "items": [
+            {
+              "text": "Battery",
+              "heading": false
+            },
+            {
+              "text": "Props",
+              "heading": false
+            }
+          ]
+        }
+      ],
+      "active": "l1"
+    }
+  },
+  {
+    "in": {
+      "lists": [
+        {
+          "id": "d",
+          "items": [
+            "a b",
+            "tab\there",
+            "  lead",
+            "trail  "
+          ]
+        }
+      ]
+    },
+    "out": {
+      "lists": [
+        {
+          "id": "d",
+          "name": "Checklist 1",
+          "items": [
+            {
+              "text": "a b",
+              "heading": false
+            },
+            {
+              "text": "tab here",
+              "heading": false
+            },
+            {
+              "text": "lead",
+              "heading": false
+            },
+            {
+              "text": "trail",
+              "heading": false
+            }
+          ]
+        }
+      ]
+    }
+  }
+]
