@@ -64,3 +64,10 @@ static MOTORS_DATA: LazyLock<Value> = LazyLock::new(|| parse("motors.json", incl
 pub fn motors(stack: &str) -> Table {
     Table(&MOTORS_DATA[stack])
 }
+
+static RC_DATA: LazyLock<Value> = LazyLock::new(|| parse("rc.json", include_str!("data/rc.json")));
+
+/// The tables of `rc_config.py` (`"px4"`) and `ardupilot_rc.py` (`"ardupilot"`).
+pub fn rc(stack: &str) -> Table {
+    Table(&RC_DATA[stack])
+}

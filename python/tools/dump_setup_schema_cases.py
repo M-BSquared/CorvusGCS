@@ -114,6 +114,7 @@ def tables() -> None:
     tables_ardupilot_safety()
     tables_mounting()
     tables_motors()
+    tables_rc()
 
     write_table("safety.json", export(S, [
         "ON_OFF_OPTIONS", "GEOFENCE_ACTION_OPTIONS", "GEOFENCE_SOURCE_OPTIONS", "RTL_TYPE_OPTIONS",
@@ -191,6 +192,19 @@ def tables_motors() -> None:
                           "BIDIR_PROTOCOL_OPTIONS", "DSHOT_CONFIG_OPTIONS", "FRAME_HINT"]),
         "ardupilot": export(AM, ["MOTOR_FUNCTIONS", "SERVO_FUNCTIONS", "FRAME_CLASSES", "FRAME_CLASS_OPTIONS",
                                  "FRAME_TYPE_OPTIONS", "MOT_PWM_TYPE_OPTIONS", "ON_OFF_OPTIONS", "BANKS", "FRAME_NOTE"]),
+    })
+
+
+def tables_rc() -> None:
+    from corvus import ardupilot_rc as AR
+    from corvus import rc_config as R
+
+    write_table("rc.json", {
+        "px4": export(R, ["RC_IN_MODE_OPTIONS", "RC_IN_MODE_PRIORITY_OPTIONS", "RC_LOSS_ACTION_OPTIONS",
+                          "FLIGHT_MODE_OPTIONS", "STICK_FIELDS", "MODE_SWITCH_FIELDS", "MODE_SLOT_FIELDS",
+                          "SWITCH_FIELDS", "AUX_FIELDS", "INPUT_NUMBER_FIELDS"]),
+        "ardupilot": export(AR, ["ON_OFF_OPTIONS", "STICK_FIELDS", "MODE_SWITCH_FIELDS", "MODE_SLOT_FIELDS",
+                                 "RC_OPTION_VALUES"]),
     })
 
 
@@ -476,6 +490,76 @@ def motors() -> None:
                       "motor_values": ap_motor_values}}), compact=True)
 
 
+def _calibration_inputs() -> list[list]:
+    good = {"channel": 1, "min": 1000, "max": 2000, "trim": 1500}
+    chans = [
+        [good], [dict(good, reversed=True)], [dict(good, reversed=False, set_reverse=True)],
+        [dict(good, set_reverse=True)], [dict(good, set_reverse=False, reversed=True)],
+        [good, dict(good, channel=2, min=990.4, max=2010.5, trim=1500.5)], [dict(good, channel=18)], [dict(good, channel=19)],
+        [dict(good, channel=0)], [dict(good, channel="3", min="1000", max="2000.0", trim=" 1500 ")],
+        [dict(good, channel=2.9)], [dict(good, channel=True)], [dict(good, min=400)], [dict(good, max=2600)],
+        [dict(good, trim=1000, min=1000)], [dict(good, min=1500, max=1600)], [dict(good, trim=2100)],
+        [dict(good, trim=900)], [dict(good, min=None)], [dict(good, channel=None)], [{"channel": 1, "min": 1000}],
+        [dict(good, min="x")], [dict(good, min=[1])], ["junk"], [good, good], [], None, {}, "x",
+        [dict(good, channel=n) for n in range(1, 19)], [dict(good, channel=n) for n in range(1, 20)],
+        [dict(good, channel=5, reversed=1), dict(good, channel=2, reversed=0, set_reverse=1)],
+        [dict(good, reversed="no"), dict(good, channel=3, reversed="")], [dict(good, min=1000.5, max=1500.5, trim=1000.5)],
+    ]
+    out = []
+    for c in chans:
+        for count, known, mapping in ((None, None, None), (8, None, None), ("8", None, None), (0, None, None), (19, None, None),
+                                      ("x", None, None), (8.0, None, None), (None, ["RC1_MIN", "RC1_MAX", "RC_CHAN_CNT"], None),
+                                      (8, [], None), (8, ["RC_CHAN_CNT", "RC_MAP_ROLL", "RCMAP_ROLL", "RC1_REVERSED", "RC1_REV"],
+                                                {"RC_MAP_ROLL": 1, "RC_MAP_THROTTLE": 3}),
+                                      (None, None, {"RC_MAP_ROLL": 2, "RCMAP_YAW": 3, "RCMAP_PITCH": 2.0}),
+                                      (None, None, {"RC_MAP_KILL_SW": 5}), (None, None, {"RC_MAP_ROLL": True}),
+                                      (None, None, {"RC_MAP_ROLL": 2.5}), (None, None, {"RC_MAP_ROLL": "2"}),
+                                      (None, None, {"RC_MAP_ROLL": 0}), (None, None, {"RC_MAP_ROLL": 19}), (None, None, []),
+                                      (None, None, {"RCMAP_ROLL": 1, "RCMAP_THROTTLE": 3, "RCMAP_FORWARD": 5})):
+            if c is not None and not isinstance(c, list) and (count, known, mapping) != (None, None, None):
+                continue
+            out.append([c, count, known, mapping])
+    return out
+
+
+def rc() -> None:
+    from corvus import ardupilot_rc as A
+    from corvus import rc_config as P
+
+    px4_pools = {"RC_MAP_*": [0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 8.0, 18.0, 19.0], "COM_FLTMODE*": [-1.0, 0.0, 1.0, 2.0, 3.0, 5.0, 9.0, 13.0, 14.0],
+                 "COM_RC_IN_MODE": [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 8.0, 9.0], "NAV_RCL_ACT": [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+                 "RC*_MIN": [800.0, 1000.0, 1100.0], "RC*_MAX": [1000.0, 1100.0, 1900.0, 2000.0], "RC*_TRIM": [1500.0, 1000.0],
+                 "RC*_DZ": [0.0, 10.0], "RC*_REV": [1.0, -1.0, 0.0]}
+    px4 = []
+    for i, v in enumerate(value_sets(P.param_names(), px4_pools, seed=31, count=50)):
+        channels = (18, 8, 0, 4, 25, -3)[i % 6]
+        px4.append([v, channels, P.build(dict(v), channels)])
+    ap_pools = {"RCMAP_*": [0.0, 1.0, 2.0, 3.0, 4.0, 18.0], "FLTMODE_CH": [0.0, 5.0, 8.0], "FLTMODE?": [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 9.0, 99.0],
+                "RC*_OPTION": [0.0, 2.0, 4.0, 7.0, 31.0, 41.0, 99.0, 153.0], "RC*_MIN": [1000.0, 1100.0], "RC*_MAX": [1900.0, 2000.0],
+                "RC*_TRIM": [1500.0], "RC*_DZ": [0.0, 30.0], "RC*_REVERSED": [0.0, 1.0, 2.0], "THR_FAILSAFE": [0.0, 1.0, 2.0]}
+    ap = []
+    for i, v in enumerate(value_sets(A.param_names(), ap_pools, seed=32, count=50)):
+        channels = (18, 8, 0, 6, 25, -3)[i % 6]
+        vehicle = (2, 1, 10, 12, 13, 0)[i % 6]
+        ap.append([v, channels, vehicle, A.build(dict(v), channels, vehicle)])
+
+    def calibrate(module, entry):
+        c, count, known, mapping = entry
+        try:
+            return {"ok": module.calibration_writes(c, count, None if known is None else set(known), mapping)}
+        except P.CalibrationError as exc:
+            return {"error": str(exc)}
+
+    inputs = _calibration_inputs()
+    write("setup_rc_cases.json", clean({
+        "px4": {"names": {str(n): P.param_names(n) for n in (18, 8, 0, 1, 25, -3)}, "cases": px4,
+                "options": {str(n): P.channel_options(n) for n in (0, 1, 8, 18, 30, -2)},
+                "calibration": [[e, calibrate(P, e)] for e in inputs]},
+        "ardupilot": {"names": {str(n): A.param_names(n) for n in (18, 8, 0, 1, 25, -3, 6)}, "cases": ap,
+                      "modes": {str(t): A.flight_mode_options(t) for t in (0, 1, 2, 10, 12, 13, 20, 99)},
+                      "calibration": [[e, calibrate(A, e)] for e in inputs]}}), compact=True)
+
+
 def battery() -> None:
     from corvus import ardupilot_battery as A
     from corvus import battery_config as P
@@ -536,7 +620,7 @@ def fields() -> None:
     write("setup_fields_cases.json", out)
 
 
-COMMANDS = {"metadata": metadata, "fields": fields, "tables": tables, "safety": safety, "battery": battery, "motors": motors, "mounting": mounting, "ardupilot_safety": ardupilot_safety}
+COMMANDS = {"metadata": metadata, "fields": fields, "tables": tables, "safety": safety, "battery": battery, "rc": rc, "motors": motors, "mounting": mounting, "ardupilot_safety": ardupilot_safety}
 
 
 def main(argv: list[str]) -> int:
