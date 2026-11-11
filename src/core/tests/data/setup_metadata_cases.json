@@ -1,0 +1,690 @@
+{
+ "parse": [
+  {
+   "name": "px4 plain",
+   "format": "px4-json",
+   "raw": "eyJ2ZXJzaW9uIjogMSwgInBhcmFtZXRlcnMiOiBbeyJuYW1lIjogIk1DX1JPTExfUCIsICJkZWZhdWx0IjogNi41LCAibWluIjogMCwgIm1heCI6IDEyLCAiaW5jcmVtZW50IjogMC4xLCAiZGVjaW1hbFBsYWNlcyI6IDIsICJzaG9ydERlc2MiOiAiIFJvbGwgUCAiLCAibG9uZ0Rlc2MiOiAiTG9uZyB0ZXh0IiwgInVuaXRzIjogIiIsICJncm91cCI6ICJNdWx0aWNvcHRlciBBdHRpdHVkZSBDb250cm9sIiwgInJlYm9vdFJlcXVpcmVkIjogdHJ1ZX0sIHsibmFtZSI6ICIgU1lTX0FVVE9TVEFSVCAiLCAiZGVmYXVsdCI6ICI0MDAxIiwgInR5cGUiOiAiSW50MzIiLCAic2hvcnREZXNjIjogIkFpcmZyYW1lIiwgInZhbHVlcyI6IFt7InZhbHVlIjogNDAwMSwgImRlc2NyaXB0aW9uIjogIlF1YWQgWCJ9LCB7InZhbHVlIjogIjQwMDIiLCAiZGVzY3JpcHRpb24iOiAiIFF1YWQgKyAifSwgeyJ2YWx1ZSI6IHRydWUsICJkZXNjcmlwdGlvbiI6ICJib29sIn0sIHsidmFsdWUiOiAieCIsICJkZXNjcmlwdGlvbiI6ICJiYWQifSwgImp1bmsiLCB7InZhbHVlIjogNX1dfSwgeyJuYW1lIjogIkNPTV9BUk1fQ0hLIiwgImRlZmF1bHQiOiAwLCAiYml0bWFzayI6IFt7ImluZGV4IjogMCwgImRlc2NyaXB0aW9uIjogIkJhdHRlcnkifSwgeyJpbmRleCI6IDIuMCwgImRlc2NyaXB0aW9uIjogIm5vIn0sIHsiaW5kZXgiOiB0cnVlLCAiZGVzY3JpcHRpb24iOiAiYm9vbCJ9LCB7ImluZGV4IjogM30sICJqdW5rIl19LCB7Im5hbWUiOiAiIiwgImRlZmF1bHQiOiAxfSwgeyJkZWZhdWx0IjogMn0sICJub3QgYW4gZW50cnkiLCA3LCBudWxsLCB7Im5hbWUiOiAiRFVQIiwgImRlZmF1bHQiOiAxLjB9LCB7Im5hbWUiOiAiRFVQIiwgImRlZmF1bHQiOiAyLjAsICJkZWNpbWFsUGxhY2VzIjogMTB9LCB7Im5hbWUiOiAiREVDIiwgImRlY2ltYWxQbGFjZXMiOiAwLCAicmVib290UmVxdWlyZWQiOiBmYWxzZSwgImRlZmF1bHQiOiB0cnVlLCAibWluIjogbnVsbCwgIm1heCI6ICJub3BlIn0sIHsibmFtZSI6ICJERUM5IiwgImRlY2ltYWxQbGFjZXMiOiA5LCAicmVib290UmVxdWlyZWQiOiAxLCAiZGVmYXVsdCI6ICIxZTMiLCAiaW5jcmVtZW50IjogImluZiJ9LCB7Im5hbWUiOiAiREVDTkVHIiwgImRlY2ltYWxQbGFjZXMiOiAtMSwgImRlY2ltYWxQbGFjZXMyIjogMywgImRlZmF1bHQiOiAxLjVlLTA3fSwgeyJuYW1lIjogIk5PVkFMUyIsICJ2YWx1ZXMiOiBbXSwgImJpdG1hc2siOiBbXX1dfQ==",
+   "ok": {
+    "MC_ROLL_P": {
+     "default": 6.5,
+     "min": 0.0,
+     "max": 12.0,
+     "increment": 0.1,
+     "short_desc": "Roll P",
+     "long_desc": "Long text",
+     "group": "Multicopter Attitude Control",
+     "decimals": 2,
+     "reboot_required": true
+    },
+    "SYS_AUTOSTART": {
+     "default": 4001.0,
+     "short_desc": "Airframe",
+     "values": [
+      [
+       4001.0,
+       "Quad X"
+      ],
+      [
+       4002.0,
+       "Quad +"
+      ],
+      [
+       5.0,
+       ""
+      ]
+     ]
+    },
+    "COM_ARM_CHK": {
+     "default": 0.0,
+     "bitmask": [
+      [
+       0,
+       "Battery"
+      ],
+      [
+       true,
+       "bool"
+      ],
+      [
+       3,
+       ""
+      ]
+     ]
+    },
+    "DUP": {
+     "default": 2.0
+    },
+    "DEC": {
+     "decimals": 0
+    },
+    "DEC9": {
+     "default": 1000.0,
+     "increment": 0.0,
+     "decimals": 9
+    },
+    "DECNEG": {
+     "default": 1.5e-07
+    },
+    "NOVALS": {}
+   }
+  },
+  {
+   "name": "px4 xz crc64",
+   "format": "px4-json",
+   "raw": "/Td6WFoAAATm1rRGAgAhARYAAAB0L+Wj4ATLAfddAD2IisaUU5CGpmN9JTQQPBo+85e5BzRy9/paBSu3oE5eOm9U3R47pC/rjePmUX5rLjYcYPTne4K9R6z75mAXCCfFLJVyoz2+rYE+ClAMfsQG7iugaIUWA8gJkGOqowg9Q48JIBtLApvZ5wNWGJ3qQU3dZTy93HJ/L7SVdksJRfZVUWAmhwSfwPh7JiBk7aHOaigZIRdRx08RRpzhFuFjYv+if6HF1skSN1ZOZJJ8Qxr3ysX5J469SBjkcqABef14gFZUFfuCiUju8BccUbeNNCQD9gIAMcwQjgIIBM6/lz/hlf7ctHxrCiS9DmWdK+smi7EaWR+LZ3dOBBDYK1q0Yh3aQCN0+IgNTaRHYrXOaN6tXt3zDODJ4gnh/LdE5z8tKTezSH7oB7Gq3Me4ZRZ9fmvewawXx2BOgB7dwafQTteGRRJ1eaWIqXHR5tRwKzETOtSajvNybqFA0q3LLSTvTZhOU//8Ff6yk4ApTI6RSk6xViPTyKK0F2vaDe73fR78zfia8PJH2qFq2r7+icflXCbHrHfxy4libG0hPoh2nhCF40P8Mmsnjhf0ZVYPMXLW+6Y6B9tJxEHqCCW0tM1GQBcpQBq0qSwL4Yfo6InsKUAK3RH1xKtxGbPY1iv2DJNiDfAsr0n9Y3DcZnWfZSWS1Dp504UWsXOAAACXc1kb0fW7GwABkwTMCQAAwXxtnrHEZ/sCAAAAAARZWg==",
+   "ok": {
+    "MC_ROLL_P": {
+     "default": 6.5,
+     "min": 0.0,
+     "max": 12.0,
+     "increment": 0.1,
+     "short_desc": "Roll P",
+     "long_desc": "Long text",
+     "group": "Multicopter Attitude Control",
+     "decimals": 2,
+     "reboot_required": true
+    },
+    "SYS_AUTOSTART": {
+     "default": 4001.0,
+     "short_desc": "Airframe",
+     "values": [
+      [
+       4001.0,
+       "Quad X"
+      ],
+      [
+       4002.0,
+       "Quad +"
+      ],
+      [
+       5.0,
+       ""
+      ]
+     ]
+    },
+    "COM_ARM_CHK": {
+     "default": 0.0,
+     "bitmask": [
+      [
+       0,
+       "Battery"
+      ],
+      [
+       true,
+       "bool"
+      ],
+      [
+       3,
+       ""
+      ]
+     ]
+    },
+    "DUP": {
+     "default": 2.0
+    },
+    "DEC": {
+     "decimals": 0
+    },
+    "DEC9": {
+     "default": 1000.0,
+     "increment": 0.0,
+     "decimals": 9
+    },
+    "DECNEG": {
+     "default": 1.5e-07
+    },
+    "NOVALS": {}
+   }
+  },
+  {
+   "name": "px4 xz crc32",
+   "format": "px4-json",
+   "raw": "/Td6WFoAAAFpIt42AgAhARYAAAB0L+Wj4ATLAfddAD2IisaUU5CGpmN9JTQQPBo+85e5BzRy9/paBSu3oE5eOm9U3R47pC/rjePmUX5rLjYcYPTne4K9R6z75mAXCCfFLJVyoz2+rYE+ClAMfsQG7iugaIUWA8gJkGOqowg9Q48JIBtLApvZ5wNWGJ3qQU3dZTy93HJ/L7SVdksJRfZVUWAmhwSfwPh7JiBk7aHOaigZIRdRx08RRpzhFuFjYv+if6HF1skSN1ZOZJJ8Qxr3ysX5J469SBjkcqABef14gFZUFfuCiUju8BccUbeNNCQD9gIAMcwQjgIIBM6/lz/hlf7ctHxrCiS9DmWdK+smi7EaWR+LZ3dOBBDYK1q0Yh3aQCN0+IgNTaRHYrXOaN6tXt3zDODJ4gnh/LdE5z8tKTezSH7oB7Gq3Me4ZRZ9fmvewawXx2BOgB7dwafQTteGRRJ1eaWIqXHR5tRwKzETOtSajvNybqFA0q3LLSTvTZhOU//8Ff6yk4ApTI6RSk6xViPTyKK0F2vaDe73fR78zfia8PJH2qFq2r7+icflXCbHrHfxy4libG0hPoh2nhCF40P8Mmsnjhf0ZVYPMXLW+6Y6B9tJxEHqCCW0tM1GQBcpQBq0qSwL4Yfo6InsKUAK3RH1xKtxGbPY1iv2DJNiDfAsr0n9Y3DcZnWfZSWS1Dp504UWsXOAAACcOOmdAAGPBMwJAAAhvnnqPjANiwIAAAAAAVla",
+   "ok": {
+    "MC_ROLL_P": {
+     "default": 6.5,
+     "min": 0.0,
+     "max": 12.0,
+     "increment": 0.1,
+     "short_desc": "Roll P",
+     "long_desc": "Long text",
+     "group": "Multicopter Attitude Control",
+     "decimals": 2,
+     "reboot_required": true
+    },
+    "SYS_AUTOSTART": {
+     "default": 4001.0,
+     "short_desc": "Airframe",
+     "values": [
+      [
+       4001.0,
+       "Quad X"
+      ],
+      [
+       4002.0,
+       "Quad +"
+      ],
+      [
+       5.0,
+       ""
+      ]
+     ]
+    },
+    "COM_ARM_CHK": {
+     "default": 0.0,
+     "bitmask": [
+      [
+       0,
+       "Battery"
+      ],
+      [
+       true,
+       "bool"
+      ],
+      [
+       3,
+       ""
+      ]
+     ]
+    },
+    "DUP": {
+     "default": 2.0
+    },
+    "DEC": {
+     "decimals": 0
+    },
+    "DEC9": {
+     "default": 1000.0,
+     "increment": 0.0,
+     "decimals": 9
+    },
+    "DECNEG": {
+     "default": 1.5e-07
+    },
+    "NOVALS": {}
+   }
+  },
+  {
+   "name": "px4 xz none",
+   "format": "px4-json",
+   "raw": "/Td6WFoAAAD/EtlBAgAhARYAAAB0L+Wj4ATLAfddAD2IisaUU5CGpmN9JTQQPBo+85e5BzRy9/paBSu3oE5eOm9U3R47pC/rjePmUX5rLjYcYPTne4K9R6z75mAXCCfFLJVyoz2+rYE+ClAMfsQG7iugaIUWA8gJkGOqowg9Q48JIBtLApvZ5wNWGJ3qQU3dZTy93HJ/L7SVdksJRfZVUWAmhwSfwPh7JiBk7aHOaigZIRdRx08RRpzhFuFjYv+if6HF1skSN1ZOZJJ8Qxr3ysX5J469SBjkcqABef14gFZUFfuCiUju8BccUbeNNCQD9gIAMcwQjgIIBM6/lz/hlf7ctHxrCiS9DmWdK+smi7EaWR+LZ3dOBBDYK1q0Yh3aQCN0+IgNTaRHYrXOaN6tXt3zDODJ4gnh/LdE5z8tKTezSH7oB7Gq3Me4ZRZ9fmvewawXx2BOgB7dwafQTteGRRJ1eaWIqXHR5tRwKzETOtSajvNybqFA0q3LLSTvTZhOU//8Ff6yk4ApTI6RSk6xViPTyKK0F2vaDe73fR78zfia8PJH2qFq2r7+icflXCbHrHfxy4libG0hPoh2nhCF40P8Mmsnjhf0ZVYPMXLW+6Y6B9tJxEHqCCW0tM1GQBcpQBq0qSwL4Yfo6InsKUAK3RH1xKtxGbPY1iv2DJNiDfAsr0n9Y3DcZnWfZSWS1Dp504UWsXOAAAAAAYsEzAkAADf86HGoAAr8AgAAAAAAWVo=",
+   "ok": {
+    "MC_ROLL_P": {
+     "default": 6.5,
+     "min": 0.0,
+     "max": 12.0,
+     "increment": 0.1,
+     "short_desc": "Roll P",
+     "long_desc": "Long text",
+     "group": "Multicopter Attitude Control",
+     "decimals": 2,
+     "reboot_required": true
+    },
+    "SYS_AUTOSTART": {
+     "default": 4001.0,
+     "short_desc": "Airframe",
+     "values": [
+      [
+       4001.0,
+       "Quad X"
+      ],
+      [
+       4002.0,
+       "Quad +"
+      ],
+      [
+       5.0,
+       ""
+      ]
+     ]
+    },
+    "COM_ARM_CHK": {
+     "default": 0.0,
+     "bitmask": [
+      [
+       0,
+       "Battery"
+      ],
+      [
+       true,
+       "bool"
+      ],
+      [
+       3,
+       ""
+      ]
+     ]
+    },
+    "DUP": {
+     "default": 2.0
+    },
+    "DEC": {
+     "decimals": 0
+    },
+    "DEC9": {
+     "default": 1000.0,
+     "increment": 0.0,
+     "decimals": 9
+    },
+    "DECNEG": {
+     "default": 1.5e-07
+    },
+    "NOVALS": {}
+   }
+  },
+  {
+   "name": "px4 xz preset 9e",
+   "format": "px4-json",
+   "raw": "/Td6WFoAAATm1rRGAgAhARwAAAAQz1jM4RjXAjtdAD2IigZUYy8PD2hxJtl7axcQMW/2tihmGeSkf4WQrEtMv+Pxj3/lK8tvM3jV0pvA8kvHNSkPqc6VRCVJ/M0XyR9690uAjzDURLNF93VFmVvQDLurJxp/n1+7n+P6u8WeYsBp0c45iBRpStryo6RasiX3FiCVYraWB4S9ucjbn2gPfLfGySViHwxCkBYKBZycECQsWp1UK9c5wn8Xzs0dsRHIZdA5wiRSo09p8ekXGfRrh665CCk2I4eHI/Gb/7YMCBT9MGcR/B3MikHvTXT815TSfA6InZfVHsJ5B0vx6qQgYUbQ+eIBzmtGnPB5H/0IR+pXv20Ak2DbpK85i6r9+agrmo/eaOglBpGVY2DpV1g2PDBDuIqj3FQAnkFMTxMuVJ7atAt3vPzH9BCMfuOxiIC2CtCb8+wmh/cUjn5G9KPaiExNLWpCQ7sl7xIOmygcELV2EuN5Np1V60CN3QcryNjBJvWIRw0zud5bCRE17Mg1vmlJoHBFMYGTZLB8LMTbAhrh6Q2xRrc0pA5F68FpIohCGm2eJHYCScSCbUxcuVX095+PPUxHY8dVCUdefeefoUGA4sJ7Qyp5BtFO2G4RwM1Xm2m/7ytpE7ollwJXrzydY81/ASkL4i4tfpSjgzeTd7TzuM02Jo60aRUAFcQ76cGl4yYuBQ6/abME1xUde+IaxRn/z+RV/dMfSwiq7txyGrQ52WduXzgi9qL68LMOnqLT2hi84FkOSZed9cuQauKSaatvB8shlwIe6gAAAFobrJF5jyVqAAHXBNixBADfnv56scRn+wIAAAAABFla",
+   "ok": {
+    "MC_ROLL_P": {
+     "default": 6.5,
+     "min": 0.0,
+     "max": 12.0,
+     "increment": 0.1,
+     "short_desc": "Roll P",
+     "long_desc": "Long text",
+     "group": "Multicopter Attitude Control",
+     "decimals": 2,
+     "reboot_required": true
+    },
+    "SYS_AUTOSTART": {
+     "default": 4001.0,
+     "short_desc": "Airframe",
+     "values": [
+      [
+       4001.0,
+       "Quad X"
+      ],
+      [
+       4002.0,
+       "Quad +"
+      ],
+      [
+       5.0,
+       ""
+      ]
+     ]
+    },
+    "COM_ARM_CHK": {
+     "default": 0.0,
+     "bitmask": [
+      [
+       0,
+       "Battery"
+      ],
+      [
+       true,
+       "bool"
+      ],
+      [
+       3,
+       ""
+      ]
+     ]
+    },
+    "DUP": {
+     "default": 2.0
+    },
+    "DEC": {
+     "decimals": 0
+    },
+    "DEC9": {
+     "default": 1000.0,
+     "increment": 0.0,
+     "decimals": 9
+    },
+    "DECNEG": {
+     "default": 1.5e-07
+    },
+    "NOVALS": {}
+   }
+  },
+  {
+   "name": "px4 xz truncated",
+   "format": "px4-json",
+   "raw": "/Td6WFoAAATm1rRGAgAhARYAAAB0L+Wj4ATLAfddAD2IisaUU5CGpmN9JTQQPBo+85e5BzRy9/paBSu3oE5eOm9U3R47pC/rjePmUX5rLjYcYPTne4K9R6z75mAXCCfFLJVyoz2+rYE+ClAMfsQG7iugaIUWA8gJkGOqowg9Q48JIBtLApvZ5wNWGJ3qQU3dZTy93HJ/L7SVdksJRfZVUWAmhwSfwPh7JiBk7aHOaigZIRdRx08RRpzhFuFjYv+if6HF1skSN1ZOZJJ8Qxr3ysX5J469SBjkcqABef14gFZUFfuCiUju8BccUbeNNCQD9gIAMcwQjgIIBM6/lz/hlf7ctHxrCiS9DmWdK+smi7EaWR+LZ3dOBBDYK1q0Yh3aQCN0+IgNTaRHYrXOaN6tXt3zDODJ4gnh/LdE5z8tKTezSH7oB7Gq3Me4ZRZ9fmvewawXx2BOgB7dwafQTteGRRJ1eaWIqXHR5tRwKzETOtSajvNybqFA0q3LLSTvTZhOU//8Ff6yk4ApTI6RSk6xViPTyKK0F2vaDe73fR78zfia8PJH2qFq2r7+icflXCbHrHfxy4libG0hPoh2nhCF40P8Mmsnjhf0ZVYPMXLW+6Y6B9tJxEHqCCW0tM1GQBcpQBq0qSwL4Yfo6InsKUAK3RH1xKtxGbPY1iv2DJNiDfAsr0n9Y3DcZnWfZSWS1Dp504UWsXOAAACXc1kb0fW7GwABkwQ=",
+   "error": ""
+  },
+  {
+   "name": "px4 not utf8",
+   "format": "px4-json",
+   "raw": "//57fQ==",
+   "error": ""
+  },
+  {
+   "name": "px4 not json",
+   "format": "px4-json",
+   "raw": "aGVsbG8=",
+   "error": ""
+  },
+  {
+   "name": "px4 array",
+   "format": "px4-json",
+   "raw": "W10=",
+   "error": "not a PX4 parameter metadata file"
+  },
+  {
+   "name": "px4 no list",
+   "format": "px4-json",
+   "raw": "eyJwYXJhbWV0ZXJzIjoge319",
+   "error": "not a PX4 parameter metadata file"
+  },
+  {
+   "name": "px4 empty list",
+   "format": "px4-json",
+   "raw": "eyJwYXJhbWV0ZXJzIjogW119",
+   "ok": {}
+  },
+  {
+   "name": "px4 unicode",
+   "format": "px4-json",
+   "raw": "eyJwYXJhbWV0ZXJzIjogW3sibmFtZSI6ICJVTkkiLCAic2hvcnREZXNjIjogIkjDtmhlIMKgIMO8YmVyIiwgImRlZmF1bHQiOiAxfV19",
+   "ok": {
+    "UNI": {
+     "default": 1.0,
+     "short_desc": "Höhe   über"
+    }
+   }
+  },
+  {
+   "name": "pck defaults",
+   "format": "ardupilot-pck",
+   "raw": "HGcGAAYAErBBUk1JTkdfQ0hFQ0sBAAEAFLFUQ19BTkdfUElUX1AAAJBAAACQQBRIUkxMX1AAALBAAACQQAGwQkFUVF9NT05JVE9SBBPAU1lTSURfVEhJU01BVgcAAAABAAAAEQBY/QA=",
+   "ok": {
+    "ARMING_CHECK": {
+     "default": 1.0
+    },
+    "ATC_ANG_PIT_P": {
+     "default": 4.5
+    },
+    "ATC_ANG_RLL_P": {
+     "default": 4.5
+    },
+    "BATT_MONITOR": {
+     "default": 4.0
+    },
+    "SYSID_THISMAV": {
+     "default": 1.0
+    },
+    "X": {
+     "default": 0.0
+    }
+   }
+  },
+  {
+   "name": "pck padded",
+   "format": "ardupilot-pck",
+   "raw": "HGcGAAYAErBBUk1JTkdfQ0hFQ0sBAAEAAAAUsVRDX0FOR19QSVRfUAAAkEAAAJBAAAAUSFJMTF9QAACwQAAAkEAAAAGwQkFUVF9NT05JVE9SBAAAE8BTWVNJRF9USElTTUFWBwAAAAEAAAAAABEAWP0AAAA=",
+   "ok": {
+    "ARMING_CHECK": {
+     "default": 1.0
+    },
+    "ATC_ANG_PIT_P": {
+     "default": 4.5
+    },
+    "ATC_ANG_RLL_P": {
+     "default": 4.5
+    },
+    "BATT_MONITOR": {
+     "default": 4.0
+    },
+    "SYSID_THISMAV": {
+     "default": 1.0
+    },
+    "X": {
+     "default": 0.0
+    }
+   }
+  },
+  {
+   "name": "pck no defaults magic",
+   "format": "ardupilot-pck",
+   "raw": "G2cGAAYAArBBUk1JTkdfQ0hFQ0sBAASxVENfQU5HX1BJVF9QAACQQARIUkxMX1AAALBAAbBCQVRUX01PTklUT1IEA8BTWVNJRF9USElTTUFWBwAAAAEAWP0=",
+   "ok": {
+    "ARMING_CHECK": {},
+    "ATC_ANG_PIT_P": {},
+    "ATC_ANG_RLL_P": {},
+    "BATT_MONITOR": {},
+    "SYSID_THISMAV": {},
+    "X": {}
+   }
+  },
+  {
+   "name": "pck wrong count",
+   "format": "ardupilot-pck",
+   "raw": "HGcDAAYAErBBUk1JTkdfQ0hFQ0sBAAEAFLFUQ19BTkdfUElUX1AAAJBAAACQQBRIUkxMX1AAALBAAACQQAGwQkFUVF9NT05JVE9SBBPAU1lTSURfVEhJU01BVgcAAAABAAAAEQBY/QA=",
+   "error": "the parameter pack lists 3 parameters but holds 6"
+  },
+  {
+   "name": "pck bad magic",
+   "format": "ardupilot-pck",
+   "raw": "NBIAAAAA",
+   "error": "not an ArduPilot parameter pack"
+  },
+  {
+   "name": "pck short",
+   "format": "ardupilot-pck",
+   "raw": "HGc=",
+   "error": "the parameter pack is truncated"
+  },
+  {
+   "name": "pck empty",
+   "format": "ardupilot-pck",
+   "raw": "HGcAAAAA",
+   "ok": {}
+  },
+  {
+   "name": "pck truncated",
+   "format": "ardupilot-pck",
+   "raw": "HGcGAAYAErBBUk1JTkdfQ0hFQ0sBAAEAFLFUQ19BTkdfUElUX1AAAJBAAACQQBRIUkxMX1AAALBAAACQQAGwQkFUVF9NT05JVE9SBBPAU1lTSURfVEhJU01BVgcAAAABAAAAEQA=",
+   "error": "the parameter pack is truncated"
+  },
+  {
+   "name": "pck truncated header",
+   "format": "ardupilot-pck",
+   "raw": "HGcGAAYAEg==",
+   "error": "the parameter pack is truncated"
+  },
+  {
+   "name": "pck unknown type",
+   "format": "ardupilot-pck",
+   "raw": "HGcGAAYAF7BBUk1JTkdfQ0hFQ0sBAAEAFLFUQ19BTkdfUElUX1AAAJBAAACQQBRIUkxMX1AAALBAAACQQAGwQkFUVF9NT05JVE9SBBPAU1lTSURfVEhJU01BVgcAAAABAAAAEQBY/QA=",
+   "error": "unknown parameter type 7 in the pack"
+  },
+  {
+   "name": "pck common longer than last",
+   "format": "ardupilot-pck",
+   "raw": "HGcBAAEAERVBQgEB",
+   "error": "the parameter pack is truncated"
+  },
+  {
+   "name": "unknown format",
+   "format": "dfu",
+   "raw": "",
+   "error": "unknown metadata format 'dfu'"
+  }
+ ],
+ "cache_names": [
+  [
+   "px4-json",
+   0,
+   "px4-json-00000000.bin"
+  ],
+  [
+   "px4-json",
+   1,
+   "px4-json-00000001.bin"
+  ],
+  [
+   "px4-json",
+   3735928559,
+   "px4-json-deadbeef.bin"
+  ],
+  [
+   "px4-json",
+   4294967295,
+   "px4-json-ffffffff.bin"
+  ],
+  [
+   "ardupilot-pck",
+   0,
+   "ardupilot-pck-00000000.bin"
+  ],
+  [
+   "ardupilot-pck",
+   1,
+   "ardupilot-pck-00000001.bin"
+  ],
+  [
+   "ardupilot-pck",
+   3735928559,
+   "ardupilot-pck-deadbeef.bin"
+  ],
+  [
+   "ardupilot-pck",
+   4294967295,
+   "ardupilot-pck-ffffffff.bin"
+  ],
+  [
+   "PX4 JSON!",
+   0,
+   "px4json-00000000.bin"
+  ],
+  [
+   "PX4 JSON!",
+   1,
+   "px4json-00000001.bin"
+  ],
+  [
+   "PX4 JSON!",
+   3735928559,
+   "px4json-deadbeef.bin"
+  ],
+  [
+   "PX4 JSON!",
+   4294967295,
+   "px4json-ffffffff.bin"
+  ],
+  [
+   "",
+   0,
+   "metadata-00000000.bin"
+  ],
+  [
+   "",
+   1,
+   "metadata-00000001.bin"
+  ],
+  [
+   "",
+   3735928559,
+   "metadata-deadbeef.bin"
+  ],
+  [
+   "",
+   4294967295,
+   "metadata-ffffffff.bin"
+  ],
+  [
+   "ÄÖ",
+   0,
+   "metadata-00000000.bin"
+  ],
+  [
+   "ÄÖ",
+   1,
+   "metadata-00000001.bin"
+  ],
+  [
+   "ÄÖ",
+   3735928559,
+   "metadata-deadbeef.bin"
+  ],
+  [
+   "ÄÖ",
+   4294967295,
+   "metadata-ffffffff.bin"
+  ],
+  [
+   "a_b-C",
+   0,
+   "ab-c-00000000.bin"
+  ],
+  [
+   "a_b-C",
+   1,
+   "ab-c-00000001.bin"
+  ],
+  [
+   "a_b-C",
+   3735928559,
+   "ab-c-deadbeef.bin"
+  ],
+  [
+   "a_b-C",
+   4294967295,
+   "ab-c-ffffffff.bin"
+  ]
+ ],
+ "cache_matches": [
+  [
+   "px4-json-deadbeef.bin",
+   true
+  ],
+  [
+   "a-00000000.bin",
+   true
+  ],
+  [
+   "-00000000.bin",
+   false
+  ],
+  [
+   "px4-DEADBEEF.bin",
+   false
+  ],
+  [
+   "px4-deadbee.bin",
+   false
+  ],
+  [
+   "px4-deadbeef0.bin",
+   false
+  ],
+  [
+   "px4_json-deadbeef.bin",
+   false
+  ],
+  [
+   "px4-deadbeef.bin.tmp",
+   false
+  ],
+  [
+   "px4-deadbeef.BIN",
+   false
+  ],
+  [
+   "x.bin",
+   false
+  ],
+  [
+   "ab-cd-12345678.bin",
+   true
+  ],
+  [
+   "ÄÖ-12345678.bin",
+   false
+  ],
+  [
+   "px4-json-deadbeef.bin\n",
+   true
+  ]
+ ],
+ "error_texts": [
+  [
+   7,
+   "this firmware was built without parameter metadata"
+  ]
+ ]
+}

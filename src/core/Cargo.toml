@@ -28,5 +28,8 @@ ctrlc = { version = "3", features = ["termination"] }
 # The forwarder binds its UDP socket with SO_REUSEADDR as Python did; the link crate already builds it.
 socket2 = { version = "0.5", features = ["all"] }
 
+# PX4 keeps its parameter metadata in parameters.json.xz (setup_schemas::param_metadata); the stdlib has no xz.
+lzma-rs = "0.3"
+
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

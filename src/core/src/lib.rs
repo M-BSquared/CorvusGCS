@@ -95,6 +95,7 @@ pub mod protocol;
 pub mod request;
 pub mod response;
 pub mod serial_ports;
+pub mod setup_schemas;
 pub mod store;
 pub mod tlog;
 pub mod vehicle;
