@@ -114,16 +114,6 @@ def test_the_destination_is_replaced_not_merged(tree, tmp_path):
     assert not (out / "stale").exists()
 
 
-@pytest.mark.parametrize("script", ["build-appimage.sh", "build-macos-app.sh", "build-windows.ps1"])
-def test_every_build_bundles_plugins_through_the_tool(script):
-    """One rule for all three artifacts. Copying plugins/ wholesale would ship
-    whatever happens to be installed on the build machine, tests included."""
-    text = (ROOT.parent / script).read_text(encoding="utf-8")
-    assert "bundle_plugins.py" in text
-    assert not re.search(r"""rsync[^\n]*REPO_DIR/plugins/""", text)
-    assert "'plugins');plugins" not in text
-
-
 # ---------------------------------------------------------------------------
 # Plugin tests live with the plugin
 # ---------------------------------------------------------------------------

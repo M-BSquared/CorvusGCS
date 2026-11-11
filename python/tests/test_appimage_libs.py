@@ -146,15 +146,6 @@ def test_ldconfig_listing_is_read_for_64_bit_entries() -> None:
     assert index == {"libxcb-cursor.so.0": Path("/lib/x86_64-linux-gnu/libxcb-cursor.so.0")}
 
 
-def test_the_appimage_build_runs_it_after_the_trim_and_the_interface() -> None:
-    script = (ROOT.parent / "build-appimage.sh").read_text(encoding="utf-8")
-    trim = script.index("tools/bundle_trim.py\"")
-    gui = script.index("cargo build --release --locked")
-    libs = script.index("tools/appimage_libs.py\" bundle \"$APPDIR\"")
-    pack = script.index("APPIMAGETOOL")
-    assert trim < gui < libs < pack
-
-
 def test_ci_installs_what_the_interface_builds_against() -> None:
     workflow = (ROOT.parent / ".github" / "workflows" / "build.yml").read_text(encoding="utf-8")
     for package in ("libxkbcommon-dev", "libwayland-dev", "libxcb-render0-dev"):

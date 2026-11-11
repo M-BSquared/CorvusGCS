@@ -11,7 +11,7 @@
 #                                              (+ Corvus_GCS-<version>-macOS-<arch>.dmg)
 #
 # Usage:
-#   ./build.sh [--dmg] [--no-verify] [--python <path>] [-- <extra platform args>]
+#   ./build.sh [--dmg] [--no-verify] [-- <extra platform args>]
 #
 # Unknown flags are passed through to the platform script. Flags that do not
 # apply to the current platform are dropped with a note, so the same CI

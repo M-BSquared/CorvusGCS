@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # Build Corvus GCS as a Linux AppImage (Ubuntu/Debian x86_64).
 #
-# Bundles the native Rust interface (Cargo.toml and src/, built with cargo) and the
-# backend it starts as its child: a relocatable CPython (venv --copies + host
-# stdlib + libpython) with the `headless` dependencies and corvus_link, then
-# packs them with appimagetool. No Qt, no web engine. No conda on the build
-# host; only stdlib python3 -m venv + pip, and a Rust toolchain (rustup, cargo).
+# Bundles the native Rust interface (Cargo.toml and src/, built with cargo)
+# with the backend (corvus_core) inside it, then packs it with appimagetool.
+# No CPython, no pip, no PyInstaller, no Qt, no web engine; corvus_link is built
+# without its `python` feature. The build host needs a Rust toolchain (rustup,
+# cargo); python3 is used only for small build helpers (the library bundler,
+# the icon fallback) and never ends up in the artifact.
 #
 # The same AppDir is also packed as a Debian package (build-deb.sh, installed
 # under /opt/corvus-gcs), so one assembly feeds both Linux artifacts.
@@ -45,22 +46,11 @@ echo "AppDir:  $APPDIR"
 echo "Output:  $OUTPUT"
 echo ""
 
-command -v python3 >/dev/null 2>&1 || { echo "ERROR: python3 not found" >&2; exit 1; }
+command -v python3 >/dev/null 2>&1 || { echo "ERROR: python3 not found (a build helper, not shipped)" >&2; exit 1; }
 command -v cargo >/dev/null 2>&1 || {
     echo "ERROR: cargo not found; install Rust from https://rustup.rs" >&2
     exit 1
 }
-
-PY_MAJOR="$(python3 -c 'import sys; print(sys.version_info.major)')"
-PY_MINOR="$(python3 -c 'import sys; print(sys.version_info.minor)')"
-# 3.12 is the floor pyproject.toml declares and the version CI tests.
-# This used to accept 3.10, so the shipped AppImage could be built on an
-# interpreter older than anything the suite had ever run against.
-if [ "$PY_MAJOR" -lt 3 ] || { [ "$PY_MAJOR" -eq 3 ] && [ "$PY_MINOR" -lt 12 ]; }; then
-    echo "ERROR: Python >= 3.12 required, found $PY_MAJOR.$PY_MINOR" >&2
-    exit 1
-fi
-PY_MM="${PY_MAJOR}.${PY_MINOR}"
 
 if [ "$(uname -m)" != "x86_64" ]; then
     echo "ERROR: this build targets x86_64; host arch is $(uname -m)" >&2
@@ -73,9 +63,8 @@ fi
 # which step wanted it. Name the file, in the first second.
 MISSING=""
 for required in \
-    VERSION LICENSE.md assets assets/CorvusGCS_logo.png \
-    python/pyproject.toml python/corvus python/src python/plugins python/serve.py \
-    Cargo.toml src/main.rs src/link/Cargo.toml
+    VERSION LICENSE.md assets/CorvusGCS_logo.png assets/licenses \
+    Cargo.toml Cargo.lock src/main.rs
 do
     [ -e "$REPO_DIR/$required" ] || MISSING="$MISSING  $required"
 done
@@ -100,10 +89,6 @@ download() {  # <url> <dest>
     else curl -fsSL -o "$dest" "$url"; fi
 }
 
-# host interpreter layout (detected, never assumed)
-PY_STDLIB="$(python3 -c 'import sysconfig; print(sysconfig.get_path("stdlib"))')"
-PY_LIBDIR="$(python3 -c 'import sysconfig; print(sysconfig.get_config_var("LIBDIR"))')"
-
 # ---- cleanup trap: keep $OUTPUT + cached build/tools, drop $APPDIR on failure
 SUCCESS=0
 cleanup() {
@@ -121,111 +106,12 @@ rm -rf "$APPDIR"
 mkdir -p "$APPDIR/usr"
 rm -f "$OUTPUT"
 
-# ---- 1. relocatable venv (--copies the interpreter binary) ------------------
-echo ">>> Creating venv (python$PY_MM) in AppDir/usr ..."
-python3 -m venv --copies "$APPDIR/usr"
-
-# ---- 2. fix portability: copy host stdlib + lib-dynload + libpython ---------
-# pyvenv.cfg `home =` points at the build host and breaks on another machine.
-# PYTHONHOME (set in AppRun) repoints the interpreter at AppDir/usr; to make
-# that resolve we copy the host stdlib (with lib-dynload) under the venv's
-# lib/pythonX.Y and the shared libpython next to it. The venv's own
-# site-packages is preserved: the host stdlib dir has no site-packages subdir,
-# and rsync below excludes dist-packages to avoid leaking system debs.
-echo ">>> Bundling stdlib + lib-dynload from $PY_STDLIB ..."
-# The same stdlib parts the .app leaves out: the CPython test suite, IDLE, Tk
-# and ensurepip, none of which the app imports, and the static libpython,
-# which only links C extensions at build time.
-rsync -a --exclude 'dist-packages' \
-    --exclude 'test' --exclude 'idlelib' --exclude 'turtledemo' \
-    --exclude 'tkinter' --exclude '_tkinter*' --exclude 'ensurepip' \
-    --exclude 'config-*/libpython*.a' \
-    "$PY_STDLIB/" "$APPDIR/usr/lib/python$PY_MM/"
-
-echo ">>> Bundling libpython${PY_MM}.so.1.0 from $PY_LIBDIR ..."
-if [ -f "$PY_LIBDIR/libpython${PY_MM}.so.1.0" ]; then
-    cp -a "$PY_LIBDIR/libpython${PY_MM}.so.1.0" "$APPDIR/usr/lib/"
-else
-    # Static-libpython builds (e.g. Debian/Ubuntu) embed it in the executable;
-    # the .so is still bundled when present so --enable-shared hosts work too.
-    echo "WARNING: libpython${PY_MM}.so.1.0 not found at $PY_LIBDIR (host likely static-libpython)"
-fi
-
-# ---- 3. pip-install deps (pyproject.toml's `headless` group) ---------------------
-PIP_LOG="$BUILD_DIR/pip-install.log"
-mkdir -p "$BUILD_DIR"
-: > "$PIP_LOG"
-echo ">>> Upgrading pip ..."
-if ! "$APPDIR/usr/bin/python3" -m pip install --upgrade pip >>"$PIP_LOG" 2>&1; then
-    echo "ERROR: pip self-upgrade failed; log: $PIP_LOG" >&2
-    exit 1
-fi
-# pyproject.toml's `headless` group, not a hand-written list: this script used to
-# install the five runtime packages with NO version floors, so the Linux
-# artifact could be built against a pymavlink older than the >=2.4 the code
-# needs and nothing would catch it until the field.
-#
-# Which source, in order: $CORVUS_REQUIREMENTS, then requirements.lock if the
-# repo has one, then the `headless` group. The lock is what makes a release
-# rebuildable — the group states floors, so installing from it in six months
-# resolves to whatever is newest then. Every build writes the set it actually
-# installed to dist/*.lock; promoting one to requirements.lock at tag time
-# pins the next rebuild to it.
-REQUIREMENTS="${CORVUS_REQUIREMENTS:-}"
-if [ -z "$REQUIREMENTS" ] && [ -f "$REPO_DIR/requirements.lock" ]; then
-    REQUIREMENTS="$REPO_DIR/requirements.lock"
-fi
-if [ -n "$REQUIREMENTS" ]; then
-    if [ ! -f "$REQUIREMENTS" ]; then
-        echo "ERROR: missing $REQUIREMENTS" >&2
-        exit 1
-    fi
-    DEPS_ARGS=(-r "$REQUIREMENTS")
-    DEPS_LABEL="$(basename "$REQUIREMENTS")"
-else
-    DEPS_ARGS=(--group "$REPO_DIR/python/pyproject.toml:headless")
-    DEPS_LABEL="pyproject.toml [app]"
-fi
-LOCK_OUT="$REPO_DIR/dist/Corvus_GCS-${VERSION}-x86_64.lock"
-echo ">>> Installing runtime deps from $DEPS_LABEL ..."
-if ! "$APPDIR/usr/bin/python3" -m pip install \
-        "${DEPS_ARGS[@]}" >>"$PIP_LOG" 2>&1; then
-    echo "ERROR: dependency install failed; log: $PIP_LOG" >&2
-    exit 1
-fi
-echo ">>> Building corvus_link (MAVLink, Rust) ..."
-if ! "$APPDIR/usr/bin/python3" -m pip install "$REPO_DIR/src/link" >>"$PIP_LOG" 2>&1; then
-    echo "ERROR: corvus_link build failed (is cargo installed?); log: $PIP_LOG" >&2
-    exit 1
-fi
-echo "    (deps install log: $PIP_LOG)"
-# What went into THIS AppImage, exactly. Ships beside the artifact so a
-# rebuild can be told to resolve to the same versions:
-#   cp dist/Corvus_GCS-<version>-x86_64.lock requirements.lock
-mkdir -p "$REPO_DIR/dist"
-{
-    echo "# Corvus GCS $VERSION — Linux x86_64, python $PY_MM"
-    echo "# The resolved runtime set this artifact was built from."
-    echo "# Install with: pip install -r <this file>"
-    "$APPDIR/usr/bin/python3" -m pip freeze --all --exclude-editable --exclude corvus-link
-} > "$LOCK_OUT" 2>>"$PIP_LOG" || {
-    echo "WARNING: could not write $LOCK_OUT" >&2
-    rm -f "$LOCK_OUT"
-}
-if [ -f "$LOCK_OUT" ]; then echo "    (resolved set: $LOCK_OUT)"; fi
-
-# ---- 3b. trim what the wheels bring and nothing reads ------------------------
-# But `all`, lxml and pip: tools/bundle_trim.py (see its docstring), which
-# also fails the build if the `all` dialect or corvus_link is gone.
-echo ">>> Trimming what the app never loads ..."
-python3 "$REPO_DIR/python/tools/bundle_trim.py" "$APPDIR/usr/lib/python$PY_MM/site-packages"
-rm -f "$APPDIR"/usr/bin/pip "$APPDIR"/usr/bin/pip3 "$APPDIR"/usr/bin/pip3.*
-
-# ---- 3c. the interface --------------------------------------------------------
+# ---- 1. the interface and the backend in it --------------------------------------------------------
 # The interface (Cargo.toml and src/), built for this host. rust-toolchain.toml at the repository root pins
 # the Rust it needs, so cargo runs from there and rustup fetches it on first
 # use. The fonts and icons are cut out of assets/ by its build.rs and the
-# logos are read from assets/, so the binary carries them. It links the C
+# logos are read from assets/, so the binary carries them, and so are the
+# languages, the version and the bundled plugins. It links the C
 # library and the OpenGL, X11 and Wayland libraries are opened at run time from
 # the host, which every desktop that can show a window has.
 echo ">>> Building the interface (Cargo.toml and src/, release) ..."
@@ -238,40 +124,37 @@ if ! ( cd "$REPO_DIR" \
     tail -n 30 "$GUI_LOG" >&2 || true
     exit 1
 fi
+mkdir -p "$APPDIR/usr/bin"
 install -m 0755 "$BUILD_DIR/cargo-gui/release/corvus-gcs" "$APPDIR/usr/bin/corvus-gcs-ui"
 
 # ---- 3d. the system libraries the AppDir links but a clean host lacks ---------
-# Read from the binaries' own DT_NEEDED entries: whatever the interpreter, its
-# extension modules and the interface link and the AppDir does not carry is
-# copied in from this host, and the build fails if anything the app cannot
+# Read from the binary's own DT_NEEDED entries: whatever the interface links
+# and the AppDir does not carry is copied in from this host, and the build fails if anything the app cannot
 # start without is still unresolved.
 echo ">>> Bundling the system libraries the AppDir links ..."
 python3 "$REPO_DIR/python/tools/appimage_libs.py" bundle "$APPDIR"
 
-# ---- 4. copy app code into AppDir root -------------------------------------
-# corvus/version.py does parent.parent/VERSION; corvus/server.py + app.py do
-# parent.parent/src — so VERSION, corvus/, src/ must be siblings at AppDir root.
-echo ">>> Copying application code ..."
-rsync -a --exclude '__pycache__' "$REPO_DIR/python/corvus/" "$APPDIR/corvus/"
-rsync -a --exclude '__pycache__' "$REPO_DIR/python/src/" "$APPDIR/src/"
-# Only what the app reads: the logos and licences. The README and website
-# screenshots stay in the repository (tools/bundle_assets.py).
-python3 "$REPO_DIR/python/tools/bundle_assets.py" "$APPDIR/assets"
-# The bundled plugins, beside corvus/ and src/ for the same reason those are
-# (corvus/plugin_registry.py resolves this root as a sibling of the package).
-# Only the ones .gitignore lets back in, and without their tests/: a plugin
-# installed into plugins/ for development is not part of the release.
-python3 "$REPO_DIR/python/tools/bundle_plugins.py" "$APPDIR/plugins"
+# ---- 2. files that travel with it ------------------------------------------
+# The Sustainable Use License requires that anyone who receives a copy of the
+# software also receives a copy of its terms, so the licence ships in the
+# bundle rather than only in the repository.
+echo ">>> Copying the licence and version ..."
 cp -a "$REPO_DIR/VERSION" "$APPDIR/VERSION"
-# The Sustainable Use License requires that anyone who receives a copy of
-# the software also receives a copy of its terms, so the licence ships in
-# the bundle rather than only in the repository.
 cp -a "$REPO_DIR/LICENSE.md" "$APPDIR/LICENSE.md"
-if [ -f "$REPO_DIR/python/serve.py" ]; then
-    cp -a "$REPO_DIR/python/serve.py" "$APPDIR/serve.py"
+mkdir -p "$APPDIR/assets"
+cp -a "$REPO_DIR/assets/licenses" "$APPDIR/assets/licenses"
+find "$APPDIR/assets" -name .DS_Store -delete
+
+# The bundle holds no Python and no PyO3: the build fails if one came back.
+python_inside="$(find "$APPDIR" \( -iname 'python*' -o -iname 'libpython*' -o -name 'site-packages' \
+    -o -name 'pip' -o -name '*.pyc' -o -name 'serve.py' -o -name 'corvus_link*' -o -name 'PySide*' \) -print)"
+if [ -n "$python_inside" ]; then
+    echo "ERROR: the AppDir must hold no Python, and it does:" >&2
+    printf '%s\n' "$python_inside" | sed 's/^/    /' >&2
+    exit 1
 fi
 
-# ---- 5. generate AppRun (no version literal; pythonX.Y resolved at runtime) --
+# ---- 3. generate AppRun (no version literal) ---------------------------------
 echo ">>> Generating AppRun + desktop entry ..."
 cat > "$APPDIR/AppRun" <<'APPRUN_EOF'
 #!/usr/bin/env bash
@@ -284,42 +167,21 @@ if [ -z "${APPDIR:-}" ]; then
 fi
 cd "$APPDIR"
 
-# Resolve the bundled pythonX.Y directory at runtime (X.Y was fixed at build).
-shopt -s nullglob
-PY_BASE=""
-for d in "$APPDIR/usr/lib"/python3.*/; do PY_BASE="$d"; break; done
-shopt -u nullglob
-if [ -z "$PY_BASE" ] || [ ! -d "$PY_BASE" ]; then
-    echo "corvus-gcs: bundled python3.x not found under $APPDIR/usr/lib" >&2
-    exit 1
-fi
-PY_SITE="${PY_BASE}site-packages"
-
-# PYTHONHOME overrides the stale pyvenv.cfg `home =` so the bundled interpreter
-# finds its stdlib under $APPDIR/usr/lib/pythonX.Y regardless of mount path.
-# PYTHONPATH re-adds the venv site-packages because PYTHONHOME bypasses venv
-# site-discovery, and AppDir root so `import corvus` resolves.
-export PYTHONHOME="$APPDIR/usr"
-export PYTHONPATH="$APPDIR:$PY_SITE"
-
-# The interpreter's own libraries (libpython) sit under usr/lib.
-export LD_LIBRARY_PATH="$APPDIR/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-
 # Ensure a writable HOME for the config, tile cache and logs when none is set/unwritable.
 if [ -z "${HOME:-}" ] || [ ! -w "${HOME:-}" ]; then
     export HOME="${XDG_CACHE_HOME:-${TMPDIR:-/tmp}}/corvus-gcs"
     mkdir -p "$HOME" 2>/dev/null || true
 fi
 
-# exec replaces the shell so SIGINT/SIGTERM reach the interface directly. It
-# starts serve.py with the bundled interpreter as its child and takes it down
-# on every way out (no zombies, no leaked sockets). The caller's flags come
-# last, so they can still override --root and --python.
-exec "$APPDIR/usr/bin/corvus-gcs-ui" --root "$APPDIR" --python "$APPDIR/usr/bin/python3" "$@"
+# exec replaces the shell so SIGINT/SIGTERM reach the interface directly. The
+# backend runs inside it, so there is no child to leave behind: the core is
+# stopped and its threads joined on every way out (no zombies, no leaked
+# sockets).
+exec "$APPDIR/usr/bin/corvus-gcs-ui" "$@"
 APPRUN_EOF
 chmod 0755 "$APPDIR/AppRun"
 
-# ---- 6. desktop entry (no version literal) ---------------------------------
+# ---- 4. desktop entry (no version literal) ---------------------------------
 # StartupWMClass is how a dock ties the running window to this entry. An
 # integrator (appimaged, AppImageLauncher) installs the file under a new name,
 # appimagekit_<hash>-corvus-gcs.desktop, so the window's app id, which
@@ -337,7 +199,7 @@ Categories=Utility;Science;
 Terminal=false
 DESKTOP_EOF
 
-# ---- 7. icon: a square 256x256 PNG ------------------------------------------
+# ---- 5. icon: a square 256x256 PNG ------------------------------------------
 # Square on purpose. An integrator files the icon under hicolor/<W>x<H>/apps
 # from the image's real size, and the logo is 753x756: scaled with its aspect
 # kept it came out 254x256, a directory no icon theme looks in, so the
@@ -367,7 +229,7 @@ mkdir -p "$APPDIR/usr/share/icons/hicolor/256x256/apps"
 cp -a "$ICON" "$APPDIR/usr/share/icons/hicolor/256x256/apps/corvus-gcs.png"
 ln -sf corvus-gcs.png "$APPDIR/.DirIcon"
 
-# ---- 7b. the Debian package ---------------------------------------------------
+# ---- 5b. the Debian package ---------------------------------------------------
 if [ "$WANT_DEB" -eq 1 ]; then
     "$REPO_DIR/build-deb.sh" "$APPDIR"
 fi

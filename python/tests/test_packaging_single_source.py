@@ -98,33 +98,11 @@ def test_every_runtime_dependency_states_a_floor() -> None:
         )
 
 
-def test_every_installer_builds_corvus_link() -> None:
-    """MAVLink is the Rust extension in src/link, not a wheel from an
-    index. An installer that forgets it builds a Corvus that cannot fly."""
-    needles = {
-        ROOT.parent / "run.sh": '"$REPO_DIR/src/link"',
-        ROOT.parent / "build-appimage.sh": '"$REPO_DIR/src/link"',
-        ROOT.parent / "build-macos-app.sh": '"$REPO_DIR/src/link"',
-        ROOT.parent / "build-windows.ps1": '$LinkSrc = Join-Path $RepoDir "src\\link"',
-    }
-    for path, needle in needles.items():
-        assert needle in path.read_text(encoding="utf-8"), f"{path.name} does not build corvus_link"
-    assert GITHUB_CI.read_text(encoding="utf-8").count("pip install ../src/link") == 3
-
-
 def test_the_pipeline_checks_the_rust_side() -> None:
     """Formatting, clippy and the Rust unit tests run on every push."""
     text = GITHUB_CI.read_text(encoding="utf-8")
     for needle in ("cargo fmt --check", "cargo clippy --all-targets -- -D warnings", "cargo test"):
         assert needle in text, needle
-
-
-def test_a_lock_never_pins_the_local_extension() -> None:
-    """corvus_link is built from the checkout; a lock line for it would name
-    this machine's path and fail every rebuild elsewhere."""
-    for name in ("build-appimage.sh", "build-macos-app.sh", "build-windows.ps1"):
-        text = (ROOT.parent / name).read_text(encoding="utf-8")
-        assert "--exclude corvus-link" in text, name
 
 
 def test_pymavlink_is_a_test_reference_only() -> None:
@@ -165,13 +143,6 @@ def test_the_dev_venv_has_everything_the_other_groups_have() -> None:
     assert not {"pyinstaller", "Pillow"} & dev, "build tools stay out of the dev venv"
 
 
-def test_every_installer_reads_its_group_from_pyproject() -> None:
-    for path, needles in INSTALLERS.items():
-        text = path.read_text(encoding="utf-8")
-        for needle in needles:
-            assert needle in text, f"{path.name} does not install {needle!r}"
-
-
 def test_no_installer_hardcodes_the_dependency_list() -> None:
     """Every one of them reads the file instead of restating it."""
     packages = ("pymavlink", "paramiko", "pyserial", "PySide6", "PyQt6", "pytest", "ruff",
@@ -190,33 +161,6 @@ def test_no_installer_hardcodes_the_dependency_list() -> None:
                         f"{path.name} names {package} in an install line: "
                         f"{stripped!r}. The list lives in pyproject.toml."
                     )
-
-
-def test_the_windows_build_does_not_freeze_the_backend() -> None:
-    """The backend runs on python.org's embeddable CPython, laid out by the
-    script; there is no PyInstaller, in the script, the groups or the CI job."""
-    assert "package-windows" not in _groups()
-    ps1 = (ROOT.parent / "build-windows.ps1").read_text(encoding="utf-8")
-    assert "PyInstaller" not in ps1.replace("No PyInstaller", "")
-    assert "embed-amd64.zip" in ps1 and "cargo build --release --locked" in ps1
-    job = GITHUB_CI.read_text(encoding="utf-8").split("windows-app:")[1].split("release:")[0]
-    assert "pip install pyinstaller" not in job.lower() and "-m PyInstaller" not in job
-
-
-def test_the_macos_build_no_longer_parses_yaml_with_a_regex() -> None:
-    """It screen-scraped environment.yml's pip: block to stay in sync."""
-    text = (ROOT.parent / "build-macos-app.sh").read_text(encoding="utf-8")
-    assert "RUNTIME_DEPS" not in text
-    assert 'pip install "${DEPS_ARGS[@]}"' in text
-
-
-def test_a_release_lock_still_wins_over_the_floors() -> None:
-    """requirements.lock is generated, not a second list — and it is what
-    makes a rebuild of a tag resolve to the versions that tag shipped with."""
-    for name in ("build-appimage.sh", "build-macos-app.sh", "build-windows.ps1"):
-        text = (ROOT.parent / name).read_text(encoding="utf-8")
-        assert "CORVUS_REQUIREMENTS" in text, name
-        assert "requirements.lock" in text, name
 
 
 def test_one_python_version_across_the_toolchain() -> None:

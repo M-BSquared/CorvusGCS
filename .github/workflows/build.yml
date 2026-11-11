@@ -6,15 +6,17 @@
 #                 tests/ and each plugin's own plugins/<id>/tests/.
 #   test-windows— the same suite on Windows; gates windows-app only.
 #   lint        — ruff over corvus/, serve.py, tests/ and plugins/.
-#   rust-gui    — rustfmt, clippy and the tests of the interface (Cargo.toml, src/), the
-#                 native egui interface every artifact ships.
+#   rust-gui    — rustfmt, clippy and the tests of the whole workspace (the
+#                 native egui interface and corvus_core, the backend inside
+#                 it), all with --locked.
 #   frontend    — the plain-node frontend assertions, tests/*.js and
 #                 plugins/<id>/tests/*.js, via python/tools/frontend_tests.js.
 #   appimage    — Linux x86_64 AppImage and amd64 .deb via ./build.sh
 #                 (-> build-appimage.sh, build-deb.sh).
 #   macos-app   — macOS arm64 .app + .dmg via ./build.sh --dmg.
-#   windows-app — Windows x64 folder + zip via .\build-windows.ps1 (python.org's
-#                 embeddable CPython for the backend, cargo for the interface).
+#   windows-app — Windows x64 folder + zip via .\build-windows.ps1.
+#                 None of the three artifacts holds Python: cargo builds one
+#                 program with its backend inside, and each job checks that.
 #   release     — on a version tag, attach every artifact to a GitHub Release.
 #
 # Every job that compiles Rust restores cargo's registry and target folders
@@ -78,6 +80,11 @@ jobs:
       # hosted runners carry cargo; the build fetches maturin and the crates.
       - name: Build corvus_link
         run: pip install ../src/link
+      # The route harness (tests/test_core_*.py) starts the Rust backend beside
+      # serve.py and holds its answers to the Python ones.
+      - name: Build corvus-core
+        working-directory: .
+        run: cargo build --locked -p corvus_core --bin corvus-core
       - name: pytest
         run: pytest -q
 
@@ -172,6 +179,9 @@ jobs:
       # build without it has to keep compiling for machines that have none.
       - name: build without TLS
         run: cargo clippy --all-targets --no-default-features -- -D warnings
+      # The build every artifact uses: no PyO3, no Python on the machine.
+      - name: build without the python feature
+        run: cargo clippy --all-targets --no-default-features --features tls -- -D warnings
       - name: cargo test
         run: |
           export PYO3_PYTHON="$(command -v python)"
@@ -200,9 +210,9 @@ jobs:
       - name: rustfmt
         run: cargo fmt --check
       - name: clippy
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: cargo test
-        run: cargo test
+        run: cargo test --workspace --locked
 
   # --- frontend assertions (no browser, no test runner) ----------------------
   frontend:
@@ -219,9 +229,9 @@ jobs:
         run: node python/tools/frontend_tests.js
 
   # --- Linux artifact --------------------------------------------------------
-  # ubuntu-22.04 on purpose: the AppImage bundles the host's CPython and links
-  # against the host glibc, so building on the oldest supported runner keeps the
-  # artifact usable on older field laptops.
+  # ubuntu-22.04 on purpose: the interface links the host's glibc, so building
+  # on the oldest supported runner keeps the artifact usable on older field
+  # laptops.
   appimage:
     needs: [test, frontend, rust-gui]
     runs-on: ubuntu-22.04
@@ -231,43 +241,41 @@ jobs:
         with:
           workspaces: |
             . -> build/cargo-gui
-            src/link -> target
-      # ubuntu-22.04's system python3 is 3.10; the AppImage bundles whatever
-      # python3 is first on PATH, and build-appimage.sh refuses anything below
-      # the 3.12 floor pyproject.toml declares. setup-python puts 3.12 there.
-      - uses: actions/setup-python@v6
-        with:
-          python-version: '3.12'
       - name: Install build dependencies
         run: |
           sudo apt-get update -y
           sudo apt-get install -y --no-install-recommends \
-            wget rsync squashfs-tools imagemagick dpkg-dev \
+            wget squashfs-tools imagemagick dpkg-dev \
             libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
             libxkbcommon-dev libwayland-dev
       # The interface is built here with cargo (the repository root, whose
-      # rust-toolchain.toml rustup reads). Its X11, Wayland and OpenGL
-      # libraries are opened at run time from the machine it runs on.
-      # appimagetool and its type-2 runtime are deliberately not cached: a
+      # rust-toolchain.toml rustup reads), backend included. Its X11, Wayland
+      # and OpenGL libraries are opened at run time from the machine it runs
+      # on. appimagetool and its type-2 runtime are deliberately not cached: a
       # fixed cache key froze an old tool for good. Each build fetches the
       # current continuous release; the static runtime needs no FUSE 2 package.
       - name: Build AppImage and .deb
         run: |
           chmod +x build.sh build-appimage.sh build-deb.sh
           ./build.sh
+      # The finished artifact, unpacked: no interpreter, package or PyO3
+      # extension may be in it.
+      - name: Check that no Python is inside
+        run: |
+          cd "$RUNNER_TEMP"
+          chmod +x "$GITHUB_WORKSPACE"/dist/Corvus_GCS-*-x86_64.AppImage
+          "$GITHUB_WORKSPACE"/dist/Corvus_GCS-*-x86_64.AppImage --appimage-extract >/dev/null
+          python3 "$GITHUB_WORKSPACE/python/tools/bundle_trim.py" check squashfs-root \
+            --require usr/bin/corvus-gcs-ui VERSION LICENSE.md
       - name: Read version
         id: ver
         run: echo "version=$(cat VERSION)" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v6
         with:
           name: Corvus_GCS-${{ steps.ver.outputs.version }}-linux-x86_64
-          # The .lock beside it is the exact resolved dependency set this
-          # AppImage was built from; pyproject.toml only states floors, so
-          # it is the lock that makes a rebuild of this tag reproducible.
           path: |
             dist/Corvus_GCS-*-x86_64.AppImage
             dist/Corvus_GCS-*-amd64.deb
-            dist/Corvus_GCS-*-x86_64.lock
           if-no-files-found: error
           retention-days: 30
 
@@ -291,43 +299,24 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: |
-            . -> target
-            src/link -> target
-      - name: Ensure a framework CPython
-        # build-macos-app.sh requires a framework build (conda and some tool-cache
-        # pythons are not relocatable into a .app) that runs as the host's own
-        # architecture. Homebrew's is one, and its prefix differs per arch:
-        # /opt/homebrew on Apple Silicon, /usr/local on Intel. The script's
-        # candidate search covers both, so this only has to make sure one exists.
-        # 3.12, matching the test job, run.sh and requires-python: this
-        # step used to install 3.11, so the artifact was packaged on a version
-        # nothing was ever tested against.
-        run: |
-          if ! brew list --versions python@3.12 >/dev/null 2>&1; then
-            brew install python@3.12 || echo "brew install failed; relying on auto-detection"
-          fi
-      - name: Show the build architecture
-        run: |
-          echo "runner arch: $(uname -m)"
-          echo "python3:     $(python3 -c 'import platform; print(platform.machine())')"
+            . -> build/cargo-gui
       - name: Build .app + .dmg
         run: |
           chmod +x build.sh build-macos-app.sh
           ./build.sh --dmg
       - name: Smoke-test the bundle
-        # The finished .app, run: its own interpreter serves a simulated
-        # vehicle, the Rust extension has every feature compiled in, a signal
-        # stops it cleanly, and its signature still verifies afterwards.
+        # The finished .app: it holds no Python of any kind, carries the
+        # version and the licence, links only macOS's own libraries, and its
+        # signature still verifies. Needs only pytest.
         run: |
           python3 -m venv "$RUNNER_TEMP/smoke"
           . "$RUNNER_TEMP/smoke/bin/activate"
           python -m pip install --upgrade pip
           cd python
-          pip install --group test
-          pip install ../src/link
+          pip install --group smoke
           CORVUS_APP_BUNDLE="$PWD/../dist/Corvus GCS.app" pytest tests/test_bundle_smoke.py -q
       - name: Keep the build logs of a failed build
-        # pip, codesign and hdiutil write their reasons to build/*.log, not to
+        # cargo, codesign and hdiutil write their reasons to build/*.log, not to
         # the job log, so without these a failed build names no cause.
         if: failure()
         uses: actions/upload-artifact@v6
@@ -347,17 +336,13 @@ jobs:
       - uses: actions/upload-artifact@v6
         with:
           name: Corvus_GCS-${{ steps.ver.outputs.version }}-macOS-${{ steps.ver.outputs.arch }}
-          # See the AppImage job: the .lock is what this artifact's
-          # dependencies actually resolved to.
-          path: |
-            dist/Corvus_GCS-*-macOS-*.dmg
-            dist/Corvus_GCS-*-macOS-*.lock
+          path: dist/Corvus_GCS-*-macOS-*.dmg
           if-no-files-found: error
           retention-days: 30
 
   # --- Windows artifact ------------------------------------------------------
-  # python.org's embeddable CPython for the backend (no PyInstaller) and cargo
-  # for the interface; see the header of build-windows.ps1.
+  # cargo builds the one program, backend inside; see the header of
+  # build-windows.ps1. The script fails the build if any Python is in the folder.
   windows-app:
     needs: [test-windows, frontend, rust-gui]
     runs-on: windows-latest
@@ -366,14 +351,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: |
-            . -> target
-            src/link -> target
-      - uses: actions/setup-python@v6
-        with:
-          python-version: '3.12'
+            . -> build/windows/cargo-gui
       - name: Build the Windows app
         shell: pwsh
-        run: .\build-windows.ps1 -Zip -Python (Get-Command python).Source
+        run: .\build-windows.ps1 -Zip
       - name: Read version
         id: ver
         shell: bash
@@ -381,11 +362,7 @@ jobs:
       - uses: actions/upload-artifact@v6
         with:
           name: Corvus_GCS-${{ steps.ver.outputs.version }}-windows-x64
-          # See the AppImage job: the .lock is what this artifact's
-          # dependencies actually resolved to.
-          path: |
-            dist/Corvus_GCS-*-windows-x64.zip
-            dist/Corvus_GCS-*-windows-x64.lock
+          path: dist/Corvus_GCS-*-windows-x64.zip
           if-no-files-found: error
           retention-days: 30
 
@@ -457,10 +434,6 @@ jobs:
           have="$(gh release view "$GITHUB_REF_NAME" --json assets \
                     --jq '.assets[] | "\(.name)\t\(.size)"' || true)"
 
-          # The .lock beside each bundle is for whoever cuts the next release
-          # to pin against (download it from this job's own artifacts, copy it
-          # over requirements.lock) — not something an operator downloading
-          # the app needs to see next to the AppImage/.dmg/.zip.
           for f in artifacts/*; do
             [ -f "$f" ] || continue
             case "$f" in *.lock) continue ;; esac
