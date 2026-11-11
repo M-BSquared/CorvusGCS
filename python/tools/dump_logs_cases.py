@@ -16,6 +16,7 @@ import math
 import pathlib
 import struct
 import sys
+import threading
 
 HERE = pathlib.Path(__file__).resolve().parent
 PYTHON_ROOT = HERE.parent
@@ -297,7 +298,613 @@ def tlog_cases() -> None:
     write("logs/tlog_index.json", index)
 
 
-STEPS = {"ulog": ulog_cases, "flights": flight_cases, "tlogs": tlog_cases}
+# ---------------------------------------------------------------------------
+# Firmware
+# ---------------------------------------------------------------------------
+
+PX4_NAMES = [
+    "px4_fmu-v6x_default.px4", "px4_fmu-v5_default.px4", "px4_fmu-v4_default.px4", "px4_fmu-v2_default.px4",
+    "cubepilot_cubeorange_default.px4", "cubepilot_cubeorangeplus_default.px4", "holybro_kakuteh7_default.px4",
+    "ark_can-flow_cannode.px4", "px4_io-v2_default.px4", "ark_gnss-top_default.px4", "mro_x21_default.px4",
+    "px4_fmu-v6x_rover.px4", "px4_fmu-v5_performance-test.px4", "3dr_something_default.px4",
+    "sky-drones_smartap-airlink_default.px4", "weird.px4", "a_b.px4", "single", "", "UPPER_Case_Default.px4",
+    "av_x-v1_default.px4", "raspberrypi_pico_default.px4", "uvify_core_default.px4", "x_y_z_w.px4",
+    "px4_fmu-v6x_bootloader.px4", "px4_fmu-v6x_canbootloader.px4", "ark_can-flow_cannode.px4",
+    "px4_fmu-v6x_default.bin", "matek_h743-slim_default.px4", "holybro_pix32v5_default.px4", "zeroone_x6_default.px4",
+    "thepeach_k1_default.px4", "siyi_n7_default.px4", "airmind_mindpx-v2_default.px4", "nxp_fmuk66-v3_default.px4",
+    "atl_mantis-edu_default.px4", "hkust_nxt-dual_default.px4", "spracing_h7extreme_default.px4", "xc-fly_x_default.px4",
+    "micoair_h743_default.px4", "modalai_fc-v2_default.px4", "siyi_n7-gps.px4", "foo_bar-io_default.px4",
+]
+BOARD_TOKENS = ["cannode", "dist", "h-flow", "can-flow", "gnss-top", "io-v2", "kakute-gps", "fmu-v5-io", "FMU-V5", "", "x"]
+AP_BOARDS = [
+    "CubeOrange", "CubeOrange-SimOnHardware", "Pixhawk1", "Pixhawk1-1M", "Pixhawk6X", "Pixhawk4", "Pixhawk5X", "Pixhawk6C",
+    "Pixracer", "fmuv2", "fmuv3", "MatekF405-Wing", "MatekH743", "KakuteH7", "SpeedyBeeF405v4", "HolybroGPS", "durandal",
+    "CUAVv5", "CUAV-Nora", "mRoX21", "mRoControlZeroF7", "sitl", "SITL_x86_64_linux_gnu", "linux", "navio2", "bebop", "apm1",
+    "VRBrain-v51", "iFlight2", "BrotherHobbyF407", "Orqa", "x", "ark-fpv", "heli-thing", "T3-Gem-O1", "QiotekZealotH743",
+    "3DRControlZeroH7", "ZeroOneX6", "Omnibus", "Blitz743Pro", "mamba",
+]
+
+
+def _board(name: str, label: str | None = None, **more) -> dict:
+    return {"name": name, "label": label or name, **more}
+
+
+def firmware_cases() -> None:
+    """The firmware catalogue, the ArduPilot half, the image container and the
+    flash gates: what firmware_catalog.py, ardupilot_firmware.py and
+    firmware_uploader.py answer, for the Rust ones."""
+    import base64
+    import io
+    import os
+    import tempfile
+    import urllib.error
+    import urllib.request
+    import zipfile
+    import zlib
+    from corvus import ardupilot_firmware as af
+    from corvus import firmware_catalog as fc
+    from corvus import firmware_uploader as fu
+
+    out: dict = {}
+
+    out["px4_tables"] = {"labels": fc.BOARD_LABELS, "vendors": fc.VENDOR_LABELS}
+    out["describe"] = [
+        {"name": n, "label": fc.board_label(n), "describe": fc.describe_board(n),
+         "flashable": fc.is_flashable_asset(n)} for n in PX4_NAMES + list(fc.BOARD_LABELS)
+    ]
+    out["peripheral"] = [{"board": b, "peripheral": fc.is_peripheral_board(b)} for b in BOARD_TOKENS]
+    out["asset_urls"] = [
+        {"tag": t, "name": n, "url": fc.asset_url(t, n)}
+        for t, n in [("v1.17.0", "px4_fmu-v6x_default.px4"), ("v1.17.0-rc1", "a b.px4"), ("v 1/2", "x/y.px4"),
+                     ("\u00e4\u00f6", "n\u00e4me.px4"), ("", ""), ("v1.0~x", "q+r%s.px4")]
+    ]
+    out["safe_names"] = [
+        {"name": n, "safe": fc._safe_name(n)}
+        for n in ["a.px4", "../../x.px4", "dir/sub/b.px4", "a b c.px4", "\u00e4.px4", "x" * 300, "", ".", "..", "a//b", "n\u00e4me"]
+    ]
+    hosts = [
+        "https://github.com/PX4/x", "http://github.com/PX4/x", "https://GITHUB.com/x", "https://evil.com/x",
+        "https://github.com.evil.com/x", "https://user@github.com/x", "https://github.com:443/x", "ftp://github.com/x",
+        "https://objects.githubusercontent.com/a", "https://release-assets.githubusercontent.com/a",
+        "https://api.github.com/a", "//github.com/x", "github.com/x", "", "https://", "https:github.com/x",
+        "  https://github.com/x", "https://github.com\t/x", "https://firmware.ardupilot.org/Copter/a.apj",
+        "https://firmware.ardupilot.org:8443/x", "https://[::1]/x", "https://github.com#x", "https://github.com?x",
+        "https://github.com\\evil.com/x", "HTTPS://github.com/x",
+    ]
+    out["hosts"] = [{"url": u, "px4": fc._host_allowed(u), "ardupilot": af.host_allowed(u)} for u in hosts]
+
+    def release(tag, assets, prerelease=False, draft=False, name=None, **more):
+        return {
+            "tag_name": tag, "name": name if name is not None else tag, "prerelease": prerelease, "draft": draft,
+            "published_at": "2026-01-01T00:00:00Z",
+            "assets": [{"name": n, "size": 1024 + i,
+                        "browser_download_url": f"https://github.com/PX4/PX4-Autopilot/releases/download/{tag}/{n}"}
+                       for i, n in enumerate(assets)],
+            **more,
+        }
+
+    payloads = {
+        "plain": [release("v1.17.0", ["px4_fmu-v6x_default.px4", "px4_fmu-v5_default.px4", "px4_fmu-v6x_bootloader.px4",
+                                       "cubepilot_cubeorange_default.px4", "holybro_kakuteh7_default.px4"]),
+                  release("v1.17.0-rc1", ["px4_fmu-v6x_default.px4"], prerelease=True),
+                  release("v1.16.0", ["px4_fmu-v5_default.px4", "px4_fmu-v4_default.px4", "zz_unknown_default.px4"])],
+        "junk": [None, 5, "x", {"a": 1}, release("d", ["px4_fmu-v6x_default.px4"], draft=True), release("empty", [])],
+        "not_a_list": {"releases": []},
+        "wrong_host": [{"tag_name": "v1", "assets": [
+            {"name": "px4_fmu-v6x_default.px4", "size": 1, "browser_download_url": "https://evil.com/px4_fmu-v6x_default.px4"},
+            {"name": "px4_fmu-v5_default.px4", "size": "7", "browser_download_url":
+                "https://github.com/PX4/PX4-Autopilot/releases/download/v1/px4_fmu-v5_default.px4"},
+            {"name": "px4_fmu-v4_default.px4", "size": None, "browser_download_url":
+                "http://github.com/PX4/PX4-Autopilot/releases/download/v1/px4_fmu-v4_default.px4"},
+            "junk", {"name": None}]}],
+        "many": [release(f"v1.{i}.0", ["px4_fmu-v6x_default.px4"]) for i in range(12)],
+        "unnamed": [{"tag_name": None, "name": None, "assets": [
+            {"name": "a_b_default.px4", "size": 1,
+             "browser_download_url": "https://github.com/x/a_b_default.px4"}]}],
+    }
+    out["parse_releases"] = [{"payload": p, "releases": fc._parse_releases(p)} for p in payloads.values()]
+
+    # Board detection, PX4 and ArduPilot.
+    px4_boards = [_board("px4_fmu-v6x_default.px4", "Pixhawk 6X (FMUv6X)"), _board("px4_fmu-v5_default.px4", "Pixhawk 4 (FMUv5)"),
+                  _board("px4_fmu-v4_default.px4", "Pixracer (FMUv4)"), _board("px4_fmu-v2_default.px4", "Pixhawk 1 (FMUv2)"),
+                  _board("cubepilot_cubeorange_default.px4", "Cube Orange"),
+                  _board("cubepilot_cubeorangeplus_default.px4", "Cube Orange+"),
+                  _board("cubepilot_cubeorange_rover.px4", "x"), _board("holybro_kakuteh7_default.px4", "Holybro Kakute H7"),
+                  _board("holybro_kakuteh7v2_default.px4", "Holybro Kakute H7 v2"), _board("matek_h743_default.px4", "Matek H743"),
+                  _board("modalai_fc-v2_default.px4", "ModalAI Flight Core v2"), _board("px4_fmu-v6c_default.px4", "6C"),
+                  _board("px4_fmu-v6x_zenoh.px4", "z")]
+    hints = [
+        {}, {"description": "PX4 FMU v6X.x"}, {"description": "PX4 FMU v5.x"}, {"description": "PX4 BL FMU v6X.x"},
+        {"description": "CubeOrange"}, {"description": "Cube Orange+"}, {"description": "CubeOrangePlus"},
+        {"description": "cube orange"}, {"description": "USB Serial", "hwid": "USB VID:PID=26AC:0016"},
+        {"description": "USB Serial", "hwid": "USB VID:PID=26ac:0011"}, {"description": "FT232R USB UART", "hwid": "USB VID:PID=0403:6001"},
+        {"vendor_id": 0x26AC, "product_id": 0x0016}, {"vendor_id": 0x26AC, "product_id": 0}, {"vendor_id": True, "product_id": True},
+        {"vendor_id": "9900", "product_id": "16"}, {"description": "Pixracer"}, {"description": "KakuteH7v2"},
+        {"description": "KakuteH7"}, {"description": "MATEK H743"}, {"description": "ModalAI Flight Core"},
+        {"description": "PX4 FMU v6C.x"}, {"description": "FMU_V4"}, {"description": "fmu v6xrt"}, {"description": None, "hwid": None},
+        {"description": "durandal"}, {"description": "  "}, {"description": "PX4 FMU v7.x"}, {"hwid": "USB VID:PID=26AC:0016 SER=1"},
+        {"description": "Pixracer", "hwid": "USB VID:PID=26AC:0011"},
+    ]
+    board_sets = [px4_boards, px4_boards[:3], [], [_board("odd.px4")]]
+    out["board_sets"] = board_sets
+    out["px4_detect"] = [{"hints": h, "set": i, "found": fc.detect_board(h, b)}
+                         for h in hints for i, b in enumerate(board_sets)]
+
+    ap_entries = [{"name": af.asset_name("Copter", "stable", b), "board": b, "label": b, "size": 0,
+                   "url": af.asset_url("Copter", "stable", b), "title": af.describe_board(b)["title"]} for b in AP_BOARDS]
+    ap_hints = [
+        {}, {"description": "CubeOrange"}, {"description": "Cube Orange"}, {"description": "CubeOrange+"},
+        {"description": "Pixhawk 6X"}, {"description": "PX4 FMU v6X.x"}, {"description": "PX4 FMU v5.x"},
+        {"description": "PX4 FMU v4.x"}, {"description": "PX4 FMU v2.x"}, {"description": "PX4 FMU v3.x"},
+        {"description": "fmu v6c"}, {"description": "MatekF405-Wing"}, {"description": "Matek F405 Wing board"},
+        {"description": "KakuteH7 flight"}, {"description": "SITL_x86_64_linux_gnu"}, {"description": "usb serial"},
+        {"description": "pixhawk1"}, {"description": "Hex Cube Orange (ChibiOS)"}, {"description": "x"}, {"description": "   "},
+        {"description": None}, {"description": "mRo X2.1"}, {"description": "ark fpv"}, {"description": "PX4 FMU v7"},
+    ]
+    out["ap_entries"] = ap_entries
+    out["ap_detect"] = [{"hints": h, "found": af.detect_board(h, ap_entries)} for h in ap_hints]
+    out["ap_detect_few"] = [{"hints": h, "found": af.detect_board(h, ap_entries[:4])} for h in ap_hints]
+    releases_both = [
+        {"tag": "v1.17.0", "prerelease": False, "boards": px4_boards},
+        {"tag": "v1.18.0-rc1", "prerelease": True, "boards": px4_boards[:2]},
+        {"tag": "ardupilot:Copter/stable", "vendor": "ardupilot", "prerelease": False, "boards": ap_entries},
+        {"tag": "ardupilot:Plane/stable", "vendor": "ardupilot", "prerelease": False, "boards": ap_entries[:5]},
+    ]
+    release_sets = [releases_both, releases_both[1:], releases_both[2:], releases_both[:1], []]
+    out["release_sets"] = release_sets
+    out["detect_boards"] = [
+        {"hints": h, "set": i, "found": fc.detect_boards(h, r)}
+        for h in hints[:12] + ap_hints[:8]
+        for i, r in enumerate(release_sets)
+    ]
+
+    # ArduPilot.
+    out["ap_tables"] = {
+        "vendors": [{"key": v.key, "directory": v.directory, "suffix": v.suffix, "binary": v.binary, "label": v.label}
+                    for v in af.VEHICLES],
+        "channels": [list(c) for c in af.CHANNELS],
+        "prefixes": [list(p) for p in af._VENDOR_PREFIXES],
+        "fmu_boards": af._FMU_BOARDS,
+        "not_flashable": sorted(af._NOT_FLASHABLE),
+    }
+    out["ap_describe"] = [{"board": b, "flashable": af.is_flashable_board(b), "describe": af.describe_board(b)}
+                          for b in AP_BOARDS + ["", "Xyz-heli", "x-heli", "CubeOrange-heli", "SITL-heli", "APM1", "bebop2"]]
+    out["ap_tags"] = [
+        {"tag": t, "parsed": list(af.parse_tag(t)) if af.parse_tag(t) else None}
+        for t in ["ardupilot:Copter/stable", "ardupilot:Heli/beta", "ardupilot:Plane/latest", "ardupilot:Blimp/stable",
+                  "ardupilot:Copter", "ardupilot:Copter/", "ardupilot:/stable", "v1.17.0", "", "ardupilot:Copter/stable/x",
+                  "ARDUPILOT:Copter/stable", "ardupilot:Rover/beta", "ardupilot:Sub/stable", None, 5]
+    ]
+    out["ap_urls"] = [
+        {"vehicle": v, "channel": c, "board": b, "name": af.asset_name(v, c, b), "url": af.asset_url(v, c, b)}
+        for v in ["Copter", "Heli", "Plane", "Rover", "Sub", "Nope"] for c in ["stable", "beta"]
+        for b in ["CubeOrange", "Pixhawk1", "a b", "x/y"]
+    ]
+    out["ap_index_urls"] = [{"directory": d, "channel": c, "url": af.index_url(d, c)}
+                            for d in ["Copter", "Plane", "a b"] for c in ["stable", "beta"]]
+    out["ap_vehicle_for_mav_type"] = [{"type": t, "vehicle": af.vehicle_for_mav_type(t)}
+                                      for t in list(range(0, 45)) + [-1, 255, None, "x", "4", 4.0, True]]
+    out["ap_binary"] = [{"vehicle": v, "binary": af.vehicle_binary(v)} for v in ["Copter", "Heli", "Plane", "Rover", "Sub", "x", ""]]
+
+    listing = (
+        "<html><body><a href=\"../\">Parent Directory</a><a href=\"CubeOrange/\">x</a><a href='Pixhawk1/'>x</a>"
+        "<a href=\"/Copter/stable/MatekF405-Wing\">m</a><a href=\"/Copter/stable/CubeOrange-heli\">h</a>"
+        "<a href=\"/Copter/stable/arducopter.apj\">f</a><a href=\"/Copter/beta/\">b</a>"
+        "<a href=\"https://firmware.ardupilot.org/Copter/stable/Hex\">e</a><a href=\"https://example.invalid/Copter/stable/evil\">e</a>"
+        "<a href=\"../../etc/\">up</a><A HREF=\"/Copter/stable/UPPER\">u</A><a href=\"/Copter/stable/sitl\">s</a>"
+        "<a href=\"/Copter/stable/linux\">l</a><a href=\"/Copter/stable/Duplicate\">d</a><a href=\"/Copter/stable/Duplicate\">d</a>"
+        "<a href=\"%2e%2e/\">x</a><a href=\"/Copter/stable/a%20b\">sp</a><a href=\"/Copter/stable/%41bc\">enc</a>"
+        "<a href=\"/Copter/stable/tools\">t</a><a href=\"/Copter/stable/logs\">l</a><a href=\"/Copter/stable/Board\n/\">nl</a>"
+        "<a href=\"/Copter/stable/b/c\">sub</a><a href=\"Rel/\">r</a><a href=\"rel2\">r</a><a href=\"/Plane/stable/PlaneBoard\">pl</a>"
+        "<a href=\"/Copter/stable/-bad\">bad</a><a href=\"/Copter/stable/@@LONG@@\">long</a>"
+        "<a href=\"/Copter/stable/foo.hex\">hx</a><a href=\"/Copter/stable/foo.JSON\">js</a><a href=\"/Copter/stable/dot.dir\">dd</a>"
+        "<a href=x>none</a><a href=\"\">empty</a><a href=\"/Copter/stable/\">self</a><a href=\"/Copter/stable\">self2</a>"
+        "<a href=\"HTTPS://FIRMWARE.ARDUPILOT.ORG/Copter/stable/Caps\">c</a><a href=\" /Copter/stable/Spaced \">sp</a></body></html>"
+    ).replace("@@LONG@@", "L" * 70)
+    out["ap_index"] = [
+        {"html": h, "base": b, "boards": af.parse_index(h, base=b)}
+        for h in [listing, "", "not html", "<a href='%2e%2e/'>x</a>", "<a href=\"CubeOrange/\">x</a>"]
+        for b in ["/Copter/stable/", "/Copter/stable", "", "/Plane/stable/"]
+    ]
+    out["ap_vehicle_boards"] = [
+        {"vehicle": v.key, "listing": lst, "boards": af.vehicle_boards(v, lst)}
+        for v in af.VEHICLES
+        for lst in (["CubeOrange", "CubeOrange-heli", "Pixhawk1", "sitl", "navio2", "foo-heli", "-heli", "x", "bebop-heli"], [], ["a"])
+    ]
+    cache = [
+        {"tag": "ardupilot:Copter/stable", "vendor": "ardupilot", "boards": [
+            {"name": "arducopter-stable-CubeOrange.apj", "board": "CubeOrange", "url": "https://evil.com/x"},
+            {"name": "arducopter-stable-sitl.apj", "board": "sitl"},
+            {"name": "arducopter-stable-bad board.apj", "board": "bad board"},
+            {"name": "x.apj"}]},
+        {"tag": "ardupilot:Plane/beta", "boards": [{"name": "arduplane-beta-Pixhawk1.apj", "board": "Pixhawk1"}]},
+    ]
+    out["ap_resolve"] = [
+        {"tag": t, "name": n, "found": af.resolve(cache, t, n)}
+        for t in ["ardupilot:Copter/stable", "ardupilot:Plane/beta", "ardupilot:Rover/stable", "v1", "ardupilot:Copter/beta"]
+        for n in ["arducopter-stable-CubeOrange.apj", "arducopter-stable-sitl.apj", "arducopter-stable-bad board.apj",
+                  "x.apj", "arduplane-beta-Pixhawk1.apj", "nope"]
+    ]
+
+    # Catalogue scenarios against a stub network.
+    class Reply:
+        def __init__(self, body: bytes, headers: dict | None = None) -> None:
+            self._body = body
+            self._pos = 0
+            self.headers = headers or {}
+
+        def read(self, n: int = -1) -> bytes:
+            if n is None or n < 0:
+                n = len(self._body)
+            chunk = self._body[self._pos:self._pos + n]
+            self._pos += len(chunk)
+            return chunk
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    class Net:
+        def __init__(self, routes: dict) -> None:
+            self.routes = routes
+            self.requests: list = []
+
+        def __call__(self, req, timeout=None):
+            url = req if isinstance(req, str) else req.full_url
+            self.requests.append(url)
+            answer = self.routes.get(url)
+            if answer is None:
+                raise urllib.error.URLError("no route")
+            if isinstance(answer, Exception):
+                raise answer
+            return Reply(answer)
+
+    gh = json.dumps(payloads["plain"]).encode()
+    ap_routes = {}
+    for d in ["Copter", "Plane", "Rover", "Sub"]:
+        for ch in ["stable", "beta"]:
+            names = {"Copter": ["CubeOrange", "Pixhawk1", "CubeOrange-heli", "sitl", "Pixhawk6X"],
+                     "Plane": ["CubeOrange", "MatekF405-Wing", "linux"], "Rover": ["Pixhawk1"], "Sub": []}[d]
+            if d == "Rover" and ch == "beta":
+                continue
+            html = "".join(f'<a href="/{d}/{ch}/{n}">{n}</a>' for n in names)
+            ap_routes[af.index_url(d, ch)] = html.encode()
+    scenarios = {
+        "online_empty": dict(routes={fc.RELEASES_URL: gh, **ap_routes}, refresh=False, files={}, catalog=None, ardupilot=None),
+        "online_refresh": dict(routes={fc.RELEASES_URL: gh, **ap_routes}, refresh=True,
+                               files={"px4_fmu-v6x_default.px4": b"x", "arducopter-stable-CubeOrange.apj": b"yy", "notes.txt": b"n"},
+                               catalog=None, ardupilot=None),
+        "github_down": dict(routes={fc.RELEASES_URL: urllib.error.URLError("boom"), **ap_routes}, refresh=True, files={},
+                            catalog=None, ardupilot=None),
+        "ardupilot_down": dict(routes={fc.RELEASES_URL: gh}, refresh=True, files={}, catalog=None, ardupilot=None),
+        "ardupilot_unreadable": dict(routes={fc.RELEASES_URL: gh, **{u: b"<html>no links</html>" for u in ap_routes}},
+                                     refresh=True, files={}, catalog=None, ardupilot=None),
+        "all_down_with_caches": dict(routes={}, refresh=True, files={"px4_fmu-v5_default.px4": b"abc"},
+                                     catalog=fc._parse_releases(payloads["plain"]), ardupilot=None),
+        "cache_hit": dict(routes={}, refresh=False, files={}, catalog=fc._parse_releases(payloads["plain"]), ardupilot=[]),
+        "cache_old_format": dict(routes={}, refresh=False, files={}, catalog=[{"tag": "v1", "boards": [{"name": "px4_fmu-v5_default.px4", "label": "x", "size": 3}]}],
+                                 ardupilot=[{"tag": "ardupilot:Plane/stable", "boards": [{"name": "arduplane-stable-Pixhawk1.apj", "board": "Pixhawk1"}]}]),
+        "github_junk": dict(routes={fc.RELEASES_URL: b"not json", **ap_routes}, refresh=True, files={}, catalog=None, ardupilot=None),
+        "github_empty": dict(routes={fc.RELEASES_URL: b"[]", **ap_routes}, refresh=True, files={}, catalog=fc._parse_releases(payloads["plain"]), ardupilot=None),
+    }
+    out["catalog_scenarios"] = []
+    saved_urlopen = urllib.request.urlopen
+    try:
+        for name, sc in scenarios.items():
+            with tempfile.TemporaryDirectory() as tmp:
+                for fname, blob in sc["files"].items():
+                    pathlib.Path(tmp, fname).write_bytes(blob)
+                ap_cache = sc["ardupilot"]
+                if name == "all_down_with_caches":
+                    urllib.request.urlopen = Net({**ap_routes})
+                    ap_cache, _ = af.fetch_releases()
+                if sc["catalog"] is not None:
+                    pathlib.Path(tmp, "catalog.json").write_text(json.dumps({"releases": sc["catalog"]}), encoding="utf-8")
+                if ap_cache is not None:
+                    pathlib.Path(tmp, "catalog-ardupilot.json").write_text(json.dumps({"releases": ap_cache}), encoding="utf-8")
+                net = Net(sc["routes"])
+                urllib.request.urlopen = net
+                catalog = fc.FirmwareCatalog(tmp)
+                data = catalog.catalog(refresh=sc["refresh"])
+                data["dir"] = "<dir>"
+                files = {}
+                for fname in sorted(os.listdir(tmp)):
+                    if fname.endswith(".json"):
+                        files[fname] = json.loads(pathlib.Path(tmp, fname).read_text(encoding="utf-8"))
+                out["catalog_scenarios"].append({
+                    "name": name, "refresh": sc["refresh"],
+                    "routes": {u: (base64.b64encode(v).decode() if isinstance(v, bytes) else str(v))
+                               for u, v in sc["routes"].items()},
+                    "route_errors": {u: str(v) for u, v in sc["routes"].items() if isinstance(v, Exception)},
+                    "files": {k: base64.b64encode(v).decode() for k, v in sc["files"].items()},
+                    "catalog": sc["catalog"], "ardupilot": ap_cache,
+                    "answer": data, "stored": files,
+                    "resolves": [
+                        {"tag": t, "board": b, "found": catalog.resolve(t, b)}
+                        for t, b in [("v1.17.0", "px4_fmu-v6x_default.px4"), ("v1.17.0", "px4_fmu-v6x_bootloader.px4"),
+                                     ("v1.16.0", "px4_fmu-v5_default.px4"), ("v1", "px4_fmu-v5_default.px4"),
+                                     ("ardupilot:Copter/stable", "arducopter-stable-CubeOrange.apj"),
+                                     ("ardupilot:Plane/stable", "arduplane-stable-Pixhawk1.apj"), ("nope", "x")]
+                    ],
+                })
+    finally:
+        urllib.request.urlopen = saved_urlopen
+
+    # Downloads.
+    out["downloads"] = []
+    image = bytes(range(256)) * 700
+    dl_cases = [
+        ("ok", {"name": "px4_fmu-v6x_default.px4", "url": "https://github.com/PX4/PX4-Autopilot/releases/download/v1/px4_fmu-v6x_default.px4", "size": len(image)}, image, False, False),
+        ("no_size", {"name": "px4_fmu-v6x_default.px4", "url": "https://github.com/PX4/x/y.px4"}, image, False, False),
+        ("wrong_host", {"name": "a.px4", "url": "https://evil.com/a.px4"}, image, False, False),
+        ("http_scheme", {"name": "a.px4", "url": "http://github.com/a.px4"}, image, False, False),
+        ("apj_ok", {"name": "arducopter-stable-X.apj", "url": "https://firmware.ardupilot.org/Copter/stable/X/arducopter.apj"}, image, False, False),
+        ("apj_from_github", {"name": "arducopter-stable-X.apj", "url": "https://github.com/x.apj"}, image, False, False),
+        ("px4_from_ardupilot", {"name": "a.px4", "url": "https://firmware.ardupilot.org/x.px4"}, image, False, False),
+        ("not_firmware", {"name": "a.bin", "url": "https://github.com/a.bin"}, image, False, False),
+        ("empty", {"name": "a.px4", "url": "https://github.com/a.px4"}, b"", False, False),
+        ("too_large", {"name": "a.px4", "url": "https://github.com/a.px4"}, b"\0" * (fc.MAX_IMAGE_BYTES + 1), False, False),
+        ("cached", {"name": "a.px4", "url": "https://github.com/a.px4"}, image, True, False),
+        ("cancelled", {"name": "a.px4", "url": "https://github.com/a.px4"}, image, False, True),
+        ("unreachable", {"name": "a.px4", "url": "https://github.com/a.px4"}, None, False, False),
+        ("odd_name", {"name": "../../b c.px4", "url": "https://github.com/a.px4", "size": 5}, image[:100], False, False),
+    ]
+    for name, entry, body, precached, cancel in dl_cases:
+        with tempfile.TemporaryDirectory() as tmp:
+            catalog = fc.FirmwareCatalog(tmp)
+            if precached:
+                pathlib.Path(tmp, "a.px4").write_bytes(b"cached image")
+            urllib.request.urlopen = Net({entry["url"]: (body if body is not None else urllib.error.URLError("refused"))})
+            progress: list = []
+            event = threading.Event()
+            if cancel:
+                event.set()
+            try:
+                got = catalog.download(entry, on_progress=lambda a, b: progress.append([a, b]), cancel=event)
+                result = {"ok": base64.b64encode(got).decode() if len(got) < 100000 else len(got)}
+            except ValueError as exc:
+                result = {"error": str(exc)}
+            finally:
+                urllib.request.urlopen = saved_urlopen
+            out["downloads"].append({
+                "name": name, "entry": entry, "body_len": None if body is None else len(body), "precached": precached,
+                "cancel": cancel, "result": result, "progress": progress[:5] + progress[-2:],
+                "progress_count": len(progress), "on_disk": sorted(os.listdir(tmp)),
+            })
+
+    # The image container.
+    def px4_json(image_bytes: bytes, **extra) -> bytes:
+        return json.dumps({"image": base64.b64encode(zlib.compress(image_bytes)).decode(), **extra}).encode()
+
+    def zipped(entries: dict[str, bytes]) -> bytes:
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            for n, b in entries.items():
+                zf.writestr(zipfile.ZipInfo(n, (2026, 1, 1, 0, 0, 0)), b, zipfile.ZIP_DEFLATED)
+        return buf.getvalue()
+
+    def stored_zip(entries: dict[str, bytes]) -> bytes:
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_STORED) as zf:
+            for n, b in entries.items():
+                zf.writestr(zipfile.ZipInfo(n, (2026, 1, 1, 0, 0, 0)), b, zipfile.ZIP_STORED)
+        return buf.getvalue()
+
+    img = bytes(range(64)) * 4
+    containers = {
+        "raw": img, "raw_small": b"\x01", "empty": b"", "json_ok": px4_json(img, board_id=9),
+        "json_no_board": px4_json(img), "json_leading_space": b"  \n" + px4_json(img, board_id=5),
+        "json_bad_board": px4_json(img, board_id=-1), "json_bool_board": px4_json(img, board_id=True),
+        "json_float_board": px4_json(img, board_id=9.0), "json_str_board": px4_json(img, board_id="9"),
+        "json_big_board": px4_json(img, board_id=0xFFFFFFFF), "json_too_big_board": px4_json(img, board_id=0x100000000),
+        "json_null_board": px4_json(img, board_id=None), "json_no_image": b'{"a": 1}', "json_image_int": b'{"image": 5}',
+        "json_invalid": b"{not json", "json_list": b"[1]", "json_bad_base64": b'{"image": "!!!"}',
+        "json_bad_zlib": json.dumps({"image": base64.b64encode(b"not zlib").decode()}).encode(),
+        "json_empty_image": px4_json(b""), "json_truncated_zlib": json.dumps({"image": base64.b64encode(zlib.compress(img)[:-6]).decode()}).encode(),
+        "json_unicode": json.dumps({"image": base64.b64encode(zlib.compress(img)).decode(), "board_id": 3, "name": "\u00e4"}).encode(),
+        "json_whitespace_b64": json.dumps({"image": base64.b64encode(zlib.compress(img)).decode()[:8] + "\n" + base64.b64encode(zlib.compress(img)).decode()[8:]}).encode(),
+        "json_b64_nonascii": json.dumps({"image": "\u00e4"}).encode(),
+        "zip_named": zipped({"firmware.px4": img, "other.bin": b"zzzzzzzzzzzzzzzz"}),
+        "zip_image_px4": zipped({"a.txt": b"x", "image.px4": img}),
+        "zip_largest_bin": zipped({"a.bin": b"short", "b.BIN": img, "c.txt": b"x" * 5000}),
+        "zip_largest_any": zipped({"a.txt": b"short", "b.dat": img}),
+        "zip_stored": stored_zip({"firmware.px4": img}),
+        "zip_empty_entry": zipped({"firmware.px4": b""}), "zip_all_empty": zipped({"x.bin": b""}),
+        "zip_no_entries": zipped({}), "zip_bad": b"PK\x03\x04 truncated nonsense", "pk_only": b"PK",
+    }
+    out["images"] = []
+    for name, blob in containers.items():
+        try:
+            parsed = fu.parse_firmware_image(blob)
+            result = {"image": base64.b64encode(parsed.image).decode(), "board_id": parsed.board_id}
+        except ValueError as exc:
+            result = {"error": str(exc)}
+        out["images"].append({"name": name, "data": base64.b64encode(blob).decode(), "result": result})
+    docs = ["", " ", "{", "}", "{}", "[]", "{\"a\"}", "{\"a\":}", "{\"a\": 1,}", "{\"a\": [1,]}", "{\"a\": [1 2]}",
+            "{\"a\": tru}", "{\"a\": nul}", "{\"a\": 01}", "{\"a\": -}", "{\"a\": 1.}", "{\"a\": 1e}", "{\"a\": .5}",
+            "{\"a\": \"\\u12\"}", "{\"a\": \"\\uZZZZ\"}", "{\"a\": \"\\x\"}", "{\"a\": \"a\nb\"}", "{\"a\": \"abc",
+            "{'a': 1}", "{\"a\": 1} {\"b\": 2}", "{\"a\": 1}\n\n  x", "\n\n{\"a\" 1}", "{\"a\":\n\n\"b\" \"c\"}",
+            "{\"a\": NaN, \"b\": -Infinity, \"c\": Infinity}", "{\"a\": -Inf}", "{\"a\": 1e5, \"b\": 1E+5, \"c\": -0.5e-3}",
+            "{\"\\u00e4\": \"\\ud83d\\ude00\"}", "{\"a\": [", "{\"a\": [1, 2", "{\"a\": {\"b\": }}", "{\"a\" : \"\u00e4\u00f6\" x}",
+            "[1, 2] x", "nul", "true false", "\"unterminated", "{\"a\": 1,\n  \"b\": ,}", "{\"a\":1,,}", "{,}", "{\"a\" \"b\"}"]
+    out["pyjson"] = []
+    for d in docs:
+        try:
+            json.loads(d)
+            out["pyjson"].append({"text": d, "error": None})
+        except json.JSONDecodeError as exc:
+            out["pyjson"].append({"text": d, "error": str(exc)})
+    out["compatible"] = [{"bootloader": b, "firmware": f, "ok": fu.board_ids_compatible(b, f)}
+                         for b in [9, 33, 50, 0] for f in [9, 33, 50, 0, 5]]
+    from corvus_link import flash as link_flash
+    out["crc"] = [
+        {"data": base64.b64encode(d).decode(), "state": s, "crc": link_flash.bl_crc32(d, s)}
+        for d in [b"", b"123456789", bytes(range(256)), b"\xff" * 1000, b"abc"] for s in [0, 0xFFFFFFFF, 12345]
+    ]
+    write("firmware_cases.json", out)
+
+
+def flash_cases() -> None:
+    """The PX4 bootloader uploader and the flash service, as the Python of
+    ``tests/reference`` runs them against a scripted bootloader (the fakes of
+    ``tests/test_flash_parity.py``), for the Rust ones."""
+    import importlib
+    import logging
+    import os
+    import zlib
+
+    sys.path.insert(0, str(PYTHON_ROOT / "tests"))
+    parity = importlib.import_module("test_flash_parity")
+    ref_up = parity.reference_uploader
+    ref_svc = parity.reference_service
+
+    def writes_of(fake) -> list:
+        return [[w[0] if w else None, len(w), zlib.crc32(w)] for w in fake.writes]
+
+    class Lines(logging.Handler):
+        def __init__(self) -> None:
+            super().__init__(logging.DEBUG)
+            self.lines: list = []
+
+        def emit(self, record: logging.LogRecord) -> None:
+            self.lines.append([record.levelname, record.getMessage(), bool(record.exc_info)])
+
+    handler = Lines()
+    loggers = [logging.getLogger("corvus.firmware"), logging.getLogger("corvus.flash")]
+    for log in loggers:
+        log.addHandler(handler)
+        log.setLevel(logging.DEBUG)
+
+    real_exists = os.path.exists
+    out: dict = {"cases": [{"name": n, "options": o} for n, o in parity.CASES]}
+    uploads = []
+    for name, options in parity.CASES:
+        for size in (1, 253, 1000):
+            for board in (None, 9, 33):
+                handler.lines.clear()
+                clock = parity.Clock()
+                ref_up.time = clock
+                os.path.exists = lambda p: True
+                import threading
+                cancel = threading.Event()
+                fake = parity.Bootloader(cancel=cancel, **options)
+                opens: list = []
+                ref_up._serial = parity.serial_module(fake, opens)
+                progress: list = []
+                uploader = ref_up.FirmwareUploader(on_progress=progress.append, cancel=cancel)
+                image = bytes((i * 7 + 1) & 0xFF for i in range(size))
+                result = uploader.run("/dev/ttyACM0", image, board_id=board)
+                uploads.append({
+                    "name": name, "size": size, "board": board, "result": result, "progress": progress,
+                    "status": uploader.status(), "writes": writes_of(fake), "closed": fake.closed, "rebooted": fake.rebooted,
+                    "serial_open": uploader._serial is not None, "fw_maxsize": uploader._fw_maxsize,
+                    "board_id": uploader._board_id, "opens": [[d, list(k)] for d, k in opens],
+                    "logs": handler.lines[:], "clock": round(clock.t, 6),
+                })
+    out["uploads"] = uploads
+
+    opening = []
+    for failures in (0, 1, 4, 5, 9):
+        for present in (True, False):
+            handler.lines.clear()
+            clock = parity.Clock()
+            ref_up.time = clock
+            os.path.exists = lambda p, _present=present: _present
+            fake = parity.Bootloader()
+            opens = []
+            ref_up._serial = parity.serial_module(fake, opens, failures)
+            progress = []
+            uploader = ref_up.FirmwareUploader(on_progress=progress.append, connect_timeout_s=2.0)
+            result = uploader.run("/dev/ttyACM0", b"\x01" * 40)
+            opening.append({
+                "failures": failures, "present": present, "result": result, "progress": progress, "status": uploader.status(),
+                "opens": [[d, list(k)] for d, k in opens], "writes": writes_of(fake), "logs": handler.lines[:],
+                "clock": round(clock.t, 6),
+            })
+    out["opening"] = opening
+
+    bad = []
+    for label, image in [("empty", b""), ("too_large", b"x" * (ref_up.MAX_FIRMWARE_IMAGE_BYTES + 1))]:
+        uploader = ref_up.FirmwareUploader()
+        result = uploader.run("/dev/ttyACM0", image)
+        bad.append({"name": label, "result": result, "status": uploader.status()})
+    out["bad_inputs"] = bad
+
+    import time as real_time
+
+    def wait_for(predicate, timeout: float = 8.0) -> bool:
+        end = real_time.monotonic() + timeout
+        while real_time.monotonic() < end:
+            if predicate():
+                return True
+            real_time.sleep(0.005)
+        return False
+
+    ref_up.time = real_time
+    services = []
+    for name, call, mav_opts, store_opts, ports, boot_opts, cat_opts in parity.SERVICE_CASES:
+        handler.lines.clear()
+        os.path.exists = lambda p: True
+        fake = parity.Bootloader(**boot_opts)
+        opens = []
+        ref_up._serial = parity.serial_module(fake, opens)
+        mavlink = parity.Mavlink(rows=parity.PORT_ROWS[ports], **mav_opts)
+        store = parity.Store(**store_opts)
+        catalog = None if call == "release-none" else parity.Catalog(store=store, **cat_opts)
+        svc = ref_svc.FlashService(mavlink, store, catalog)
+        events: list = []
+        svc.add_listener(events.append)
+        first = second = None
+        if call in ("upload", "busy"):
+            first = svc.start(parity.PX4_IMAGE)
+            if call == "busy":
+                second = [svc.start(parity.PX4_IMAGE), svc.last_error, svc.start_release("v1", "fmu-v6x"), svc.last_error]
+        elif call == "upload-bad":
+            first = svc.start(b"{not json")
+        elif call.startswith("release"):
+            first = svc.start_release("v1.16.0", "fmu-v6x")
+        elif call == "cancel-idle":
+            first = svc.cancel()
+        elif call == "cancel-erase":
+            first = svc.start(parity.PX4_IMAGE)
+            assert wait_for(lambda _f=fake: _f.erased)
+            second = svc.cancel()
+        elif call == "shutdown-erase":
+            first = svc.start(parity.PX4_IMAGE)
+            assert wait_for(lambda _f=fake: _f.erased)
+            svc.shutdown()
+        elif call in ("shutdown-idle", "after-shutdown"):
+            svc.shutdown()
+            svc.shutdown()
+            if call == "after-shutdown":
+                first = svc.start(parity.PX4_IMAGE)
+        worker = svc._worker
+        if worker is not None:
+            worker.join(timeout=10)
+        svc.shutdown()
+        status = svc.status()
+        services.append({
+            "name": name, "call": call, "first": first, "second": second, "last_error": svc.last_error, "status": status,
+            "events": parity.without_start_notice(events, call), "mavlink": [list(e) if isinstance(e, tuple) else e for e in mavlink.events],
+            "writes": writes_of(fake), "closed": fake.closed, "rebooted": fake.rebooted,
+            "opens": [[d, list(k)] for d, k in opens], "logs": handler.lines[:],
+            "worker_gone": svc._worker is None, "uploader_gone": svc._uploader is None,
+            "catalog_calls": [] if catalog is None else [list(c) for c in catalog.calls],
+        })
+    os.path.exists = real_exists
+    out["services"] = services
+    out["service_cases"] = [
+        {"name": n, "call": c, "mavlink": m, "store": st, "ports": p, "bootloader": b, "catalog": {k: (v.hex() if isinstance(v, bytes) else v) for k, v in ct.items()}}
+        for n, c, m, st, p, b, ct in parity.SERVICE_CASES
+    ]
+    out["port_rows"] = parity.PORT_ROWS
+    out["px4_image"] = parity.PX4_IMAGE.hex()
+    write("flash_cases.json", out)
+
+
+STEPS = {"ulog": ulog_cases, "flights": flight_cases, "tlogs": tlog_cases, "firmware": firmware_cases, "flash": flash_cases}
 
 
 def main(argv: list[str]) -> int:

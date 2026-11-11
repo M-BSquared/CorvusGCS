@@ -2258,6 +2258,16 @@ impl Bridge {
         self.shared.engines.setup.reboot_autopilot(self.shared.as_ref())
     }
 
+    /// Reboots the autopilot into its USB bootloader, for flashing; refused while armed.
+    pub fn reboot_to_bootloader(&self) -> bool {
+        self.shared.engines.setup.reboot_to_bootloader(self.shared.as_ref())
+    }
+
+    /// The USB vendor and product ids AUTOPILOT_VERSION reported, `(0, 0)` before it did.
+    pub fn board_ids(&self) -> (i64, i64) {
+        self.shared.st().board
+    }
+
     /// The modes this vehicle can be commanded into, in the dialect's order:
     /// those the link's own mode table has, then any it has beyond them.
     pub fn available_modes(&self) -> Vec<String> {

@@ -121,6 +121,7 @@ mod unported;
 
 pub use crate::core::{Core, CoreBuilder, Options};
 pub use crate::events::{Binding, Topic};
+pub use crate::firmware::{Firmware, FirmwareModule};
 pub use crate::http::mcp::{McpEndpoint, McpHandle, TokenStore};
 pub use crate::http::{Http, HttpInfo, HttpOptions};
 pub use crate::hub::StoreHub;
