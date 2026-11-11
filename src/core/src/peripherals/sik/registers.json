@@ -1,0 +1,398 @@
+{
+  "registers": [
+    {
+      "name": "FORMAT",
+      "label": "EEPROM format",
+      "kind": "readonly",
+      "advanced": true,
+      "hint": "The layout version of the radio's own settings store. Set by the firmware and not editable."
+    },
+    {
+      "name": "SERIAL_SPEED",
+      "label": "Baud rate",
+      "kind": "enum",
+      "options": [
+        {
+          "value": 1,
+          "label": "1200 baud"
+        },
+        {
+          "value": 2,
+          "label": "2400 baud"
+        },
+        {
+          "value": 4,
+          "label": "4800 baud"
+        },
+        {
+          "value": 9,
+          "label": "9600 baud"
+        },
+        {
+          "value": 19,
+          "label": "19200 baud"
+        },
+        {
+          "value": 38,
+          "label": "38400 baud"
+        },
+        {
+          "value": 57,
+          "label": "57600 baud"
+        },
+        {
+          "value": 115,
+          "label": "115200 baud"
+        },
+        {
+          "value": 230,
+          "label": "230400 baud"
+        }
+      ],
+      "hint": "The speed of the wire between this radio and whatever it is plugged into: the ground station here, the autopilot's telemetry port at the far end. It does not have to match the other radio, but it does have to match what is on the other end of its own cable."
+    },
+    {
+      "name": "AIR_SPEED",
+      "label": "Air data rate",
+      "kind": "enum",
+      "options": [
+        {
+          "value": 2,
+          "label": "2 kbps"
+        },
+        {
+          "value": 4,
+          "label": "4 kbps"
+        },
+        {
+          "value": 8,
+          "label": "8 kbps"
+        },
+        {
+          "value": 16,
+          "label": "16 kbps"
+        },
+        {
+          "value": 19,
+          "label": "19 kbps"
+        },
+        {
+          "value": 24,
+          "label": "24 kbps"
+        },
+        {
+          "value": 32,
+          "label": "32 kbps"
+        },
+        {
+          "value": 48,
+          "label": "48 kbps"
+        },
+        {
+          "value": 64,
+          "label": "64 kbps"
+        },
+        {
+          "value": 96,
+          "label": "96 kbps"
+        },
+        {
+          "value": 128,
+          "label": "128 kbps"
+        },
+        {
+          "value": 192,
+          "label": "192 kbps"
+        },
+        {
+          "value": 250,
+          "label": "250 kbps"
+        }
+      ],
+      "hint": "The speed the two radios talk to each other at. Lower reaches further and carries less: 64 kbps is the default and manages a kilometre or more on the small antennas the radios ship with."
+    },
+    {
+      "name": "NETID",
+      "label": "Network ID",
+      "kind": "number",
+      "min": 0,
+      "max": 499,
+      "step": 1,
+      "hint": "Which pair of radios this is. Two pairs on the same ID in the same field will interfere; give each aircraft its own number. It also seeds the frequency-hopping pattern, so different IDs hop differently."
+    },
+    {
+      "name": "TXPOWER",
+      "label": "Transmit power",
+      "kind": "enum",
+      "options": [
+        {
+          "value": 1,
+          "label": "1 dBm (1.3 mW)"
+        },
+        {
+          "value": 2,
+          "label": "2 dBm (1.6 mW)"
+        },
+        {
+          "value": 5,
+          "label": "5 dBm (3.2 mW)"
+        },
+        {
+          "value": 8,
+          "label": "8 dBm (6.3 mW)"
+        },
+        {
+          "value": 11,
+          "label": "11 dBm (12.5 mW)"
+        },
+        {
+          "value": 14,
+          "label": "14 dBm (25 mW)"
+        },
+        {
+          "value": 17,
+          "label": "17 dBm (50 mW)"
+        },
+        {
+          "value": 20,
+          "label": "20 dBm (100 mW)"
+        }
+      ],
+      "hint": "Check this against the limit where you are flying, and remember that the limit is on radiated power, and antenna gain counts towards it. The default of 20 dBm is inside the US and Australian 915 MHz allowance with an antenna below 10 dBi."
+    },
+    {
+      "name": "ECC",
+      "label": "Error correction",
+      "kind": "enum",
+      "options": [
+        {
+          "value": 0,
+          "label": "Off"
+        },
+        {
+          "value": 1,
+          "label": "On"
+        }
+      ],
+      "hint": "Golay forward error correction: halves the usable bandwidth and recovers bit errors that would otherwise drop the packet. Newer radio chips cannot do it at all and will fail to run with it on, which is why current guidance is to leave it off."
+    },
+    {
+      "name": "MAVLINK",
+      "label": "MAVLink framing",
+      "kind": "enum",
+      "options": [
+        {
+          "value": 0,
+          "label": "Raw serial, no MAVLink framing"
+        },
+        {
+          "value": 1,
+          "label": "MAVLink framing and RSSI reporting"
+        },
+        {
+          "value": 2,
+          "label": "Low latency: prioritise RC override packets"
+        }
+      ],
+      "hint": "Aligns radio packets to MAVLink message boundaries so a lost packet does not deliver half a message. Leave this on MAVLink framing: RSSI and error reporting only arrive in that mode. Low latency additionally fast-tracks RC override, which is what a joystick flies on."
+    },
+    {
+      "name": "OPPRESEND",
+      "label": "Opportunistic resend",
+      "kind": "enum",
+      "options": [
+        {
+          "value": 0,
+          "label": "Off"
+        },
+        {
+          "value": 1,
+          "label": "On"
+        }
+      ],
+      "advanced": true,
+      "hint": "Resend a packet when the transmit window would otherwise go unused."
+    },
+    {
+      "name": "MIN_FREQ",
+      "label": "Minimum frequency",
+      "kind": "number",
+      "unit": "kHz",
+      "min": 240000,
+      "max": 1000000,
+      "step": 1000,
+      "advanced": true,
+      "hint": "The bottom of the band the radio hops within. A 433 MHz radio accepts 414000 to 454000 and a 900 MHz one 895000 to 935000; what you may actually use inside that is set by your national regulator."
+    },
+    {
+      "name": "MAX_FREQ",
+      "label": "Maximum frequency",
+      "kind": "number",
+      "unit": "kHz",
+      "min": 240000,
+      "max": 1000000,
+      "step": 1000,
+      "advanced": true,
+      "hint": "The top of the hopping band. Must be above the minimum, and the span between them is divided into the hopping channels."
+    },
+    {
+      "name": "NUM_CHANNELS",
+      "label": "Hopping channels",
+      "kind": "number",
+      "min": 1,
+      "max": 50,
+      "step": 1,
+      "advanced": true,
+      "hint": "How many frequencies the band is split into. More than one is what makes the radio frequency-agile, which several regulators require alongside listen-before-talk."
+    },
+    {
+      "name": "DUTY_CYCLE",
+      "label": "Duty cycle",
+      "kind": "number",
+      "unit": "%",
+      "min": 0,
+      "max": 100,
+      "step": 1,
+      "advanced": true,
+      "hint": "The share of the time this radio is allowed to transmit. 100 unless your regulator trades duty cycle for band or power. Europe's 433 MHz allowance below 10% is the usual reason. Zero makes the radio receive-only."
+    },
+    {
+      "name": "LBT_RSSI",
+      "label": "Listen before talk",
+      "kind": "number",
+      "min": 0,
+      "max": 255,
+      "step": 1,
+      "advanced": true,
+      "hint": "Wait for the channel to be quiet before transmitting. 0 disables it; the lowest working threshold is 25, and each step above that is about 0.5 dB over the receiver's noise floor."
+    },
+    {
+      "name": "MANCHESTER",
+      "label": "Manchester encoding",
+      "kind": "enum",
+      "options": [
+        {
+          "value": 0,
+          "label": "Off"
+        },
+        {
+          "value": 1,
+          "label": "On"
+        }
+      ],
+      "advanced": true,
+      "hint": "Alternative line coding. Off unless something specific requires it."
+    },
+    {
+      "name": "RTSCTS",
+      "label": "Hardware flow control",
+      "kind": "enum",
+      "options": [
+        {
+          "value": 0,
+          "label": "Off"
+        },
+        {
+          "value": 1,
+          "label": "On"
+        },
+        {
+          "value": 2,
+          "label": "Auto"
+        }
+      ],
+      "advanced": true,
+      "hint": "RTS/CTS on the serial wire. Worth enabling on a Pixhawk TELEM port, which carries the two extra pins; a radio on a USB cable does not."
+    },
+    {
+      "name": "MAX_WINDOW",
+      "label": "Maximum transmit window",
+      "kind": "number",
+      "unit": "ms",
+      "min": 20,
+      "max": 400,
+      "step": 1,
+      "advanced": true,
+      "hint": "The longest a radio may hold the air before handing over. 131 is the default and gives the most bandwidth; 33 bounds how long a command from the ground can wait, which is what low-latency joystick control needs."
+    },
+    {
+      "name": "ENCRYPTION_LEVEL",
+      "label": "Encryption",
+      "kind": "enum",
+      "options": [
+        {
+          "value": 0,
+          "label": "Off"
+        },
+        {
+          "value": 1,
+          "label": "On"
+        }
+      ],
+      "advanced": true,
+      "hint": "AES link encryption on the firmware builds that carry it. Both ends need the same level and the same key; the key is set with AT&E and is not readable back."
+    }
+  ],
+  "must_match": [
+    "AIR_SPEED",
+    "ECC",
+    "LBT_RSSI",
+    "MAX_FREQ",
+    "MAX_WINDOW",
+    "MIN_FREQ",
+    "NETID",
+    "NUM_CHANNELS"
+  ],
+  "read_only": [
+    "FORMAT"
+  ],
+  "bauds": [
+    57600,
+    115200,
+    38400,
+    19200,
+    9600,
+    230400,
+    2400,
+    4800
+  ],
+  "default_baud": 57600,
+  "serial_speeds": [
+    [
+      1,
+      1200
+    ],
+    [
+      2,
+      2400
+    ],
+    [
+      4,
+      4800
+    ],
+    [
+      9,
+      9600
+    ],
+    [
+      19,
+      19200
+    ],
+    [
+      38,
+      38400
+    ],
+    [
+      57,
+      57600
+    ],
+    [
+      115,
+      115200
+    ],
+    [
+      230,
+      230400
+    ]
+  ]
+}

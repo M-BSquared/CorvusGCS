@@ -70,10 +70,7 @@ pub struct SerialPort {
 
 impl SerialPort {
     pub fn open(device: &str, baud: u32, timeout: f64, write_timeout: f64) -> io::Result<SerialPort> {
-        let port = Serial::open_direct(device, baud).map_err(|e| match e.errno {
-            Some(code) => io::Error::new(io::Error::from_raw_os_error(code).kind(), e.message),
-            None => io::Error::other(e.message),
-        })?;
+        let port = Serial::open_direct(device, baud).map_err(crate::peripherals::util::serial_open_error)?;
         Ok(SerialPort {
             port,
             timeout,

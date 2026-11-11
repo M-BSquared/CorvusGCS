@@ -334,7 +334,94 @@ def rtk() -> None:
     write("peripherals_rtk_cases.json", out)
 
 
-COMMANDS = {"ports": ports, "netprobe": netprobe, "rtk": rtk}
+def sik() -> None:
+    from corvus import sik_config as c
+
+    table = {
+        "registers": c.REGISTERS,
+        "must_match": sorted(c.MUST_MATCH),
+        "read_only": sorted(c.READ_ONLY),
+        "bauds": list(c.BAUD_CANDIDATES),
+        "default_baud": c.DEFAULT_BAUD,
+        "serial_speeds": [list(x) for x in c.SERIAL_SPEEDS],
+    }
+    path = PYTHON_ROOT.parent / "src" / "core" / "src" / "peripherals" / "sik" / "registers.json"
+    text = json.dumps(table, indent=2, ensure_ascii=False) + "\n"
+    if CHECK:
+        if not path.is_file() or path.read_text(encoding="utf-8") != text:
+            STALE.append("sik/registers.json")
+    else:
+        path.write_text(text, encoding="utf-8")
+        print(f"wrote {path}")
+
+    out: dict[str, object] = {"schema": c.schema()}
+    ati5 = [
+        "S0: FORMAT=25\r\nS1: SERIAL_SPEED=57\r\nS2: AIR_SPEED=64\r\nS3: NETID=25\r\nS4: TXPOWER=20\r\nS5: ECC=0\r\nS6: MAVLINK=1",
+        "ATI5\r\nS0:FORMAT=25\nS15:MAX_WINDOW=131\nS16: FOO = 7\nS3=NETID=-4\nGARBAGE\nS9 ; X=1\nOK\n",
+        "S12=5", "S12=34=5", "  S7 = OPPRESEND = 1  ", "s1: lower=3", "S1: A=1\nS2: A=2", "S: X=1", "S1: X=", "S1: =1",
+        "",
+    ]
+    out["registers"] = [{"text": t, "result": c.parse_registers(t)} for t in ati5]
+    rssi = [
+        "L/R RSSI: 190/180  L/R noise: 60/55 pkts: 10  txe=0 rxe=0 stx=0 srx=0 ecc=0/0 temp=34 dco=0",
+        "l/r rssi:  10 / 20 .. L/R NOISE: 1/2", "L/R RSSI: 1/2\nline\nL/R noise: 3/4", "L/R RSSI: 1/2", "", "no report here",
+        "L/R   RSSI:5/6 L/R noise:7/8",
+    ]
+    out["rssi"] = [{"text": t, "result": c.parse_rssi(t)} for t in rssi]
+    versions = [
+        "ATI\r\nSiK 2.0 on HM-TRP\r\nOK\r\n", "RFD SiK 2.7 on RFD900P", "OK", "ERROR", "", "ATI\nrti\nOK", "  \n\n  banner  \nOK",
+        "at\nRT something\nreal", "AT+\nOK",
+    ]
+    out["versions"] = [{"text": t, "result": c.parse_version(t)} for t in versions]
+    base = c.parse_registers(ati5[0])
+    full = c.parse_registers(ati5[1] + "\n" + ati5[0] + "\nS8:MIN_FREQ=915000\nS9:MAX_FREQ=928000\nS10:NUM_CHANNELS=20\nS11:DUTY_CYCLE=100\nS12:LBT_RSSI=0\nS14:RTSCTS=0\nS13:MANCHESTER=0\nS7:OPPRESEND=1")
+    out["describe"] = [
+        {"registers": r, "version": v, "board": b, "result": c.describe_radio(r, v, b)}
+        for r, v, b in [(base, "SiK 2.0 on HM-TRP", "HM-TRP"), (full, "", ""), ({}, "x", "y"),
+                        ({"SERIAL_SPEED": {"number": 1, "value": 3}, "ZED": {"number": 30, "value": 1}, "ABC": {"number": 20, "value": 2},
+                          "AIR_SPEED": {"number": 2, "value": 77}}, "", "")]
+    ]
+    pair = []
+    L = c.describe_radio(full)
+    for tweak in [{}, {"NETID": 26}, {"AIR_SPEED": 32, "ECC": 1}, {"TXPOWER": 5}, {"MIN_FREQ": 1, "MAX_WINDOW": 5}]:
+        r = {k: dict(v) for k, v in full.items()}
+        for k, v in tweak.items():
+            r[k] = {"number": r[k]["number"], "value": v}
+        R = c.describe_radio(r)
+        pair.append({"local": L, "remote": R, "compare": c.compare(L, R), "copy": c.copy_to_remote(L, R)})
+    pair.append({"local": L, "remote": None, "compare": c.compare(L, None), "copy": c.copy_to_remote(L, None)})
+    pair.append({"local": L, "remote": {}, "compare": c.compare(L, {}), "copy": c.copy_to_remote(L, {})})
+    out["pair"] = pair
+    writes = []
+    present = full
+    requests = [
+        {}, {"NETID": 26}, {"netid": 30, "ecc": 1}, {"NETID": 25}, {"NETID": 500}, {"NETID": -1}, {"NETID": 1.5}, {"NETID": 26.0},
+        {"NETID": True}, {"NETID": "26"}, {"NETID": None}, {"FORMAT": 1}, {"NOPE": 1}, {"AIR_SPEED": 7}, {"AIR_SPEED": 32},
+        {"TXPOWER": 21}, {"SERIAL_SPEED": 115}, {"SERIAL_SPEED": 100}, {"MIN_FREQ": 930000}, {"MAX_FREQ": 900000},
+        {"MIN_FREQ": 900000, "MAX_FREQ": 900000}, {"MIN_FREQ": 900000}, {"MAX_FREQ": 920000}, {"min_freq": 950000},
+        {"MIN_FREQ": 100}, {"MAX_WINDOW": 401}, {"MAX_WINDOW": 19}, {"NUM_CHANNELS": 0}, {"S1": 1},
+        {"AIR_SPEED": 32, "NETID": 26, "ECC": 1, "SERIAL_SPEED": 115}, {"ZZ": 5}, {"MAX_FREQ": "abc", "MIN_FREQ": 1},
+    ]
+    for req in requests:
+        entry = {"settings": req}
+        try:
+            w = c.validate_writes(req, c._registers_of(L) if hasattr(c, "_registers_of") else {
+                f["name"]: {"number": f["register"], "value": f["value"]} for f in L["fields"]})
+            entry["writes"] = w
+            entry["plan_local"] = c.write_plan(w, False)
+            entry["plan_remote"] = c.write_plan(w, True)
+        except c.SikConfigError as exc:
+            entry["error"] = str(exc)
+        writes.append(entry)
+    out["writes"] = writes
+    out["present"] = {f["name"]: {"number": f["register"], "value": f["value"]} for f in L["fields"]}
+    out["baud"] = [{"value": v, "baud": c.baud_from_register(v)} for v in [1, 2, 4, 9, 19, 38, 57, 115, 230, 3, 0, 57600, 2000, 2001, 460800]]
+    out["register"] = [{"baud": b, "register": c.register_from_baud(b)} for b in [1200, 2400, 9600, 57600, 115200, 230400, 460800, 1999, 2000, 2999, 5, 0]]
+    out["dbm"] = [{"rssi": r, "dbm": c.rssi_to_dbm(r)} for r in [0, 1, 100, 190, 255, 12.5]]
+    write("peripherals_sik_cases.json", out)
+
+
+COMMANDS = {"ports": ports, "netprobe": netprobe, "rtk": rtk, "sik": sik}
 
 
 def main(argv: list[str]) -> int:

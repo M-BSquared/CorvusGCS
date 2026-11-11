@@ -84,3 +84,32 @@ def test_the_rtk_block_of_the_config_file_is_the_pythons_byte_for_byte(pair) -> 
 def test_restarting_a_survey_answers_as_python_does(pair) -> None:
     diffs = pair.compare_post("/api/rtk/restart", {}, ignore=["uptime", "source_age", "ports", "message", "state"])
     assert not diffs, "\n".join(diffs)
+
+
+def test_the_sik_status_is_the_pythons(pair) -> None:
+    diffs = pair.compare_get("/api/sik/status")
+    assert not diffs, "\n".join(diffs)
+
+
+@pytest.mark.parametrize("path,body", [
+    ("/api/sik/load", {}),
+    ("/api/sik/load", {"device": ""}),
+    ("/api/sik/load", {"device": 5}),
+    ("/api/sik/load", {"device": "/dev/corvus-no-such-port", "baud": 0}),
+    ("/api/sik/load", {"device": "/dev/corvus-no-such-port", "baud": True}),
+    ("/api/sik/load", {"device": "/dev/corvus-no-such-port", "baud": "57600"}),
+    ("/api/sik/load", {"device": "/dev/corvus-no-such-port", "baud": 57600.0}),
+    ("/api/sik/load", {"device": "/dev/corvus-no-such-port", "remote": "yes"}),
+    ("/api/sik/save", {"device": "/dev/corvus-no-such-port"}),
+    ("/api/sik/save", {"device": "/dev/corvus-no-such-port", "local": {}, "remote": {}}),
+    ("/api/sik/save", {"device": "/dev/corvus-no-such-port", "local": []}),
+    ("/api/sik/save", {"device": "/dev/corvus-no-such-port", "remote": "x"}),
+    ("/api/sik/save", {"device": "/dev/corvus-no-such-port", "local": {"NETID": 3}}),
+    ("/api/sik/reset", {"device": "/dev/corvus-no-such-port", "target": "both"}),
+    ("/api/sik/reset", {"device": "/dev/corvus-no-such-port", "target": 5}),
+    ("/api/sik/reset", {"device": "/dev/corvus-no-such-port"}),
+    ("/api/sik/reset", {"device": "  /dev/corvus-no-such-port  ", "target": "remote"}),
+])
+def test_the_sik_endpoints_refuse_and_fail_as_python_does(pair, path, body) -> None:
+    diffs = pair.compare_post(path, body)
+    assert not diffs, "\n".join(diffs)

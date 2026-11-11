@@ -60,6 +60,15 @@ pub fn py_oserror_text(e: &std::io::Error) -> String {
     }
 }
 
+/// A serial port that would not open, with `str(OSError(errno, message))` as
+/// its text.
+pub fn serial_open_error(e: corvus_link::plain::transport::SerialOpenError) -> std::io::Error {
+    match e.errno {
+        Some(code) => std::io::Error::other(format!("[Errno {code}] {}", e.message)),
+        None => std::io::Error::other(e.message),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -11,6 +11,7 @@ pub mod child_env;
 pub mod net_probe;
 pub mod ports;
 pub mod rtk;
+pub mod sik;
 pub mod util;
 
 use std::sync::{Arc, OnceLock};
@@ -29,12 +30,18 @@ use net_probe::Pinger;
 pub struct Peripherals {
     pub pinger: Pinger,
     rtk: OnceLock<Arc<rtk::RtkService>>,
+    sik: OnceLock<Arc<sik::SikService>>,
 }
 
 impl Peripherals {
     /// The RTK base station service, once the module has started.
     pub fn rtk(&self) -> Option<Arc<rtk::RtkService>> {
         self.rtk.get().cloned()
+    }
+
+    /// The SiK radio configuration service, once the module has started.
+    pub fn sik(&self) -> Option<Arc<sik::SikService>> {
+        self.sik.get().cloned()
     }
 }
 
@@ -48,6 +55,7 @@ impl PeripheralsModule {
             inner: Arc::new(Peripherals {
                 pinger: Pinger::new(None),
                 rtk: OnceLock::new(),
+                sik: OnceLock::new(),
             }),
         }
     }
@@ -68,6 +76,7 @@ impl Module for PeripheralsModule {
         reg.service(Arc::clone(&self.inner));
         reg.post("/api/local/ping", api_local_ping);
         rtk::register(reg);
+        sik::register(reg);
     }
 
     fn start(&self, core: &Core) -> std::io::Result<()> {
@@ -83,7 +92,9 @@ impl Module for PeripheralsModule {
                 .unwrap_or(serde_json::Value::Null);
             let timing = rtk::Timing::default();
             let service = Arc::new(rtk::RtkService::new(
-                Arc::new(rtk::VehicleRtkHost { vehicle }),
+                Arc::new(rtk::VehicleRtkHost {
+                    vehicle: Arc::clone(&vehicle),
+                }),
                 &settings,
                 rtk::RtkIo::system(timing),
                 timing,
@@ -97,6 +108,14 @@ impl Module for PeripheralsModule {
                 service.start();
             }
             let _ = self.inner.rtk.set(service);
+            let sik = Arc::new(sik::SikService::new(
+                Arc::new(sik::VehicleSikHost {
+                    vehicle: Arc::clone(&vehicle),
+                }),
+                sik::SikService::system_open(),
+                sik::SikTiming::default(),
+            ));
+            let _ = self.inner.sik.set(sik);
         }
         Ok(())
     }
@@ -104,6 +123,9 @@ impl Module for PeripheralsModule {
     fn stop(&self, _core: &Core) {
         if let Some(rtk) = self.inner.rtk() {
             rtk.stop(3.0);
+        }
+        if let Some(sik) = self.inner.sik() {
+            sik.shutdown();
         }
         self.inner.pinger.shutdown();
     }
