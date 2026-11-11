@@ -478,17 +478,21 @@ Rules that keep the chain honest:
 ## Commands
 
 ```
-./run.sh                        # build and run the native interface (core inside, no Python)
+./run.sh                        # build (dev profile, incremental) and run the native interface, core inside, no Python
+./run.sh --release              # the optimised build a bundle ships (thin LTO, one codegen unit: slow to build)
+./run.sh --fast                 # release code without LTO, for a quick look at real speed
+cargo run                       # the same as ./run.sh, from a clean checkout (rust-toolchain.toml is honoured)
+cargo fmt --check && cargo clippy --workspace --all-targets --locked -- -D warnings && cargo test --locked --workspace   # the Rust gates, src/link included
+cargo build --timings           # where a build spends its time (target/cargo-timings/)
 .venv/bin/python -m pytest -q   # test suite (the gate for every change)
 .venv/bin/python -m ruff check corvus serve.py tests plugins   # lint, as CI runs it
 .venv/bin/python serve.py       # backend only, UI in a normal browser
-(cd src/link && maturin develop --release)   # rebuild corvus_link into the venv after a Rust change
-(cd src/link && cargo clippy --all-targets && PYO3_PYTHON=../../.venv/bin/python cargo test)   # Rust checks (libpython on the loader path, as CI sets it)
-./build.sh [--dmg]              # artifact for the current host (dispatches below)
-./build-appimage.sh             # Linux artifact  (x86_64)
-./build-macos-app.sh [--dmg]    # macOS artifact  (arm64 / x86_64)
+(cd src/link && maturin develop --release)   # the Python reference only: corvus_link with its `python` feature, built into the venv
+./build.sh [--dmg] [--no-deb] [--fast]   # artifact for the current host (dispatches below); --fast: release code without LTO, to try locally
+./build-appimage.sh [--no-deb|--deb-only|--fast]   # Linux artifact  (x86_64)
+./build-macos-app.sh [--dmg] [--fast]    # macOS artifact  (arm64 / x86_64)
+.\build-windows.ps1 [-Zip] [-Fast]       # Windows artifact (PowerShell)
 node tools/frontend_tests.js    # frontend assertions: tests/ + plugins/*/tests/
-cargo run --release   # the native interface, starts serve.py itself
 python3 tools/guide.py          # after editing docs/guide/*.html: rewrite each page's frame
 git config core.hooksPath .githooks   # one-time, enables the VERSION auto-bump
 ```

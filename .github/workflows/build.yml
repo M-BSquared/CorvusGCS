@@ -7,8 +7,8 @@
 #   test-windows— the same suite on Windows; gates windows-app only.
 #   lint        — ruff over corvus/, serve.py, tests/ and plugins/.
 #   rust-gui    — rustfmt, clippy and the tests of the whole workspace (the
-#                 native egui interface and corvus_core, the backend inside
-#                 it), all with --locked.
+#                 native egui interface, corvus_core, the backend inside it,
+#                 and corvus_link, the MAVLink crate), all with --locked.
 #   frontend    — the plain-node frontend assertions, tests/*.js and
 #                 plugins/<id>/tests/*.js, via python/tools/frontend_tests.js.
 #   appimage    — Linux x86_64 AppImage and amd64 .deb via ./build.sh
@@ -16,7 +16,10 @@
 #   macos-app   — macOS arm64 .app + .dmg via ./build.sh --dmg.
 #   windows-app — Windows x64 folder + zip via .\build-windows.ps1.
 #                 None of the three artifacts holds Python: cargo builds one
-#                 program with its backend inside, and each job checks that.
+#                 program with its backend inside, and each job checks that
+#                 (.github/scripts/check-bundle.sh, shell only). They need
+#                 rust-gui and nothing else, so they run beside the Python
+#                 jobs; `release` waits for all of them.
 #   android-app — Android APK (tablet mode on by default) via ./build-android.sh.
 #   release     — on a version tag, attach every artifact to a GitHub Release.
 #
@@ -65,9 +68,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: |
-            . -> target
-            src/link -> target
+          workspaces: . -> target
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
@@ -104,9 +105,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: |
-            . -> target
-            src/link -> target
+          workspaces: . -> target
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
@@ -150,45 +149,6 @@ jobs:
       - name: ruff
         run: ruff check corvus serve.py tests plugins
 
-  # --- the Rust side of corvus_link -----------------------------------------
-  # Formatting, clippy with warnings as errors, and the Rust unit tests of the
-  # parts that need no Python (CRC, dialect tables, modes, the parameter value
-  # codec, the RTCM, UBX and CSV framers, the checksums and the fragment plan).
-  # The test binary links libpython, so the loader is pointed at the
-  # interpreter's own library folder. The behaviour against pymavlink and the
-  # former Python code is pytest's job, in the test jobs above.
-  rust:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: src/link
-    steps:
-      - uses: actions/checkout@v5
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: |
-            . -> target
-            src/link -> target
-      - uses: actions/setup-python@v6
-        with:
-          python-version: '3.12'
-      - name: rustfmt
-        run: cargo fmt --check
-      - name: clippy
-        run: cargo clippy --all-targets -- -D warnings
-      # TLS (wss:) is a default Cargo feature that needs a C compiler; the
-      # build without it has to keep compiling for machines that have none.
-      - name: build without TLS
-        run: cargo clippy --all-targets --no-default-features -- -D warnings
-      # The build every artifact uses: no PyO3, no Python on the machine.
-      - name: build without the python feature
-        run: cargo clippy --all-targets --no-default-features --features tls -- -D warnings
-      - name: cargo test
-        run: |
-          export PYO3_PYTHON="$(command -v python)"
-          export LD_LIBRARY_PATH="$(python -c 'import sysconfig; print(sysconfig.get_config_var("LIBDIR"))')"
-          cargo test
-
   # --- the native interface (Cargo.toml and src/, egui) --------------------------
   # Its own toolchain comes from rust-toolchain.toml at the repository root,
   # which rustup reads. The X11/Wayland headers are what eframe's
@@ -199,9 +159,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: |
-            . -> target
-            src/link -> target
+          workspaces: . -> target
       - name: Install the windowing headers
         run: |
           sudo apt-get update -y
@@ -212,6 +170,12 @@ jobs:
         run: cargo fmt --check
       - name: clippy
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      # The Rust 1.99 toolchain, formatting, clippy and tests cover the whole
+      # workspace, src/link (the MAVLink crate) included, with the features the
+      # program uses. The optional ones are checked on their own: wss (tls) here;
+      # the Python extension (python) belongs to the Python jobs above.
+      - name: clippy, corvus_link with TLS
+        run: cargo clippy -p corvus_link --all-targets --features tls --locked -- -D warnings
       - name: cargo test
         run: cargo test --workspace --locked
 
@@ -234,14 +198,13 @@ jobs:
   # on the oldest supported runner keeps the artifact usable on older field
   # laptops.
   appimage:
-    needs: [test, frontend, rust-gui]
+    needs: [rust-gui]
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v5
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: |
-            . -> build/cargo-gui
+          workspaces: . -> target
       - name: Install build dependencies
         run: |
           sudo apt-get update -y
@@ -266,8 +229,8 @@ jobs:
           cd "$RUNNER_TEMP"
           chmod +x "$GITHUB_WORKSPACE"/dist/Corvus_GCS-*-x86_64.AppImage
           "$GITHUB_WORKSPACE"/dist/Corvus_GCS-*-x86_64.AppImage --appimage-extract >/dev/null
-          python3 "$GITHUB_WORKSPACE/python/tools/bundle_trim.py" check squashfs-root \
-            --require usr/bin/corvus-gcs-ui VERSION LICENSE.md
+          "$GITHUB_WORKSPACE/.github/scripts/check-bundle.sh" squashfs-root \
+            usr/bin/corvus-gcs-ui VERSION LICENSE.md
       - name: Read version
         id: ver
         run: echo "version=$(cat VERSION)" >> "$GITHUB_OUTPUT"
@@ -293,29 +256,26 @@ jobs:
   # the payload's architecture disagrees with that name, which is the failure
   # that would otherwise ship an Intel bundle labelled arm64.
   macos-app:
-    needs: [test, frontend, rust-gui]
+    needs: [rust-gui]
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v5
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: |
-            . -> build/cargo-gui
+          workspaces: . -> target
       - name: Build .app + .dmg
         run: |
           chmod +x build.sh build-macos-app.sh
           ./build.sh --dmg
       - name: Smoke-test the bundle
         # The finished .app: it holds no Python of any kind, carries the
-        # version and the licence, links only macOS's own libraries, and its
-        # signature still verifies. Needs only pytest.
+        # version and the licence, its signature verifies, and it starts and
+        # prints its usage. (build-macos-app.sh also checks the libraries.)
         run: |
-          python3 -m venv "$RUNNER_TEMP/smoke"
-          . "$RUNNER_TEMP/smoke/bin/activate"
-          python -m pip install --upgrade pip
-          cd python
-          pip install --group smoke
-          CORVUS_APP_BUNDLE="$PWD/../dist/Corvus GCS.app" pytest tests/test_bundle_smoke.py -q
+          app="dist/Corvus GCS.app"
+          .github/scripts/check-bundle.sh "$app" Contents/MacOS/corvus-gcs Contents/Resources/VERSION Contents/Resources/LICENSE.md
+          "$app/Contents/MacOS/corvus-gcs" --help | head -n 5
+          codesign --verify --deep --strict "$app"
       - name: Keep the build logs of a failed build
         # cargo, codesign and hdiutil write their reasons to build/*.log, not to
         # the job log, so without these a failed build names no cause.
@@ -345,14 +305,13 @@ jobs:
   # cargo builds the one program, backend inside; see the header of
   # build-windows.ps1. The script fails the build if any Python is in the folder.
   windows-app:
-    needs: [test-windows, frontend, rust-gui]
+    needs: [rust-gui]
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: |
-            . -> build/windows/cargo-gui
+          workspaces: . -> target
       - name: Build the Windows app
         shell: pwsh
         run: .\build-windows.ps1 -Zip
@@ -393,7 +352,7 @@ jobs:
 
   # --- release (version tags only) -------------------------------------------
   release:
-    needs: [appimage, macos-app, windows-app, android-app]
+    needs: [test, test-windows, frontend, rust-gui, appimage, macos-app, windows-app, android-app]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     permissions:

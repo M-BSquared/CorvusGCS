@@ -1,0 +1,7 @@
+# The oldest macOS the interface runs on. Cargo's own cache keys do not include
+# this variable, so setting it for some builds and not others makes the C
+# dependencies (ring, aws-lc, SQLite) rebuild each time the two alternate: it is
+# set here for every build, and build-macos-app.sh reads it from this file for
+# Info.plist, so the binary and the bundle cannot disagree.
+[env]
+MACOSX_DEPLOYMENT_TARGET = "12.0"

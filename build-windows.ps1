@@ -16,7 +16,12 @@
 #                ->  Corvus_GCS-<version>-windows-x64.zip   (with -Zip)
 #
 # Usage:
-#   .\build-windows.ps1 [-Zip] [-NoVerify]
+#   .\build-windows.ps1 [-Zip] [-NoVerify] [-Fast]
+#
+# -Fast builds with the `fast` cargo profile (release code, no LTO) for a local
+# try. The interface is built into the repository's target folder (or
+# $env:CARGO_TARGET_DIR), the one cargo uses, so a second build only recompiles
+# what changed.
 #
 # Version is read exclusively from the repo-root VERSION file - never
 # hardcoded, exactly as build-appimage.sh and build-macos-app.sh do.
@@ -28,7 +33,8 @@
 [CmdletBinding()]
 param(
     [switch]$Zip,
-    [switch]$NoVerify
+    [switch]$NoVerify,
+    [switch]$Fast
 )
 
 $ErrorActionPreference = "Stop"
@@ -72,13 +78,15 @@ New-Item -ItemType Directory -Force -Path $DistDir | Out-Null
 # runs from there and rustup fetches it on first use. The fonts and icons are
 # cut out of src\vendor by its build.rs, and the languages, the version and the
 # bundled plugins are compiled in, so the executable carries them. The target
-# folder persists in build\, so a second build only recompiles what changed.
-Write-Host ">>> Building the interface (release, locked) ..."
+# folder is the repository's own, so a second build only recompiles what changed.
+$Profile = if ($Fast) { "fast" } else { "release" }
+Write-Host ">>> Building the interface ($Profile profile, locked) ..."
 $GuiLog = Join-Path $BuildDir "cargo-gui.log"
 Push-Location $RepoDir
 try {
-    $env:CARGO_TARGET_DIR = Join-Path $BuildDir "cargo-gui"
-    & cargo build --release --locked --bin corvus-gcs *> $GuiLog
+    $Target = if ($env:CARGO_TARGET_DIR) { $env:CARGO_TARGET_DIR } else { Join-Path $RepoDir "target" }
+    $env:CARGO_TARGET_DIR = $Target
+    & cargo build --profile $Profile --locked --bin corvus-gcs *> $GuiLog
     if ($LASTEXITCODE -ne 0) {
         Get-Content $GuiLog -Tail 30
         throw "the interface did not build; log: $GuiLog"
@@ -91,7 +99,7 @@ try {
 if (Test-Path $AppDir) { Remove-Item -Recurse -Force $AppDir }
 New-Item -ItemType Directory -Force -Path $AppDir | Out-Null
 $Exe = Join-Path $AppDir "$AppName.exe"
-Copy-Item (Join-Path $BuildDir "cargo-gui\release\corvus-gcs.exe") $Exe
+Copy-Item (Join-Path $Target "$Profile\corvus-gcs.exe") $Exe
 Copy-Item (Join-Path $RepoDir "VERSION") (Join-Path $AppDir "VERSION")
 # The Sustainable Use License requires that anyone who receives a copy of the
 # software also receives a copy of its terms.

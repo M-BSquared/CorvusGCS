@@ -100,6 +100,16 @@ every page for both stacks, and the first parts of map data (crs, geocode, tile
 sources, cache, proxy, downloader) and logs (ULog reader, flight review,
 telemetry review).
 
+### 0.0 Build speed (2026-11-11)
+
+Done: dev, `fast` and release profiles, eframe without wgpu, workspace
+dependencies, `src/link` in the workspace, the packaging scripts and CI on the
+shared `target/`, with `--fast` flags. Open: `aws-lc-sys` (about 40 s of a cold
+build) comes in through walkers' reqwest and cannot be dropped without
+patching walkers; the CI Python jobs (`test`, `test-windows`, `lint`,
+`frontend`) still gate `release`; Windows and Linux packaging were changed
+without being run.
+
 ### 0.1 Vehicle and control (`src/core/src/vehicle.rs`)
 
 * P3 Two root crate tests in `net::backend` take their port from
