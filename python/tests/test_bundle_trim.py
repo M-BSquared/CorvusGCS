@@ -1,7 +1,7 @@
-"""``tools/bundle_trim.py``: what a packaged build drops besides unused Qt.
+"""``tools/bundle_trim.py``: a packaged build holds no Python.
 
-Each step is run on a small fake ``site-packages`` laid out like the real
-wheels, so the tests run on every CI host without a build.
+Each case builds a small fake bundle, so the tests run on every CI host without
+a build.
 """
 from __future__ import annotations
 
@@ -20,162 +20,67 @@ sys.modules[_spec.name] = bt
 _spec.loader.exec_module(bt)
 
 
-def write(path: Path, data: bytes | str = b"x") -> Path:
+def write(path: Path, data: bytes | str = b"x", mode: int = 0o644) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
-    if isinstance(data, str):
-        data = data.encode()
-    path.write_bytes(data)
+    path.write_bytes(data.encode() if isinstance(data, str) else data)
+    path.chmod(mode)
     return path
 
 
-def fake_site(tmp_path: Path) -> Path:
-    site = tmp_path / "site-packages"
-    write(site / "corvus_link" / "__init__.py", "from .corvus_link import *")
-    write(site / "corvus_link" / "corvus_link.abi3.so", b"\x7fELF")
-    write(site / "lxml" / "__init__.py", "")
-    write(site / "lxml-6.0.dist-info" / "METADATA")
-    write(site / "pip" / "__init__.py", "")
-    write(site / "pip-26.0.dist-info" / "METADATA")
-    write(site / "paramiko" / "__init__.py", "")
-    qt = site / "PySide6" / "Qt"
-    write(site / "PySide6" / "QtCore.pyi")
-    write(site / "PySide6" / "QtCore.abi3.so")
-    for name in ("qtbase_de.qm", "qt_fr.qm"):
-        write(qt / "translations" / name)
-    for locale in ("en-US", "de", "fr", "ja"):
-        write(qt / "translations" / "qtwebengine_locales" / f"{locale}.pak")
-    return site
+def good_bundle(root: Path) -> Path:
+    write(root / "corvus-gcs", b"\x7fELF native code", 0o755)
+    write(root / "VERSION", "2026.11.1\n")
+    write(root / "LICENSE.md", "terms")
+    write(root / "assets" / "licenses" / "GPL-3.0.txt", "text")
+    return root
 
 
-def test_the_mavlink_extension_stays(tmp_path):
-    site = fake_site(tmp_path)
-    bt.trim(site, log=lambda _line: None)
-    assert (site / "corvus_link" / "corvus_link.abi3.so").is_file()
+def test_a_bundle_of_one_program_and_its_licence_passes(tmp_path: Path) -> None:
+    assert bt.check(good_bundle(tmp_path), ("corvus-gcs", "VERSION", "LICENSE.md")) == []
 
 
-def test_lxml_and_pip_go_with_their_metadata(tmp_path):
-    site = fake_site(tmp_path)
-    bt.trim(site, log=lambda _line: None)
-    for gone in ("lxml", "lxml-6.0.dist-info", "pip", "pip-26.0.dist-info"):
-        assert not (site / gone).exists()
-    assert (site / "paramiko" / "__init__.py").is_file()
+@pytest.mark.parametrize("rel", [
+    "python/bin/python3", "lib/python3.12/os.py", "usr/lib/libpython3.12.so.1.0", "Python.framework/Versions/3.12/Python",
+    "python/python312.dll", "site-packages/serial/__init__.py", "backend/serve.py", "pyvenv.cfg",
+    "lib/corvus_link.abi3.so", "x/PySide6/QtCore.so", "a/b.pyc", "pip/__init__.py",
+])
+def test_every_part_of_an_interpreter_or_its_packages_is_refused(tmp_path: Path, rel: str) -> None:
+    good_bundle(tmp_path)
+    write(tmp_path / rel)
+    problems = bt.check(tmp_path)
+    assert problems and any("Python" in p for p in problems), problems
 
 
-def test_qt_translations_and_foreign_locales_go(tmp_path):
-    site = fake_site(tmp_path)
-    bt.trim(site, log=lambda _line: None)
-    translations = site / "PySide6" / "Qt" / "translations"
-    assert not list(translations.glob("*.qm"))
-    assert sorted(p.name for p in (translations / "qtwebengine_locales").iterdir()) == ["de.pak", "en-US.pak"]
-    assert not (site / "PySide6" / "QtCore.pyi").exists()
-    assert (site / "PySide6" / "QtCore.abi3.so").is_file()
+@pytest.mark.parametrize("symbol", [b"PyInit_corvus_link", b"Py_InitializeEx"])
+def test_a_native_file_built_against_python_is_refused(tmp_path: Path, symbol: bytes) -> None:
+    good_bundle(tmp_path)
+    write(tmp_path / "corvus-gcs", b"\x7fELF" + b"\0" * 10 + symbol, 0o755)
+    assert [p for p in bt.check(tmp_path) if "PyO3" in p]
 
 
-def test_the_devtools_pack_goes_and_the_web_engine_resources_stay(tmp_path):
-    site = fake_site(tmp_path)
-    resources = site / "PySide6" / "Qt" / "resources"
-    for name in ("qtwebengine_resources.pak", "qtwebengine_devtools_resources.pak", "icudtl.dat",
-                 "v8_context_snapshot.bin"):
-        write(resources / name)
-    bt.trim(site, log=lambda _line: None)
-    assert sorted(p.name for p in resources.iterdir()) == [
-        "icudtl.dat", "qtwebengine_resources.pak", "v8_context_snapshot.bin"]
+def test_a_symbol_split_across_the_read_blocks_is_still_found(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(bt, "_CHUNK", 8)
+    write(tmp_path / "corvus-gcs", b"abcdefgh" + b"xxPyInit_a" + b"yyyy", 0o755)
+    assert bt.built_against_python(tmp_path / "corvus-gcs")
 
 
-def test_only_the_build_architecture_keeps_its_v8_snapshot(tmp_path):
-    site = fake_site(tmp_path)
-    resources = site / "PySide6" / "Qt" / "lib" / "QtWebEngineCore.framework" / "Versions" / "A" / "Resources"
-    for arch in ("arm64", "x86_64"):
-        write(resources / f"v8_context_snapshot.{arch}.bin")
-    removed = bt.plan(site, arch="arm64").remove
-    assert resources / "v8_context_snapshot.x86_64.bin" in removed
-    assert resources / "v8_context_snapshot.arm64.bin" not in removed
-    # A host whose own snapshot is not there keeps every one, rather than none.
-    assert not any("v8_context" in p.name for p in bt.plan(site, arch="riscv64").remove)
+def test_a_missing_required_file_fails(tmp_path: Path) -> None:
+    good_bundle(tmp_path)
+    (tmp_path / "LICENSE.md").unlink()
+    assert bt.check(tmp_path, ("LICENSE.md",)) == ["LICENSE.md: required and missing"]
 
 
-def test_dry_run_changes_nothing(tmp_path):
-    site = fake_site(tmp_path)
-    before = sorted(str(p) for p in site.rglob("*"))
-    lines: list[str] = []
-    bt.trim(site, dry_run=True, log=lines.append)
-    assert sorted(str(p) for p in site.rglob("*")) == before
-    assert any("would remove" in line for line in lines)
+def test_the_command_line_says_what_it_found(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    good_bundle(tmp_path)
+    assert bt.main(["check", str(tmp_path)]) == 0
+    write(tmp_path / "python3", b"x", 0o755)
+    assert bt.main(["check", str(tmp_path)]) == 1
+    assert "python3: a Python file or folder" in capsys.readouterr().err
 
 
-def test_a_bundle_without_the_mavlink_extension_fails_the_build(tmp_path):
-    site = fake_site(tmp_path)
-    (site / "corvus_link" / "corvus_link.abi3.so").unlink()
-    with pytest.raises(bt.TrimError, match="corvus_link"):
-        bt.trim(site, log=lambda _line: None)
-
-
-def test_a_missing_en_us_locale_fails_the_build(tmp_path):
-    site = fake_site(tmp_path)
-    (site / "PySide6" / "Qt" / "translations" / "qtwebengine_locales" / "en-US.pak").unlink()
-    with pytest.raises(bt.TrimError, match="en-US.pak"):
-        bt.trim(site, log=lambda _line: None)
-
-
-def test_a_frozen_layout_with_the_extension_passes(tmp_path):
-    internal = tmp_path / "_internal"
-    write(internal / "corvus_link" / "corvus_link.pyd")
-    bt.trim(internal, log=lambda _line: None)
-
-
-# A .framework and its directory symlinks exist only in the macOS bundle; on
-# Windows a plain symlink_to makes a file link that a chained path cannot open.
-_posix_links = pytest.mark.skipif(
-    sys.platform == "win32",
-    reason="macOS framework symlinks; no Windows bundle has a .framework",
-)
-
-
-def framework(site: Path, name: str) -> Path:
-    fw = site / "PySide6" / "Qt" / "lib" / f"{name}.framework"
-    for base in (fw, fw / "Versions" / "A"):
-        write(base / "Resources" / "Info.plist", "plist")
-        write(base / "Resources" / "qtwebengine_resources.pak", "pak" * 100)
-    write(fw / "Versions" / "A" / name, b"\xcf\xfa\xed\xfe")
-    return fw
-
-
-@_posix_links
-def test_identical_framework_copies_become_symlinks(tmp_path):
-    site = fake_site(tmp_path)
-    fw = framework(site, "QtWebEngineCore")
-    bt.trim(site, log=lambda _line: None)
-    assert (fw / "Versions" / "Current").is_symlink()
-    assert (fw / "Versions" / "Current").readlink() == Path("A")
-    assert (fw / "Resources").is_symlink()
-    assert (fw / "Resources").readlink() == Path("Versions/Current/Resources")
-    assert (fw / "Resources" / "qtwebengine_resources.pak").read_text() == "pak" * 100
-
-
-@_posix_links
-def test_a_framework_copy_that_differs_is_left_alone(tmp_path):
-    site = fake_site(tmp_path)
-    fw = framework(site, "QtWebEngineCore")
-    write(fw / "Helpers" / "QtWebEngineProcess", "signed")
-    write(fw / "Versions" / "A" / "Helpers" / "QtWebEngineProcess", "unsigned")
-    bt.trim(site, log=lambda _line: None)
-    assert (fw / "Resources").is_symlink()
-    assert not (fw / "Helpers").is_symlink()
-    assert (fw / "Helpers" / "QtWebEngineProcess").read_text() == "signed"
-
-
-def test_every_build_script_runs_the_trim_and_ships_no_qt():
-    for script in ("build-macos-app.sh", "build-appimage.sh"):
-        text = (ROOT.parent / script).read_text()
-        assert "tools/bundle_trim.py\"" in text, script
-        assert "qt_bundle.py" not in text and "PySide6" not in text, script
-        assert "pyproject.toml:headless" in text, script
-    windows = (ROOT.parent / "build-windows.ps1").read_text()
-    assert "tools\\bundle_trim.py" in windows
-    assert "PyInstaller" not in windows.replace("No PyInstaller", "")
-
-
-def test_the_app_no_longer_steers_pymavlink():
-    """MAVLINK_DIALECT only ever told pymavlink which dialect to load."""
-    source = (ROOT / "corvus" / "app.py").read_text()
-    assert "MAVLINK_DIALECT" not in source
+def test_the_build_scripts_check_the_same_rule() -> None:
+    for name in ("build-appimage.sh", "build-macos-app.sh", "build-windows.ps1"):
+        text = (ROOT.parent / name).read_text(encoding="utf-8")
+        assert "must hold no Python" in text, name
+        code = "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))
+        assert "pip install" not in code and "pyinstaller" not in code.lower() and "venv" not in code, name

@@ -59,10 +59,6 @@ pub struct Launch {
     pub root: PathBuf,
     /// The Python interpreter to run it with.
     pub python: PathBuf,
-    /// A frozen backend that runs by itself (the Windows bundle's
-    /// `backend/corvus-backend.exe`), which takes the place of `python` and
-    /// `serve.py`.
-    pub frozen: Option<PathBuf>,
 }
 
 impl Launch {
@@ -90,39 +86,7 @@ impl Launch {
                 .find(|v| v.is_file())
                 .unwrap_or_else(|| PathBuf::from(if cfg!(windows) { "python" } else { "python3" }))
         });
-        Ok(Launch {
-            root,
-            python,
-            frozen: None,
-        })
-    }
-
-    /// The backend beside the executable, when this is a bundle that carries
-    /// one: an embedded interpreter (`<dir>/backend/python/python.exe` on
-    /// Windows) running `<dir>/backend/serve.py`, or a frozen backend that runs
-    /// by itself (`<dir>/backend/corvus-backend`, `.exe` on Windows).
-    pub fn bundled(exe_dir: &Path) -> Option<Launch> {
-        let root = exe_dir.join("backend");
-        let python = root
-            .join("python")
-            .join(if cfg!(windows) { "python.exe" } else { "bin/python3" });
-        if python.is_file() && root.join("serve.py").is_file() {
-            return Some(Launch {
-                root,
-                python,
-                frozen: None,
-            });
-        }
-        let exe = root.join(if cfg!(windows) {
-            "corvus-backend.exe"
-        } else {
-            "corvus-backend"
-        });
-        exe.is_file().then(|| Launch {
-            root,
-            python: PathBuf::new(),
-            frozen: Some(exe),
-        })
+        Ok(Launch { root, python })
     }
 }
 
@@ -177,15 +141,9 @@ impl Backend {
 
     /// Starts `serve.py <port>` and waits until it answers.
     pub fn start(launch: &Launch, port: u16) -> Result<Backend, String> {
-        let mut command = match &launch.frozen {
-            Some(exe) => Command::new(exe),
-            None => {
-                let mut c = Command::new(&launch.python);
-                c.arg(launch.root.join("serve.py"));
-                c
-            }
-        };
-        let program = launch.frozen.as_ref().unwrap_or(&launch.python);
+        let mut command = Command::new(&launch.python);
+        command.arg(launch.root.join("serve.py"));
+        let program = &launch.python;
         #[cfg(windows)]
         {
             use std::os::windows::process::CommandExt;
@@ -313,42 +271,6 @@ mod tests {
         assert!(Launch::find(Path::new("/"), None).is_err());
     }
 
-    #[test]
-    fn a_frozen_backend_beside_the_executable_is_found() {
-        let dir = std::env::temp_dir().join(format!("corvus-bundled-{}", std::process::id()));
-        let backend = dir.join("backend");
-        std::fs::create_dir_all(&backend).unwrap();
-        assert!(Launch::bundled(&dir).is_none(), "nothing there yet");
-        let name = if cfg!(windows) {
-            "corvus-backend.exe"
-        } else {
-            "corvus-backend"
-        };
-        std::fs::write(backend.join(name), "").unwrap();
-        let launch = Launch::bundled(&dir).expect("found");
-        assert_eq!(launch.frozen, Some(backend.join(name)));
-        assert_eq!(launch.root, backend);
-        std::fs::remove_dir_all(&dir).unwrap();
-    }
-
-    #[test]
-    fn an_embedded_interpreter_beside_the_executable_is_found() {
-        let dir = std::env::temp_dir().join(format!("corvus-embedded-{}", std::process::id()));
-        let backend = dir.join("backend");
-        let python = backend
-            .join("python")
-            .join(if cfg!(windows) { "python.exe" } else { "bin/python3" });
-        std::fs::create_dir_all(python.parent().unwrap()).unwrap();
-        std::fs::write(&python, "").unwrap();
-        assert!(Launch::bundled(&dir).is_none(), "no serve.py yet");
-        std::fs::write(backend.join("serve.py"), "").unwrap();
-        let launch = Launch::bundled(&dir).expect("found");
-        assert_eq!(launch.python, python);
-        assert_eq!(launch.frozen, None);
-        assert_eq!(launch.root, backend);
-        std::fs::remove_dir_all(&dir).unwrap();
-    }
-
     #[cfg(unix)]
     #[test]
     fn a_child_that_ignores_sigterm_is_killed_after_the_grace_period() {
@@ -457,7 +379,7 @@ mod tests {
     }
 
     #[test]
-    fn the_core_answers_the_interface_client_and_unported_areas_say_so() {
+    fn the_core_answers_the_interface_client() {
         let _ =
             std::fs::remove_dir_all(std::env::temp_dir().join(format!("corvus-backend-client-{}", std::process::id())));
         let mut b = core_in("client").unwrap();

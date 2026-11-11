@@ -19,10 +19,11 @@ assets/  docs/  VERSION  LICENSE.md                shared by both
 build*.sh  build-windows.ps1  run.sh  release.sh   packaging for the Rust interface plus its backend
 ```
 
-The backend is being ported to Rust as `corvus_core` (`src/core`, plan in
-`src/BACKEND_PORT.md`, open work in `PLAN.md` section 0). The interface starts
-`python/serve.py` as its child until the port is complete; `--core` runs the
-Rust backend in its own process. Paths in this file that name `corvus/`, `src/js`, `tests/`, `tools/`,
+The backend is ported to Rust as `corvus_core` (`src/core`, plan in
+`src/BACKEND_PORT.md`, open work in `PLAN.md` section 0). The interface runs it
+in its own process by default; `--root DIR [--python PY]` runs `python/serve.py`
+as its child instead. `python/` is the reference the parity tests hold the core
+to, and is deleted only on the user's word. Paths in this file that name `corvus/`, `src/js`, `tests/`, `tools/`,
 `plugins/` or `pyproject.toml` are relative to `python/`.
 
 ## Agent roster
@@ -103,7 +104,7 @@ until a tool and its permission are added there on purpose.
 
 ### Tech stack
 
-- **Backend / wrapper:** CPython, standard library only where possible
+- **Backend / wrapper (the Python reference, `python/`):** CPython, standard library only where possible
   (`http.server`, `threading`, `subprocess`, `signal`, `atexit`,
   `collections.deque`, `pathlib`, `json`, `struct`). Add a third-party dependency
   only when the stdlib genuinely cannot do the job, and justify it.
@@ -159,9 +160,11 @@ until a tool and its permission are added there on purpose.
 
 Corvus GCS ships as a self-contained desktop artifact per platform. Every
 artifact is the native Rust interface (`Cargo.toml` and `src/`, egui, built with
-cargo) plus the backend it starts as its child (`serve.py` with a bundled
-CPython, python.org's embeddable CPython on Windows); all of them derive their version
-from the one `VERSION` read at build time. The Qt window around the web
+cargo) with the backend (`corvus_core`) inside the same executable; no artifact
+holds Python. All of them derive their version from the one `VERSION` read at
+build time. The interface runs the core in its own process by default;
+`--root DIR [--python PY]` runs `python/serve.py` as a child instead, for
+development and comparison. The Qt window around the web
 interface (`corvus/app.py`, `./run.sh --web`) stays in the repository for
 development until the native interface has every page; no bundle ships it.
 
@@ -170,12 +173,12 @@ the current host and fails loudly rather than pretending to cross-build.
 
 | Platform | Script | Artifact | Notes |
 | --- | --- | --- | --- |
-| Linux x86_64 | `./build.sh` -> `build-appimage.sh`, `build-deb.sh` | `dist/Corvus_GCS-<version>-x86_64.AppImage` and `dist/Corvus_GCS-<version>-amd64.deb` | one AppDir (bundled CPython + the Rust interface) packed twice; `--no-deb` / `--deb-only`; the .deb installs under `/opt/corvus-gcs` |
-| macOS (arm64 / x86_64) | `./build.sh --dmg` -> `build-macos-app.sh` | `dist/Corvus GCS.app` (+ `dist/Corvus_GCS-<version>-macOS-<arch>.dmg`) | relocatable framework CPython, ad-hoc codesigned |
-| Windows x64 | `.\build-windows.ps1 [-Zip]` | `dist\Corvus GCS\` (+ `dist\Corvus_GCS-<version>-windows-x64.zip`) | python.org's embeddable CPython laid out by the script (no PyInstaller); `./build.sh` from a Windows shell points here rather than cross-building |
+| Linux x86_64 | `./build.sh` -> `build-appimage.sh`, `build-deb.sh` | `dist/Corvus_GCS-<version>-x86_64.AppImage` and `dist/Corvus_GCS-<version>-amd64.deb` | one AppDir (the Rust interface, nothing else that runs) packed twice; `--no-deb` / `--deb-only`; the .deb installs under `/opt/corvus-gcs` |
+| macOS (arm64 / x86_64) | `./build.sh --dmg` -> `build-macos-app.sh` | `dist/Corvus GCS.app` (+ `dist/Corvus_GCS-<version>-macOS-<arch>.dmg`) | the interface in the bundle, ad-hoc codesigned |
+| Windows x64 | `.\build-windows.ps1 [-Zip]` | `dist\Corvus GCS\` (+ `dist\Corvus_GCS-<version>-windows-x64.zip`) | `Corvus GCS.exe` beside `VERSION` and `LICENSE.md` (no PyInstaller, no interpreter); `./build.sh` from a Windows shell points here rather than cross-building |
 
 CI is GitHub Actions only: `.github/workflows/build.yml` (test + test-windows +
-lint + frontend + appimage + macos-app + windows-app + release) calls the same
+lint + rust + rust-gui + frontend + appimage + macos-app + windows-app + release) calls the same
 `./build.sh` a developer runs locally. There is no second pipeline; do not add
 one back.
 
@@ -191,40 +194,40 @@ narrows the machines the artifact runs on.
 
 Shared packaging invariants — a violation of any of these is a build bug:
 
-- **Self-contained.** Bundled CPython + stdlib + corvus_link/paramiko/pyserial
-  (the `headless` group) and the compiled interface. No system Python, no
-  conda, no Qt on the target machine. The interface opens OpenGL, X11 and
-  Wayland from the machine it runs on, as every desktop program does.
+- **Self-contained, and no Python.** The compiled interface with `corvus_core`
+  inside it, and nothing else that runs: no CPython, no `pip`, no PyInstaller,
+  no `site-packages`, no `serve.py`, no PyO3 extension. `corvus_link` is
+  built without its `python` feature (the root workspace depends on it with
+  `default-features = false`). Every build script fails when it finds a Python
+  file in the bundle, and `tools/bundle_trim.py check <bundle>` makes the same
+  check on a finished artifact (CI runs it on the AppImage, the macOS smoke
+  test on the `.app`). No system Python, no conda, no Qt on the target machine.
+  The interface opens OpenGL, X11 and Wayland from the machine it runs on, as
+  every desktop program does.
 - **No Qt in a bundle.** The interface is egui on OpenGL (glow) with a 24 bit
   depth buffer for the 3D map; nothing in a bundle links Qt or a web engine.
   The one place Qt remains is `corvus/app.py` behind `./run.sh --web`, and
   there the rule stands: PySide6 (LGPL v3), never PyQt6 (GPL v3, which does not
   combine with the Sustainable Use License). macOS 12 is the floor
   (`MIN_MACOS` in `build-macos-app.sh`, read by both cargo and `Info.plist`).
-- **Only what runs.** `tools/bundle_trim.py` takes out lxml, pip, every
-  pymavlink dialect but `all`, and the other architecture's slices where a
-  wheel carries two. It fails the build if the `all` dialect or the compiled
-  `corvus_link` module is gone.
 - **The interface is built by cargo, locked.** `cargo build --release
   --locked` from the repository root (its `rust-toolchain.toml` pins the Rust),
   into a target folder under `build/`. Fonts and icons are cut out of
-  `src/vendor` by its `build.rs` and the logos are read from `assets/`, so the
-  binary carries them. A macOS bundle holds a launcher
-  (`Contents/MacOS/corvus-gcs`, `tools/macos_launcher.c`) that sets the
-  interpreter's environment and `exec`s `corvus-gcs-ui`; the AppImage's
-  `AppRun` does the same; the Windows folder holds `Corvus GCS.exe` beside
-  `backend\corvus-backend.exe`, which the interface finds without flags.
-- **corvus_link is built, not downloaded.** Every installer (`run.sh`, the
-  three build scripts, CI) runs `pip install <repo>/src/link` after
-  its dependency group, so a build machine needs a Rust toolchain (cargo);
-  the target machine never does. A release lock excludes it
-  (`pip freeze --exclude corvus-link`), because the line would name the
-  build machine's path.
+  `src/vendor` by its `build.rs`, the logos are read from `assets/`, and the
+  languages, the version and the bundled plugins are compiled in, so the
+  binary carries them. The executable is the macOS bundle's
+  `Contents/MacOS/corvus-gcs`, the AppImage's `usr/bin/corvus-gcs-ui` (started
+  by `AppRun`, which `exec`s it so signals reach it) and `Corvus GCS.exe`.
+  Backend teardown is the interface's normal exit path: the core is stopped and
+  its threads joined; there is no child process to kill.
+- **Build host.** A Rust toolchain (cargo) and the platform's own tools. The
+  Linux script uses `python3` for small helpers (the library bundler
+  `tools/appimage_libs.py`, an icon fallback); it never enters the artifact.
 - **Offline at runtime.** The build may download wheels and packaging tools
   once; the *running* app must never need the network.
-- **Layout contract.** `VERSION`, `corvus/`, `src/`, and `assets/` stay
-  siblings inside the bundle, because `corvus/version.py` and `corvus/server.py`
-  resolve them as `Path(__file__).parent.parent / …`.
+- **Layout contract.** `VERSION`, `LICENSE.md` and `assets/licenses/` sit
+  beside the executable (`Contents/Resources` in a `.app`). The program reads
+  none of them at run time; they travel with it.
 - **Licence travels with the software.** `LICENSE.md` ships inside every
   artifact next to `VERSION`. This is not housekeeping: the Sustainable Use
   License requires that anyone who receives a copy of the software also receives
@@ -468,7 +471,7 @@ Rules that keep the chain honest:
 ## Commands
 
 ```
-./run.sh                        # create/update .venv from pyproject.toml + launch desktop app
+./run.sh                        # build and run the native interface (core inside, no Python)
 .venv/bin/python -m pytest -q   # test suite (the gate for every change)
 .venv/bin/python -m ruff check corvus serve.py tests plugins   # lint, as CI runs it
 .venv/bin/python serve.py       # backend only, UI in a normal browser

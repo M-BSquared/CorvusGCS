@@ -7,15 +7,16 @@
 #
 # The desktop app is the native Rust interface (Cargo.toml and src/), built with
 # cargo from the repository root, whose rust-toolchain.toml pins the Rust it
-# needs; rustup installs that on the first run. Nothing else is needed once the
-# backend is part of that workspace (a `corvus_core` member in Cargo.toml).
+# needs; rustup installs that on the first run. The backend (corvus_core) is
+# inside it: nothing else is needed, and no Python is started.
 #
-# Until then the interface starts python/serve.py as its child, and only then
-# does this script create .venv from a Python >= 3.12, install the `dev` group
-# of python/pyproject.toml and build corvus_link into it. It is skipped with
-# --server (a backend elsewhere) and never needed by a Rust-only checkout.
-# Later runs re-install only when pyproject.toml or src/link changed, and an
-# update that fails offline still starts on the set already installed.
+#   ./run.sh --python-backend [flags]   run the reference backend python/serve.py
+#                                       as the interface's child instead
+#
+# Only --web and --python-backend create .venv (from a Python >= 3.12), install
+# the `dev` group of python/pyproject.toml and build corvus_link into it. Later
+# runs re-install only when pyproject.toml or src/link changed, and an update
+# that fails offline still starts on the set already installed.
 #
 # $CORVUS_PYTHON picks the interpreter the venv is created from.
 
@@ -75,13 +76,6 @@ fi
 
 py_ok() {  # <interpreter> -> 0 if it is Python >= 3.12
     "$1" -c 'import sys; sys.exit(sys.version_info < (3, 12))' >/dev/null 2>&1
-}
-
-needs_python() {  # the backend is still python/serve.py, and no --server was given
-    grep -q "corvus_core" "$REPO_DIR/Cargo.toml" && return 1
-    local a
-    for a in "$@"; do [ "$a" = "--server" ] && return 1; done
-    [ -f "$REPO_DIR/python/serve.py" ]
 }
 
 ensure_venv() {
@@ -155,8 +149,9 @@ PROFILE="${CORVUS_PROFILE:-fast}"
 BIN="$REPO_DIR/target/$PROFILE/corvus-gcs"
 [ -x "$BIN" ] || BIN="$BIN.exe"
 # exec, so SIGINT/SIGTERM reach the interface's own handlers directly, which
-# take the backend down.
-if needs_python "$@"; then
+# stop the core and join its threads.
+if [ "${1:-}" = "--python-backend" ]; then
+    shift
     ensure_venv
     CORVUS_APP_ID=corvus-gcs-dev exec "$BIN" --root "$REPO_DIR" --python "$PY" "$@"
 fi

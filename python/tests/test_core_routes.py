@@ -82,11 +82,37 @@ def test_the_first_start_is_pending_until_it_is_finished() -> None:
         assert (fresh.rs.state_dir / "config.json").read_text() == (fresh.py.state_dir / "config.json").read_text()
 
 
-def test_an_area_that_is_not_ported_says_so_instead_of_404(pair) -> None:
-    status, body = harness.http("POST", pair.rs.url + "/api/mavlink/scope/clear", {})
-    assert (status, body) == (501, {"error": "Not available in this build"})
+def test_the_message_scope_routes_answer_as_python_does_and_unknown_paths_are_404(pair) -> None:
+    assert not pair.compare_post("/api/mavlink/scope/clear", {})
     assert harness.http("GET", pair.rs.url + "/api/no-such-route")[0] == 404
     assert harness.http("GET", pair.py.url + "/api/no-such-route")[0] == 404
+
+
+@pytest.mark.parametrize("path,limit", [
+    ("/api/logs/review/upload", 128 * 1024 * 1024),
+    ("/api/firmware/upload", 64 * 1024 * 1024),
+    ("/api/dem/import", 1024 * 1024 * 1024),
+])
+def test_a_raw_upload_beyond_its_cap_is_refused_in_the_routes_own_words(pair, path, limit) -> None:
+    import http.client
+
+    answers = []
+    for server in (pair.py, pair.rs):
+        conn = http.client.HTTPConnection("127.0.0.1", int(server.url.rsplit(":", 1)[1]), timeout=10)
+        conn.putrequest("POST", path)
+        conn.putheader("Content-Length", str(limit + 1))
+        conn.endheaders()
+        response = conn.getresponse()
+        answers.append((response.status, _json_of(response.read())))
+        conn.close()
+    assert answers[0] == answers[1]
+    assert answers[0][0] == 413
+
+
+def _json_of(raw: bytes):
+    import json as _json
+
+    return _json.loads(raw)
 
 
 def test_a_request_for_another_host_is_refused_like_python_refuses_it(pair) -> None:

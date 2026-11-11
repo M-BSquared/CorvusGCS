@@ -59,14 +59,6 @@ def test_the_icon_code_finds_its_logos_in_the_bundle():
 
 
 @pytest.mark.parametrize("script", BUILDS)
-def test_every_build_ships_assets_through_the_tool(script):
-    text = (ROOT.parent / script).read_text(encoding="utf-8")
-    assert "bundle_assets.py" in text
-    assert not re.search(r"""rsync[^\n]*REPO_DIR/assets/""", text)
-    assert "RepoDir 'assets');assets" not in text
-
-
-@pytest.mark.parametrize("script", BUILDS)
 def test_no_build_copies_the_website_or_the_scene_scripts(script):
     text = (ROOT.parent / script).read_text(encoding="utf-8")
     for line in text.splitlines():

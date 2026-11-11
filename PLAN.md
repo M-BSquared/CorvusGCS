@@ -85,9 +85,10 @@ be seen live, see 1.2):
 The native interface (`src/`) is a client of the backend; the backend is being
 ported from `python/corvus` to `corvus_core` (`src/core`, plan and rules in
 `src/BACKEND_PORT.md`). `python/` stays the reference until the user deletes it.
-`corvus-gcs` starts `serve.py` by default; `--core` runs `corvus_core` in the
-interface's own process. The switch to `--core` as the default happens when no
-route of the interface answers 501 ("Not available in this build").
+`corvus-gcs` runs `corvus_core` in its own process by default (the switch is
+done: `tests/no_unavailable_routes.rs` shows no route of the Python server is
+left at 501); `--root DIR [--python PY]` runs `serve.py` as a child for the
+comparison. No artifact holds Python.
 
 Done and merged: the router, state store, settings, HTTP server, the protocols
 (parameters, logs, shell, FTP, flight, setup, telemetry, missions, Remote ID,
@@ -109,23 +110,11 @@ telemetry review).
 * P3 A download thread can outlive `shutdown` by up to the 15 s fetch timeout;
   so can a building worker inside an Overpass call (up to 65 s), which `close`
   waits 2 s for and then lets go.
-* P3 `POST /api/dem/import` is a raw route, so the router holds the whole body
-  (up to 1 GB) in memory before the handler streams nothing; its 413 answers
-  `{"error": "request too large"}` where Python names the 1 GB limit. A raw
-  route that writes its body to a file as it arrives needs the foundation.
 * P3 `buildings::parse_length` reads ASCII digits only; Python's `isdigit`
   also takes other scripts' digits.
 
 ### 0.3 Logs and firmware (`src/core/src/logs/`, `firmware/`)
 
-* P2 `/api/mavlink/scope` and `/api/mavlink/scope/clear` (`routes/logs.py`,
-  `mavlink_inspector.py`) answer 501: they need a message scope in the bridge
-  (`record_scope` in `bridge.rs` is empty), which the vehicle area owns.
-* P2 The raw upload routes (`/api/logs/review/upload`, `/api/firmware/upload`)
-  answer 413 with the router's `{"error": "request too large"}` beyond the
-  cap; Python answers `{"ok": false, "error": "that log is too large to
-  review"}` and `{"ok": false, "error": "request too large"}`. The router cap
-  runs before the handler.
 * P3 The text Python's libraries give for a damaged firmware container (bad
   zlib data other than the header, a ZIP that fails its CRC) is not copied
   word for word; the JSON, base64 and header texts are.
@@ -152,9 +141,12 @@ Nothing open: every setup route answers, the harness compares them with `serve.p
 
 ### 0.7 The switch
 
-* P1 Make `--core` the default once 0.1 to 0.6 leave nothing at 501; the build
-  scripts and CI drop CPython, PyInstaller and `pip`; the bundle smoke test
-  checks that no Python is inside; `corvus_link` loses its `python` feature.
+* P2 Not run here: the AppImage, the `.deb` and the Windows folder (their
+  scripts are written to the same contract as the macOS one, which was built and
+  smoke tested); CI is their first run. Check that the Windows folder and the
+  AppImage start without Python on a clean machine.
+* P3 `corvus_link` keeps its `python` feature for the reference; it is dropped
+  with `python/`.
 * P1 `python/` is deleted only on the user's word, after the page by page and
   route by route comparison. Qt and the web interface go with it.
 
@@ -176,8 +168,8 @@ Nothing open: every setup route answers, the harness compares them with `serve.p
   tablet and touch mode, USB gamepad.
 * P2 Decide on the `gilrs` crate (needs libudev on the Linux build host).
 * P2 Run `build-appimage.sh` and `build-windows.ps1` for the first time (CI is
-  the first run) and check that the language files, plugin `lang` folders and
-  the core are inside every artifact.
+  the first run). The language files and the core are compiled into the one
+  executable; check that plugin `lang` folders are too.
 
 ## 1. Live checks
 

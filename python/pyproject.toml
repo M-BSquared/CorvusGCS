@@ -72,6 +72,9 @@ test = [
     # and ws: links against the Rust ones. Never shipped.
     "wsproto>=1.2",
 ]
+# The bundle smoke test (tests/test_bundle_smoke.py): it runs a finished artifact
+# and imports nothing of the backend, so it needs only pytest.
+smoke = ["pytest>=7.0"]
 # The linter CI runs.
 lint = ["ruff>=0.5"]
 # The local development venv that run.sh creates: the app, the suite and the

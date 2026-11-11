@@ -136,6 +136,9 @@ pub struct Request {
     pub headers: Headers,
     /// The body as it arrived (for a raw route), or empty.
     pub body: Vec<u8>,
+    /// The file a spooled route's body was streamed to (the server removes it
+    /// after the handler returns; a handler that keeps it moves it away).
+    pub body_file: Option<std::path::PathBuf>,
     /// The peer's address, loopback for an in-process call.
     pub peer: Option<IpAddr>,
     pub origin: Origin,
@@ -154,6 +157,7 @@ impl Request {
             query: Query::parse(query),
             headers: Headers::default(),
             body: Vec::new(),
+            body_file: None,
             peer: None,
             origin: Origin::Http,
             params: Vec::new(),

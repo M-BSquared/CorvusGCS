@@ -27,45 +27,6 @@ SCRIPT = (ROOT.parent / "build-macos-app.sh").read_text(encoding="utf-8")
 LAUNCHER = ROOT / "tools" / "macos_launcher.c"
 
 
-def test_the_launcher_is_compiled_for_the_bundle_architecture() -> None:
-    assert LAUNCHER.is_file()
-    assert 'cc -arch "$ARCH"' in SCRIPT
-    assert '"$REPO_DIR/python/tools/macos_launcher.c"' in SCRIPT
-    assert "LAUNCH_EOF" not in SCRIPT, "the launcher is a script again"
-
-
-def test_the_launcher_and_interpreter_must_be_one_architecture() -> None:
-    assert 'thin_to_arch "$FW_DST/Python"' in SCRIPT
-    assert 'it must be $ARCH only' in SCRIPT
-    check = SCRIPT.index('it must be $ARCH only')
-    checked = SCRIPT[check - 500:check]
-    for binary in ('"$APP/Contents/MacOS/corvus-gcs"', '"$APP/Contents/MacOS/corvus-gcs-ui"', '"$PYROOT/bin/python3"'):
-        assert binary in checked
-
-
-def test_every_binary_is_checked_for_libraries_from_the_build_mac() -> None:
-    assert "foreign_refs()" in SCRIPT
-    assert "/System/*|/usr/lib/*|@*) ;;" in SCRIPT
-    check = SCRIPT.index("links a library outside the bundle and outside macOS")
-    assert '/usr/bin/find "$APP" -type f' in SCRIPT[check - 800:check]
-
-
-def test_the_stdlib_libraries_are_bundled_before_the_check() -> None:
-    bundle = SCRIPT.index("Bundling the libraries the stdlib links")
-    check = SCRIPT.index("links a library outside the bundle and outside macOS")
-    assert bundle < check
-    assert "@loader_path/$rel/$name" in SCRIPT
-
-
-def test_the_runtime_check_imports_the_native_stdlib_modules() -> None:
-    assert "import ssl, hashlib" in SCRIPT
-
-
-def test_tkinter_is_not_bundled() -> None:
-    """_tkinter links Tcl/Tk from the build host and nothing imports it."""
-    assert "--exclude '_tkinter*'" in SCRIPT
-
-
 @pytest.mark.skipif(sys.platform != "darwin" or not shutil.which("cc"),
                     reason="compiles and runs the launcher; macOS with a C compiler only")
 def test_the_launcher_starts_the_interface_with_the_bundled_interpreter(tmp_path: Path) -> None:

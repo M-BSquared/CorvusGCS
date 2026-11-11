@@ -489,6 +489,23 @@ fn serve_connection(core: &Core, mut stream: TcpStream) {
     }
 }
 
+fn content_length(req: &Request) -> Result<usize, Response> {
+    match req.headers.get("Content-Length") {
+        None => Ok(0),
+        Some(v) => match v.trim().parse::<i64>() {
+            Ok(n) if n >= 0 => Ok(n as usize),
+            _ => Err(Response::error(400, "invalid content-length")),
+        },
+    }
+}
+
+fn too_large(options: Option<router::RouteOptions>) -> Response {
+    match options.and_then(|o| o.too_large) {
+        Some(text) => Response::not_ok(413, text),
+        None => Response::error(413, "request too large"),
+    }
+}
+
 /// Reads the body the head promised, the way `_handle_api_post` does.
 fn read_body(
     stream: &mut TcpStream,
@@ -497,13 +514,7 @@ fn read_body(
     mut rest: Vec<u8>,
     limit: usize,
 ) -> Result<Vec<u8>, Response> {
-    let length = match req.headers.get("Content-Length") {
-        None => 0,
-        Some(v) => match v.trim().parse::<i64>() {
-            Ok(n) if n >= 0 => n as usize,
-            _ => return Err(Response::error(400, "invalid content-length")),
-        },
-    };
+    let length = content_length(req)?;
     if length > limit {
         return Err(Response::error(413, "request too large"));
     }
@@ -516,6 +527,72 @@ fn read_body(
     }
     rest.truncate(length);
     Ok(rest)
+}
+
+/// Streams the body to a file under the state folder's `spool`, so a file of
+/// a gigabyte never sits in memory. `None` is an empty body.
+fn spool_body(
+    stream: &mut TcpStream,
+    core: &Core,
+    req: &Request,
+    rest: Vec<u8>,
+    options: router::RouteOptions,
+) -> Result<Option<std::path::PathBuf>, Response> {
+    let length = content_length(req)?;
+    if length > options.max_body {
+        return Err(too_large(Some(options)));
+    }
+    if length == 0 {
+        return Ok(None);
+    }
+    let dir = core.paths().join("spool");
+    let cut = || Response::not_ok(400, "the upload was cut short");
+    std::fs::create_dir_all(&dir).map_err(|_| cut())?;
+    static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let path = dir.join(format!(
+        "upload-{}-{}.part",
+        std::process::id(),
+        COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    ));
+    let mut file = std::fs::File::create(&path).map_err(|_| cut())?;
+    let mut written = 0usize;
+    let mut failed = false;
+    let mut put = |chunk: &[u8], written: &mut usize| -> bool {
+        let take = chunk.len().min(length - *written);
+        if file.write_all(&chunk[..take]).is_err() {
+            return false;
+        }
+        *written += take;
+        true
+    };
+    failed |= !put(&rest, &mut written);
+    let _ = stream.set_read_timeout(Some(SLICE));
+    let mut last = Instant::now();
+    let mut chunk = vec![0u8; 64 * 1024];
+    while !failed && written < length {
+        if core.is_stopping() || last.elapsed() > IDLE_LIMIT {
+            break;
+        }
+        match stream.read(&mut chunk) {
+            Ok(0) => break,
+            Ok(n) => {
+                failed |= !put(&chunk[..n], &mut written);
+                last = Instant::now();
+            }
+            Err(e)
+                if matches!(
+                    e.kind(),
+                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut | std::io::ErrorKind::Interrupted
+                ) => {}
+            Err(_) => break,
+        }
+    }
+    drop(file);
+    if failed || written < length {
+        let _ = std::fs::remove_file(&path);
+        return Err(cut());
+    }
+    Ok(Some(path))
 }
 
 fn route(core: &Core, stream: &mut TcpStream, mut req: Request, rest: Vec<u8>) -> Response {
@@ -548,12 +625,22 @@ fn route(core: &Core, stream: &mut TcpStream, mut req: Request, rest: Vec<u8>) -
         };
     }
     if req.method == Method::Post {
-        let limit = core
-            .router()
-            .options_for(Method::Post, &path)
-            .map_or(router::MAX_JSON_BODY, |o| o.max_body);
+        let options = core.router().options_for(Method::Post, &path);
+        if let Some(o) = options.filter(|o| o.spool) {
+            match spool_body(stream, core, &req, rest, o) {
+                Ok(file) => req.body_file = file,
+                Err(r) => return r,
+            }
+            let response = core.dispatch(req.clone());
+            if let Some(file) = &req.body_file {
+                let _ = std::fs::remove_file(file);
+            }
+            return response;
+        }
+        let limit = options.map_or(router::MAX_JSON_BODY, |o| o.max_body);
         match read_body(stream, core, &req, rest, limit) {
             Ok(b) => req.body = b,
+            Err(r) if r.status == 413 => return too_large(options),
             Err(r) => return r,
         }
     }
@@ -592,6 +679,20 @@ mod tests {
             reg.post_with("/api/upload", crate::router::RouteOptions::raw(16), |_, req| {
                 Response::json(json!({"bytes": req.body.len()}))
             });
+            reg.post_with(
+                "/api/spool",
+                crate::router::RouteOptions::raw(16)
+                    .too_large("too big for the spool")
+                    .spooled(),
+                |_, req| {
+                    let size = req
+                        .body_file
+                        .as_ref()
+                        .and_then(|f| std::fs::read(f).ok())
+                        .map(|b| b.len());
+                    Response::json(json!({"size": size, "in_memory": req.body.len()}))
+                },
+            );
             reg.get("/api/ws", |core, req| {
                 let core = core.clone();
                 Response::upgrade(req, move |ws| {
@@ -826,6 +927,17 @@ mod tests {
         let (status, _, body) = post(addr, "/api/upload", "0123456789", "");
         assert_eq!((status, json_of(&body)), (200, json!({"bytes": 10})));
         assert_eq!(post(addr, "/api/upload", &"x".repeat(17), "").0, 413);
+        let (status, _, body) = post(addr, "/api/spool", "0123456789", "");
+        assert_eq!((status, json_of(&body)), (200, json!({"size": 10, "in_memory": 0})));
+        let (status, _, body) = post(addr, "/api/spool", "", "");
+        assert_eq!((status, json_of(&body)), (200, json!({"size": null, "in_memory": 0})));
+        let (status, _, body) = post(addr, "/api/spool", &"x".repeat(17), "");
+        assert_eq!(
+            (status, json_of(&body)),
+            (413, json!({"ok": false, "error": "too big for the spool"}))
+        );
+        let spooled = std::fs::read_dir(core.paths().join("spool")).map_or(0, Iterator::count);
+        assert_eq!(spooled, 0, "the spool file is removed after the handler");
         core.stop();
         std::fs::remove_dir_all(&d).unwrap();
     }

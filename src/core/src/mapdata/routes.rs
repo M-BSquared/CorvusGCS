@@ -51,7 +51,13 @@ pub fn register(reg: &mut Registry) {
     reg.get("/api/dem", dem_list);
     reg.post("/api/dem/rename", dem_rename);
     reg.post("/api/dem/remove", dem_remove);
-    reg.post_with("/api/dem/import", RouteOptions::raw(MAX_DEM_BODY_BYTES), dem_import);
+    reg.post_with(
+        "/api/dem/import",
+        RouteOptions::raw(MAX_DEM_BODY_BYTES)
+            .too_large("that file is larger than 1 GB. Split it into smaller tiles")
+            .spooled(),
+        dem_import,
+    );
     reg.get_pattern("/api/tiles/{source}/{z:d}/{x:d}/{y:d}.png", tile_serve);
     reg.get_pattern("/api/buildings/{z:d}/{x:d}/{y:d}.json", buildings_serve);
 }
@@ -587,7 +593,7 @@ fn dem_import(core: &Core, req: &Request) -> Response {
     let Some(store) = r.as_ref().and_then(|r| r.custom_dem.as_ref()) else {
         return Response::not_ok(503, "elevation models are unavailable");
     };
-    if req.body.is_empty() {
+    if req.body_file.is_none() && req.body.is_empty() {
         return Response::not_ok(400, "the file is empty");
     }
     let param = |key: &str| req.query.get(key).unwrap_or("").trim().to_string();
@@ -608,7 +614,11 @@ fn dem_import(core: &Core, req: &Request) -> Response {
     let model_id = (!model.is_empty()).then_some(model.as_str());
     let _ = std::fs::create_dir_all(store.root());
     let tmp = store.root().join(format!("upload-{}.part", &uuid4_hex()[..12]));
-    if std::fs::write(&tmp, &req.body).is_err() {
+    let stored = match req.body_file.as_ref() {
+        Some(spooled) => std::fs::rename(spooled, &tmp).is_ok() || std::fs::copy(spooled, &tmp).is_ok(),
+        None => std::fs::write(&tmp, &req.body).is_ok(),
+    };
+    if !stored {
         return Response::not_ok(400, "could not read this file as an elevation grid");
     }
     let imported = store.import_file(&tmp, &filename, &param("name"), epsg, model_id);

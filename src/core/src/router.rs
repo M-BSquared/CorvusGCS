@@ -30,6 +30,12 @@ pub struct RouteOptions {
     pub body: Body,
     /// The largest body the route accepts, answered with 413 beyond it.
     pub max_body: usize,
+    /// The text of the 413 beyond the cap, answered as `{"ok": false, "error":
+    /// text}`; `None` answers the router's `{"error": "request too large"}`.
+    pub too_large: Option<&'static str>,
+    /// The body is written to a file as it arrives and `Request::body_file`
+    /// names it, so an upload of any size is never held in memory.
+    pub spool: bool,
 }
 
 /// The cap of a JSON route (`MAX_JSON_BODY_BYTES` in `server.py`).
@@ -41,23 +47,43 @@ impl RouteOptions {
     pub const GET: RouteOptions = RouteOptions {
         body: Body::None,
         max_body: 0,
+        too_large: None,
+        spool: false,
     };
     pub const JSON: RouteOptions = RouteOptions {
         body: Body::Json,
         max_body: MAX_JSON_BODY,
+        too_large: None,
+        spool: false,
     };
 
     pub fn raw(max_body: usize) -> RouteOptions {
         RouteOptions {
             body: Body::Raw,
             max_body,
+            too_large: None,
+            spool: false,
         }
+    }
+
+    /// Answers the 413 beyond the cap with `text` (the Python route's own words).
+    pub fn too_large(mut self, text: &'static str) -> RouteOptions {
+        self.too_large = Some(text);
+        self
+    }
+
+    /// Streams the body to a file (`Request::body_file`) instead of memory.
+    pub fn spooled(mut self) -> RouteOptions {
+        self.spool = true;
+        self
     }
 
     pub fn json(max_body: usize) -> RouteOptions {
         RouteOptions {
             body: Body::Json,
             max_body,
+            too_large: None,
+            spool: false,
         }
     }
 }

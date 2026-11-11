@@ -31,7 +31,7 @@ pub(super) fn register(reg: &mut Registry) {
     reg.get("/api/firmware/progress", api_progress);
     reg.post_with(
         "/api/firmware/upload",
-        RouteOptions::raw(MAX_FIRMWARE_BODY_BYTES),
+        RouteOptions::raw(MAX_FIRMWARE_BODY_BYTES).too_large("request too large"),
         api_upload,
     );
 }

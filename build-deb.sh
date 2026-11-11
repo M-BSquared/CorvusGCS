@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Build Corvus GCS as a Debian package (amd64) from an assembled AppDir.
 #
-# build-appimage.sh assembles the AppDir (bundled CPython, corvus_link, the Rust
-# interface, the app code) and calls this with its path, so the .deb carries
+# build-appimage.sh assembles the AppDir (the Rust interface with its backend
+# inside, the licence) and calls this with its path, so the .deb carries
 # exactly the payload the AppImage does. It installs under /opt/corvus-gcs, adds
 # /usr/bin/corvus-gcs, the desktop entry and the icon, and depends only on what
 # every desktop already has: the C library, OpenGL, and the X11 or Wayland
@@ -73,7 +73,7 @@ Depends: libc6 (>= 2.35), libgl1, libxkbcommon0, libx11-6 | libwayland-client0
 Homepage: https://github.com/M-BSquared/CorvusGCS
 Description: Ground Control Station for PX4 and ArduPilot aircraft
  Corvus GCS runs offline on a laptop and talks to the autopilot over serial,
- UDP or TCP. It carries its own Python and needs no network at run time.
+ UDP or TCP. It is one native program and needs no network at run time.
 CONTROL
 
 cat > "$STAGE/DEBIAN/postinst" <<'POST'
