@@ -15,7 +15,7 @@ use std::time::{Duration, Instant};
 use serde_json::{json, Map, Value};
 
 use super::fetch::{Fetch, Req};
-use super::util::{finite, quote_plus, round_half_even};
+use super::util::{finite, quote_plus, round_half_even, truthy};
 
 pub const SEARCH_URL: &str = "https://nominatim.openstreetmap.org/search";
 pub const MIN_INTERVAL_S: f64 = 1.1;
@@ -87,18 +87,6 @@ fn label(entry: &Map<String, Value>) -> String {
     };
     let joined = text.split_whitespace().collect::<Vec<_>>().join(" ");
     joined.chars().take(200).collect()
-}
-
-/// Python truthiness of a JSON value (`a or b`).
-fn truthy(v: &Value) -> bool {
-    match v {
-        Value::Null => false,
-        Value::Bool(b) => *b,
-        Value::Number(n) => n.as_f64() != Some(0.0),
-        Value::String(s) => !s.is_empty(),
-        Value::Array(a) => !a.is_empty(),
-        Value::Object(o) => !o.is_empty(),
-    }
 }
 
 fn kind(entry: &Map<String, Value>) -> String {
@@ -319,7 +307,7 @@ impl Geocoder {
         let resp = match net.send(&req) {
             Ok(r) => r,
             Err(e) => {
-                let too_big = e.0.contains("larger than the cap");
+                let too_big = e.is_too_large();
                 self.back_off(self.limits.offline_backoff);
                 return Err(if too_big {
                     unusable()

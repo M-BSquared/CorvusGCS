@@ -30,6 +30,16 @@ impl Fetched {
 #[derive(Debug, Clone)]
 pub struct NetError(pub String);
 
+/// The text of the error a body past the cap makes.
+pub const TOO_LARGE: &str = "the answer is larger than the cap";
+
+impl NetError {
+    /// The answer was longer than `Req::max_body`.
+    pub fn is_too_large(&self) -> bool {
+        self.0 == TOO_LARGE
+    }
+}
+
 impl std::fmt::Display for NetError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.0)
@@ -106,7 +116,7 @@ impl Fetch for Http {
             .read_to_vec()
             .map_err(|e| NetError(e.to_string()))?;
         if body.len() > req.max_body {
-            return Err(NetError("the answer is larger than the cap".into()));
+            return Err(NetError(TOO_LARGE.into()));
         }
         Ok(Fetched { status, body, headers })
     }

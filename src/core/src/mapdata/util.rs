@@ -64,6 +64,18 @@ pub fn json_float(v: &Value) -> Option<f64> {
     }
 }
 
+/// Python truthiness of a JSON value (`a or b`).
+pub fn truthy(v: &Value) -> bool {
+    match v {
+        Value::Null => false,
+        Value::Bool(b) => *b,
+        Value::Number(n) => n.as_f64() != Some(0.0),
+        Value::String(s) => !s.is_empty(),
+        Value::Array(a) => !a.is_empty(),
+        Value::Object(o) => !o.is_empty(),
+    }
+}
+
 /// `float(value)` that is finite, `None` otherwise (`geocode._finite`).
 pub fn finite(v: &Value) -> Option<f64> {
     json_float(v).filter(|x| x.is_finite())
