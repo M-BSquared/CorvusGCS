@@ -142,7 +142,6 @@ telemetry review).
 
 ### 0.4 Peripherals (`src/core/src/peripherals/`)
 
-* P1 Video (`video.py`, `routes/video.py`; keep the ffmpeg boundary).
 * P1 SSH transport (`connect`, `connections`, `run`, `power`): choose the
   crate (`ssh2` needs libssh2 and a crypto backend in every bundle, `russh` is
   pure Rust but needs tokio), keep `~/.corvus/known_hosts`.

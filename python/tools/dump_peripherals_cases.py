@@ -445,7 +445,137 @@ def shell() -> None:
     write("peripherals_shell_cases.json", out)
 
 
-COMMANDS = {"ports": ports, "netprobe": netprobe, "rtk": rtk, "sik": sik, "shell": shell}
+def video() -> None:
+    from corvus import video as v
+
+    urls = [
+        "", "  ", "rtsp://192.168.144.25:8554/main.264", "RTSP://Host:554/a?b=c#d", "rtsps://h/x", "rtsp://admin:secret@10.0.0.1/stream",
+        "rtsp://admin:p%40ss%3Aword@10.0.0.1:8554/s", "rtsp://user@10.0.0.1/s", "rtsp://:pw@10.0.0.1/s", "rtsp://a:b@c:d@host/x",
+        "udp://@:5600", "udp://:5600", "udp://@239.0.0.1:5600", "udp://", "udp://@", "udp://host", "srt://h:9000?mode=caller",
+        "http://cam/stream.mjpg", "https://cam:8443/whep", "http://[::1]:8889/cam/whep", "http://[::1/x", "http://::1]/x",
+        "http://h:99999/x", "http://h:abc/x", "http://h:/x", "http://h:0/x", "http://h:-1/x", "http://h:\u0661\u0662/x",
+        "rtsp://", "rtsp:///path", "rtsp:/host/x", "rtsp:host", "file:///etc/passwd", "ftp://h/x", "javascript:alert(1)", "//host/x",
+        "host:554/x", "192.168.1.1", "rtsp://a b/c", "rtsp://h/a\tb", "rtsp://h/\x7f", "\x00rtsp://h/x", "  rtsp://h/x  ", "rtsp://h/" + "a" * 2100,
+        "rtsp://h/" + "a" * 2030, "1http://h", "ht+tp://h", "h_t://h", "rtsp://h?x", "rtsp://h#f", "rtsp://h:554", "rtsp://H.Example.COM/x",
+        "rtsp://\u00e4\u00f6.de/x", "http://h/\u00e4", "rtsp://bad\u00a0space/x", "rtsp://us er@h/x", "rtsp://h\n/x", "RTSPS://H",
+        "http://[foo]/x", "http://[v1.x]/x", "http://[v1.]/x", "http://[127.0.0.1]/x", "http://[fe80::1%25eth0]/", "http://[::1]:abc/x",
+        "rtsp://h:000000000000000000554/x", "rtsp://h:65535/x", "rtsp://h:65536/x", "rtsp://u:p@[::1]:8554/x", "http://u@h/x?a=b#c",
+    ]
+    out: dict = {"urls": urls}
+    out["urlparts"] = []
+    for u in urls:
+        c, user, pw = v.split_credentials(u)
+        row = {"url": u, "split": [c, user, pw], "display": v.display_address(u),
+               "problem": {k: v.url_problem(u, k) for k in v.KINDS}}
+        out["urlparts"].append(row)
+    out["with_credentials"] = [
+        {"url": u, "user": usr, "password": pw, "result": v.with_credentials(u, usr, pw)}
+        for u in ["rtsp://h/x", "rtsp://h:554/x?a=b", "udp://:5600", "http://[::1]/x"]
+        for usr, pw in [("", ""), ("", "x"), ("a", ""), ("a", "b"), ("a b", "p@ss:w/rd"), ("\u00e4", "\u00fc")]
+    ]
+    out["redact"] = [
+        {"text": t, "secret": s, "result": v.redact(t, s)}
+        for t, s in [("", ""), ("abc", ""), ("a secret b secret", "secret"), ("p%40ss and p@ss", "p@ss"), ("nothing", "x"), ("x", "x")]
+    ]
+    lines = [
+        "", "[tcp @ 0x7f8a1c0] Connection refused", "Server returned 401 Unauthorized (authorization failed)", "method DESCRIBE failed: 404 Not Found",
+        "[rtsp @ 0x1][tcp @ 0x2] Connection timed out", "No route to host", "Network is unreachable", "Name or service not known",
+        "nodename nor servname provided", "Invalid data found when processing input", "[Errno 61] Connection refused", "Something unknown",
+        "Server returned 403 Forbidden", "operation TIMED OUT", "  padded  ",
+    ]
+    out["explain"] = [{"line": l, "result": v.explain_error(l)} for l in lines]
+    out["whep_error"] = [
+        {"code": c, "body": b, "result": v._whep_error(c, b.encode())}
+        for c in (401, 403, 404, 301, 307, 500, 400)
+        for b in ("", '{"error": "no such stream"}', "plain  text\nbody", "x" * 400, '{"error":"' + "y" * 400 + '"}')
+    ]
+    versions = ["", "7.1", "n7.1", "8.1.2", "4.4.2-0ubuntu1", "N-112345-g1234", "5.0", "4.99", "garbage", "n5.1.2", "10.0", "3.4.8"]
+    out["versions"] = [{"version": ver, "major": v.ffmpeg_major(ver), "hides": v.hides_password(ver)} for ver in versions]
+    camera = ["rtsp://h/x", "rtsps://h/x", "udp://:5600", "srt://h:9000", "http://h/x.mjpg", "https://h/x", "ftp://h", "RTSP://H/x"]
+    out["input_options"] = [
+        {"url": u, "transport": t, "version": ver, "result": v.input_options(u, t, ver)}
+        for u in camera for t in v.TRANSPORTS for ver in ("", "4.4", "5.1", "N-1-g")
+    ]
+    out["concat_list"] = [
+        {"url": u, "transport": "udp", "version": "7.0", "result": v.concat_list(u, "udp", "7.0")}
+        for u in camera + ["rtsp://u:it's@h/x", "rtsp://u:a'b'c@h/y"]
+    ]
+    out["command"] = [
+        {"url": u, "transport": "tcp", "list_path": lp, "version": ver, "result": v.ffmpeg_command("/usr/bin/ffmpeg", u, "tcp", list_path=lp, version=ver)}
+        for u in camera for lp in ("", "/tmp/corvus-video-x/v1-1.ffconcat") for ver in ("", "4.4", "7.0")
+    ]
+    cfgs = [
+        {"id": "v1", "name": "Front", "url": "rtsp://h/x", "username": "u", "password": "p", "transport": "udp", "kind": "rtsp"},
+        {"id": "v2", "url": "rtsp://a:b@h/x"}, {"id": "v3", "url": "http://h/whep", "kind": "webrtc", "password": "tok"},
+        {"id": "v4", "url": "rtsp://h/x", "password": "nouser"}, {"id": "v5", "url": "nope"}, {"id": "v6", "url": "rtsp://h/x", "kind": "x"},
+        {"id": "v7", "url": "rtsp://h/x", "transport": "sctp"}, {"id": "v8", "name": "n" * 100, "url": "rtsp://h/x"}, {"id": "v9", "url": "rtsp://h/x", "username": " u ", "password": " p "},
+        {"id": "a b", "url": "rtsp://h/x"}, {"id": "x" * 33, "url": "rtsp://h/x"}, {"id": 5, "url": "rtsp://h/x"}, {"url": "rtsp://h/x", "name": 5},
+        {"id": "w1", "url": "rtsp://h/x", "password": 5}, {"id": "w2", "url": " rtsp://h/x ", "name": "  "}, {"id": "w3", "url": "rtsp://u:p@h/x", "username": "own"},
+        {"id": "w4", "url": "rtsp://h/x", "password": "q" * 2000, "username": "u"}, "str", 5, None, [], {},
+    ]
+    stream_rows = []
+    for c in cfgs:
+        r = v.coerce_stream(c)
+        gen = isinstance(r, dict) and not (isinstance(c, dict) and r["id"] == c.get("id"))
+        if gen:
+            r = dict(r, id="<new>")
+        stream_rows.append({"raw": c, "result": r, "public": v.public_stream(r) if r else None})
+    out["streams"] = stream_rows
+    lists = [
+        None, {}, [], "x", {"streams": "no"}, {"streams": [], "ffmpeg": ""}, {"streams": [cfgs[0], cfgs[0]], "ffmpeg": " /usr/bin/ffmpeg "},
+        {"streams": [dict(cfgs[0], id=f"s{i}") for i in range(12)], "ffmpeg": 5}, {"streams": [cfgs[4], cfgs[1] | {"id": "ok"}], "ffmpeg": "f" * 1100},
+    ]
+    out["settings"] = [{"raw": raw, "result": v.settings(raw)} for raw in lists]
+    out["origins"] = [
+        {"a": a, "b": b, "result": v.same_origin(a, b)}
+        for a, b in [("http://h/a", "http://h/b"), ("http://h/a", "https://h/a"), ("http://h:80/a", "http://h/a"), ("rtsp://h/a", "rtsp://h:554/b"),
+                     ("http://H/a", "http://h/a"), ("http://h:8889/a", "http://h:8890/a"), ("rtsps://h", "rtsps://h:322"), ("http://h:x/a", "http://h:y/a"), ("", "")]
+    ]
+    out["auth"] = [
+        {"stream": s, "result": v.auth_header(s)}
+        for s in [{}, {"username": "u", "password": "p"}, {"username": "u"}, {"password": "tok"}, {"username": "\u00e4", "password": "\u00fc"}]
+    ]
+    out["windows_paths"] = [
+        {"env": e, "result": v.windows_ffmpeg_paths(e)}
+        for e in [{}, {"LOCALAPPDATA": "C:\\L"}, {"USERPROFILE": "C:\\U", "ProgramData": "C:\\P"}, {"LOCALAPPDATA": "C:\\L", "USERPROFILE": "C:\\U", "ProgramData": "C:\\P"}]
+    ]
+    soi, eoi = b"\xff\xd8", b"\xff\xd9"
+    jpg = lambda body: soi + body + eoi
+    streams = [
+        [jpg(b"abc")], [jpg(b"abc") + jpg(b"defg")], [soi + b"ab", b"cd" + eoi], [b"junk" + jpg(b"x") + b"more"], [soi, b"abc", eoi],
+        [soi + b"abc\xff", eoi], [b"\xff", b"\xd8abc\xff\xd9"], [b"no markers at all"], [b""], [soi + b"x" * 40],
+        [jpg(b"a"), jpg(b"b"), jpg(b"c")], [soi + b"\xff\x00\xd8" + eoi], [soi + soi + b"q" + eoi],
+    ]
+    cases = []
+    for chunks in streams:
+        sp = v.JpegSplitter()
+        cases.append({"chunks": [c.hex() for c in chunks], "frames": [[f.hex() for f in sp.feed(c)] for c in chunks]})
+    sp = v.JpegSplitter(max_bytes=16)
+    chunks = [soi + b"x" * 30, b"yy", jpg(b"ok")]
+    cases.append({"max": 16, "chunks": [c.hex() for c in chunks], "frames": [[f.hex() for f in sp.feed(c)] for c in chunks]})
+    out["splitter"] = cases
+
+    def sof(w: int, h: int, marker: int = 0xC0) -> bytes:
+        return soi + b"\xff\xe0\x00\x04\x00\x00" + bytes([0xFF, marker, 0, 17, 8, h >> 8, h & 255, w >> 8, w & 255, 3, 1, 0x22, 0, 2, 0x11, 1, 3, 0x11, 1]) + eoi
+    sizes = [sof(640, 480), sof(1920, 1080, 0xC2), soi + eoi, b"", b"\xff\xd8", sof(1, 1, 0xC1), b"\x00" * 30, soi + b"\xff\xd0\xff\xd1" + b"\x00" * 12]
+    out["jpeg_size"] = [{"data": d.hex(), "result": list(v.jpeg_size(d)) if v.jpeg_size(d) else None} for d in sizes]
+    from urllib.parse import urljoin
+    out["urljoin"] = [
+        {"base": b, "ref": r, "result": urljoin(b, r)}
+        for b in ["http://h:8889/cam/whep", "http://h/a/b/c", "https://h/x/"]
+        for r in ["", "/session/1", "session/1", "../s", "./s", "?x=1", "#f", "http://other/s", "//other/s", "https://h/s", "../../../s", "a/../b", "s/.", "s/..", "/a/./b/../c", "mediamtx/whep/abc?x=1#z"]
+    ]
+    out["constants"] = {
+        "max_streams": v.MAX_STREAMS, "max_name": v.MAX_NAME_LEN, "max_url": v.MAX_URL_LEN, "schemes": list(v.SCHEMES),
+        "transports": list(v.TRANSPORTS), "kinds": list(v.KINDS), "idle_stop": v.IDLE_STOP_S, "stall": v.STALL_S, "watchdog": v.WATCHDOG_S,
+        "socket_timeout": v.SOCKET_TIMEOUT_S, "retry": list(v.RETRY_BACKOFF_S), "frame_wait": v.FRAME_WAIT_S, "term": v.TERM_TIMEOUT_S,
+        "max_frame": v.MAX_FRAME_BYTES, "resolve_retry": v.RESOLVE_RETRY_S, "list_keep": v.LIST_KEEP_S, "whep_timeout": v.WHEP_TIMEOUT_S,
+        "whep_close": v.WHEP_CLOSE_TIMEOUT_S, "max_sdp": v.MAX_SDP_BYTES, "max_whep": v.MAX_WHEP_SESSIONS, "max_width": v.MAX_WIDTH, "quality": v.JPEG_QUALITY,
+    }
+    write("peripherals_video_cases.json", out)
+
+
+COMMANDS = {"ports": ports, "netprobe": netprobe, "rtk": rtk, "sik": sik, "shell": shell, "video": video}
 
 
 def main(argv: list[str]) -> int:
