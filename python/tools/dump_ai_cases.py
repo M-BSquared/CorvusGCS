@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import pathlib
 import sys
+import time
 
 HERE = pathlib.Path(__file__).resolve().parent
 PYTHON_ROOT = HERE.parent
@@ -372,8 +373,277 @@ def clean_nan(x):
     return x
 
 
+def _mcp_replies() -> dict:
+    params = [{"name": f"MPC_P{i}", "value": i, "type": 9} for i in range(310)] + [{"name": "SYS_AUTOSTART", "value": 4001, "type": 6}]
+    return {
+        "GET /api/state": (200, {"armed": False, "mode": "HOLD"}),
+        "GET /api/fleet": (200, {"vehicles": []}),
+        "GET /api/mavlink/capabilities": (200, {"stack": "px4"}),
+        "GET /api/mavlink/modes": (200, {"modes": ["HOLD", "POSITION"]}),
+        "POST /api/mission/download": (200, {"ok": True, "plan": {"items": []}}),
+        "GET /api/params": (200, {"complete": True, "params": params}),
+        "POST /api/params/set": (200, {"ok": True}),
+        "POST /api/mission/upload": (409, {"ok": False, "error": "vehicle said no"}),
+        "POST /api/mavlink/arm": (200, {"ok": False, "error": "not ready"}),
+        "POST /api/mavlink/takeoff": (503, {"error": "not connected"}),
+        "POST /api/mavlink/land": (500, {}),
+        "POST /api/mavlink/rtl": (200, {"ok": True, "value": 3}),
+        "POST /api/mavlink/hold": (200, {"ok": True}),
+        "POST /api/mavlink/manual": (200, {"ok": True}),
+        "POST /api/mavlink/velocity": (400, {"ok": False, "error": "wrong mode"}),
+    }
+
+
+def _mcp_steps() -> list:
+    init = lambda v=None, name="Agent": {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": dict(  # noqa: E731
+        {"clientInfo": {"name": name, "version": "1.0"}}, **({"protocolVersion": v} if v else {}))}
+    call = lambda n, a=None, i=7: {"jsonrpc": "2.0", "id": i, "method": "tools/call", "params": {"name": n, "arguments": a or {}}}  # noqa: E731
+    all_on = {"enabled": True, "fleet": True, "permissions": {p: True for p in
+              ["params_write", "mission", "arm", "flight", "goto", "control", "command", "plugins"]},
+              "confirm": {p: False for p in ["params_write", "mission", "arm", "flight", "control", "command"]}}
+    tool = lambda **kw: dict({"plugin": "demo", "name": "go", "title": "Go", "description": "d", "plugin_name": "Demo"}, **kw)  # noqa: E731
+    steps: list = [
+        {"op": "post", "message": init()},
+        {"op": "post", "message": init("2025-03-26")},
+        {"op": "post", "message": init("1999-01-01")},
+        {"op": "post", "message": {"jsonrpc": "2.0", "method": "notifications/initialized"}, "session": "last"},
+        {"op": "post", "message": {"jsonrpc": "2.0", "id": 2, "method": "ping"}, "session": "last"},
+        {"op": "post", "message": {"jsonrpc": "2.0", "id": 2, "method": "ping"}, "session": "bogus"},
+        {"op": "post", "message": {"jsonrpc": "2.0", "id": 3, "method": "tools/list"}, "session": "last"},
+        {"op": "post", "message": {"jsonrpc": "2.0", "id": 4, "method": "nope"}, "session": "last"},
+        {"op": "post", "message": {"jsonrpc": "2.0", "id": 4, "method": "resources/list"}, "session": "last"},
+        {"op": "post", "message": {"jsonrpc": "2.0", "id": 4, "method": "prompts/list"}, "session": "last"},
+        {"op": "post", "message": {"jsonrpc": "2.0", "id": 4, "method": "resources/templates/list"}, "session": "last"},
+        {"op": "post", "message": {"jsonrpc": "2.0", "id": 5, "method": "ping", "params": 5}, "session": "last"},
+        {"op": "post", "message": {"id": 5, "method": "ping"}, "session": "last"},
+        {"op": "post", "message": [], "session": "last"},
+        {"op": "post", "message": 5, "session": "last"},
+        {"op": "post", "message": {"jsonrpc": "2.0", "id": 6, "result": {}}, "session": "last"},
+        {"op": "post", "message": [{"jsonrpc": "2.0", "id": 1, "method": "ping"}, {"jsonrpc": "2.0", "method": "x"},
+                                   {"jsonrpc": "2.0", "id": 2, "method": "tools/list"}], "session": "last"},
+        {"op": "post", "message": [{"jsonrpc": "2.0", "method": "x"}], "session": "last"},
+        {"op": "post", "message": call("get_vehicle_state"), "session": "last"},
+        {"op": "post", "message": call("arm"), "session": "last"},
+        {"op": "post", "message": call("nope"), "session": "last"},
+        {"op": "post", "message": {"jsonrpc": "2.0", "id": 8, "method": "tools/call", "params": {"name": 5}}, "session": "last"},
+        {"op": "post", "message": {"jsonrpc": "2.0", "id": 8, "method": "tools/call", "params": {"name": "arm", "arguments": []}}, "session": "last"},
+        {"op": "settings", "raw": {"enabled": True}},
+        {"op": "tools"},
+        {"op": "call", "name": "list_vehicles", "args": {}},
+        {"op": "call", "name": "get_capabilities", "args": {"vehicle": "main:1"}},
+        {"op": "call", "name": "list_flight_modes", "args": {}},
+        {"op": "call", "name": "download_mission", "args": {}},
+        {"op": "call", "name": "list_parameters", "args": {"prefix": "mpc_p1"}},
+        {"op": "call", "name": "list_parameters", "args": {}},
+        {"op": "call", "name": "list_parameters", "args": {"prefix": 5}},
+        {"op": "call", "name": "get_parameters", "args": {"names": ["MPC_P3", "NOPE"]}},
+        {"op": "call", "name": "get_parameters", "args": {"names": []}},
+        {"op": "call", "name": "download_parameters", "args": {}},
+        {"op": "call", "name": "set_parameter", "args": {"name": "MPC_P1", "value": 1}},
+        {"op": "settings", "raw": all_on},
+        {"op": "tools"},
+        {"op": "call", "name": "set_parameter", "args": {"name": "MPC_P1", "value": 2.5}},
+        {"op": "call", "name": "set_parameter", "args": {"name": "NOPE", "value": 2}},
+        {"op": "call", "name": "set_parameter", "args": {"name": "MPC_P1", "value": True}},
+        {"op": "call", "name": "set_parameter", "args": {"name": " ", "value": 1}},
+        {"op": "call", "name": "upload_mission", "args": {"plan": {"items": [1, 2]}, "start": True}},
+        {"op": "call", "name": "start_mission", "args": {"items": 3}},
+        {"op": "call", "name": "clear_mission", "args": {}},
+        {"op": "call", "name": "arm", "args": {}},
+        {"op": "call", "name": "disarm", "args": {"vehicle": "main:1"}},
+        {"op": "call", "name": "takeoff", "args": {"altitude": 10}},
+        {"op": "call", "name": "land", "args": {}},
+        {"op": "call", "name": "return_to_launch", "args": {}},
+        {"op": "call", "name": "hold", "args": {}},
+        {"op": "call", "name": "set_flight_mode", "args": {"mode": "HOLD"}},
+        {"op": "call", "name": "set_home", "args": {"lat": 1.5, "lon": 2.5}},
+        {"op": "call", "name": "fly_to", "args": {"points": [{"lat": 1, "lon": 2, "alt": 5}, {"lat": 3, "lon": 4}]}},
+        {"op": "call", "name": "fly_to", "args": {"points": []}},
+        {"op": "call", "name": "fly_to", "args": {"points": [5]}},
+        {"op": "call", "name": "send_command", "args": {"command": "DO_CHANGE_SPEED", "params": [1, 2], "alt": 3}},
+        {"op": "call", "name": "send_command", "args": {"command": "X", "params": "no"}},
+        {"op": "call", "name": "send_command", "args": {}},
+        {"op": "call", "name": "manual_control", "args": {"x": "a"}},
+        {"op": "call", "name": "manual_control", "args": {"duration_s": 9}},
+        {"op": "call", "name": "set_velocity", "args": {"frame": "up"}},
+        {"op": "call", "name": "arm", "args": {"vehicle": 5}},
+        {"op": "call", "name": "arm", "args": {"vehicle": ""}},
+        {"op": "call", "name": "list_parameters", "args": {"vehicle": "main:1"}},
+        {"op": "settings", "raw": dict(all_on, fleet=False)},
+        {"op": "call", "name": "arm", "args": {"vehicle": "main:1"}},
+        {"op": "settings", "raw": dict(all_on, confirm={"arm": True})},
+        {"op": "call", "name": "arm", "args": {}},
+        {"op": "call_confirmed", "name": "arm", "args": {}, "allow": True},
+        {"op": "call_confirmed", "name": "arm", "args": {}, "allow": False},
+        {"op": "window", "id": "w1", "tools": [tool(), tool(confirm=True, name="ask", read_only=False),
+                                             tool(name="bad name!"), tool(plugin="bad id!"), tool(name="get_vehicle_state"),
+                                             tool(name="ro", read_only=True, input_schema={"type": "object", "properties": {"a": {}}}),
+                                             tool(name="big", input_schema={"type": "object", "x": "y" * 9000}),
+                                             tool(name="notobj", input_schema=[1]), "junk", tool(title=5, description=7, plugin_name=3)]},
+        {"op": "window", "id": "bad id", "tools": []},
+        {"op": "window", "id": "w2", "tools": [tool(name="go", description="second")]},
+        {"op": "tools"},
+        {"op": "status"},
+        {"op": "call", "name": "demo_ro", "args": {"a": 1}},
+        {"op": "call_confirmed", "name": "demo_ask", "args": {}, "allow": True},
+        {"op": "settings", "raw": dict(all_on, plugins={"demo": False})},
+        {"op": "tools"},
+        {"op": "call", "name": "demo_ro", "args": {}},
+        {"op": "advance", "seconds": 30},
+        {"op": "tools"},
+        {"op": "status"},
+        {"op": "settings", "raw": {"enabled": False}},
+        {"op": "call", "name": "arm", "args": {}},
+        {"op": "update", "patch": {"enabled": "yes"}},
+        {"op": "update", "patch": {"permissions": {"nope": True}}},
+        {"op": "update", "patch": {"permissions": {"arm": 1}}},
+        {"op": "update", "patch": {"plugins": {"bad id": True}}},
+        {"op": "update", "patch": {"confirm": []}},
+        {"op": "update", "patch": {"enabled": True, "fleet": True, "permissions": {"arm": True, "mission": True},
+                                   "confirm": {"arm": False}, "plugins": {"demo": False, "other": True}}},
+        {"op": "update", "patch": {"permissions": {"arm": False}, "confirm": {"mission": False}}},
+        {"op": "stop"},
+        {"op": "status"},
+        {"op": "post", "message": init(name="X" * 100), "session": None},
+        {"op": "post", "message": init(), "session": None},
+        {"op": "status"},
+        {"op": "advance", "seconds": 200},
+        {"op": "status"},
+        {"op": "end_session", "session": "last"},
+        {"op": "end_session", "session": "bogus"},
+        {"op": "end_session", "session": None},
+        {"op": "answer", "id": "nothing", "allow": True},
+        {"op": "result", "id": "nothing", "ok": True},
+    ]
+    return steps
+
+
+def mcp_engine() -> None:
+    import re
+    import tempfile
+
+    from corvus import mcp as M
+
+    replies = _mcp_replies()
+    coerce_inputs = [None, 5, [], {}, {"enabled": True}, {"enabled": "true", "fleet": 1}, {"permissions": {"arm": True, "x": True, "mission": "y"}},
+                     {"confirm": {"arm": False, "nope": True}}, {"plugins": {"ok.id": False, "bad id": True, "x": 1}},
+                     {"permissions": []}, {"enabled": False, "fleet": False, "permissions": {}, "confirm": {}, "plugins": {}}]
+    settings_cases = [{"in": v, "coerce": M.coerce_settings(v), "effective": M.effective_settings(v),
+                       "compact": M.compact_settings(M.effective_settings(v))} for v in coerce_inputs]
+    levels = [[p.id, M.level(M.effective_settings({"permissions": {p.id: True}, "confirm": {p.id: True}}), p.id)] for p in M.PERMISSIONS]
+    plugin_names = [[a, b, M.plugin_tool_name(a, b)] for a, b in [("demo", "go"), ("a.b-c", "x" * 70), ("we ird", "n")]]
+    out_steps = []
+    with tempfile.TemporaryDirectory() as tmp:
+        raw: dict = {"value": None}
+        now = {"t": 100.0}
+        calls: list = []
+        events: list = []
+
+        def dispatch(method, path, body):
+            calls.append([method, path, body])
+            return replies.get(f"{method} {path.split('?')[0]}", (200, {"ok": True}))
+
+        def save(block):
+            raw["value"] = block
+
+        svc = M.McpService(dispatch=dispatch, load_settings=lambda: raw["value"], save_settings=save,
+                           token_path=pathlib.Path(tmp) / "mcp-token", clock=lambda: now["t"])
+        svc.add_listener(lambda e: events.append(e))
+        sids: dict = {}
+        last = {"sid": None}
+
+        def norm(value):
+            text = json.dumps(value)
+            for real, name in sids.items():
+                text = text.replace(real, name)
+            text = re.sub(r'"at": [0-9.e+]+', '"at": 0', text)
+            text = re.sub(r'"id": "[0-9a-f]{16}"', '"id": "<id>"', text)
+            text = text.replace('"version": "' + M.get_version() + '"', '"version": "<version>"')
+            return json.loads(text)
+
+        def sid_of(sel):
+            if sel == "last":
+                return last["sid"]
+            return sel
+
+        def snapshot(step, result):
+            nonlocal calls, events
+            c, e = calls, events
+            calls, events = [], []
+            # direct control frames are repeated by a thread; consecutive equal calls are one
+            dedup = [x for i, x in enumerate(c) if i == 0 or x != c[i - 1]]
+            out_steps.append({"step": step, "result": norm(result), "calls": norm(dedup), "events": norm(
+                [dict(x) for x in e]), "saved": norm(raw["value"])})
+
+        for step in _mcp_steps():
+            op = step["op"]
+            if op == "settings":
+                raw["value"] = step["raw"]
+                svc.settings_reloaded()
+                result = svc.settings()
+            elif op == "post":
+                status, reply, headers = svc.handle_post(step["message"], sid_of(step.get("session")))
+                sid = headers.get("Mcp-Session-Id")
+                if sid:
+                    sids[sid] = f"<sid{len(sids) + 1}>"
+                    last["sid"] = sid
+                result = {"status": status, "reply": reply, "headers": headers}
+            elif op == "tools":
+                result = svc.tools()
+            elif op == "status":
+                result = svc.status()
+            elif op == "call":
+                result = svc.call_tool(step["name"], step["args"], None)
+            elif op == "call_confirmed":
+                import threading
+                box: dict = {}
+                t = threading.Thread(target=lambda: box.update(r=svc.call_tool(step["name"], step["args"], None)))
+                t.start()
+                while not svc.status()["pending"] and t.is_alive():
+                    time.sleep(0.01)
+                pending = svc.status()["pending"]
+                if pending:
+                    svc.answer(pending[0]["id"], step["allow"])
+                t.join()
+                result = {"pending": [dict(p, id="<id>") for p in pending], "result": box.get("r")}
+            elif op == "window":
+                try:
+                    result = svc.window_heartbeat(step["id"], step["tools"])
+                except ValueError as exc:
+                    result = {"error": str(exc)}
+            elif op == "advance":
+                now["t"] += step["seconds"]
+                result = now["t"]
+            elif op == "update":
+                try:
+                    result = svc.update_settings(step["patch"])
+                except ValueError as exc:
+                    result = {"error": str(exc)}
+            elif op == "stop":
+                result = svc.stop()
+            elif op == "end_session":
+                result = svc.end_session(sid_of(step["session"]))
+            elif op == "answer":
+                result = svc.answer(step["id"], step["allow"])
+            elif op == "result":
+                result = svc.call_result(step["id"], step["ok"], None, None)
+            else:
+                raise SystemExit(op)
+            if op == "call_confirmed":
+                events[:] = [dict(e, id="<id>") if "id" in e else e for e in events]
+            snapshot(step, result)
+        svc.shutdown()
+    write("ai_mcp_engine.json", {
+        "settings": settings_cases, "levels": levels, "plugin_names": plugin_names,
+        "catalog": M.tool_catalog(), "steps": out_steps, "replies": {k: list(v) for k, v in replies.items()},
+        "constants": [M.CONFIRM_TIMEOUT_S, M.CONTROL_MAX_S, M.WHERE],
+        "builtin": [[t.name, t.permission, t.vehicle, t.read_only] for t in M.BUILTIN_TOOLS],
+    })
+
+
 COMMANDS = {"checklists": checklists, "plugins": plugins, "plugin_config": plugin_config,
-            "plugin_files": plugin_files, "update": update_check}
+            "plugin_files": plugin_files, "update": update_check,
+            "mcp_engine": mcp_engine}
 
 
 def main(argv: list[str]) -> int:

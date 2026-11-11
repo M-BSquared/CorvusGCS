@@ -211,5 +211,9 @@ fn api_plugins_folder(core: &Core, _req: &Request) -> Response {
 
 /// The config was replaced as a whole (an import, a reset): whoever runs from
 /// it re-reads it. The AI server's switches are the one such reader that keeps
-/// state of its own, and it is told here once it exists.
-pub(super) fn settings_reloaded(_core: &Core) {}
+/// state of its own, and it is told here.
+pub(super) fn settings_reloaded(core: &Core) {
+    if let Some(svc) = core.service::<crate::mcp::McpService>() {
+        svc.settings_reloaded();
+    }
+}

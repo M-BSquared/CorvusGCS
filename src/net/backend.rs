@@ -147,6 +147,7 @@ impl Backend {
         let core = corvus_core::CoreBuilder::new(options)
             .module(corvus_core::VehicleModule::new())
             .module(corvus_core::PluginsModule::new())
+            .module(corvus_core::McpModule::new())
             .module(corvus_core::Http::new(corvus_core::HttpOptions {
                 port: 0,
                 ..corvus_core::HttpOptions::default()

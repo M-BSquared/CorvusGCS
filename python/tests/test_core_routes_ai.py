@@ -291,3 +291,115 @@ def test_a_switched_off_update_check_reports_the_cache_only(up) -> None:
 def test_a_skipped_release_is_remembered_as_python_remembers_it(up, body) -> None:
     check(up.compare_post("/api/update/skip", body))
     check(up.compare_get("/api/update"))
+
+
+# ---- the MCP server: the settings card's routes and /mcp itself ----
+
+def _mcp_post(server, token: str | None, message, session: str | None = None):
+    import urllib.error
+    import urllib.request
+
+    headers = {"Content-Type": "application/json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    if session:
+        headers["Mcp-Session-Id"] = session
+    req = urllib.request.Request(server.url + "/mcp", data=json.dumps(message).encode(), method="POST", headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            status, raw, hdrs = resp.status, resp.read(), dict(resp.headers)
+    except urllib.error.HTTPError as exc:
+        status, raw, hdrs = exc.code, exc.read(), dict(exc.headers)
+    return status, (json.loads(raw) if raw else None), hdrs
+
+
+@pytest.fixture(scope="module")
+def mp():
+    with harness.Pair(seed=harness.standard_seed()) as p:
+        yield p
+
+
+MCP_IGNORE = ("token", "url", "at")
+
+
+def test_the_mcp_card_starts_as_python_has_it(mp) -> None:
+    check(mp.compare_get("/api/mcp", MCP_IGNORE))
+    check(mp.compare_get("/api/mcp/status", MCP_IGNORE))
+    (_, py), (_, rs) = mp.both("GET", "/api/mcp")
+    assert len(py["token"]) == len(rs["token"]) == 43
+
+
+@pytest.mark.parametrize("body", [
+    {"enabled": "yes"}, {"permissions": {"nope": True}}, {"permissions": {"arm": 1}}, {"plugins": {"bad id": True}},
+    {"confirm": []}, {"enabled": True, "fleet": True}, {"permissions": {"arm": True, "mission": True}, "confirm": {"arm": False}},
+    {"plugins": {"demo": False}}, {"permissions": {"arm": False}},
+])
+def test_a_switch_is_set_as_python_sets_it(mp, body) -> None:
+    check(mp.compare_post("/api/mcp/settings", body, MCP_IGNORE))
+    check(mp.compare_get("/api/mcp", MCP_IGNORE))
+    for state in (mp.py.state_dir, mp.rs.state_dir):
+        pass
+
+
+def test_the_mcp_block_in_the_config_file_is_python_s(mp) -> None:
+    texts = [(s / "config.json").read_text(encoding="utf-8") for s in (mp.py.state_dir, mp.rs.state_dir)]
+    assert json.loads(texts[0])["mcp"] == json.loads(texts[1])["mcp"]
+    assert texts[0] == texts[1]
+
+
+@pytest.mark.parametrize("body", [{}, {"id": "x"}, {"id": "x", "allow": "yes"}, {"id": "x", "allow": True}])
+def test_a_confirmation_nobody_waits_for_is_refused_alike(mp, body) -> None:
+    check(mp.compare_post("/api/mcp/confirm", body, MCP_IGNORE))
+
+
+@pytest.mark.parametrize("body", [{}, {"id": "bad id"}, {"id": "w1", "tools": []},
+                                  {"id": "w1", "tools": [{"plugin": "demo", "name": "go", "title": "Go"}]}])
+def test_a_window_is_registered_as_python_registers_it(mp, body) -> None:
+    check(mp.compare_post("/api/mcp/window", body, MCP_IGNORE))
+    check(mp.compare_post("/api/mcp/result", {"id": "none", "ok": True}, MCP_IGNORE))
+    check(mp.compare_get("/api/mcp/status", MCP_IGNORE + ("seen_s",)))
+
+
+def test_the_protocol_over_http_is_answered_as_python_answers_it(mp) -> None:
+    tokens = [harness.http("GET", s.url + "/api/mcp")[1]["token"] for s in (mp.py, mp.rs)]
+    for body in ({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"clientInfo": {"name": "T"}}},):
+        (ps, pb, ph), (rs, rb, rh) = (_mcp_post(s, t, body) for s, t in zip((mp.py, mp.rs), tokens))
+        assert ps == rs == 200
+        check(harness.diff_json(pb, rb))
+        sessions = (ph["Mcp-Session-Id"], rh["Mcp-Session-Id"])
+    for body in ({"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
+                 {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "get_vehicle_state"}},
+                 {"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {"name": "arm"}},
+                 {"jsonrpc": "2.0", "id": 5, "method": "nope"}, {"jsonrpc": "2.0", "method": "notifications/initialized"},
+                 [{"jsonrpc": "2.0", "id": 6, "method": "ping"}], 5):
+        (ps, pb, _), (rs, rb, _) = (_mcp_post(s, t, body, sid) for s, t, sid in zip((mp.py, mp.rs), tokens, sessions))
+        assert ps == rs, body
+        check(harness.diff_json(pb, rb, ("mission_revision", "link_status", "link_connection", "link_error", "link_auto",
+                                         "link_quality", "link_suggestion", "link_bootloader", "time", "boot_ms",
+                                         "px4_version", "text", "structuredContent")))
+
+
+def test_the_door_stays_shut_as_python_shuts_it(mp) -> None:
+    for token in (None, "wrong"):
+        (ps, pb, ph), (rs, rb, rh) = (_mcp_post(s, token, {"jsonrpc": "2.0", "id": 1, "method": "ping"}) for s in (mp.py, mp.rs))
+        assert (ps, pb) == (rs, rb)
+        assert ph.get("WWW-Authenticate") == rh.get("WWW-Authenticate")
+    mp.both("POST", "/api/mcp/settings", {"enabled": False})
+    tokens = [harness.http("GET", s.url + "/api/mcp")[1]["token"] for s in (mp.py, mp.rs)]
+    (ps, pb, _), (rs, rb, _) = (_mcp_post(s, t, {"jsonrpc": "2.0", "id": 1, "method": "ping"}) for s, t in zip((mp.py, mp.rs), tokens))
+    assert (ps, pb) == (rs, rb) and ps == 403
+
+
+def test_a_stop_takes_the_writes_away_as_python_does(mp) -> None:
+    mp.both("POST", "/api/mcp/settings", {"enabled": True, "permissions": {"arm": True, "flight": True}})
+    check(mp.compare_post("/api/mcp/stop", {}, MCP_IGNORE))
+    check(mp.compare_get("/api/mcp", MCP_IGNORE))
+
+
+def test_a_new_token_makes_the_old_one_useless_in_both(mp) -> None:
+    olds = [harness.http("GET", s.url + "/api/mcp")[1]["token"] for s in (mp.py, mp.rs)]
+    for s in (mp.py, mp.rs):
+        status, answer = harness.http("POST", s.url + "/api/mcp/token", {})
+        assert status == 200 and answer["ok"] is True and len(answer["token"]) == 43
+    for s, old in zip((mp.py, mp.rs), olds):
+        assert _mcp_post(s, old, {"jsonrpc": "2.0", "id": 1, "method": "ping"})[0] == 401
