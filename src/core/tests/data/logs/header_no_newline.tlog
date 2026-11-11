@@ -1,0 +1,1 @@
+#CORVUS-TLOG {"product": "Corvus GCS", "version": "9.9.9-test", "conn": "udp:0.0.0.0:14540", "format": "mavlink-raw", "started_at": "2026-11-07T10:00:00+00:00"}

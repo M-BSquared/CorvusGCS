@@ -272,7 +272,32 @@ def flight_cases() -> None:
     write("logs/index.json", index)
 
 
-STEPS = {"ulog": ulog_cases, "flights": flight_cases}
+def tlog_cases() -> None:
+    """Synthetic tlogs (tools/tlog_kit.py) and what tlog_review makes of them."""
+    from corvus import flight_review, tlog_review
+    sys.path.insert(0, str(HERE))
+    import tlog_kit
+
+    index = []
+    for name, make in tlog_kit.build_tlogs().items():
+        blob = make()
+        expected: dict = {}
+        for sens in flight_review.SENSITIVITIES:
+            tlog_review.clear_cache()
+            try:
+                review = tlog_review.review_bytes(blob, name + ".tlog", sens)
+            except tlog_review.TlogError as exc:
+                expected[sens] = {"error": str(exc)}
+                continue
+            expected[sens] = wire(review if sens == "normal" else
+                                  {"summary": review["summary"], "findings": review["findings"]})
+        write_bytes(DATA / "logs" / f"{name}.tlog", blob)
+        write_text(DATA / "logs" / f"{name}.tlog.review.json", compact(expected))
+        index.append(name)
+    write("logs/tlog_index.json", index)
+
+
+STEPS = {"ulog": ulog_cases, "flights": flight_cases, "tlogs": tlog_cases}
 
 
 def main(argv: list[str]) -> int:

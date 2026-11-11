@@ -183,7 +183,7 @@ fn floats(col: &Col) -> Vec<f64> {
 }
 
 /// Reduce to MAX_POINTS, keeping the extreme sample of each bucket.
-pub fn decimate(times: &[f64], values: &[f64]) -> (Vec<f64>, Vec<f64>) {
+pub(crate) fn decimate(times: &[f64], values: &[f64]) -> (Vec<f64>, Vec<f64>) {
     let count = values.len();
     if count <= MAX_POINTS {
         return (times.to_vec(), values.to_vec());
@@ -218,7 +218,7 @@ pub struct Span {
     pub end: f64,
 }
 
-fn series_value(name: &str, x: &[f64], y: &[f64], y_digits: usize) -> Value {
+pub(crate) fn series_value(name: &str, x: &[f64], y: &[f64], y_digits: usize) -> Value {
     json!({
         "name": name,
         "x": x.iter().map(|t| num(round_to(*t, 3))).collect::<Vec<_>>(),
@@ -226,7 +226,7 @@ fn series_value(name: &str, x: &[f64], y: &[f64], y_digits: usize) -> Value {
     })
 }
 
-fn plot(
+pub(crate) fn plot(
     id: &str,
     title: &str,
     unit: &str,
@@ -250,18 +250,18 @@ fn plot(
     Some(Value::Object(p))
 }
 
-fn note(text: &str) -> Vec<(&'static str, Value)> {
+pub(crate) fn note(text: &str) -> Vec<(&'static str, Value)> {
     vec![("note", text.into())]
 }
 
-fn ys(series: &Value) -> Vec<Option<f64>> {
+pub(crate) fn ys(series: &Value) -> Vec<Option<f64>> {
     series["y"]
         .as_array()
         .map(|a| a.iter().map(Value::as_f64).collect())
         .unwrap_or_default()
 }
 
-fn xs(series: &Value) -> Vec<f64> {
+pub(crate) fn xs(series: &Value) -> Vec<f64> {
     series["x"]
         .as_array()
         .map(|a| a.iter().filter_map(Value::as_f64).collect())
@@ -295,7 +295,7 @@ fn sample_dt(times: &[f64]) -> f64 {
 }
 
 /// `(seconds past the threshold, when it first was, the worst value)`.
-fn time_above(times: &[f64], values: &[f64], threshold: f64, below: bool) -> (f64, Option<f64>, f64) {
+pub(crate) fn time_above(times: &[f64], values: &[f64], threshold: f64, below: bool) -> (f64, Option<f64>, f64) {
     let mut total = 0.0;
     let mut first = None;
     let mut worst = if below { f64::INFINITY } else { f64::NEG_INFINITY };
@@ -326,7 +326,7 @@ fn time_above(times: &[f64], values: &[f64], threshold: f64, below: bool) -> (f6
     }
 }
 
-fn during(when: Option<f64>, spans: &Spans, grace: f64) -> bool {
+pub(crate) fn during(when: Option<f64>, spans: &Spans, grace: f64) -> bool {
     if spans.is_empty() {
         return true;
     }
@@ -336,7 +336,7 @@ fn during(when: Option<f64>, spans: &Spans, grace: f64) -> bool {
     spans.iter().any(|s| s.start <= when && when <= s.end + grace)
 }
 
-fn rise(times: &[f64], values: &[f64], spans: &Spans) -> (f64, Option<f64>) {
+pub(crate) fn rise(times: &[f64], values: &[f64], spans: &Spans) -> (f64, Option<f64>) {
     let all = [Span {
         start: f64::NEG_INFINITY,
         end: f64::INFINITY,
@@ -364,7 +364,7 @@ fn rise(times: &[f64], values: &[f64], spans: &Spans) -> (f64, Option<f64>) {
     (total, first)
 }
 
-fn held_floor(times: &[f64], values: &[f64], hold_s: f64) -> Option<(f64, f64)> {
+pub(crate) fn held_floor(times: &[f64], values: &[f64], hold_s: f64) -> Option<(f64, f64)> {
     if values.is_empty() {
         return None;
     }
@@ -419,7 +419,7 @@ fn sag(times: &[f64], values: &[f64], window: f64) -> (f64, Option<f64>) {
     (best, best_at)
 }
 
-fn within(times: &[f64], values: &[f64], spans: &Spans) -> (Vec<f64>, Vec<f64>) {
+pub(crate) fn within(times: &[f64], values: &[f64], spans: &Spans) -> (Vec<f64>, Vec<f64>) {
     if spans.is_empty() {
         return (times.to_vec(), values.to_vec());
     }
@@ -439,7 +439,7 @@ fn within(times: &[f64], values: &[f64], spans: &Spans) -> (Vec<f64>, Vec<f64>) 
     (out_t, out_v)
 }
 
-fn align(times: &[f64], other_t: &[f64], other_v: &[f64], max_age: Option<f64>) -> Vec<f64> {
+pub(crate) fn align(times: &[f64], other_t: &[f64], other_v: &[f64], max_age: Option<f64>) -> Vec<f64> {
     let mut out = Vec::with_capacity(times.len());
     let mut cursor = 0;
     let mut last = f64::NAN;
@@ -458,7 +458,7 @@ fn align(times: &[f64], other_t: &[f64], other_v: &[f64], max_age: Option<f64>) 
     out
 }
 
-fn percentile(values: &[f64], fraction: f64) -> f64 {
+pub(crate) fn percentile(values: &[f64], fraction: f64) -> f64 {
     if values.is_empty() {
         return 0.0;
     }
@@ -469,7 +469,7 @@ fn percentile(values: &[f64], fraction: f64) -> f64 {
     ordered[position]
 }
 
-fn correlate(a: &[f64], b: &[f64]) -> Option<f64> {
+pub(crate) fn correlate(a: &[f64], b: &[f64]) -> Option<f64> {
     let pairs: Vec<(f64, f64)> = a
         .iter()
         .zip(b)
@@ -567,7 +567,7 @@ fn mode_at(modes: &[Mode], when: Option<f64>) -> String {
     }
 }
 
-fn finding(level: &str, text: &str, when: Option<f64>, modes: &[Mode], detail: &str) -> Value {
+pub(crate) fn finding(level: &str, text: &str, when: Option<f64>, modes: &[Mode], detail: &str) -> Value {
     let mut out = Map::new();
     out.insert("level".into(), level.into());
     out.insert("text".into(), text.into());
@@ -585,7 +585,7 @@ fn finding(level: &str, text: &str, when: Option<f64>, modes: &[Mode], detail: &
 }
 
 /// `{value:.Nf}` as Python writes it.
-fn f(value: f64, digits: usize) -> String {
+pub(crate) fn f(value: f64, digits: usize) -> String {
     if value.is_nan() {
         return "nan".into();
     }
@@ -1168,7 +1168,7 @@ impl<'a> Ctx<'a> {
 }
 
 /// `max(values)` of a non-empty list: the first, replaced by anything larger.
-fn max_of(values: &[f64]) -> f64 {
+pub(crate) fn max_of(values: &[f64]) -> f64 {
     let mut best = values[0];
     for &v in &values[1..] {
         if v > best {
@@ -1179,7 +1179,7 @@ fn max_of(values: &[f64]) -> f64 {
 }
 
 /// `min(values)` of a non-empty list.
-fn min_of(values: &[f64]) -> f64 {
+pub(crate) fn min_of(values: &[f64]) -> f64 {
     let mut best = values[0];
     for &v in &values[1..] {
         if v < best {
@@ -1189,7 +1189,7 @@ fn min_of(values: &[f64]) -> f64 {
     best
 }
 
-fn capitalize(s: &str) -> String {
+pub(crate) fn capitalize(s: &str) -> String {
     let mut c = s.chars();
     match c.next() {
         Some(first) => first.to_uppercase().collect::<String>() + &c.as_str().to_lowercase(),
@@ -2476,9 +2476,9 @@ impl<'a> Ctx<'a> {
     }
 }
 
-const RECOVERY_MODES: [&str; 4] = ["Return", "Descend", "Termination", "Precision land"];
-const ERROR_LEVELS: [&str; 4] = ["emergency", "alert", "critical", "error"];
-const MESSAGE_GRACE_S: f64 = 3.0;
+pub(crate) const RECOVERY_MODES: [&str; 4] = ["Return", "Descend", "Termination", "Precision land"];
+pub(crate) const ERROR_LEVELS: [&str; 4] = ["emergency", "alert", "critical", "error"];
+pub(crate) const MESSAGE_GRACE_S: f64 = 3.0;
 
 // ---------------------------------------------------------------------------
 // Findings

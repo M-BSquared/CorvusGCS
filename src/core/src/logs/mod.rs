@@ -3,4 +3,5 @@
 
 pub mod flight_review;
 pub mod pytext;
+pub mod tlog_review;
 pub mod ulog;
