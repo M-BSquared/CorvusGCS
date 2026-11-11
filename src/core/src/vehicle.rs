@@ -143,6 +143,10 @@ impl Module for VehicleModule {
         reg.post("/api/mavlink/hold", api_mavlink_hold);
         reg.post("/api/mavlink/command", api_mavlink_command);
         reg.post("/api/mavlink/velocity", api_mavlink_velocity);
+        reg.post("/api/motors/test", api_motors_test);
+        reg.post("/api/motors/test/stop", api_motors_test_stop);
+        reg.post("/api/rangefinder/stream", api_rangefinder_stream);
+        reg.post("/api/rc/stream", api_rc_stream);
         reg.get("/api/fleet", api_fleet);
         reg.post("/api/fleet/select", api_fleet_select);
         reg.post("/api/fleet/vehicle", api_fleet_vehicle);
@@ -1252,4 +1256,111 @@ fn api_mavlink_velocity(core: &Core, req: &Request) -> Response {
         "velocity setpoint failed",
         vec![],
     )
+}
+
+// -------------------------------------------- actuators and streams (control)
+
+fn api_motors_test(core: &Core, req: &Request) -> Response {
+    let payload = req.payload();
+    let Some(motor) = payload
+        .get("motor")
+        .and_then(|m| m.as_i64().filter(|_| !m.is_boolean()))
+    else {
+        return Response::not_ok(400, "motor must be an integer");
+    };
+    let number = |key: &str, default: f64, what: &str| -> Result<f64, Response> {
+        match payload.get(key) {
+            None => Ok(default),
+            Some(Value::Number(n)) => Ok(n.as_f64().unwrap_or(default)),
+            Some(_) => Err(Response::not_ok(400, what)),
+        }
+    };
+    let throttle = match number("throttle", 15.0, "throttle must be a number") {
+        Ok(v) => v,
+        Err(r) => return r,
+    };
+    let duration = match number("duration", 2.0, "duration must be a number") {
+        Ok(v) => v,
+        Err(r) => return r,
+    };
+    if !(0.0..=100.0).contains(&throttle) {
+        return Response::not_ok(400, "throttle must be between 0 and 100 percent");
+    }
+    let Some(svc) = service(core) else {
+        return unavailable("not connected");
+    };
+    let bridge = svc.active().bridge;
+    if bridge.motor_test(motor, throttle, duration) {
+        return Response::json(json!({"ok": true, "motor": motor, "throttle": throttle}));
+    }
+    let error = bridge.last_error();
+    let error = if error.is_empty() {
+        "motor test failed".to_string()
+    } else {
+        error
+    };
+    Response::not_ok(if error.contains("not connected") { 503 } else { 409 }, &error)
+}
+
+fn api_motors_test_stop(core: &Core, _req: &Request) -> Response {
+    let Some(svc) = service(core) else {
+        return unavailable("not connected");
+    };
+    let bridge = svc.active().bridge;
+    if bridge.stop_motor_test() {
+        return Response::json(json!({"ok": true}));
+    }
+    let error = bridge.last_error();
+    Response::not_ok(503, if error.is_empty() { "motor stop failed" } else { &error })
+}
+
+fn api_rangefinder_stream(core: &Core, req: &Request) -> Response {
+    let Some(enabled) = req.payload().get("enabled").and_then(Value::as_bool) else {
+        return Response::not_ok(400, "enabled must be boolean");
+    };
+    let Some(svc) = service(core) else {
+        return unavailable("not connected");
+    };
+    let bridge = svc.active().bridge;
+    if bridge.set_rangefinder_stream(enabled) {
+        return Response::json(json!({"ok": true, "enabled": enabled}));
+    }
+    let error = bridge.last_error();
+    let error = if error.is_empty() {
+        "distance sensor request failed".to_string()
+    } else {
+        error
+    };
+    Response::not_ok(if error.contains("not connected") { 503 } else { 409 }, &error)
+}
+
+fn api_rc_stream(core: &Core, req: &Request) -> Response {
+    let payload = req.payload();
+    let Some(enabled) = payload.get("enabled").and_then(Value::as_bool) else {
+        return Response::not_ok(400, "enabled must be boolean");
+    };
+    let raw = match payload.get("rate_hz") {
+        None => 20.0,
+        Some(Value::Number(n)) => n.as_f64().unwrap_or(f64::NAN),
+        Some(_) => return Response::not_ok(400, "rate_hz must be a number"),
+    };
+    let rate = raw.trunc();
+    if raw != rate || !(1.0..=50.0).contains(&rate) {
+        return Response::not_ok(400, "rate_hz must be between 1 and 50 Hz");
+    }
+    let rate_hz = rate as i64;
+    let Some(svc) = service(core) else {
+        return unavailable("not connected");
+    };
+    let bridge = svc.active().bridge;
+    if bridge.set_rc_stream(enabled, rate_hz) {
+        return Response::json(json!({"ok": true, "enabled": enabled, "rate_hz": rate_hz}));
+    }
+    let error = bridge.last_error();
+    let error = if error.is_empty() {
+        "RC stream request failed".to_string()
+    } else {
+        error
+    };
+    Response::not_ok(if error.contains("not connected") { 503 } else { 409 }, &error)
 }

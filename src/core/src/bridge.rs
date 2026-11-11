@@ -2207,6 +2207,16 @@ impl Bridge {
         self.shared.engines.setup.cancel_calibration(self.shared.as_ref())
     }
 
+    /// Starts or stops the DISTANCE_SENSOR stream behind the altitude card.
+    pub fn set_rangefinder_stream(&self, enabled: bool) -> bool {
+        self.shared.telemetry.rangefinder_stream(self.shared.as_ref(), enabled)
+    }
+
+    /// Enables or disables the high rate RC_CHANNELS stream.
+    pub fn set_rc_stream(&self, enabled: bool, rate_hz: i64) -> bool {
+        self.shared.telemetry.rc_stream(self.shared.as_ref(), enabled, rate_hz)
+    }
+
     pub fn motor_test(&self, motor: i64, throttle_pct: f64, duration_s: f64) -> bool {
         self.shared
             .engines

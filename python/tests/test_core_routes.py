@@ -388,3 +388,22 @@ def test_a_manual_connect_and_a_disconnect_leave_auto_connect_as_python_leaves_i
         diffs += p.compare_post("/api/mavlink/connect", {"connection": "udpout:127.0.0.1:10"}, FLEET_VOLATILE)
         diffs += p.compare_get("/api/fleet", FLEET_VOLATILE)
         assert not diffs, "\n".join(diffs)
+
+
+@pytest.mark.parametrize("path,body", [
+    ("/api/motors/test", {}), ("/api/motors/test", {"motor": True}), ("/api/motors/test", {"motor": "1"}),
+    ("/api/motors/test", {"motor": 1, "throttle": "x"}), ("/api/motors/test", {"motor": 1, "duration": None}),
+    ("/api/motors/test", {"motor": 1, "throttle": 101}), ("/api/motors/test", {"motor": 1, "throttle": -1}),
+    ("/api/motors/test", {"motor": 1}), ("/api/motors/test", {"motor": 1, "throttle": 20.5, "duration": 3}),
+    ("/api/motors/test/stop", {}),
+    ("/api/rangefinder/stream", {}), ("/api/rangefinder/stream", {"enabled": "yes"}), ("/api/rangefinder/stream", {"enabled": True}),
+    ("/api/rangefinder/stream", {"enabled": False}),
+    ("/api/rc/stream", {}), ("/api/rc/stream", {"enabled": 1}), ("/api/rc/stream", {"enabled": True, "rate_hz": "x"}),
+    ("/api/rc/stream", {"enabled": True, "rate_hz": True}), ("/api/rc/stream", {"enabled": True, "rate_hz": 0}),
+    ("/api/rc/stream", {"enabled": True, "rate_hz": 51}), ("/api/rc/stream", {"enabled": True, "rate_hz": 2.5}),
+    ("/api/rc/stream", {"enabled": True, "rate_hz": 10.0}), ("/api/rc/stream", {"enabled": True}),
+    ("/api/rc/stream", {"enabled": False, "rate_hz": 5}),
+])
+def test_an_actuator_or_stream_request_with_nothing_connected_is_answered_as_python_answers_it(vehicle_pair, path, body) -> None:
+    diffs = vehicle_pair.compare_post(path, body)
+    assert not diffs, "\n".join(diffs)
