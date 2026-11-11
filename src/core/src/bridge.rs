@@ -1731,7 +1731,10 @@ impl ReceiveHost for Shared {
     fn reset_parameter_cache(&self) {
         self.engines.params.reset();
     }
-    fn reset_param_metadata(&self) {}
+    fn reset_param_metadata(&self) {
+        self.engines.metadata.reset();
+        self.engines.ftp.abort();
+    }
     fn set_request_sent(&self, sent: bool) {
         self.st().request_sent = sent;
     }
@@ -1781,6 +1784,8 @@ pub struct Engines {
     pub remote_id: RemoteIdEngine,
     param_listeners: Mutex<Vec<ParamListener>>,
     watchdog: Mutex<Option<JoinHandle<()>>>,
+    upload: Mutex<Option<JoinHandle<()>>>,
+    metadata: crate::setup_schemas::MetadataFetch,
     rx_source: Mutex<(i64, i64)>,
 }
 
@@ -1800,6 +1805,8 @@ impl Engines {
             remote_id: RemoteIdEngine::new(),
             param_listeners: Mutex::new(Vec::new()),
             watchdog: Mutex::new(None),
+            upload: Mutex::new(None),
+            metadata: crate::setup_schemas::MetadataFetch::new(),
             rx_source: Mutex::new((0, 0)),
         }
     }
@@ -2147,13 +2154,182 @@ impl Bridge {
         self.shared.engines.params.set_param(self.shared.as_ref(), name, value)
     }
 
-    pub fn fetch_params(&self, names: &[String], timeout: f64) -> Vec<(String, f64)> {
+    /// A named read of parameters; with `fresh` only values that arrive after
+    /// the call count, so a page redraws from what the vehicle holds now.
+    pub fn fetch_params(&self, names: &[String], timeout: f64, fresh: bool) -> Vec<(String, f64)> {
         self.shared
             .engines
             .params
-            .fetch_params(self.shared.as_ref(), names, timeout, false)
+            .fetch_params(self.shared.as_ref(), names, timeout, fresh)
             .into_iter()
             .collect()
+    }
+
+    /// The flight stack of this link as the dialect names it.
+    pub fn stack_name(&self) -> &'static str {
+        self.shared.st().dialect.stack().as_str()
+    }
+
+    /// Reads the parameters back and writes again what did not stick.
+    pub fn verify_params(&self, targets: &[(String, f64)], names: &[String]) -> Option<Value> {
+        let _gate = self.shared.op_lock.lock();
+        let report = self
+            .shared
+            .engines
+            .params
+            .verify_params(self.shared.as_ref(), targets, Some(names), true, 4.0)?;
+        let results: Vec<Value> = report
+            .results
+            .iter()
+            .map(|r| {
+                json!({
+                    "name": r.name, "wanted": crate::json::num(r.wanted),
+                    "before": r.before.map(crate::json::num), "after": r.after.map(crate::json::num),
+                    "rewritten": r.rewritten, "ok": r.ok, "error": r.error,
+                })
+            })
+            .collect();
+        let values: Map<String, Value> = report
+            .values
+            .iter()
+            .map(|(k, v)| (k.clone(), crate::json::num(*v)))
+            .collect();
+        Some(json!({
+            "results": results, "values": values, "missing": report.missing,
+            "confirmed": report.confirmed, "failed": report.failed,
+            "all_confirmed": report.all_confirmed,
+        }))
+    }
+
+    /// Applies a parameter file as a background upload on one joined thread.
+    pub fn start_param_upload(&self, params: Vec<(String, f64)>) -> bool {
+        let sh = &self.shared;
+        let _gate = sh.op_lock.lock();
+        sh.set_last_error("");
+        let mut slot = sh.engines.upload.lock().unwrap_or_else(|e| e.into_inner());
+        if slot.as_ref().is_some_and(|t| !t.is_finished()) {
+            sh.set_last_error("another parameter operation in progress");
+            return false;
+        }
+        if !sh.engines.params.begin_upload(sh.as_ref(), &params) {
+            return false;
+        }
+        if let Some(old) = slot.take() {
+            let _ = old.join();
+        }
+        let me = Arc::clone(sh);
+        *slot = std::thread::Builder::new()
+            .name("param-upload".into())
+            .spawn(move || me.engines.params.run_upload(me.as_ref(), &params))
+            .ok();
+        true
+    }
+
+    /// The tally of the last upload: `{state, written, failed, errors}`.
+    pub fn param_upload_result(&self) -> Value {
+        let r = self.shared.engines.params.upload_result();
+        json!({
+            "state": r.state, "written": r.written, "failed": r.failed.len(),
+            "errors": r.failed.iter().map(|f| json!({"name": f.name, "error": f.error})).collect::<Vec<_>>(),
+        })
+    }
+
+    /// The cached parameters, sorted: `[{name, value, type}]`.
+    pub fn params_json(&self) -> Vec<Value> {
+        self.params()
+            .iter()
+            .map(|e| json!({"name": e.name, "value": crate::json::num(e.value), "type": e.ptype}))
+            .collect()
+    }
+
+    /// What a parameter file written for this vehicle says about it.
+    pub fn param_file_info(&self) -> Value {
+        let snap = self.shared.store.snapshot();
+        let text = |k: &str| snap.get(k).and_then(Value::as_str).unwrap_or("").to_string();
+        let st = self.shared.st();
+        json!({
+            "format": st.dialect.param_file_format(),
+            "system_id": if st.target.0 == 0 { 1 } else { i64::from(st.target.0) },
+            "component_id": if st.target.1 == 0 { 1 } else { i64::from(st.target.1) },
+            "stack": st.dialect.label(),
+            "vehicle": text("vehicle_type"),
+            "version": text("px4_version"),
+            "git_hash": text("px4_version_detail"),
+        })
+    }
+
+    /// Confirms to ArduPilot that the aircraft is in the position it asked for.
+    pub fn accel_calibration_position(&self, position: &str) -> bool {
+        self.shared
+            .engines
+            .setup
+            .accel_calibration_position(self.shared.as_ref(), position)
+    }
+
+    /// `usb` (a direct FC cable), `sik` (an adapter), `udp`, `tcp` or `unknown`.
+    pub fn transport(&self) -> String {
+        let conn = self.shared.connection();
+        if ["udp:", "udpin:", "udpout:", "udpbcast:"]
+            .iter()
+            .any(|p| conn.starts_with(p))
+        {
+            return "udp".into();
+        }
+        if conn.starts_with("tcp:") || conn.starts_with("tcpin:") {
+            return "tcp".into();
+        }
+        if !conn.starts_with("serial:") {
+            return "unknown".into();
+        }
+        let device = split_serial_connection(&conn).0;
+        let lower = device.trim().to_lowercase();
+        let mut aliases = vec![lower.clone()];
+        for (this, other) in [("/dev/tty.", "/dev/cu."), ("/dev/cu.", "/dev/tty.")] {
+            if let Some(rest) = lower.strip_prefix(this) {
+                aliases.push(format!("{other}{rest}"));
+            }
+        }
+        let ports = crate::serial_ports::list_serial_ports();
+        let mut descriptor = String::new();
+        for candidate in &aliases {
+            if let Some(p) = ports.iter().find(|p| p.device.trim().to_lowercase() == *candidate) {
+                descriptor = format!("{} {}", p.hwid, p.description);
+                if !descriptor.trim().is_empty() {
+                    break;
+                }
+            }
+        }
+        let by_name = crate::serial_ports::classify_serial_device(&device, "", "");
+        if by_name != "unknown" {
+            return by_name.to_string();
+        }
+        match crate::serial_ports::classify_serial_device(&device, &descriptor, "") {
+            "rtk" => "unknown",
+            other => other,
+        }
+        .to_string()
+    }
+
+    /// Whatever identifies the connected board, for the firmware picker.
+    pub fn board_identity(&self) -> Value {
+        let (vendor, product) = self.shared.st().board;
+        let mut out = json!({
+            "device": "", "description": "", "hwid": "",
+            "vendor_id": vendor, "product_id": product,
+        });
+        let device = self.serial_device();
+        if device.is_empty() {
+            return out;
+        }
+        out["device"] = json!(device);
+        for port in crate::serial_ports::list_serial_ports() {
+            if port.device == device {
+                out["description"] = json!(port.description);
+                out["hwid"] = json!(port.hwid);
+                break;
+            }
+        }
+        out
     }
 
     pub fn shell_command(&self, text: &str) -> bool {
@@ -2200,6 +2376,44 @@ impl Bridge {
             .read_file(self.shared.as_ref(), path, None, cancel)
     }
 
+    /// `ftp_read_file` with a progress callback `(received, size)`.
+    pub fn ftp_read_file_with(
+        &self,
+        path: &str,
+        progress: Option<&(dyn Fn(u64, u64) + Sync)>,
+        cancel: Option<Cancel>,
+    ) -> Result<Vec<u8>, FtpError> {
+        self.shared
+            .engines
+            .ftp
+            .read_file(self.shared.as_ref(), path, progress, cancel)
+    }
+
+    pub fn ftp_file_crc32_with(&self, path: &str, cancel: Option<Cancel>) -> Result<u32, FtpError> {
+        self.shared.engines.ftp.file_crc32(self.shared.as_ref(), path, cancel)
+    }
+
+    /// The dialect of the connected stack.
+    pub fn dialect(&self) -> Dialect {
+        self.shared.st().dialect
+    }
+
+    pub(crate) fn metadata_fetch(&self) -> &crate::setup_schemas::MetadataFetch {
+        &self.shared.engines.metadata
+    }
+
+    /// Starts the background read of the vehicle's parameter metadata.
+    pub fn start_param_metadata(
+        &self,
+        cache: Option<crate::setup_schemas::param_metadata::ParamMetadataCache>,
+    ) -> Value {
+        self.shared.engines.metadata.start(self, cache)
+    }
+
+    pub fn param_metadata_status(&self, include_params: bool) -> Value {
+        self.shared.engines.metadata.status(include_params)
+    }
+
     pub fn ftp_file_crc32(&self, path: &str) -> Result<u32, FtpError> {
         self.shared.engines.ftp.file_crc32(self.shared.as_ref(), path, None)
     }
@@ -2220,6 +2434,20 @@ impl Bridge {
     /// Enables or disables the high rate RC_CHANNELS stream.
     pub fn set_rc_stream(&self, enabled: bool, rate_hz: i64) -> bool {
         self.shared.telemetry.rc_stream(self.shared.as_ref(), enabled, rate_hz)
+    }
+
+    /// Enables or disables the high rate VIBRATION stream.
+    pub fn set_vibration_stream(&self, enabled: bool, rate_hz: i64) -> bool {
+        self.shared
+            .telemetry
+            .vibration_stream(self.shared.as_ref(), enabled, rate_hz)
+    }
+
+    /// Enables or disables the controller setpoint stream of the tuning page.
+    pub fn set_tuning_stream(&self, enabled: bool, rate_hz: i64) -> bool {
+        self.shared
+            .telemetry
+            .tuning_stream(self.shared.as_ref(), enabled, rate_hz)
     }
 
     pub fn motor_test(&self, motor: i64, throttle_pct: f64, duration_s: f64) -> bool {
@@ -2403,6 +2631,16 @@ impl Bridge {
     /// Stops the parameter watchdog with the rest; called from `stop`.
     fn join_workers(&self) {
         self.shared.engines.params.abort();
+        self.shared.engines.metadata.stop();
+        join_bounded(
+            self.shared
+                .engines
+                .upload
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .take(),
+            Duration::from_secs(2),
+        );
         join_bounded(
             self.shared
                 .engines

@@ -101,13 +101,8 @@ telemetry review).
 
 ### 0.1 Vehicle and control (`src/core/src/vehicle.rs`)
 
-* P1 `/api/motors`, `/api/rc`, `/api/params*`, the calibration, autotune and
-  motor routes of `routes/control.py`: use the helpers of `setup_schemas`
-  (`motors`, `rc::calibration_writes`, `mounting::positions`, `safety`).
-* P1 A `fresh` flag on `Bridge::fetch_params`; `transport()` and
-  `board_identity()` for first setup; `GET /api/mission/return`;
-  `/api/mavlink/scope` (needs the vehicle's `record_scope` hook);
-  `/api/tuning/stream`, `/api/vibration/stream`, `/api/warnings/clear`.
+* P1 `GET /api/mission/return`; `/api/mavlink/scope` (needs the vehicle's
+  `record_scope` hook).
 * P2 Register the routes of the forwarder (`/api/forwarding`) and of Remote ID
   (`/api/remoteid*`); the engines exist.
 * P2 `Bridge::set_connection` and a way to ask whether the bridge runs, so SiK
@@ -159,10 +154,8 @@ telemetry review).
 
 ### 0.6 Setup schemas (`src/core/src/setup_schemas/`)
 
-* P1 First setup routes; `/api/params/metadata*` (the fetch state machine over
-  `ftp_read_file` and `ftp_file_crc32`, plus the cache routes).
 * P2 Extend the route harness with the four pages; model PX4 v1.16, v1.17 and
-  v1.18 by name in the tests; honour `?fresh=1`.
+  v1.18 by name in the tests.
 * P3 The fixtures are about 12 MB; reduce the value set counts.
 
 ### 0.7 The switch

@@ -407,3 +407,59 @@ def test_a_manual_connect_and_a_disconnect_leave_auto_connect_as_python_leaves_i
 def test_an_actuator_or_stream_request_with_nothing_connected_is_answered_as_python_answers_it(vehicle_pair, path, body) -> None:
     diffs = vehicle_pair.compare_post(path, body)
     assert not diffs, "\n".join(diffs)
+
+
+# ---- the setup pages and the parameter routes, with nothing connected ----
+
+@pytest.mark.parametrize("path", [
+    "/api/motors", "/api/motors?fresh=1", "/api/rc", "/api/params", "/api/params/upload/result",
+    "/api/params/export/target", "/api/first-setup", "/api/params/metadata", "/api/params/metadata/cache",
+])
+def test_a_setup_or_parameter_read_with_nothing_connected_is_answered_as_python_answers_it(vehicle_pair, path) -> None:
+    diffs = vehicle_pair.compare_get(path, ("dir", "filename"))
+    assert not diffs, "\n".join(diffs)
+
+
+@pytest.mark.parametrize("path,body", [
+    ("/api/motors/assign", {}), ("/api/motors/assign", {"motor": True}), ("/api/motors/assign", {"motor": 0}),
+    ("/api/motors/assign", {"motor": 17}), ("/api/motors/assign", {"motor": 1}),
+    ("/api/motors/assign", {"motor": 1, "bank": 5, "pin": 1}), ("/api/motors/assign", {"motor": 1, "bank": "MAIN"}),
+    ("/api/motors/assign", {"motor": 1, "bank": "MAIN", "pin": True}),
+    ("/api/motors/assign", {"motor": 1, "bank": "NOPE", "pin": 1}),
+    ("/api/motors/assign", {"motor": 1, "bank": "MAIN", "pin": 99}),
+    ("/api/motors/assign", {"motor": 1, "bank": "MAIN", "pin": 3}), ("/api/motors/assign", {"motor": 2, "output": None}),
+    ("/api/rc/calibrate", {}), ("/api/rc/calibrate", {"count": "x"}), ("/api/rc/calibrate", {"count": True}),
+    ("/api/rc/calibrate", {"channels": []}),
+    ("/api/calibrate", {}), ("/api/calibrate", {"type": 5}), ("/api/calibrate", {"type": "nope"}),
+    ("/api/calibrate", {"type": "GYRO"}), ("/api/calibrate", {"type": "accel"}),
+    ("/api/calibrate/position", {}), ("/api/calibrate/position", {"position": "up"}),
+    ("/api/calibrate/position", {"position": " Level "}), ("/api/calibrate/cancel", {}),
+    ("/api/autotune", {}), ("/api/autotune", {"axis": "roll"}), ("/api/autotune", {"axis": "all", "enabled": "no"}),
+    ("/api/autotune", {"axis": " ALL "}), ("/api/autotune", {"axis": "all", "enabled": False}),
+    ("/api/vibration/stream", {}), ("/api/vibration/stream", {"enabled": 1}),
+    ("/api/vibration/stream", {"enabled": True, "rate_hz": "x"}), ("/api/vibration/stream", {"enabled": True, "rate_hz": True}),
+    ("/api/vibration/stream", {"enabled": True, "rate_hz": 0}), ("/api/vibration/stream", {"enabled": True, "rate_hz": 2.5}),
+    ("/api/vibration/stream", {"enabled": True}), ("/api/vibration/stream", {"enabled": False, "rate_hz": 50}),
+    ("/api/tuning/stream", {}), ("/api/tuning/stream", {"enabled": True, "rate_hz": 51}),
+    ("/api/tuning/stream", {"enabled": True}), ("/api/tuning/stream", {"enabled": False, "rate_hz": 5}),
+    ("/api/warnings/clear", {}),
+    ("/api/params/download", {}),
+    ("/api/params/set", {}), ("/api/params/set", {"name": ""}), ("/api/params/set", {"name": "A", "value": True}),
+    ("/api/params/set", {"name": "A", "value": "1"}), ("/api/params/set", {"name": "A", "value": 1}),
+    ("/api/params/verify", {}), ("/api/params/verify", {"params": 5}), ("/api/params/verify", {"names": [1]}),
+    ("/api/params/verify", {"names": [""]}), ("/api/params/verify", {"params": [5]}),
+    ("/api/params/verify", {"params": [{"name": ""}]}), ("/api/params/verify", {"params": [{"name": "A"}]}),
+    ("/api/params/verify", {"params": [{"name": "A", "value": True}]}),
+    ("/api/params/verify", {"params": [{"name": "A", "value": 1}], "names": ["B"]}),
+    ("/api/params/upload", {}), ("/api/params/upload", {"params": []}), ("/api/params/upload", {"params": [5]}),
+    ("/api/params/upload", {"params": [{"name": 1, "value": 1}]}), ("/api/params/upload", {"params": [{"name": "A"}]}),
+    ("/api/params/upload", {"params": [{"name": "A", "value": 1}]}),
+    ("/api/params/metadata", {}), ("/api/params/metadata/cache/clear", {}),
+    ("/api/first-setup/airframe", {}), ("/api/first-setup/airframe", {"preset": True}),
+    ("/api/first-setup/airframe", {"preset": "4001"}), ("/api/first-setup/airframe", {"preset": 4001}),
+    ("/api/params/export", {}), ("/api/params/export", {"params": []}), ("/api/params/export", {"params": [{"name": "A", "value": 1}], "format": "x"}),
+    ("/api/params/export", {"params": [5]}), ("/api/params/export", {"params": [{"name": "A", "value": True}]}),
+])
+def test_a_setup_or_parameter_write_with_nothing_connected_is_answered_as_python_answers_it(vehicle_pair, path, body) -> None:
+    diffs = vehicle_pair.compare_post(path, body)
+    assert not diffs, "\n".join(diffs)
