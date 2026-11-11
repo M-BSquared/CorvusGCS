@@ -30,5 +30,16 @@ serialport = { version = "4", default-features = false }
 # The forwarder binds its UDP socket with SO_REUSEADDR as Python did; the link crate already builds it.
 socket2 = { version = "0.5", features = ["all"] }
 
+# The offline tile cache is an MBTiles file: SQLite, read and written by the
+# same file layout Python's sqlite3 module uses. "bundled" compiles SQLite into
+# the binary, so no system library is needed on any platform the bundle ships.
+rusqlite = { version = "0.37", features = ["bundled"] }
+# Upstream tiles, the place search and the Overpass cells are HTTPS. rustls with
+# the platform's own certificate store (as Python's urllib uses the system's),
+# no async runtime, no thread of its own.
+ureq = { version = "3", default-features = false, features = ["rustls", "platform-verifier"] }
+# Elevation tiles are PNG: flate2 is the zlib the Python decoder used.
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

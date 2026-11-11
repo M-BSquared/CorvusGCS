@@ -89,6 +89,7 @@ pub mod geofence;
 pub mod json;
 pub mod languages;
 pub mod lock;
+pub mod mapdata;
 pub mod mission;
 pub mod paths;
 pub mod priority_lock;
