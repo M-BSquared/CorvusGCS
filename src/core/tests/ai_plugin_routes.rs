@@ -30,6 +30,7 @@ fn rig(name: &str, config: Option<Value>) -> Rig {
             seen.lock().unwrap().push(p.to_string());
             (true, String::new())
         }),
+        ..PluginDirs::default()
     };
     let core = CoreBuilder::new(Options::in_dir(&tmp.0))
         .module(PluginsModule::with_dirs(dirs))

@@ -30,6 +30,10 @@ pub struct PluginDirs {
     pub user: Option<PathBuf>,
     pub bundled: Option<PathBuf>,
     pub opener: Opener,
+    /// Where the update check reads the release list from; GitHub when `None`.
+    pub update_url: Option<String>,
+    /// What opens a web page; the system browser when `None`.
+    pub browser: Option<super::update_check::BrowserOpener>,
 }
 
 impl Default for PluginDirs {
@@ -38,6 +42,8 @@ impl Default for PluginDirs {
             user: None,
             bundled: None,
             opener: Arc::new(file_manager::open_folder),
+            update_url: None,
+            browser: None,
         }
     }
 }

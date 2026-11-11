@@ -263,3 +263,31 @@ def test_a_reset_puts_the_station_back_as_python_does(sp) -> None:
         assert not (state / "config.json").exists()
         assert not (state / "plugins" / "mine" / "config.json").exists()
         assert (state / "plugins" / "mine" / "plugin.json").exists(), "an installed plugin stays"
+
+
+# ---- the update check, from the cache (no network on either side) ----
+
+CACHED = {"checked_at": 1.0, "latest": {"tag": "v2999.01.01", "version": "2999.01.01", "name": "Big", "published": "p",
+                                        "notes": "n", "assets": [{"name": "a", "size": 1}], "url": "https://evil.example/"},
+          "error": "no route"}
+
+
+@pytest.fixture(scope="module")
+def up():
+    seed = harness.standard_seed()
+    seed["config"]["updates"] = {"check": False}
+    with harness.Pair(seed=seed) as p:
+        for state in (p.py.state_dir, p.rs.state_dir):
+            (state / "update.json").write_text(json.dumps(CACHED), encoding="utf-8")
+        yield p
+
+
+def test_a_switched_off_update_check_reports_the_cache_only(up) -> None:
+    check(up.compare_get("/api/update"))
+    check(up.compare_get("/api/update?refresh=1"))
+
+
+@pytest.mark.parametrize("body", [{"version": "2999.01.01"}, {"version": "  x  "}, {}, {"version": 5}, {"version": ""}])
+def test_a_skipped_release_is_remembered_as_python_remembers_it(up, body) -> None:
+    check(up.compare_post("/api/update/skip", body))
+    check(up.compare_get("/api/update"))

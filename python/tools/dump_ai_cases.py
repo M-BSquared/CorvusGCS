@@ -286,8 +286,94 @@ def plugin_files() -> None:
                                    "installs": installs, "limits": [PF.MAX_PLUGIN_BYTES, PF.MAX_FILES]})
 
 
+def _releases() -> dict:
+    def rel(tag, **kw):
+        return dict({"tag_name": tag, "name": f"Release {tag}", "published_at": "2026-11-01T10:00:00Z",
+                     "body": "  notes \u00e9 \n", "assets": [{"name": "a.zip", "size": 12}, {"name": 5, "size": "7"},
+                                                          {"size": None}, "x"]}, **kw)
+    return {
+        "mixed": [rel("v2026.10.01"), rel("v2026.11.03"), rel("v2026.11.02", prerelease=True),
+                  rel("v2026.12.01", draft=True), rel("nightly"), rel("v2026.9.99"), 5, None,
+                  {"tag_name": "2026.11.03"}, rel("v2026.11.03\n")],
+        "newest_listed_last": [rel("v2026.01.01"), rel("v2027.01.01"), rel("v2026.06.01")],
+        "older": [rel("v2020.01.01")],
+        "long_notes": [rel("v2030.01.01", body="n" * 5000)],
+        "empty": [], "none_stable": [rel("v2030.01.01", prerelease=True)], "not_a_list": {"a": 1},
+        "odd_fields": [{"tag_name": "vv2030.1", "name": None, "published_at": 5, "body": None, "assets": None}],
+    }
+
+
+def update_check() -> None:
+    import http.server
+    import tempfile
+    import threading
+
+    from corvus import update_check as U
+
+    versions = ["2026.09.27", "v2026.09.27", " v1.2 ", "nightly", "", None, "1..2", "v", "1.2.3.4", "01.002",
+                "2026.09", "2026.09.01", "v2026.11.03\n", "0.0.0-unknown", "1e3", 5, 2026.09]
+    parse = [[v, list(U.parse_version(v)) if U.parse_version(v) is not None else None] for v in versions]
+    newer = [[a, b, U.is_newer(a, b)] for a, b in [
+        ("2026.09.27", "2026.09.26"), ("2026.09", "2026.09.01"), ("2026.09.01", "2026.09"), ("v2", "1.99.99"),
+        ("nightly", "1"), ("1", "nightly"), ("1.0", "1.0.0"), ("1.0.0", "1.0"), ("1.0", "1.0")]]
+    pages = [[t, U._release_page(t)] for t in ["v2026.09.27", "2026.09", "nightly", "", "v1.2\n", "../x"]]
+    releases = _releases()
+    picks = [[name, U._pick_latest(p)] for name, p in releases.items()]
+
+    scenarios = []
+    for name, payload in releases.items():
+        scenarios.append({"name": name, "status": 200, "body": json.dumps(payload)})
+    scenarios += [
+        {"name": "not json", "status": 200, "body": "<html>"},
+        {"name": "server error", "status": 500, "body": "{}"},
+        {"name": "too large", "status": 200, "body": json.dumps([{"tag_name": "v1", "body": "x" * (U.MAX_PAYLOAD_BYTES + 10)}])},
+    ]
+    out = []
+    for sc in scenarios:
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self, sc=sc):  # noqa: N802
+                body = sc["body"].encode()
+                self.send_response(sc["status"])
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *a):
+                pass
+
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        U.RELEASES_URL = f"http://127.0.0.1:{server.server_address[1]}/releases"
+        with tempfile.TemporaryDirectory() as tmp:
+            checker = U.UpdateChecker(tmp)
+            first = checker.check(force=True)
+            cache = json.loads(pathlib.Path(tmp, "update.json").read_text())
+            second = checker.check()
+            cached = checker.cached_status()
+        server.shutdown()
+        for d in (first, second, cached):
+            d["checked_at"] = d["checked_at"] > 0
+        cache["checked_at"] = cache["checked_at"] > 0
+        out.append({"scenario": sc if len(sc["body"]) < 3000 else dict(sc, body=None), "first": first,
+                    "cache": cache, "second": second, "cached": cached})
+    # stale rules
+    with tempfile.TemporaryDirectory() as tmp:
+        c = U.UpdateChecker(tmp)
+        stale = [[v, c._is_stale(v, 1000.0)] for v in [
+            {}, {"checked_at": "x"}, {"checked_at": 2000.0, "latest": {"a": 1}}, {"checked_at": 1000.0 - U.CHECK_INTERVAL_S, "latest": {"a": 1}},
+            {"checked_at": 1000.0 - U.CHECK_INTERVAL_S + 1, "latest": {"a": 1}}, {"checked_at": 1000.0 - U.RETRY_INTERVAL_S},
+            {"checked_at": 1000.0 - U.RETRY_INTERVAL_S + 1}, {"checked_at": 1000.0 - U.RETRY_INTERVAL_S, "latest": {}}]]
+    write("ai_update.json", clean_nan({"parse": parse, "newer": newer, "pages": pages, "picks": picks,
+                                       "scenarios": out, "stale": stale, "intervals": [U.CHECK_INTERVAL_S, U.RETRY_INTERVAL_S]}))
+
+
+def clean_nan(x):
+    return x
+
+
 COMMANDS = {"checklists": checklists, "plugins": plugins, "plugin_config": plugin_config,
-            "plugin_files": plugin_files}
+            "plugin_files": plugin_files, "update": update_check}
 
 
 def main(argv: list[str]) -> int:

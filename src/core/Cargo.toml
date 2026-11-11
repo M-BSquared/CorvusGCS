@@ -28,5 +28,12 @@ ctrlc = { version = "3", features = ["termination"] }
 # The forwarder binds its UDP socket with SO_REUSEADDR as Python did; the link crate already builds it.
 socket2 = { version = "0.5", features = ["all"] }
 
+# The update check reads the release list of GitHub over https: the one request the
+# core makes on its own. The same TLS stack corvus_link uses for wss (ring, so a
+# second provider elsewhere cannot make the choice ambiguous) and the system's
+# certificate store. Already in the lock file.
+rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
+rustls-native-certs = "0.8.5"
+
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

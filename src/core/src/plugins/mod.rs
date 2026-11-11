@@ -9,13 +9,18 @@ pub mod checklists;
 pub mod config;
 pub mod file_manager;
 pub mod files;
+mod http_client;
 pub mod registry;
 mod routes;
 pub mod settings_routes;
+pub mod update_check;
 
 pub use registry::PluginRegistry;
 pub use routes::{registry, settings_all, Opener, PluginDirs};
 
+use std::sync::Arc;
+
+use crate::core::Core;
 use crate::module::{Module, Registry};
 
 /// The routes and services of the plugins area.
@@ -45,5 +50,15 @@ impl Module for PluginsModule {
         reg.config_block("checklists", checklists::coerce);
         routes::register(reg, self.dirs.clone());
         settings_routes::register(reg);
+        update_check::register(reg);
+    }
+
+    fn start(&self, core: &Core) -> std::io::Result<()> {
+        core.insert_service(Arc::new(update_check::make_service(
+            core.paths().home(),
+            self.dirs.update_url.as_deref(),
+            self.dirs.browser.clone(),
+        )));
+        Ok(())
     }
 }
