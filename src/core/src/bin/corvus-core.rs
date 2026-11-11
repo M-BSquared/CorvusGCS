@@ -56,6 +56,7 @@ fn main() -> ExitCode {
         .module(corvus_core::PluginsModule::new())
         .module(corvus_core::McpModule::new())
         .module(corvus_core::SetupSchemasModule::new())
+        .module(corvus_core::MapDataModule::new())
         .module(Http::new(HttpOptions {
             port,
             ..HttpOptions::default()

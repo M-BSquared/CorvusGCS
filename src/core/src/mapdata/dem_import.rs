@@ -15,7 +15,7 @@ use std::path::Path;
 
 use flate2::read::ZlibDecoder;
 
-use super::util::{py_float, round_half_even};
+use super::util::{py_float, py_repr, round_half_even};
 
 /// A grid is held in memory once while it is converted: 120 million cells.
 pub const MAX_CELLS: usize = 120_000_000;
@@ -729,32 +729,6 @@ fn mask_nodata(values: &mut [f32], nodata: Option<f64>) {
             *v = f32::NAN;
         }
     }
-}
-
-/// Python's `repr` of a short text.
-fn py_repr(s: &str) -> String {
-    let quote = if s.contains('\'') && !s.contains('"') {
-        '"'
-    } else {
-        '\''
-    };
-    let mut out = String::from(quote);
-    for c in s.chars() {
-        match c {
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            c if c == quote => {
-                out.push('\\');
-                out.push(c);
-            }
-            c if (c as u32) < 0x20 || c as u32 == 0x7f => out.push_str(&format!("\\x{:02x}", c as u32)),
-            c => out.push(c),
-        }
-    }
-    out.push(quote);
-    out
 }
 
 /// Lines as Python's text mode reads them (`\n`, `\r\n` and `\r` all end a

@@ -124,6 +124,7 @@ pub use crate::events::{Binding, Topic};
 pub use crate::http::mcp::{McpEndpoint, McpHandle, TokenStore};
 pub use crate::http::{Http, HttpInfo, HttpOptions};
 pub use crate::hub::StoreHub;
+pub use crate::mapdata::{MapData, MapDataModule, MapDataOptions};
 pub use crate::mcp::McpModule;
 pub use crate::module::{Guard, LanguageRoots, Module, Registry};
 pub use crate::peripherals::{Peripherals, PeripheralsModule};
