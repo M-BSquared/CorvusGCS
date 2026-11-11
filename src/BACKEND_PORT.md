@@ -18,7 +18,11 @@ is today becomes a Rust library inside the app. Decided with the user on
 
 ## Status
 
-The open work per area, in priority order, is in `PLAN.md` section 0.
+Every route of the Python server is registered by a module of the core
+(`src/core/tests/no_unavailable_routes.rs`), the interface runs the core in its
+own process by default, and no artifact holds Python (`build-*.sh`,
+`python/tools/bundle_trim.py`, CI). The open work, in priority order, is in
+`PLAN.md` section 0.
 
 ## Rules
 
@@ -66,9 +70,11 @@ Sizes are the Python lines today.
 2. **Then in parallel, one session each** (they only touch their own module
    folder and register routes through the foundation's router): Vehicle, Map
    data, Logs and firmware, Peripherals, AI and plugins.
-3. **Switch:** the three build scripts and CI drop CPython, PyInstaller and
-   `pip`; the bundle smoke test checks that no Python is inside.
-4. **Delete `python/`** only on the user's word.
+3. **Switch (done):** the core is the default, the build scripts and CI no
+   longer use CPython, PyInstaller or `pip`, and the bundle checks (the build
+   scripts, `bundle_trim.py check`, the smoke test) fail when a Python is inside.
+4. **Delete `python/`** only on the user's word, after the page by page and
+   route by route comparison. The Qt window and the web interface go with it.
 
 ## Open at the start
 
