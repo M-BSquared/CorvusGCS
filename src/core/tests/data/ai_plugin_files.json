@@ -1,0 +1,793 @@
+{
+  "clean": [
+    [
+      "a.js",
+      "a.js"
+    ],
+    [
+      "sub/a.js",
+      "sub/a.js"
+    ],
+    [
+      "a.JS",
+      "a.JS"
+    ],
+    [
+      "config.json",
+      null
+    ],
+    [
+      "sub/config.json",
+      "sub/config.json"
+    ],
+    [
+      "a.exe",
+      null
+    ],
+    [
+      "a",
+      null
+    ],
+    [
+      ".a.js",
+      null
+    ],
+    [
+      "sub/.a.js",
+      null
+    ],
+    [
+      "../a.js",
+      null
+    ],
+    [
+      "sub/../a.js",
+      null
+    ],
+    [
+      "./a.js",
+      null
+    ],
+    [
+      "/a.js",
+      null
+    ],
+    [
+      "C:/a.js",
+      null
+    ],
+    [
+      "a:b.js",
+      null
+    ],
+    [
+      "a\\b.js",
+      "a/b.js"
+    ],
+    [
+      "a b .js",
+      "a b .js"
+    ],
+    [
+      "a.js ",
+      null
+    ],
+    [
+      "a.js.",
+      null
+    ],
+    [
+      "con.js",
+      null
+    ],
+    [
+      "CON",
+      null
+    ],
+    [
+      "nul.txt",
+      null
+    ],
+    [
+      "com1.json",
+      null
+    ],
+    [
+      "lpt9.md",
+      null
+    ],
+    [
+      "COM0.js",
+      "COM0.js"
+    ],
+    [
+      "aux.d.js",
+      null
+    ],
+    [
+      "a|b.js",
+      null
+    ],
+    [
+      "a?.js",
+      null
+    ],
+    [
+      "a*.js",
+      null
+    ],
+    [
+      "a\"b.js",
+      null
+    ],
+    [
+      "a<b.js",
+      null
+    ],
+    [
+      "a\tb.js",
+      null
+    ],
+    [
+      "",
+      null
+    ],
+    [
+      "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      null
+    ],
+    [
+      "d/d/d/d/d/d/d/d/a.js",
+      null
+    ],
+    [
+      "d/d/d/d/d/d/d/d/d/a.js",
+      null
+    ],
+    [
+      "d//a.js",
+      null
+    ],
+    [
+      "d/a.js/",
+      null
+    ],
+    [
+      "img/Logo.PNG",
+      "img/Logo.PNG"
+    ],
+    [
+      "lang/de.json",
+      "lang/de.json"
+    ],
+    [
+      "a.tar.gz",
+      null
+    ],
+    [
+      ".js",
+      null
+    ],
+    [
+      "sub/.js",
+      null
+    ],
+    [
+      "a.mjs",
+      "a.mjs"
+    ],
+    [
+      "a.map",
+      "a.map"
+    ],
+    [
+      "style.css",
+      "style.css"
+    ],
+    [
+      "t.csv",
+      "t.csv"
+    ],
+    [
+      "n.md",
+      "n.md"
+    ],
+    [
+      "n.txt",
+      "n.txt"
+    ],
+    [
+      "f.woff2",
+      "f.woff2"
+    ],
+    [
+      "é.js",
+      "é.js"
+    ]
+  ],
+  "tree": {
+    "p/plugin.json": "{}",
+    "p/z.js": "z",
+    "p/a.js": "a",
+    "p/config.json": "{}",
+    "p/sub/b.css": "b",
+    "p/sub/deep/c.json": "c",
+    "p/.hidden.js": "h",
+    "p/.git/x.js": "g",
+    "p/__pycache__/m.js": "m",
+    "p/bad.exe": "b",
+    "p/sub/.h.js": "h",
+    "p/B.js": "B",
+    "p/a b.js": "ab",
+    "p/é.js": "e",
+    "q/plugin.json": "{}",
+    "q/big.txt": {
+      "repeat": 4194305
+    },
+    "r/plugin.json": "{}",
+    "r/f000.js": "x",
+    "r/f001.js": "x",
+    "r/f002.js": "x",
+    "r/f003.js": "x",
+    "r/f004.js": "x",
+    "r/f005.js": "x",
+    "r/f006.js": "x",
+    "r/f007.js": "x",
+    "r/f008.js": "x",
+    "r/f009.js": "x",
+    "r/f010.js": "x",
+    "r/f011.js": "x",
+    "r/f012.js": "x",
+    "r/f013.js": "x",
+    "r/f014.js": "x",
+    "r/f015.js": "x",
+    "r/f016.js": "x",
+    "r/f017.js": "x",
+    "r/f018.js": "x",
+    "r/f019.js": "x",
+    "r/f020.js": "x",
+    "r/f021.js": "x",
+    "r/f022.js": "x",
+    "r/f023.js": "x",
+    "r/f024.js": "x",
+    "r/f025.js": "x",
+    "r/f026.js": "x",
+    "r/f027.js": "x",
+    "r/f028.js": "x",
+    "r/f029.js": "x",
+    "r/f030.js": "x",
+    "r/f031.js": "x",
+    "r/f032.js": "x",
+    "r/f033.js": "x",
+    "r/f034.js": "x",
+    "r/f035.js": "x",
+    "r/f036.js": "x",
+    "r/f037.js": "x",
+    "r/f038.js": "x",
+    "r/f039.js": "x",
+    "r/f040.js": "x",
+    "r/f041.js": "x",
+    "r/f042.js": "x",
+    "r/f043.js": "x",
+    "r/f044.js": "x",
+    "r/f045.js": "x",
+    "r/f046.js": "x",
+    "r/f047.js": "x",
+    "r/f048.js": "x",
+    "r/f049.js": "x",
+    "r/f050.js": "x",
+    "r/f051.js": "x",
+    "r/f052.js": "x",
+    "r/f053.js": "x",
+    "r/f054.js": "x",
+    "r/f055.js": "x",
+    "r/f056.js": "x",
+    "r/f057.js": "x",
+    "r/f058.js": "x",
+    "r/f059.js": "x",
+    "r/f060.js": "x",
+    "r/f061.js": "x",
+    "r/f062.js": "x",
+    "r/f063.js": "x",
+    "r/f064.js": "x",
+    "r/f065.js": "x",
+    "r/f066.js": "x",
+    "r/f067.js": "x",
+    "r/f068.js": "x",
+    "r/f069.js": "x",
+    "r/f070.js": "x",
+    "r/f071.js": "x",
+    "r/f072.js": "x",
+    "r/f073.js": "x",
+    "r/f074.js": "x",
+    "r/f075.js": "x",
+    "r/f076.js": "x",
+    "r/f077.js": "x",
+    "r/f078.js": "x",
+    "r/f079.js": "x",
+    "r/f080.js": "x",
+    "r/f081.js": "x",
+    "r/f082.js": "x",
+    "r/f083.js": "x",
+    "r/f084.js": "x",
+    "r/f085.js": "x",
+    "r/f086.js": "x",
+    "r/f087.js": "x",
+    "r/f088.js": "x",
+    "r/f089.js": "x",
+    "r/f090.js": "x",
+    "r/f091.js": "x",
+    "r/f092.js": "x",
+    "r/f093.js": "x",
+    "r/f094.js": "x",
+    "r/f095.js": "x",
+    "r/f096.js": "x",
+    "r/f097.js": "x",
+    "r/f098.js": "x",
+    "r/f099.js": "x",
+    "r/f100.js": "x",
+    "r/f101.js": "x",
+    "r/f102.js": "x",
+    "r/f103.js": "x",
+    "r/f104.js": "x",
+    "r/f105.js": "x",
+    "r/f106.js": "x",
+    "r/f107.js": "x",
+    "r/f108.js": "x",
+    "r/f109.js": "x",
+    "r/f110.js": "x",
+    "r/f111.js": "x",
+    "r/f112.js": "x",
+    "r/f113.js": "x",
+    "r/f114.js": "x",
+    "r/f115.js": "x",
+    "r/f116.js": "x",
+    "r/f117.js": "x",
+    "r/f118.js": "x",
+    "r/f119.js": "x",
+    "r/f120.js": "x",
+    "r/f121.js": "x",
+    "r/f122.js": "x",
+    "r/f123.js": "x",
+    "r/f124.js": "x",
+    "r/f125.js": "x",
+    "r/f126.js": "x",
+    "r/f127.js": "x",
+    "r/f128.js": "x",
+    "r/f129.js": "x",
+    "r/f130.js": "x",
+    "r/f131.js": "x",
+    "r/f132.js": "x",
+    "r/f133.js": "x",
+    "r/f134.js": "x",
+    "r/f135.js": "x",
+    "r/f136.js": "x",
+    "r/f137.js": "x",
+    "r/f138.js": "x",
+    "r/f139.js": "x",
+    "r/f140.js": "x",
+    "r/f141.js": "x",
+    "r/f142.js": "x",
+    "r/f143.js": "x",
+    "r/f144.js": "x",
+    "r/f145.js": "x",
+    "r/f146.js": "x",
+    "r/f147.js": "x",
+    "r/f148.js": "x",
+    "r/f149.js": "x",
+    "r/f150.js": "x",
+    "r/f151.js": "x",
+    "r/f152.js": "x",
+    "r/f153.js": "x",
+    "r/f154.js": "x",
+    "r/f155.js": "x",
+    "r/f156.js": "x",
+    "r/f157.js": "x",
+    "r/f158.js": "x",
+    "r/f159.js": "x",
+    "r/f160.js": "x",
+    "r/f161.js": "x",
+    "r/f162.js": "x",
+    "r/f163.js": "x",
+    "r/f164.js": "x",
+    "r/f165.js": "x",
+    "r/f166.js": "x",
+    "r/f167.js": "x",
+    "r/f168.js": "x",
+    "r/f169.js": "x",
+    "r/f170.js": "x",
+    "r/f171.js": "x",
+    "r/f172.js": "x",
+    "r/f173.js": "x",
+    "r/f174.js": "x",
+    "r/f175.js": "x",
+    "r/f176.js": "x",
+    "r/f177.js": "x",
+    "r/f178.js": "x",
+    "r/f179.js": "x",
+    "r/f180.js": "x",
+    "r/f181.js": "x",
+    "r/f182.js": "x",
+    "r/f183.js": "x",
+    "r/f184.js": "x",
+    "r/f185.js": "x",
+    "r/f186.js": "x",
+    "r/f187.js": "x",
+    "r/f188.js": "x",
+    "r/f189.js": "x",
+    "r/f190.js": "x",
+    "r/f191.js": "x",
+    "r/f192.js": "x",
+    "r/f193.js": "x",
+    "r/f194.js": "x",
+    "r/f195.js": "x",
+    "r/f196.js": "x",
+    "r/f197.js": "x",
+    "r/f198.js": "x",
+    "r/f199.js": "x",
+    "s/plugin.json": "{}",
+    "s/big.txt": {
+      "repeat": 4194304
+    }
+  },
+  "collected": {
+    "p": {
+      "files": [
+        [
+          "B.js",
+          "B"
+        ],
+        [
+          "a b.js",
+          "ab"
+        ],
+        [
+          "a.js",
+          "a"
+        ],
+        [
+          "plugin.json",
+          "{}"
+        ],
+        [
+          "z.js",
+          "z"
+        ],
+        [
+          "é.js",
+          "e"
+        ],
+        [
+          "sub/b.css",
+          "b"
+        ],
+        [
+          "sub/deep/c.json",
+          "c"
+        ]
+      ]
+    },
+    "q": {
+      "error": "larger than 4 MB"
+    },
+    "r": {
+      "error": "made of more than 200 files"
+    },
+    "s": {
+      "error": "larger than 4 MB"
+    }
+  },
+  "checks": [
+    [
+      "empty",
+      {
+        "error": "no files"
+      }
+    ],
+    [
+      "none",
+      {
+        "error": "no files"
+      }
+    ],
+    [
+      "manifest only",
+      {
+        "ok": [
+          "plugin.json"
+        ]
+      }
+    ],
+    [
+      "no manifest",
+      {
+        "error": "no plugin.json"
+      }
+    ],
+    [
+      "unclean",
+      {
+        "error": "unusable file '../a.js'"
+      }
+    ],
+    [
+      "config",
+      {
+        "error": "unusable file 'config.json'"
+      }
+    ],
+    [
+      "backslash",
+      {
+        "error": "unusable file 'a\\\\b.js'"
+      }
+    ],
+    [
+      "not bytes",
+      {
+        "error": "unusable file 'plugin.json'"
+      }
+    ],
+    [
+      "big",
+      {
+        "error": "larger than 4 MB"
+      }
+    ],
+    [
+      "just fits",
+      {
+        "ok": [
+          "plugin.json"
+        ]
+      }
+    ],
+    [
+      "many",
+      {
+        "error": "more than 200 files"
+      }
+    ],
+    [
+      "just many",
+      {
+        "ok": [
+          "f0.js",
+          "f1.js",
+          "f10.js",
+          "f100.js",
+          "f101.js",
+          "f102.js",
+          "f103.js",
+          "f104.js",
+          "f105.js",
+          "f106.js",
+          "f107.js",
+          "f108.js",
+          "f109.js",
+          "f11.js",
+          "f110.js",
+          "f111.js",
+          "f112.js",
+          "f113.js",
+          "f114.js",
+          "f115.js",
+          "f116.js",
+          "f117.js",
+          "f118.js",
+          "f119.js",
+          "f12.js",
+          "f120.js",
+          "f121.js",
+          "f122.js",
+          "f123.js",
+          "f124.js",
+          "f125.js",
+          "f126.js",
+          "f127.js",
+          "f128.js",
+          "f129.js",
+          "f13.js",
+          "f130.js",
+          "f131.js",
+          "f132.js",
+          "f133.js",
+          "f134.js",
+          "f135.js",
+          "f136.js",
+          "f137.js",
+          "f138.js",
+          "f139.js",
+          "f14.js",
+          "f140.js",
+          "f141.js",
+          "f142.js",
+          "f143.js",
+          "f144.js",
+          "f145.js",
+          "f146.js",
+          "f147.js",
+          "f148.js",
+          "f149.js",
+          "f15.js",
+          "f150.js",
+          "f151.js",
+          "f152.js",
+          "f153.js",
+          "f154.js",
+          "f155.js",
+          "f156.js",
+          "f157.js",
+          "f158.js",
+          "f159.js",
+          "f16.js",
+          "f160.js",
+          "f161.js",
+          "f162.js",
+          "f163.js",
+          "f164.js",
+          "f165.js",
+          "f166.js",
+          "f167.js",
+          "f168.js",
+          "f169.js",
+          "f17.js",
+          "f170.js",
+          "f171.js",
+          "f172.js",
+          "f173.js",
+          "f174.js",
+          "f175.js",
+          "f176.js",
+          "f177.js",
+          "f178.js",
+          "f179.js",
+          "f18.js",
+          "f180.js",
+          "f181.js",
+          "f182.js",
+          "f183.js",
+          "f184.js",
+          "f185.js",
+          "f186.js",
+          "f187.js",
+          "f188.js",
+          "f189.js",
+          "f19.js",
+          "f190.js",
+          "f191.js",
+          "f192.js",
+          "f193.js",
+          "f194.js",
+          "f195.js",
+          "f196.js",
+          "f197.js",
+          "f198.js",
+          "f2.js",
+          "f20.js",
+          "f21.js",
+          "f22.js",
+          "f23.js",
+          "f24.js",
+          "f25.js",
+          "f26.js",
+          "f27.js",
+          "f28.js",
+          "f29.js",
+          "f3.js",
+          "f30.js",
+          "f31.js",
+          "f32.js",
+          "f33.js",
+          "f34.js",
+          "f35.js",
+          "f36.js",
+          "f37.js",
+          "f38.js",
+          "f39.js",
+          "f4.js",
+          "f40.js",
+          "f41.js",
+          "f42.js",
+          "f43.js",
+          "f44.js",
+          "f45.js",
+          "f46.js",
+          "f47.js",
+          "f48.js",
+          "f49.js",
+          "f5.js",
+          "f50.js",
+          "f51.js",
+          "f52.js",
+          "f53.js",
+          "f54.js",
+          "f55.js",
+          "f56.js",
+          "f57.js",
+          "f58.js",
+          "f59.js",
+          "f6.js",
+          "f60.js",
+          "f61.js",
+          "f62.js",
+          "f63.js",
+          "f64.js",
+          "f65.js",
+          "f66.js",
+          "f67.js",
+          "f68.js",
+          "f69.js",
+          "f7.js",
+          "f70.js",
+          "f71.js",
+          "f72.js",
+          "f73.js",
+          "f74.js",
+          "f75.js",
+          "f76.js",
+          "f77.js",
+          "f78.js",
+          "f79.js",
+          "f8.js",
+          "f80.js",
+          "f81.js",
+          "f82.js",
+          "f83.js",
+          "f84.js",
+          "f85.js",
+          "f86.js",
+          "f87.js",
+          "f88.js",
+          "f89.js",
+          "f9.js",
+          "f90.js",
+          "f91.js",
+          "f92.js",
+          "f93.js",
+          "f94.js",
+          "f95.js",
+          "f96.js",
+          "f97.js",
+          "f98.js",
+          "f99.js",
+          "plugin.json"
+        ]
+      }
+    ]
+  ],
+  "installs": [
+    {
+      "step": "bad id",
+      "error": "invalid plugin id 'bad id'",
+      "files": {}
+    },
+    {
+      "step": "no files",
+      "error": "no files",
+      "files": {}
+    },
+    {
+      "step": "first",
+      "ok": true,
+      "files": {
+        "x/plugin.json": "{\"v\": 1}",
+        "x/sub/y.css": "y",
+        "x/x.js": "one"
+      }
+    },
+    {
+      "step": "again",
+      "ok": true,
+      "files": {
+        "x/config.json": "{\"saved\": 1}\n",
+        "x/plugin.json": "{\"v\": 2}",
+        "x/x.js": "two"
+      }
+    }
+  ],
+  "limits": [
+    4194304,
+    200
+  ]
+}

@@ -876,6 +876,8 @@ dependencies = [
  "indexmap",
  "libc",
  "rusqlite",
+ "rustls",
+ "rustls-native-certs",
  "serde_json",
  "serialport",
  "sha1 0.10.7",

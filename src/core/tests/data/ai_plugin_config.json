@@ -1,0 +1,469 @@
+{
+  "ops": [
+    {
+      "op": [
+        "load",
+        "a"
+      ],
+      "result": null
+    },
+    {
+      "op": [
+        "save",
+        "a",
+        {
+          "x": 1,
+          "y": [
+            1,
+            2,
+            {
+              "z": "é\u0001"
+            }
+          ],
+          "n": null,
+          "f": 1.5,
+          "e": {}
+        }
+      ],
+      "result": "ok"
+    },
+    {
+      "op": [
+        "load",
+        "a"
+      ],
+      "result": {
+        "x": 1,
+        "y": [
+          1,
+          2,
+          {
+            "z": "é\u0001"
+          }
+        ],
+        "n": null,
+        "f": 1.5,
+        "e": {}
+      }
+    },
+    {
+      "op": [
+        "update",
+        "a",
+        {
+          "x": 2,
+          "k": true
+        },
+        false
+      ],
+      "result": {
+        "x": 2,
+        "y": [
+          1,
+          2,
+          {
+            "z": "é\u0001"
+          }
+        ],
+        "n": null,
+        "f": 1.5,
+        "e": {},
+        "k": true
+      }
+    },
+    {
+      "op": [
+        "load",
+        "a"
+      ],
+      "result": {
+        "x": 2,
+        "y": [
+          1,
+          2,
+          {
+            "z": "é\u0001"
+          }
+        ],
+        "n": null,
+        "f": 1.5,
+        "e": {},
+        "k": true
+      }
+    },
+    {
+      "op": [
+        "update",
+        "a",
+        {
+          "only": 1
+        },
+        true
+      ],
+      "result": {
+        "only": 1
+      }
+    },
+    {
+      "op": [
+        "load",
+        "a"
+      ],
+      "result": {
+        "only": 1
+      }
+    },
+    {
+      "op": [
+        "update",
+        "a",
+        {
+          "_options": {
+            "m": 1
+          },
+          "q": 1
+        },
+        false
+      ],
+      "result": {
+        "only": 1,
+        "_options": {
+          "m": 1
+        },
+        "q": 1
+      }
+    },
+    {
+      "op": [
+        "update",
+        "a",
+        {
+          "fresh": 1
+        },
+        true
+      ],
+      "result": {
+        "fresh": 1,
+        "_options": {
+          "m": 1
+        }
+      }
+    },
+    {
+      "op": [
+        "load",
+        "a"
+      ],
+      "result": {
+        "fresh": 1,
+        "_options": {
+          "m": 1
+        }
+      }
+    },
+    {
+      "op": [
+        "update",
+        "a",
+        {
+          "_options": {
+            "m": 2
+          }
+        },
+        true
+      ],
+      "result": {
+        "_options": {
+          "m": 2
+        }
+      }
+    },
+    {
+      "op": [
+        "load",
+        "a"
+      ],
+      "result": {
+        "_options": {
+          "m": 2
+        }
+      }
+    },
+    {
+      "op": [
+        "update",
+        "b",
+        {
+          "n": 1
+        },
+        false
+      ],
+      "result": {
+        "n": 1
+      }
+    },
+    {
+      "op": [
+        "update",
+        "c",
+        {},
+        false
+      ],
+      "result": {}
+    },
+    {
+      "op": [
+        "update",
+        "c",
+        {
+          "k": 1
+        },
+        false
+      ],
+      "result": {
+        "k": 1
+      }
+    },
+    {
+      "op": [
+        "save",
+        "bad id",
+        {
+          "a": 1
+        }
+      ],
+      "result": {
+        "error": "invalid plugin id 'bad id'"
+      }
+    },
+    {
+      "op": [
+        "save",
+        "..",
+        {}
+      ],
+      "result": {
+        "error": "invalid plugin id '..'"
+      }
+    },
+    {
+      "op": [
+        "load",
+        "../a"
+      ],
+      "result": null
+    },
+    {
+      "op": [
+        "update",
+        "",
+        {},
+        false
+      ],
+      "result": {
+        "error": "invalid plugin id ''"
+      }
+    },
+    {
+      "op": [
+        "raw",
+        "d",
+        "{not json"
+      ],
+      "result": "ok"
+    },
+    {
+      "op": [
+        "load",
+        "d"
+      ],
+      "result": null
+    },
+    {
+      "op": [
+        "update",
+        "d",
+        {
+          "k": 1
+        },
+        false
+      ],
+      "result": {
+        "k": 1
+      }
+    },
+    {
+      "op": [
+        "raw",
+        "e",
+        "[1, 2]"
+      ],
+      "result": "ok"
+    },
+    {
+      "op": [
+        "load",
+        "e"
+      ],
+      "result": null
+    },
+    {
+      "op": [
+        "raw",
+        "f",
+        "{\"keep\": 1}"
+      ],
+      "result": "ok"
+    },
+    {
+      "op": [
+        "load",
+        "f"
+      ],
+      "result": {
+        "keep": 1
+      }
+    },
+    {
+      "op": [
+        "mkdir",
+        "emptyfolder"
+      ],
+      "result": "ok"
+    },
+    {
+      "op": [
+        "mkdir",
+        ".hidden"
+      ],
+      "result": "ok"
+    },
+    {
+      "op": [
+        "raw",
+        ".hidden",
+        "{}"
+      ],
+      "result": "ok"
+    },
+    {
+      "op": [
+        "load_all"
+      ],
+      "result": {
+        "a": {
+          "_options": {
+            "m": 2
+          }
+        },
+        "b": {
+          "n": 1
+        },
+        "c": {
+          "k": 1
+        },
+        "d": {
+          "k": 1
+        },
+        "f": {
+          "keep": 1
+        }
+      }
+    },
+    {
+      "op": [
+        "migrate",
+        {
+          "a": {
+            "legacy": 1
+          },
+          "g": {
+            "legacy": 2
+          },
+          "h": 5,
+          "bad id": {
+            "x": 1
+          },
+          "d": {
+            "l": 1
+          }
+        }
+      ],
+      "result": true
+    },
+    {
+      "op": [
+        "load",
+        "g"
+      ],
+      "result": {
+        "legacy": 2
+      }
+    },
+    {
+      "op": [
+        "load",
+        "h"
+      ],
+      "result": null
+    },
+    {
+      "op": [
+        "load_all"
+      ],
+      "result": {
+        "a": {
+          "_options": {
+            "m": 2
+          }
+        },
+        "b": {
+          "n": 1
+        },
+        "c": {
+          "k": 1
+        },
+        "d": {
+          "k": 1
+        },
+        "f": {
+          "keep": 1
+        },
+        "g": {
+          "legacy": 2
+        }
+      }
+    },
+    {
+      "op": [
+        "migrate",
+        null
+      ],
+      "result": true
+    },
+    {
+      "op": [
+        "migrate",
+        {}
+      ],
+      "result": true
+    },
+    {
+      "op": [
+        "migrate",
+        []
+      ],
+      "result": true
+    }
+  ],
+  "files": {
+    ".hidden/config.json": "{}",
+    "a/config.json": "{\n  \"_options\": {\n    \"m\": 2\n  }\n}\n",
+    "b/config.json": "{\n  \"n\": 1\n}\n",
+    "c/config.json": "{\n  \"k\": 1\n}\n",
+    "d/config.json": "{\n  \"k\": 1\n}\n",
+    "e/config.json": "[1, 2]",
+    "f/config.json": "{\"keep\": 1}",
+    "g/config.json": "{\n  \"legacy\": 2\n}\n"
+  }
+}

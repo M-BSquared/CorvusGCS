@@ -1,0 +1,1130 @@
+{
+  "parse": [
+    [
+      "2026.09.27",
+      [
+        2026,
+        9,
+        27
+      ]
+    ],
+    [
+      "v2026.09.27",
+      [
+        2026,
+        9,
+        27
+      ]
+    ],
+    [
+      " v1.2 ",
+      [
+        1,
+        2
+      ]
+    ],
+    [
+      "nightly",
+      null
+    ],
+    [
+      "",
+      null
+    ],
+    [
+      null,
+      null
+    ],
+    [
+      "1..2",
+      null
+    ],
+    [
+      "v",
+      null
+    ],
+    [
+      "1.2.3.4",
+      [
+        1,
+        2,
+        3,
+        4
+      ]
+    ],
+    [
+      "01.002",
+      [
+        1,
+        2
+      ]
+    ],
+    [
+      "2026.09",
+      [
+        2026,
+        9
+      ]
+    ],
+    [
+      "2026.09.01",
+      [
+        2026,
+        9,
+        1
+      ]
+    ],
+    [
+      "v2026.11.03\n",
+      [
+        2026,
+        11,
+        3
+      ]
+    ],
+    [
+      "0.0.0-unknown",
+      null
+    ],
+    [
+      "1e3",
+      null
+    ],
+    [
+      5,
+      [
+        5
+      ]
+    ],
+    [
+      2026.09,
+      [
+        2026,
+        9
+      ]
+    ]
+  ],
+  "newer": [
+    [
+      "2026.09.27",
+      "2026.09.26",
+      true
+    ],
+    [
+      "2026.09",
+      "2026.09.01",
+      false
+    ],
+    [
+      "2026.09.01",
+      "2026.09",
+      true
+    ],
+    [
+      "v2",
+      "1.99.99",
+      true
+    ],
+    [
+      "nightly",
+      "1",
+      false
+    ],
+    [
+      "1",
+      "nightly",
+      false
+    ],
+    [
+      "1.0",
+      "1.0.0",
+      false
+    ],
+    [
+      "1.0.0",
+      "1.0",
+      true
+    ],
+    [
+      "1.0",
+      "1.0",
+      false
+    ]
+  ],
+  "pages": [
+    [
+      "v2026.09.27",
+      "https://github.com/M-BSquared/CorvusGCS/releases/tag/v2026.09.27"
+    ],
+    [
+      "2026.09",
+      "https://github.com/M-BSquared/CorvusGCS/releases/tag/2026.09"
+    ],
+    [
+      "nightly",
+      "https://github.com/M-BSquared/CorvusGCS/releases"
+    ],
+    [
+      "",
+      "https://github.com/M-BSquared/CorvusGCS/releases"
+    ],
+    [
+      "v1.2\n",
+      "https://github.com/M-BSquared/CorvusGCS/releases/tag/v1.2\n"
+    ],
+    [
+      "../x",
+      "https://github.com/M-BSquared/CorvusGCS/releases"
+    ]
+  ],
+  "picks": [
+    [
+      "mixed",
+      {
+        "tag": "v2026.11.03",
+        "version": "2026.11.03",
+        "name": "Release v2026.11.03",
+        "published": "2026-11-01T10:00:00Z",
+        "notes": "notes é",
+        "assets": [
+          {
+            "name": "a.zip",
+            "size": 12
+          },
+          {
+            "name": "5",
+            "size": 7
+          },
+          {
+            "name": "",
+            "size": 0
+          }
+        ],
+        "url": "https://github.com/M-BSquared/CorvusGCS/releases/tag/v2026.11.03"
+      }
+    ],
+    [
+      "newest_listed_last",
+      {
+        "tag": "v2027.01.01",
+        "version": "2027.01.01",
+        "name": "Release v2027.01.01",
+        "published": "2026-11-01T10:00:00Z",
+        "notes": "notes é",
+        "assets": [
+          {
+            "name": "a.zip",
+            "size": 12
+          },
+          {
+            "name": "5",
+            "size": 7
+          },
+          {
+            "name": "",
+            "size": 0
+          }
+        ],
+        "url": "https://github.com/M-BSquared/CorvusGCS/releases/tag/v2027.01.01"
+      }
+    ],
+    [
+      "older",
+      {
+        "tag": "v2020.01.01",
+        "version": "2020.01.01",
+        "name": "Release v2020.01.01",
+        "published": "2026-11-01T10:00:00Z",
+        "notes": "notes é",
+        "assets": [
+          {
+            "name": "a.zip",
+            "size": 12
+          },
+          {
+            "name": "5",
+            "size": 7
+          },
+          {
+            "name": "",
+            "size": 0
+          }
+        ],
+        "url": "https://github.com/M-BSquared/CorvusGCS/releases/tag/v2020.01.01"
+      }
+    ],
+    [
+      "long_notes",
+      {
+        "tag": "v2030.01.01",
+        "version": "2030.01.01",
+        "name": "Release v2030.01.01",
+        "published": "2026-11-01T10:00:00Z",
+        "notes": "nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn",
+        "assets": [
+          {
+            "name": "a.zip",
+            "size": 12
+          },
+          {
+            "name": "5",
+            "size": 7
+          },
+          {
+            "name": "",
+            "size": 0
+          }
+        ],
+        "url": "https://github.com/M-BSquared/CorvusGCS/releases/tag/v2030.01.01"
+      }
+    ],
+    [
+      "empty",
+      null
+    ],
+    [
+      "none_stable",
+      null
+    ],
+    [
+      "not_a_list",
+      null
+    ],
+    [
+      "odd_fields",
+      null
+    ]
+  ],
+  "scenarios": [
+    {
+      "scenario": {
+        "name": "mixed",
+        "status": 200,
+        "body": "[{\"tag_name\": \"v2026.10.01\", \"name\": \"Release v2026.10.01\", \"published_at\": \"2026-11-01T10:00:00Z\", \"body\": \"  notes \\u00e9 \\n\", \"assets\": [{\"name\": \"a.zip\", \"size\": 12}, {\"name\": 5, \"size\": \"7\"}, {\"size\": null}, \"x\"]}, {\"tag_name\": \"v2026.11.03\", \"name\": \"Release v2026.11.03\", \"published_at\": \"2026-11-01T10:00:00Z\", \"body\": \"  notes \\u00e9 \\n\", \"assets\": [{\"name\": \"a.zip\", \"size\": 12}, {\"name\": 5, \"size\": \"7\"}, {\"size\": null}, \"x\"]}, {\"tag_name\": \"v2026.11.02\", \"name\": \"Release v2026.11.02\", \"published_at\": \"2026-11-01T10:00:00Z\", \"body\": \"  notes \\u00e9 \\n\", \"assets\": [{\"name\": \"a.zip\", \"size\": 12}, {\"name\": 5, \"size\": \"7\"}, {\"size\": null}, \"x\"], \"prerelease\": true}, {\"tag_name\": \"v2026.12.01\", \"name\": \"Release v2026.12.01\", \"published_at\": \"2026-11-01T10:00:00Z\", \"body\": \"  notes \\u00e9 \\n\", \"assets\": [{\"name\": \"a.zip\", \"size\": 12}, {\"name\": 5, \"size\": \"7\"}, {\"size\": null}, \"x\"], \"draft\": true}, {\"tag_name\": \"nightly\", \"name\": \"Release nightly\", \"published_at\": \"2026-11-01T10:00:00Z\", \"body\": \"  notes \\u00e9 \\n\", \"assets\": [{\"name\": \"a.zip\", \"size\": 12}, {\"name\": 5, \"size\": \"7\"}, {\"size\": null}, \"x\"]}, {\"tag_name\": \"v2026.9.99\", \"name\": \"Release v2026.9.99\", \"published_at\": \"2026-11-01T10:00:00Z\", \"body\": \"  notes \\u00e9 \\n\", \"assets\": [{\"name\": \"a.zip\", \"size\": 12}, {\"name\": 5, \"size\": \"7\"}, {\"size\": null}, \"x\"]}, 5, null, {\"tag_name\": \"2026.11.03\"}, {\"tag_name\": \"v2026.11.03\\n\", \"name\": \"Release v2026.11.03\\n\", \"published_at\": \"2026-11-01T10:00:00Z\", \"body\": \"  notes \\u00e9 \\n\", \"assets\": [{\"name\": \"a.zip\", \"size\": 12}, {\"name\": 5, \"size\": \"7\"}, {\"size\": null}, \"x\"]}]"
+      },
+      "first": {
+        "current": "2026.11.46",
+        "latest": "2026.11.03",
+        "update_available": false,
+        "name": "Release v2026.11.03",
+        "url": "https://github.com/M-BSquared/CorvusGCS/releases/tag/v2026.11.03",
+        "published": "2026-11-01T10:00:00Z",
+        "notes": "notes é",
+        "assets": [
+          {
+            "name": "a.zip",
+            "size": 12
+          },
+          {
+            "name": "5",
+            "size": 7
+          },
+          {
+            "name": "",
+            "size": 0
+          }
+        ],
+        "checked_at": true,
+        "error": ""
+      },
+      "cache": {
+        "checked_at": true,
+        "latest": {
+          "tag": "v2026.11.03",
+          "version": "2026.11.03",
+          "name": "Release v2026.11.03",
+          "published": "2026-11-01T10:00:00Z",
+          "notes": "notes é",
+          "assets": [
+            {
+              "name": "a.zip",
+              "size": 12
+            },
+            {
+              "name": "5",
+              "size": 7
+            },
+            {
+              "name": "",
+              "size": 0
+            }
+          ],
+          "url": "https://github.com/M-BSquared/CorvusGCS/releases/tag/v2026.11.03"
+        },
+        "error": ""
+      },
+      "second": {
+        "current": "2026.11.46",
+        "latest": "2026.11.03",
+        "update_available": false,
+        "name": "Release v2026.11.03",
+        "url": "https://github.com/M-BSquared/CorvusGCS/releases/tag/v2026.11.03",
+        "published": "2026-11-01T10:00:00Z",
+        "notes": "notes é",
+        "assets": [
+          {
+            "name": "a.zip",
+            "size": 12
+          },
+          {
+            "name": "5",
+            "size": 7
+          },
+          {
+            "name": "",
+            "size": 0
+          }
+        ],
+        "checked_at": true,
+        "error": ""
+      },
+      "cached": {
+        "current": "2026.11.46",
+        "latest": "2026.11.03",
+        "update_available": false,
+        "name": "Release v2026.11.03",
+        "url": "https://github.com/M-BSquared/CorvusGCS/releases/tag/v2026.11.03",
+        "published": "2026-11-01T10:00:00Z",
+        "notes": "notes é",
+        "assets": [
+          {
+            "name": "a.zip",
+            "size": 12
+          },
+          {
+            "name": "5",
+            "size": 7
+          },
+          {
+            "name": "",
+            "size": 0
+          }
+        ],
+        "checked_at": true,
+        "error": ""
+      }
+    },
+    {
+      "scenario": {
+        "name": "newest_listed_last",
+        "status": 200,
+        "body": "[{\"tag_name\": \"v2026.01.01\", \"name\": \"Release v2026.01.01\", \"published_at\": \"2026-11-01T10:00:00Z\", \"body\": \"  notes \\u00e9 \\n\", \"assets\": [{\"name\": \"a.zip\", \"size\": 12}, {\"name\": 5, \"size\": \"7\"}, {\"size\": null}, \"x\"]}, {\"tag_name\": \"v2027.01.01\", \"name\": \"Release v2027.01.01\", \"published_at\": \"2026-11-01T10:00:00Z\", \"body\": \"  notes \\u00e9 \\n\", \"assets\": [{\"name\": \"a.zip\", \"size\": 12}, {\"name\": 5, \"size\": \"7\"}, {\"size\": null}, \"x\"]}, {\"tag_name\": \"v2026.06.01\", \"name\": \"Release v2026.06.01\", \"published_at\": \"2026-11-01T10:00:00Z\", \"body\": \"  notes \\u00e9 \\n\", \"assets\": [{\"name\": \"a.zip\", \"size\": 12}, {\"name\": 5, \"size\": \"7\"}, {\"size\": null}, \"x\"]}]"
+      },
+      "first": {
+        "current": "2026.11.46",
+        "latest": "2027.01.01",
+        "update_available": true,
+        "name": "Release v2027.01.01",
+        "url": "https://github.com/M-BSquared/CorvusGCS/releases/tag/v2027.01.01",
+        "published": "2026-11-01T10:00:00Z",
+        "notes": "notes é",
+        "assets": [
+          {
+            "name": "a.zip",
+            "size": 12
+          },
+          {
+            "name": "5",
+            "size": 7
+          },
+          {
+            "name": "",
+            "size": 0
+          }
+        ],
+        "checked_at": true,
+        "error": ""
+      },
+      "cache": {
+        "checked_at": true,
+        "latest": {
+          "tag": "v2027.01.01",
+          "version": "2027.01.01",
+          "name": "Release v2027.01.01",
+          "published": "2026-11-01T10:00:00Z",
+          "notes": "notes é",
+          "assets": [
+            {
+              "name": "a.zip",
+              "size": 12
+            },
+            {
+              "name": "5",
+              "size": 7
+            },
+            {
+              "name": "",
+              "size": 0
+            }
+          ],
+          "url": "https://github.com/M-BSquared/CorvusGCS/releases/tag/v2027.01.01"
+        },
+        "error": ""
+      },
+      "second": {
+        "current": "2026.11.46",
+        "latest": "2027.01.01",
+        "update_available": true,
+        "name": "Release v2027.01.01",
+        "url": "https://github.com/M-BSquared/CorvusGCS/releases/tag/v2027.01.01",
+        "published": "2026-11-01T10:00:00Z",
+        "notes": "notes é",
+        "assets": [
+          {
+            "name": "a.zip",
+            "size": 12
+          },
+          {
+            "name": "5",
+            "size": 7
+          },
+          {
+            "name": "",
+            "size": 0
+          }
+        ],
+        "checked_at": true,
+        "error": ""
+      },
+      "cached": {
+        "current": "2026.11.46",
+        "latest": "2027.01.01",
+        "update_available": true,
+        "name": "Release v2027.01.01",
+        "url": "https://github.com/M-BSquared/CorvusGCS/releases/tag/v2027.01.01",
+        "published": "2026-11-01T10:00:00Z",
+        "notes": "notes é",
+        "assets": [
+          {
+            "name": "a.zip",
+            "size": 12
+          },
+          {
+            "name": "5",
+            "size": 7
+          },
+          {
+            "name": "",
+            "size": 0
+          }
+        ],
+        "checked_at": true,
+        "error": ""
+      }
+    },
+    {
+      "scenario": {
+        "name": "older",
+        "status": 200,
+        "body": "[{\"tag_name\": \"v2020.01.01\", \"name\": \"Release v2020.01.01\", \"published_at\": \"2026-11-01T10:00:00Z\", \"body\": \"  notes \\u00e9 \\n\", \"assets\": [{\"name\": \"a.zip\", \"size\": 12}, {\"name\": 5, \"size\": \"7\"}, {\"size\": null}, \"x\"]}]"
+      },
+      "first": {
+        "current": "2026.11.46",
+        "latest": "2020.01.01",
+        "update_available": false,
+        "name": "Release v2020.01.01",
+        "url": "https://github.com/M-BSquared/CorvusGCS/releases/tag/v2020.01.01",
+        "published": "2026-11-01T10:00:00Z",
+        "notes": "notes é",
+        "assets": [
+          {
+            "name": "a.zip",
+            "size": 12
+          },
+          {
+            "name": "5",
+            "size": 7
+          },
+          {
+            "name": "",
+            "size": 0
+          }
+        ],
+        "checked_at": true,
+        "error": ""
+      },
+      "cache": {
+        "checked_at": true,
+        "latest": {
+          "tag": "v2020.01.01",
+          "version": "2020.01.01",
+          "name": "Release v2020.01.01",
+          "published": "2026-11-01T10:00:00Z",
+          "notes": "notes é",
+          "assets": [
+            {
+              "name": "a.zip",
+              "size": 12
+            },
+            {
+              "name": "5",
+              "size": 7
+            },
+            {
+              "name": "",
+              "size": 0
+            }
+          ],
+          "url": "https://github.com/M-BSquared/CorvusGCS/releases/tag/v2020.01.01"
+        },
+        "error": ""
+      },
+      "second": {
+        "current": "2026.11.46",
+        "latest": "2020.01.01",
+        "update_available": false,
+        "name": "Release v2020.01.01",
+        "url": "https://github.com/M-BSquared/CorvusGCS/releases/tag/v2020.01.01",
+        "published": "2026-11-01T10:00:00Z",
+        "notes": "notes é",
+        "assets": [
+          {
+            "name": "a.zip",
+            "size": 12
+          },
+          {
+            "name": "5",
+            "size": 7
+          },
+          {
+            "name": "",
+            "size": 0
+          }
+        ],
+        "checked_at": true,
+        "error": ""
+      },
+      "cached": {
+        "current": "2026.11.46",
+        "latest": "2020.01.01",
+        "update_available": false,
+        "name": "Release v2020.01.01",
+        "url": "https://github.com/M-BSquared/CorvusGCS/releases/tag/v2020.01.01",
+        "published": "2026-11-01T10:00:00Z",
+        "notes": "notes é",
+        "assets": [
+          {
+            "name": "a.zip",
+            "size": 12
+          },
+          {
+            "name": "5",
+            "size": 7
+          },
+          {
+            "name": "",
+            "size": 0
+          }
+        ],
+        "checked_at": true,
+        "error": ""
+      }
+    },
+    {
+      "scenario": {
+        "name": "long_notes",
+        "status": 200,
+        "body": null
+      },
+      "first": {
+        "current": "2026.11.46",
+        "latest": "2030.01.01",
+        "update_available": true,
+        "name": "Release v2030.01.01",
+        "url": "https://github.com/M-BSquared/CorvusGCS/releases/tag/v2030.01.01",
+        "published": "2026-11-01T10:00:00Z",
+        "notes": "nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn",
+        "assets": [
+          {
+            "name": "a.zip",
+            "size": 12
+          },
+          {
+            "name": "5",
+            "size": 7
+          },
+          {
+            "name": "",
+            "size": 0
+          }
+        ],
+        "checked_at": true,
+        "error": ""
+      },
+      "cache": {
+        "checked_at": true,
+        "latest": {
+          "tag": "v2030.01.01",
+          "version": "2030.01.01",
+          "name": "Release v2030.01.01",
+          "published": "2026-11-01T10:00:00Z",
+          "notes": "nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn",
+          "assets": [
+            {
+              "name": "a.zip",
+              "size": 12
+            },
+            {
+              "name": "5",
+              "size": 7
+            },
+            {
+              "name": "",
+              "size": 0
+            }
+          ],
+          "url": "https://github.com/M-BSquared/CorvusGCS/releases/tag/v2030.01.01"
+        },
+        "error": ""
+      },
+      "second": {
+        "current": "2026.11.46",
+        "latest": "2030.01.01",
+        "update_available": true,
+        "name": "Release v2030.01.01",
+        "url": "https://github.com/M-BSquared/CorvusGCS/releases/tag/v2030.01.01",
+        "published": "2026-11-01T10:00:00Z",
+        "notes": "nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn",
+        "assets": [
+          {
+            "name": "a.zip",
+            "size": 12
+          },
+          {
+            "name": "5",
+            "size": 7
+          },
+          {
+            "name": "",
+            "size": 0
+          }
+        ],
+        "checked_at": true,
+        "error": ""
+      },
+      "cached": {
+        "current": "2026.11.46",
+        "latest": "2030.01.01",
+        "update_available": true,
+        "name": "Release v2030.01.01",
+        "url": "https://github.com/M-BSquared/CorvusGCS/releases/tag/v2030.01.01",
+        "published": "2026-11-01T10:00:00Z",
+        "notes": "nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn",
+        "assets": [
+          {
+            "name": "a.zip",
+            "size": 12
+          },
+          {
+            "name": "5",
+            "size": 7
+          },
+          {
+            "name": "",
+            "size": 0
+          }
+        ],
+        "checked_at": true,
+        "error": ""
+      }
+    },
+    {
+      "scenario": {
+        "name": "empty",
+        "status": 200,
+        "body": "[]"
+      },
+      "first": {
+        "current": "2026.11.46",
+        "latest": "",
+        "update_available": false,
+        "name": "",
+        "url": "https://github.com/M-BSquared/CorvusGCS/releases",
+        "published": "",
+        "notes": "",
+        "assets": [],
+        "checked_at": true,
+        "error": ""
+      },
+      "cache": {
+        "checked_at": true,
+        "latest": null,
+        "error": ""
+      },
+      "second": {
+        "current": "2026.11.46",
+        "latest": "",
+        "update_available": false,
+        "name": "",
+        "url": "https://github.com/M-BSquared/CorvusGCS/releases",
+        "published": "",
+        "notes": "",
+        "assets": [],
+        "checked_at": true,
+        "error": ""
+      },
+      "cached": {
+        "current": "2026.11.46",
+        "latest": "",
+        "update_available": false,
+        "name": "",
+        "url": "https://github.com/M-BSquared/CorvusGCS/releases",
+        "published": "",
+        "notes": "",
+        "assets": [],
+        "checked_at": true,
+        "error": ""
+      }
+    },
+    {
+      "scenario": {
+        "name": "none_stable",
+        "status": 200,
+        "body": "[{\"tag_name\": \"v2030.01.01\", \"name\": \"Release v2030.01.01\", \"published_at\": \"2026-11-01T10:00:00Z\", \"body\": \"  notes \\u00e9 \\n\", \"assets\": [{\"name\": \"a.zip\", \"size\": 12}, {\"name\": 5, \"size\": \"7\"}, {\"size\": null}, \"x\"], \"prerelease\": true}]"
+      },
+      "first": {
+        "current": "2026.11.46",
+        "latest": "",
+        "update_available": false,
+        "name": "",
+        "url": "https://github.com/M-BSquared/CorvusGCS/releases",
+        "published": "",
+        "notes": "",
+        "assets": [],
+        "checked_at": true,
+        "error": ""
+      },
+      "cache": {
+        "checked_at": true,
+        "latest": null,
+        "error": ""
+      },
+      "second": {
+        "current": "2026.11.46",
+        "latest": "",
+        "update_available": false,
+        "name": "",
+        "url": "https://github.com/M-BSquared/CorvusGCS/releases",
+        "published": "",
+        "notes": "",
+        "assets": [],
+        "checked_at": true,
+        "error": ""
+      },
+      "cached": {
+        "current": "2026.11.46",
+        "latest": "",
+        "update_available": false,
+        "name": "",
+        "url": "https://github.com/M-BSquared/CorvusGCS/releases",
+        "published": "",
+        "notes": "",
+        "assets": [],
+        "checked_at": true,
+        "error": ""
+      }
+    },
+    {
+      "scenario": {
+        "name": "not_a_list",
+        "status": 200,
+        "body": "{\"a\": 1}"
+      },
+      "first": {
+        "current": "2026.11.46",
+        "latest": "",
+        "update_available": false,
+        "name": "",
+        "url": "https://github.com/M-BSquared/CorvusGCS/releases",
+        "published": "",
+        "notes": "",
+        "assets": [],
+        "checked_at": true,
+        "error": ""
+      },
+      "cache": {
+        "checked_at": true,
+        "latest": null,
+        "error": ""
+      },
+      "second": {
+        "current": "2026.11.46",
+        "latest": "",
+        "update_available": false,
+        "name": "",
+        "url": "https://github.com/M-BSquared/CorvusGCS/releases",
+        "published": "",
+        "notes": "",
+        "assets": [],
+        "checked_at": true,
+        "error": ""
+      },
+      "cached": {
+        "current": "2026.11.46",
+        "latest": "",
+        "update_available": false,
+        "name": "",
+        "url": "https://github.com/M-BSquared/CorvusGCS/releases",
+        "published": "",
+        "notes": "",
+        "assets": [],
+        "checked_at": true,
+        "error": ""
+      }
+    },
+    {
+      "scenario": {
+        "name": "odd_fields",
+        "status": 200,
+        "body": "[{\"tag_name\": \"vv2030.1\", \"name\": null, \"published_at\": 5, \"body\": null, \"assets\": null}]"
+      },
+      "first": {
+        "current": "2026.11.46",
+        "latest": "",
+        "update_available": false,
+        "name": "",
+        "url": "https://github.com/M-BSquared/CorvusGCS/releases",
+        "published": "",
+        "notes": "",
+        "assets": [],
+        "checked_at": true,
+        "error": ""
+      },
+      "cache": {
+        "checked_at": true,
+        "latest": null,
+        "error": ""
+      },
+      "second": {
+        "current": "2026.11.46",
+        "latest": "",
+        "update_available": false,
+        "name": "",
+        "url": "https://github.com/M-BSquared/CorvusGCS/releases",
+        "published": "",
+        "notes": "",
+        "assets": [],
+        "checked_at": true,
+        "error": ""
+      },
+      "cached": {
+        "current": "2026.11.46",
+        "latest": "",
+        "update_available": false,
+        "name": "",
+        "url": "https://github.com/M-BSquared/CorvusGCS/releases",
+        "published": "",
+        "notes": "",
+        "assets": [],
+        "checked_at": true,
+        "error": ""
+      }
+    },
+    {
+      "scenario": {
+        "name": "not json",
+        "status": 200,
+        "body": "<html>"
+      },
+      "first": {
+        "current": "2026.11.46",
+        "latest": "",
+        "update_available": false,
+        "name": "",
+        "url": "https://github.com/M-BSquared/CorvusGCS/releases",
+        "published": "",
+        "notes": "",
+        "assets": [],
+        "checked_at": true,
+        "error": "could not reach the release server (Expecting value: line 1 column 1 (char 0))"
+      },
+      "cache": {
+        "checked_at": true,
+        "latest": null,
+        "error": "could not reach the release server (Expecting value: line 1 column 1 (char 0))"
+      },
+      "second": {
+        "current": "2026.11.46",
+        "latest": "",
+        "update_available": false,
+        "name": "",
+        "url": "https://github.com/M-BSquared/CorvusGCS/releases",
+        "published": "",
+        "notes": "",
+        "assets": [],
+        "checked_at": true,
+        "error": "could not reach the release server (Expecting value: line 1 column 1 (char 0))"
+      },
+      "cached": {
+        "current": "2026.11.46",
+        "latest": "",
+        "update_available": false,
+        "name": "",
+        "url": "https://github.com/M-BSquared/CorvusGCS/releases",
+        "published": "",
+        "notes": "",
+        "assets": [],
+        "checked_at": true,
+        "error": "could not reach the release server (Expecting value: line 1 column 1 (char 0))"
+      }
+    },
+    {
+      "scenario": {
+        "name": "server error",
+        "status": 500,
+        "body": "{}"
+      },
+      "first": {
+        "current": "2026.11.46",
+        "latest": "",
+        "update_available": false,
+        "name": "",
+        "url": "https://github.com/M-BSquared/CorvusGCS/releases",
+        "published": "",
+        "notes": "",
+        "assets": [],
+        "checked_at": true,
+        "error": "could not reach the release server (HTTP Error 500: Internal Server Error)"
+      },
+      "cache": {
+        "checked_at": true,
+        "latest": null,
+        "error": "could not reach the release server (HTTP Error 500: Internal Server Error)"
+      },
+      "second": {
+        "current": "2026.11.46",
+        "latest": "",
+        "update_available": false,
+        "name": "",
+        "url": "https://github.com/M-BSquared/CorvusGCS/releases",
+        "published": "",
+        "notes": "",
+        "assets": [],
+        "checked_at": true,
+        "error": "could not reach the release server (HTTP Error 500: Internal Server Error)"
+      },
+      "cached": {
+        "current": "2026.11.46",
+        "latest": "",
+        "update_available": false,
+        "name": "",
+        "url": "https://github.com/M-BSquared/CorvusGCS/releases",
+        "published": "",
+        "notes": "",
+        "assets": [],
+        "checked_at": true,
+        "error": "could not reach the release server (HTTP Error 500: Internal Server Error)"
+      }
+    },
+    {
+      "scenario": {
+        "name": "too large",
+        "status": 200,
+        "body": null
+      },
+      "first": {
+        "current": "2026.11.46",
+        "latest": "",
+        "update_available": false,
+        "name": "",
+        "url": "https://github.com/M-BSquared/CorvusGCS/releases",
+        "published": "",
+        "notes": "",
+        "assets": [],
+        "checked_at": true,
+        "error": "the release list was unexpectedly large"
+      },
+      "cache": {
+        "checked_at": true,
+        "latest": null,
+        "error": "the release list was unexpectedly large"
+      },
+      "second": {
+        "current": "2026.11.46",
+        "latest": "",
+        "update_available": false,
+        "name": "",
+        "url": "https://github.com/M-BSquared/CorvusGCS/releases",
+        "published": "",
+        "notes": "",
+        "assets": [],
+        "checked_at": true,
+        "error": "the release list was unexpectedly large"
+      },
+      "cached": {
+        "current": "2026.11.46",
+        "latest": "",
+        "update_available": false,
+        "name": "",
+        "url": "https://github.com/M-BSquared/CorvusGCS/releases",
+        "published": "",
+        "notes": "",
+        "assets": [],
+        "checked_at": true,
+        "error": "the release list was unexpectedly large"
+      }
+    }
+  ],
+  "stale": [
+    [
+      {},
+      true
+    ],
+    [
+      {
+        "checked_at": "x"
+      },
+      true
+    ],
+    [
+      {
+        "checked_at": 2000.0,
+        "latest": {
+          "a": 1
+        }
+      },
+      true
+    ],
+    [
+      {
+        "checked_at": -20600.0,
+        "latest": {
+          "a": 1
+        }
+      },
+      true
+    ],
+    [
+      {
+        "checked_at": -20599.0,
+        "latest": {
+          "a": 1
+        }
+      },
+      false
+    ],
+    [
+      {
+        "checked_at": 100.0
+      },
+      true
+    ],
+    [
+      {
+        "checked_at": 101.0
+      },
+      false
+    ],
+    [
+      {
+        "checked_at": 100.0,
+        "latest": {}
+      },
+      true
+    ]
+  ],
+  "intervals": [
+    21600.0,
+    900.0
+  ]
+}

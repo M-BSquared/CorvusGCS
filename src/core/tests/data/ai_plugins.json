@@ -1,0 +1,483 @@
+{
+  "tree": {
+    "bundled/alpha/plugin.json": "{\"id\": \"alpha\", \"name\": \"Alpha\", \"order\": 20, \"icon\": \"bolt\", \"description\": \" first \", \"version\": \"1.0.0\", \"author\": \"A\", \"scripts\": [\"alpha.js\"], \"styles\": [\"alpha.css\"]}",
+    "bundled/alpha/alpha.js": "a",
+    "bundled/alpha/alpha.css": "a",
+    "bundled/beta/plugin.json": "{\"name\": \"Beta\", \"order\": 20}",
+    "bundled/beta/beta.js": "b",
+    "bundled/gamma/plugin.json": "{not json",
+    "bundled/gamma/gamma.js": "g",
+    "bundled/delta/plugin.json": "{\"id\": \"bad id\", \"scripts\": [\"d.js\"]}",
+    "bundled/delta/d.js": "d",
+    "bundled/eps/plugin.json": "{\"id\": \"eps\", \"scripts\": [\"missing.js\"]}",
+    "bundled/zeta/plugin.json": "{\"id\": \"zeta\", \"name\": \"  \", \"order\": 5.7, \"icon\": \"\", \"scripts\": [\"./a.js\", \"a.js\", \"../outside.js\", \"/abs.js\", \"sub/b.js\", \"c.exe\", \"sub\\\\b.js\", 5, \"\", \"sub/../a.js\", \".dot.js\", \"./sub/b.js\"], \"styles\": [\"s.css\", \"nope.css\"]}",
+    "bundled/zeta/a.js": "a",
+    "bundled/zeta/s.css": "s",
+    "bundled/zeta/sub/b.js": "b",
+    "bundled/zeta/c.exe": "c",
+    "bundled/zeta/.dot.js": "d",
+    "bundled/outside.js": "o",
+    "bundled/.hid/plugin.json": "{\"id\": \"hid\", \"scripts\": [\"h.js\"]}",
+    "bundled/.hid/h.js": "h",
+    "bundled/stray.txt": "not a folder",
+    "bundled/eta/plugin.json": "{\"id\": \"eta\", \"name\": \"eta\", \"order\": true, \"scripts\": [\"eta.js\"]}",
+    "bundled/eta/eta.js": "e",
+    "bundled/theta/plugin.json": "{\"id\": \"theta-id\", \"name\": \"Theta\", \"order\": \"3\", \"scripts\": [\"x.js\"]}",
+    "bundled/theta/x.js": "t",
+    "bundled/iota/plugin.json": "[1, 2]",
+    "bundled/iota/iota.js": "i",
+    "bundled/über/plugin.json": "{\"name\": \"\\u00dcber\", \"scripts\": [\"u.js\"]}",
+    "bundled/über/u.js": "u",
+    "user/alpha/plugin.json": "{\"id\": \"alpha\", \"name\": \"Alpha (mine)\", \"order\": 1, \"scripts\": [\"mine.js\"]}",
+    "user/alpha/mine.js": "m",
+    "user/alpha/config.json": "{}",
+    "user/Omega/plugin.json": "{\"name\": \"omega\", \"order\": 20, \"scripts\": [\"o.js\"]}",
+    "user/Omega/o.js": "o",
+    "user/B/plugin.json": "{\"name\": \"b\", \"order\": 20, \"scripts\": [\"b.js\"]}",
+    "user/B/b.js": "b",
+    "user/only-config/config.json": "{}",
+    "user/.staged/plugin.json": "{\"id\": \"staged\", \"scripts\": [\"s.js\"]}",
+    "user/.staged/s.js": "s"
+  },
+  "discover": [
+    {
+      "id": "alpha",
+      "name": "Alpha (mine)",
+      "order": 1,
+      "icon": "puzzle",
+      "description": "",
+      "version": "",
+      "author": "",
+      "scripts": [
+        "mine.js"
+      ],
+      "styles": [],
+      "source": "user",
+      "dir": "user/alpha"
+    },
+    {
+      "id": "zeta",
+      "name": "zeta",
+      "order": 5,
+      "icon": "puzzle",
+      "description": "",
+      "version": "",
+      "author": "",
+      "scripts": [
+        "a.js",
+        "sub/b.js",
+        "sub/../a.js",
+        ".dot.js"
+      ],
+      "styles": [
+        "s.css"
+      ],
+      "source": "bundled",
+      "dir": "bundled/zeta"
+    },
+    {
+      "id": "B",
+      "name": "b",
+      "order": 20,
+      "icon": "puzzle",
+      "description": "",
+      "version": "",
+      "author": "",
+      "scripts": [
+        "b.js"
+      ],
+      "styles": [],
+      "source": "user",
+      "dir": "user/B"
+    },
+    {
+      "id": "beta",
+      "name": "Beta",
+      "order": 20,
+      "icon": "puzzle",
+      "description": "",
+      "version": "",
+      "author": "",
+      "scripts": [
+        "beta.js"
+      ],
+      "styles": [],
+      "source": "bundled",
+      "dir": "bundled/beta"
+    },
+    {
+      "id": "Omega",
+      "name": "omega",
+      "order": 20,
+      "icon": "puzzle",
+      "description": "",
+      "version": "",
+      "author": "",
+      "scripts": [
+        "o.js"
+      ],
+      "styles": [],
+      "source": "user",
+      "dir": "user/Omega"
+    },
+    {
+      "id": "eta",
+      "name": "eta",
+      "order": 100,
+      "icon": "puzzle",
+      "description": "",
+      "version": "",
+      "author": "",
+      "scripts": [
+        "eta.js"
+      ],
+      "styles": [],
+      "source": "bundled",
+      "dir": "bundled/eta"
+    },
+    {
+      "id": "theta-id",
+      "name": "Theta",
+      "order": 100,
+      "icon": "puzzle",
+      "description": "",
+      "version": "",
+      "author": "",
+      "scripts": [
+        "x.js"
+      ],
+      "styles": [],
+      "source": "bundled",
+      "dir": "bundled/theta"
+    }
+  ],
+  "public": [
+    {
+      "id": "alpha",
+      "name": "Alpha (mine)",
+      "order": 1,
+      "icon": "puzzle",
+      "description": "",
+      "version": "",
+      "author": "",
+      "scripts": [
+        "mine.js"
+      ],
+      "styles": [],
+      "source": "user"
+    },
+    {
+      "id": "zeta",
+      "name": "zeta",
+      "order": 5,
+      "icon": "puzzle",
+      "description": "",
+      "version": "",
+      "author": "",
+      "scripts": [
+        "a.js",
+        "sub/b.js",
+        "sub/../a.js",
+        ".dot.js"
+      ],
+      "styles": [
+        "s.css"
+      ],
+      "source": "bundled"
+    },
+    {
+      "id": "B",
+      "name": "b",
+      "order": 20,
+      "icon": "puzzle",
+      "description": "",
+      "version": "",
+      "author": "",
+      "scripts": [
+        "b.js"
+      ],
+      "styles": [],
+      "source": "user"
+    },
+    {
+      "id": "beta",
+      "name": "Beta",
+      "order": 20,
+      "icon": "puzzle",
+      "description": "",
+      "version": "",
+      "author": "",
+      "scripts": [
+        "beta.js"
+      ],
+      "styles": [],
+      "source": "bundled"
+    },
+    {
+      "id": "Omega",
+      "name": "omega",
+      "order": 20,
+      "icon": "puzzle",
+      "description": "",
+      "version": "",
+      "author": "",
+      "scripts": [
+        "o.js"
+      ],
+      "styles": [],
+      "source": "user"
+    },
+    {
+      "id": "eta",
+      "name": "eta",
+      "order": 100,
+      "icon": "puzzle",
+      "description": "",
+      "version": "",
+      "author": "",
+      "scripts": [
+        "eta.js"
+      ],
+      "styles": [],
+      "source": "bundled"
+    },
+    {
+      "id": "theta-id",
+      "name": "Theta",
+      "order": 100,
+      "icon": "puzzle",
+      "description": "",
+      "version": "",
+      "author": "",
+      "scripts": [
+        "x.js"
+      ],
+      "styles": [],
+      "source": "bundled"
+    }
+  ],
+  "find_dir": {
+    "alpha": "user/alpha",
+    "zeta": "bundled/zeta",
+    "beta": "bundled/beta",
+    "gamma": null,
+    "hid": null,
+    "staged": null,
+    "theta-id": "bundled/theta",
+    "theta": null,
+    "../x": null,
+    "": null,
+    "nope": null,
+    "Omega": "user/Omega",
+    "alpha\n": null
+  },
+  "assets": [
+    [
+      "a.js",
+      "a.js"
+    ],
+    [
+      "./a.js",
+      "a.js"
+    ],
+    [
+      "sub/b.js",
+      "sub/b.js"
+    ],
+    [
+      "sub\\b.js",
+      null
+    ],
+    [
+      "../outside.js",
+      null
+    ],
+    [
+      "/abs.js",
+      null
+    ],
+    [
+      "C:/x.js",
+      null
+    ],
+    [
+      "c.exe",
+      null
+    ],
+    [
+      "s.css",
+      "s.css"
+    ],
+    [
+      "sub",
+      null
+    ],
+    [
+      "",
+      null
+    ],
+    [
+      "nope.js",
+      null
+    ],
+    [
+      ".dot.js",
+      ".dot.js"
+    ],
+    [
+      "sub/../a.js",
+      "a.js"
+    ],
+    [
+      "a.js/",
+      "a.js"
+    ],
+    [
+      "a\u0000.js",
+      null
+    ],
+    [
+      "A.JS",
+      "A.JS"
+    ],
+    [
+      "x:y",
+      null
+    ]
+  ],
+  "ids": [
+    [
+      "a",
+      true
+    ],
+    [
+      "a.b-c_d",
+      true
+    ],
+    [
+      "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      true
+    ],
+    [
+      "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      false
+    ],
+    [
+      "",
+      false
+    ],
+    [
+      ".a",
+      false
+    ],
+    [
+      "-a",
+      false
+    ],
+    [
+      "a b",
+      false
+    ],
+    [
+      "a/b",
+      false
+    ],
+    [
+      "a\n",
+      true
+    ],
+    [
+      "a\n\n",
+      false
+    ],
+    [
+      "é",
+      false
+    ]
+  ],
+  "bundled_only": [
+    {
+      "id": "zeta",
+      "name": "zeta",
+      "order": 5,
+      "icon": "puzzle",
+      "description": "",
+      "version": "",
+      "author": "",
+      "scripts": [
+        "a.js",
+        "sub/b.js",
+        "sub/../a.js",
+        ".dot.js"
+      ],
+      "styles": [
+        "s.css"
+      ],
+      "source": "bundled",
+      "dir": "bundled/zeta"
+    },
+    {
+      "id": "alpha",
+      "name": "Alpha",
+      "order": 20,
+      "icon": "bolt",
+      "description": "first",
+      "version": "1.0.0",
+      "author": "A",
+      "scripts": [
+        "alpha.js"
+      ],
+      "styles": [
+        "alpha.css"
+      ],
+      "source": "bundled",
+      "dir": "bundled/alpha"
+    },
+    {
+      "id": "beta",
+      "name": "Beta",
+      "order": 20,
+      "icon": "puzzle",
+      "description": "",
+      "version": "",
+      "author": "",
+      "scripts": [
+        "beta.js"
+      ],
+      "styles": [],
+      "source": "bundled",
+      "dir": "bundled/beta"
+    },
+    {
+      "id": "eta",
+      "name": "eta",
+      "order": 100,
+      "icon": "puzzle",
+      "description": "",
+      "version": "",
+      "author": "",
+      "scripts": [
+        "eta.js"
+      ],
+      "styles": [],
+      "source": "bundled",
+      "dir": "bundled/eta"
+    },
+    {
+      "id": "theta-id",
+      "name": "Theta",
+      "order": 100,
+      "icon": "puzzle",
+      "description": "",
+      "version": "",
+      "author": "",
+      "scripts": [
+        "x.js"
+      ],
+      "styles": [],
+      "source": "bundled",
+      "dir": "bundled/theta"
+    }
+  ],
+  "readme": "# Corvus GCS plugins\n\nDrop one folder per plugin into this directory, then press Reload plugins\nin Settings > Plugins (or restart Corvus).\n\n    plugins/\n      my-plugin/\n        plugin.json\n        my-plugin.js\n        my-plugin.css      (optional)\n        lang/de.json       (optional, translations of the plugin's own texts)\n\n`plugin.json` describes the plugin:\n\n    {\n      \"id\": \"my-plugin\",\n      \"name\": \"My Plugin\",\n      \"icon\": \"puzzle\",\n      \"description\": \"What it does, one line.\",\n      \"version\": \"1.0.0\",\n      \"author\": \"Your name\",\n      \"order\": 100,\n      \"scripts\": [\"my-plugin.js\"],\n      \"styles\": [\"my-plugin.css\"]\n    }\n\n`icon` is a Lucide icon name (https://lucide.dev). `id` defaults to the folder\nname; `scripts` defaults to `<id>.js`. `order` decides where the card sits in\nthe grid (lower is earlier, default 100); ties are broken by name.\n\nEach script registers the plugin when it loads:\n\n    Corvus.plugins.register(\"my-plugin\", {\n      name: \"My Plugin\",\n      icon: \"puzzle\",\n      description: \"What it does, one line.\",\n      init: function (containerEl, api) { /* build your UI */ },\n      destroy: function (containerEl) { /* tear it down again */ },\n    });\n\nMore keys are optional. `start: function (api) { ... }` runs once when Corvus\nstarts (and after Reload plugins), whether or not the plugin is opened (to put\na saved line back on the map, say). `tab: true` lets it have a tab of its own\nin the side panel, switched on with \"Own tab\" in its settings; otherwise it is\na card like any other, so it has to work as both. `options: [...]` gives it\nsettings, opened from its gear in Settings > Plugins:\n\n    options: [\n      { key: \"labels\", label: \"Show labels\", type: \"toggle\", default: true },\n      { key: \"units\", label: \"Units\", type: \"select\", default: \"m\",\n        choices: [{ value: \"m\", label: \"Metres\" }, { value: \"ft\", label: \"Feet\" }] },\n    ],\n    optionsChanged: function (options, api) { /* follow the new values */ },\n\nThe types are toggle, select, text and number; read them with\n`api.getOptions()`.\n\n`api.map` draws on the Home map. Lines and areas lie under the flown track:\n`api.map.drawLine(key, [[lng, lat], ...], {color, width, dashed})`,\n`api.map.drawPolygon(key, [[lng, lat], ...], {color, fillOpacity, width})`\n(the area the points span) and `api.map.drawCircle(key, [lng, lat], metres,\nopts)`. `api.map.drawText(key, [lng, lat], \"text\", {color, size, dot})` puts a\nlabel there. `api.map.drawButton(key, [lng, lat], \"label\", {onClick, title, color, size, disabled})`\nputs a clickable button there. `api.map.drawMarker(key, [lng, lat], {icon, label, color, size, selected, draggable, onClick, onDrag, onDragEnd})`\nputs a round icon badge there (`icon` is a symbol name from `api.map.icons()`,\nsuch as \"tree\", or your own SVG path strings on a 24 by 24 grid).\n`api.map.pickPoint(onPick, {onCancel})` waits for one click on the map and\n`api.map.track()` returns the track flown so far. `api.map.remove(key)`, `api.map.setVisible(key, on)`,\n`api.map.fit(coords)` and `api.map.colors` for the colours to offer. The keys\nare the plugin's own.\n\nWhatever a plugin saves through `api.saveSettings` is written to\n`<id>/config.json` in this folder, one file per plugin and separate from the\napplication's own config. To set up another computer the same way, copy that\nfile (or the whole plugin folder) to the same place there and restart. This\nworks for the plugins that ship with Corvus too: their folder here holds only\nthe config. Settings > Export and import does the same in one file: switch on a\nplugin's Settings, and for a plugin of your own its Files, and an import on\nthe other computer puts them here.\n\n`api` is documented at the top of `src/js/plugins.js`. The plugins shipped in\nthe application's own `plugins/` folder are complete worked examples:\n`ssh-launcher` for a form, saved settings, a backend call and a terminal,\n`vibration` for a live chart on the telemetry stream. Two more are installed\ninto this folder from their own repositories: the Trajectory Viewer\n(https://github.com/M-BSquared/corvus-trajectory-viewer) for reading a file, a start hook and a line on the map,\nand the NuttX Console (https://github.com/M-BSquared/corvus-nuttx-console) for a tab of its own and a\nstream from `/api/events`. Copy one and start from there.\n\nA plugin may keep its own tests in a `tests/` folder beside its files. Corvus\nnever loads them; the Plugins page of the guide says how to run them.\n"
+}
