@@ -335,12 +335,119 @@ def tile_math_cases() -> None:
     })
 
 
+def _png_with_filters(width: int, height: int, rows: list[list[int]], colour: int, kinds: list[int]) -> bytes:
+    """A PNG whose scanlines use the given filter kinds (for the decoder)."""
+    import struct
+    import zlib
+    bpp = 3 if colour == 2 else 4
+    stride = width * bpp
+    raw = bytearray()
+    prev = [0] * stride
+    for r, kind in zip(rows, kinds):
+        out = []
+        for i, v in enumerate(r):
+            a = r[i - bpp] if i >= bpp else 0
+            b = prev[i]
+            c = prev[i - bpp] if i >= bpp else 0
+            if kind == 0:
+                f = v
+            elif kind == 1:
+                f = v - a
+            elif kind == 2:
+                f = v - b
+            elif kind == 3:
+                f = v - ((a + b) >> 1)
+            else:
+                p = a + b - c
+                pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
+                pr = a if pa <= pb and pa <= pc else (b if pb <= pc else c)
+                f = v - pr
+            out.append(f & 255)
+        raw.append(kind)
+        raw.extend(out)
+        prev = r
+
+    def chunk(kind: bytes, body: bytes) -> bytes:
+        return (struct.pack(">I", len(body)) + kind + body
+                + struct.pack(">I", zlib.crc32(kind + body) & 0xFFFFFFFF))
+
+    header = struct.pack(">IIBBBBB", width, height, 8, colour, 0, 0, 0)
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header)
+            + chunk(b"IDAT", zlib.compress(bytes(raw))) + chunk(b"IEND", b""))
+
+
+def dem_tiles_cases() -> None:
+    import random
+    from array import array
+    from corvus import dem_tiles as d
+
+    def grid_of(values):
+        return list(values)
+
+    rnd = random.Random(7)
+    size = 8
+
+    def tile(base: int, slope: int) -> bytes:
+        vals = array(d._U32, [32768 * 256 + base + slope * (r * size + c) + rnd.randrange(0, 40)
+                              for r in range(size) for c in range(size)])
+        return d.encode(size, size, vals)
+
+    decode_cases = []
+    for colour in (2, 6):
+        bpp = 3 if colour == 2 else 4
+        for kinds in ([0] * 4, [1] * 4, [2] * 4, [3] * 4, [4] * 4, [1, 2, 3, 4], [4, 3, 2, 1]):
+            rows = [[rnd.randrange(256) for _ in range(4 * bpp)] for _ in range(4)]
+            png = _png_with_filters(4, 4, rows, colour, kinds)
+            g = d.decode(png)
+            decode_cases.append({"png": _b64(png), "width": g.width, "height": g.height,
+                                 "values": list(g.values)})
+    bad = []
+    good = tile(1000, 3)
+    for name, blob in [("empty", b""), ("magic", b"\x89PNG\r\n\x1a\nxx"), ("text", b"hello"),
+                       ("truncated", good[:40]), ("noidat", good[:33] + good[-12:])]:
+        bad.append({"name": name, "png": _b64(blob), "decoded": d.decode(blob) is not None})
+    anc = tile(5000, 7)
+    overzoom = []
+    for dz, sx, sy in [(1, 0, 0), (1, 1, 1), (2, 3, 0), (2, 1, 2), (3, 5, 6), (3, 0, 7), (0, 0, 0), (1, 2, 0), (2, -1, 0)]:
+        out = d.overzoom(anc, dz, sx, sy)
+        overzoom.append({"dz": dz, "x": sx, "y": sy,
+                         "values": None if out is None else list(d.decode(out).values)})
+    trans = []
+    for a, b, sz in [("terrarium", "mapbox", 4), ("mapbox", "terrarium", 8), ("terrarium", "terrarium", 16),
+                     ("terrarium", "nope", 4), ("terrarium", "mapbox", 1)]:
+        out = d.transcode(anc, a, b, sz)
+        trans.append({"from": a, "to": b, "size": sz,
+                      "values": None if out is None else list(d.decode(out).values)})
+    heights = []
+    for enc, dz, sx, sy, sz in [("terrarium", 0, 0, 0, None), ("mapbox", 1, 1, 0, None), ("terrarium", 2, 3, 3, 4),
+                                ("nope", 0, 0, 0, None)]:
+        h = d.heights(anc, enc, dz, sx, sy, sz)
+        heights.append({"enc": enc, "dz": dz, "x": sx, "y": sy, "size": sz, "values": h})
+    eh = [float(v) * 1.37 - 40 for v in range(16)]
+    enc_heights = {"values": eh, "terrarium": list(d.decode(d.encode_heights(4, eh, "terrarium")).values),
+                   "mapbox": list(d.decode(d.encode_heights(4, eh, "mapbox")).values)}
+    store = {(0, 0, 0): tile(3000, 2), (3, 2, 2): tile(6000, 5), (3, 3, 2): tile(6500, 1), (2, 3, 3): tile(2000, 9)}
+    fall = d.DemFallback()
+    requests = []
+    for z, x, y in [(1, 0, 0), (1, 1, 1), (3, 2, 3), (3, 3, 3), (3, 4, 2), (3, 1, 2), (4, 5, 4), (4, 4, 4),
+                    (4, 5, 5), (2, 0, 0), (2, 3, 3), (0, 0, 0), (5, 0, 0)]:
+        out = fall.tile("src", z, x, y, lambda a, b, c: store.get((a, b, c)))
+        requests.append({"z": z, "x": x, "y": y,
+                         "values": None if out is None else list(d.decode(out).values)})
+    write("mapdata_dem_tiles_cases.json", {
+        "decode": decode_cases, "bad": bad, "size": size, "ancestor": _b64(anc),
+        "overzoom": overzoom, "transcode": trans, "heights": heights, "encode_heights": enc_heights,
+        "store": [{"z": k[0], "x": k[1], "y": k[2], "png": _b64(v)} for k, v in store.items()],
+        "fallback": requests})
+
+
 SECTIONS = {
     "tile_math": tile_math_cases,
     "tile_sources": tile_sources_cases,
     "tile_cache": tile_cache_cases,
     "crs": crs_cases,
     "geocode": geocode_cases,
+    "dem_tiles": dem_tiles_cases,
 }
 
 

@@ -5,6 +5,7 @@
 //! and `routes/dem.py` of the Python program).
 
 pub mod crs;
+pub mod dem_tiles;
 pub mod fetch;
 pub mod geocode;
 pub mod tile_cache;
