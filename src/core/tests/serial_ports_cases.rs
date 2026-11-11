@@ -48,6 +48,17 @@ fn the_serial_port_classification_answers_like_python() {
         let (device, baud) = split_serial_connection(&s(&c[0]));
         check(format!("split {}", c[0]), json!([device, baud]), &c[1]);
     }
+    for c in data["options"].as_array().unwrap() {
+        let conn = s(&c[0]);
+        let o = parse_serial_options(&conn);
+        check(
+            format!("options {conn}"),
+            json!([o.dtr, o.rts, o.firmware, o.link, o.sets_lines(), serial_query(&o)]),
+            &c[1],
+        );
+        let verdict = validate_serial_options(&conn).err().map_or(Json::Null, Json::from);
+        check(format!("validate {conn}"), verdict, &c[2]);
+    }
     for c in data["same"].as_array().unwrap() {
         check(
             format!("same {} {}", c[0], c[1]),

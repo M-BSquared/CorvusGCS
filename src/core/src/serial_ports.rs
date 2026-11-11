@@ -154,7 +154,136 @@ pub fn classify_serial_device(device: &str, hwid: &str, description: &str) -> &'
     "unknown"
 }
 
-/// `serial:<device>[:<baud>]` as `(device, baud)`. Never fails.
+pub const SERIAL_LINES: [&str; 3] = ["on", "off", "default"];
+pub const SERIAL_FIRMWARE_HINTS: [&str; 1] = ["betaflight"];
+pub const SERIAL_LINKS: [&str; 1] = ["elrs"];
+
+/// What a `serial:` string says beyond the device and the baud.
+///
+/// `dtr` and `rts` are the control lines held while the port is open: true
+/// asserts, false releases, None leaves them to the system. `firmware` names a
+/// flight controller whose heartbeat does not say what it is, `link` the radio
+/// the port belongs to. Both are hints; a heartbeat that names its autopilot
+/// wins over them.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SerialOptions {
+    pub dtr: Option<bool>,
+    pub rts: Option<bool>,
+    pub firmware: String,
+    pub link: String,
+}
+
+impl SerialOptions {
+    /// True when a control line has to be held, so the plain opener will not do.
+    pub fn sets_lines(&self) -> bool {
+        self.dtr.is_some() || self.rts.is_some()
+    }
+}
+
+/// The text before the first `?`.
+pub fn connection_base(conn: &str) -> &str {
+    conn.split_once('?').map_or(conn, |(base, _)| base)
+}
+
+fn parse_query(conn: &str) -> Vec<(String, String)> {
+    let query = conn.split_once('?').map_or("", |(_, q)| q);
+    let mut pairs: Vec<(String, String)> = Vec::new();
+    for part in query.split('&') {
+        let (key, value) = part.split_once('=').unwrap_or((part, ""));
+        let key = py_strip_lower(key);
+        if key.is_empty() {
+            continue;
+        }
+        let value = py_strip_lower(value);
+        match pairs.iter_mut().find(|(k, _)| *k == key) {
+            Some(slot) => slot.1 = value,
+            None => pairs.push((key, value)),
+        }
+    }
+    pairs
+}
+
+fn py_strip_lower(text: &str) -> String {
+    text.trim().to_lowercase()
+}
+
+fn pair<'a>(pairs: &'a [(String, String)], key: &str) -> Option<&'a str> {
+    pairs.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str())
+}
+
+fn line_state(value: Option<&str>) -> Option<bool> {
+    match value {
+        Some("on") => Some(true),
+        Some("off") => Some(false),
+        _ => None,
+    }
+}
+
+/// The options of `serial:<device>:<baud>?dtr=off&rts=off&fc=betaflight`.
+/// Never fails: a value that is not understood is dropped.
+pub fn parse_serial_options(conn: &str) -> SerialOptions {
+    let pairs = parse_query(conn);
+    let firmware = pair(&pairs, "fc").unwrap_or("");
+    let link = pair(&pairs, "link").unwrap_or("");
+    SerialOptions {
+        dtr: line_state(pair(&pairs, "dtr")),
+        rts: line_state(pair(&pairs, "rts")),
+        firmware: if SERIAL_FIRMWARE_HINTS.contains(&firmware) {
+            firmware.to_string()
+        } else {
+            String::new()
+        },
+        link: if SERIAL_LINKS.contains(&link) {
+            link.to_string()
+        } else {
+            String::new()
+        },
+    }
+}
+
+/// The strict reading: why an option value would be ignored, or Ok.
+pub fn validate_serial_options(conn: &str) -> Result<(), String> {
+    let pairs = parse_query(conn);
+    for key in ["dtr", "rts"] {
+        if let Some(v) = pair(&pairs, key) {
+            if !SERIAL_LINES.contains(&v) {
+                return Err(format!("{key} must be one of: {}", SERIAL_LINES.join(", ")));
+            }
+        }
+    }
+    let fc = pair(&pairs, "fc").unwrap_or("");
+    if !fc.is_empty() && !SERIAL_FIRMWARE_HINTS.contains(&fc) {
+        return Err(format!("fc must be one of: {}", SERIAL_FIRMWARE_HINTS.join(", ")));
+    }
+    let link = pair(&pairs, "link").unwrap_or("");
+    if !link.is_empty() && !SERIAL_LINKS.contains(&link) {
+        return Err(format!("link must be one of: {}", SERIAL_LINKS.join(", ")));
+    }
+    Ok(())
+}
+
+/// The `?...` tail for `options`, empty when there is nothing to say.
+pub fn serial_query(options: &SerialOptions) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    if !options.link.is_empty() {
+        parts.push(format!("link={}", options.link));
+    }
+    for (key, state) in [("dtr", options.dtr), ("rts", options.rts)] {
+        if let Some(on) = state {
+            parts.push(format!("{key}={}", if on { "on" } else { "off" }));
+        }
+    }
+    if !options.firmware.is_empty() {
+        parts.push(format!("fc={}", options.firmware));
+    }
+    if parts.is_empty() {
+        String::new()
+    } else {
+        format!("?{}", parts.join("&"))
+    }
+}
+
+/// `serial:<device>[:<baud>][?options]` as `(device, baud)`. Never fails.
 pub fn split_serial_connection(conn: &str) -> (String, u32) {
     crate::bridge::split_serial_connection(conn)
 }
@@ -249,7 +378,15 @@ fn glob_devices() -> Vec<PortRow> {
     };
     scan(
         "/dev",
-        &["ttyUSB", "ttyACM", "cu.usbmodem", "cu.usbserial", "cu.SLAB_"],
+        &[
+            "ttyUSB",
+            "ttyACM",
+            "cu.usbmodem",
+            "cu.usbserial",
+            "cu.SLAB_",
+            "rfcomm",
+            "cu.HC-",
+        ],
         &mut devices,
     );
     scan("/dev/serial/by-id", &[], &mut devices);

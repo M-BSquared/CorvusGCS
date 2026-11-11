@@ -26,7 +26,7 @@ use corvus_link::plain::{Message, Value as Wv};
 use serde_json::{json, Map, Value};
 
 use crate::clock;
-use crate::dialect::{dialect_for_id, dialect_for_stack, Dialect, ModeCommand, Stack};
+use crate::dialect::{dialect_for_id_hinted, dialect_for_stack, Dialect, ModeCommand, Stack};
 use crate::fleet::FleetTracker;
 use crate::priority_lock::PriorityLock;
 use crate::protocol::flight::{FlightEngine, FlightHost, FlightSnapshot};
@@ -82,6 +82,7 @@ impl BridgeConfig {
 /// `serial:<device>[:<baud>]` as `(device, baud)`. The baud is the last field
 /// only when it is all digits, so a device name with a colon in it keeps it.
 pub fn split_serial_connection(conn: &str) -> (String, u32) {
+    let conn = crate::serial_ports::connection_base(conn);
     let rest = conn.strip_prefix("serial:").unwrap_or(conn);
     if let Some((device, baud)) = rest.rsplit_once(':') {
         if !baud.is_empty() && baud.bytes().all(|b| b.is_ascii_digit()) {
@@ -115,6 +116,7 @@ pub fn validate_connection(connection: &str) -> Result<(), String> {
         if baud == 0 {
             return Err("serial connection requires a numeric baud rate".into());
         }
+        crate::serial_ports::validate_serial_options(connection)?;
     }
     Ok(())
 }
@@ -753,6 +755,9 @@ impl Shared {
         let device = if self.is_serial() {
             let (device, baud) = split_serial_connection(&conn_str);
             opts.baud = baud;
+            let held = crate::serial_ports::parse_serial_options(&conn_str);
+            opts.dtr = held.dtr;
+            opts.rts = held.rts;
             device
         } else {
             conn_str.clone()
@@ -1445,7 +1450,7 @@ impl FlightHost for Shared {
         !self.st().mode_values.is_empty()
     }
     fn modes_unsupported(&self) -> bool {
-        self.st().dialect.stack() == Stack::Generic
+        matches!(self.st().dialect.stack(), Stack::Generic | Stack::Betaflight)
     }
     fn home_alt_amsl(&self) -> Option<f64> {
         self.st().home_alt
@@ -1559,8 +1564,14 @@ impl ReceiveHost for Shared {
         self.st().dialect
     }
     fn latch_dialect(&self, autopilot: i64, mav_type: i64) -> bool {
+        let conn = self.connection();
         let mut st = self.st();
-        let dialect = dialect_for_id(autopilot);
+        let hint = if conn.starts_with("serial:") {
+            crate::serial_ports::parse_serial_options(&conn).firmware
+        } else {
+            String::new()
+        };
+        let dialect = dialect_for_id_hinted(autopilot, &hint);
         let changed = dialect != st.dialect || mav_type != st.mav_type;
         if dialect != st.dialect {
             // Another stack's release number says nothing about this one.
@@ -2717,6 +2728,13 @@ mod tests {
         );
         assert!(validate_connection("serial:/dev/ttyUSB0:57600").is_ok());
         assert!(validate_connection("udpin:0.0.0.0:14550").is_ok());
+        let elrs = "serial:/dev/ttyUSB0:460800?link=elrs&dtr=off&rts=off&fc=betaflight";
+        assert!(validate_connection(elrs).is_ok());
+        assert_eq!(split_serial_connection(elrs), ("/dev/ttyUSB0".to_string(), 460_800));
+        assert_eq!(
+            validate_connection("serial:/dev/ttyUSB0:460800?rts=sometimes"),
+            Err("rts must be one of: on, off, default".into())
+        );
     }
 
     #[test]

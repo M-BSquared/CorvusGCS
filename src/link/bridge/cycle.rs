@@ -108,16 +108,18 @@ impl LinkCycle {
         let system = self.constant(py, "GCS_SYSTEM_ID")?.unbind();
         let component = self.constant(py, "GCS_COMPONENT_ID")?.unbind();
         if truthy(bridge, "_is_serial")? {
+            let env = self.env(py);
             let parsed = bridge.call_method1("_parse_serial", (bridge.getattr("_conn_str")?,))?;
-            let kwargs = kw(
-                py,
-                &[
-                    ("baud", parsed.get_item(1)?.unbind()),
-                    ("source_system", system),
-                    ("source_component", component),
-                ],
-            )?;
-            mavutil.call_method("mavlink_connection", (parsed.get_item(0)?,), Some(&kwargs))
+            let options = env
+                .getattr("parse_serial_options")?
+                .call1((bridge.getattr("_conn_str")?,))?;
+            env.getattr("open_serial_link")?.call1((
+                parsed.get_item(0)?,
+                parsed.get_item(1)?,
+                options,
+                system,
+                component,
+            ))
         } else {
             let kwargs = kw(
                 py,

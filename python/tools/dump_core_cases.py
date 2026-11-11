@@ -781,8 +781,8 @@ def dialect_cases() -> None:
     from corvus import autopilot as ap
 
     stacks = {"px4": ap.dialect_for_stack("px4"), "ardupilot": ap.dialect_for_stack("ardupilot"),
-              "generic": ap.dialect_for_stack("generic")}
-    ids: list[object] = [-1, 0, 1, 3, 12, 13, 255, "px4", " PX4 ", "ArduPilotMega", "apm", "arducopter",
+              "generic": ap.dialect_for_stack("generic"), "betaflight": ap.dialect_for_stack("betaflight")}
+    ids: list[object] = ["betaflight", " Betaflight ", -1, 0, 1, 3, 12, 13, 255, "px4", " PX4 ", "ArduPilotMega", "apm", "arducopter",
                          "arduplane", "ardupilot", "x", "", "Generic"]
     stack_ids = [[v, ap.stack_for_autopilot(v)] for v in ids]
     supported: dict[str, bool] = {}
@@ -791,7 +791,9 @@ def dialect_cases() -> None:
             firmware = _fw_parse(fw)
             supported[f"{name}|{fw}"] = ap.px4_mode_supported(name, firmware)
     classes = {str(m): [ap.vehicle_class(m), ap.is_ground_vehicle(m)] for m in DIALECT_MAV_TYPES + [-1]}
-    out: dict[str, object] = {"stack_ids": stack_ids, "px4_supported": supported, "classes": classes,
+    hints = [[a, h, ap.dialect_for(a, h).stack] for a in (0, 3, 8, 12, 99) for h in
+             ("", "betaflight", " BetaFlight ", "px4", "something")]
+    out: dict[str, object] = {"stack_ids": stack_ids, "hints": hints, "px4_supported": supported, "classes": classes,
                               "position_commands": sorted(ap.PLUGIN_POSITION_COMMANDS)}
     per: dict[str, object] = {}
     for key, d in stacks.items():
@@ -1233,8 +1235,25 @@ def serial_cases() -> None:
                        for dev in devices for h, d in ((h, descriptions[i % len(descriptions)]) for i, h in enumerate(hwids))]
     out["identity"] = [[h, S.usb_identity(h)] for h in hwids]
     conns = ["serial:/dev/ttyACM0:921600", "serial:/dev/ttyACM0", "serial:COM3:115200", "serial:", "serial:/dev/x:0", "serial:/dev/x:abc",
-             "serial:/dev/serial/by-path/pci-0:1.2:0", "serial:/dev/x:", "udp:1.2.3.4:5", "", "/dev/ttyUSB0:9600", "serial:/dev/x:+5"]
+             "serial:/dev/serial/by-path/pci-0:1.2:0", "serial:/dev/x:", "udp:1.2.3.4:5", "", "/dev/ttyUSB0:9600", "serial:/dev/x:+5",
+             "serial:/dev/ttyUSB0:460800?link=elrs&dtr=off&rts=off&fc=betaflight", "serial:COM7:460800?dtr=off",
+             "serial:COM7:9600?dtr=on", "serial:COM7:9600?dtr=maybe&fc=px4&link=wifi", "serial:COM7:9600?fc=px4",
+             "serial:COM7:9600?link=wifi", "serial:COM7:9600?rts=sometimes", "serial:COM7?DTR=Off&&=x&fc= Betaflight ",
+             "serial:COM7:9600?dtr=default&rts=default", "serial:COM7:9600?dtr=off&dtr=on", "serial:/dev/x?", "serial:/dev/x:57600?"]
     out["split"] = [[c, list(S.split_serial_connection(c))] for c in conns]
+
+    def _validate(c: str) -> object:
+        try:
+            S.validate_serial_options(c)
+        except ValueError as exc:
+            return str(exc)
+        return None
+
+    def _options(c: str) -> list:
+        o = S.parse_serial_options(c)
+        return [o.dtr, o.rts, o.firmware, o.link, o.sets_lines, S.serial_query(o)]
+
+    out["options"] = [[c, _options(c), _validate(c)] for c in conns]
     pairs = [("/dev/tty.usbmodem1", "/dev/cu.usbmodem1"), ("COM3", "\\\\.\\com3"), ("/nonexistent/a", "/NONEXISTENT/A"),
              ("/nonexistent/a", "/nonexistent/b"), ("", ""), ("COM3", "COM4"), ("/dev/cu.x", "/dev/tty.x"), ("/dev/cu.x", "/dev/cu.y")]
     out["same"] = [[a, b, S.same_port(a, b)] for a, b in pairs]
@@ -1242,6 +1261,148 @@ def serial_cases() -> None:
         ("/nonexistent/a", ["/nonexistent/a"]), ("/nonexistent/a", ["/nonexistent/b"]), ("", ["x"]), ("COM3", ["com3"]),
         ("COM9", []), ("/dev/null", []), ("/dev/tty.usbmodem1", ["/dev/cu.usbmodem1"]), ("  /nonexistent/a ", ["/nonexistent/a"])]]
     write("serial_ports_cases.json", out)
+
+
+def msp_cases() -> None:
+    import struct
+
+    from corvus import msp
+
+    def reply(command: int, payload: bytes = b"", error: bool = False) -> bytes:
+        body = bytes([len(payload), command]) + payload
+        checksum = 0
+        for byte in body:
+            checksum ^= byte
+        return (b"$M!" if error else b"$M>") + body + bytes([checksum])
+
+    out: dict[str, object] = {}
+    out["requests"] = [[c, p.hex(), build_hex(msp, c, p)] for c, p in
+                       [(1, b""), (112, b""), (255, b""), (10, b"abc"), (4, bytes(255)), (4, bytes(256)), (300, b""), (-1, b"")]]
+    good = reply(msp.MSP_FC_VARIANT, b"BTFL")
+    bad = bytearray(good)
+    bad[-1] ^= 0xFF
+    ver = reply(msp.MSP_FC_VERSION, bytes([4, 5, 1]))
+    streams = {
+        "split": [b"garbage$" + ver[:4], ver[4:]],
+        "badsum": [bytes(bad) + good],
+        "error": [reply(msp.MSP_NAME, b"", error=True)],
+        "mavlink": [bytes([0xFD, 0x09, 0x00, 0x00, 0x00, 0x01, 0x01]) * 10],
+        "byte_by_byte": [bytes([b]) for b in good + ver],
+        "dollar_tail": [b"xx$", b"M", b">\x00\x0a\x0a"],
+        "wrong_dir": [b"$M<\x00\x01\x01" + good],
+        "short": [b"$M>\x03"],
+        "noise_only": [b"abc", b"def$"],
+        "empty": [b""],
+    }
+    parsed = {}
+    for name, chunks in streams.items():
+        parser = msp.MspParser()
+        frames: list[list] = []
+        for chunk in chunks:
+            frames += [[f.command, f.payload.hex(), f.error] for f in parser.feed(chunk)]
+        parsed[name] = {"chunks": [c.hex() for c in chunks], "frames": frames,
+                        "ok": parser.frames_ok, "errors": parser.checksum_errors}
+    out["streams"] = parsed
+    payloads: dict[int, list[bytes]] = {
+        1: [b"", bytes([0, 1]), bytes([0, 1, 46]), bytes([1, 2, 3, 4])],
+        2: [b"", b"BTFL", b"INAV", b"ab", b"AB\x00CD", b"\xff\xfeXY", b"KISS", b" BT "],
+        3: [b"", bytes([4, 5]), bytes([4, 5, 1]), bytes([255, 255, 255, 9])],
+        4: [b"", bytes(5), b"S405" + struct.pack("<H", 7), b"S405" + struct.pack("<H", 0) + bytes([1, 0, 8]) + b"SPEEDYF4\x00",
+            b"S405" + struct.pack("<H", 0) + bytes([1, 0, 20]) + b"SHORT", b"\xc3\xa9405" + bytes(2) + bytes([0, 0, 0])],
+        5: [bytes(18), b"Oct 28 2026" + b"12:00:00" + b"abcdef1", b"Oct 28 2026" + b"12:00:00", b"Oct 28 2026" + b"12:00:00" + b"abcdefghijklmnop"],
+        10: [b"", b"racer", b"  r\x00acer  ", b"\xffx", b"a\x1fb\x1f"],
+        150: [bytes(10), struct.pack("<HHHIB", 125, 0, 0b100011, 0, 1), struct.pack("<HHHIBH", 125, 3, 0b111111, 0, 255, 12),
+              struct.pack("<HHHIBHBB", 125, 0, 0b100011, 0, 1, 12, 4, 0), struct.pack("<HHHIBHBB", 65535, 65535, 65535, 4294967295, 255, 65535, 255, 255)],
+        112: [bytes(8), bytes([45, 80, 30, 47, 84, 35, 45, 80, 0]),
+              bytes([45, 80, 30, 47, 84, 35, 45, 80, 0]) + bytes(12) + bytes([50, 75, 0]), bytes(23), bytes(24)],
+        111: [bytes(7), bytes([100, 0, 70, 70, 70, 65, 50, 0]), bytes([100, 0, 70, 70, 70, 65, 50, 0]) + struct.pack("<H", 1350),
+              bytes([100, 0, 70, 70, 70, 65, 50, 0, 1])],
+        130: [bytes(10), struct.pack("<BHBHhBH", 4, 1500, 160, 120, 250, 1, 1620), struct.pack("<BHBHhBH", 255, 65535, 255, 65535, -32768, 255, 65535),
+              struct.pack("<BHBHhBH", 6, 5000, 0, 0, -1, 0, 1)],
+    }
+    decoded = []
+    for command, plist in payloads.items():
+        decode = dict(list(msp.REQUIRED) + list(msp.OPTIONAL))[command]
+        for payload in plist:
+            try:
+                value, error = decode(payload), None
+            except msp.MspError as exc:
+                value, error = None, str(exc)
+            decoded.append([command, payload.hex(), value, error])
+    out["decoded"] = decoded
+
+    def betaflight_answers() -> dict[int, bytes]:
+        pids = bytes([45, 80, 30, 47, 84, 35, 45, 80, 0]) + bytes(12) + bytes([50, 75, 0])
+        board = b"S405" + struct.pack("<H", 0) + bytes([1, 0, 8]) + b"SPEEDYF4" + b"\x00"
+        return {
+            msp.MSP_API_VERSION: bytes([0, 1, 46]), msp.MSP_FC_VARIANT: b"BTFL", msp.MSP_FC_VERSION: bytes([4, 5, 1]),
+            msp.MSP_BOARD_INFO: board, msp.MSP_BUILD_INFO: b"Oct 28 2026" + b"12:00:00" + b"abcdef1",
+            msp.MSP_NAME: b"racer", msp.MSP_STATUS_EX: struct.pack("<HHHIBHBB", 125, 0, 0b100011, 0, 1, 12, 4, 0),
+            msp.MSP_PID: pids, msp.MSP_RC_TUNING: bytes([100, 0, 70, 70, 70, 65, 50, 0]) + struct.pack("<H", 1350),
+            msp.MSP_BATTERY_STATE: struct.pack("<BHBHhBH", 4, 1500, 160, 120, 250, 1, 1620),
+        }
+
+    class Link:
+        def __init__(self, answers: dict[int, bytes], errors: set[int], silent: bool) -> None:
+            self.answers, self.errors, self.silent = answers, errors, silent
+            self.pending = b""
+            self.requests: list[int] = []
+            self.now = 0.0
+
+        def reset_input_buffer(self) -> None:
+            self.pending = b""
+
+        def write(self, data: bytes) -> None:
+            command = data[4]
+            self.requests.append(command)
+            if self.silent:
+                return
+            if command in self.errors or command not in self.answers:
+                self.pending += reply(command, b"", error=True)
+            else:
+                self.pending += reply(command, self.answers[command])
+
+        def read(self, size: int = 1) -> bytes:
+            self.now += 0.05
+            data, self.pending = self.pending[:size], self.pending[size:]
+            return data
+
+        def close(self) -> None:
+            pass
+
+    full = betaflight_answers()
+    short_pid = dict(full)
+    short_pid[msp.MSP_PID] = b"\x01\x02"
+    inav = dict(full)
+    inav[msp.MSP_FC_VARIANT] = b"INAV"
+    short_required = dict(full)
+    short_required[msp.MSP_FC_VERSION] = b"\x01"
+    sessions = {
+        "full": (full, set(), False), "missing_optional": (full, {msp.MSP_BATTERY_STATE, msp.MSP_NAME}, False),
+        "short_pid": (short_pid, set(), False), "inav": (inav, set(), False), "silent": ({}, set(), True),
+        "required_error": (full, {msp.MSP_FC_VARIANT}, False), "short_required": (short_required, set(), False),
+        "only_required": ({k: full[k] for k in (1, 2, 3)}, set(), False),
+    }
+    ran = {}
+    for name, (answers, errors, silent) in sessions.items():
+        link = Link(answers, errors, silent)
+        session = msp.MspSession(link, clock=lambda link=link: link.now)
+        try:
+            value, error = msp.read_with_session(session), None
+        except msp.MspError as exc:
+            value, error = None, str(exc)
+        ran[name] = {"answers": {str(k): v.hex() for k, v in answers.items()}, "errors": sorted(errors), "silent": silent,
+                     "result": value, "error": error, "requests": link.requests}
+    out["sessions"] = ran
+    out["constants"] = {"default_baud": msp.DEFAULT_BAUD, "bauds": list(msp.BAUD_CANDIDATES)}
+    write("msp_cases.json", out)
+
+
+def build_hex(msp: object, command: int, payload: bytes) -> object:
+    try:
+        return msp.build_request(command, payload).hex()
+    except ValueError as exc:
+        return "error: " + str(exc)
 
 
 def clean_nan(x):
@@ -1256,7 +1417,8 @@ def clean_nan(x):
 
 COMMANDS = {"routes": routes, "store": store, "buffers": buffers, "config": config_cases,
             "partial": partial_cases, "bundle": bundle_cases, "languages": languages_cases, "http": http_cases,
-            "dialect": dialect_cases, "battery": battery_cases, "planner": planner_cases, "serial": serial_cases}
+            "dialect": dialect_cases, "battery": battery_cases, "planner": planner_cases, "serial": serial_cases,
+            "msp": msp_cases}
 
 
 def main(argv: list[str]) -> int:
