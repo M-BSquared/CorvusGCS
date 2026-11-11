@@ -213,6 +213,29 @@ fn the_vehicle_routes_fly_a_simulated_vehicle() {
     let (status, answer) = call("POST", "/api/mission/upload", json!({"plan": {"items": []}}));
     assert_eq!((status, answer["error"].as_str()), (400, Some("the mission is empty")));
 
+    let (status, caps) = core.internal_call("GET", "/api/mavlink/capabilities", None);
+    assert_eq!(
+        (status, caps["stack"].as_str(), caps["vehicle_type"].as_i64()),
+        (200, Some("px4"), Some(2))
+    );
+    let (status, modes) = core.internal_call("GET", "/api/mavlink/modes", None);
+    assert_eq!(status, 200);
+    assert!(
+        modes["modes"].as_array().unwrap().iter().any(|m| m == "POSCTL"),
+        "{modes}"
+    );
+    assert_eq!(modes["labels"]["POSCTL"], "POSITION");
+    let (status, answer) = call("POST", "/api/mavlink/arm", json!({"arm": true}));
+    assert_eq!((status, &answer["ok"]), (200, &json!(true)), "{answer}");
+    let (status, answer) = call("POST", "/api/mavlink/manual", json!({"x": 0.5, "z": 0.5}));
+    assert_eq!((status, &answer["ok"]), (200, &json!(true)), "{answer}");
+    let (status, answer) = call("POST", "/api/mavlink/arm", json!({"arm": "x"}));
+    assert_eq!((status, answer["error"].as_str()), (400, Some("arm must be boolean")));
+    let (status, _) = call("POST", "/api/mavlink/disconnect", json!({}));
+    assert_eq!(status, 200);
+    let (_, auto) = core.internal_call("GET", "/api/mavlink/auto", None);
+    assert_eq!(auto["auto"]["manual_override"], true);
+
     core.stop();
     drop(vehicle);
     let _ = std::fs::remove_dir_all(&dir);

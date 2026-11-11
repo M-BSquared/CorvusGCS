@@ -145,7 +145,10 @@ impl Backend {
     pub fn start_core() -> Result<Backend, String> {
         let options = corvus_core::Options::default();
         let core = corvus_core::CoreBuilder::new(options)
-            .module(corvus_core::VehicleModule::new())
+            .module(corvus_core::VehicleModule::with_options(corvus_core::VehicleOptions {
+                autostart: true,
+                connection: None,
+            }))
             .module(corvus_core::Http::new(corvus_core::HttpOptions {
                 port: 0,
                 ..corvus_core::HttpOptions::default()

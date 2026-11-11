@@ -3,7 +3,11 @@
 //! Python server (`python/tools/route_harness.py`), and it is what a second
 //! station or an AI client talks to when no window is open.
 //!
-//!     corvus-core [--port N] [--state-dir DIR] [--web-root DIR]
+//!     corvus-core [--port N] [--state-dir DIR] [--web-root DIR] [--autostart] [--mavlink CONNECTION]
+//!
+//! Without `--autostart` or `--mavlink` the link stays closed until
+//! `POST /api/mavlink/connect`; with one, the main link opens the way `serve.py`
+//! opens it and auto connect runs.
 //!
 //! Prints `listening http://127.0.0.1:PORT` once the server is up, and stops
 //! (joining every thread) on SIGINT and SIGTERM.
@@ -12,20 +16,29 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::mpsc;
 
-use corvus_core::{CoreBuilder, Http, HttpInfo, HttpOptions, Options, VehicleModule};
+use corvus_core::{CoreBuilder, Http, HttpInfo, HttpOptions, Options, VehicleModule, VehicleOptions};
 
 fn main() -> ExitCode {
     let mut port = 8000u16;
     let mut options = Options::default();
+    let mut vehicle = VehicleOptions::default();
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
         let mut value = |name: &str| args.next().ok_or_else(|| format!("{name} needs a value"));
         let parsed = match a.as_str() {
             "--port" => value("--port").and_then(|v| v.parse().map(|p| port = p).map_err(|_| format!("bad port {v}"))),
             "--state-dir" => value("--state-dir").map(|v| options = Options::in_dir(PathBuf::from(v))),
+            "--autostart" => {
+                vehicle.autostart = true;
+                Ok(())
+            }
+            "--mavlink" => value("--mavlink").map(|v| {
+                vehicle.autostart = true;
+                vehicle.connection = Some(v);
+            }),
             "--web-root" => value("--web-root").map(|v| options.web_root = Some(PathBuf::from(v))),
             "-h" | "--help" => {
-                println!("usage: corvus-core [--port N] [--state-dir DIR] [--web-root DIR]");
+                println!("usage: corvus-core [--port N] [--state-dir DIR] [--web-root DIR] [--autostart] [--mavlink CONNECTION]");
                 return ExitCode::SUCCESS;
             }
             other => Err(format!("unknown argument {other}")),
@@ -36,7 +49,7 @@ fn main() -> ExitCode {
         }
     }
     let core = match CoreBuilder::new(options)
-        .module(VehicleModule::new())
+        .module(VehicleModule::with_options(vehicle))
         .module(Http::new(HttpOptions {
             port,
             ..HttpOptions::default()

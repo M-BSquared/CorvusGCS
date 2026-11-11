@@ -2226,6 +2226,106 @@ impl Bridge {
         self.shared.engines.setup.reboot_autopilot(self.shared.as_ref())
     }
 
+    /// The modes this vehicle can be commanded into, in the dialect's order:
+    /// those the link's own mode table has, then any it has beyond them.
+    pub fn available_modes(&self) -> Vec<String> {
+        let st = self.shared.st();
+        let firmware = st.firmware.map(|f| [f.0, f.1, f.2]);
+        let ordered = st
+            .dialect
+            .available_modes(st.mav_type, firmware.as_ref().map(|a| &a[..]));
+        if st.mode_values.is_empty() {
+            return ordered;
+        }
+        let have: Vec<&String> = st.mode_values.iter().map(|(n, _)| n).collect();
+        let mut known: Vec<String> = ordered.iter().filter(|n| have.contains(n)).cloned().collect();
+        let mut extra: Vec<String> = have.into_iter().filter(|n| !known.contains(n)).cloned().collect();
+        extra.sort();
+        known.extend(extra);
+        known
+    }
+
+    /// What the operator reads for each mode `available_modes` offers.
+    pub fn mode_labels(&self) -> Map<String, Value> {
+        let modes = self.available_modes();
+        let dialect = self.shared.st().dialect;
+        modes
+            .into_iter()
+            .map(|m| (m.clone(), json!(dialect.mode_label(&m))))
+            .collect()
+    }
+
+    /// What the connected stack can do, for the interface to adapt to.
+    pub fn capabilities(&self) -> Value {
+        let (dialect, mav_type) = {
+            let st = self.shared.st();
+            (st.dialect, st.mav_type)
+        };
+        let mut caps = dialect.capabilities(mav_type);
+        caps.insert("modes".into(), json!(self.available_modes()));
+        caps.insert("vehicle_type".into(), json!(mav_type));
+        let refusals: Vec<(i64, String)> = dialect
+            .mission_refusals(mav_type)
+            .into_iter()
+            .map(|(c, r)| (c, r.to_string()))
+            .collect();
+        caps.insert(
+            "mission_unsupported".into(),
+            Value::Object(crate::mission::refused_item_types(&refusals)),
+        );
+        Value::Object(caps)
+    }
+
+    /// One MANUAL_CONTROL frame: axes normalised (`x`, `y`, `r` in -1 to 1,
+    /// `z` thrust 0 to 1, 0.5 neutral), clamped rather than refused.
+    pub fn manual_control(&self, x: f64, y: f64, z: f64, r: f64, buttons: i64) -> bool {
+        let sh = &self.shared;
+        sh.set_last_error("");
+        let axis = |v: f64, lo: f64, hi: f64| {
+            let v = if v.is_nan() { 0.0 } else { v };
+            (v.clamp(lo, hi) * 1000.0).round() as i128
+        };
+        let target = i128::from(sh.st().target.0);
+        let msg = Message::named("MANUAL_CONTROL", corvus_link::plain::defs::Wire::V2)
+            .expect("the dialect has MANUAL_CONTROL")
+            .with("target", Wv::Int(target))
+            .with("x", Wv::Int(axis(x, -1.0, 1.0)))
+            .with("y", Wv::Int(axis(y, -1.0, 1.0)))
+            .with("z", Wv::Int(axis(z, 0.0, 1.0)))
+            .with("r", Wv::Int(axis(r, -1.0, 1.0)))
+            .with("buttons", Wv::Int(i128::from(buttons & 0xFFFF)));
+        match sh.do_send(msg) {
+            Ok(true) => true,
+            Ok(false) => {
+                sh.set_last_error("Manual control failed: DISCONNECTED");
+                false
+            }
+            Err(e) => {
+                sh.set_last_error(&format!("Manual control send failed: {e}"));
+                false
+            }
+        }
+    }
+
+    /// Moves home to a clicked coordinate; the altitude stays.
+    pub fn set_home(&self, lat: f64, lon: f64) -> bool {
+        self.shared.flight.set_home(self.shared.as_ref(), lat, lon)
+    }
+
+    /// One MAV_CMD a plugin names, from the connected stack's list.
+    pub fn plugin_command(&self, command: i64, params: &[f64], position: Option<(f64, f64, f64, &str)>) -> bool {
+        self.shared
+            .flight
+            .plugin_command(self.shared.as_ref(), command, Some(params), position)
+    }
+
+    /// One velocity setpoint, a stream with no ACK.
+    pub fn velocity_setpoint(&self, vx: f64, vy: f64, vz: f64, yaw_rate_deg: Option<f64>, body: bool) -> bool {
+        self.shared
+            .flight
+            .velocity_setpoint(self.shared.as_ref(), vx, vy, vz, yaw_rate_deg, body)
+    }
+
     /// The plan items with every Circle flown as waypoints when the stack
     /// refuses `NAV_LOITER_TURNS` in a mission.
     pub fn lower_mission_plan(&self, items: &[PlanItem]) -> Vec<PlanItem> {

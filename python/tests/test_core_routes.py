@@ -83,7 +83,7 @@ def test_the_first_start_is_pending_until_it_is_finished() -> None:
 
 
 def test_an_area_that_is_not_ported_says_so_instead_of_404(pair) -> None:
-    status, body = harness.http("POST", pair.rs.url + "/api/mavlink/arm", {})
+    status, body = harness.http("POST", pair.rs.url + "/api/logs/refresh", {})
     assert (status, body) == (501, {"error": "Not available in this build"})
     status, body = harness.http("GET", pair.rs.url + "/api/tiles/esri/1/2/3.png")
     assert status == 501
@@ -300,3 +300,91 @@ def test_the_saved_mission_plans_are_kept_as_python_keeps_them(vehicle_pair) -> 
 def test_a_mission_request_without_a_vehicle_is_refused_as_python_refuses_it(vehicle_pair, path, body) -> None:
     diffs = vehicle_pair.compare_post(path, body)
     assert not diffs, "\n".join(diffs)
+
+
+# ---- the vehicle link and its commands (routes/vehicle.py), with nothing connected ----
+
+@pytest.mark.parametrize("path", ["/api/mavlink/modes", "/api/mavlink/capabilities", "/api/mavlink/serial-ports",
+                                  "/api/mavlink/modes?vehicle=bad", "/api/mavlink/capabilities?vehicle=main:1",
+                                  "/api/mavlink/modes?vehicle=link-4:1"])
+def test_the_link_reads_are_answered_as_python_answers_them(vehicle_pair, path) -> None:
+    diffs = vehicle_pair.compare_get(path)
+    assert not diffs, "\n".join(diffs)
+
+
+def test_what_auto_connect_offers_reads_the_same(vehicle_pair) -> None:
+    diffs = vehicle_pair.compare_get("/api/mavlink/auto", ("reason", "winner"))
+    assert not diffs, "\n".join(diffs)
+
+
+COMMAND_BODIES = [
+    ("/api/mavlink/arm", {}), ("/api/mavlink/arm", {"arm": False}), ("/api/mavlink/arm", {"arm": "yes"}),
+    ("/api/mavlink/arm", {"vehicle": "main:1"}), ("/api/mavlink/arm", {"vehicle": 5}), ("/api/mavlink/arm", {"vehicle": ""}),
+    ("/api/mavlink/mode", {}), ("/api/mavlink/mode", {"mode": ""}), ("/api/mavlink/mode", {"mode": 5}),
+    ("/api/mavlink/mode", {"mode": "posctl"}),
+    ("/api/mavlink/takeoff", {}), ("/api/mavlink/takeoff", {"altitude": 30}), ("/api/mavlink/takeoff", {"altitude": "30"}),
+    ("/api/mavlink/takeoff", {"altitude": True}), ("/api/mavlink/takeoff", {"altitude": None}),
+    ("/api/mavlink/takeoff", {"altitude": 0.5}), ("/api/mavlink/takeoff", {"altitude": 121}),
+    ("/api/mavlink/takeoff", {"altitude": "abc"}), ("/api/mavlink/takeoff", {"altitude": [1]}),
+    ("/api/mavlink/takeoff", {"altitude": "inf"}), ("/api/mavlink/takeoff", {"altitude": "nan"}),
+    ("/api/mavlink/land", {}), ("/api/mavlink/rtl", {}), ("/api/mavlink/hold", {}), ("/api/mavlink/reboot", {}),
+    ("/api/mavlink/shell/send", {}), ("/api/mavlink/shell/send", {"data": ""}), ("/api/mavlink/shell/send", {"data": "ver\n"}),
+    ("/api/mavlink/shell/close", {}),
+    ("/api/mavlink/manual", {}), ("/api/mavlink/manual", {"x": 2}), ("/api/mavlink/manual", {"y": "a"}),
+    ("/api/mavlink/manual", {"z": -0.1}), ("/api/mavlink/manual", {"r": True}), ("/api/mavlink/manual", {"buttons": -1}),
+    ("/api/mavlink/manual", {"buttons": 65536}), ("/api/mavlink/manual", {"buttons": 1.0}),
+    ("/api/mavlink/manual", {"x": 0.5, "y": -0.5, "z": 0.7, "r": 1, "buttons": 3}),
+    ("/api/mavlink/sethome", {}), ("/api/mavlink/sethome", {"lat": 91, "lon": 0}), ("/api/mavlink/sethome", {"lat": 1, "lon": 181}),
+    ("/api/mavlink/sethome", {"lat": "1", "lon": 0}), ("/api/mavlink/sethome", {"lat": 47.5, "lon": 8.5}),
+    ("/api/mavlink/gotopoints", {}), ("/api/mavlink/gotopoints", {"points": []}), ("/api/mavlink/gotopoints", {"points": 5}),
+    ("/api/mavlink/gotopoints", {"points": [5]}), ("/api/mavlink/gotopoints", {"points": [{}]}),
+    ("/api/mavlink/gotopoints", {"points": [{"lat": 1, "lon": 2}]}),
+    ("/api/mavlink/gotopoints", {"points": [{"lat": 1, "lon": 2, "alt_agl": 0}]}),
+    ("/api/mavlink/gotopoints", {"points": [{"lat": 91, "lon": 2, "alt_agl": 10}]}),
+    ("/api/mavlink/gotopoints", {"points": [{"lat": 1, "lon": 181, "alt_agl": 10}]}),
+    ("/api/mavlink/gotopoints", {"points": [{"lat": 1, "lon": 2, "alt_agl": 10}]}),
+    ("/api/mavlink/gotopoints", {"points": [{"lat": 1, "lon": 2, "alt_agl": 10}] * 256}),
+    ("/api/mavlink/gotopoints", {"points": [{"lat": True, "lon": 2, "alt_agl": 10}]}),
+    ("/api/mavlink/command", {}), ("/api/mavlink/command", {"command": "NOPE"}), ("/api/mavlink/command", {"command": True}),
+    ("/api/mavlink/command", {"command": 70000}), ("/api/mavlink/command", {"command": "do_change_speed", "params": [1, 5]}),
+    ("/api/mavlink/command", {"command": "MAV_CMD_DO_CHANGE_SPEED", "params": [1, None, -1]}),
+    ("/api/mavlink/command", {"command": 178, "params": [1] * 8}), ("/api/mavlink/command", {"command": 178, "params": "x"}),
+    ("/api/mavlink/command", {"command": 178, "params": [True]}), ("/api/mavlink/command", {"command": 178, "lat": 1}),
+    ("/api/mavlink/command", {"command": "DO_REPOSITION", "lat": 1, "lon": 2}),
+    ("/api/mavlink/command", {"command": "DO_REPOSITION", "lat": 1}),
+    ("/api/mavlink/command", {"command": "DO_REPOSITION", "lat": 91, "lon": 2}),
+    ("/api/mavlink/command", {"command": "DO_REPOSITION", "lat": 1, "lon": 2, "frame": "x"}),
+    ("/api/mavlink/command", {"command": "DO_REPOSITION", "lat": 1, "lon": 2, "frame": "amsl", "alt": 100}),
+    ("/api/mavlink/command", {"command": "DO_REPOSITION", "params": [1, 2, 3, 4, 5]}),
+    ("/api/mavlink/command", {"command": "DO_ORBIT", "lat": 1, "lon": 2, "alt": "x"}),
+    ("/api/mavlink/velocity", {}), ("/api/mavlink/velocity", {"vx": 31}), ("/api/mavlink/velocity", {"vy": "a"}),
+    ("/api/mavlink/velocity", {"yaw_rate": 181}), ("/api/mavlink/velocity", {"yaw_rate": "a"}),
+    ("/api/mavlink/velocity", {"frame": "x"}), ("/api/mavlink/velocity", {"vx": 1, "vy": 1, "vz": -1, "yaw_rate": 10, "frame": "body"}),
+]
+
+
+@pytest.mark.parametrize("path,body", COMMAND_BODIES)
+def test_a_flight_command_with_nothing_connected_is_answered_as_python_answers_it(vehicle_pair, path, body) -> None:
+    diffs = vehicle_pair.compare_post(path, body)
+    assert not diffs, "\n".join(diffs)
+
+
+@pytest.mark.parametrize("body", [
+    {"connection": ""}, {"connection": 5}, {"connection": "carrier-pigeon:1"}, {"connection": "serial:"},
+    {"connection": "serial:/dev/x:0"},
+])
+def test_a_refused_connect_is_refused_as_python_refuses_it(vehicle_pair, body) -> None:
+    diffs = vehicle_pair.compare_post("/api/mavlink/connect", body)
+    assert not diffs, "\n".join(diffs)
+
+
+def test_a_manual_connect_and_a_disconnect_leave_auto_connect_as_python_leaves_it() -> None:
+    with harness.Pair(seed=harness.standard_seed()) as p:
+        diffs = p.compare_post("/api/mavlink/connect", {"connection": "udpout:127.0.0.1:9"})
+        diffs += p.compare_get("/api/mavlink/auto")
+        diffs += p.compare_post("/api/mavlink/disconnect", {})
+        diffs += p.compare_get("/api/mavlink/auto")
+        diffs += p.compare_post("/api/fleet/links/add", {"connection": "udpout:127.0.0.1:9"})
+        diffs += p.compare_post("/api/mavlink/connect", {"connection": "udpout:127.0.0.1:10"}, FLEET_VOLATILE)
+        diffs += p.compare_get("/api/fleet", FLEET_VOLATILE)
+        assert not diffs, "\n".join(diffs)
