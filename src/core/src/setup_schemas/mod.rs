@@ -13,6 +13,7 @@ pub mod ardupilot_safety;
 pub mod ardupilot_tuning;
 pub mod battery;
 pub mod fields;
+pub mod first_setup;
 pub mod motors;
 pub mod mounting;
 pub mod param_metadata;

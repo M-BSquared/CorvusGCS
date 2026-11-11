@@ -608,6 +608,31 @@ def tuning() -> None:
         "ardupilot": {"names": A.param_names(), "cases": ap}}), compact=True)
 
 
+def first_setup() -> None:
+    from corvus import first_setup as F
+    from corvus.ardupilot_firmware import vehicle_for_mav_type
+
+    pools = {"SYS_AUTOSTART": [0.0, 4001.0, 13000.0, 99.0, 3000.0], "CAL_*_ID": [0.0, 0.0, 1234.0], "SYS_HAS_MAG": [0.0, 1.0],
+             "FRAME_CLASS": [0.0, 1.0, 2.0, 3.0, 5.0, 9.0], "FRAME_TYPE": [0.0, 1.0, 3.0], "INS_ACCOFFS_*": [0.0, 0.0, 0.01, -0.2, 1e-10],
+             "COMPASS_OFS_*": [0.0, 0.0, 12.0, -3.5, 1e-10], "COMPASS_DEV_ID": [0.0, 0.0, 97539.0], "COMPASS_USE": [0.0, 1.0, 2.0]}
+    cases = []
+    for stack in ("px4", "ardupilot", "generic", ""):
+        names = F.param_names(stack)
+        for i, v in enumerate(value_sets(F.param_names("px4") + F.param_names("ardupilot"), pools, seed=51, count=60)):
+            vehicle = ("Copter", "Plane", "Heli", "Rover", "Sub", "")[i % 6]
+            transport = ("usb", "sik", "udp", "tcp", "unknown", "serial")[i % 6]
+            cases.append([stack, vehicle, transport, v, F.assess(stack, vehicle, transport, dict(v))])
+    writes = [[stack, vehicle, pid, F.writes_for(stack, vehicle, pid)] for stack in ("px4", "ardupilot", "", "generic")
+              for vehicle in ("Copter", "Plane", "")
+              for pid in (4001, 5001, 6001, 7001, 8001, 9001, 2100, 3000, 13000, 13200, 13100, 50000, 51000, 101, 100, 201, 200, 301, 300, 0, -1, 4002)]
+    presets = [[stack, vehicle, F.presets(stack, vehicle)] for stack in ("px4", "ardupilot", "", "generic")
+               for vehicle in ("Copter", "Plane", "Heli", "")]
+    names = {s: F.param_names(s) for s in ("px4", "ardupilot", "", "generic")}
+    types = [[t, vehicle_for_mav_type(t)] for t in range(0, 40)] + [[None, vehicle_for_mav_type(None)]]
+    write("setup_first_cases.json", clean({"cases": cases, "writes": writes, "presets": presets, "names": names,
+                                           "types": [t for t in types if t[0] is not None]}), compact=True)
+
+
 def battery() -> None:
     from corvus import ardupilot_battery as A
     from corvus import battery_config as P
@@ -668,7 +693,7 @@ def fields() -> None:
     write("setup_fields_cases.json", out)
 
 
-COMMANDS = {"metadata": metadata, "fields": fields, "tables": tables, "safety": safety, "battery": battery, "tuning": tuning, "rc": rc, "motors": motors, "mounting": mounting, "ardupilot_safety": ardupilot_safety}
+COMMANDS = {"metadata": metadata, "fields": fields, "tables": tables, "safety": safety, "battery": battery, "first_setup": first_setup, "tuning": tuning, "rc": rc, "motors": motors, "mounting": mounting, "ardupilot_safety": ardupilot_safety}
 
 
 def main(argv: list[str]) -> int:
