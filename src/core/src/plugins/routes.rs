@@ -202,3 +202,8 @@ fn api_plugins_folder(core: &Core, _req: &Request) -> Response {
         if ok { 200 } else { 500 },
     )
 }
+
+/// The config was replaced as a whole (an import, a reset): whoever runs from
+/// it re-reads it. The AI server's switches are the one such reader that keeps
+/// state of its own, and it is told here once it exists.
+pub(super) fn settings_reloaded(_core: &Core) {}

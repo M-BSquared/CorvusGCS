@@ -11,6 +11,7 @@ pub mod file_manager;
 pub mod files;
 pub mod registry;
 mod routes;
+pub mod settings_routes;
 
 pub use registry::PluginRegistry;
 pub use routes::{registry, settings_all, Opener, PluginDirs};
@@ -43,5 +44,6 @@ impl Module for PluginsModule {
     fn register(&self, reg: &mut Registry) {
         reg.config_block("checklists", checklists::coerce);
         routes::register(reg, self.dirs.clone());
+        settings_routes::register(reg);
     }
 }
