@@ -101,3 +101,62 @@ fn a_switched_off_base_runs_no_thread_and_a_ping_is_refused_from_another_machine
     core.stop();
     let _ = std::fs::remove_dir_all(d);
 }
+
+#[test]
+fn a_console_line_reaches_every_stream_and_a_closed_stream_is_let_go() {
+    let d = dir("console");
+    let core = core_in(&d);
+    core.start().unwrap();
+    let mut a = core.topic_stream(&[("console", "message")], None, &[]);
+    let mut b = core.topic_stream(&[("console", "message")], None, &[]);
+    let call = |cmd: &str| {
+        core.internal_call(
+            "POST",
+            "/api/console/command",
+            json!({"command": cmd}).as_object().cloned(),
+        )
+    };
+    let (status, answer) = call("arm");
+    assert_eq!(status, 503, "{answer}");
+    for s in [&mut a, &mut b] {
+        let events = corvus_core::events::collect(s.as_mut(), std::time::Duration::from_secs(3), 1);
+        assert_eq!(events.len(), 1);
+        let text = String::from_utf8(events[0].frame()).unwrap();
+        assert!(
+            text.starts_with("event: message\n") && text.contains("\"name\":\"ARM\""),
+            "{text}"
+        );
+    }
+    a.close();
+    b.close();
+    let (status, _) = call("arm");
+    assert_eq!(status, 503);
+    core.stop();
+    let _ = std::fs::remove_dir_all(d);
+}
+
+#[cfg(unix)]
+#[test]
+fn the_cores_stop_ends_every_terminal_and_background_program() {
+    let d = dir("shell");
+    let core = core_in(&d);
+    core.start().unwrap();
+    let call = |path: &str, body: Value| core.internal_call("POST", path, body.as_object().cloned());
+    let (status, answer) = call("/api/local/connect", json!({"name": "life", "directory": "/"}));
+    assert_eq!((status, &answer["connected"]), (200, &json!(true)), "{answer}");
+    let (_, run) = call("/api/local/run", json!({"command": "exec sleep 300"}));
+    let pid = run["pid"].as_i64().expect("it runs") as i32;
+    let (_, status) = core.internal_call("GET", "/api/local/status", None);
+    assert_eq!(status["running"], 1);
+    let (_, sessions) = core.internal_call("GET", "/api/ssh/sessions", None);
+    assert_eq!(sessions["sessions"][0]["name"], "life");
+    let alive = |pid: i32| unsafe { libc::kill(pid, 0) == 0 };
+    assert!(alive(pid));
+    let t = std::time::Instant::now();
+    core.stop();
+    assert!(!alive(pid), "the background program is gone after stop");
+    let (_, sessions) = core.internal_call("GET", "/api/ssh/sessions", None);
+    assert_eq!(sessions["sessions"], json!([]));
+    assert!(t.elapsed() < std::time::Duration::from_secs(10), "{:?}", t.elapsed());
+    let _ = std::fs::remove_dir_all(d);
+}

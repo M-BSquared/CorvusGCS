@@ -8,9 +8,11 @@
 //! `stop`, which the core calls on its shutdown path.
 
 pub mod child_env;
+pub mod console;
 pub mod net_probe;
 pub mod ports;
 pub mod rtk;
+pub mod shell;
 pub mod sik;
 pub mod util;
 
@@ -29,8 +31,13 @@ use net_probe::Pinger;
 /// `core.service::<Peripherals>()`.
 pub struct Peripherals {
     pub pinger: Pinger,
+    /// The terminal sessions: the shell on this computer, SSH connections.
+    pub terminals: Arc<shell::Terminals>,
+    /// Programs started on this computer without a window.
+    pub runner: shell::LocalRunner,
     rtk: OnceLock<Arc<rtk::RtkService>>,
     sik: OnceLock<Arc<sik::SikService>>,
+    console: Arc<console::ConsoleHub>,
 }
 
 impl Peripherals {
@@ -54,8 +61,11 @@ impl PeripheralsModule {
         PeripheralsModule {
             inner: Arc::new(Peripherals {
                 pinger: Pinger::new(None),
+                terminals: Arc::default(),
+                runner: shell::LocalRunner::new(),
                 rtk: OnceLock::new(),
                 sik: OnceLock::new(),
+                console: Arc::default(),
             }),
         }
     }
@@ -77,6 +87,8 @@ impl Module for PeripheralsModule {
         reg.post("/api/local/ping", api_local_ping);
         rtk::register(reg);
         sik::register(reg);
+        console::register(reg, Arc::clone(&self.inner.console));
+        shell::register(reg);
     }
 
     fn start(&self, core: &Core) -> std::io::Result<()> {
@@ -116,6 +128,7 @@ impl Module for PeripheralsModule {
                 sik::SikTiming::default(),
             ));
             let _ = self.inner.sik.set(sik);
+            self.inner.console.attach(&vehicle);
         }
         Ok(())
     }
@@ -127,12 +140,14 @@ impl Module for PeripheralsModule {
         if let Some(sik) = self.inner.sik() {
             sik.shutdown();
         }
+        self.inner.runner.shutdown();
+        self.inner.terminals.shutdown();
         self.inner.pinger.shutdown();
     }
 }
 
 /// `_local_only`: the program runs on this computer or not at all.
-fn local_only(req: &Request) -> Option<Response> {
+pub(crate) fn local_only(req: &Request) -> Option<Response> {
     if req.is_loopback() {
         return None;
     }

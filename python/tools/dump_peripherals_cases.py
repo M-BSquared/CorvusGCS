@@ -421,7 +421,31 @@ def sik() -> None:
     write("peripherals_sik_cases.json", out)
 
 
-COMMANDS = {"ports": ports, "netprobe": netprobe, "rtk": rtk, "sik": sik}
+def shell() -> None:
+    from corvus import local_shell as ls
+
+    envs = [
+        {}, {"LANG": "de_DE.UTF-8"}, {"LC_ALL": "C"}, {"LC_CTYPE": ""}, {"LANG": "", "LC_ALL": ""}, {"HOME": "/home/x", "PATH": "/usr/bin"},
+        {"TERM": "dumb", "COLORTERM": "no"}, {"PYTHONEXECUTABLE": "/x", "QTWEBENGINE_CHROMIUM_FLAGS": "--x", "_PYI_A": "1", "KEEP": "1"},
+        {"CORVUS_QPA_DEFAULT": "xcb", "QT_QPA_PLATFORM": "xcb"}, {"CORVUS_QPA_DEFAULT": "xcb", "QT_QPA_PLATFORM": "wayland"},
+        {"LD_LIBRARY_PATH": "/opt/other/lib:/usr/lib"},
+    ]
+    out = {
+        "shell_env": [
+            {"env": e, "platform": p, "result": ls.shell_env(e, p)} for e in envs for p in ("linux", "darwin", "win32")
+        ],
+        "shell_command": [
+            {"text": t, "shell": sh, "platform": p, "result": ls.shell_command(t, sh, p)}
+            for t in ("echo hi", 'say "x" && y', "")
+            for sh in ("/bin/bash", "/bin/sh", "C:\\Windows\\cmd.exe")
+            for p in ("linux", "darwin", "win32")
+        ],
+        "limits": {"max_command": ls.MAX_COMMAND, "early_exit": ls.EARLY_EXIT_S, "tail": ls.OUTPUT_TAIL, "term": ls.TERM_TIMEOUT_S},
+    }
+    write("peripherals_shell_cases.json", out)
+
+
+COMMANDS = {"ports": ports, "netprobe": netprobe, "rtk": rtk, "sik": sik, "shell": shell}
 
 
 def main(argv: list[str]) -> int:
