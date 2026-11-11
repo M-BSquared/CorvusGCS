@@ -875,6 +875,7 @@ dependencies = [
  "indexmap",
  "libc",
  "serde_json",
+ "serialport",
  "sha1 0.10.7",
  "socket2 0.5.10",
 ]
