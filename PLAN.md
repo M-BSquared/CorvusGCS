@@ -125,7 +125,9 @@ telemetry review).
 
 ### 0.4 Peripherals (`src/core/src/peripherals/`)
 
-* P3 The Windows branches of the shell and runner are compile gated but untested. ELRS stays in `corvus_link` (dormant, no route in Python), so the core has nothing to port. SSH: the agent (`SSH_AUTH_SOCK`) is not asked for keys, only `~/.ssh/id_*` files without a passphrase; a key with a passphrase is refused as Python refused it.
+* P3 The Windows branches of the shell and runner are compile gated but untested. The dormant CRSF reader ELRS stays in `corvus_link` (no route in Python). ExpressLRS over MAVLink and Betaflight are ported: the serial options `?link=elrs&dtr=off&rts=off&fc=betaflight` (`serial_ports.rs`, held lines in `corvus_link` `Serial::open_held`), the generic heartbeat hint and the `betaflight` dialect (`dialect.rs`), the MSP reader (`corvus_link::plain::msp`) and its two routes (`peripherals/betaflight.rs`), all held to the Python by fixtures. Not done: a test with real hardware (an ELRS module resetting on connect, a Betaflight board over USB), none was available. SSH: the agent (`SSH_AUTH_SOCK`) is not asked for keys, only `~/.ssh/id_*` files without a passphrase; a key with a passphrase is refused as Python refused it.
+* P2 The native interface lacks the pieces of master's ExpressLRS and Betaflight work: the Betaflight setup page, the greyed Setup tiles for a telemetry only stack, and the Link panel's Radio selector (rows in `src/PARITY.md`). The backend is ready for all three.
+* P3 `python/corvus/serial_open.py` now opens through `corvus_link.mavutil` (`dtr` and `rts` keyword arguments) so the Python reference needs no pymavlink; `python/tests/test_qt_binding.py` and `test_macos_signing_order.py` still describe the Python and Qt bundles the switch removed and fail; update or delete them with `python/`.
 
 ### 0.5 AI and plugins (`src/core/src/plugins/`, `mcp/`)
 

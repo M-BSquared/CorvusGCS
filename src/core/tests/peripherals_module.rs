@@ -244,3 +244,38 @@ fn the_video_routes_keep_the_list_hide_the_passwords_and_stop_joins_the_decoders
     assert!(!video.any_alive());
     let _ = std::fs::remove_dir_all(d);
 }
+
+#[test]
+fn the_betaflight_routes_list_ports_and_refuse_a_bad_read() {
+    let d = dir("betaflight");
+    let core = core_in(&d);
+    core.start().unwrap();
+    let (status, answer) = core.internal_call("GET", "/api/betaflight/status", None);
+    assert_eq!(status, 200);
+    assert_eq!(answer["link_device"], "");
+    assert_eq!(answer["default_baud"], 115_200);
+    assert_eq!(answer["bauds"][1], 57_600);
+    assert!(answer["ports"].is_array());
+
+    let call = |body: Value| core.internal_call("POST", "/api/betaflight/read", body.as_object().cloned());
+    let (status, answer) = call(json!({}));
+    assert_eq!((status, answer["error"].as_str()), (400, Some("device is required")));
+    let (status, _) = call(json!({"device": "  "}));
+    assert_eq!(status, 400);
+    let (status, answer) = call(json!({"device": "/dev/ttyACM0", "baud": "fast"}));
+    assert_eq!(
+        (status, answer["error"].as_str()),
+        (400, Some("baud must be a positive integer"))
+    );
+    let (status, _) = call(json!({"device": "/dev/ttyACM0", "baud": true}));
+    assert_eq!(status, 400);
+    let (status, _) = call(json!({"device": "/dev/ttyACM0", "baud": 0}));
+    assert_eq!(status, 400);
+    let (status, answer) = call(json!({"device": "/definitely/not/a/port"}));
+    assert_eq!(status, 409);
+    assert!(answer["error"]
+        .as_str()
+        .unwrap()
+        .starts_with("could not open /definitely/not/a/port: "));
+    core.stop();
+}

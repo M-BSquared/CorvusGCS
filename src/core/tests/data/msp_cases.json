@@ -1,0 +1,1234 @@
+{
+  "requests": [
+    [
+      1,
+      "",
+      "244d3c000101"
+    ],
+    [
+      112,
+      "",
+      "244d3c007070"
+    ],
+    [
+      255,
+      "",
+      "244d3c00ffff"
+    ],
+    [
+      10,
+      "616263",
+      "244d3c030a61626369"
+    ],
+    [
+      4,
+      "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "244d3cff04000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000fb"
+    ],
+    [
+      4,
+      "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "error: MSP v1 payload is at most 255 bytes"
+    ],
+    [
+      300,
+      "",
+      "error: MSP v1 commands are one byte"
+    ],
+    [
+      -1,
+      "",
+      "error: MSP v1 commands are one byte"
+    ]
+  ],
+  "streams": {
+    "split": {
+      "chunks": [
+        "6761726261676524244d3e03",
+        "0304050100"
+      ],
+      "frames": [
+        [
+          3,
+          "040501",
+          false
+        ]
+      ],
+      "ok": 1,
+      "errors": 0
+    },
+    "badsum": {
+      "chunks": [
+        "244d3e04024254464ce5244d3e04024254464c1a"
+      ],
+      "frames": [
+        [
+          2,
+          "4254464c",
+          false
+        ]
+      ],
+      "ok": 1,
+      "errors": 1
+    },
+    "error": {
+      "chunks": [
+        "244d21000a0a"
+      ],
+      "frames": [
+        [
+          10,
+          "",
+          true
+        ]
+      ],
+      "ok": 1,
+      "errors": 0
+    },
+    "mavlink": {
+      "chunks": [
+        "fd090000000101fd090000000101fd090000000101fd090000000101fd090000000101fd090000000101fd090000000101fd090000000101fd090000000101fd090000000101"
+      ],
+      "frames": [],
+      "ok": 0,
+      "errors": 0
+    },
+    "byte_by_byte": {
+      "chunks": [
+        "24",
+        "4d",
+        "3e",
+        "04",
+        "02",
+        "42",
+        "54",
+        "46",
+        "4c",
+        "1a",
+        "24",
+        "4d",
+        "3e",
+        "03",
+        "03",
+        "04",
+        "05",
+        "01",
+        "00"
+      ],
+      "frames": [
+        [
+          2,
+          "4254464c",
+          false
+        ],
+        [
+          3,
+          "040501",
+          false
+        ]
+      ],
+      "ok": 2,
+      "errors": 0
+    },
+    "dollar_tail": {
+      "chunks": [
+        "787824",
+        "4d",
+        "3e000a0a"
+      ],
+      "frames": [
+        [
+          10,
+          "",
+          false
+        ]
+      ],
+      "ok": 1,
+      "errors": 0
+    },
+    "wrong_dir": {
+      "chunks": [
+        "244d3c000101244d3e04024254464c1a"
+      ],
+      "frames": [
+        [
+          2,
+          "4254464c",
+          false
+        ]
+      ],
+      "ok": 1,
+      "errors": 0
+    },
+    "short": {
+      "chunks": [
+        "244d3e03"
+      ],
+      "frames": [],
+      "ok": 0,
+      "errors": 0
+    },
+    "noise_only": {
+      "chunks": [
+        "616263",
+        "64656624"
+      ],
+      "frames": [],
+      "ok": 0,
+      "errors": 0
+    },
+    "empty": {
+      "chunks": [
+        ""
+      ],
+      "frames": [],
+      "ok": 0,
+      "errors": 0
+    }
+  },
+  "decoded": [
+    [
+      1,
+      "",
+      null,
+      "API version reply is too short"
+    ],
+    [
+      1,
+      "0001",
+      null,
+      "API version reply is too short"
+    ],
+    [
+      1,
+      "00012e",
+      {
+        "protocol": 0,
+        "api": "1.46"
+      },
+      null
+    ],
+    [
+      1,
+      "01020304",
+      {
+        "protocol": 1,
+        "api": "2.3"
+      },
+      null
+    ],
+    [
+      2,
+      "",
+      {
+        "variant": "",
+        "variant_name": ""
+      },
+      null
+    ],
+    [
+      2,
+      "4254464c",
+      {
+        "variant": "BTFL",
+        "variant_name": "Betaflight"
+      },
+      null
+    ],
+    [
+      2,
+      "494e4156",
+      {
+        "variant": "INAV",
+        "variant_name": "iNav"
+      },
+      null
+    ],
+    [
+      2,
+      "6162",
+      {
+        "variant": "ab",
+        "variant_name": "ab"
+      },
+      null
+    ],
+    [
+      2,
+      "4142004344",
+      {
+        "variant": "AB",
+        "variant_name": "AB"
+      },
+      null
+    ],
+    [
+      2,
+      "fffe5859",
+      {
+        "variant": "��XY",
+        "variant_name": "��XY"
+      },
+      null
+    ],
+    [
+      2,
+      "4b495353",
+      {
+        "variant": "KISS",
+        "variant_name": "KISS"
+      },
+      null
+    ],
+    [
+      2,
+      "20425420",
+      {
+        "variant": "BT",
+        "variant_name": "BT"
+      },
+      null
+    ],
+    [
+      3,
+      "",
+      null,
+      "firmware version reply is too short"
+    ],
+    [
+      3,
+      "0405",
+      null,
+      "firmware version reply is too short"
+    ],
+    [
+      3,
+      "040501",
+      {
+        "version": "4.5.1"
+      },
+      null
+    ],
+    [
+      3,
+      "ffffff09",
+      {
+        "version": "255.255.255"
+      },
+      null
+    ],
+    [
+      4,
+      "",
+      null,
+      "board info reply is too short"
+    ],
+    [
+      4,
+      "0000000000",
+      null,
+      "board info reply is too short"
+    ],
+    [
+      4,
+      "533430350700",
+      {
+        "board": "S405",
+        "hardware_revision": 7,
+        "target": ""
+      },
+      null
+    ],
+    [
+      4,
+      "533430350000010008535045454459463400",
+      {
+        "board": "S405",
+        "hardware_revision": 0,
+        "target": "SPEEDYF4"
+      },
+      null
+    ],
+    [
+      4,
+      "53343035000001001453484f5254",
+      {
+        "board": "S405",
+        "hardware_revision": 0,
+        "target": "SHORT"
+      },
+      null
+    ],
+    [
+      4,
+      "c3a93430350000000000",
+      {
+        "board": "��40",
+        "hardware_revision": 53,
+        "target": ""
+      },
+      null
+    ],
+    [
+      5,
+      "000000000000000000000000000000000000",
+      null,
+      "build info reply is too short"
+    ],
+    [
+      5,
+      "4f6374203238203230323631323a30303a303061626364656631",
+      {
+        "build": {
+          "date": "Oct 28 2026",
+          "time": "12:00:00",
+          "revision": "abcdef1"
+        }
+      },
+      null
+    ],
+    [
+      5,
+      "4f6374203238203230323631323a30303a3030",
+      {
+        "build": {
+          "date": "Oct 28 2026",
+          "time": "12:00:00",
+          "revision": ""
+        }
+      },
+      null
+    ],
+    [
+      5,
+      "4f6374203238203230323631323a30303a30306162636465666768696a6b6c6d6e6f70",
+      {
+        "build": {
+          "date": "Oct 28 2026",
+          "time": "12:00:00",
+          "revision": "abcdefg"
+        }
+      },
+      null
+    ],
+    [
+      10,
+      "",
+      {
+        "name": ""
+      },
+      null
+    ],
+    [
+      10,
+      "7261636572",
+      {
+        "name": "racer"
+      },
+      null
+    ],
+    [
+      10,
+      "20207200616365722020",
+      {
+        "name": "r\u0000acer"
+      },
+      null
+    ],
+    [
+      10,
+      "ff78",
+      {
+        "name": "�x"
+      },
+      null
+    ],
+    [
+      10,
+      "611f621f",
+      {
+        "name": "a\u001fb"
+      },
+      null
+    ],
+    [
+      150,
+      "00000000000000000000",
+      null,
+      "status reply is too short"
+    ],
+    [
+      150,
+      "7d00000023000000000001",
+      {
+        "cycle_time_us": 125,
+        "i2c_errors": 0,
+        "sensors": [
+          "gyro",
+          "accelerometer",
+          "barometer"
+        ],
+        "pid_profile": 2
+      },
+      null
+    ],
+    [
+      150,
+      "7d0003003f0000000000ff0c00",
+      {
+        "cycle_time_us": 125,
+        "i2c_errors": 3,
+        "sensors": [
+          "gyro",
+          "accelerometer",
+          "barometer",
+          "magnetometer",
+          "gps",
+          "rangefinder"
+        ],
+        "pid_profile": 256,
+        "cpu_load": 12
+      },
+      null
+    ],
+    [
+      150,
+      "7d000000230000000000010c000400",
+      {
+        "cycle_time_us": 125,
+        "i2c_errors": 0,
+        "sensors": [
+          "gyro",
+          "accelerometer",
+          "barometer"
+        ],
+        "pid_profile": 2,
+        "cpu_load": 12,
+        "pid_profile_count": 4,
+        "rate_profile": 1
+      },
+      null
+    ],
+    [
+      150,
+      "ffffffffffffffffffffffffffffff",
+      {
+        "cycle_time_us": 65535,
+        "i2c_errors": 65535,
+        "sensors": [
+          "gyro",
+          "accelerometer",
+          "barometer",
+          "magnetometer",
+          "gps",
+          "rangefinder"
+        ],
+        "pid_profile": 256,
+        "cpu_load": 65535,
+        "pid_profile_count": 255,
+        "rate_profile": 256
+      },
+      null
+    ],
+    [
+      112,
+      "0000000000000000",
+      null,
+      "PID reply is too short"
+    ],
+    [
+      112,
+      "2d501e2f54232d5000",
+      {
+        "pids": {
+          "roll": {
+            "p": 45,
+            "i": 80,
+            "d": 30
+          },
+          "pitch": {
+            "p": 47,
+            "i": 84,
+            "d": 35
+          },
+          "yaw": {
+            "p": 45,
+            "i": 80,
+            "d": 0
+          }
+        }
+      },
+      null
+    ],
+    [
+      112,
+      "2d501e2f54232d5000000000000000000000000000324b00",
+      {
+        "pids": {
+          "roll": {
+            "p": 45,
+            "i": 80,
+            "d": 30
+          },
+          "pitch": {
+            "p": 47,
+            "i": 84,
+            "d": 35
+          },
+          "yaw": {
+            "p": 45,
+            "i": 80,
+            "d": 0
+          },
+          "level": {
+            "p": 50,
+            "i": 75,
+            "d": 0
+          }
+        }
+      },
+      null
+    ],
+    [
+      112,
+      "0000000000000000000000000000000000000000000000",
+      {
+        "pids": {
+          "roll": {
+            "p": 0,
+            "i": 0,
+            "d": 0
+          },
+          "pitch": {
+            "p": 0,
+            "i": 0,
+            "d": 0
+          },
+          "yaw": {
+            "p": 0,
+            "i": 0,
+            "d": 0
+          }
+        }
+      },
+      null
+    ],
+    [
+      112,
+      "000000000000000000000000000000000000000000000000",
+      {
+        "pids": {
+          "roll": {
+            "p": 0,
+            "i": 0,
+            "d": 0
+          },
+          "pitch": {
+            "p": 0,
+            "i": 0,
+            "d": 0
+          },
+          "yaw": {
+            "p": 0,
+            "i": 0,
+            "d": 0
+          },
+          "level": {
+            "p": 0,
+            "i": 0,
+            "d": 0
+          }
+        }
+      },
+      null
+    ],
+    [
+      111,
+      "00000000000000",
+      null,
+      "rates reply is too short"
+    ],
+    [
+      111,
+      "6400464646413200",
+      {
+        "rates": {
+          "rc_rate": 100,
+          "rc_expo": 0,
+          "roll": 70,
+          "pitch": 70,
+          "yaw": 70,
+          "tpa_rate": 65,
+          "throttle_mid": 50,
+          "throttle_expo": 0
+        }
+      },
+      null
+    ],
+    [
+      111,
+      "64004646464132004605",
+      {
+        "rates": {
+          "rc_rate": 100,
+          "rc_expo": 0,
+          "roll": 70,
+          "pitch": 70,
+          "yaw": 70,
+          "tpa_rate": 65,
+          "throttle_mid": 50,
+          "throttle_expo": 0,
+          "tpa_breakpoint": 1350
+        }
+      },
+      null
+    ],
+    [
+      111,
+      "640046464641320001",
+      {
+        "rates": {
+          "rc_rate": 100,
+          "rc_expo": 0,
+          "roll": 70,
+          "pitch": 70,
+          "yaw": 70,
+          "tpa_rate": 65,
+          "throttle_mid": 50,
+          "throttle_expo": 0
+        }
+      },
+      null
+    ],
+    [
+      130,
+      "00000000000000000000",
+      null,
+      "battery reply is too short"
+    ],
+    [
+      130,
+      "04dc05a07800fa00015406",
+      {
+        "battery": {
+          "cells": 4,
+          "capacity_mah": 1500,
+          "voltage": 16.2,
+          "used_mah": 120,
+          "current": 2.5
+        }
+      },
+      null
+    ],
+    [
+      130,
+      "ffffffffffff0080ffffff",
+      {
+        "battery": {
+          "cells": 255,
+          "capacity_mah": 65535,
+          "voltage": 655.35,
+          "used_mah": 65535,
+          "current": -327.68
+        }
+      },
+      null
+    ],
+    [
+      130,
+      "068813000000ffff000100",
+      {
+        "battery": {
+          "cells": 6,
+          "capacity_mah": 5000,
+          "voltage": 0.01,
+          "used_mah": 0,
+          "current": -0.01
+        }
+      },
+      null
+    ]
+  ],
+  "sessions": {
+    "full": {
+      "answers": {
+        "1": "00012e",
+        "2": "4254464c",
+        "3": "040501",
+        "4": "533430350000010008535045454459463400",
+        "5": "4f6374203238203230323631323a30303a303061626364656631",
+        "10": "7261636572",
+        "150": "7d000000230000000000010c000400",
+        "112": "2d501e2f54232d5000000000000000000000000000324b00",
+        "111": "64004646464132004605",
+        "130": "04dc05a07800fa00015406"
+      },
+      "errors": [],
+      "silent": false,
+      "result": {
+        "unanswered": [],
+        "protocol": 0,
+        "api": "1.46",
+        "variant": "BTFL",
+        "variant_name": "Betaflight",
+        "version": "4.5.1",
+        "board": "S405",
+        "hardware_revision": 0,
+        "target": "SPEEDYF4",
+        "build": {
+          "date": "Oct 28 2026",
+          "time": "12:00:00",
+          "revision": "abcdef1"
+        },
+        "name": "racer",
+        "cycle_time_us": 125,
+        "i2c_errors": 0,
+        "sensors": [
+          "gyro",
+          "accelerometer",
+          "barometer"
+        ],
+        "pid_profile": 2,
+        "cpu_load": 12,
+        "pid_profile_count": 4,
+        "rate_profile": 1,
+        "pids": {
+          "roll": {
+            "p": 45,
+            "i": 80,
+            "d": 30
+          },
+          "pitch": {
+            "p": 47,
+            "i": 84,
+            "d": 35
+          },
+          "yaw": {
+            "p": 45,
+            "i": 80,
+            "d": 0
+          },
+          "level": {
+            "p": 50,
+            "i": 75,
+            "d": 0
+          }
+        },
+        "rates": {
+          "rc_rate": 100,
+          "rc_expo": 0,
+          "roll": 70,
+          "pitch": 70,
+          "yaw": 70,
+          "tpa_rate": 65,
+          "throttle_mid": 50,
+          "throttle_expo": 0,
+          "tpa_breakpoint": 1350
+        },
+        "battery": {
+          "cells": 4,
+          "capacity_mah": 1500,
+          "voltage": 16.2,
+          "used_mah": 120,
+          "current": 2.5
+        },
+        "is_betaflight": true
+      },
+      "error": null,
+      "requests": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        10,
+        150,
+        112,
+        111,
+        130
+      ]
+    },
+    "missing_optional": {
+      "answers": {
+        "1": "00012e",
+        "2": "4254464c",
+        "3": "040501",
+        "4": "533430350000010008535045454459463400",
+        "5": "4f6374203238203230323631323a30303a303061626364656631",
+        "10": "7261636572",
+        "150": "7d000000230000000000010c000400",
+        "112": "2d501e2f54232d5000000000000000000000000000324b00",
+        "111": "64004646464132004605",
+        "130": "04dc05a07800fa00015406"
+      },
+      "errors": [
+        10,
+        130
+      ],
+      "silent": false,
+      "result": {
+        "unanswered": [
+          10,
+          130
+        ],
+        "protocol": 0,
+        "api": "1.46",
+        "variant": "BTFL",
+        "variant_name": "Betaflight",
+        "version": "4.5.1",
+        "board": "S405",
+        "hardware_revision": 0,
+        "target": "SPEEDYF4",
+        "build": {
+          "date": "Oct 28 2026",
+          "time": "12:00:00",
+          "revision": "abcdef1"
+        },
+        "cycle_time_us": 125,
+        "i2c_errors": 0,
+        "sensors": [
+          "gyro",
+          "accelerometer",
+          "barometer"
+        ],
+        "pid_profile": 2,
+        "cpu_load": 12,
+        "pid_profile_count": 4,
+        "rate_profile": 1,
+        "pids": {
+          "roll": {
+            "p": 45,
+            "i": 80,
+            "d": 30
+          },
+          "pitch": {
+            "p": 47,
+            "i": 84,
+            "d": 35
+          },
+          "yaw": {
+            "p": 45,
+            "i": 80,
+            "d": 0
+          },
+          "level": {
+            "p": 50,
+            "i": 75,
+            "d": 0
+          }
+        },
+        "rates": {
+          "rc_rate": 100,
+          "rc_expo": 0,
+          "roll": 70,
+          "pitch": 70,
+          "yaw": 70,
+          "tpa_rate": 65,
+          "throttle_mid": 50,
+          "throttle_expo": 0,
+          "tpa_breakpoint": 1350
+        },
+        "is_betaflight": true
+      },
+      "error": null,
+      "requests": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        10,
+        150,
+        112,
+        111,
+        130
+      ]
+    },
+    "short_pid": {
+      "answers": {
+        "1": "00012e",
+        "2": "4254464c",
+        "3": "040501",
+        "4": "533430350000010008535045454459463400",
+        "5": "4f6374203238203230323631323a30303a303061626364656631",
+        "10": "7261636572",
+        "150": "7d000000230000000000010c000400",
+        "112": "0102",
+        "111": "64004646464132004605",
+        "130": "04dc05a07800fa00015406"
+      },
+      "errors": [],
+      "silent": false,
+      "result": {
+        "unanswered": [
+          112
+        ],
+        "protocol": 0,
+        "api": "1.46",
+        "variant": "BTFL",
+        "variant_name": "Betaflight",
+        "version": "4.5.1",
+        "board": "S405",
+        "hardware_revision": 0,
+        "target": "SPEEDYF4",
+        "build": {
+          "date": "Oct 28 2026",
+          "time": "12:00:00",
+          "revision": "abcdef1"
+        },
+        "name": "racer",
+        "cycle_time_us": 125,
+        "i2c_errors": 0,
+        "sensors": [
+          "gyro",
+          "accelerometer",
+          "barometer"
+        ],
+        "pid_profile": 2,
+        "cpu_load": 12,
+        "pid_profile_count": 4,
+        "rate_profile": 1,
+        "rates": {
+          "rc_rate": 100,
+          "rc_expo": 0,
+          "roll": 70,
+          "pitch": 70,
+          "yaw": 70,
+          "tpa_rate": 65,
+          "throttle_mid": 50,
+          "throttle_expo": 0,
+          "tpa_breakpoint": 1350
+        },
+        "battery": {
+          "cells": 4,
+          "capacity_mah": 1500,
+          "voltage": 16.2,
+          "used_mah": 120,
+          "current": 2.5
+        },
+        "is_betaflight": true
+      },
+      "error": null,
+      "requests": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        10,
+        150,
+        112,
+        111,
+        130
+      ]
+    },
+    "inav": {
+      "answers": {
+        "1": "00012e",
+        "2": "494e4156",
+        "3": "040501",
+        "4": "533430350000010008535045454459463400",
+        "5": "4f6374203238203230323631323a30303a303061626364656631",
+        "10": "7261636572",
+        "150": "7d000000230000000000010c000400",
+        "112": "2d501e2f54232d5000000000000000000000000000324b00",
+        "111": "64004646464132004605",
+        "130": "04dc05a07800fa00015406"
+      },
+      "errors": [],
+      "silent": false,
+      "result": {
+        "unanswered": [],
+        "protocol": 0,
+        "api": "1.46",
+        "variant": "INAV",
+        "variant_name": "iNav",
+        "version": "4.5.1",
+        "board": "S405",
+        "hardware_revision": 0,
+        "target": "SPEEDYF4",
+        "build": {
+          "date": "Oct 28 2026",
+          "time": "12:00:00",
+          "revision": "abcdef1"
+        },
+        "name": "racer",
+        "cycle_time_us": 125,
+        "i2c_errors": 0,
+        "sensors": [
+          "gyro",
+          "accelerometer",
+          "barometer"
+        ],
+        "pid_profile": 2,
+        "cpu_load": 12,
+        "pid_profile_count": 4,
+        "rate_profile": 1,
+        "pids": {
+          "roll": {
+            "p": 45,
+            "i": 80,
+            "d": 30
+          },
+          "pitch": {
+            "p": 47,
+            "i": 84,
+            "d": 35
+          },
+          "yaw": {
+            "p": 45,
+            "i": 80,
+            "d": 0
+          },
+          "level": {
+            "p": 50,
+            "i": 75,
+            "d": 0
+          }
+        },
+        "rates": {
+          "rc_rate": 100,
+          "rc_expo": 0,
+          "roll": 70,
+          "pitch": 70,
+          "yaw": 70,
+          "tpa_rate": 65,
+          "throttle_mid": 50,
+          "throttle_expo": 0,
+          "tpa_breakpoint": 1350
+        },
+        "battery": {
+          "cells": 4,
+          "capacity_mah": 1500,
+          "voltage": 16.2,
+          "used_mah": 120,
+          "current": 2.5
+        },
+        "is_betaflight": false
+      },
+      "error": null,
+      "requests": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        10,
+        150,
+        112,
+        111,
+        130
+      ]
+    },
+    "silent": {
+      "answers": {},
+      "errors": [],
+      "silent": true,
+      "result": null,
+      "error": "No flight controller answered. Use the USB port of the flight controller, not the telemetry port, with MSP on that port.",
+      "requests": [
+        1,
+        1
+      ]
+    },
+    "required_error": {
+      "answers": {
+        "1": "00012e",
+        "2": "4254464c",
+        "3": "040501",
+        "4": "533430350000010008535045454459463400",
+        "5": "4f6374203238203230323631323a30303a303061626364656631",
+        "10": "7261636572",
+        "150": "7d000000230000000000010c000400",
+        "112": "2d501e2f54232d5000000000000000000000000000324b00",
+        "111": "64004646464132004605",
+        "130": "04dc05a07800fa00015406"
+      },
+      "errors": [
+        2
+      ],
+      "silent": false,
+      "result": null,
+      "error": "No flight controller answered. Use the USB port of the flight controller, not the telemetry port, with MSP on that port.",
+      "requests": [
+        1,
+        2
+      ]
+    },
+    "short_required": {
+      "answers": {
+        "1": "00012e",
+        "2": "4254464c",
+        "3": "01",
+        "4": "533430350000010008535045454459463400",
+        "5": "4f6374203238203230323631323a30303a303061626364656631",
+        "10": "7261636572",
+        "150": "7d000000230000000000010c000400",
+        "112": "2d501e2f54232d5000000000000000000000000000324b00",
+        "111": "64004646464132004605",
+        "130": "04dc05a07800fa00015406"
+      },
+      "errors": [],
+      "silent": false,
+      "result": null,
+      "error": "firmware version reply is too short",
+      "requests": [
+        1,
+        2,
+        3
+      ]
+    },
+    "only_required": {
+      "answers": {
+        "1": "00012e",
+        "2": "4254464c",
+        "3": "040501"
+      },
+      "errors": [],
+      "silent": false,
+      "result": {
+        "unanswered": [
+          4,
+          5,
+          10,
+          150,
+          112,
+          111,
+          130
+        ],
+        "protocol": 0,
+        "api": "1.46",
+        "variant": "BTFL",
+        "variant_name": "Betaflight",
+        "version": "4.5.1",
+        "is_betaflight": true
+      },
+      "error": null,
+      "requests": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        10,
+        150,
+        112,
+        111,
+        130
+      ]
+    }
+  },
+  "constants": {
+    "default_baud": 115200,
+    "bauds": [
+      115200,
+      57600,
+      230400,
+      460800,
+      921600,
+      38400,
+      19200,
+      9600
+    ]
+  }
+}

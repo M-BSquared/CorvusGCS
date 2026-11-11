@@ -1,6 +1,7 @@
 {
   "get": [
     "/api/battery",
+    "/api/betaflight/status",
     "/api/branding/logo",
     "/api/config",
     "/api/console/stream",
@@ -64,6 +65,7 @@
   ],
   "post": [
     "/api/autotune",
+    "/api/betaflight/read",
     "/api/branding/logo/remove",
     "/api/calibrate",
     "/api/calibrate/cancel",
