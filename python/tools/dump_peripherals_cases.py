@@ -163,7 +163,178 @@ def netprobe() -> None:
     write("peripherals_netprobe_cases.json", out)
 
 
-COMMANDS = {"ports": ports, "netprobe": netprobe}
+def _hex(b: bytes) -> str:
+    return bytes(b).hex()
+
+
+def rtk() -> None:
+    from corvus import rtk as r
+
+    out: dict[str, object] = {}
+    durations = [0, 10, 60, 180, 3600, 86400, -5]
+    accuracies = [0.0, 0.05, 0.1, 0.5, 2.0, 2.0005, 100.0, 3.14159]
+    out["survey"] = [
+        {"duration": d, "accuracy": a, "msm7": m,
+         "modern": [_hex(f) for f in r.survey_in_frames(d, a, m)],
+         "legacy": [_hex(f) for f in r.legacy_survey_in_frames(d, a, m)]}
+        for d in durations for a in accuracies for m in (False, True)
+    ]
+    positions = [
+        (47.123456789, 8.987654321, 512.3456, 0.1), (-33.8688, 151.2093, -12.5, 0.05), (0.0, 0.0, 0.0, 0.1),
+        (89.999999999, -179.999999999, 19999.9999, 100.0), (47.5, 8.5, 1000.0, 2.0), (-0.000000001, 0.000000001, 0.00005, 0.0),
+        (12.3456789012, 98.7654321098, 123456.78, 0.3),
+    ]
+    out["fixed"] = [
+        {"lat": la, "lon": lo, "alt": al, "acc": ac, "msm7": m,
+         "modern": [_hex(f) for f in r.fixed_position_frames(la, lo, al, ac, m)],
+         "legacy": [_hex(f) for f in r.legacy_fixed_position_frames(la, lo, al, ac, m)]}
+        for la, lo, al, ac in positions for m in (False, True)
+    ]
+    out["output"] = [
+        {"msm7": m,
+         "stop": [_hex(f) for f in r.stop_output_frames(m)],
+         "activate": [_hex(f) for f in r.activate_output_frames(m)],
+         "activate_full_rate": [_hex(f) for f in r.activate_output_frames(m, False)],
+         "disable": [_hex(f) for f in r.disable_base_frames(m)],
+         "legacy_stop": [_hex(f) for f in r.legacy_stop_output_frames(m)],
+         "legacy_activate": [_hex(f) for f in r.legacy_activate_output_frames(m)],
+         "legacy_disable": [_hex(f) for f in r.legacy_disable_base_frames(m)]}
+        for m in (False, True)
+    ]
+    out["polls"] = [{"class": c, "id": i, "frame": _hex(r.poll_frame(c, i))}
+                    for c, i in [(0x0A, 0x04), (0x01, 0x3B), (0x06, 0x8A), (0xF5, 0x05)]]
+    out["valset"] = [
+        {"items": [[k, v] for k, v in items], "frame": _hex(r.valset(items))}
+        for items in [
+            [(0x20030001, 1)], [(0x30210001, 1000), (0x20030001, 2)], [(0x40030009, -1), (0x4003000F, 123456)],
+            [(0x20910088, 0), (0x209102BD, 5), (0x50030001, 2**40 + 7)], [],
+        ]
+    ]
+    nav = []
+    for dur, acc, valid, active in [(0, 0, 0, 1), (90, 15000, 0, 1), (180, 9000, 1, 0), (4000000000, 4294967295, 1, 1)]:
+        payload = bytearray(40)
+        payload[8:12] = dur.to_bytes(4, "little")
+        payload[12:16] = (-2_000_000).to_bytes(4, "little", signed=True)
+        payload[16:20] = (3_500_000).to_bytes(4, "little", signed=True)
+        payload[20:24] = (4_700_000).to_bytes(4, "little", signed=True)
+        payload[28:32] = acc.to_bytes(4, "little")
+        payload[32:36] = (77).to_bytes(4, "little")
+        payload[36] = valid
+        payload[37] = active
+        nav.append({"payload": _hex(bytes(payload)), "result": r.parse_nav_svin(bytes(payload))})
+    nav.append({"payload": _hex(b"\x00" * 39), "result": r.parse_nav_svin(b"\x00" * 39)})
+    out["nav_svin"] = nav
+    vers = []
+
+    def mon(sw: bytes, hw: bytes, exts: list[bytes]) -> bytes:
+        return sw.ljust(30, b"\0") + hw.ljust(10, b"\0") + b"".join(e.ljust(30, b"\0") for e in exts)
+
+    for payload in [
+        mon(b"EXT CORE 1.00 (61b2dd)", b"00190000", [b"ROM BASE 0x118B2060", b"FWVER=HPG 1.32", b"PROTVER=27.31", b"MOD=ZED-F9P"]),
+        mon(b"EXT CORE 3.01", b"00080000", [b"PROTVER=18.00", b"MOD=NEO-M8P-2"]),
+        mon(b"x", b"y", [b"PROTVER 20"]), mon(b"x", b"y", [b"PROTVER="]), mon(b"x", b"y", [b"PROTVER=abc", b"MOD= LEA-6H "]),
+        mon(b"x\xff", b"y", []), b"\x00" * 39, b"",
+    ]:
+        v = r.parse_mon_ver(payload)
+        vers.append({"payload": _hex(payload), "result": v, "label": r.receiver_label(v), "valset": r.supports_valset(v)})
+    out["mon_ver"] = vers
+    out["labels"] = [
+        {"version": v, "label": r.receiver_label(v), "valset": r.supports_valset(v)}
+        for v in [None, {}, {"model": "ZED-F9P"}, {"model": "", "software": " sw ", "protocol": 27.0},
+                  {"protocol": 15.5}, {"protocol": 0.0, "model": "X"}, {"protocol": 1234567.0}, {"protocol": 0.00001234}]
+    ]
+    out["crc"] = [{"data": _hex(d), "crc": r.crc24q(d)} for d in [b"", b"123456789", b"\xd3\x00\x13" + b"\x01" * 19]]
+
+    def rtcm(number: int, body: bytes) -> bytes:
+        payload = bytes([number >> 4, (number & 0x0F) << 4]) + body
+        head = bytes([0xD3, (len(payload) >> 8) & 3, len(payload) & 0xFF]) + payload
+        c = r.crc24q(head)
+        return head + bytes([c >> 16, (c >> 8) & 255, c & 255])
+
+    good = [rtcm(1005, bytes(range(19))), rtcm(1074, b"\x02" * 300), rtcm(1230, b"\x03" * 5)]
+    bad = bytearray(rtcm(1005, b"\x07" * 19))
+    bad[-1] ^= 0xFF
+    streams = {
+        "clean": b"".join(good),
+        "noise": b"junk" + b"".join(good) + b"\xd3\xd3\xd3",
+        "corrupt": b"junk, not a frame" + bytes(bad) + good[1],
+        "truncated": good[0][:10],
+        "empty": b"",
+    }
+    framer_cases = []
+    for name, stream in streams.items():
+        for chunk in (1, 3, 7, 64, 500, max(1, len(stream))):
+            f = r.RtcmFramer()
+            frames = []
+            for i in range(0, len(stream), chunk):
+                frames.extend(f.feed(stream[i:i + chunk]))
+            framer_cases.append({
+                "name": name, "chunk": chunk, "stream": _hex(stream), "frames": [_hex(x) for x in frames],
+                "crc_errors": f.crc_errors, "discarded": f.discarded, "count": f.frames,
+                "numbers": [r.message_number(x) for x in frames],
+            })
+    out["framer"] = framer_cases
+    ubx_stream = (r.poll_frame(1, 0x3B) + b"\x00\xb5" + r.ubx_frame(0x06, 0x8A, b"\x09" * 4)[:-1] + b"\x00"
+                  + r.ubx_frame(0x0A, 0x04, b"abc"))
+    ubx_cases = []
+    for chunk in (1, 3, 5, 64, len(ubx_stream)):
+        p = r.UbxParser()
+        got = []
+        for i in range(0, len(ubx_stream), chunk):
+            got.extend(p.feed(ubx_stream[i:i + chunk]))
+        ubx_cases.append({"chunk": chunk, "stream": _hex(ubx_stream), "messages": [[c, i, _hex(pl)] for c, i, pl in got]})
+    out["ubx_parser"] = ubx_cases
+
+    raws = [
+        None, 5, [], {}, {"enabled": True}, {"enabled": "yes"}, {"source": "ntrip", "mode": "fixed"}, {"source": "tcp", "mode": "x"},
+        {"device": "  /dev/ttyACM0  ", "baud": 115200}, {"device": 5, "baud": "9600"}, {"baud": 1e12}, {"baud": -5}, {"baud": 38400.7},
+        {"baud": True}, {"survey_accuracy": 0.0}, {"survey_accuracy": 500}, {"survey_accuracy": "1.5"}, {"survey_accuracy": None},
+        {"survey_accuracy": 2.0004999}, {"survey_duration": 1}, {"survey_duration": 10**12},
+        {"survey_duration": 99.9}, {"survey_duration": "100"}, {"survey_duration": True}, {"msm7": True}, {"msm7": 1},
+        {"fixed": {}}, {"fixed": {"latitude": 47.123456789012, "longitude": -8.5, "altitude": 512.123456, "accuracy": 0.0001}},
+        {"fixed": {"latitude": 91, "longitude": -181, "altitude": 99999, "accuracy": 1000}}, {"fixed": "x"},
+        {"fixed": {"latitude": "47.5", "longitude": None}}, {"ntrip": {}}, {"ntrip": {"host": " caster.example.com ", "port": 2102,
+         "mountpoint": "MOUNT", "username": " u ", "password": " p "}}, {"ntrip": {"port": 0}}, {"ntrip": {"port": 70000}},
+        {"ntrip": {"host": "h" * 300, "mountpoint": "m" * 200, "username": "u" * 200, "password": "p" * 200}},
+        {"ntrip": "x"}, {"ntrip": {"port": 2101.9}}, {"unknown": 1},
+    ]
+    resolved = []
+    for raw in raws:
+        s = r.settings(raw)
+        resolved.append({"raw": raw, "settings": s, "public": r.public_settings(s)})
+    out["settings"] = resolved
+    out["defaults"] = r.defaults()
+    out["fixed_problems"] = [
+        {"fixed": f, "problem": r.fixed_position_problem(f)}
+        for f in [{}, {"latitude": 0, "longitude": 0}, {"latitude": 47.5, "longitude": 8.5}, {"latitude": 95, "longitude": 8},
+                  {"latitude": 1, "longitude": 200}, {"latitude": 1e-10, "longitude": 1e-10}, {"latitude": "5", "longitude": "6"},
+                  {"latitude": 0, "longitude": 3}]
+    ]
+    out["ntrip_problems"] = [
+        {"ntrip": n, "problem": r.ntrip_problem(n)}
+        for n in [{}, {"host": "h"}, {"host": " ", "mountpoint": "m"}, {"host": "h", "mountpoint": "m"}, {"host": "h", "mountpoint": " "},
+                  {"host": 5, "mountpoint": 6}]
+    ]
+    out["progress"] = [
+        {"survey": s, "duration": d, "accuracy": a, "progress": r.survey_progress(s, d, a)}
+        for s in [None, {}, {"valid": True, "active": False}, {"valid": True, "active": True}, {"duration": 90, "accuracy": 1.0},
+                  {"duration": 900, "accuracy": 0.5}, {"duration": 90, "accuracy": 4.0}, {"duration": 0, "accuracy": 0},
+                  {"duration": -5, "accuracy": 2.0}, {"duration": 45, "accuracy": 0.0}, {"duration": 10, "accuracy": 2.0}]
+        for d, a in [(180, 2.0), (10, 0.1), (86400, 100.0), (1, 2.0)]
+    ]
+    requests = []
+    for host, port, mount, user, pw in [
+        ("caster.example.com", 2101, "MOUNT", "", ""), ("h", 80, "a/b", "user", "pass"), ("h", 2101, "m", "u", ""), ("h", 2101, "m", "", "p"),
+        ("h", 2101, "m\u00e9", "\u00fc", "\u00df"),
+    ]:
+        requests.append({"host": host, "port": port, "mount": mount, "user": user, "password": pw,
+                         "request": r._rtk.ntrip_request(host, port, mount, user, pw).decode("latin-1")
+                         .replace(__import__("corvus.version", fromlist=["x"]).get_version(), "{version}")})
+    out["ntrip_requests"] = requests
+    write("peripherals_rtk_cases.json", out)
+
+
+COMMANDS = {"ports": ports, "netprobe": netprobe, "rtk": rtk}
 
 
 def main(argv: list[str]) -> int:

@@ -51,6 +51,15 @@ pub fn os_error_text(e: &std::io::Error) -> String {
     }
 }
 
+/// `str(OSError)`: `[Errno 54] Connection reset by peer` for an error the
+/// system numbered, the plain text otherwise.
+pub fn py_oserror_text(e: &std::io::Error) -> String {
+    match e.raw_os_error() {
+        Some(code) => format!("[Errno {code}] {}", os_error_text(e)),
+        None => e.to_string(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

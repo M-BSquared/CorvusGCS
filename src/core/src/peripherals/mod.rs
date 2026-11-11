@@ -10,9 +10,10 @@
 pub mod child_env;
 pub mod net_probe;
 pub mod ports;
+pub mod rtk;
 pub mod util;
 
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use serde_json::{json, Value};
 
@@ -27,6 +28,14 @@ use net_probe::Pinger;
 /// `core.service::<Peripherals>()`.
 pub struct Peripherals {
     pub pinger: Pinger,
+    rtk: OnceLock<Arc<rtk::RtkService>>,
+}
+
+impl Peripherals {
+    /// The RTK base station service, once the module has started.
+    pub fn rtk(&self) -> Option<Arc<rtk::RtkService>> {
+        self.rtk.get().cloned()
+    }
 }
 
 pub struct PeripheralsModule {
@@ -38,6 +47,7 @@ impl PeripheralsModule {
         PeripheralsModule {
             inner: Arc::new(Peripherals {
                 pinger: Pinger::new(None),
+                rtk: OnceLock::new(),
             }),
         }
     }
@@ -57,9 +67,44 @@ impl Module for PeripheralsModule {
     fn register(&self, reg: &mut Registry) {
         reg.service(Arc::clone(&self.inner));
         reg.post("/api/local/ping", api_local_ping);
+        rtk::register(reg);
+    }
+
+    fn start(&self, core: &Core) -> std::io::Result<()> {
+        // RTK is the one service whose default is to act: it is built and, when
+        // switched on in the config, started here, so a base plugged in before
+        // the ground station opened is found without anybody asking.
+        if let Some(vehicle) = core.service::<crate::vehicle::VehicleService>() {
+            let settings = core
+                .settings()
+                .get()
+                .get("rtk")
+                .cloned()
+                .unwrap_or(serde_json::Value::Null);
+            let timing = rtk::Timing::default();
+            let service = Arc::new(rtk::RtkService::new(
+                Arc::new(rtk::VehicleRtkHost { vehicle }),
+                &settings,
+                rtk::RtkIo::system(timing),
+                timing,
+            ));
+            if service
+                .settings()
+                .get("enabled")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+            {
+                service.start();
+            }
+            let _ = self.inner.rtk.set(service);
+        }
+        Ok(())
     }
 
     fn stop(&self, _core: &Core) {
+        if let Some(rtk) = self.inner.rtk() {
+            rtk.stop(3.0);
+        }
         self.inner.pinger.shutdown();
     }
 }
