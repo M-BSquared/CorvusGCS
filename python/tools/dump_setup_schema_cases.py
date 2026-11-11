@@ -115,6 +115,7 @@ def tables() -> None:
     tables_mounting()
     tables_motors()
     tables_rc()
+    tables_tuning()
 
     write_table("safety.json", export(S, [
         "ON_OFF_OPTIONS", "GEOFENCE_ACTION_OPTIONS", "GEOFENCE_SOURCE_OPTIONS", "RTL_TYPE_OPTIONS",
@@ -205,6 +206,25 @@ def tables_rc() -> None:
                           "SWITCH_FIELDS", "AUX_FIELDS", "INPUT_NUMBER_FIELDS"]),
         "ardupilot": export(AR, ["ON_OFF_OPTIONS", "STICK_FIELDS", "MODE_SWITCH_FIELDS", "MODE_SLOT_FIELDS",
                                  "RC_OPTION_VALUES"]),
+    })
+
+
+def tables_tuning() -> None:
+    from corvus import ardupilot_tuning as AT
+    from corvus import tuning_config as T
+
+    write_table("tuning.json", {
+        "px4": export(T, ["ON_OFF_OPTIONS", "AUTOTUNE_APPLY_OPTIONS", "FW_AXES_BITS", "MC_AUTOTUNE_AXES", "AXES_HINT",
+                          "MC_RATE_SECTIONS", "MC_ATTITUDE_SECTIONS", "MC_VELOCITY_SECTIONS", "MC_POSITION_SECTIONS",
+                          "FW_RATE_SECTIONS", "FW_ATTITUDE_SECTIONS", "MC_RATE_CHARTS", "ATTITUDE_CHARTS",
+                          "VELOCITY_CHARTS", "POSITION_CHARTS", "AUTOTUNE_STEPS", "MC_AUTOTUNE_FIELDS",
+                          "FW_AUTOTUNE_FIELDS", "AUTOTUNE_RUNNING_TEXT", "TUNE_NONE_TEXT"]) | {"APPLY_DONE_TEXT": T._APPLY_DONE_TEXT},
+        "ardupilot": export(AT, ["COPTER_RATE_SECTIONS", "COPTER_ATTITUDE_SECTIONS", "COPTER_VELOCITY_SECTIONS",
+                                 "COPTER_POSITION_SECTIONS", "PLANE_RATE_SECTIONS", "PLANE_ATTITUDE_SECTIONS",
+                                 "ROVER_RATE_SECTIONS", "ROVER_NAV_SECTIONS", "RATE_CHARTS", "ATTITUDE_CHARTS",
+                                 "VELOCITY_CHARTS", "AUTOTUNE_AXES_BITS", "PLANE_AUTOTUNE_AXES_BITS",
+                                 "COPTER_AUTOTUNE_FIELDS", "PLANE_AUTOTUNE_FIELDS", "COPTER_AUTOTUNE_STEPS",
+                                 "PLANE_AUTOTUNE_STEPS", "COPTER_RUNNING_TEXT", "PLANE_RUNNING_TEXT"]),
     })
 
 
@@ -560,6 +580,34 @@ def rc() -> None:
                       "calibration": [[e, calibrate(A, e)] for e in inputs]}}), compact=True)
 
 
+def tuning() -> None:
+    from corvus import ardupilot_tuning as A
+    from corvus import tuning_config as P
+
+    px4_pools = {"MC_AT_EN": [0.0, 1.0, 2.0], "FW_AT_EN": [0.0, 1.0], "MC_AT_APPLY": [0.0, 1.0, 2.0, 3.0], "FW_AT_APPLY": [0.0, 1.0, 2.0, 5.0],
+                 "FW_AT_AXES": [0.0, 1.0, 3.0, 7.0, 9.0]}
+    px4 = [[v, P.build(dict(v))] for v in value_sets(P.param_names(), px4_pools, seed=41, count=80)]
+    mc = {n: 0.1 for n in P.param_names() if n.startswith(("MC_", "MPC_"))}
+    fw = {n: 0.2 for n in P.param_names() if n.startswith("FW_")}
+    for extra in ({"MC_AT_EN": 1.0, "MC_AT_APPLY": 0.0}, {"MC_AT_EN": 0.0, "MC_AT_APPLY": 2.0}, {"MC_AT_EN": 1.0}):
+        px4.append([{**mc, **extra}, P.build({**mc, **extra})])
+    for extra in ({"FW_AT_EN": 1.0, "FW_AT_AXES": 5.0}, {"FW_AT_EN": 1.0}):
+        px4.append([{**fw, **extra}, P.build({**fw, **extra})])
+    ap_pools = {"AUTOTUNE_AXES": [0.0, 1.0, 7.0, 15.0], "AUTOTUNE_OPTIONS": [0.0, 1.0, 2.0]}
+    ap = []
+    vehicles = ("copter", "plane", "rover", "sub", "other", "")
+    for i, v in enumerate(value_sets(A.param_names(), ap_pools, seed=42, count=80)):
+        vehicle = vehicles[i % len(vehicles)]
+        ap.append([v, vehicle, A.build(dict(v), vehicle)])
+    full = {n: 0.5 for n in A.param_names()}
+    for vehicle in vehicles:
+        ap.append([full, vehicle, A.build(dict(full), vehicle)])
+    ap.append([{"ATC_RAT_RLL_P": 0.1}, None, A.build({"ATC_RAT_RLL_P": 0.1})])
+    write("setup_tuning_cases.json", clean({
+        "px4": {"names": P.param_names(), "cases": px4},
+        "ardupilot": {"names": A.param_names(), "cases": ap}}), compact=True)
+
+
 def battery() -> None:
     from corvus import ardupilot_battery as A
     from corvus import battery_config as P
@@ -620,7 +668,7 @@ def fields() -> None:
     write("setup_fields_cases.json", out)
 
 
-COMMANDS = {"metadata": metadata, "fields": fields, "tables": tables, "safety": safety, "battery": battery, "rc": rc, "motors": motors, "mounting": mounting, "ardupilot_safety": ardupilot_safety}
+COMMANDS = {"metadata": metadata, "fields": fields, "tables": tables, "safety": safety, "battery": battery, "tuning": tuning, "rc": rc, "motors": motors, "mounting": mounting, "ardupilot_safety": ardupilot_safety}
 
 
 def main(argv: list[str]) -> int:
