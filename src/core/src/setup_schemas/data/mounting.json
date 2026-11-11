@@ -1,0 +1,358 @@
+{
+ "ROTATION_OPTIONS": [
+  {
+   "value": 0,
+   "label": "No rotation"
+  },
+  {
+   "value": 1,
+   "label": "Yaw 45°"
+  },
+  {
+   "value": 2,
+   "label": "Yaw 90°"
+  },
+  {
+   "value": 3,
+   "label": "Yaw 135°"
+  },
+  {
+   "value": 4,
+   "label": "Yaw 180°"
+  },
+  {
+   "value": 5,
+   "label": "Yaw 225°"
+  },
+  {
+   "value": 6,
+   "label": "Yaw 270°"
+  },
+  {
+   "value": 7,
+   "label": "Yaw 315°"
+  },
+  {
+   "value": 8,
+   "label": "Roll 180°"
+  },
+  {
+   "value": 9,
+   "label": "Roll 180°, Yaw 45°"
+  },
+  {
+   "value": 10,
+   "label": "Roll 180°, Yaw 90°"
+  },
+  {
+   "value": 11,
+   "label": "Roll 180°, Yaw 135°"
+  },
+  {
+   "value": 12,
+   "label": "Pitch 180°"
+  },
+  {
+   "value": 13,
+   "label": "Roll 180°, Yaw 225°"
+  },
+  {
+   "value": 14,
+   "label": "Roll 180°, Yaw 270°"
+  },
+  {
+   "value": 15,
+   "label": "Roll 180°, Yaw 315°"
+  },
+  {
+   "value": 16,
+   "label": "Roll 90°"
+  },
+  {
+   "value": 17,
+   "label": "Roll 90°, Yaw 45°"
+  },
+  {
+   "value": 18,
+   "label": "Roll 90°, Yaw 90°"
+  },
+  {
+   "value": 19,
+   "label": "Roll 90°, Yaw 135°"
+  },
+  {
+   "value": 20,
+   "label": "Roll 270°"
+  },
+  {
+   "value": 21,
+   "label": "Roll 270°, Yaw 45°"
+  },
+  {
+   "value": 22,
+   "label": "Roll 270°, Yaw 90°"
+  },
+  {
+   "value": 23,
+   "label": "Roll 270°, Yaw 135°"
+  },
+  {
+   "value": 24,
+   "label": "Pitch 90°"
+  },
+  {
+   "value": 25,
+   "label": "Pitch 270°"
+  },
+  {
+   "value": 26,
+   "label": "Pitch 180°, Yaw 90°"
+  },
+  {
+   "value": 27,
+   "label": "Pitch 180°, Yaw 270°"
+  },
+  {
+   "value": 28,
+   "label": "Roll 90°, Pitch 90°"
+  },
+  {
+   "value": 29,
+   "label": "Roll 180°, Pitch 90°"
+  },
+  {
+   "value": 30,
+   "label": "Roll 270°, Pitch 90°"
+  },
+  {
+   "value": 31,
+   "label": "Roll 90°, Pitch 180°"
+  },
+  {
+   "value": 32,
+   "label": "Roll 270°, Pitch 180°"
+  },
+  {
+   "value": 33,
+   "label": "Roll 90°, Pitch 270°"
+  },
+  {
+   "value": 34,
+   "label": "Roll 180°, Pitch 270°"
+  },
+  {
+   "value": 35,
+   "label": "Roll 270°, Pitch 270°"
+  },
+  {
+   "value": 36,
+   "label": "Roll 90°, Pitch 180°, Yaw 90°"
+  },
+  {
+   "value": 37,
+   "label": "Roll 90°, Yaw 270°"
+  },
+  {
+   "value": 38,
+   "label": "Roll 90°, Pitch 68°, Yaw 293°"
+  },
+  {
+   "value": 39,
+   "label": "Pitch 315°"
+  },
+  {
+   "value": 40,
+   "label": "Roll 90°, Pitch 315°"
+  }
+ ],
+ "AXIS_LABELS": {
+  "X": "Forward",
+  "Y": "Right",
+  "Z": "Down"
+ },
+ "POSITION_HINT": "Metres from the centre of gravity. Forward, right and down are positive, so a GPS on a mast above the frame has a negative Z.",
+ "ORIENTATION_HINT": "Set the rotation before calibrating. The accelerometer and compass calibrations are measured through it, so changing it later means calibrating both again, and the level horizon too. It takes effect after a reboot.",
+ "GPS_HINT": "The antenna, not the receiver box. With RTK the offset is larger than the position error, so measure it.",
+ "AHRS_ROTATION_OPTIONS": [
+  {
+   "value": 0,
+   "label": "No rotation"
+  },
+  {
+   "value": 1,
+   "label": "Yaw 45°"
+  },
+  {
+   "value": 2,
+   "label": "Yaw 90°"
+  },
+  {
+   "value": 3,
+   "label": "Yaw 135°"
+  },
+  {
+   "value": 4,
+   "label": "Yaw 180°"
+  },
+  {
+   "value": 5,
+   "label": "Yaw 225°"
+  },
+  {
+   "value": 6,
+   "label": "Yaw 270°"
+  },
+  {
+   "value": 7,
+   "label": "Yaw 315°"
+  },
+  {
+   "value": 8,
+   "label": "Roll 180°"
+  },
+  {
+   "value": 9,
+   "label": "Roll 180°, Yaw 45°"
+  },
+  {
+   "value": 10,
+   "label": "Roll 180°, Yaw 90°"
+  },
+  {
+   "value": 11,
+   "label": "Roll 180°, Yaw 135°"
+  },
+  {
+   "value": 12,
+   "label": "Pitch 180°"
+  },
+  {
+   "value": 13,
+   "label": "Roll 180°, Yaw 225°"
+  },
+  {
+   "value": 14,
+   "label": "Roll 180°, Yaw 270°"
+  },
+  {
+   "value": 15,
+   "label": "Roll 180°, Yaw 315°"
+  },
+  {
+   "value": 16,
+   "label": "Roll 90°"
+  },
+  {
+   "value": 17,
+   "label": "Roll 90°, Yaw 45°"
+  },
+  {
+   "value": 18,
+   "label": "Roll 90°, Yaw 90°"
+  },
+  {
+   "value": 19,
+   "label": "Roll 90°, Yaw 135°"
+  },
+  {
+   "value": 20,
+   "label": "Roll 270°"
+  },
+  {
+   "value": 21,
+   "label": "Roll 270°, Yaw 45°"
+  },
+  {
+   "value": 22,
+   "label": "Roll 270°, Yaw 90°"
+  },
+  {
+   "value": 23,
+   "label": "Roll 270°, Yaw 135°"
+  },
+  {
+   "value": 24,
+   "label": "Pitch 90°"
+  },
+  {
+   "value": 25,
+   "label": "Pitch 270°"
+  },
+  {
+   "value": 26,
+   "label": "Pitch 180°, Yaw 90°"
+  },
+  {
+   "value": 27,
+   "label": "Pitch 180°, Yaw 270°"
+  },
+  {
+   "value": 28,
+   "label": "Roll 90°, Pitch 90°"
+  },
+  {
+   "value": 29,
+   "label": "Roll 180°, Pitch 90°"
+  },
+  {
+   "value": 30,
+   "label": "Roll 270°, Pitch 90°"
+  },
+  {
+   "value": 31,
+   "label": "Roll 90°, Pitch 180°"
+  },
+  {
+   "value": 32,
+   "label": "Roll 270°, Pitch 180°"
+  },
+  {
+   "value": 33,
+   "label": "Roll 90°, Pitch 270°"
+  },
+  {
+   "value": 34,
+   "label": "Roll 180°, Pitch 270°"
+  },
+  {
+   "value": 35,
+   "label": "Roll 270°, Pitch 270°"
+  },
+  {
+   "value": 36,
+   "label": "Roll 90°, Pitch 180°, Yaw 90°"
+  },
+  {
+   "value": 37,
+   "label": "Roll 90°, Yaw 270°"
+  },
+  {
+   "value": 38,
+   "label": "Roll 90°, Pitch 68°, Yaw 293°"
+  },
+  {
+   "value": 39,
+   "label": "Pitch 315°"
+  },
+  {
+   "value": 40,
+   "label": "Roll 90°, Pitch 315°"
+  },
+  {
+   "value": 42,
+   "label": "Roll 45°"
+  },
+  {
+   "value": 43,
+   "label": "Roll 315°"
+  },
+  {
+   "value": 101,
+   "label": "Custom 1 (CUST_ROT1_*)"
+  },
+  {
+   "value": 102,
+   "label": "Custom 2 (CUST_ROT2_*)"
+  }
+ ]
+}

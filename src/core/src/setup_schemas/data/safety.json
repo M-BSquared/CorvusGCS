@@ -1,0 +1,873 @@
+{
+ "ON_OFF_OPTIONS": [
+  {
+   "value": 0,
+   "label": "Off"
+  },
+  {
+   "value": 1,
+   "label": "On"
+  }
+ ],
+ "GEOFENCE_ACTION_OPTIONS": [
+  {
+   "value": 0,
+   "label": "None"
+  },
+  {
+   "value": 1,
+   "label": "Warning"
+  },
+  {
+   "value": 2,
+   "label": "Hold"
+  },
+  {
+   "value": 3,
+   "label": "Return"
+  },
+  {
+   "value": 4,
+   "label": "Terminate"
+  },
+  {
+   "value": 5,
+   "label": "Land"
+  }
+ ],
+ "GEOFENCE_SOURCE_OPTIONS": [
+  {
+   "value": 0,
+   "label": "GPS"
+  },
+  {
+   "value": 1,
+   "label": "Global position"
+  }
+ ],
+ "RTL_TYPE_OPTIONS": [
+  {
+   "value": 0,
+   "label": "Home or rally point, direct"
+  },
+  {
+   "value": 1,
+   "label": "Mission landing or rally point, direct"
+  },
+  {
+   "value": 2,
+   "label": "Mission landing along the mission path"
+  },
+  {
+   "value": 3,
+   "label": "Closest destination, direct"
+  }
+ ],
+ "RTL_CONE_OPTIONS": [
+  {
+   "value": 0,
+   "label": "Disabled (climb to return altitude)"
+  },
+  {
+   "value": 25,
+   "label": "25°"
+  },
+  {
+   "value": 45,
+   "label": "45°"
+  },
+  {
+   "value": 65,
+   "label": "65°"
+  },
+  {
+   "value": 80,
+   "label": "80°"
+  },
+  {
+   "value": 90,
+   "label": "90° (climb only if below)"
+  }
+ ],
+ "LINK_LOSS_ACTION_OPTIONS": [
+  {
+   "value": 0,
+   "label": "Disabled"
+  },
+  {
+   "value": 1,
+   "label": "Hold"
+  },
+  {
+   "value": 2,
+   "label": "Return"
+  },
+  {
+   "value": 3,
+   "label": "Land"
+  },
+  {
+   "value": 5,
+   "label": "Terminate"
+  },
+  {
+   "value": 6,
+   "label": "Disarm"
+  }
+ ],
+ "LOW_BATTERY_ACTION_OPTIONS": [
+  {
+   "value": 0,
+   "label": "Warning only"
+  },
+  {
+   "value": 2,
+   "label": "Land"
+  },
+  {
+   "value": 3,
+   "label": "Return at critical, land at emergency"
+  }
+ ],
+ "LOW_BATTERY_ACTION_DEPRECATED": {
+  "value": 1,
+  "label": "Return, even at emergency (deprecated)"
+ },
+ "POSITION_LOSS_ACTION_OPTIONS": [
+  {
+   "value": 0,
+   "label": "Altitude or Manual"
+  },
+  {
+   "value": 1,
+   "label": "Land or Terminate"
+  }
+ ],
+ "ACTUATOR_FAILURE_ACTION_OPTIONS": [
+  {
+   "value": 0,
+   "label": "Disabled"
+  },
+  {
+   "value": 1,
+   "label": "Hold"
+  },
+  {
+   "value": 2,
+   "label": "Land"
+  },
+  {
+   "value": 3,
+   "label": "Return"
+  },
+  {
+   "value": 4,
+   "label": "Terminate"
+  }
+ ],
+ "QUADCHUTE_ACTION_OPTIONS": [
+  {
+   "value": 0,
+   "label": "Warning only"
+  },
+  {
+   "value": 1,
+   "label": "Return"
+  },
+  {
+   "value": 2,
+   "label": "Land"
+  },
+  {
+   "value": 3,
+   "label": "Hold"
+  }
+ ],
+ "RANGE_CTRL_OPTIONS": [
+  {
+   "value": 0,
+   "label": "Disabled"
+  },
+  {
+   "value": 1,
+   "label": "Conditional (range aid)"
+  },
+  {
+   "value": 2,
+   "label": "Always"
+  }
+ ],
+ "HEIGHT_REF_OPTIONS": [
+  {
+   "value": 0,
+   "label": "Barometer"
+  },
+  {
+   "value": 1,
+   "label": "GPS"
+  },
+  {
+   "value": 2,
+   "label": "Range sensor"
+  },
+  {
+   "value": 3,
+   "label": "Vision"
+  }
+ ],
+ "ALT_MODE_OPTIONS": [
+  {
+   "value": 0,
+   "label": "Altitude following"
+  },
+  {
+   "value": 1,
+   "label": "Terrain following"
+  },
+  {
+   "value": 2,
+   "label": "Terrain hold"
+  }
+ ],
+ "FLOW_ROTATION_OPTIONS": [
+  {
+   "value": 0,
+   "label": "No rotation"
+  },
+  {
+   "value": 1,
+   "label": "Yaw 45°"
+  },
+  {
+   "value": 2,
+   "label": "Yaw 90°"
+  },
+  {
+   "value": 3,
+   "label": "Yaw 135°"
+  },
+  {
+   "value": 4,
+   "label": "Yaw 180°"
+  },
+  {
+   "value": 5,
+   "label": "Yaw 225°"
+  },
+  {
+   "value": 6,
+   "label": "Yaw 270°"
+  },
+  {
+   "value": 7,
+   "label": "Yaw 315°"
+  }
+ ],
+ "SERIAL_PORT_OPTIONS": [
+  {
+   "value": 102,
+   "label": "TELEM 2"
+  },
+  {
+   "value": 101,
+   "label": "TELEM 1"
+  },
+  {
+   "value": 103,
+   "label": "TELEM 3"
+  },
+  {
+   "value": 104,
+   "label": "TELEM/SERIAL 4"
+  },
+  {
+   "value": 201,
+   "label": "GPS 1"
+  },
+  {
+   "value": 202,
+   "label": "GPS 2"
+  },
+  {
+   "value": 203,
+   "label": "GPS 3"
+  },
+  {
+   "value": 6,
+   "label": "UART 6"
+  },
+  {
+   "value": 301,
+   "label": "Wifi port"
+  },
+  {
+   "value": 401,
+   "label": "Ext2"
+  }
+ ],
+ "PORT_USERS": [
+  [
+   "MAV_0_CONFIG",
+   "MAVLink"
+  ],
+  [
+   "MAV_1_CONFIG",
+   "MAVLink"
+  ],
+  [
+   "MAV_2_CONFIG",
+   "MAVLink"
+  ],
+  [
+   "GPS_1_CONFIG",
+   "GPS"
+  ],
+  [
+   "GPS_2_CONFIG",
+   "GPS"
+  ],
+  [
+   "RC_PORT_CONFIG",
+   "RC input"
+  ],
+  [
+   "UXRCE_DDS_CFG",
+   "uXRCE-DDS"
+  ]
+ ],
+ "WIRING": {
+  "i2c": "Plug it into an I2C connector. On most Pixhawk boards the GPS 1 connector carries I2C as well, and an I2C splitter lets several devices share one port.",
+  "spi": "An SPI sensor has to sit on an SPI bus the board brings out for it, usually a connector labelled SPI. A board without one cannot run it.",
+  "pwm": "Connect its PWM line to the pin the PX4 page for your flight controller names for the Lidar-Lite PWM driver.",
+  "serial": "Plug it into the serial connector you pick below; the names are the ones printed on the flight controller. Cross the data lines: the sensor's TX goes to the port's RX, its RX to the port's TX.",
+  "can": "Plug it into a CAN connector, CAN 1 or CAN 2. CAN devices can be chained, and the last one on the bus needs its termination on.",
+  "board": "The driver runs on the port the flight controller's own startup gives it; see the PX4 page for the board.",
+  "external": "Nothing plugs into the flight controller for this: the sensor reaches it over MAVLink, usually from a companion computer."
+ },
+ "RANGEFINDER_BUS_DRIVERS": [
+  [
+   "SENS_EN_SF1XX",
+   [
+    [
+     1,
+     "Lightware SF10/a (I2C)",
+     "i2c"
+    ],
+    [
+     2,
+     "Lightware SF10/b (I2C)",
+     "i2c"
+    ],
+    [
+     3,
+     "Lightware SF10/c (I2C)",
+     "i2c"
+    ],
+    [
+     4,
+     "Lightware SF11/c (I2C)",
+     "i2c"
+    ],
+    [
+     5,
+     "Lightware SF/LW20/b (I2C)",
+     "i2c"
+    ],
+    [
+     6,
+     "Lightware SF/LW20/c (I2C)",
+     "i2c"
+    ],
+    [
+     7,
+     "Lightware SF/LW30/d (I2C)",
+     "i2c"
+    ]
+   ]
+  ],
+  [
+   "SENS_EN_LL40LS",
+   [
+    [
+     1,
+     "Garmin Lidar-Lite (PWM)",
+     "pwm"
+    ],
+    [
+     2,
+     "Garmin Lidar-Lite (I2C)",
+     "i2c"
+    ]
+   ]
+  ],
+  [
+   "SENS_EN_TRANGER",
+   [
+    [
+     1,
+     "TeraRanger, model detected (I2C)",
+     "i2c"
+    ],
+    [
+     2,
+     "TeraRanger One (I2C)",
+     "i2c"
+    ],
+    [
+     3,
+     "TeraRanger Evo 60 m (I2C)",
+     "i2c"
+    ],
+    [
+     4,
+     "TeraRanger Evo 600 Hz (I2C)",
+     "i2c"
+    ],
+    [
+     5,
+     "TeraRanger Evo 3 m (I2C)",
+     "i2c"
+    ]
+   ]
+  ],
+  [
+   "SENS_EN_TF02PRO",
+   [
+    [
+     1,
+     "Benewake TF02 Pro (I2C)",
+     "i2c"
+    ]
+   ]
+  ],
+  [
+   "SENS_EN_MB12XX",
+   [
+    [
+     1,
+     "Maxbotix MB12xx (I2C)",
+     "i2c"
+    ]
+   ]
+  ],
+  [
+   "SENS_EN_VL53L0X",
+   [
+    [
+     1,
+     "ST VL53L0X (I2C)",
+     "i2c"
+    ]
+   ]
+  ],
+  [
+   "SENS_EN_VL53L1X",
+   [
+    [
+     1,
+     "ST VL53L1X (I2C)",
+     "i2c"
+    ]
+   ]
+  ],
+  [
+   "SENS_EN_PGA460",
+   [
+    [
+     1,
+     "TI PGA460",
+     "board"
+    ]
+   ]
+  ]
+ ],
+ "RANGEFINDER_SERIAL_DRIVERS": [
+  [
+   "SENS_TFMINI_CFG",
+   "SENS_TFMINI_HW",
+   [
+    [
+     1,
+     "Benewake TFmini family (serial)"
+    ]
+   ],
+   "Benewake TFmini family (serial)"
+  ],
+  [
+   "SENS_SF0X_CFG",
+   "SENS_EN_SF0X",
+   [
+    [
+     1,
+     "Lightware SF02 (serial)"
+    ],
+    [
+     2,
+     "Lightware SF10/a (serial)"
+    ],
+    [
+     3,
+     "Lightware SF10/b (serial)"
+    ],
+    [
+     4,
+     "Lightware SF10/c (serial)"
+    ],
+    [
+     5,
+     "Lightware SF11/c (serial)"
+    ],
+    [
+     6,
+     "Lightware SF30/b (serial)"
+    ],
+    [
+     7,
+     "Lightware SF30/c (serial)"
+    ],
+    [
+     8,
+     "Lightware LW20/c (serial)"
+    ]
+   ],
+   "Lightware (serial)"
+  ],
+  [
+   "SENS_ULAND_CFG",
+   null,
+   [],
+   "Aerotenna uLanding (serial)"
+  ],
+  [
+   "SENS_CM8JL65_CFG",
+   null,
+   [],
+   "Lanbao CM8JL65 (serial)"
+  ],
+  [
+   "SENS_LEDDAR1_CFG",
+   null,
+   [],
+   "LeddarOne (serial)"
+  ]
+ ],
+ "FLOW_BUS_DRIVERS": [
+  [
+   "SENS_EN_PMW3901",
+   [
+    [
+     1,
+     "PixArt PMW3901 (SPI)",
+     "spi"
+    ]
+   ]
+  ],
+  [
+   "SENS_EN_PAW3902",
+   [
+    [
+     1,
+     "PixArt PAW3902 / PAW3903 (SPI)",
+     "spi"
+    ]
+   ]
+  ],
+  [
+   "SENS_EN_PAA3905",
+   [
+    [
+     1,
+     "PixArt PAA3905 (SPI)",
+     "spi"
+    ]
+   ]
+  ],
+  [
+   "SENS_EN_PX4FLOW",
+   [
+    [
+     1,
+     "PX4Flow (I2C)",
+     "i2c"
+    ]
+   ]
+  ]
+ ],
+ "FLOW_SERIAL_DRIVERS": [
+  [
+   "SENS_TFLOW_CFG",
+   null,
+   [],
+   "ThoneFlow-3901U (serial)"
+  ]
+ ],
+ "RANGEFINDER_CAN_DRIVERS": [
+  [
+   "UAVCAN_SUB_RNG",
+   "DroneCAN node"
+  ]
+ ],
+ "FLOW_CAN_DRIVERS": [
+  [
+   "UAVCAN_SUB_FLOW",
+   "DroneCAN node"
+  ]
+ ],
+ "SENSOR_PRESETS": [
+  {
+   "id": "holybro-h-flow",
+   "label": "Holybro H-Flow",
+   "vendor": "Holybro",
+   "model": "19006",
+   "bus": "DroneCAN",
+   "provides": [
+    "flow",
+    "range"
+   ],
+   "driver_id": {
+    "flow": "UAVCAN_SUB_FLOW:1",
+    "range": "UAVCAN_SUB_RNG:1"
+   },
+   "wiring": "Plug it into CAN 1 or CAN 2 with the 4-pin JST-GH cable. It has two CAN connectors, so further CAN devices can be chained behind it; the last device on the bus needs its termination on.",
+   "summary": "PAA3905E1 optical flow and an AFBR-S50LV85D distance sensor on one board, 0.08 to 30 m, over a single CAN cable.",
+   "note": "A DroneCAN node rather than a local driver: the autopilot subscribes to the messages it publishes, which is why the CAN stack itself has to be running. Wire it to a CAN port and mount it with the connectors pointing to the back of the vehicle. Set EKF2_OF_POS_X, _Y and _Z to where it sits relative to the centre of gravity. The numbers below are Holybro's own setup values for this module.",
+   "params": [
+    [
+     "UAVCAN_ENABLE",
+     2.0,
+     "Run the DroneCAN stack and configure sensor nodes automatically"
+    ],
+    [
+     "UAVCAN_SUB_FLOW",
+     1.0,
+     "Subscribe to the module's optical-flow message"
+    ],
+    [
+     "UAVCAN_SUB_RNG",
+     1.0,
+     "Subscribe to its distance message"
+    ],
+    [
+     "UAVCAN_RNG_MIN",
+     0.08,
+     "Shortest distance the module reports"
+    ],
+    [
+     "UAVCAN_RNG_MAX",
+     30.0,
+     "Longest distance the module reports"
+    ],
+    [
+     "SENS_FLOW_ROT",
+     0.0,
+     "Mounted with the connectors aft. Change it if the board is turned"
+    ],
+    [
+     "SENS_FLOW_MINHGT",
+     0.08,
+     "Below this height the flow reading is not used"
+    ],
+    [
+     "SENS_FLOW_MAXHGT",
+     30.0,
+     "Above it the ground is too far to track"
+    ],
+    [
+     "SENS_FLOW_MAXR",
+     7.4,
+     "Fastest angular rate the flow sensor can follow"
+    ],
+    [
+     "EKF2_OF_CTRL",
+     1.0,
+     "Fuse the flow into the estimator"
+    ],
+    [
+     "EKF2_RNG_CTRL",
+     1.0,
+     "Use the distance sensor for height when low and slow"
+    ],
+    [
+     "EKF2_RNG_A_HMAX",
+     10.0,
+     "Height below which that range aid is trusted"
+    ],
+    [
+     "EKF2_RNG_QLTY_T",
+     0.2,
+     "Seconds of poor returns tolerated before dropping it"
+    ]
+   ],
+   "reboot": true
+  },
+  {
+   "id": "matek-3901-l0x",
+   "label": "Matek 3901-L0X",
+   "vendor": "Matek Systems",
+   "model": "3901-L0X",
+   "bus": "UART (MSP v2)",
+   "provides": [
+    "flow",
+    "range"
+   ],
+   "summary": "PMW3901 optical flow and a VL53L0X lidar, 0.08 to 2 m, on one UART speaking MSP v2.",
+   "supported": false,
+   "unsupported": "PX4 has no MSP sensor input. The module speaks MSP v2, which INAV (2.3+) and ArduPilot (4.1+) read and PX4 does not. No parameter on this page can make its flow or distance data reach the estimator. For PX4, use a SPI PMW3901 board or a DroneCAN module.",
+   "params": [],
+   "reboot": false
+  },
+  {
+   "id": "benewake-tfmini-s",
+   "label": "Benewake TFmini-S",
+   "vendor": "Benewake",
+   "model": "TFmini-S",
+   "bus": "UART",
+   "provides": [
+    "range"
+   ],
+   "driver_id": {
+    "range": "SENS_TFMINI_CFG"
+   },
+   "serial": true,
+   "wiring": "Plug it into a free serial connector, TELEM or GPS, and pick that connector below. The sensor's TX goes to the port's RX and its RX to the port's TX, plus 5 V and ground.",
+   "summary": "0.1 to 12 m time-of-flight rangefinder, ±6 cm, on one UART. PX4's TFmini driver uses readings from 0.4 to 12 m.",
+   "note": "Leave the module in its UART mode; PX4's driver does not read its I2C mode. Any free serial port will do. The baud rate is fixed in the driver, so there is nothing else to set.",
+   "params": [
+    [
+     "SENS_TFMINI_HW",
+     1.0,
+     "The TFmini model: the driver's 0.4 to 12 m limits, not the radar's"
+    ],
+    [
+     "EKF2_RNG_CTRL",
+     1.0,
+     "Use it for height while the vehicle is low and slow"
+    ],
+    [
+     "EKF2_RNG_A_HMAX",
+     7.0,
+     "Height below which that range aid is trusted"
+    ],
+    [
+     "EKF2_RNG_NOISE",
+     0.06,
+     "Measurement noise implied by the datasheet accuracy"
+    ],
+    [
+     "EKF2_RNG_SFE",
+     0.01,
+     "The 1 % range-proportional part of that accuracy"
+    ]
+   ],
+   "reboot": true
+  },
+  {
+   "id": "benewake-tfmini-plus",
+   "label": "Benewake TFmini Plus",
+   "vendor": "Benewake",
+   "model": "TFmini Plus",
+   "bus": "UART",
+   "provides": [
+    "range"
+   ],
+   "driver_id": {
+    "range": "SENS_TFMINI_CFG"
+   },
+   "serial": true,
+   "wiring": "Plug it into a free serial connector, TELEM or GPS, and pick that connector below. The sensor's TX goes to the port's RX and its RX to the port's TX, plus 5 V and ground.",
+   "summary": "0.1 to 12 m time-of-flight rangefinder, ±5 cm, on one UART. PX4's TFmini driver uses readings from 0.4 to 12 m.",
+   "note": "Same driver and the same fixed baud rate as the TFmini-S, with a slightly tighter short-range accuracy. Leave it in UART mode.",
+   "params": [
+    [
+     "SENS_TFMINI_HW",
+     1.0,
+     "The TFmini model: the driver's 0.4 to 12 m limits, not the radar's"
+    ],
+    [
+     "EKF2_RNG_CTRL",
+     1.0,
+     "Use it for height while the vehicle is low and slow"
+    ],
+    [
+     "EKF2_RNG_A_HMAX",
+     7.0,
+     "Height below which that range aid is trusted"
+    ],
+    [
+     "EKF2_RNG_NOISE",
+     0.05,
+     "Measurement noise implied by the datasheet accuracy"
+    ],
+    [
+     "EKF2_RNG_SFE",
+     0.01,
+     "The 1 % range-proportional part of that accuracy"
+    ]
+   ],
+   "reboot": true
+  },
+  {
+   "id": "benewake-tf03",
+   "label": "Benewake TF03",
+   "vendor": "Benewake",
+   "model": "TF03",
+   "bus": "UART",
+   "provides": [
+    "range"
+   ],
+   "driver_id": {
+    "range": "SENS_TFMINI_CFG"
+   },
+   "serial": true,
+   "wiring": "Plug it into a free serial connector, TELEM or GPS, and pick that connector below. The sensor's TX goes to the port's RX and its RX to the port's TX, plus 5 V and ground.",
+   "summary": "0.1 to 180 m time-of-flight rangefinder, ±10 cm, on one UART. PX4's TFmini driver uses readings from 0.4 to 12 m.",
+   "note": "The TF03 sends the same 9-byte Benewake frame at 115200 baud as the TFmini, so it runs on the TFmini driver. That driver treats anything past 12 m as out of range, so on PX4 this is a 12 m sensor. Its CAN mode is not read by PX4; keep the module in UART mode.",
+   "params": [
+    [
+     "SENS_TFMINI_HW",
+     1.0,
+     "The TFmini model: the driver's 0.4 to 12 m limits, not the radar's"
+    ],
+    [
+     "EKF2_RNG_CTRL",
+     1.0,
+     "Use it for height while the vehicle is low and slow"
+    ],
+    [
+     "EKF2_RNG_A_HMAX",
+     10.0,
+     "Height below which that range aid is trusted"
+    ],
+    [
+     "EKF2_RNG_NOISE",
+     0.1,
+     "Measurement noise implied by the datasheet accuracy"
+    ],
+    [
+     "EKF2_RNG_SFE",
+     0.01,
+     "The 1 % range-proportional part of that accuracy"
+    ]
+   ],
+   "reboot": true
+  }
+ ],
+ "FAST_LANDING": {
+  "MPC_Z_V_AUTO_DN": 2.5,
+  "MPC_Z_VEL_MAX_DN": 2.5,
+  "MPC_LAND_ALT1": 12.0,
+  "MPC_LAND_ALT2": 6.0,
+  "MPC_LAND_SPEED": 1.0,
+  "MPC_LAND_ALT3": 2.0,
+  "MPC_LAND_CRWL": 0.5
+ },
+ "LANDING_PARAMS": [
+  "MPC_Z_V_AUTO_DN",
+  "MPC_Z_VEL_MAX_DN",
+  "MPC_LAND_ALT1",
+  "MPC_LAND_ALT2",
+  "MPC_LAND_SPEED",
+  "MPC_LAND_ALT3",
+  "MPC_LAND_CRWL"
+ ]
+}

@@ -111,6 +111,10 @@ def export(module: object, names: list[str]) -> dict:
 def tables() -> None:
     from corvus import safety_config as S
 
+    tables_ardupilot_safety()
+    tables_mounting()
+    tables_motors()
+
     write_table("safety.json", export(S, [
         "ON_OFF_OPTIONS", "GEOFENCE_ACTION_OPTIONS", "GEOFENCE_SOURCE_OPTIONS", "RTL_TYPE_OPTIONS",
         "RTL_CONE_OPTIONS", "LINK_LOSS_ACTION_OPTIONS", "LOW_BATTERY_ACTION_OPTIONS",
@@ -153,6 +157,41 @@ def value_sets(names: list[str], pools: dict[str, list[float]] | None = None, *,
         keep = [0.15, 0.4, 0.7, 0.9, 1.0][i % 5]
         sets.append({n: draw(n) for n in names if rng.random() < keep})
     return sets
+
+
+def tables_ardupilot_safety() -> None:
+    from corvus import ardupilot_safety as A
+
+    write_table("ardupilot_safety.json", {**export(A, [
+        "ON_OFF_OPTIONS", "FENCE_TYPE_BITS", "FENCE_ACTION_OPTIONS", "COPTER_FAILSAFE_ACTION_OPTIONS",
+        "PLANE_SHORT_FAILSAFE_OPTIONS", "PLANE_LONG_FAILSAFE_OPTIONS", "ROVER_FAILSAFE_ACTION_OPTIONS",
+        "EKF_FAILSAFE_ACTION_OPTIONS", "EKF_FAILSAFE_THRESHOLD_OPTIONS", "FS_OPTIONS_BITS", "ARMING_CHECK_BITS",
+        "ARMING_RUDDER_OPTIONS", "EK3_POSZ_OPTIONS", "EK3_VELXY_OPTIONS", "EK3_POSXY_OPTIONS",
+        "RANGEFINDER_ORIENT_OPTIONS", "RANGEFINDER_TYPES", "FLOW_TYPES", "SERIAL_PROTOCOL_NAMES", "BAUD_CODES",
+        "SERIAL_PROTOCOL_BY_BUS", "FLOW_SOURCE_SET", "LENGTH_ALIASES", "WIRING", "SERIAL_WIRING",
+        "CAN_WRITE_LABELS", "SENSOR_PRESETS",
+    ])})
+
+
+def tables_mounting() -> None:
+    from corvus import ardupilot_mounting as AM
+    from corvus import mounting_config as M
+
+    write_table("mounting.json", {**export(M, ["ROTATION_OPTIONS", "AXIS_LABELS", "POSITION_HINT", "ORIENTATION_HINT",
+                                               "GPS_HINT"]),
+                                  **export(AM, ["AHRS_ROTATION_OPTIONS"])})
+
+
+def tables_motors() -> None:
+    from corvus import ardupilot_motors as AM
+    from corvus import motor_config as M
+
+    write_table("motors.json", {
+        "px4": export(M, ["BANKS", "AIRFRAME_FAMILIES", "AIRFRAME_OPTIONS", "PROTOCOL_OPTIONS",
+                          "BIDIR_PROTOCOL_OPTIONS", "DSHOT_CONFIG_OPTIONS", "FRAME_HINT"]),
+        "ardupilot": export(AM, ["MOTOR_FUNCTIONS", "SERVO_FUNCTIONS", "FRAME_CLASSES", "FRAME_CLASS_OPTIONS",
+                                 "FRAME_TYPE_OPTIONS", "MOT_PWM_TYPE_OPTIONS", "ON_OFF_OPTIONS", "BANKS", "FRAME_NOTE"]),
+    })
 
 
 def metadata() -> None:
@@ -289,6 +328,154 @@ def safety() -> None:
 VEHICLES = ["copter", "plane", "rover", "sub", "other", ""]
 
 
+AP_SAFETY_POOLS = {
+    "SERIAL*_PROTOCOL": [-1.0, -1.0, 0.0, 1.0, 2.0, 5.0, 9.0, 9.0, 18.0, 32.0, 23.0, 99.0],
+    "SERIAL*_BAUD": [9.0, 57.0, 115.0, 115.0, 230.0, 921.0, 115200.0, 38400.0],
+    "CAN_P*_DRIVER": [0.0, 1.0, 2.0, -1.0], "CAN_D*_PROTOCOL": [0.0, 1.0, 1.0, 4.0, 5.0],
+    "GPS*_TYPE": [0.0, 1.0, 2.0, 9.0], "EK3_SRC*_*": [0.0, 1.0, 2.0, 3.0, 5.0, 6.0, 7.0],
+    "EK3_SRC_OPTIONS": [0.0, 1.0, 2.0, 3.0],
+    "RNGFND1_TYPE": [0.0, 1.0, 2.0, 3.0, 5.0, 7.0, 8.0, 10.0, 12.0, 14.0, 15.0, 16.0, 19.0, 20.0, 21.0, 23.0, 24.0, 25.0, 27.0, 32.0, 37.0, 99.0],
+    "RNGFND2_TYPE": [0.0, 0.0, 8.0, 20.0, 24.0, 2.0], "FLOW_TYPE": [0.0, 1.0, 2.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0],
+    "RNGFND1_ADDR": [0.0, 16.0, 41.0, 49.0, 102.0, 5.0], "RNGFND1_PIN": [-1.0, 0.0, 14.0, 15.0],
+    "RNGFND1_MIN": [0.0, 0.1, 0.2], "RNGFND_LANDING": [0.0, 1.0], "SURFTRAK_MODE": [0.0, 1.0, 2.0],
+    "FENCE_TYPE": [0.0, 1.0, 2.0, 4.0, 5.0, 7.0, 15.0, 8.0], "FENCE_ENABLE": [0.0, 1.0, 2.0],
+    "FENCE_ACTION": [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
+    "FS_OPTIONS": [0.0, 1.0, 3.0, 17.0, 127.0], "ARMING_CHECK": [0.0, 1.0, 74.0, 1000.0, 524287.0],
+    "FS_THR_ENABLE": [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0], "FS_GCS_ENABLE": [0.0, 1.0, 2.0, 3.0, 9.0],
+    "FS_EKF_ACTION": [0.0, 1.0, 2.0, 3.0, 4.0], "FS_EKF_THRESH": [0.0, 1.0, 2.0, 3.0, 4.0],
+    "FS_SHORT_ACTN": [0.0, 1.0, 2.0, 3.0, 4.0], "FS_LONG_ACTN": [0.0, 1.0, 2.0, 3.0, 4.0, 5.0],
+    "FS_ACTION": [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0], "ARMING_RUDDER": [0.0, 1.0, 2.0, 3.0],
+    "RTL_ALT": [0.0, 1500.0, 3000.0], "RTL_AUTOLAND": [0.0, 1.0, 2.0, 3.0],
+}
+
+
+def ardupilot_safety() -> None:
+    from corvus import ardupilot_safety as A
+
+    names = A.param_names()
+    extras_pool = [[], ["RTL_ALT"], ["WPNAV_SPEED", "NOT_A_PARAM"], ["wpnav_speed "], ["FENCE_ENABLE", "ATC_RAT_RLL_P"],
+                   ["bad name"], ["A" * 17], [f"P{i}" for i in range(30)]]
+    rows = []
+    for i, values in enumerate(value_sets(names, AP_SAFETY_POOLS, seed=7, count=70)):
+        vehicle = VEHICLES[i % len(VEHICLES)]
+        extra = A.normalise_extra(extras_pool[i % len(extras_pool)])
+        rows.append([values, extra, vehicle, A.build(dict(values), list(extra), vehicle)])
+    rows.append([{"FENCE_ACTION": 1.0}, [], None, A.build({"FENCE_ACTION": 1.0}, [])])
+    profiles = []
+    for vehicle in ("copter", "plane", "rover", "sub", "x"):
+        for v in ({}, {"RTL_ALT": 1500.0}, {"RTL_ALT": -1.0, "RTL_ALT_FINAL": 0.0}, {"RTL_ALT": 2000.0, "RTL_ALT_FINAL": 500.0},
+                  {"RTL_ALTITUDE": 80.0}, {"RTL_ALTITUDE": -1.0, "ALT_HOLD_RTL": 6000.0}, {"ALT_HOLD_RTL": -1.0}, {"GF": 1.0}):
+            profiles.append([v, vehicle, A.return_profile(v, vehicle)])
+    enable_writes = [[v, A.geofence_enable_writes(v)] for v in (
+        {}, {"FENCE_TYPE": 0.0}, {"FENCE_TYPE": 4.0, "FENCE_ENABLE": 1.0}, {"FENCE_TYPE": 3.0, "FENCE_ENABLE": 0.0},
+        {"FENCE_TYPE": 1.0}, {"FENCE_ENABLE": 2.0}, {"FENCE_TYPE": 7.9, "FENCE_ENABLE": 1.0}, {"FENCE_TYPE": -3.0})]
+    write("setup_ardupilot_safety_cases.json", clean({
+        "names": names, "return_names": {v: A.return_param_names(v) for v in ("copter", "plane", "rover", "x")},
+        "build": rows, "profiles": profiles, "enable_writes": enable_writes}), compact=True)
+
+
+def mounting() -> None:
+    from corvus import ardupilot_mounting as A
+    from corvus import mounting_config as P
+
+    px4_pools = {"SENS_GPS1_ID": [0.0, 0.0, 1234.0], "GPS_2_CONFIG": [0.0, 0.0, 102.0], "SENS_GPS*_OFF*": [0.0, 0.0, 0.5, -1.25, 1e-10, 0.0000005],
+                 "SENS_BOARD_ROT": [-1.0, 0.0, 2.0, 8.0, 40.0, 41.0, 99.0], "EKF2_*_POS_*": [0.0, 0.1, -0.35, 1.2345]}
+    ap_pools = {"AHRS_ORIENTATION": [0.0, 2.0, 25.0, 41.0, 42.0, 101.0, 102.0, 103.0], "GPS_TYPE2": [0.0, 0.0, 9.0],
+                "GPS2_TYPE": [0.0, 0.0, 9.0], "INS_POS*": [0.0, 0.0, 0.01, -0.05, 0.0000005, 0.05],
+                "GPS*_POS*": [0.0, 0.1, -0.2], "AHRS_TRIM_*": [0.0, 0.01, -0.1]}
+    px4 = [[v, P.build(dict(v))] for v in value_sets(P.param_names(), px4_pools, seed=11, count=70)]
+    ap = [[v, A.build(dict(v))] for v in value_sets(A.param_names(), ap_pools, seed=12, count=70)]
+    # Pairs that agree to the last digit, and ones a hair apart.
+    for first in (0.0, 0.05):
+        for second in (first, first + 5e-7, first + 2e-6):
+            v = {"INS_POS1_X": first, "INS_POS2_X": second, "INS_POS3_X": first + 1e-6, "INS_POS1_Y": 0.1,
+                 "INS_POS2_Y": 0.1, "INS_POS1_Z": -0.2}
+            ap.append([v, A.build(dict(v))])
+    write("setup_mounting_cases.json", clean({
+        "px4": {"names": P.param_names(), "orientation_names": P.orientation_param_names(),
+                "position_names": P.position_param_names(), "cases": px4},
+        "ardupilot": {"names": A.param_names(), "orientation_names": A.orientation_param_names(),
+                      "position_names": A.position_param_names(), "cases": ap}}), compact=True)
+
+
+def _quad(count: int, radius: float, *, pusher: bool = False, spin: bool = True, outputs: str = "MAIN",
+          pins: int | None = None) -> dict[str, float]:
+    import math
+
+    v: dict[str, float] = {"CA_AIRFRAME": 0.0, "CA_ROTOR_COUNT": float(count + (1 if pusher else 0)), "SYS_AUTOSTART": 4001.0}
+    for i in range(count):
+        angle = math.pi / count + 2 * math.pi * i / count
+        v[f"CA_ROTOR{i}_PX"] = round(radius * math.cos(angle), 4)
+        v[f"CA_ROTOR{i}_PY"] = round(radius * math.sin(angle), 4)
+        v[f"CA_ROTOR{i}_PZ"] = 0.0
+        v[f"CA_ROTOR{i}_KM"] = 0.05 if i % 2 == 0 else -0.05
+        v[f"CA_ROTOR{i}_CT"] = 6.5
+        v[f"CA_ROTOR{i}_AX"], v[f"CA_ROTOR{i}_AY"], v[f"CA_ROTOR{i}_AZ"] = 0.0, 0.0, -1.0
+    if pusher:
+        i = count
+        v[f"CA_ROTOR{i}_PX"], v[f"CA_ROTOR{i}_PY"], v[f"CA_ROTOR{i}_PZ"] = -0.9, 0.0, 0.0
+        v[f"CA_ROTOR{i}_AX"], v[f"CA_ROTOR{i}_AY"], v[f"CA_ROTOR{i}_AZ"] = 1.0, 0.0, 0.0
+    prefix = {"MAIN": "PWM_MAIN", "AUX": "PWM_AUX", "CAN": "UAVCAN_EC", "SIM": "SIM_GZ_EC"}[outputs]
+    for i in range(1, (pins or count + (1 if pusher else 0)) + 1):
+        v[f"{prefix}_FUNC{i}"] = float(100 + i)
+        for suffix, value in (("MIN", 1000.0), ("MAX", 2000.0), ("DIS", 900.0), ("FAIL", -1.0)):
+            v[f"{prefix}_{suffix}{i}"] = value
+    for i in range(4):
+        v[f"PWM_MAIN_TIM{i}"] = -3.0
+    return v
+
+
+def motors() -> None:
+    from corvus import ardupilot_motors as A
+    from corvus import motor_config as P
+
+    px4_pools = {
+        "CA_ROTOR*_P*": [0.0, 0.2, -0.2, 0.1795, -0.1795, 0.35, 0.0004], "CA_ROTOR*_KM": [0.05, -0.05, 0.0, 0.1],
+        "CA_ROTOR*_A*": [0.0, 0.0, 1.0, -1.0, 0.5], "CA_ROTOR*_CT": [6.5, 0.0, 0.14],
+        "CA_ROTOR_COUNT": [0.0, 2.0, 4.0, 4.0, 6.0, 8.0, 12.0, 13.0, -1.0], "CA_AIRFRAME": [0.0, 1.0, 2.0, 5.0, 10.0, 12.0, 13.0, 99.0],
+        "*_FUNC*": [0.0, 101.0, 102.0, 103.0, 104.0, 105.0, 116.0, 117.0, 201.0, 208.0, 209.0, 105.4, 99.0, 300.0, 0.0],
+        "PWM_*_TIM*": [-5.0, -4.0, -3.0, -8.0, -7.0, -6.0, -1.0, 50.0, 200.0, 400.0, -2.0, 123.0],
+        "DSHOT_CONFIG": [0.0, 150.0, 300.0, 600.0, 1200.0, 999.0], "SYS_AUTOSTART": [4001.0, 4010.0, 0.0, 17001.0],
+        "*_MIN*": [1000.0, 1100.0, 0.0], "*_MAX*": [2000.0, 1900.0, 1000.0], "*_DIS*": [900.0, 1000.0], "*_FAIL*": [-1.0, 1500.0],
+        "PWM_*_DISARM": [900.0], "DSHOT_MIN": [0.055, 0.1],
+    }
+    names = P.param_names()
+    sets = value_sets(names, px4_pools, seed=21, count=60)
+    sets += [_quad(4, 0.25), _quad(6, 0.3), _quad(4, 0.25, pusher=True), _quad(4, 0.0), _quad(8, 0.5, outputs="SIM"),
+             _quad(4, 0.2, outputs="CAN"), _quad(3, 0.3, outputs="AUX"), _quad(12, 0.4, pins=16)]
+    straight = {"CA_ROTOR_COUNT": 2.0, "CA_ROTOR0_PX": 0.3, "CA_ROTOR0_PY": 0.0, "CA_ROTOR1_PX": -0.3, "CA_ROTOR1_PY": 0.0}
+    sets += [straight, {**straight, "CA_ROTOR1_PY": 0.0004}, {"CA_ROTOR_COUNT": 1.0, "CA_ROTOR0_PX": 0.3, "CA_ROTOR0_PY": 0.1}]
+    px4 = [[v, P.build(dict(v)), P.output_param_names(v)] for v in sets]
+    labels = [[v, P.function_label(v), P.motor_of(v), P.motor_function_value(int(v))] for v in
+              (-1.0, 0.0, 1.0, 99.0, 100.0, 101.0, 116.0, 117.0, 200.0, 201.0, 208.0, 209.0, 104.5, 105.5)]
+    function_params = [[b, pin, P.function_param(b, pin)] for b in ("MAIN", "AUX", "CAN", "SIM", "main", "SERVO", "")
+                       for pin in (0, 1, 8, 9, 16, 17)]
+    motor_values = [[n, P.motor_function_value(n)] for n in (-1, 0, 1, 12, 16, 17)]
+
+    ap_pools = {"FRAME_CLASS": [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 9.0, 12.0, 13.0, 14.0, 15.0, 17.0, 18.0, 99.0, -1.0],
+                "FRAME_TYPE": [0.0, 1.0, 3.0, 19.0, 77.0], "MOT_PWM_TYPE": [0.0, 1.0, 4.0, 9.0, 10.0],
+                "SERVO*_FUNCTION": [0.0, 33.0, 34.0, 35.0, 36.0, 37.0, 38.0, 39.0, 40.0, 82.0, 83.0, 84.0, 85.0, 1.0, 4.0, 19.0, 54.0,
+                                    88.0, 77.0, 32.0, 41.0, 33.4, 33.5],
+                "SERVO_BLH_AUTO": [0.0, 1.0], "MOT_SAFE_DISARM": [0.0, 1.0, 2.0]}
+    ap_sets = value_sets(A.param_names(), ap_pools, seed=22, count=60)
+    for cls in (1, 2, 3, 6, 12, 15):
+        v = {"FRAME_CLASS": float(cls), "FRAME_TYPE": 1.0}
+        for pin in range(1, 17):
+            v[f"SERVO{pin}_FUNCTION"] = float(32 + pin) if pin <= 8 else float(82 + pin - 9) if pin <= 12 else 0.0
+            v[f"SERVO{pin}_MIN"], v[f"SERVO{pin}_MAX"] = 1000.0, 2000.0
+        ap_sets.append(v)
+    ap = [[v, A.build(dict(v))] for v in ap_sets]
+    ap_labels = [[v, A.function_label(v), A.motor_of(v)] for v in (-1.0, 0.0, 1.0, 32.0, 33.0, 40.0, 41.0, 54.0, 82.0, 85.0, 86.0, 88.0, 33.5, 34.5)]
+    ap_params = [[b, pin, A.function_param(b, pin)] for b in ("SERVO", "servo", "MAIN", "")
+                 for pin in (0, 1, 16, 17)]
+    ap_motor_values = [[n, A.motor_function_value(n)] for n in (-1, 0, 1, 8, 9, 12, 13)]
+    write("setup_motors_cases.json", clean({
+        "px4": {"names": P.param_names(), "cases": px4, "labels": labels, "function_params": function_params,
+                "motor_values": motor_values},
+        "ardupilot": {"names": A.param_names(), "cases": ap, "labels": ap_labels, "function_params": ap_params,
+                      "motor_values": ap_motor_values}}), compact=True)
+
+
 def battery() -> None:
     from corvus import ardupilot_battery as A
     from corvus import battery_config as P
@@ -349,7 +536,7 @@ def fields() -> None:
     write("setup_fields_cases.json", out)
 
 
-COMMANDS = {"metadata": metadata, "fields": fields, "tables": tables, "safety": safety, "battery": battery}
+COMMANDS = {"metadata": metadata, "fields": fields, "tables": tables, "safety": safety, "battery": battery, "motors": motors, "mounting": mounting, "ardupilot_safety": ardupilot_safety}
 
 
 def main(argv: list[str]) -> int:

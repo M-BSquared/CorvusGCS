@@ -5,5 +5,14 @@
 //! and `ardupilot_*.py`; the tests hold each schema to the JSON the Python
 //! builds for the same parameter values.
 
+pub mod ardupilot_battery;
+pub mod ardupilot_motors;
+pub mod ardupilot_mounting;
+pub mod ardupilot_safety;
+pub mod battery;
 pub mod fields;
+pub mod motors;
+pub mod mounting;
 pub mod param_metadata;
+pub mod safety;
+mod tables;
