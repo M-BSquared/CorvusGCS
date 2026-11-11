@@ -18,7 +18,7 @@ from pymavlink import mavutil
 
 from corvus import autopilot, serial_open
 from corvus.mavlink_bridge import MavlinkBridge
-from corvus.serial_open import HeldLineMavSerial, held_line_port_class, open_serial_link
+from corvus.serial_open import open_serial_link
 from corvus.serial_ports import (
     SerialOptions,
     parse_serial_options,
@@ -76,57 +76,10 @@ def test_the_bridge_accepts_a_good_string_and_refuses_a_bad_one():
 
 # --- opening the port -----------------------------------------------------
 
-class _FakePort:
-    opened: list[_FakePort] = []
-
-    def __init__(self, device: str, baud: int, **kwargs: Any) -> None:
-        self.device, self.baud, self.kwargs = device, baud, kwargs
-        self.baudrate = baud
-        _FakePort.opened.append(self)
-
-    def fileno(self) -> int:
-        raise OSError("no descriptor")
-
-    def setBaudrate(self, baud: int) -> None:
-        self.baudrate = baud
-
-    def close(self) -> None:
-        pass
-
-
-def test_the_lines_are_handed_to_the_port_before_it_opens():
-    _FakePort.opened.clear()
-    link = HeldLineMavSerial(
-        "/dev/ttyUSB0", 460800, SerialOptions(dtr=False, rts=False), 254, 190,
-        port_class=_FakePort,
-    )
-    port = _FakePort.opened[0]
-    assert port.kwargs["dtr"] is False and port.kwargs["rts"] is False
-    assert port.kwargs["dsrdtr"] is False and port.kwargs["rtscts"] is False
-    assert port.baud == 1200 and port.baudrate == 460800
-    assert link.port is port
-
-
-def test_pyserial_opens_with_the_held_state_not_the_default(monkeypatch: pytest.MonkeyPatch):
-    import serial
-
-    seen: list[tuple[Any, Any]] = []
-    monkeypatch.setattr(
-        serial.Serial, "open",
-        lambda self: seen.append((self._dtr_state, self._rts_state)),
-    )
-    held_line_port_class()("/dev/ttyUSB0", 1200, dtr=False, rts=False)
-    held_line_port_class()("/dev/ttyUSB0", 1200)
-    held_line_port_class()("/dev/ttyUSB0", 1200, dtr=True, rts=False)
-    assert seen == [(False, False), (True, True), (True, False)]
-
-
-def test_a_plain_serial_link_still_goes_through_mavlink_connection(
-    monkeypatch: pytest.MonkeyPatch,
-):
+def test_a_plain_serial_link_opens_without_line_arguments(monkeypatch: pytest.MonkeyPatch):
     calls: list[tuple[str, dict]] = []
     monkeypatch.setattr(
-        mavutil, "mavlink_connection",
+        serial_open.mavutil, "mavlink_connection",
         lambda device, **kw: calls.append((device, kw)) or "plain",
     )
     assert open_serial_link("/dev/ttyUSB0", 57600, SerialOptions(), 254, 190) == "plain"
@@ -135,14 +88,17 @@ def test_a_plain_serial_link_still_goes_through_mavlink_connection(
     })]
 
 
-def test_held_lines_use_the_held_opener(monkeypatch: pytest.MonkeyPatch):
-    made: list[Any] = []
+def test_held_lines_are_handed_to_the_opener(monkeypatch: pytest.MonkeyPatch):
+    calls: list[tuple[str, dict]] = []
     monkeypatch.setattr(
-        serial_open, "HeldLineMavSerial",
-        lambda *a, **k: made.append(a) or "held",
+        serial_open.mavutil, "mavlink_connection",
+        lambda device, **kw: calls.append((device, kw)) or "held",
     )
     assert open_serial_link("COM7", 460800, SerialOptions(dtr=False), 254, 190) == "held"
-    assert made and made[0][0] == "COM7"
+    assert calls == [("COM7", {
+        "baud": 460800, "source_system": 254, "source_component": 190,
+        "dtr": False, "rts": None,
+    })]
 
 
 # --- the dialect ----------------------------------------------------------

@@ -4,9 +4,10 @@
 //! The module publishes [`Peripherals`] as a service and registers the routes
 //! of `routes/rtk.py`, `routes/video.py`, `routes/console.py` and the parts of
 //! `server.py` that belong to these programs (`/api/local/*`, `/api/ssh/*`,
-//! `/api/sik/*`). Every thread, socket, pty and child it starts is ended in
+//! `/api/sik/*`, `/api/betaflight/*`). Every thread, socket, pty and child it starts is ended in
 //! `stop`, which the core calls on its shutdown path.
 
+pub mod betaflight;
 pub mod child_env;
 pub mod console;
 pub mod net_probe;
@@ -98,6 +99,7 @@ impl Module for PeripheralsModule {
         reg.service(Arc::clone(&self.inner));
         reg.post("/api/local/ping", api_local_ping);
         rtk::register(reg);
+        betaflight::register(reg);
         sik::register(reg);
         console::register(reg, Arc::clone(&self.inner.console));
         shell::register(reg);

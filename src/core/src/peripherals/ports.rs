@@ -207,6 +207,7 @@ pub fn classify_serial_device(device: &str, hwid: &str, description: &str) -> &'
 /// `serial:<device>[:<baud>]` to `(device, baud)`. Never fails: the baud is the
 /// last `:` field only when it is all digits.
 pub fn split_serial_connection(conn: &str) -> (String, u32) {
+    let conn = conn.split_once('?').map_or(conn, |(base, _)| base);
     let rest = conn.strip_prefix("serial:").unwrap_or(conn);
     if let Some((device, baud)) = rest.rsplit_once(':') {
         if digits(baud) {
@@ -294,7 +295,15 @@ fn glob_ports() -> Vec<PortRow> {
     for (dir, prefixes) in [
         (
             "/dev",
-            &["ttyUSB", "ttyACM", "cu.usbmodem", "cu.usbserial", "cu.SLAB_"][..],
+            &[
+                "ttyUSB",
+                "ttyACM",
+                "cu.usbmodem",
+                "cu.usbserial",
+                "cu.SLAB_",
+                "rfcomm",
+                "cu.HC-",
+            ][..],
         ),
         ("/dev/serial/by-id", &[""][..]),
     ] {

@@ -26,6 +26,7 @@ tls = ["dep:rustls", "dep:rustls-native-certs"]
 pyo3 = { version = "0.25", features = ["abi3-py312"], optional = true }
 sha2 = "0.10"
 indexmap = "2"
+serde_json = "1"
 socket2 = { version = "0.5", features = ["all"] }
 tungstenite = { version = "0.30.0", default-features = false, features = ["handshake"] }
 rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12"], optional = true }
@@ -45,6 +46,3 @@ roxmltree = "0.20"
 lto = "thin"
 codegen-units = 1
 
-[dev-dependencies]
-# The plain layer's tests read the frames pymavlink produced.
-serde_json = "1"

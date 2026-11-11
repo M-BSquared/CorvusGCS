@@ -123,6 +123,8 @@ otherwise; "native file" is in `src/`.
 | RC transmitter drawing, learn, inspector | rc-transmitter.js | setup/rc_*.rs | done |
 | PID tuning; run bar sticks to the top | setup-tuning.js | setup/tuning.rs | done: built, not looked at on screen |
 | Telemetry radio (SiK) | setup-sik.js | setup/sik*.rs | done |
+| Betaflight page: read the controller over MSP (firmware, board, sensors, PIDs, rates, battery) | setup-betaflight.js | not built; the core answers `GET /api/betaflight/status` and `POST /api/betaflight/read` (`peripherals/betaflight.rs`, `corvus_link::plain::msp`) | missing: a port picker, a Read button and summary, PID and rate tables built from `pagekit`, `select` and `card`, as `setup/sik.rs` does; it maps onto the UI base |
+| Setup tiles greyed with the reason when `capabilities.setup_unavailable` names them (Betaflight) | setup.js, capabilities.js | not built; the core reports `telemetry_only` and `setup_unavailable` | missing: `setup/landing.rs` and the capabilities reader |
 | RTK GPS | setup-rtk.js | setup/rtk*.rs | done |
 | Video | setup-video.js | setup/video*.rs | done |
 | Remote ID | setup-remoteid.js | setup/remoteid*.rs | done |
@@ -182,7 +184,7 @@ The rows were found by reading the CSS and the scripts, then the native code. On
 
 | Feature | Web file | Native file | Status |
 | --- | --- | --- | --- |
-| Link: status, recent, suggestion, new link (serial, network, presets), auto connect | link.js | panel/link.rs | done |
+| Link: status, recent, suggestion, new link (serial, network, presets), auto connect | link.js | panel/link.rs | partial: not built: the Radio selector with ExpressLRS (MAVLink), baud 460800, DTR and RTS choices and the Betaflight hint, which write `?link=elrs&dtr=off&rts=off&fc=betaflight` after the serial string; the core already reads them (`serial_ports::parse_serial_options`) |
 | Share link (forward to a second station) | link.js | panel/link.rs | done |
 | Console: filter, pause, copy, save, clear, input with history, jump to latest | panel.js | panel/console.rs | done |
 | SSH tab and saved connections, terminal | panel.js, ssh-term.js | panel/mod.rs, term/ | done |

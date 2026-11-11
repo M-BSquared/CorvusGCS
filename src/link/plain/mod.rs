@@ -19,6 +19,7 @@ pub mod connection;
 pub mod crc;
 pub mod frame;
 pub mod message;
+pub mod msp;
 pub mod param_value;
 pub mod shell_text;
 pub mod time;

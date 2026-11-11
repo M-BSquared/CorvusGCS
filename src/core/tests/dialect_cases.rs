@@ -151,6 +151,15 @@ fn stacks_follow_the_autopilot_id_and_name() {
 }
 
 #[test]
+fn a_link_hint_names_a_generic_heartbeat_only() {
+    let c = cases();
+    for row in c["hints"].as_array().unwrap() {
+        let got = dialect_for_id_hinted(row[0].as_i64().unwrap(), row[1].as_str().unwrap());
+        assert_eq!(got.stack().as_str(), row[2].as_str().unwrap(), "{row}");
+    }
+}
+
+#[test]
 fn px4_modes_wait_for_the_firmware_that_flies_them() {
     let c = cases();
     for (key, want) in c["px4_supported"].as_object().unwrap() {

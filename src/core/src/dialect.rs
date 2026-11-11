@@ -32,6 +32,8 @@ pub enum Stack {
     Px4,
     ArduPilot,
     Generic,
+    /// A generic heartbeat that the link says comes from Betaflight.
+    Betaflight,
 }
 
 impl Stack {
@@ -40,6 +42,7 @@ impl Stack {
             Stack::Px4 => "px4",
             Stack::ArduPilot => "ardupilot",
             Stack::Generic => "generic",
+            Stack::Betaflight => "betaflight",
         }
     }
 
@@ -47,6 +50,7 @@ impl Stack {
         match name {
             "px4" => Stack::Px4,
             "ardupilot" => Stack::ArduPilot,
+            "betaflight" => Stack::Betaflight,
             _ => Stack::Generic,
         }
     }
@@ -68,7 +72,17 @@ pub fn stack_for_autopilot_name(name: &str) -> Stack {
     match name.trim().to_lowercase().as_str() {
         "px4" => Stack::Px4,
         "ardupilotmega" | "ardupilot" | "apm" | "arducopter" | "arduplane" => Stack::ArduPilot,
+        "betaflight" => Stack::Betaflight,
         _ => Stack::Generic,
+    }
+}
+
+/// The stack a link's hint (`fc=betaflight`) names, when the heartbeat does
+/// not name one. Only ever fills in a stack that would be generic.
+pub fn stack_for_hint(hint: &str) -> Option<Stack> {
+    match hint.trim().to_lowercase().as_str() {
+        "betaflight" => Some(Stack::Betaflight),
+        _ => None,
     }
 }
 
@@ -617,8 +631,34 @@ pub fn dialect_for_stack(stack: Stack) -> Dialect {
 
 /// The dialect for a MAV_AUTOPILOT id.
 pub fn dialect_for_id(autopilot: i64) -> Dialect {
-    dialect_for_stack(stack_for_autopilot_id(autopilot))
+    dialect_for_id_hinted(autopilot, "")
 }
+
+/// The dialect for a MAV_AUTOPILOT id and what the link said about the flight
+/// controller. An autopilot that names itself PX4 or ArduPilot beats the hint.
+pub fn dialect_for_id_hinted(autopilot: i64, hint: &str) -> Dialect {
+    let mut stack = stack_for_autopilot_id(autopilot);
+    if stack == Stack::Generic {
+        stack = stack_for_hint(hint).unwrap_or(stack);
+    }
+    dialect_for_stack(stack)
+}
+
+/// Every setup tile that reads or writes the controller through MAVLink.
+/// Betaflight is configured over MSP, so none of them can reach it from here.
+const BETAFLIGHT_BLOCKED_TILES: [&str; 11] = [
+    "firstsetup",
+    "calibration",
+    "control",
+    "tuning",
+    "motors",
+    "safety",
+    "battery",
+    "rtk",
+    "remoteid",
+    "parameters",
+    "firmware",
+];
 
 const PX4_MISSION_HINT: &str = "PX4 names the reason in its event log only. The usual ones are a takeoff or a landing the vehicle's mission settings require, or a fixed wing landing approach steeper than it allows.";
 
@@ -632,7 +672,28 @@ impl Dialect {
             Stack::Px4 => "PX4",
             Stack::ArduPilot => "ArduPilot",
             Stack::Generic => "Generic",
+            Stack::Betaflight => "Betaflight",
         }
+    }
+
+    /// A stack that only reports: no parameters, commands or missions.
+    pub fn telemetry_only(&self) -> bool {
+        self.stack == Stack::Betaflight
+    }
+
+    /// Setup tiles this stack cannot serve, each with the sentence the greyed
+    /// tile carries. Reported, not hidden.
+    pub fn setup_unavailable(&self) -> Map {
+        let mut out = Map::new();
+        if self.stack == Stack::Betaflight {
+            for tile in BETAFLIGHT_BLOCKED_TILES {
+                out.insert(
+                    tile.to_string(),
+                    json!("Not for Betaflight. Use the Betaflight Configurator for this."),
+                );
+            }
+        }
+        out
     }
 
     pub fn supports_shell(&self) -> bool {
@@ -652,7 +713,7 @@ impl Dialect {
         match self.stack {
             Stack::Px4 => "command",
             Stack::ArduPilot => "mode",
-            Stack::Generic => "none",
+            Stack::Generic | Stack::Betaflight => "none",
         }
     }
 
@@ -660,7 +721,7 @@ impl Dialect {
         match self.stack {
             Stack::Px4 => "ulog",
             Stack::ArduPilot => "dataflash",
-            Stack::Generic => "unknown",
+            Stack::Generic | Stack::Betaflight => "unknown",
         }
     }
 
@@ -668,7 +729,7 @@ impl Dialect {
         match self.stack {
             Stack::Px4 => ".ulg",
             Stack::ArduPilot => ".bin",
-            Stack::Generic => ".log",
+            Stack::Generic | Stack::Betaflight => ".log",
         }
     }
 
@@ -676,7 +737,7 @@ impl Dialect {
         match self.stack {
             Stack::Px4 => "px4",
             Stack::ArduPilot => "ardupilot",
-            Stack::Generic => "",
+            Stack::Generic | Stack::Betaflight => "",
         }
     }
 
@@ -688,7 +749,7 @@ impl Dialect {
         match self.stack {
             Stack::Px4 => "MISSION",
             Stack::ArduPilot => "AUTO",
-            Stack::Generic => "",
+            Stack::Generic | Stack::Betaflight => "",
         }
     }
 
@@ -720,7 +781,7 @@ impl Dialect {
         match self.stack {
             Stack::Px4 => "/etc/extras/parameters.json.xz",
             Stack::ArduPilot => "@PARAM/param.pck?withdefaults=1",
-            Stack::Generic => "",
+            Stack::Generic | Stack::Betaflight => "",
         }
     }
 
@@ -728,7 +789,7 @@ impl Dialect {
         match self.stack {
             Stack::Px4 => "px4-json",
             Stack::ArduPilot => "ardupilot-pck",
-            Stack::Generic => "",
+            Stack::Generic | Stack::Betaflight => "",
         }
     }
 
@@ -738,7 +799,7 @@ impl Dialect {
 
     pub fn param_file_format(&self) -> &'static str {
         match self.stack {
-            Stack::Px4 | Stack::Generic => "qgc",
+            Stack::Px4 | Stack::Generic | Stack::Betaflight => "qgc",
             Stack::ArduPilot => "mission-planner",
         }
     }
@@ -747,7 +808,7 @@ impl Dialect {
         match self.stack {
             Stack::Px4 => &["Preflight Fail: "],
             Stack::ArduPilot => &["PreArm: ", "Arm: "],
-            Stack::Generic => &["Preflight Fail: ", "PreArm: "],
+            Stack::Generic | Stack::Betaflight => &["Preflight Fail: ", "PreArm: "],
         }
     }
 
@@ -784,7 +845,7 @@ impl Dialect {
         match self.stack {
             Stack::Px4 => px4_vehicle_event(text),
             Stack::ArduPilot => ardupilot_vehicle_event(text),
-            Stack::Generic => px4_vehicle_event(text).or_else(|| ardupilot_vehicle_event(text)),
+            Stack::Generic | Stack::Betaflight => px4_vehicle_event(text).or_else(|| ardupilot_vehicle_event(text)),
         }
     }
 
@@ -793,7 +854,7 @@ impl Dialect {
         match self.stack {
             Stack::Px4 => px4_prearm_event(reason),
             Stack::ArduPilot => ardupilot_prearm_event(reason),
-            Stack::Generic => px4_prearm_event(reason).or_else(|| ardupilot_prearm_event(reason)),
+            Stack::Generic | Stack::Betaflight => px4_prearm_event(reason).or_else(|| ardupilot_prearm_event(reason)),
         }
     }
 
@@ -827,7 +888,7 @@ impl Dialect {
                     .find(|(n, _)| *n == custom_mode)
                     .map_or_else(|| format!("MODE_{custom_mode}"), |(_, v)| (*v).to_string())
             }
-            Stack::Generic => {
+            Stack::Generic | Stack::Betaflight => {
                 if custom_mode != 0 {
                     format!("MODE_{custom_mode}")
                 } else {
@@ -883,7 +944,7 @@ impl Dialect {
                     })
                     .collect()
             }
-            Stack::Generic => Vec::new(),
+            Stack::Generic | Stack::Betaflight => Vec::new(),
         }
     }
 
@@ -901,7 +962,7 @@ impl Dialect {
                 names.sort();
                 names
             }
-            Stack::Generic => Vec::new(),
+            Stack::Generic | Stack::Betaflight => Vec::new(),
         }
     }
 
@@ -966,7 +1027,7 @@ impl Dialect {
                 }
                 usable
             }
-            Stack::Generic => Vec::new(),
+            Stack::Generic | Stack::Betaflight => Vec::new(),
         }
     }
 
@@ -1006,7 +1067,7 @@ impl Dialect {
                     ""
                 }
             }
-            Stack::Generic => "",
+            Stack::Generic | Stack::Betaflight => "",
         }
     }
 
@@ -1046,7 +1107,7 @@ impl Dialect {
                 .filter(|n| names.contains(n))
                 .collect()
             }
-            Stack::Generic => Vec::new(),
+            Stack::Generic | Stack::Betaflight => Vec::new(),
         }
     }
 
@@ -1076,7 +1137,7 @@ impl Dialect {
                     ""
                 }
             }
-            Stack::Generic => "",
+            Stack::Generic | Stack::Betaflight => "",
         }
     }
 
@@ -1088,7 +1149,7 @@ impl Dialect {
         match self.stack {
             Stack::Px4 => "OFFBOARD",
             Stack::ArduPilot => self.guided_mode(mav_type),
-            Stack::Generic => "",
+            Stack::Generic | Stack::Betaflight => "",
         }
     }
 
@@ -1098,7 +1159,7 @@ impl Dialect {
         match self.stack {
             Stack::Px4 => out.extend(plugin_commands_named(PX4_COMMANDS)),
             Stack::ArduPilot => out.extend(plugin_commands_named(AP_COMMANDS)),
-            Stack::Generic => return Vec::new(),
+            Stack::Generic | Stack::Betaflight => return Vec::new(),
         }
         out
     }
@@ -1154,7 +1215,7 @@ impl Dialect {
                     ),
                 ),
             ],
-            Stack::Generic => vec![
+            Stack::Generic | Stack::Betaflight => vec![
                 ("gyro", cal(&[1.0])),
                 ("baro", cal(&[0.0, 0.0, 1.0])),
                 ("accel", cal(&[0.0, 0.0, 0.0, 0.0, 1.0])),
@@ -1254,6 +1315,7 @@ impl Dialect {
                 }
             }
             Stack::Generic => CommandPlan::unsupported("Corvus does not know how this autopilot runs an autotune"),
+            Stack::Betaflight => CommandPlan::unsupported("Betaflight takes no commands over MAVLink"),
         }
     }
 
@@ -1288,6 +1350,8 @@ impl Dialect {
             "vehicle": vehicle_class(mav_type).as_str(),
             "ground": is_ground_vehicle(mav_type),
             "label": self.label(),
+            "telemetry_only": self.telemetry_only(),
+            "setup_unavailable": self.setup_unavailable(),
             "shell": self.supports_shell(),
             "esc_calibration": self.supports_esc_calibration(),
             "accel_cal_prompted": self.accel_cal_positions_are_prompted(),

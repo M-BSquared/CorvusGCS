@@ -176,6 +176,20 @@ pub fn raise_modem_lines(fd: RawFd, rts: bool) -> io::Result<()> {
     }
 }
 
+/// Set DTR and RTS to the given states, ignoring a device that has no modem
+/// lines. Used when the operator asked for a line to stay released.
+pub fn set_modem_lines(fd: RawFd, dtr: bool, rts: bool) -> io::Result<()> {
+    for (bit, on) in [(libc::TIOCM_DTR, dtr), (libc::TIOCM_RTS, rts)] {
+        let request = if on { libc::TIOCMBIS } else { libc::TIOCMBIC };
+        match check(unsafe { libc::ioctl(fd, request as _, &bit) }) {
+            Ok(_) => {}
+            Err(e) if matches!(e.raw_os_error(), Some(libc::EINVAL) | Some(libc::ENOTTY)) => {}
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(())
+}
+
 pub fn flush_input(fd: RawFd) {
     unsafe {
         libc::tcflush(fd, libc::TCIFLUSH);

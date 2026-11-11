@@ -2387,7 +2387,14 @@ fn open_connection(
     }
     let opened = {
         let device = device.clone();
-        py.allow_threads(move || Serial::open(&device, baud_value))
+        let held = |key: &str| -> PyResult<Option<bool>> {
+            match opts.and_then(|o| o.get_item(key).ok().flatten()) {
+                Some(v) if !v.is_none() => Ok(Some(v.is_truthy()?)),
+                _ => Ok(None),
+            }
+        };
+        let (dtr, rts) = (held("dtr")?, held("rts")?);
+        py.allow_threads(move || Serial::open_held(&device, baud_value, dtr, rts))
     };
     let link = match opened {
         Ok(link) => link,

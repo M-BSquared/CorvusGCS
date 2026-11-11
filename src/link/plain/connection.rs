@@ -41,6 +41,10 @@ pub struct Options {
     pub reconnect_delay: f64,
     /// The wire format sent. MAVLink 2 unless the peer is known to speak 1.
     pub proto: Proto,
+    /// DTR and RTS of a serial port: Some holds the line at that state from
+    /// the moment the port opens, None leaves it asserted as usual.
+    pub dtr: Option<bool>,
+    pub rts: Option<bool>,
 }
 
 impl Default for Options {
@@ -54,6 +58,8 @@ impl Default for Options {
             retries: 3,
             reconnect_delay: 1.0,
             proto: Proto::V2,
+            dtr: None,
+            rts: None,
         }
     }
 }
@@ -317,12 +323,12 @@ pub fn open(device: &str, opts: &Options) -> Result<Connection, ConnectError> {
             ))
         }
         Target::Mcast { group, port } => Link::Mcast(Mcast::open(group, *port)?),
-        Target::Serial { device, baud } => {
-            Link::Serial(Serial::open(device, *baud).map_err(|e| ConnectError::Serial {
+        Target::Serial { device, baud } => Link::Serial(Serial::open_held(device, *baud, opts.dtr, opts.rts).map_err(
+            |e| ConnectError::Serial {
                 errno: e.errno,
                 message: e.message,
-            })?)
-        }
+            },
+        )?),
     };
     Ok(Connection {
         link,
