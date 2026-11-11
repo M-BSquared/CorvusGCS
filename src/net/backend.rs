@@ -149,6 +149,7 @@ impl Backend {
                 autostart: true,
                 connection: None,
             }))
+            .module(corvus_core::PeripheralsModule::new())
             .module(corvus_core::Http::new(corvus_core::HttpOptions {
                 port: 0,
                 ..corvus_core::HttpOptions::default()

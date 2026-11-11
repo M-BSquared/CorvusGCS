@@ -16,7 +16,9 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::mpsc;
 
-use corvus_core::{CoreBuilder, Http, HttpInfo, HttpOptions, Options, VehicleModule, VehicleOptions};
+use corvus_core::{
+    CoreBuilder, Http, HttpInfo, HttpOptions, Options, PeripheralsModule, VehicleModule, VehicleOptions,
+};
 
 fn main() -> ExitCode {
     let mut port = 8000u16;
@@ -50,6 +52,7 @@ fn main() -> ExitCode {
     }
     let core = match CoreBuilder::new(options)
         .module(VehicleModule::with_options(vehicle))
+        .module(PeripheralsModule::new())
         .module(Http::new(HttpOptions {
             port,
             ..HttpOptions::default()

@@ -1,0 +1,666 @@
+{
+  "shell_env": [
+    {
+      "env": {},
+      "platform": "linux",
+      "result": {
+        "TERM": "xterm-256color",
+        "COLORTERM": "truecolor",
+        "LC_CTYPE": "C.UTF-8"
+      }
+    },
+    {
+      "env": {},
+      "platform": "darwin",
+      "result": {
+        "TERM": "xterm-256color",
+        "COLORTERM": "truecolor",
+        "LC_CTYPE": "UTF-8"
+      }
+    },
+    {
+      "env": {},
+      "platform": "win32",
+      "result": {
+        "TERM": "xterm-256color",
+        "COLORTERM": "truecolor",
+        "LC_CTYPE": "C.UTF-8"
+      }
+    },
+    {
+      "env": {
+        "LANG": "de_DE.UTF-8"
+      },
+      "platform": "linux",
+      "result": {
+        "LANG": "de_DE.UTF-8",
+        "TERM": "xterm-256color",
+        "COLORTERM": "truecolor"
+      }
+    },
+    {
+      "env": {
+        "LANG": "de_DE.UTF-8"
+      },
+      "platform": "darwin",
+      "result": {
+        "LANG": "de_DE.UTF-8",
+        "TERM": "xterm-256color",
+        "COLORTERM": "truecolor"
+      }
+    },
+    {
+      "env": {
+        "LANG": "de_DE.UTF-8"
+      },
+      "platform": "win32",
+      "result": {
+        "LANG": "de_DE.UTF-8",
+        "TERM": "xterm-256color",
+        "COLORTERM": "truecolor"
+      }
+    },
+    {
+      "env": {
+        "LC_ALL": "C"
+      },
+      "platform": "linux",
+      "result": {
+        "LC_ALL": "C",
+        "TERM": "xterm-256color",
+        "COLORTERM": "truecolor"
+      }
+    },
+    {
+      "env": {
+        "LC_ALL": "C"
+      },
+      "platform": "darwin",
+      "result": {
+        "LC_ALL": "C",
+        "TERM": "xterm-256color",
+        "COLORTERM": "truecolor"
+      }
+    },
+    {
+      "env": {
+        "LC_ALL": "C"
+      },
+      "platform": "win32",
+      "result": {
+        "LC_ALL": "C",
+        "TERM": "xterm-256color",
+        "COLORTERM": "truecolor"
+      }
+    },
+    {
+      "env": {
+        "LC_CTYPE": ""
+      },
+      "platform": "linux",
+      "result": {
+        "LC_CTYPE": "C.UTF-8",
+        "TERM": "xterm-256color",
+        "COLORTERM": "truecolor"
+      }
+    },
+    {
+      "env": {
+        "LC_CTYPE": ""
+      },
+      "platform": "darwin",
+      "result": {
+        "LC_CTYPE": "UTF-8",
+        "TERM": "xterm-256color",
+        "COLORTERM": "truecolor"
+      }
+    },
+    {
+      "env": {
+        "LC_CTYPE": ""
+      },
+      "platform": "win32",
+      "result": {
+        "LC_CTYPE": "C.UTF-8",
+        "TERM": "xterm-256color",
+        "COLORTERM": "truecolor"
+      }
+    },
+    {
+      "env": {
+        "LANG": "",
+        "LC_ALL": ""
+      },
+      "platform": "linux",
+      "result": {
+        "LANG": "",
+        "LC_ALL": "",
+        "TERM": "xterm-256color",
+        "COLORTERM": "truecolor",
+        "LC_CTYPE": "C.UTF-8"
+      }
+    },
+    {
+      "env": {
+        "LANG": "",
+        "LC_ALL": ""
+      },
+      "platform": "darwin",
+      "result": {
+        "LANG": "",
+        "LC_ALL": "",
+        "TERM": "xterm-256color",
+        "COLORTERM": "truecolor",
+        "LC_CTYPE": "UTF-8"
+      }
+    },
+    {
+      "env": {
+        "LANG": "",
+        "LC_ALL": ""
+      },
+      "platform": "win32",
+      "result": {
+        "LANG": "",
+        "LC_ALL": "",
+        "TERM": "xterm-256color",
+        "COLORTERM": "truecolor",
+        "LC_CTYPE": "C.UTF-8"
+      }
+    },
+    {
+      "env": {
+        "HOME": "/home/x",
+        "PATH": "/usr/bin"
+      },
+      "platform": "linux",
+      "result": {
+        "HOME": "/home/x",
+        "PATH": "/usr/bin",
+        "TERM": "xterm-256color",
+        "COLORTERM": "truecolor",
+        "LC_CTYPE": "C.UTF-8"
+      }
+    },
+    {
+      "env": {
+        "HOME": "/home/x",
+        "PATH": "/usr/bin"
+      },
+      "platform": "darwin",
+      "result": {
+        "HOME": "/home/x",
+        "PATH": "/usr/bin",
+        "TERM": "xterm-256color",
+        "COLORTERM": "truecolor",
+        "LC_CTYPE": "UTF-8"
+      }
+    },
+    {
+      "env": {
+        "HOME": "/home/x",
+        "PATH": "/usr/bin"
+      },
+      "platform": "win32",
+      "result": {
+        "HOME": "/home/x",
+        "PATH": "/usr/bin",
+        "TERM": "xterm-256color",
+        "COLORTERM": "truecolor",
+        "LC_CTYPE": "C.UTF-8"
+      }
+    },
+    {
+      "env": {
+        "TERM": "dumb",
+        "COLORTERM": "no"
+      },
+      "platform": "linux",
+      "result": {
+        "TERM": "xterm-256color",
+        "COLORTERM": "truecolor",
+        "LC_CTYPE": "C.UTF-8"
+      }
+    },
+    {
+      "env": {
+        "TERM": "dumb",
+        "COLORTERM": "no"
+      },
+      "platform": "darwin",
+      "result": {
+        "TERM": "xterm-256color",
+        "COLORTERM": "truecolor",
+        "LC_CTYPE": "UTF-8"
+      }
+    },
+    {
+      "env": {
+        "TERM": "dumb",
+        "COLORTERM": "no"
+      },
+      "platform": "win32",
+      "result": {
+        "TERM": "xterm-256color",
+        "COLORTERM": "truecolor",
+        "LC_CTYPE": "C.UTF-8"
+      }
+    },
+    {
+      "env": {
+        "PYTHONEXECUTABLE": "/x",
+        "QTWEBENGINE_CHROMIUM_FLAGS": "--x",
+        "_PYI_A": "1",
+        "KEEP": "1"
+      },
+      "platform": "linux",
+      "result": {
+        "KEEP": "1",
+        "TERM": "xterm-256color",
+        "COLORTERM": "truecolor",
+        "LC_CTYPE": "C.UTF-8"
+      }
+    },
+    {
+      "env": {
+        "PYTHONEXECUTABLE": "/x",
+        "QTWEBENGINE_CHROMIUM_FLAGS": "--x",
+        "_PYI_A": "1",
+        "KEEP": "1"
+      },
+      "platform": "darwin",
+      "result": {
+        "KEEP": "1",
+        "TERM": "xterm-256color",
+        "COLORTERM": "truecolor",
+        "LC_CTYPE": "UTF-8"
+      }
+    },
+    {
+      "env": {
+        "PYTHONEXECUTABLE": "/x",
+        "QTWEBENGINE_CHROMIUM_FLAGS": "--x",
+        "_PYI_A": "1",
+        "KEEP": "1"
+      },
+      "platform": "win32",
+      "result": {
+        "KEEP": "1",
+        "TERM": "xterm-256color",
+        "COLORTERM": "truecolor",
+        "LC_CTYPE": "C.UTF-8"
+      }
+    },
+    {
+      "env": {
+        "CORVUS_QPA_DEFAULT": "xcb",
+        "QT_QPA_PLATFORM": "xcb"
+      },
+      "platform": "linux",
+      "result": {
+        "TERM": "xterm-256color",
+        "COLORTERM": "truecolor",
+        "LC_CTYPE": "C.UTF-8"
+      }
+    },
+    {
+      "env": {
+        "CORVUS_QPA_DEFAULT": "xcb",
+        "QT_QPA_PLATFORM": "xcb"
+      },
+      "platform": "darwin",
+      "result": {
+        "TERM": "xterm-256color",
+        "COLORTERM": "truecolor",
+        "LC_CTYPE": "UTF-8"
+      }
+    },
+    {
+      "env": {
+        "CORVUS_QPA_DEFAULT": "xcb",
+        "QT_QPA_PLATFORM": "xcb"
+      },
+      "platform": "win32",
+      "result": {
+        "TERM": "xterm-256color",
+        "COLORTERM": "truecolor",
+        "LC_CTYPE": "C.UTF-8"
+      }
+    },
+    {
+      "env": {
+        "CORVUS_QPA_DEFAULT": "xcb",
+        "QT_QPA_PLATFORM": "wayland"
+      },
+      "platform": "linux",
+      "result": {
+        "QT_QPA_PLATFORM": "wayland",
+        "TERM": "xterm-256color",
+        "COLORTERM": "truecolor",
+        "LC_CTYPE": "C.UTF-8"
+      }
+    },
+    {
+      "env": {
+        "CORVUS_QPA_DEFAULT": "xcb",
+        "QT_QPA_PLATFORM": "wayland"
+      },
+      "platform": "darwin",
+      "result": {
+        "QT_QPA_PLATFORM": "wayland",
+        "TERM": "xterm-256color",
+        "COLORTERM": "truecolor",
+        "LC_CTYPE": "UTF-8"
+      }
+    },
+    {
+      "env": {
+        "CORVUS_QPA_DEFAULT": "xcb",
+        "QT_QPA_PLATFORM": "wayland"
+      },
+      "platform": "win32",
+      "result": {
+        "QT_QPA_PLATFORM": "wayland",
+        "TERM": "xterm-256color",
+        "COLORTERM": "truecolor",
+        "LC_CTYPE": "C.UTF-8"
+      }
+    },
+    {
+      "env": {
+        "LD_LIBRARY_PATH": "/opt/other/lib:/usr/lib"
+      },
+      "platform": "linux",
+      "result": {
+        "LD_LIBRARY_PATH": "/opt/other/lib:/usr/lib",
+        "TERM": "xterm-256color",
+        "COLORTERM": "truecolor",
+        "LC_CTYPE": "C.UTF-8"
+      }
+    },
+    {
+      "env": {
+        "LD_LIBRARY_PATH": "/opt/other/lib:/usr/lib"
+      },
+      "platform": "darwin",
+      "result": {
+        "LD_LIBRARY_PATH": "/opt/other/lib:/usr/lib",
+        "TERM": "xterm-256color",
+        "COLORTERM": "truecolor",
+        "LC_CTYPE": "UTF-8"
+      }
+    },
+    {
+      "env": {
+        "LD_LIBRARY_PATH": "/opt/other/lib:/usr/lib"
+      },
+      "platform": "win32",
+      "result": {
+        "LD_LIBRARY_PATH": "/opt/other/lib:/usr/lib",
+        "TERM": "xterm-256color",
+        "COLORTERM": "truecolor",
+        "LC_CTYPE": "C.UTF-8"
+      }
+    }
+  ],
+  "shell_command": [
+    {
+      "text": "echo hi",
+      "shell": "/bin/bash",
+      "platform": "linux",
+      "result": [
+        "/bin/bash",
+        "-l",
+        "-c",
+        "echo hi"
+      ]
+    },
+    {
+      "text": "echo hi",
+      "shell": "/bin/bash",
+      "platform": "darwin",
+      "result": [
+        "/bin/bash",
+        "-l",
+        "-c",
+        "echo hi"
+      ]
+    },
+    {
+      "text": "echo hi",
+      "shell": "/bin/bash",
+      "platform": "win32",
+      "result": "\"/bin/bash\" /d /s /c \"echo hi\""
+    },
+    {
+      "text": "echo hi",
+      "shell": "/bin/sh",
+      "platform": "linux",
+      "result": [
+        "/bin/sh",
+        "-l",
+        "-c",
+        "echo hi"
+      ]
+    },
+    {
+      "text": "echo hi",
+      "shell": "/bin/sh",
+      "platform": "darwin",
+      "result": [
+        "/bin/sh",
+        "-l",
+        "-c",
+        "echo hi"
+      ]
+    },
+    {
+      "text": "echo hi",
+      "shell": "/bin/sh",
+      "platform": "win32",
+      "result": "\"/bin/sh\" /d /s /c \"echo hi\""
+    },
+    {
+      "text": "echo hi",
+      "shell": "C:\\Windows\\cmd.exe",
+      "platform": "linux",
+      "result": [
+        "C:\\Windows\\cmd.exe",
+        "-l",
+        "-c",
+        "echo hi"
+      ]
+    },
+    {
+      "text": "echo hi",
+      "shell": "C:\\Windows\\cmd.exe",
+      "platform": "darwin",
+      "result": [
+        "C:\\Windows\\cmd.exe",
+        "-l",
+        "-c",
+        "echo hi"
+      ]
+    },
+    {
+      "text": "echo hi",
+      "shell": "C:\\Windows\\cmd.exe",
+      "platform": "win32",
+      "result": "\"C:\\Windows\\cmd.exe\" /d /s /c \"echo hi\""
+    },
+    {
+      "text": "say \"x\" && y",
+      "shell": "/bin/bash",
+      "platform": "linux",
+      "result": [
+        "/bin/bash",
+        "-l",
+        "-c",
+        "say \"x\" && y"
+      ]
+    },
+    {
+      "text": "say \"x\" && y",
+      "shell": "/bin/bash",
+      "platform": "darwin",
+      "result": [
+        "/bin/bash",
+        "-l",
+        "-c",
+        "say \"x\" && y"
+      ]
+    },
+    {
+      "text": "say \"x\" && y",
+      "shell": "/bin/bash",
+      "platform": "win32",
+      "result": "\"/bin/bash\" /d /s /c \"say \"x\" && y\""
+    },
+    {
+      "text": "say \"x\" && y",
+      "shell": "/bin/sh",
+      "platform": "linux",
+      "result": [
+        "/bin/sh",
+        "-l",
+        "-c",
+        "say \"x\" && y"
+      ]
+    },
+    {
+      "text": "say \"x\" && y",
+      "shell": "/bin/sh",
+      "platform": "darwin",
+      "result": [
+        "/bin/sh",
+        "-l",
+        "-c",
+        "say \"x\" && y"
+      ]
+    },
+    {
+      "text": "say \"x\" && y",
+      "shell": "/bin/sh",
+      "platform": "win32",
+      "result": "\"/bin/sh\" /d /s /c \"say \"x\" && y\""
+    },
+    {
+      "text": "say \"x\" && y",
+      "shell": "C:\\Windows\\cmd.exe",
+      "platform": "linux",
+      "result": [
+        "C:\\Windows\\cmd.exe",
+        "-l",
+        "-c",
+        "say \"x\" && y"
+      ]
+    },
+    {
+      "text": "say \"x\" && y",
+      "shell": "C:\\Windows\\cmd.exe",
+      "platform": "darwin",
+      "result": [
+        "C:\\Windows\\cmd.exe",
+        "-l",
+        "-c",
+        "say \"x\" && y"
+      ]
+    },
+    {
+      "text": "say \"x\" && y",
+      "shell": "C:\\Windows\\cmd.exe",
+      "platform": "win32",
+      "result": "\"C:\\Windows\\cmd.exe\" /d /s /c \"say \"x\" && y\""
+    },
+    {
+      "text": "",
+      "shell": "/bin/bash",
+      "platform": "linux",
+      "result": [
+        "/bin/bash",
+        "-l",
+        "-c",
+        ""
+      ]
+    },
+    {
+      "text": "",
+      "shell": "/bin/bash",
+      "platform": "darwin",
+      "result": [
+        "/bin/bash",
+        "-l",
+        "-c",
+        ""
+      ]
+    },
+    {
+      "text": "",
+      "shell": "/bin/bash",
+      "platform": "win32",
+      "result": "\"/bin/bash\" /d /s /c \"\""
+    },
+    {
+      "text": "",
+      "shell": "/bin/sh",
+      "platform": "linux",
+      "result": [
+        "/bin/sh",
+        "-l",
+        "-c",
+        ""
+      ]
+    },
+    {
+      "text": "",
+      "shell": "/bin/sh",
+      "platform": "darwin",
+      "result": [
+        "/bin/sh",
+        "-l",
+        "-c",
+        ""
+      ]
+    },
+    {
+      "text": "",
+      "shell": "/bin/sh",
+      "platform": "win32",
+      "result": "\"/bin/sh\" /d /s /c \"\""
+    },
+    {
+      "text": "",
+      "shell": "C:\\Windows\\cmd.exe",
+      "platform": "linux",
+      "result": [
+        "C:\\Windows\\cmd.exe",
+        "-l",
+        "-c",
+        ""
+      ]
+    },
+    {
+      "text": "",
+      "shell": "C:\\Windows\\cmd.exe",
+      "platform": "darwin",
+      "result": [
+        "C:\\Windows\\cmd.exe",
+        "-l",
+        "-c",
+        ""
+      ]
+    },
+    {
+      "text": "",
+      "shell": "C:\\Windows\\cmd.exe",
+      "platform": "win32",
+      "result": "\"C:\\Windows\\cmd.exe\" /d /s /c \"\""
+    }
+  ],
+  "limits": {
+    "max_command": 8192,
+    "early_exit": 1.0,
+    "tail": 4096,
+    "term": 2.0
+  }
+}

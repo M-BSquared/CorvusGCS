@@ -43,3 +43,7 @@ flate2 = { version = "1", default-features = false, features = ["rust_backend"] 
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+[target.'cfg(any(target_os = "macos", windows))'.dependencies]
+# Lists the serial ports with their USB descriptor (IOKit, the Windows registry); Linux reads sysfs itself.
+serialport = { version = "4", default-features = false }

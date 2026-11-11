@@ -1,0 +1,2182 @@
+{
+  "hosts": [
+    {
+      "host": "192.168.1.5",
+      "result": [
+        "192.168.1.5",
+        ""
+      ]
+    },
+    {
+      "host": "example.com",
+      "result": [
+        "example.com",
+        ""
+      ]
+    },
+    {
+      "host": "host_name",
+      "result": [
+        "host_name",
+        ""
+      ]
+    },
+    {
+      "host": "-oProxyCommand=x",
+      "result": [
+        "",
+        "That is not an IP address or host name."
+      ]
+    },
+    {
+      "host": "a b",
+      "result": [
+        "",
+        "That is not an IP address or host name."
+      ]
+    },
+    {
+      "host": "",
+      "result": [
+        "",
+        "Enter an IP address or host name."
+      ]
+    },
+    {
+      "host": "  ",
+      "result": [
+        "",
+        "Enter an IP address or host name."
+      ]
+    },
+    {
+      "host": null,
+      "result": [
+        "",
+        "Enter an IP address or host name."
+      ]
+    },
+    {
+      "host": 5,
+      "result": [
+        "5",
+        ""
+      ]
+    },
+    {
+      "host": "fe80::1%en0",
+      "result": [
+        "fe80::1%en0",
+        ""
+      ]
+    },
+    {
+      "host": "::1",
+      "result": [
+        "::1",
+        ""
+      ]
+    },
+    {
+      "host": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "result": [
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        ""
+      ]
+    },
+    {
+      "host": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "result": [
+        "",
+        "That is not an IP address or host name."
+      ]
+    },
+    {
+      "host": "ok-host.local",
+      "result": [
+        "ok-host.local",
+        ""
+      ]
+    },
+    {
+      "host": "bad;rm",
+      "result": [
+        "",
+        "That is not an IP address or host name."
+      ]
+    },
+    {
+      "host": "trail-",
+      "result": [
+        "",
+        "That is not an IP address or host name."
+      ]
+    },
+    {
+      "host": "-lead",
+      "result": [
+        "",
+        "That is not an IP address or host name."
+      ]
+    },
+    {
+      "host": ":",
+      "result": [
+        ":",
+        ""
+      ]
+    },
+    {
+      "host": "a:",
+      "result": [
+        "",
+        "That is not an IP address or host name."
+      ]
+    },
+    {
+      "host": "xxx\n",
+      "result": [
+        "xxx",
+        ""
+      ]
+    },
+    {
+      "host": "éx",
+      "result": [
+        "",
+        "That is not an IP address or host name."
+      ]
+    },
+    {
+      "host": "1.2.3.4 ",
+      "result": [
+        "1.2.3.4",
+        ""
+      ]
+    },
+    {
+      "host": "[::1]",
+      "result": [
+        "",
+        "That is not an IP address or host name."
+      ]
+    },
+    {
+      "host": "a..b",
+      "result": [
+        "a..b",
+        ""
+      ]
+    },
+    {
+      "host": "a%b",
+      "result": [
+        "a%b",
+        ""
+      ]
+    },
+    {
+      "host": "9.9.9.9\n",
+      "result": [
+        "9.9.9.9",
+        ""
+      ]
+    }
+  ],
+  "commands": [
+    {
+      "platform": "linux",
+      "host": "10.0.0.1",
+      "wait": 0.5,
+      "argv": [
+        "/bin/ping",
+        "-c",
+        "1",
+        "-n",
+        "-W",
+        "1",
+        "10.0.0.1"
+      ]
+    },
+    {
+      "platform": "linux",
+      "host": "10.0.0.1",
+      "wait": 1.0,
+      "argv": [
+        "/bin/ping",
+        "-c",
+        "1",
+        "-n",
+        "-W",
+        "1",
+        "10.0.0.1"
+      ]
+    },
+    {
+      "platform": "linux",
+      "host": "10.0.0.1",
+      "wait": 2.0,
+      "argv": [
+        "/bin/ping",
+        "-c",
+        "1",
+        "-n",
+        "-W",
+        "2",
+        "10.0.0.1"
+      ]
+    },
+    {
+      "platform": "linux",
+      "host": "10.0.0.1",
+      "wait": 2.2,
+      "argv": [
+        "/bin/ping",
+        "-c",
+        "1",
+        "-n",
+        "-W",
+        "3",
+        "10.0.0.1"
+      ]
+    },
+    {
+      "platform": "linux",
+      "host": "10.0.0.1",
+      "wait": 10.0,
+      "argv": [
+        "/bin/ping",
+        "-c",
+        "1",
+        "-n",
+        "-W",
+        "10",
+        "10.0.0.1"
+      ]
+    },
+    {
+      "platform": "linux",
+      "host": "fe80::1%en0",
+      "wait": 0.5,
+      "argv": [
+        "/bin/ping",
+        "-c",
+        "1",
+        "-n",
+        "-W",
+        "1",
+        "fe80::1%en0"
+      ]
+    },
+    {
+      "platform": "linux",
+      "host": "fe80::1%en0",
+      "wait": 1.0,
+      "argv": [
+        "/bin/ping",
+        "-c",
+        "1",
+        "-n",
+        "-W",
+        "1",
+        "fe80::1%en0"
+      ]
+    },
+    {
+      "platform": "linux",
+      "host": "fe80::1%en0",
+      "wait": 2.0,
+      "argv": [
+        "/bin/ping",
+        "-c",
+        "1",
+        "-n",
+        "-W",
+        "2",
+        "fe80::1%en0"
+      ]
+    },
+    {
+      "platform": "linux",
+      "host": "fe80::1%en0",
+      "wait": 2.2,
+      "argv": [
+        "/bin/ping",
+        "-c",
+        "1",
+        "-n",
+        "-W",
+        "3",
+        "fe80::1%en0"
+      ]
+    },
+    {
+      "platform": "linux",
+      "host": "fe80::1%en0",
+      "wait": 10.0,
+      "argv": [
+        "/bin/ping",
+        "-c",
+        "1",
+        "-n",
+        "-W",
+        "10",
+        "fe80::1%en0"
+      ]
+    },
+    {
+      "platform": "linux",
+      "host": "host.local",
+      "wait": 0.5,
+      "argv": [
+        "/bin/ping",
+        "-c",
+        "1",
+        "-n",
+        "-W",
+        "1",
+        "host.local"
+      ]
+    },
+    {
+      "platform": "linux",
+      "host": "host.local",
+      "wait": 1.0,
+      "argv": [
+        "/bin/ping",
+        "-c",
+        "1",
+        "-n",
+        "-W",
+        "1",
+        "host.local"
+      ]
+    },
+    {
+      "platform": "linux",
+      "host": "host.local",
+      "wait": 2.0,
+      "argv": [
+        "/bin/ping",
+        "-c",
+        "1",
+        "-n",
+        "-W",
+        "2",
+        "host.local"
+      ]
+    },
+    {
+      "platform": "linux",
+      "host": "host.local",
+      "wait": 2.2,
+      "argv": [
+        "/bin/ping",
+        "-c",
+        "1",
+        "-n",
+        "-W",
+        "3",
+        "host.local"
+      ]
+    },
+    {
+      "platform": "linux",
+      "host": "host.local",
+      "wait": 10.0,
+      "argv": [
+        "/bin/ping",
+        "-c",
+        "1",
+        "-n",
+        "-W",
+        "10",
+        "host.local"
+      ]
+    },
+    {
+      "platform": "darwin",
+      "host": "10.0.0.1",
+      "wait": 0.5,
+      "argv": [
+        "/bin/ping",
+        "-c",
+        "1",
+        "-n",
+        "-t",
+        "1",
+        "10.0.0.1"
+      ]
+    },
+    {
+      "platform": "darwin",
+      "host": "10.0.0.1",
+      "wait": 1.0,
+      "argv": [
+        "/bin/ping",
+        "-c",
+        "1",
+        "-n",
+        "-t",
+        "1",
+        "10.0.0.1"
+      ]
+    },
+    {
+      "platform": "darwin",
+      "host": "10.0.0.1",
+      "wait": 2.0,
+      "argv": [
+        "/bin/ping",
+        "-c",
+        "1",
+        "-n",
+        "-t",
+        "2",
+        "10.0.0.1"
+      ]
+    },
+    {
+      "platform": "darwin",
+      "host": "10.0.0.1",
+      "wait": 2.2,
+      "argv": [
+        "/bin/ping",
+        "-c",
+        "1",
+        "-n",
+        "-t",
+        "3",
+        "10.0.0.1"
+      ]
+    },
+    {
+      "platform": "darwin",
+      "host": "10.0.0.1",
+      "wait": 10.0,
+      "argv": [
+        "/bin/ping",
+        "-c",
+        "1",
+        "-n",
+        "-t",
+        "10",
+        "10.0.0.1"
+      ]
+    },
+    {
+      "platform": "darwin",
+      "host": "host.local",
+      "wait": 0.5,
+      "argv": [
+        "/bin/ping",
+        "-c",
+        "1",
+        "-n",
+        "-t",
+        "1",
+        "host.local"
+      ]
+    },
+    {
+      "platform": "darwin",
+      "host": "host.local",
+      "wait": 1.0,
+      "argv": [
+        "/bin/ping",
+        "-c",
+        "1",
+        "-n",
+        "-t",
+        "1",
+        "host.local"
+      ]
+    },
+    {
+      "platform": "darwin",
+      "host": "host.local",
+      "wait": 2.0,
+      "argv": [
+        "/bin/ping",
+        "-c",
+        "1",
+        "-n",
+        "-t",
+        "2",
+        "host.local"
+      ]
+    },
+    {
+      "platform": "darwin",
+      "host": "host.local",
+      "wait": 2.2,
+      "argv": [
+        "/bin/ping",
+        "-c",
+        "1",
+        "-n",
+        "-t",
+        "3",
+        "host.local"
+      ]
+    },
+    {
+      "platform": "darwin",
+      "host": "host.local",
+      "wait": 10.0,
+      "argv": [
+        "/bin/ping",
+        "-c",
+        "1",
+        "-n",
+        "-t",
+        "10",
+        "host.local"
+      ]
+    },
+    {
+      "platform": "win32",
+      "host": "10.0.0.1",
+      "wait": 0.5,
+      "argv": [
+        "/bin/ping",
+        "-n",
+        "1",
+        "-w",
+        "500",
+        "10.0.0.1"
+      ]
+    },
+    {
+      "platform": "win32",
+      "host": "10.0.0.1",
+      "wait": 1.0,
+      "argv": [
+        "/bin/ping",
+        "-n",
+        "1",
+        "-w",
+        "1000",
+        "10.0.0.1"
+      ]
+    },
+    {
+      "platform": "win32",
+      "host": "10.0.0.1",
+      "wait": 2.0,
+      "argv": [
+        "/bin/ping",
+        "-n",
+        "1",
+        "-w",
+        "2000",
+        "10.0.0.1"
+      ]
+    },
+    {
+      "platform": "win32",
+      "host": "10.0.0.1",
+      "wait": 2.2,
+      "argv": [
+        "/bin/ping",
+        "-n",
+        "1",
+        "-w",
+        "2200",
+        "10.0.0.1"
+      ]
+    },
+    {
+      "platform": "win32",
+      "host": "10.0.0.1",
+      "wait": 10.0,
+      "argv": [
+        "/bin/ping",
+        "-n",
+        "1",
+        "-w",
+        "10000",
+        "10.0.0.1"
+      ]
+    },
+    {
+      "platform": "win32",
+      "host": "fe80::1%en0",
+      "wait": 0.5,
+      "argv": [
+        "/bin/ping",
+        "-n",
+        "1",
+        "-w",
+        "500",
+        "fe80::1%en0"
+      ]
+    },
+    {
+      "platform": "win32",
+      "host": "fe80::1%en0",
+      "wait": 1.0,
+      "argv": [
+        "/bin/ping",
+        "-n",
+        "1",
+        "-w",
+        "1000",
+        "fe80::1%en0"
+      ]
+    },
+    {
+      "platform": "win32",
+      "host": "fe80::1%en0",
+      "wait": 2.0,
+      "argv": [
+        "/bin/ping",
+        "-n",
+        "1",
+        "-w",
+        "2000",
+        "fe80::1%en0"
+      ]
+    },
+    {
+      "platform": "win32",
+      "host": "fe80::1%en0",
+      "wait": 2.2,
+      "argv": [
+        "/bin/ping",
+        "-n",
+        "1",
+        "-w",
+        "2200",
+        "fe80::1%en0"
+      ]
+    },
+    {
+      "platform": "win32",
+      "host": "fe80::1%en0",
+      "wait": 10.0,
+      "argv": [
+        "/bin/ping",
+        "-n",
+        "1",
+        "-w",
+        "10000",
+        "fe80::1%en0"
+      ]
+    },
+    {
+      "platform": "win32",
+      "host": "host.local",
+      "wait": 0.5,
+      "argv": [
+        "/bin/ping",
+        "-n",
+        "1",
+        "-w",
+        "500",
+        "host.local"
+      ]
+    },
+    {
+      "platform": "win32",
+      "host": "host.local",
+      "wait": 1.0,
+      "argv": [
+        "/bin/ping",
+        "-n",
+        "1",
+        "-w",
+        "1000",
+        "host.local"
+      ]
+    },
+    {
+      "platform": "win32",
+      "host": "host.local",
+      "wait": 2.0,
+      "argv": [
+        "/bin/ping",
+        "-n",
+        "1",
+        "-w",
+        "2000",
+        "host.local"
+      ]
+    },
+    {
+      "platform": "win32",
+      "host": "host.local",
+      "wait": 2.2,
+      "argv": [
+        "/bin/ping",
+        "-n",
+        "1",
+        "-w",
+        "2200",
+        "host.local"
+      ]
+    },
+    {
+      "platform": "win32",
+      "host": "host.local",
+      "wait": 10.0,
+      "argv": [
+        "/bin/ping",
+        "-n",
+        "1",
+        "-w",
+        "10000",
+        "host.local"
+      ]
+    }
+  ],
+  "replies": [
+    {
+      "platform": "linux",
+      "code": 0,
+      "host": "10.0.0.1",
+      "text": "64 bytes from 10.0.0.1: icmp_seq=0 ttl=64 time=0.431 ms",
+      "reachable": true,
+      "rtt": 0.431
+    },
+    {
+      "platform": "linux",
+      "code": 0,
+      "host": "10.0.0.1",
+      "text": "Reply from 10.0.0.1: bytes=32 time<1ms TTL=128",
+      "reachable": true,
+      "rtt": 1.0
+    },
+    {
+      "platform": "linux",
+      "code": 0,
+      "host": "10.0.0.1",
+      "text": "Reply from 10.0.0.1: bytes=32 time=12ms TTL=128",
+      "reachable": true,
+      "rtt": 12.0
+    },
+    {
+      "platform": "linux",
+      "code": 0,
+      "host": "10.0.0.1",
+      "text": "Reply from 10.0.0.9: Destination host unreachable.",
+      "reachable": true,
+      "rtt": null
+    },
+    {
+      "platform": "linux",
+      "code": 0,
+      "host": "10.0.0.1",
+      "text": "Reply from fe80::1: time=3ms",
+      "reachable": true,
+      "rtt": 3.0
+    },
+    {
+      "platform": "linux",
+      "code": 0,
+      "host": "10.0.0.1",
+      "text": "Reply from fe80::1: Destination unreachable",
+      "reachable": true,
+      "rtt": null
+    },
+    {
+      "platform": "linux",
+      "code": 0,
+      "host": "10.0.0.1",
+      "text": "time=1,5 ms ttl=3",
+      "reachable": true,
+      "rtt": 1.5
+    },
+    {
+      "platform": "linux",
+      "code": 0,
+      "host": "10.0.0.1",
+      "text": "",
+      "reachable": true,
+      "rtt": null
+    },
+    {
+      "platform": "linux",
+      "code": 0,
+      "host": "10.0.0.1",
+      "text": "rtt min/avg/max = 1.0/2.0/3.0 ms",
+      "reachable": true,
+      "rtt": null
+    },
+    {
+      "platform": "linux",
+      "code": 0,
+      "host": "10.0.0.1",
+      "text": "64 bytes from ::1: icmp_seq=1 ttl=64 time=0.05 ms",
+      "reachable": true,
+      "rtt": 0.05
+    },
+    {
+      "platform": "linux",
+      "code": 0,
+      "host": "::1",
+      "text": "64 bytes from 10.0.0.1: icmp_seq=0 ttl=64 time=0.431 ms",
+      "reachable": true,
+      "rtt": 0.431
+    },
+    {
+      "platform": "linux",
+      "code": 0,
+      "host": "::1",
+      "text": "Reply from 10.0.0.1: bytes=32 time<1ms TTL=128",
+      "reachable": true,
+      "rtt": 1.0
+    },
+    {
+      "platform": "linux",
+      "code": 0,
+      "host": "::1",
+      "text": "Reply from 10.0.0.1: bytes=32 time=12ms TTL=128",
+      "reachable": true,
+      "rtt": 12.0
+    },
+    {
+      "platform": "linux",
+      "code": 0,
+      "host": "::1",
+      "text": "Reply from 10.0.0.9: Destination host unreachable.",
+      "reachable": true,
+      "rtt": null
+    },
+    {
+      "platform": "linux",
+      "code": 0,
+      "host": "::1",
+      "text": "Reply from fe80::1: time=3ms",
+      "reachable": true,
+      "rtt": 3.0
+    },
+    {
+      "platform": "linux",
+      "code": 0,
+      "host": "::1",
+      "text": "Reply from fe80::1: Destination unreachable",
+      "reachable": true,
+      "rtt": null
+    },
+    {
+      "platform": "linux",
+      "code": 0,
+      "host": "::1",
+      "text": "time=1,5 ms ttl=3",
+      "reachable": true,
+      "rtt": 1.5
+    },
+    {
+      "platform": "linux",
+      "code": 0,
+      "host": "::1",
+      "text": "",
+      "reachable": true,
+      "rtt": null
+    },
+    {
+      "platform": "linux",
+      "code": 0,
+      "host": "::1",
+      "text": "rtt min/avg/max = 1.0/2.0/3.0 ms",
+      "reachable": true,
+      "rtt": null
+    },
+    {
+      "platform": "linux",
+      "code": 0,
+      "host": "::1",
+      "text": "64 bytes from ::1: icmp_seq=1 ttl=64 time=0.05 ms",
+      "reachable": true,
+      "rtt": 0.05
+    },
+    {
+      "platform": "linux",
+      "code": 1,
+      "host": "10.0.0.1",
+      "text": "64 bytes from 10.0.0.1: icmp_seq=0 ttl=64 time=0.431 ms",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "linux",
+      "code": 1,
+      "host": "10.0.0.1",
+      "text": "Reply from 10.0.0.1: bytes=32 time<1ms TTL=128",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "linux",
+      "code": 1,
+      "host": "10.0.0.1",
+      "text": "Reply from 10.0.0.1: bytes=32 time=12ms TTL=128",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "linux",
+      "code": 1,
+      "host": "10.0.0.1",
+      "text": "Reply from 10.0.0.9: Destination host unreachable.",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "linux",
+      "code": 1,
+      "host": "10.0.0.1",
+      "text": "Reply from fe80::1: time=3ms",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "linux",
+      "code": 1,
+      "host": "10.0.0.1",
+      "text": "Reply from fe80::1: Destination unreachable",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "linux",
+      "code": 1,
+      "host": "10.0.0.1",
+      "text": "time=1,5 ms ttl=3",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "linux",
+      "code": 1,
+      "host": "10.0.0.1",
+      "text": "",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "linux",
+      "code": 1,
+      "host": "10.0.0.1",
+      "text": "rtt min/avg/max = 1.0/2.0/3.0 ms",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "linux",
+      "code": 1,
+      "host": "10.0.0.1",
+      "text": "64 bytes from ::1: icmp_seq=1 ttl=64 time=0.05 ms",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "linux",
+      "code": 1,
+      "host": "::1",
+      "text": "64 bytes from 10.0.0.1: icmp_seq=0 ttl=64 time=0.431 ms",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "linux",
+      "code": 1,
+      "host": "::1",
+      "text": "Reply from 10.0.0.1: bytes=32 time<1ms TTL=128",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "linux",
+      "code": 1,
+      "host": "::1",
+      "text": "Reply from 10.0.0.1: bytes=32 time=12ms TTL=128",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "linux",
+      "code": 1,
+      "host": "::1",
+      "text": "Reply from 10.0.0.9: Destination host unreachable.",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "linux",
+      "code": 1,
+      "host": "::1",
+      "text": "Reply from fe80::1: time=3ms",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "linux",
+      "code": 1,
+      "host": "::1",
+      "text": "Reply from fe80::1: Destination unreachable",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "linux",
+      "code": 1,
+      "host": "::1",
+      "text": "time=1,5 ms ttl=3",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "linux",
+      "code": 1,
+      "host": "::1",
+      "text": "",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "linux",
+      "code": 1,
+      "host": "::1",
+      "text": "rtt min/avg/max = 1.0/2.0/3.0 ms",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "linux",
+      "code": 1,
+      "host": "::1",
+      "text": "64 bytes from ::1: icmp_seq=1 ttl=64 time=0.05 ms",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "linux",
+      "code": 2,
+      "host": "10.0.0.1",
+      "text": "64 bytes from 10.0.0.1: icmp_seq=0 ttl=64 time=0.431 ms",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "linux",
+      "code": 2,
+      "host": "10.0.0.1",
+      "text": "Reply from 10.0.0.1: bytes=32 time<1ms TTL=128",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "linux",
+      "code": 2,
+      "host": "10.0.0.1",
+      "text": "Reply from 10.0.0.1: bytes=32 time=12ms TTL=128",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "linux",
+      "code": 2,
+      "host": "10.0.0.1",
+      "text": "Reply from 10.0.0.9: Destination host unreachable.",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "linux",
+      "code": 2,
+      "host": "10.0.0.1",
+      "text": "Reply from fe80::1: time=3ms",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "linux",
+      "code": 2,
+      "host": "10.0.0.1",
+      "text": "Reply from fe80::1: Destination unreachable",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "linux",
+      "code": 2,
+      "host": "10.0.0.1",
+      "text": "time=1,5 ms ttl=3",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "linux",
+      "code": 2,
+      "host": "10.0.0.1",
+      "text": "",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "linux",
+      "code": 2,
+      "host": "10.0.0.1",
+      "text": "rtt min/avg/max = 1.0/2.0/3.0 ms",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "linux",
+      "code": 2,
+      "host": "10.0.0.1",
+      "text": "64 bytes from ::1: icmp_seq=1 ttl=64 time=0.05 ms",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "linux",
+      "code": 2,
+      "host": "::1",
+      "text": "64 bytes from 10.0.0.1: icmp_seq=0 ttl=64 time=0.431 ms",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "linux",
+      "code": 2,
+      "host": "::1",
+      "text": "Reply from 10.0.0.1: bytes=32 time<1ms TTL=128",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "linux",
+      "code": 2,
+      "host": "::1",
+      "text": "Reply from 10.0.0.1: bytes=32 time=12ms TTL=128",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "linux",
+      "code": 2,
+      "host": "::1",
+      "text": "Reply from 10.0.0.9: Destination host unreachable.",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "linux",
+      "code": 2,
+      "host": "::1",
+      "text": "Reply from fe80::1: time=3ms",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "linux",
+      "code": 2,
+      "host": "::1",
+      "text": "Reply from fe80::1: Destination unreachable",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "linux",
+      "code": 2,
+      "host": "::1",
+      "text": "time=1,5 ms ttl=3",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "linux",
+      "code": 2,
+      "host": "::1",
+      "text": "",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "linux",
+      "code": 2,
+      "host": "::1",
+      "text": "rtt min/avg/max = 1.0/2.0/3.0 ms",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "linux",
+      "code": 2,
+      "host": "::1",
+      "text": "64 bytes from ::1: icmp_seq=1 ttl=64 time=0.05 ms",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "darwin",
+      "code": 0,
+      "host": "10.0.0.1",
+      "text": "64 bytes from 10.0.0.1: icmp_seq=0 ttl=64 time=0.431 ms",
+      "reachable": true,
+      "rtt": 0.431
+    },
+    {
+      "platform": "darwin",
+      "code": 0,
+      "host": "10.0.0.1",
+      "text": "Reply from 10.0.0.1: bytes=32 time<1ms TTL=128",
+      "reachable": true,
+      "rtt": 1.0
+    },
+    {
+      "platform": "darwin",
+      "code": 0,
+      "host": "10.0.0.1",
+      "text": "Reply from 10.0.0.1: bytes=32 time=12ms TTL=128",
+      "reachable": true,
+      "rtt": 12.0
+    },
+    {
+      "platform": "darwin",
+      "code": 0,
+      "host": "10.0.0.1",
+      "text": "Reply from 10.0.0.9: Destination host unreachable.",
+      "reachable": true,
+      "rtt": null
+    },
+    {
+      "platform": "darwin",
+      "code": 0,
+      "host": "10.0.0.1",
+      "text": "Reply from fe80::1: time=3ms",
+      "reachable": true,
+      "rtt": 3.0
+    },
+    {
+      "platform": "darwin",
+      "code": 0,
+      "host": "10.0.0.1",
+      "text": "Reply from fe80::1: Destination unreachable",
+      "reachable": true,
+      "rtt": null
+    },
+    {
+      "platform": "darwin",
+      "code": 0,
+      "host": "10.0.0.1",
+      "text": "time=1,5 ms ttl=3",
+      "reachable": true,
+      "rtt": 1.5
+    },
+    {
+      "platform": "darwin",
+      "code": 0,
+      "host": "10.0.0.1",
+      "text": "",
+      "reachable": true,
+      "rtt": null
+    },
+    {
+      "platform": "darwin",
+      "code": 0,
+      "host": "10.0.0.1",
+      "text": "rtt min/avg/max = 1.0/2.0/3.0 ms",
+      "reachable": true,
+      "rtt": null
+    },
+    {
+      "platform": "darwin",
+      "code": 0,
+      "host": "10.0.0.1",
+      "text": "64 bytes from ::1: icmp_seq=1 ttl=64 time=0.05 ms",
+      "reachable": true,
+      "rtt": 0.05
+    },
+    {
+      "platform": "darwin",
+      "code": 0,
+      "host": "::1",
+      "text": "64 bytes from 10.0.0.1: icmp_seq=0 ttl=64 time=0.431 ms",
+      "reachable": true,
+      "rtt": 0.431
+    },
+    {
+      "platform": "darwin",
+      "code": 0,
+      "host": "::1",
+      "text": "Reply from 10.0.0.1: bytes=32 time<1ms TTL=128",
+      "reachable": true,
+      "rtt": 1.0
+    },
+    {
+      "platform": "darwin",
+      "code": 0,
+      "host": "::1",
+      "text": "Reply from 10.0.0.1: bytes=32 time=12ms TTL=128",
+      "reachable": true,
+      "rtt": 12.0
+    },
+    {
+      "platform": "darwin",
+      "code": 0,
+      "host": "::1",
+      "text": "Reply from 10.0.0.9: Destination host unreachable.",
+      "reachable": true,
+      "rtt": null
+    },
+    {
+      "platform": "darwin",
+      "code": 0,
+      "host": "::1",
+      "text": "Reply from fe80::1: time=3ms",
+      "reachable": true,
+      "rtt": 3.0
+    },
+    {
+      "platform": "darwin",
+      "code": 0,
+      "host": "::1",
+      "text": "Reply from fe80::1: Destination unreachable",
+      "reachable": true,
+      "rtt": null
+    },
+    {
+      "platform": "darwin",
+      "code": 0,
+      "host": "::1",
+      "text": "time=1,5 ms ttl=3",
+      "reachable": true,
+      "rtt": 1.5
+    },
+    {
+      "platform": "darwin",
+      "code": 0,
+      "host": "::1",
+      "text": "",
+      "reachable": true,
+      "rtt": null
+    },
+    {
+      "platform": "darwin",
+      "code": 0,
+      "host": "::1",
+      "text": "rtt min/avg/max = 1.0/2.0/3.0 ms",
+      "reachable": true,
+      "rtt": null
+    },
+    {
+      "platform": "darwin",
+      "code": 0,
+      "host": "::1",
+      "text": "64 bytes from ::1: icmp_seq=1 ttl=64 time=0.05 ms",
+      "reachable": true,
+      "rtt": 0.05
+    },
+    {
+      "platform": "darwin",
+      "code": 1,
+      "host": "10.0.0.1",
+      "text": "64 bytes from 10.0.0.1: icmp_seq=0 ttl=64 time=0.431 ms",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "darwin",
+      "code": 1,
+      "host": "10.0.0.1",
+      "text": "Reply from 10.0.0.1: bytes=32 time<1ms TTL=128",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "darwin",
+      "code": 1,
+      "host": "10.0.0.1",
+      "text": "Reply from 10.0.0.1: bytes=32 time=12ms TTL=128",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "darwin",
+      "code": 1,
+      "host": "10.0.0.1",
+      "text": "Reply from 10.0.0.9: Destination host unreachable.",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "darwin",
+      "code": 1,
+      "host": "10.0.0.1",
+      "text": "Reply from fe80::1: time=3ms",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "darwin",
+      "code": 1,
+      "host": "10.0.0.1",
+      "text": "Reply from fe80::1: Destination unreachable",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "darwin",
+      "code": 1,
+      "host": "10.0.0.1",
+      "text": "time=1,5 ms ttl=3",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "darwin",
+      "code": 1,
+      "host": "10.0.0.1",
+      "text": "",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "darwin",
+      "code": 1,
+      "host": "10.0.0.1",
+      "text": "rtt min/avg/max = 1.0/2.0/3.0 ms",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "darwin",
+      "code": 1,
+      "host": "10.0.0.1",
+      "text": "64 bytes from ::1: icmp_seq=1 ttl=64 time=0.05 ms",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "darwin",
+      "code": 1,
+      "host": "::1",
+      "text": "64 bytes from 10.0.0.1: icmp_seq=0 ttl=64 time=0.431 ms",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "darwin",
+      "code": 1,
+      "host": "::1",
+      "text": "Reply from 10.0.0.1: bytes=32 time<1ms TTL=128",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "darwin",
+      "code": 1,
+      "host": "::1",
+      "text": "Reply from 10.0.0.1: bytes=32 time=12ms TTL=128",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "darwin",
+      "code": 1,
+      "host": "::1",
+      "text": "Reply from 10.0.0.9: Destination host unreachable.",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "darwin",
+      "code": 1,
+      "host": "::1",
+      "text": "Reply from fe80::1: time=3ms",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "darwin",
+      "code": 1,
+      "host": "::1",
+      "text": "Reply from fe80::1: Destination unreachable",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "darwin",
+      "code": 1,
+      "host": "::1",
+      "text": "time=1,5 ms ttl=3",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "darwin",
+      "code": 1,
+      "host": "::1",
+      "text": "",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "darwin",
+      "code": 1,
+      "host": "::1",
+      "text": "rtt min/avg/max = 1.0/2.0/3.0 ms",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "darwin",
+      "code": 1,
+      "host": "::1",
+      "text": "64 bytes from ::1: icmp_seq=1 ttl=64 time=0.05 ms",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "darwin",
+      "code": 2,
+      "host": "10.0.0.1",
+      "text": "64 bytes from 10.0.0.1: icmp_seq=0 ttl=64 time=0.431 ms",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "darwin",
+      "code": 2,
+      "host": "10.0.0.1",
+      "text": "Reply from 10.0.0.1: bytes=32 time<1ms TTL=128",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "darwin",
+      "code": 2,
+      "host": "10.0.0.1",
+      "text": "Reply from 10.0.0.1: bytes=32 time=12ms TTL=128",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "darwin",
+      "code": 2,
+      "host": "10.0.0.1",
+      "text": "Reply from 10.0.0.9: Destination host unreachable.",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "darwin",
+      "code": 2,
+      "host": "10.0.0.1",
+      "text": "Reply from fe80::1: time=3ms",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "darwin",
+      "code": 2,
+      "host": "10.0.0.1",
+      "text": "Reply from fe80::1: Destination unreachable",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "darwin",
+      "code": 2,
+      "host": "10.0.0.1",
+      "text": "time=1,5 ms ttl=3",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "darwin",
+      "code": 2,
+      "host": "10.0.0.1",
+      "text": "",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "darwin",
+      "code": 2,
+      "host": "10.0.0.1",
+      "text": "rtt min/avg/max = 1.0/2.0/3.0 ms",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "darwin",
+      "code": 2,
+      "host": "10.0.0.1",
+      "text": "64 bytes from ::1: icmp_seq=1 ttl=64 time=0.05 ms",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "darwin",
+      "code": 2,
+      "host": "::1",
+      "text": "64 bytes from 10.0.0.1: icmp_seq=0 ttl=64 time=0.431 ms",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "darwin",
+      "code": 2,
+      "host": "::1",
+      "text": "Reply from 10.0.0.1: bytes=32 time<1ms TTL=128",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "darwin",
+      "code": 2,
+      "host": "::1",
+      "text": "Reply from 10.0.0.1: bytes=32 time=12ms TTL=128",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "darwin",
+      "code": 2,
+      "host": "::1",
+      "text": "Reply from 10.0.0.9: Destination host unreachable.",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "darwin",
+      "code": 2,
+      "host": "::1",
+      "text": "Reply from fe80::1: time=3ms",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "darwin",
+      "code": 2,
+      "host": "::1",
+      "text": "Reply from fe80::1: Destination unreachable",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "darwin",
+      "code": 2,
+      "host": "::1",
+      "text": "time=1,5 ms ttl=3",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "darwin",
+      "code": 2,
+      "host": "::1",
+      "text": "",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "darwin",
+      "code": 2,
+      "host": "::1",
+      "text": "rtt min/avg/max = 1.0/2.0/3.0 ms",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "darwin",
+      "code": 2,
+      "host": "::1",
+      "text": "64 bytes from ::1: icmp_seq=1 ttl=64 time=0.05 ms",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "win32",
+      "code": 0,
+      "host": "10.0.0.1",
+      "text": "64 bytes from 10.0.0.1: icmp_seq=0 ttl=64 time=0.431 ms",
+      "reachable": true,
+      "rtt": 0.431
+    },
+    {
+      "platform": "win32",
+      "code": 0,
+      "host": "10.0.0.1",
+      "text": "Reply from 10.0.0.1: bytes=32 time<1ms TTL=128",
+      "reachable": true,
+      "rtt": 1.0
+    },
+    {
+      "platform": "win32",
+      "code": 0,
+      "host": "10.0.0.1",
+      "text": "Reply from 10.0.0.1: bytes=32 time=12ms TTL=128",
+      "reachable": true,
+      "rtt": 12.0
+    },
+    {
+      "platform": "win32",
+      "code": 0,
+      "host": "10.0.0.1",
+      "text": "Reply from 10.0.0.9: Destination host unreachable.",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "win32",
+      "code": 0,
+      "host": "10.0.0.1",
+      "text": "Reply from fe80::1: time=3ms",
+      "reachable": false,
+      "rtt": 3.0
+    },
+    {
+      "platform": "win32",
+      "code": 0,
+      "host": "10.0.0.1",
+      "text": "Reply from fe80::1: Destination unreachable",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "win32",
+      "code": 0,
+      "host": "10.0.0.1",
+      "text": "time=1,5 ms ttl=3",
+      "reachable": true,
+      "rtt": 1.5
+    },
+    {
+      "platform": "win32",
+      "code": 0,
+      "host": "10.0.0.1",
+      "text": "",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "win32",
+      "code": 0,
+      "host": "10.0.0.1",
+      "text": "rtt min/avg/max = 1.0/2.0/3.0 ms",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "win32",
+      "code": 0,
+      "host": "10.0.0.1",
+      "text": "64 bytes from ::1: icmp_seq=1 ttl=64 time=0.05 ms",
+      "reachable": true,
+      "rtt": 0.05
+    },
+    {
+      "platform": "win32",
+      "code": 0,
+      "host": "::1",
+      "text": "64 bytes from 10.0.0.1: icmp_seq=0 ttl=64 time=0.431 ms",
+      "reachable": true,
+      "rtt": 0.431
+    },
+    {
+      "platform": "win32",
+      "code": 0,
+      "host": "::1",
+      "text": "Reply from 10.0.0.1: bytes=32 time<1ms TTL=128",
+      "reachable": true,
+      "rtt": 1.0
+    },
+    {
+      "platform": "win32",
+      "code": 0,
+      "host": "::1",
+      "text": "Reply from 10.0.0.1: bytes=32 time=12ms TTL=128",
+      "reachable": true,
+      "rtt": 12.0
+    },
+    {
+      "platform": "win32",
+      "code": 0,
+      "host": "::1",
+      "text": "Reply from 10.0.0.9: Destination host unreachable.",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "win32",
+      "code": 0,
+      "host": "::1",
+      "text": "Reply from fe80::1: time=3ms",
+      "reachable": true,
+      "rtt": 3.0
+    },
+    {
+      "platform": "win32",
+      "code": 0,
+      "host": "::1",
+      "text": "Reply from fe80::1: Destination unreachable",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "win32",
+      "code": 0,
+      "host": "::1",
+      "text": "time=1,5 ms ttl=3",
+      "reachable": true,
+      "rtt": 1.5
+    },
+    {
+      "platform": "win32",
+      "code": 0,
+      "host": "::1",
+      "text": "",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "win32",
+      "code": 0,
+      "host": "::1",
+      "text": "rtt min/avg/max = 1.0/2.0/3.0 ms",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "win32",
+      "code": 0,
+      "host": "::1",
+      "text": "64 bytes from ::1: icmp_seq=1 ttl=64 time=0.05 ms",
+      "reachable": true,
+      "rtt": 0.05
+    },
+    {
+      "platform": "win32",
+      "code": 1,
+      "host": "10.0.0.1",
+      "text": "64 bytes from 10.0.0.1: icmp_seq=0 ttl=64 time=0.431 ms",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "win32",
+      "code": 1,
+      "host": "10.0.0.1",
+      "text": "Reply from 10.0.0.1: bytes=32 time<1ms TTL=128",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "win32",
+      "code": 1,
+      "host": "10.0.0.1",
+      "text": "Reply from 10.0.0.1: bytes=32 time=12ms TTL=128",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "win32",
+      "code": 1,
+      "host": "10.0.0.1",
+      "text": "Reply from 10.0.0.9: Destination host unreachable.",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "win32",
+      "code": 1,
+      "host": "10.0.0.1",
+      "text": "Reply from fe80::1: time=3ms",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "win32",
+      "code": 1,
+      "host": "10.0.0.1",
+      "text": "Reply from fe80::1: Destination unreachable",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "win32",
+      "code": 1,
+      "host": "10.0.0.1",
+      "text": "time=1,5 ms ttl=3",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "win32",
+      "code": 1,
+      "host": "10.0.0.1",
+      "text": "",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "win32",
+      "code": 1,
+      "host": "10.0.0.1",
+      "text": "rtt min/avg/max = 1.0/2.0/3.0 ms",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "win32",
+      "code": 1,
+      "host": "10.0.0.1",
+      "text": "64 bytes from ::1: icmp_seq=1 ttl=64 time=0.05 ms",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "win32",
+      "code": 1,
+      "host": "::1",
+      "text": "64 bytes from 10.0.0.1: icmp_seq=0 ttl=64 time=0.431 ms",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "win32",
+      "code": 1,
+      "host": "::1",
+      "text": "Reply from 10.0.0.1: bytes=32 time<1ms TTL=128",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "win32",
+      "code": 1,
+      "host": "::1",
+      "text": "Reply from 10.0.0.1: bytes=32 time=12ms TTL=128",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "win32",
+      "code": 1,
+      "host": "::1",
+      "text": "Reply from 10.0.0.9: Destination host unreachable.",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "win32",
+      "code": 1,
+      "host": "::1",
+      "text": "Reply from fe80::1: time=3ms",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "win32",
+      "code": 1,
+      "host": "::1",
+      "text": "Reply from fe80::1: Destination unreachable",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "win32",
+      "code": 1,
+      "host": "::1",
+      "text": "time=1,5 ms ttl=3",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "win32",
+      "code": 1,
+      "host": "::1",
+      "text": "",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "win32",
+      "code": 1,
+      "host": "::1",
+      "text": "rtt min/avg/max = 1.0/2.0/3.0 ms",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "win32",
+      "code": 1,
+      "host": "::1",
+      "text": "64 bytes from ::1: icmp_seq=1 ttl=64 time=0.05 ms",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "win32",
+      "code": 2,
+      "host": "10.0.0.1",
+      "text": "64 bytes from 10.0.0.1: icmp_seq=0 ttl=64 time=0.431 ms",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "win32",
+      "code": 2,
+      "host": "10.0.0.1",
+      "text": "Reply from 10.0.0.1: bytes=32 time<1ms TTL=128",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "win32",
+      "code": 2,
+      "host": "10.0.0.1",
+      "text": "Reply from 10.0.0.1: bytes=32 time=12ms TTL=128",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "win32",
+      "code": 2,
+      "host": "10.0.0.1",
+      "text": "Reply from 10.0.0.9: Destination host unreachable.",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "win32",
+      "code": 2,
+      "host": "10.0.0.1",
+      "text": "Reply from fe80::1: time=3ms",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "win32",
+      "code": 2,
+      "host": "10.0.0.1",
+      "text": "Reply from fe80::1: Destination unreachable",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "win32",
+      "code": 2,
+      "host": "10.0.0.1",
+      "text": "time=1,5 ms ttl=3",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "win32",
+      "code": 2,
+      "host": "10.0.0.1",
+      "text": "",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "win32",
+      "code": 2,
+      "host": "10.0.0.1",
+      "text": "rtt min/avg/max = 1.0/2.0/3.0 ms",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "win32",
+      "code": 2,
+      "host": "10.0.0.1",
+      "text": "64 bytes from ::1: icmp_seq=1 ttl=64 time=0.05 ms",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "win32",
+      "code": 2,
+      "host": "::1",
+      "text": "64 bytes from 10.0.0.1: icmp_seq=0 ttl=64 time=0.431 ms",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "win32",
+      "code": 2,
+      "host": "::1",
+      "text": "Reply from 10.0.0.1: bytes=32 time<1ms TTL=128",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "win32",
+      "code": 2,
+      "host": "::1",
+      "text": "Reply from 10.0.0.1: bytes=32 time=12ms TTL=128",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "win32",
+      "code": 2,
+      "host": "::1",
+      "text": "Reply from 10.0.0.9: Destination host unreachable.",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "win32",
+      "code": 2,
+      "host": "::1",
+      "text": "Reply from fe80::1: time=3ms",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "win32",
+      "code": 2,
+      "host": "::1",
+      "text": "Reply from fe80::1: Destination unreachable",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "win32",
+      "code": 2,
+      "host": "::1",
+      "text": "time=1,5 ms ttl=3",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "win32",
+      "code": 2,
+      "host": "::1",
+      "text": "",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "win32",
+      "code": 2,
+      "host": "::1",
+      "text": "rtt min/avg/max = 1.0/2.0/3.0 ms",
+      "reachable": false,
+      "rtt": null
+    },
+    {
+      "platform": "win32",
+      "code": 2,
+      "host": "::1",
+      "text": "64 bytes from ::1: icmp_seq=1 ttl=64 time=0.05 ms",
+      "reachable": false,
+      "rtt": null
+    }
+  ],
+  "limits": {
+    "max_host": 253,
+    "min_wait": 0.5,
+    "max_wait": 10.0,
+    "grace": 2.0,
+    "concurrent": 4
+  }
+}
