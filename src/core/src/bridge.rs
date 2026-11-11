@@ -1695,8 +1695,15 @@ impl ReceiveHost for Shared {
     fn handle_position_target(&self, msg: &Message) {
         self.telemetry.handle_position_target(self, msg);
     }
-    fn log_sink(&self, _msg: &Message) -> Result<bool, String> {
-        Ok(false)
+    fn log_sink(&self, msg: &Message) -> Result<bool, String> {
+        let sink = self.engines.log_sink.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        match sink {
+            Some(sink) => {
+                sink(msg);
+                Ok(true)
+            }
+            None => Ok(false),
+        }
     }
     fn note_heartbeat(&self, stamp: f64) {
         self.telemetry.note_heartbeat(stamp);
@@ -1770,6 +1777,9 @@ use crate::protocol::RequestHost;
 
 type ParamListener = Box<dyn Fn(&Status) + Send + Sync>;
 
+/// Where LOG_ENTRY and LOG_DATA go while a log job runs.
+pub type LogSink = Arc<dyn Fn(&Message) + Send + Sync>;
+
 /// The engines of the protocols that are not part of the receive path proper.
 pub struct Engines {
     pub params: Arc<ParamEngine>,
@@ -1780,6 +1790,7 @@ pub struct Engines {
     pub setup: SetupEngine,
     pub remote_id: RemoteIdEngine,
     param_listeners: Mutex<Vec<ParamListener>>,
+    log_sink: Mutex<Option<LogSink>>,
     watchdog: Mutex<Option<JoinHandle<()>>>,
     rx_source: Mutex<(i64, i64)>,
 }
@@ -1799,6 +1810,7 @@ impl Engines {
             setup: SetupEngine::new(),
             remote_id: RemoteIdEngine::new(),
             param_listeners: Mutex::new(Vec::new()),
+            log_sink: Mutex::new(None),
             watchdog: Mutex::new(None),
             rx_source: Mutex::new((0, 0)),
         }
@@ -2168,6 +2180,11 @@ impl Bridge {
 
     pub fn shell_stop(&self) {
         self.shared.engines.shell.stop(self.shared.as_ref());
+    }
+
+    /// Routes LOG_ENTRY and LOG_DATA to `sink`; `None` detaches.
+    pub fn set_log_sink(&self, sink: Option<LogSink>) {
+        *self.shared.engines.log_sink.lock().unwrap_or_else(|e| e.into_inner()) = sink;
     }
 
     pub fn log_request_list(&self, start: i64, end: i64) -> bool {
