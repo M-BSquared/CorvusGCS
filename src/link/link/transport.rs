@@ -39,12 +39,7 @@ pub fn resolve_v4(host: &str, port: u16) -> io::Result<SocketAddr> {
         }
         last = Some(addr);
     }
-    last.ok_or_else(|| {
-        io::Error::new(
-            io::ErrorKind::Other,
-            "[Errno 8] nodename nor servname provided, or not known",
-        )
-    })
+    last.ok_or_else(|| io::Error::other("[Errno 8] nodename nor servname provided, or not known"))
 }
 
 #[cfg(unix)]
@@ -681,10 +676,7 @@ impl Serial {
     /// port that says it is readable and then returns nothing.
     pub fn recv(&self, n: usize) -> io::Result<Vec<u8>> {
         if self.closed.load(Ordering::SeqCst) {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                "Attempting to use a port that is not open",
-            ));
+            return Err(io::Error::other("Attempting to use a port that is not open"));
         }
         #[cfg(unix)]
         {
@@ -704,8 +696,7 @@ impl Serial {
                 return Err(io::Error::new(err.kind(), format!("read failed: {err}")));
             }
             if rc == 0 {
-                return Err(io::Error::new(
-                    io::ErrorKind::Other,
+                return Err(io::Error::other(
                     "device reports readiness to read but returned no data (device disconnected or multiple access on port?)",
                 ));
             }
@@ -738,10 +729,7 @@ impl Serial {
     /// `reset_input_buffer`.
     pub fn reset_input(&self) -> io::Result<()> {
         if self.closed.load(Ordering::SeqCst) {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                "Attempting to use a port that is not open",
-            ));
+            return Err(io::Error::other("Attempting to use a port that is not open"));
         }
         #[cfg(unix)]
         if let Some(fd) = *lock(&self.fd) {
@@ -761,10 +749,7 @@ impl Serial {
     /// `in_waiting`.
     pub fn waiting(&self) -> io::Result<usize> {
         if self.closed.load(Ordering::SeqCst) {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                "Attempting to use a port that is not open",
-            ));
+            return Err(io::Error::other("Attempting to use a port that is not open"));
         }
         #[cfg(unix)]
         {
@@ -802,10 +787,7 @@ impl Serial {
                 .as_secs_f64();
             if !self.wait_readable(left) {
                 if self.closed.load(Ordering::SeqCst) {
-                    return Err(io::Error::new(
-                        io::ErrorKind::Other,
-                        "Attempting to use a port that is not open",
-                    ));
+                    return Err(io::Error::other("Attempting to use a port that is not open"));
                 }
                 break;
             }
@@ -823,10 +805,7 @@ impl Serial {
         #[cfg(unix)]
         {
             if self.closed.load(Ordering::SeqCst) {
-                return Err(io::Error::new(
-                    io::ErrorKind::Other,
-                    "Attempting to use a port that is not open",
-                ));
+                return Err(io::Error::other("Attempting to use a port that is not open"));
             }
             let _guard = lock(&self.write_lock);
             let Some(fd) = *lock(&self.fd) else {
@@ -865,10 +844,7 @@ impl Serial {
 
     pub fn write(&self, buf: &[u8]) -> io::Result<usize> {
         if self.closed.load(Ordering::SeqCst) {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                "Attempting to use a port that is not open",
-            ));
+            return Err(io::Error::other("Attempting to use a port that is not open"));
         }
         #[cfg(unix)]
         {
@@ -1313,7 +1289,7 @@ impl LogFile {
     pub fn read(&self, n: usize) -> io::Result<Vec<u8>> {
         let mut guard = lock(&self.file);
         let Some(f) = guard.as_mut() else {
-            return Err(io::Error::new(io::ErrorKind::Other, "read of closed file"));
+            return Err(io::Error::other("read of closed file"));
         };
         let mut buf = vec![0u8; n];
         let mut got = 0;
@@ -1338,7 +1314,7 @@ impl LogFile {
     pub fn write(&self, buf: &[u8]) -> io::Result<()> {
         match lock(&self.file).as_mut() {
             Some(f) => f.write_all(buf),
-            None => Err(io::Error::new(io::ErrorKind::Other, "write to closed file")),
+            None => Err(io::Error::other("write to closed file")),
         }
     }
 

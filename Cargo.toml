@@ -9,12 +9,11 @@ build = "build.rs"
 
 [workspace]
 # One lock file and one target folder for the interface and the crates it is
-# made of (the API plugins build on and the plugins themselves). src/link is
-# the MAVLink extension module: it has its own toolchain, lock and maturin
-# build, and stays out.
-members = ["src/core", "src/api", "src/plugins/vibration", "src/plugins/ssh-launcher", "src/plugins/map-entities", "src/plugins/schwalby"]
+# made of (the API plugins build on and the plugins themselves), src/link (the
+# MAVLink crate) included: it builds without its optional python feature, so
+# it needs no Python and no toolchain of its own.
+members = ["src/link", "src/core", "src/api", "src/plugins/vibration", "src/plugins/ssh-launcher", "src/plugins/map-entities", "src/plugins/schwalby"]
 default-members = [".", "src/core", "src/api", "src/plugins/vibration", "src/plugins/ssh-launcher", "src/plugins/map-entities", "src/plugins/schwalby"]
-exclude = ["src/link"]
 
 [workspace.dependencies]
 # One place for the versions and features the crates share, so a feature added
