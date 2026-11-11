@@ -82,6 +82,8 @@ def seed_state(state_dir: pathlib.Path, seed: dict[str, Any] | None) -> None:
     state_dir.mkdir(parents=True, exist_ok=True)
     if not seed:
         return
+    if seed.get("setup") is not None:
+        seed["setup"](state_dir)
     if seed.get("config") is not None:
         (state_dir / "config.json").write_text(json.dumps(seed["config"], indent=2) + "\n", encoding="utf-8")
     for name, data in (seed.get("languages") or {}).items():

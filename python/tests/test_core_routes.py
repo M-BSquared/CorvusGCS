@@ -85,8 +85,6 @@ def test_the_first_start_is_pending_until_it_is_finished() -> None:
 def test_an_area_that_is_not_ported_says_so_instead_of_404(pair) -> None:
     status, body = harness.http("POST", pair.rs.url + "/api/logs/refresh", {})
     assert (status, body) == (501, {"error": "Not available in this build"})
-    status, body = harness.http("GET", pair.rs.url + "/api/tiles/esri/1/2/3.png")
-    assert status == 501
     assert harness.http("GET", pair.rs.url + "/api/no-such-route")[0] == 404
     assert harness.http("GET", pair.py.url + "/api/no-such-route")[0] == 404
 

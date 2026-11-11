@@ -14,7 +14,6 @@ has corvus_link installed.
 from __future__ import annotations
 
 import json
-import math
 import pathlib
 import sys
 
@@ -623,9 +622,6 @@ def _tiff(values, width, height, *, bo="<", fmt="f", compression="none", predict
     head = (b"II*\x00" if bo == "<" else b"MM\x00*") + struct.pack(e + "I", 8)
     ifd_size = 2 + 12 * len(entries) + 4
     extra_at = 8 + ifd_size
-    extra = bytearray()
-    data_at = None
-    body = bytearray()
     # First pass: size the extra area to know where the blocks start.
     big = [len(v) for (_t, _ty, _n, v) in entries if len(v) > 4]
     total_extra = sum(big + [(-n) % 2 for n in big])
@@ -800,7 +796,6 @@ def custom_dem_cases() -> None:
     for z, px, py in [(0, 0, 0), (3, 700.5, 300.25), (14, 8765432.0, 5678901.5), (18, 1.0, 2.0)]:
         lonlat.append({"z": z, "px": px, "py": py, "lonlat": list(cd.tile_lonlat(z, px, py)),
                        "pixel": list(cd.lonlat_pixel(z, *cd.tile_lonlat(z, px, py)))})
-    ov = array("f", [1, 2, 3, math.nan, 5, 6, 7, 8, 9, 10, 11, 12, math.nan, math.nan, math.nan, math.nan, 5])
     ovs = []
     for wi, hi in [(4, 4), (3, 5), (5, 3), (17, 1)]:
         vals = array("f", [(i * 1.5 if i % 7 else math.nan) for i in range(wi * hi)])
@@ -831,7 +826,6 @@ def custom_dem_cases() -> None:
     asc = f"ncols {gw}\nnrows {gh}\nxllcorner 690000\nyllcorner 5330000\ncellsize 1\nNODATA_value -9999\n"
     asc += "\n".join(" ".join(f"{v:.3f}" for v in vals[r * gw:(r + 1) * gw]) for r in range(gh)) + "\n"
     write_bin(folder / "model.asc", asc.encode())
-    base_cache: dict[tuple, list[float]] = {}
 
     def base(z, x, y):
         if z < 15:
