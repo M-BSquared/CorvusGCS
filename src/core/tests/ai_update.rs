@@ -85,6 +85,9 @@ fn normalized(mut m: serde_json::Map<String, Value>) -> Value {
 }
 
 fn error_class(v: &mut Value) {
+    if v.get("current").is_some() {
+        v["current"] = json!("");
+    }
     // The words after "could not reach the release server" are the HTTP library's.
     if let Some(e) = v["error"].as_str() {
         if e.starts_with("could not reach the release server (") && !e.contains("HTTP Error") {

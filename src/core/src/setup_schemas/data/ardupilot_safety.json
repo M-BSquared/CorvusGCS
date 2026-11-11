@@ -1,0 +1,941 @@
+{
+ "ON_OFF_OPTIONS": [
+  {
+   "value": 0,
+   "label": "Disabled"
+  },
+  {
+   "value": 1,
+   "label": "Enabled"
+  }
+ ],
+ "FENCE_TYPE_BITS": [
+  {
+   "bit": 0,
+   "label": "Maximum altitude"
+  },
+  {
+   "bit": 1,
+   "label": "Circle around home"
+  },
+  {
+   "bit": 2,
+   "label": "Polygon"
+  },
+  {
+   "bit": 3,
+   "label": "Minimum altitude"
+  }
+ ],
+ "FENCE_ACTION_OPTIONS": {
+  "copter": [
+   {
+    "value": 0,
+    "label": "Report only"
+   },
+   {
+    "value": 1,
+    "label": "RTL, or land if that fails"
+   },
+   {
+    "value": 2,
+    "label": "Always land"
+   },
+   {
+    "value": 3,
+    "label": "SmartRTL, then RTL, then land"
+   },
+   {
+    "value": 4,
+    "label": "Brake, or land if that fails"
+   },
+   {
+    "value": 5,
+    "label": "SmartRTL, or land"
+   }
+  ],
+  "plane": [
+   {
+    "value": 0,
+    "label": "Report only"
+   },
+   {
+    "value": 1,
+    "label": "RTL"
+   },
+   {
+    "value": 6,
+    "label": "Guided"
+   },
+   {
+    "value": 7,
+    "label": "Guided with throttle pass-through"
+   }
+  ],
+  "rover": [
+   {
+    "value": 0,
+    "label": "Report only"
+   },
+   {
+    "value": 1,
+    "label": "RTL, or hold if that fails"
+   },
+   {
+    "value": 2,
+    "label": "Hold"
+   },
+   {
+    "value": 3,
+    "label": "SmartRTL, then RTL, then hold"
+   },
+   {
+    "value": 4,
+    "label": "SmartRTL, or hold"
+   }
+  ]
+ },
+ "COPTER_FAILSAFE_ACTION_OPTIONS": [
+  {
+   "value": 0,
+   "label": "Disabled"
+  },
+  {
+   "value": 1,
+   "label": "Always RTL"
+  },
+  {
+   "value": 2,
+   "label": "Continue the mission in Auto, otherwise RTL"
+  },
+  {
+   "value": 3,
+   "label": "Always land"
+  },
+  {
+   "value": 4,
+   "label": "SmartRTL, or RTL"
+  },
+  {
+   "value": 5,
+   "label": "SmartRTL, or land"
+  },
+  {
+   "value": 6,
+   "label": "Auto landing sequence, or RTL"
+  },
+  {
+   "value": 7,
+   "label": "Brake, or land"
+  }
+ ],
+ "PLANE_SHORT_FAILSAFE_OPTIONS": [
+  {
+   "value": 0,
+   "label": "Continue"
+  },
+  {
+   "value": 1,
+   "label": "Circle"
+  },
+  {
+   "value": 2,
+   "label": "Fly level"
+  },
+  {
+   "value": 3,
+   "label": "Return to launch"
+  }
+ ],
+ "PLANE_LONG_FAILSAFE_OPTIONS": [
+  {
+   "value": 0,
+   "label": "Continue"
+  },
+  {
+   "value": 1,
+   "label": "Return to launch"
+  },
+  {
+   "value": 2,
+   "label": "Glide"
+  },
+  {
+   "value": 3,
+   "label": "Deploy parachute"
+  },
+  {
+   "value": 4,
+   "label": "Auto landing sequence"
+  }
+ ],
+ "ROVER_FAILSAFE_ACTION_OPTIONS": [
+  {
+   "value": 0,
+   "label": "Nothing"
+  },
+  {
+   "value": 1,
+   "label": "RTL"
+  },
+  {
+   "value": 2,
+   "label": "Hold"
+  },
+  {
+   "value": 3,
+   "label": "SmartRTL, or RTL"
+  },
+  {
+   "value": 4,
+   "label": "SmartRTL, or hold"
+  },
+  {
+   "value": 5,
+   "label": "Terminate"
+  }
+ ],
+ "EKF_FAILSAFE_ACTION_OPTIONS": [
+  {
+   "value": 0,
+   "label": "Report only"
+  },
+  {
+   "value": 1,
+   "label": "Land"
+  },
+  {
+   "value": 2,
+   "label": "Hold altitude"
+  },
+  {
+   "value": 3,
+   "label": "Land, even from Stabilize"
+  }
+ ],
+ "EKF_FAILSAFE_THRESHOLD_OPTIONS": [
+  {
+   "value": 0,
+   "label": "0.0 (off)"
+  },
+  {
+   "value": 1,
+   "label": "0.6 (strict)"
+  },
+  {
+   "value": 2,
+   "label": "0.8 (default)"
+  },
+  {
+   "value": 3,
+   "label": "1.0 (relaxed)"
+  }
+ ],
+ "FS_OPTIONS_BITS": [
+  {
+   "bit": 0,
+   "label": "Continue the mission if RC is lost"
+  },
+  {
+   "bit": 1,
+   "label": "Continue the mission if the GCS link is lost"
+  },
+  {
+   "bit": 2,
+   "label": "Continue landing if RC is lost"
+  },
+  {
+   "bit": 3,
+   "label": "Continue landing if the GCS link is lost"
+  },
+  {
+   "bit": 4,
+   "label": "Continue the mission on a low battery"
+  },
+  {
+   "bit": 5,
+   "label": "Continue landing on a low battery"
+  },
+  {
+   "bit": 6,
+   "label": "Release the gripper on a battery failsafe"
+  }
+ ],
+ "ARMING_CHECK_BITS": [
+  {
+   "bit": 0,
+   "label": "All checks"
+  },
+  {
+   "bit": 1,
+   "label": "Barometer"
+  },
+  {
+   "bit": 2,
+   "label": "Compass"
+  },
+  {
+   "bit": 3,
+   "label": "GPS lock"
+  },
+  {
+   "bit": 4,
+   "label": "Inertial sensors"
+  },
+  {
+   "bit": 5,
+   "label": "Parameters"
+  },
+  {
+   "bit": 6,
+   "label": "RC channels"
+  },
+  {
+   "bit": 7,
+   "label": "Board voltage"
+  },
+  {
+   "bit": 8,
+   "label": "Battery level"
+  },
+  {
+   "bit": 10,
+   "label": "Logging available"
+  },
+  {
+   "bit": 11,
+   "label": "Hardware safety switch"
+  },
+  {
+   "bit": 12,
+   "label": "GPS configuration"
+  },
+  {
+   "bit": 13,
+   "label": "System"
+  },
+  {
+   "bit": 14,
+   "label": "Mission"
+  },
+  {
+   "bit": 15,
+   "label": "Rangefinder"
+  },
+  {
+   "bit": 16,
+   "label": "Camera"
+  },
+  {
+   "bit": 17,
+   "label": "Auxiliary authorisation"
+  },
+  {
+   "bit": 18,
+   "label": "Visual odometry"
+  },
+  {
+   "bit": 19,
+   "label": "FFT"
+  }
+ ],
+ "ARMING_RUDDER_OPTIONS": [
+  {
+   "value": 0,
+   "label": "Disabled"
+  },
+  {
+   "value": 1,
+   "label": "Arm only"
+  },
+  {
+   "value": 2,
+   "label": "Arm and disarm"
+  }
+ ],
+ "EK3_POSZ_OPTIONS": [
+  {
+   "value": 0,
+   "label": "None"
+  },
+  {
+   "value": 1,
+   "label": "Barometer"
+  },
+  {
+   "value": 2,
+   "label": "Rangefinder"
+  },
+  {
+   "value": 3,
+   "label": "GPS"
+  },
+  {
+   "value": 4,
+   "label": "Beacon"
+  },
+  {
+   "value": 6,
+   "label": "External navigation"
+  }
+ ],
+ "EK3_VELXY_OPTIONS": [
+  {
+   "value": 0,
+   "label": "None"
+  },
+  {
+   "value": 3,
+   "label": "GPS"
+  },
+  {
+   "value": 4,
+   "label": "Beacon"
+  },
+  {
+   "value": 5,
+   "label": "Optical flow"
+  },
+  {
+   "value": 6,
+   "label": "External navigation"
+  },
+  {
+   "value": 7,
+   "label": "Wheel encoder"
+  }
+ ],
+ "EK3_POSXY_OPTIONS": [
+  {
+   "value": 0,
+   "label": "None"
+  },
+  {
+   "value": 3,
+   "label": "GPS"
+  },
+  {
+   "value": 4,
+   "label": "Beacon"
+  },
+  {
+   "value": 6,
+   "label": "External navigation"
+  }
+ ],
+ "RANGEFINDER_ORIENT_OPTIONS": [
+  {
+   "value": 0,
+   "label": "Forward"
+  },
+  {
+   "value": 4,
+   "label": "Back"
+  },
+  {
+   "value": 24,
+   "label": "Up"
+  },
+  {
+   "value": 25,
+   "label": "Down"
+  }
+ ],
+ "RANGEFINDER_TYPES": [
+  {
+   "value": 1,
+   "label": "Analog voltage",
+   "bus": "analog"
+  },
+  {
+   "value": 2,
+   "label": "MaxBotix sonar (I2C)",
+   "bus": "i2c",
+   "addr": 0
+  },
+  {
+   "value": 3,
+   "label": "Garmin Lidar-Lite (I2C)",
+   "bus": "i2c"
+  },
+  {
+   "value": 5,
+   "label": "PWM input",
+   "bus": "pwm"
+  },
+  {
+   "value": 7,
+   "label": "LightWare SF10, SF11, SF20, LW20 (I2C)",
+   "bus": "i2c",
+   "addr": 102
+  },
+  {
+   "value": 8,
+   "label": "LightWare SF10, SF11, SF20, LW20 (serial)",
+   "bus": "serial",
+   "baud": 115
+  },
+  {
+   "value": 10,
+   "label": "MAVLink (companion computer)",
+   "bus": "mavlink"
+  },
+  {
+   "value": 12,
+   "label": "LeddarOne (serial)",
+   "bus": "serial",
+   "baud": 115
+  },
+  {
+   "value": 14,
+   "label": "TeraRanger Evo (I2C)",
+   "bus": "i2c",
+   "addr": 49
+  },
+  {
+   "value": 15,
+   "label": "Garmin Lidar-Lite v3 (I2C)",
+   "bus": "i2c"
+  },
+  {
+   "value": 16,
+   "label": "ST VL53L0X, VL53L1X (I2C)",
+   "bus": "i2c",
+   "addr": 41
+  },
+  {
+   "value": 19,
+   "label": "Benewake TF02 (serial)",
+   "bus": "serial",
+   "baud": 115
+  },
+  {
+   "value": 20,
+   "label": "Benewake TFmini, TFmini-S, TFmini Plus (serial)",
+   "bus": "serial",
+   "baud": 115
+  },
+  {
+   "value": 21,
+   "label": "Garmin Lidar-Lite v3HP (I2C)",
+   "bus": "i2c"
+  },
+  {
+   "value": 23,
+   "label": "Blue Robotics Ping sonar (serial)",
+   "bus": "serial",
+   "baud": 115
+  },
+  {
+   "value": 24,
+   "label": "DroneCAN",
+   "bus": "can"
+  },
+  {
+   "value": 25,
+   "label": "Benewake TFmini Plus, TF02-Pro, TF-Luna (I2C)",
+   "bus": "i2c",
+   "addr": 16
+  },
+  {
+   "value": 27,
+   "label": "Benewake TF02-Pro, TF03, TF-Luna (serial)",
+   "bus": "serial",
+   "baud": 115
+  },
+  {
+   "value": 32,
+   "label": "MSP (Matek 3901-L0X)",
+   "bus": "msp",
+   "baud": 115
+  },
+  {
+   "value": 37,
+   "label": "Nooploop TOFSense (serial)",
+   "bus": "serial",
+   "baud": 230
+  }
+ ],
+ "FLOW_TYPES": [
+  {
+   "value": 1,
+   "label": "PX4Flow (I2C)",
+   "bus": "i2c"
+  },
+  {
+   "value": 2,
+   "label": "PixArt on the flight controller",
+   "bus": "board"
+  },
+  {
+   "value": 4,
+   "label": "Cheerson CX-OF (serial)",
+   "bus": "serial_flow"
+  },
+  {
+   "value": 5,
+   "label": "MAVLink (companion computer)",
+   "bus": "mavlink"
+  },
+  {
+   "value": 6,
+   "label": "DroneCAN (HereFlow, H-Flow, ARK Flow)",
+   "bus": "can"
+  },
+  {
+   "value": 7,
+   "label": "MSP (Matek 3901-L0X)",
+   "bus": "msp",
+   "baud": 115
+  },
+  {
+   "value": 8,
+   "label": "UPixels UPFlow (serial)",
+   "bus": "serial_flow"
+  }
+ ],
+ "SERIAL_PROTOCOL_NAMES": {
+  "-1": "not used",
+  "1": "MAVLink1",
+  "2": "MAVLink2",
+  "3": "FrSky D",
+  "4": "FrSky SPort",
+  "5": "GPS",
+  "7": "Alexmos gimbal",
+  "8": "Gimbal",
+  "9": "Rangefinder",
+  "10": "FrSky passthrough",
+  "11": "Lidar360",
+  "13": "Beacon",
+  "14": "Volz servos",
+  "15": "SBus out",
+  "16": "ESC telemetry",
+  "17": "Devo telemetry",
+  "18": "Optical flow",
+  "19": "Robotis servos",
+  "20": "NMEA out",
+  "21": "Wind vane",
+  "22": "SLCAN",
+  "23": "RC input",
+  "24": "EFI",
+  "25": "LTM",
+  "26": "RunCam",
+  "27": "HoTT telemetry",
+  "28": "Scripting",
+  "29": "Crossfire VTX",
+  "30": "Generator",
+  "31": "Winch",
+  "32": "MSP",
+  "33": "DJI FPV",
+  "34": "Airspeed",
+  "35": "ADS-B",
+  "36": "AHRS",
+  "37": "SmartAudio",
+  "38": "FETtec OneWire",
+  "39": "Torqeedo",
+  "40": "AIS",
+  "41": "CoDev ESC",
+  "42": "DisplayPort",
+  "43": "MAVLink high latency",
+  "44": "IRC Tramp",
+  "45": "DDS XRCE",
+  "46": "IMU data",
+  "48": "PPP",
+  "49": "i-BUS telemetry",
+  "50": "IOMCU"
+ },
+ "BAUD_CODES": {
+  "1": 1200,
+  "2": 2400,
+  "4": 4800,
+  "9": 9600,
+  "19": 19200,
+  "38": 38400,
+  "57": 57600,
+  "111": 111100,
+  "115": 115200,
+  "230": 230400,
+  "256": 256000,
+  "460": 460800,
+  "500": 500000,
+  "921": 921600,
+  "1500": 1500000,
+  "2000": 2000000
+ },
+ "SERIAL_PROTOCOL_BY_BUS": {
+  "serial": 9,
+  "serial_flow": 18,
+  "msp": 32
+ },
+ "FLOW_SOURCE_SET": [
+  [
+   "POSXY",
+   0,
+   "No position source: flow gives velocity, not position"
+  ],
+  [
+   "VELXY",
+   5,
+   "Optical flow is the horizontal velocity source"
+  ],
+  [
+   "POSZ",
+   1,
+   "Height from the barometer"
+  ],
+  [
+   "VELZ",
+   0,
+   "No vertical velocity source"
+  ],
+  [
+   "YAW",
+   1,
+   "Heading from the compass"
+  ]
+ ],
+ "LENGTH_ALIASES": {
+  "RNGFND1_MIN": [
+   "RNGFND1_MIN_CM",
+   100.0
+  ],
+  "RNGFND1_MAX": [
+   "RNGFND1_MAX_CM",
+   100.0
+  ],
+  "RNGFND1_GNDCLR": [
+   "RNGFND1_GNDCLEAR",
+   100.0
+  ]
+ },
+ "WIRING": {
+  "serial": "Plug it into the serial port you pick below. ArduPilot numbers them SERIAL1, SERIAL2 and so on; on Pixhawk-standard boards SERIAL1 is TELEM1, SERIAL2 is TELEM2, SERIAL3 is GPS1 and SERIAL4 is GPS2, but check your board's page on ardupilot.org. The sensor's TX goes to the port's RX and its RX to the port's TX.",
+  "serial_flow": "Plug it into the serial port you pick below. ArduPilot numbers them SERIAL1, SERIAL2 and so on; on Pixhawk-standard boards SERIAL1 is TELEM1, SERIAL2 is TELEM2, SERIAL3 is GPS1 and SERIAL4 is GPS2, but check your board's page on ardupilot.org. The sensor's TX goes to the port's RX and its RX to the port's TX.",
+  "msp": "Plug it into the serial port you pick below. ArduPilot numbers them SERIAL1, SERIAL2 and so on; on Pixhawk-standard boards SERIAL1 is TELEM1, SERIAL2 is TELEM2, SERIAL3 is GPS1 and SERIAL4 is GPS2, but check your board's page on ardupilot.org. The sensor's TX goes to the port's RX and its RX to the port's TX.",
+  "i2c": "Plug it into an I2C connector. On most Pixhawk boards the GPS1 connector carries I2C as well, and an I2C splitter lets several devices share one port.",
+  "analog": "Connect its output to an analog input pin and set RNGFND1_PIN to that pin's number from your board's page on ardupilot.org.",
+  "pwm": "Connect its PWM output to a pin that can read PWM and set RNGFND1_PIN to that pin's number from your board's page on ardupilot.org.",
+  "mavlink": "Nothing plugs into the flight controller for the sensor itself: it arrives over MAVLink, usually from a companion computer on a telemetry port.",
+  "board": "It is built into the flight controller; there is nothing to plug in."
+ },
+ "SERIAL_WIRING": "Plug it into the serial port you pick below. ArduPilot numbers them SERIAL1, SERIAL2 and so on; on Pixhawk-standard boards SERIAL1 is TELEM1, SERIAL2 is TELEM2, SERIAL3 is GPS1 and SERIAL4 is GPS2, but check your board's page on ardupilot.org. The sensor's TX goes to the port's RX and its RX to the port's TX.",
+ "CAN_WRITE_LABELS": {
+  "CAN_P1_DRIVER": "Start CAN port 1 on driver 1",
+  "CAN_D1_PROTOCOL": "Driver 1 speaks DroneCAN"
+ },
+ "SENSOR_PRESETS": [
+  {
+   "id": "holybro-h-flow",
+   "label": "Holybro H-Flow",
+   "vendor": "Holybro",
+   "model": "19006",
+   "bus": "DroneCAN",
+   "provides": [
+    "flow",
+    "range"
+   ],
+   "can": true,
+   "flow_estimator": true,
+   "summary": "PAA3905E1 optical flow and an AFBR-S50LV85D distance sensor on one board, over a single CAN cable.",
+   "note": "Mount it with the connectors pointing to the back of the vehicle, and set FLOW_POS_X, _Y and _Z to where it sits relative to the centre of gravity. The values are Holybro's ArduPilot setup, except the height source: ArduPilot's own wiki keeps that on the barometer.",
+   "params": [
+    [
+     "RNGFND1_TYPE",
+     24,
+     "Read the distance sensor from the DroneCAN node"
+    ],
+    [
+     "RNGFND1_ORIENT",
+     25,
+     "It faces down"
+    ],
+    [
+     "RNGFND1_MAX",
+     30.0,
+     "Longest reading, from Holybro's setup"
+    ],
+    [
+     "FLOW_TYPE",
+     6,
+     "Read optical flow from the same node"
+    ]
+   ],
+   "reboot": true
+  },
+  {
+   "id": "matek-3901-l0x",
+   "label": "Matek 3901-L0X",
+   "vendor": "Matek Systems",
+   "model": "3901-L0X",
+   "bus": "UART (MSP)",
+   "provides": [
+    "flow",
+    "range"
+   ],
+   "serial": 32,
+   "baud": 115,
+   "flow_estimator": true,
+   "summary": "PMW3901 optical flow and a VL53L0X lidar on one UART speaking MSP.",
+   "note": "Mount it lens down with the small arrow pointing forward. Its lidar reaches about 1.2 m and less outdoors, so the ArduPilot wiki recommends a longer range lidar for height.",
+   "params": [
+    [
+     "RNGFND1_TYPE",
+     32,
+     "Read the lidar over MSP"
+    ],
+    [
+     "RNGFND1_ORIENT",
+     25,
+     "It faces down"
+    ],
+    [
+     "RNGFND1_MAX",
+     1.2,
+     "Longest reading, from the ArduPilot wiki"
+    ],
+    [
+     "FLOW_TYPE",
+     7,
+     "Read optical flow over MSP"
+    ],
+    [
+     "FLOW_FXSCALER",
+     -800,
+     "Scale correction the wiki gives for this module"
+    ],
+    [
+     "FLOW_FYSCALER",
+     -800,
+     "Scale correction the wiki gives for this module"
+    ]
+   ],
+   "reboot": true
+  },
+  {
+   "id": "benewake-tfmini-s",
+   "label": "Benewake TFmini-S",
+   "vendor": "Benewake",
+   "model": "TFmini-S",
+   "bus": "UART",
+   "provides": [
+    "range"
+   ],
+   "serial": 9,
+   "baud": 115,
+   "summary": "Time-of-flight rangefinder, 0.1 to 12 m, on one UART at 115200 baud.",
+   "note": "Leave it in UART mode. The longest reading is the wiki's outdoor value; indoors it can be raised to 10 m.",
+   "params": [
+    [
+     "RNGFND1_TYPE",
+     20,
+     "The Benewake serial driver for this model"
+    ],
+    [
+     "RNGFND1_ORIENT",
+     25,
+     "It faces down"
+    ],
+    [
+     "RNGFND1_MIN",
+     0.1,
+     "Shortest reading, from the ArduPilot wiki"
+    ],
+    [
+     "RNGFND1_MAX",
+     6.0,
+     "Longest reading, from the ArduPilot wiki"
+    ],
+    [
+     "RNGFND1_GNDCLR",
+     0.1,
+     "What it reads on the ground. Measure yours"
+    ]
+   ],
+   "reboot": true
+  },
+  {
+   "id": "benewake-tfmini-plus",
+   "label": "Benewake TFmini Plus",
+   "vendor": "Benewake",
+   "model": "TFmini Plus",
+   "bus": "UART",
+   "provides": [
+    "range"
+   ],
+   "serial": 9,
+   "baud": 115,
+   "summary": "Time-of-flight rangefinder, 0.1 to 12 m, on one UART at 115200 baud.",
+   "note": "Leave it in UART mode. The longest reading is the wiki's outdoor value; indoors it can be raised to 10 m.",
+   "params": [
+    [
+     "RNGFND1_TYPE",
+     20,
+     "The Benewake serial driver for this model"
+    ],
+    [
+     "RNGFND1_ORIENT",
+     25,
+     "It faces down"
+    ],
+    [
+     "RNGFND1_MIN",
+     0.1,
+     "Shortest reading, from the ArduPilot wiki"
+    ],
+    [
+     "RNGFND1_MAX",
+     6.0,
+     "Longest reading, from the ArduPilot wiki"
+    ],
+    [
+     "RNGFND1_GNDCLR",
+     0.1,
+     "What it reads on the ground. Measure yours"
+    ]
+   ],
+   "reboot": true
+  },
+  {
+   "id": "benewake-tf03",
+   "label": "Benewake TF03",
+   "vendor": "Benewake",
+   "model": "TF03",
+   "bus": "UART",
+   "provides": [
+    "range"
+   ],
+   "serial": 9,
+   "baud": 115,
+   "summary": "Long range time-of-flight rangefinder on one UART at 115200 baud.",
+   "note": "Keep it in UART mode. ArduPilot reads its CAN mode as well, but that is a different driver (RNGFND1_TYPE = 34) and not what this preset sets.",
+   "params": [
+    [
+     "RNGFND1_TYPE",
+     27,
+     "The Benewake serial driver for this model"
+    ],
+    [
+     "RNGFND1_ORIENT",
+     25,
+     "It faces down"
+    ],
+    [
+     "RNGFND1_MIN",
+     1.0,
+     "Shortest reading, from the ArduPilot wiki"
+    ],
+    [
+     "RNGFND1_MAX",
+     50.0,
+     "Longest reading, from the ArduPilot wiki"
+    ],
+    [
+     "RNGFND1_GNDCLR",
+     0.1,
+     "What it reads on the ground. Measure yours"
+    ]
+   ],
+   "reboot": true
+  }
+ ]
+}

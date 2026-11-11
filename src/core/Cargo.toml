@@ -46,6 +46,8 @@ flate2 = { version = "1", default-features = false, features = ["rust_backend"] 
 # certificate store. Already in the lock file.
 rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
 rustls-native-certs = "0.8.5"
+# PX4 keeps its parameter metadata in parameters.json.xz (setup_schemas::param_metadata); the stdlib has no xz.
+lzma-rs = "0.3"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

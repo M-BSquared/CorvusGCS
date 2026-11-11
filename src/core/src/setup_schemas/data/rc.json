@@ -1,0 +1,542 @@
+{
+ "px4": {
+  "RC_IN_MODE_OPTIONS": [
+   {
+    "value": 0,
+    "label": "RC transmitter only"
+   },
+   {
+    "value": 1,
+    "label": "Joystick only"
+   },
+   {
+    "value": 2,
+    "label": "RC or joystick, fall back to the other"
+   },
+   {
+    "value": 3,
+    "label": "RC or joystick, keep the first until reboot"
+   },
+   {
+    "value": 4,
+    "label": "Stick input disabled"
+   }
+  ],
+  "RC_IN_MODE_PRIORITY_OPTIONS": [
+   {
+    "value": 5,
+    "label": "Priority: RC, joystick 1, joystick 2"
+   },
+   {
+    "value": 6,
+    "label": "Priority: joystick 1, joystick 2, RC"
+   },
+   {
+    "value": 7,
+    "label": "Priority: RC, joystick 2, joystick 1"
+   },
+   {
+    "value": 8,
+    "label": "Priority: joystick 2, joystick 1, RC"
+   }
+  ],
+  "RC_LOSS_ACTION_OPTIONS": [
+   {
+    "value": 0,
+    "label": "Disabled, keep flying"
+   },
+   {
+    "value": 1,
+    "label": "Hold position"
+   },
+   {
+    "value": 2,
+    "label": "Return to launch"
+   },
+   {
+    "value": 3,
+    "label": "Land at the current position"
+   },
+   {
+    "value": 5,
+    "label": "Terminate flight"
+   },
+   {
+    "value": 6,
+    "label": "Lockdown (stop the motors)"
+   }
+  ],
+  "FLIGHT_MODE_OPTIONS": [
+   {
+    "value": -1,
+    "label": "Unassigned"
+   },
+   {
+    "value": 0,
+    "label": "Manual"
+   },
+   {
+    "value": 1,
+    "label": "Altitude"
+   },
+   {
+    "value": 2,
+    "label": "Position"
+   },
+   {
+    "value": 3,
+    "label": "Mission"
+   },
+   {
+    "value": 4,
+    "label": "Hold"
+   },
+   {
+    "value": 5,
+    "label": "Return"
+   },
+   {
+    "value": 6,
+    "label": "Acro"
+   },
+   {
+    "value": 7,
+    "label": "Offboard"
+   },
+   {
+    "value": 8,
+    "label": "Stabilized"
+   },
+   {
+    "value": 10,
+    "label": "Takeoff"
+   },
+   {
+    "value": 11,
+    "label": "Land"
+   },
+   {
+    "value": 12,
+    "label": "Follow Me"
+   },
+   {
+    "value": 13,
+    "label": "Precision Land"
+   }
+  ],
+  "STICK_FIELDS": [
+   [
+    "RC_MAP_ROLL",
+    "Roll",
+    "The channel the right stick's left/right axis sends on."
+   ],
+   [
+    "RC_MAP_PITCH",
+    "Pitch",
+    "The channel the right stick's forward/back axis sends on."
+   ],
+   [
+    "RC_MAP_YAW",
+    "Yaw",
+    "The channel the left stick's left/right axis sends on."
+   ],
+   [
+    "RC_MAP_THROTTLE",
+    "Throttle",
+    "The channel the left stick's forward/back axis sends on."
+   ]
+  ],
+  "MODE_SWITCH_FIELDS": [
+   [
+    "RC_MAP_FLTMODE",
+    "Flight mode channel",
+    "One channel whose six positions select the six modes below. This is the modern PX4 mapping; leave it unassigned only if you bind individual mode switches instead."
+   ]
+  ],
+  "MODE_SLOT_FIELDS": [
+   [
+    "COM_FLTMODE1",
+    "Position 1 (switch fully down)",
+    ""
+   ],
+   [
+    "COM_FLTMODE2",
+    "Position 2",
+    ""
+   ],
+   [
+    "COM_FLTMODE3",
+    "Position 3",
+    ""
+   ],
+   [
+    "COM_FLTMODE4",
+    "Position 4",
+    ""
+   ],
+   [
+    "COM_FLTMODE5",
+    "Position 5",
+    ""
+   ],
+   [
+    "COM_FLTMODE6",
+    "Position 6 (switch fully up)",
+    ""
+   ]
+  ],
+  "SWITCH_FIELDS": [
+   [
+    "RC_MAP_ARM_SW",
+    "Arm / disarm switch",
+    "Arms on the high position. PX4 still requires the safety switch and the prearm checks to pass."
+   ],
+   [
+    "RC_MAP_KILL_SW",
+    "Kill switch",
+    "Stops the motors instantly, in flight, with no landing. Bind it to a guarded switch or not at all."
+   ],
+   [
+    "RC_MAP_RETURN_SW",
+    "Return switch",
+    "Triggers return-to-launch."
+   ],
+   [
+    "RC_MAP_LOITER_SW",
+    "Hold switch",
+    "Holds position where the vehicle is."
+   ],
+   [
+    "RC_MAP_OFFB_SW",
+    "Offboard switch",
+    "Hands control to a companion computer."
+   ],
+   [
+    "RC_MAP_TRANS_SW",
+    "VTOL transition switch",
+    "Transitions between hover and forward flight."
+   ],
+   [
+    "RC_MAP_GEAR_SW",
+    "Landing gear switch",
+    ""
+   ],
+   [
+    "RC_MAP_FLAPS",
+    "Flaps channel",
+    ""
+   ],
+   [
+    "RC_MAP_MAN_SW",
+    "Manual mode switch",
+    "Legacy per-mode switch."
+   ],
+   [
+    "RC_MAP_ACRO_SW",
+    "Acro mode switch",
+    "Legacy per-mode switch."
+   ],
+   [
+    "RC_MAP_POSCTL_SW",
+    "Position mode switch",
+    "Legacy per-mode switch."
+   ],
+   [
+    "RC_MAP_STAB_SW",
+    "Stabilized mode switch",
+    "Legacy per-mode switch."
+   ],
+   [
+    "RC_MAP_MODE_SW",
+    "Legacy mode switch",
+    "Superseded by the flight mode channel."
+   ]
+  ],
+  "AUX_FIELDS": [
+   [
+    "RC_MAP_AUX1",
+    "AUX 1",
+    "Passed straight through to an actuator or a payload."
+   ],
+   [
+    "RC_MAP_AUX2",
+    "AUX 2",
+    ""
+   ],
+   [
+    "RC_MAP_AUX3",
+    "AUX 3",
+    ""
+   ],
+   [
+    "RC_MAP_AUX4",
+    "AUX 4",
+    ""
+   ],
+   [
+    "RC_MAP_AUX5",
+    "AUX 5",
+    ""
+   ],
+   [
+    "RC_MAP_AUX6",
+    "AUX 6",
+    ""
+   ],
+   [
+    "RC_MAP_PARAM1",
+    "Tuning knob 1",
+    "Adjusts the parameter named by RC_PARAM_MAP."
+   ],
+   [
+    "RC_MAP_PARAM2",
+    "Tuning knob 2",
+    ""
+   ],
+   [
+    "RC_MAP_PARAM3",
+    "Tuning knob 3",
+    ""
+   ]
+  ],
+  "INPUT_NUMBER_FIELDS": [
+   [
+    "COM_RC_LOSS_T",
+    "RC loss timeout",
+    "s",
+    "How long the transmitter may go unheard before the loss action runs."
+   ],
+   [
+    "COM_RC_STICK_OV",
+    "Stick override threshold",
+    "%",
+    "How far a stick must move to take an autonomous flight back into position mode. 0 disables the override entirely."
+   ],
+   [
+    "RC_CHAN_CNT",
+    "Channel count",
+    "",
+    "How many channels the receiver delivers. Written by the calibration."
+   ],
+   [
+    "RC_RSSI_PWM_CHAN",
+    "RSSI channel",
+    "",
+    "Channel carrying link strength as a pulse width. 0 if the receiver reports RSSI over the protocol instead."
+   ]
+  ]
+ },
+ "ardupilot": {
+  "ON_OFF_OPTIONS": [
+   {
+    "value": 0,
+    "label": "Disabled"
+   },
+   {
+    "value": 1,
+    "label": "Enabled"
+   }
+  ],
+  "STICK_FIELDS": [
+   [
+    "RCMAP_ROLL",
+    "Roll",
+    "The channel the right stick's left/right axis sends on."
+   ],
+   [
+    "RCMAP_PITCH",
+    "Pitch",
+    "The channel the right stick's forward/back axis sends on."
+   ],
+   [
+    "RCMAP_YAW",
+    "Yaw",
+    "The channel the left stick's left/right axis sends on."
+   ],
+   [
+    "RCMAP_THROTTLE",
+    "Throttle",
+    "The channel the left stick's forward/back axis sends on."
+   ],
+   [
+    "RCMAP_FORWARD",
+    "Forward",
+    "Sub only."
+   ],
+   [
+    "RCMAP_LATERAL",
+    "Lateral",
+    "Sub only."
+   ]
+  ],
+  "MODE_SWITCH_FIELDS": [
+   [
+    "FLTMODE_CH",
+    "Flight mode channel",
+    "One channel whose six PWM bands select the six modes below. ArduPilot fixes the bands; only the modes are yours to choose."
+   ]
+  ],
+  "MODE_SLOT_FIELDS": [
+   [
+    "FLTMODE1",
+    "Position 1 (below 1230 us)",
+    ""
+   ],
+   [
+    "FLTMODE2",
+    "Position 2 (1231-1360 us)",
+    ""
+   ],
+   [
+    "FLTMODE3",
+    "Position 3 (1361-1490 us)",
+    ""
+   ],
+   [
+    "FLTMODE4",
+    "Position 4 (1491-1620 us)",
+    ""
+   ],
+   [
+    "FLTMODE5",
+    "Position 5 (1621-1749 us)",
+    ""
+   ],
+   [
+    "FLTMODE6",
+    "Position 6 (above 1750 us)",
+    ""
+   ]
+  ],
+  "RC_OPTION_VALUES": [
+   {
+    "value": 0,
+    "label": "Do nothing"
+   },
+   {
+    "value": 2,
+    "label": "Flip"
+   },
+   {
+    "value": 3,
+    "label": "Simple mode"
+   },
+   {
+    "value": 4,
+    "label": "RTL"
+   },
+   {
+    "value": 7,
+    "label": "Save waypoint"
+   },
+   {
+    "value": 9,
+    "label": "Camera trigger"
+   },
+   {
+    "value": 10,
+    "label": "Rangefinder enable"
+   },
+   {
+    "value": 11,
+    "label": "Fence enable"
+   },
+   {
+    "value": 16,
+    "label": "Auto mode"
+   },
+   {
+    "value": 17,
+    "label": "Landing gear"
+   },
+   {
+    "value": 18,
+    "label": "Land mode"
+   },
+   {
+    "value": 19,
+    "label": "Gripper"
+   },
+   {
+    "value": 21,
+    "label": "Parachute enable"
+   },
+   {
+    "value": 22,
+    "label": "Parachute release"
+   },
+   {
+    "value": 24,
+    "label": "Reset mission to first waypoint"
+   },
+   {
+    "value": 27,
+    "label": "Retract mount"
+   },
+   {
+    "value": 28,
+    "label": "Relay 1"
+   },
+   {
+    "value": 29,
+    "label": "Landing gear (alt)"
+   },
+   {
+    "value": 31,
+    "label": "Motor emergency stop"
+   },
+   {
+    "value": 32,
+    "label": "Motor interlock"
+   },
+   {
+    "value": 33,
+    "label": "Brake mode"
+   },
+   {
+    "value": 41,
+    "label": "Arm / disarm"
+   },
+   {
+    "value": 46,
+    "label": "RC override enable"
+   },
+   {
+    "value": 52,
+    "label": "Acro mode"
+   },
+   {
+    "value": 55,
+    "label": "Guided mode"
+   },
+   {
+    "value": 56,
+    "label": "Loiter mode"
+   },
+   {
+    "value": 57,
+    "label": "Follow mode"
+   },
+   {
+    "value": 62,
+    "label": "Compass learn"
+   },
+   {
+    "value": 65,
+    "label": "GPS disable"
+   },
+   {
+    "value": 66,
+    "label": "Relay 5"
+   },
+   {
+    "value": 100,
+    "label": "KillIMU1"
+   },
+   {
+    "value": 153,
+    "label": "Arm / emergency motor stop"
+   }
+  ]
+ }
+}

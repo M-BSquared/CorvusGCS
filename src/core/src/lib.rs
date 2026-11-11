@@ -102,6 +102,7 @@ pub mod protocol;
 pub mod request;
 pub mod response;
 pub mod serial_ports;
+pub mod setup_schemas;
 pub mod store;
 pub mod tlog;
 pub mod vehicle;
@@ -131,6 +132,7 @@ pub use crate::request::{Headers, Method, Origin, Query, Request};
 pub use crate::response::{Response, SseEvent, SseNext, SseStream, UNAVAILABLE};
 pub use crate::router::{Body, Handler, Pattern, Route, RouteOptions, Router, MAX_JSON_BODY, MAX_SETTINGS_BODY};
 pub use crate::settings::{ConfigListener, Settings};
+pub use crate::setup_schemas::SetupSchemasModule;
 pub use crate::vehicle::{VehicleModule, VehicleOptions, VehicleService};
 
 #[cfg(test)]

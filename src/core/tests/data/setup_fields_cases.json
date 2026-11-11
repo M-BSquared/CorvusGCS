@@ -1,0 +1,914 @@
+{
+ "values": {
+  "A": 1.0,
+  "B": 2.0,
+  "C": 0.5,
+  "D": 2.5,
+  "E": -1.5,
+  "F": 3.5,
+  "G": 7.0
+ },
+ "options": [
+  {
+   "value": 0,
+   "label": "Off"
+  },
+  {
+   "value": 1,
+   "label": "On"
+  }
+ ],
+ "enum": [
+  [
+   "A",
+   {
+    "param": "A",
+    "label": "Label",
+    "kind": "enum",
+    "value": 1.0,
+    "options": [
+     {
+      "value": 0,
+      "label": "Off"
+     },
+     {
+      "value": 1,
+      "label": "On"
+     }
+    ],
+    "unit": "x",
+    "hint": "h"
+   }
+  ],
+  [
+   "B",
+   {
+    "param": "B",
+    "label": "Label",
+    "kind": "enum",
+    "value": 2.0,
+    "options": [
+     {
+      "value": 0,
+      "label": "Off"
+     },
+     {
+      "value": 1,
+      "label": "On"
+     },
+     {
+      "value": 2,
+      "label": "Unknown (2)"
+     }
+    ],
+    "unit": "x",
+    "hint": "h"
+   }
+  ],
+  [
+   "C",
+   {
+    "param": "C",
+    "label": "Label",
+    "kind": "enum",
+    "value": 0.5,
+    "options": [
+     {
+      "value": 0,
+      "label": "Off"
+     },
+     {
+      "value": 1,
+      "label": "On"
+     }
+    ],
+    "unit": "x",
+    "hint": "h"
+   }
+  ],
+  [
+   "D",
+   {
+    "param": "D",
+    "label": "Label",
+    "kind": "enum",
+    "value": 2.5,
+    "options": [
+     {
+      "value": 0,
+      "label": "Off"
+     },
+     {
+      "value": 1,
+      "label": "On"
+     },
+     {
+      "value": 2,
+      "label": "Unknown (2)"
+     }
+    ],
+    "unit": "x",
+    "hint": "h"
+   }
+  ],
+  [
+   "E",
+   {
+    "param": "E",
+    "label": "Label",
+    "kind": "enum",
+    "value": -1.5,
+    "options": [
+     {
+      "value": 0,
+      "label": "Off"
+     },
+     {
+      "value": 1,
+      "label": "On"
+     },
+     {
+      "value": -2,
+      "label": "Unknown (-2)"
+     }
+    ],
+    "unit": "x",
+    "hint": "h"
+   }
+  ],
+  [
+   "F",
+   {
+    "param": "F",
+    "label": "Label",
+    "kind": "enum",
+    "value": 3.5,
+    "options": [
+     {
+      "value": 0,
+      "label": "Off"
+     },
+     {
+      "value": 1,
+      "label": "On"
+     },
+     {
+      "value": 4,
+      "label": "Unknown (4)"
+     }
+    ],
+    "unit": "x",
+    "hint": "h"
+   }
+  ],
+  [
+   "Z",
+   null
+  ]
+ ],
+ "enum_options": [
+  [
+   0.0,
+   [
+    {
+     "value": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "label": "On"
+    }
+   ]
+  ],
+  [
+   1.0,
+   [
+    {
+     "value": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "label": "On"
+    }
+   ]
+  ],
+  [
+   0.5,
+   [
+    {
+     "value": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "label": "On"
+    }
+   ]
+  ],
+  [
+   1.5,
+   [
+    {
+     "value": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "label": "On"
+    },
+    {
+     "value": 2,
+     "label": "Unknown (2)"
+    }
+   ]
+  ],
+  [
+   2.5,
+   [
+    {
+     "value": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "label": "On"
+    },
+    {
+     "value": 2,
+     "label": "Unknown (2)"
+    }
+   ]
+  ],
+  [
+   -0.5,
+   [
+    {
+     "value": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "label": "On"
+    }
+   ]
+  ],
+  [
+   -1.5,
+   [
+    {
+     "value": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "label": "On"
+    },
+    {
+     "value": -2,
+     "label": "Unknown (-2)"
+    }
+   ]
+  ],
+  [
+   7.0,
+   [
+    {
+     "value": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "label": "On"
+    },
+    {
+     "value": 7,
+     "label": "Unknown (7)"
+    }
+   ]
+  ],
+  [
+   0.49,
+   [
+    {
+     "value": 0,
+     "label": "Off"
+    },
+    {
+     "value": 1,
+     "label": "On"
+    }
+   ]
+  ]
+ ],
+ "labels": [
+  [
+   0.0,
+   "Off"
+  ],
+  [
+   1.0,
+   "On"
+  ],
+  [
+   0.5,
+   "Off"
+  ],
+  [
+   1.5,
+   "Unknown (2)"
+  ],
+  [
+   2.5,
+   "Unknown (2)"
+  ],
+  [
+   -0.5,
+   "Off"
+  ],
+  [
+   9.0,
+   "Unknown (9)"
+  ]
+ ],
+ "number": [
+  [
+   "A",
+   {
+    "param": "A",
+    "label": "Label",
+    "kind": "number",
+    "value": 9,
+    "unit": "m",
+    "step": 1,
+    "min": 0,
+    "max": 1.5,
+    "hint": "h"
+   }
+  ],
+  [
+   "Z",
+   null
+  ]
+ ],
+ "bitmask": [
+  [
+   "A",
+   {
+    "param": "A",
+    "label": "Label",
+    "kind": "bitmask",
+    "value": 1.0,
+    "bits": [
+     {
+      "bit": 0,
+      "label": "One"
+     },
+     {
+      "bit": 1,
+      "label": "Two"
+     }
+    ],
+    "hint": "h"
+   }
+  ],
+  [
+   "Z",
+   null
+  ]
+ ],
+ "present": [
+  {
+   "param": "A",
+   "label": "a",
+   "kind": "number",
+   "value": 1.0
+  },
+  {
+   "param": "B",
+   "label": "b",
+   "kind": "number",
+   "value": 2.0
+  }
+ ],
+ "section": [
+  {
+   "id": "id",
+   "title": "Title",
+   "kind": "fields",
+   "fields": [
+    {
+     "param": "A",
+     "label": "a",
+     "kind": "number",
+     "value": 1.0
+    }
+   ]
+  },
+  {
+   "id": "id",
+   "title": "Title",
+   "kind": "fields",
+   "fields": [
+    {
+     "param": "A",
+     "label": "a",
+     "kind": "number",
+     "value": 1.0
+    }
+   ],
+   "hint": "hint"
+  },
+  null
+ ],
+ "flags": [
+  [
+   [
+    {
+     "id": "flow"
+    }
+   ],
+   [
+    {
+     "id": "flow"
+    }
+   ]
+  ],
+  [
+   [
+    {
+     "id": "flow"
+    },
+    {
+     "id": "rangefinder",
+     "toggle": {
+      "state": "on"
+     }
+    }
+   ],
+   [
+    {
+     "id": "flow"
+    },
+    {
+     "id": "rangefinder",
+     "toggle": {
+      "state": "on"
+     }
+    }
+   ]
+  ],
+  [
+   [
+    {
+     "id": "flow"
+    },
+    {
+     "id": "rangefinder",
+     "toggle": {
+      "state": "off"
+     }
+    }
+   ],
+   [
+    {
+     "id": "flow"
+    },
+    {
+     "id": "rangefinder",
+     "toggle": {
+      "state": "off"
+     }
+    }
+   ]
+  ],
+  [
+   [
+    {
+     "id": "flow"
+    },
+    {
+     "id": "rangefinder",
+     "toggle": null
+    }
+   ],
+   [
+    {
+     "id": "flow"
+    },
+    {
+     "id": "rangefinder",
+     "toggle": null
+    }
+   ]
+  ],
+  [
+   [
+    {
+     "id": "flow",
+     "toggle": {
+      "state": "on",
+      "problems": [
+       "x"
+      ]
+     }
+    }
+   ],
+   [
+    {
+     "id": "flow",
+     "toggle": {
+      "state": "partial",
+      "problems": [
+       "x",
+       "Flow is set up, but no distance sensor is on. Without a height above the ground the flow rate cannot be turned into a speed."
+      ]
+     }
+    }
+   ]
+  ],
+  [
+   [
+    {
+     "id": "flow",
+     "toggle": {
+      "state": "on",
+      "problems": [
+       "x"
+      ]
+     }
+    },
+    {
+     "id": "rangefinder",
+     "toggle": {
+      "state": "on"
+     }
+    }
+   ],
+   [
+    {
+     "id": "flow",
+     "toggle": {
+      "state": "on",
+      "problems": [
+       "x"
+      ]
+     }
+    },
+    {
+     "id": "rangefinder",
+     "toggle": {
+      "state": "on"
+     }
+    }
+   ]
+  ],
+  [
+   [
+    {
+     "id": "flow",
+     "toggle": {
+      "state": "on",
+      "problems": [
+       "x"
+      ]
+     }
+    },
+    {
+     "id": "rangefinder",
+     "toggle": {
+      "state": "off"
+     }
+    }
+   ],
+   [
+    {
+     "id": "flow",
+     "toggle": {
+      "state": "partial",
+      "problems": [
+       "x",
+       "Flow is set up, but no distance sensor is on. Without a height above the ground the flow rate cannot be turned into a speed."
+      ]
+     }
+    },
+    {
+     "id": "rangefinder",
+     "toggle": {
+      "state": "off"
+     }
+    }
+   ]
+  ],
+  [
+   [
+    {
+     "id": "flow",
+     "toggle": {
+      "state": "on",
+      "problems": [
+       "x"
+      ]
+     }
+    },
+    {
+     "id": "rangefinder",
+     "toggle": null
+    }
+   ],
+   [
+    {
+     "id": "flow",
+     "toggle": {
+      "state": "partial",
+      "problems": [
+       "x",
+       "Flow is set up, but no distance sensor is on. Without a height above the ground the flow rate cannot be turned into a speed."
+      ]
+     }
+    },
+    {
+     "id": "rangefinder",
+     "toggle": null
+    }
+   ]
+  ],
+  [
+   [
+    {
+     "id": "flow",
+     "toggle": {
+      "state": "off",
+      "problems": [
+       "x"
+      ]
+     }
+    }
+   ],
+   [
+    {
+     "id": "flow",
+     "toggle": {
+      "state": "off",
+      "problems": [
+       "x"
+      ]
+     }
+    }
+   ]
+  ],
+  [
+   [
+    {
+     "id": "flow",
+     "toggle": {
+      "state": "off",
+      "problems": [
+       "x"
+      ]
+     }
+    },
+    {
+     "id": "rangefinder",
+     "toggle": {
+      "state": "on"
+     }
+    }
+   ],
+   [
+    {
+     "id": "flow",
+     "toggle": {
+      "state": "off",
+      "problems": [
+       "x"
+      ]
+     }
+    },
+    {
+     "id": "rangefinder",
+     "toggle": {
+      "state": "on"
+     }
+    }
+   ]
+  ],
+  [
+   [
+    {
+     "id": "flow",
+     "toggle": {
+      "state": "off",
+      "problems": [
+       "x"
+      ]
+     }
+    },
+    {
+     "id": "rangefinder",
+     "toggle": {
+      "state": "off"
+     }
+    }
+   ],
+   [
+    {
+     "id": "flow",
+     "toggle": {
+      "state": "off",
+      "problems": [
+       "x"
+      ]
+     }
+    },
+    {
+     "id": "rangefinder",
+     "toggle": {
+      "state": "off"
+     }
+    }
+   ]
+  ],
+  [
+   [
+    {
+     "id": "flow",
+     "toggle": {
+      "state": "off",
+      "problems": [
+       "x"
+      ]
+     }
+    },
+    {
+     "id": "rangefinder",
+     "toggle": null
+    }
+   ],
+   [
+    {
+     "id": "flow",
+     "toggle": {
+      "state": "off",
+      "problems": [
+       "x"
+      ]
+     }
+    },
+    {
+     "id": "rangefinder",
+     "toggle": null
+    }
+   ]
+  ],
+  [
+   [
+    {
+     "id": "flow",
+     "toggle": {
+      "state": "partial",
+      "problems": [
+       "x"
+      ]
+     }
+    }
+   ],
+   [
+    {
+     "id": "flow",
+     "toggle": {
+      "state": "partial",
+      "problems": [
+       "x"
+      ]
+     }
+    }
+   ]
+  ],
+  [
+   [
+    {
+     "id": "flow",
+     "toggle": {
+      "state": "partial",
+      "problems": [
+       "x"
+      ]
+     }
+    },
+    {
+     "id": "rangefinder",
+     "toggle": {
+      "state": "on"
+     }
+    }
+   ],
+   [
+    {
+     "id": "flow",
+     "toggle": {
+      "state": "partial",
+      "problems": [
+       "x"
+      ]
+     }
+    },
+    {
+     "id": "rangefinder",
+     "toggle": {
+      "state": "on"
+     }
+    }
+   ]
+  ],
+  [
+   [
+    {
+     "id": "flow",
+     "toggle": {
+      "state": "partial",
+      "problems": [
+       "x"
+      ]
+     }
+    },
+    {
+     "id": "rangefinder",
+     "toggle": {
+      "state": "off"
+     }
+    }
+   ],
+   [
+    {
+     "id": "flow",
+     "toggle": {
+      "state": "partial",
+      "problems": [
+       "x"
+      ]
+     }
+    },
+    {
+     "id": "rangefinder",
+     "toggle": {
+      "state": "off"
+     }
+    }
+   ]
+  ],
+  [
+   [
+    {
+     "id": "flow",
+     "toggle": {
+      "state": "partial",
+      "problems": [
+       "x"
+      ]
+     }
+    },
+    {
+     "id": "rangefinder",
+     "toggle": null
+    }
+   ],
+   [
+    {
+     "id": "flow",
+     "toggle": {
+      "state": "partial",
+      "problems": [
+       "x"
+      ]
+     }
+    },
+    {
+     "id": "rangefinder",
+     "toggle": null
+    }
+   ]
+  ],
+  [
+   [
+    {
+     "id": "flow",
+     "toggle": {
+      "state": "on"
+     }
+    }
+   ],
+   [
+    {
+     "id": "flow",
+     "toggle": {
+      "state": "partial",
+      "problems": [
+       "Flow is set up, but no distance sensor is on. Without a height above the ground the flow rate cannot be turned into a speed."
+      ]
+     }
+    }
+   ]
+  ]
+ ]
+}

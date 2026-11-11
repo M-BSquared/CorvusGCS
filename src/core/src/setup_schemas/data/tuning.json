@@ -1,0 +1,1579 @@
+{
+ "px4": {
+  "ON_OFF_OPTIONS": [
+   {
+    "value": 0,
+    "label": "Off"
+   },
+   {
+    "value": 1,
+    "label": "On"
+   }
+  ],
+  "AUTOTUNE_APPLY_OPTIONS": [
+   {
+    "value": 0,
+    "label": "Never (test only)"
+   },
+   {
+    "value": 1,
+    "label": "After landing and disarming"
+   },
+   {
+    "value": 2,
+    "label": "Immediately, in flight"
+   }
+  ],
+  "FW_AXES_BITS": [
+   {
+    "bit": 0,
+    "label": "Roll"
+   },
+   {
+    "bit": 1,
+    "label": "Pitch"
+   },
+   {
+    "bit": 2,
+    "label": "Yaw"
+   }
+  ],
+  "MC_AUTOTUNE_AXES": [
+   "Roll",
+   "Pitch",
+   "Yaw"
+  ],
+  "AXES_HINT": "Choose on the ground: parameters cannot be written while armed. One axis per flight takes longer, but a tune that misbehaves is easier to abort.",
+  "MC_RATE_SECTIONS": [
+   [
+    "roll",
+    "Roll",
+    [
+     [
+      "MC_ROLLRATE_P",
+      "Roll rate P",
+      "",
+      "Proportional gain on the rate error. Raise until the axis feels crisp, back off before it buzzes."
+     ],
+     [
+      "MC_ROLLRATE_I",
+      "Roll rate I",
+      "",
+      "Integral gain. Removes steady-state error (wind, an off-centre payload) and is what a slow drift back to level comes from."
+     ],
+     [
+      "MC_ROLLRATE_D",
+      "Roll rate D",
+      "",
+      "Derivative gain. Damps overshoot; too much of it amplifies motor and frame noise into heat."
+     ],
+     [
+      "MC_ROLLRATE_FF",
+      "Roll rate feed-forward",
+      "",
+      "Feed-forward from the rate setpoint. Improves tracking without touching the loop's stability."
+     ],
+     [
+      "MC_ROLLRATE_K",
+      "Roll rate gain",
+      "",
+      "Overall gain multiplier for this axis. Scales P, I and D together, so it is the one knob to turn after a payload change."
+     ],
+     [
+      "MC_RR_INT_LIM",
+      "Roll integrator limit",
+      "",
+      "Ceiling on the integrator, in normalised torque. Stops a long-held error from winding up into a lurch when the vehicle is released."
+     ]
+    ]
+   ],
+   [
+    "pitch",
+    "Pitch",
+    [
+     [
+      "MC_PITCHRATE_P",
+      "Pitch rate P",
+      "",
+      "Proportional gain on the rate error. Raise until the axis feels crisp, back off before it buzzes."
+     ],
+     [
+      "MC_PITCHRATE_I",
+      "Pitch rate I",
+      "",
+      "Integral gain. Removes steady-state error (wind, an off-centre payload) and is what a slow drift back to level comes from."
+     ],
+     [
+      "MC_PITCHRATE_D",
+      "Pitch rate D",
+      "",
+      "Derivative gain. Damps overshoot; too much of it amplifies motor and frame noise into heat."
+     ],
+     [
+      "MC_PITCHRATE_FF",
+      "Pitch rate feed-forward",
+      "",
+      "Feed-forward from the rate setpoint. Improves tracking without touching the loop's stability."
+     ],
+     [
+      "MC_PITCHRATE_K",
+      "Pitch rate gain",
+      "",
+      "Overall gain multiplier for this axis. Scales P, I and D together, so it is the one knob to turn after a payload change."
+     ],
+     [
+      "MC_PR_INT_LIM",
+      "Pitch integrator limit",
+      "",
+      "Ceiling on the integrator, in normalised torque. Stops a long-held error from winding up into a lurch when the vehicle is released."
+     ]
+    ]
+   ],
+   [
+    "yaw",
+    "Yaw",
+    [
+     [
+      "MC_YAWRATE_P",
+      "Yaw rate P",
+      "",
+      "Proportional gain on the rate error. Raise until the axis feels crisp, back off before it buzzes."
+     ],
+     [
+      "MC_YAWRATE_I",
+      "Yaw rate I",
+      "",
+      "Integral gain. Removes steady-state error (wind, an off-centre payload) and is what a slow drift back to level comes from."
+     ],
+     [
+      "MC_YAWRATE_D",
+      "Yaw rate D",
+      "",
+      "Derivative gain. Damps overshoot; too much of it amplifies motor and frame noise into heat."
+     ],
+     [
+      "MC_YAWRATE_FF",
+      "Yaw rate feed-forward",
+      "",
+      "Feed-forward from the rate setpoint. Improves tracking without touching the loop's stability."
+     ],
+     [
+      "MC_YAWRATE_K",
+      "Yaw rate gain",
+      "",
+      "Overall gain multiplier for this axis. Scales P, I and D together, so it is the one knob to turn after a payload change."
+     ],
+     [
+      "MC_YR_INT_LIM",
+      "Yaw integrator limit",
+      "",
+      "Ceiling on the integrator, in normalised torque. Stops a long-held error from winding up into a lurch when the vehicle is released."
+     ]
+    ]
+   ]
+  ],
+  "MC_ATTITUDE_SECTIONS": [
+   [
+    "gains",
+    "Attitude gains",
+    [
+     [
+      "MC_ROLL_P",
+      "Roll P",
+      "",
+      "Turns a roll angle error into a roll rate setpoint. Higher is sharper; too high and the rate loop is asked for more than the airframe can give."
+     ],
+     [
+      "MC_PITCH_P",
+      "Pitch P",
+      "",
+      "Pitch angle error to pitch rate setpoint."
+     ],
+     [
+      "MC_YAW_P",
+      "Yaw P",
+      "",
+      "Heading error to yaw rate setpoint."
+     ],
+     [
+      "MC_YAW_WEIGHT",
+      "Yaw weight",
+      "",
+      "How much yaw authority may be taken from roll and pitch when the mixer saturates. Lower keeps the vehicle upright at the cost of heading."
+     ]
+    ]
+   ],
+   [
+    "limits",
+    "Rate limits",
+    [
+     [
+      "MC_ROLLRATE_MAX",
+      "Maximum roll rate",
+      "deg/s",
+      "Ceiling on the rate setpoint the attitude loop may request."
+     ],
+     [
+      "MC_PITCHRATE_MAX",
+      "Maximum pitch rate",
+      "deg/s",
+      ""
+     ],
+     [
+      "MC_YAWRATE_MAX",
+      "Maximum yaw rate",
+      "deg/s",
+      ""
+     ]
+    ]
+   ]
+  ],
+  "MC_VELOCITY_SECTIONS": [
+   [
+    "horizontal",
+    "Horizontal velocity",
+    [
+     [
+      "MPC_XY_VEL_P_ACC",
+      "Horizontal velocity P",
+      "",
+      "Horizontal velocity error to acceleration setpoint."
+     ],
+     [
+      "MPC_XY_VEL_I_ACC",
+      "Horizontal velocity I",
+      "",
+      "Trims out a steady wind. Too high and the vehicle circles its hold point."
+     ],
+     [
+      "MPC_XY_VEL_D_ACC",
+      "Horizontal velocity D",
+      "",
+      "Damps the velocity loop. Sensitive to position noise, so raise it slowly."
+     ],
+     [
+      "MPC_XY_VEL_MAX",
+      "Maximum horizontal speed",
+      "m/s",
+      ""
+     ]
+    ]
+   ],
+   [
+    "vertical",
+    "Vertical velocity",
+    [
+     [
+      "MPC_Z_VEL_P_ACC",
+      "Vertical velocity P",
+      "",
+      "Vertical velocity error to acceleration setpoint."
+     ],
+     [
+      "MPC_Z_VEL_I_ACC",
+      "Vertical velocity I",
+      "",
+      "Carries the hover thrust. This is the gain that holds altitude when the battery sags."
+     ],
+     [
+      "MPC_Z_VEL_D_ACC",
+      "Vertical velocity D",
+      "",
+      ""
+     ],
+     [
+      "MPC_Z_VEL_MAX_UP",
+      "Maximum climb rate",
+      "m/s",
+      ""
+     ],
+     [
+      "MPC_Z_VEL_MAX_DN",
+      "Maximum descent rate",
+      "m/s",
+      ""
+     ]
+    ]
+   ],
+   [
+    "envelope",
+    "Envelope",
+    [
+     [
+      "MPC_TILTMAX_AIR",
+      "Maximum tilt in flight",
+      "deg",
+      "Caps the lean angle the velocity loop may ask for, and with it the horizontal acceleration the vehicle can produce."
+     ],
+     [
+      "MPC_THR_HOVER",
+      "Hover throttle",
+      "",
+      "The throttle that holds a hover. A wrong value makes every altitude change start with a lurch."
+     ]
+    ]
+   ]
+  ],
+  "MC_POSITION_SECTIONS": [
+   [
+    "gains",
+    "Position gains",
+    [
+     [
+      "MPC_XY_P",
+      "Horizontal position P",
+      "",
+      "Horizontal position error to velocity setpoint. Raise for a tighter hold, lower if the vehicle hunts around its hold point."
+     ],
+     [
+      "MPC_Z_P",
+      "Vertical position P",
+      "",
+      "Altitude error to climb-rate setpoint."
+     ]
+    ]
+   ],
+   [
+    "smoothness",
+    "Acceleration and jerk",
+    [
+     [
+      "MPC_ACC_HOR",
+      "Horizontal acceleration",
+      "m/s²",
+      ""
+     ],
+     [
+      "MPC_ACC_UP_MAX",
+      "Maximum upward acceleration",
+      "m/s²",
+      ""
+     ],
+     [
+      "MPC_ACC_DOWN_MAX",
+      "Maximum downward acceleration",
+      "m/s²",
+      ""
+     ],
+     [
+      "MPC_JERK_AUTO",
+      "Jerk limit (missions)",
+      "m/s³",
+      "How abruptly acceleration may change. Lower is smoother and gentler on a camera; higher tracks a mission leg more tightly."
+     ],
+     [
+      "MPC_JERK_MAX",
+      "Jerk limit (manual)",
+      "m/s³",
+      ""
+     ]
+    ]
+   ]
+  ],
+  "FW_RATE_SECTIONS": [
+   [
+    "roll",
+    "Roll",
+    [
+     [
+      "FW_RR_P",
+      "Roll rate P",
+      "",
+      "Proportional gain on the rate error. Raise until the axis feels crisp, back off before it buzzes."
+     ],
+     [
+      "FW_RR_I",
+      "Roll rate I",
+      "",
+      "Integral gain. Removes steady-state error (wind, an off-centre payload) and is what a slow drift back to level comes from."
+     ],
+     [
+      "FW_RR_D",
+      "Roll rate D",
+      "",
+      "Derivative gain. Damps overshoot; too much of it amplifies motor and frame noise into heat."
+     ],
+     [
+      "FW_RR_FF",
+      "Roll rate feed-forward",
+      "",
+      "Feed-forward from the rate setpoint. Improves tracking without touching the loop's stability."
+     ],
+     [
+      "FW_RR_IMAX",
+      "Roll integrator limit",
+      "",
+      "Ceiling on the integrator, in normalised torque. Stops a long-held error from winding up into a lurch when the vehicle is released."
+     ]
+    ]
+   ],
+   [
+    "pitch",
+    "Pitch",
+    [
+     [
+      "FW_PR_P",
+      "Pitch rate P",
+      "",
+      "Proportional gain on the rate error. Raise until the axis feels crisp, back off before it buzzes."
+     ],
+     [
+      "FW_PR_I",
+      "Pitch rate I",
+      "",
+      "Integral gain. Removes steady-state error (wind, an off-centre payload) and is what a slow drift back to level comes from."
+     ],
+     [
+      "FW_PR_D",
+      "Pitch rate D",
+      "",
+      "Derivative gain. Damps overshoot; too much of it amplifies motor and frame noise into heat."
+     ],
+     [
+      "FW_PR_FF",
+      "Pitch rate feed-forward",
+      "",
+      "Feed-forward from the rate setpoint. Improves tracking without touching the loop's stability."
+     ],
+     [
+      "FW_PR_IMAX",
+      "Pitch integrator limit",
+      "",
+      "Ceiling on the integrator, in normalised torque. Stops a long-held error from winding up into a lurch when the vehicle is released."
+     ]
+    ]
+   ],
+   [
+    "yaw",
+    "Yaw",
+    [
+     [
+      "FW_YR_P",
+      "Yaw rate P",
+      "",
+      "Proportional gain on the rate error. Raise until the axis feels crisp, back off before it buzzes."
+     ],
+     [
+      "FW_YR_I",
+      "Yaw rate I",
+      "",
+      "Integral gain. Removes steady-state error (wind, an off-centre payload) and is what a slow drift back to level comes from."
+     ],
+     [
+      "FW_YR_D",
+      "Yaw rate D",
+      "",
+      "Derivative gain. Damps overshoot; too much of it amplifies motor and frame noise into heat."
+     ],
+     [
+      "FW_YR_FF",
+      "Yaw rate feed-forward",
+      "",
+      "Feed-forward from the rate setpoint. Improves tracking without touching the loop's stability."
+     ],
+     [
+      "FW_YR_IMAX",
+      "Yaw integrator limit",
+      "",
+      "Ceiling on the integrator, in normalised torque. Stops a long-held error from winding up into a lurch when the vehicle is released."
+     ]
+    ]
+   ]
+  ],
+  "FW_ATTITUDE_SECTIONS": [
+   [
+    "response",
+    "Attitude response",
+    [
+     [
+      "FW_R_TC",
+      "Roll time constant",
+      "s",
+      "How quickly the aircraft is asked to reach a commanded roll angle. Smaller is sharper; a large airframe needs a larger value."
+     ],
+     [
+      "FW_P_TC",
+      "Pitch time constant",
+      "s",
+      ""
+     ]
+    ]
+   ],
+   [
+    "limits",
+    "Rate limits",
+    [
+     [
+      "FW_R_RMAX",
+      "Maximum roll rate",
+      "deg/s",
+      ""
+     ],
+     [
+      "FW_P_RMAX_POS",
+      "Maximum pitch-up rate",
+      "deg/s",
+      ""
+     ],
+     [
+      "FW_P_RMAX_NEG",
+      "Maximum pitch-down rate",
+      "deg/s",
+      ""
+     ],
+     [
+      "FW_Y_RMAX",
+      "Maximum yaw rate",
+      "deg/s",
+      ""
+     ]
+    ]
+   ]
+  ],
+  "MC_RATE_CHARTS": [
+   {
+    "id": "rollrate",
+    "title": "Roll rate",
+    "unit": "deg/s",
+    "actual": "rollspeed",
+    "setpoint": "rollspeed_sp"
+   },
+   {
+    "id": "pitchrate",
+    "title": "Pitch rate",
+    "unit": "deg/s",
+    "actual": "pitchspeed",
+    "setpoint": "pitchspeed_sp"
+   },
+   {
+    "id": "yawrate",
+    "title": "Yaw rate",
+    "unit": "deg/s",
+    "actual": "yawspeed",
+    "setpoint": "yawspeed_sp"
+   }
+  ],
+  "ATTITUDE_CHARTS": [
+   {
+    "id": "roll",
+    "title": "Roll angle",
+    "unit": "deg",
+    "actual": "roll",
+    "setpoint": "roll_sp"
+   },
+   {
+    "id": "pitch",
+    "title": "Pitch angle",
+    "unit": "deg",
+    "actual": "pitch",
+    "setpoint": "pitch_sp"
+   }
+  ],
+  "VELOCITY_CHARTS": [
+   {
+    "id": "vx",
+    "title": "Velocity north",
+    "unit": "m/s",
+    "actual": "vx",
+    "setpoint": "vx_sp"
+   },
+   {
+    "id": "vy",
+    "title": "Velocity east",
+    "unit": "m/s",
+    "actual": "vy",
+    "setpoint": "vy_sp"
+   },
+   {
+    "id": "vz",
+    "title": "Velocity down",
+    "unit": "m/s",
+    "actual": "vz",
+    "setpoint": "vz_sp"
+   }
+  ],
+  "POSITION_CHARTS": [
+   {
+    "id": "alt",
+    "title": "Height above home",
+    "unit": "m",
+    "actual": "altitude_agl",
+    "setpoint": null
+   },
+   {
+    "id": "groundspeed",
+    "title": "Ground speed",
+    "unit": "m/s",
+    "actual": "groundspeed",
+    "setpoint": null
+   }
+  ],
+  "AUTOTUNE_STEPS": [
+   "Fly somewhere open, with room to drift, and keep a hand on the sticks.",
+   "Take off and hold a stable hover in Position or Altitude mode, 3-10 m up.",
+   "Start the tune and let go of the sticks. The autopilot injects its own steps and needs a clean response to measure.",
+   "Expect roughly a minute of visible twitching, one axis at a time.",
+   "Land and disarm to apply the gains, then test them gently before flying the aircraft normally."
+  ],
+  "MC_AUTOTUNE_FIELDS": [
+   [
+    "MC_AT_SYSID_AMP",
+    "Excitation amplitude",
+    "",
+    "How hard the autotune shakes the vehicle. Raise it on a large or heavy airframe whose response is otherwise lost in the noise; lower it if the aircraft feels alarming during the tune."
+   ],
+   [
+    "MC_AT_RISE_TIME",
+    "Target rise time",
+    "s",
+    "The closed-loop response the tune aims for. Smaller means sharper and hotter motors."
+   ]
+  ],
+  "FW_AUTOTUNE_FIELDS": [
+   [
+    "FW_AT_SYSID_AMP",
+    "Excitation amplitude",
+    "",
+    "How hard the autotune excites each axis."
+   ],
+   [
+    "FW_AT_MAN_AUX",
+    "Start from an aux switch",
+    "",
+    "Lets the tune be triggered from the transmitter instead of the ground station."
+   ]
+  ],
+  "AUTOTUNE_RUNNING_TEXT": "The autopilot is exciting each axis in turn and measuring the response. Keep your hands off the sticks and hold the hover. Stop the tune at any time if the vehicle misbehaves.",
+  "TUNE_NONE_TEXT": "This firmware has no autotune. Set the gains by hand below, on the ground.",
+  "APPLY_DONE_TEXT": {
+   "0": "The tune finished. The gains were not applied because the apply setting is Never, so nothing on the vehicle has changed.",
+   "1": "The tune finished. Land and disarm to apply the new gains, then test them gently before flying normally.",
+   "2": "The tune finished and the new gains are already active. Test them gently before flying normally."
+  }
+ },
+ "ardupilot": {
+  "COPTER_RATE_SECTIONS": [
+   [
+    "roll",
+    "Roll",
+    [
+     [
+      "ATC_RAT_RLL_P",
+      "Roll rate P",
+      "",
+      "The main gain: how hard the controller reacts to a rate error. Raise it until the aircraft feels crisp, back off at the first sign of a twitch."
+     ],
+     [
+      "ATC_RAT_RLL_I",
+      "Roll rate I",
+      "",
+      "Removes steady error: a persistent lean from an off-centre payload or a bent arm. On ArduPilot this normally tracks P."
+     ],
+     [
+      "ATC_RAT_RLL_D",
+      "Roll rate D",
+      "",
+      "Damps the response. Too much amplifies motor and frame noise into heat."
+     ],
+     [
+      "ATC_RAT_RLL_IMAX",
+      "Roll integrator limit",
+      "",
+      "Ceiling on the integrator's share of the output, as a fraction of full authority."
+     ],
+     [
+      "ATC_RAT_RLL_FF",
+      "Roll feed-forward",
+      "",
+      "Passes the rate setpoint straight through, ahead of the error loop."
+     ],
+     [
+      "ATC_RAT_RLL_FLTT",
+      "Roll target filter",
+      "Hz",
+      "Low-pass on the setpoint entering the loop."
+     ],
+     [
+      "ATC_RAT_RLL_FLTE",
+      "Roll error filter",
+      "Hz",
+      "Low-pass on the rate error. Lowering it calms a noisy airframe at the cost of response."
+     ],
+     [
+      "ATC_RAT_RLL_FLTD",
+      "Roll derivative filter",
+      "Hz",
+      "Low-pass on the D term specifically, and the usual first thing to lower when a tune makes the motors hot."
+     ],
+     [
+      "ATC_RAT_RLL_SMAX",
+      "Roll slew limit",
+      "",
+      "Caps how fast the output may move, which is ArduPilot's own guard against a gain that is too high for the airframe. 0 disables it."
+     ]
+    ]
+   ],
+   [
+    "pitch",
+    "Pitch",
+    [
+     [
+      "ATC_RAT_PIT_P",
+      "Pitch rate P",
+      "",
+      "The main gain: how hard the controller reacts to a rate error. Raise it until the aircraft feels crisp, back off at the first sign of a twitch."
+     ],
+     [
+      "ATC_RAT_PIT_I",
+      "Pitch rate I",
+      "",
+      "Removes steady error: a persistent lean from an off-centre payload or a bent arm. On ArduPilot this normally tracks P."
+     ],
+     [
+      "ATC_RAT_PIT_D",
+      "Pitch rate D",
+      "",
+      "Damps the response. Too much amplifies motor and frame noise into heat."
+     ],
+     [
+      "ATC_RAT_PIT_IMAX",
+      "Pitch integrator limit",
+      "",
+      "Ceiling on the integrator's share of the output, as a fraction of full authority."
+     ],
+     [
+      "ATC_RAT_PIT_FF",
+      "Pitch feed-forward",
+      "",
+      "Passes the rate setpoint straight through, ahead of the error loop."
+     ],
+     [
+      "ATC_RAT_PIT_FLTT",
+      "Pitch target filter",
+      "Hz",
+      "Low-pass on the setpoint entering the loop."
+     ],
+     [
+      "ATC_RAT_PIT_FLTE",
+      "Pitch error filter",
+      "Hz",
+      "Low-pass on the rate error. Lowering it calms a noisy airframe at the cost of response."
+     ],
+     [
+      "ATC_RAT_PIT_FLTD",
+      "Pitch derivative filter",
+      "Hz",
+      "Low-pass on the D term specifically, and the usual first thing to lower when a tune makes the motors hot."
+     ],
+     [
+      "ATC_RAT_PIT_SMAX",
+      "Pitch slew limit",
+      "",
+      "Caps how fast the output may move, which is ArduPilot's own guard against a gain that is too high for the airframe. 0 disables it."
+     ]
+    ]
+   ],
+   [
+    "yaw",
+    "Yaw",
+    [
+     [
+      "ATC_RAT_YAW_P",
+      "Yaw rate P",
+      "",
+      "The main gain: how hard the controller reacts to a rate error. Raise it until the aircraft feels crisp, back off at the first sign of a twitch."
+     ],
+     [
+      "ATC_RAT_YAW_I",
+      "Yaw rate I",
+      "",
+      "Removes steady error: a persistent lean from an off-centre payload or a bent arm. On ArduPilot this normally tracks P."
+     ],
+     [
+      "ATC_RAT_YAW_D",
+      "Yaw rate D",
+      "",
+      "Damps the response. Too much amplifies motor and frame noise into heat."
+     ],
+     [
+      "ATC_RAT_YAW_IMAX",
+      "Yaw integrator limit",
+      "",
+      "Ceiling on the integrator's share of the output, as a fraction of full authority."
+     ],
+     [
+      "ATC_RAT_YAW_FF",
+      "Yaw feed-forward",
+      "",
+      "Passes the rate setpoint straight through, ahead of the error loop."
+     ],
+     [
+      "ATC_RAT_YAW_FLTT",
+      "Yaw target filter",
+      "Hz",
+      "Low-pass on the setpoint entering the loop."
+     ],
+     [
+      "ATC_RAT_YAW_FLTE",
+      "Yaw error filter",
+      "Hz",
+      "Low-pass on the rate error. Lowering it calms a noisy airframe at the cost of response."
+     ],
+     [
+      "ATC_RAT_YAW_FLTD",
+      "Yaw derivative filter",
+      "Hz",
+      "Low-pass on the D term specifically, and the usual first thing to lower when a tune makes the motors hot."
+     ],
+     [
+      "ATC_RAT_YAW_SMAX",
+      "Yaw slew limit",
+      "",
+      "Caps how fast the output may move, which is ArduPilot's own guard against a gain that is too high for the airframe. 0 disables it."
+     ]
+    ]
+   ]
+  ],
+  "COPTER_ATTITUDE_SECTIONS": [
+   [
+    "gains",
+    "Attitude gains",
+    [
+     [
+      "ATC_ANG_RLL_P",
+      "Roll angle P",
+      "",
+      "Turns a roll angle error into a roll rate setpoint. Higher is sharper; too high and the rate loop is asked for more than the airframe can give."
+     ],
+     [
+      "ATC_ANG_PIT_P",
+      "Pitch angle P",
+      "",
+      "Pitch angle error to pitch rate setpoint."
+     ],
+     [
+      "ATC_ANG_YAW_P",
+      "Yaw angle P",
+      "",
+      "Heading error to yaw rate setpoint."
+     ],
+     [
+      "ATC_INPUT_TC",
+      "Input time constant",
+      "s",
+      "How sharply the aircraft answers the sticks. Smaller is more direct."
+     ]
+    ]
+   ],
+   [
+    "limits",
+    "Acceleration limits",
+    [
+     [
+      "ATC_ACCEL_R_MAX",
+      "Maximum roll acceleration",
+      "cdeg/s/s",
+      "Centidegrees per second squared, ArduPilot's own unit."
+     ],
+     [
+      "ATC_ACCEL_P_MAX",
+      "Maximum pitch acceleration",
+      "cdeg/s/s",
+      ""
+     ],
+     [
+      "ATC_ACCEL_Y_MAX",
+      "Maximum yaw acceleration",
+      "cdeg/s/s",
+      ""
+     ],
+     [
+      "ATC_SLEW_YAW",
+      "Yaw slew rate",
+      "cdeg/s",
+      "Fastest heading change an automatic mode may command."
+     ]
+    ]
+   ],
+   [
+    "priority",
+    "Throttle and attitude priority",
+    [
+     [
+      "ATC_THR_MIX_MIN",
+      "Throttle/attitude mix, minimum",
+      "",
+      "How much authority attitude control keeps when the throttle is low. Raising it helps a heavy aircraft stay upright in a fast descent."
+     ],
+     [
+      "ATC_THR_MIX_MAN",
+      "Throttle/attitude mix, manual",
+      "",
+      ""
+     ],
+     [
+      "ATC_THR_MIX_MAX",
+      "Throttle/attitude mix, maximum",
+      "",
+      ""
+     ]
+    ]
+   ]
+  ],
+  "COPTER_VELOCITY_SECTIONS": [
+   [
+    "horizontal",
+    "Horizontal velocity",
+    [
+     [
+      "PSC_VELXY_P",
+      "Velocity XY P",
+      "",
+      "Velocity error to acceleration demand."
+     ],
+     [
+      "PSC_VELXY_I",
+      "Velocity XY I",
+      "",
+      ""
+     ],
+     [
+      "PSC_VELXY_D",
+      "Velocity XY D",
+      "",
+      ""
+     ],
+     [
+      "PSC_VELXY_IMAX",
+      "Velocity XY integrator limit",
+      "cm/s/s",
+      ""
+     ],
+     [
+      "PSC_VELXY_FLTE",
+      "Velocity XY error filter",
+      "Hz",
+      ""
+     ],
+     [
+      "PSC_VELXY_FLTD",
+      "Velocity XY derivative filter",
+      "Hz",
+      ""
+     ]
+    ]
+   ],
+   [
+    "vertical",
+    "Vertical velocity",
+    [
+     [
+      "PSC_VELZ_P",
+      "Velocity Z P",
+      "",
+      "Climb-rate error to acceleration demand."
+     ],
+     [
+      "PSC_VELZ_I",
+      "Velocity Z I",
+      "",
+      ""
+     ],
+     [
+      "PSC_VELZ_D",
+      "Velocity Z D",
+      "",
+      ""
+     ],
+     [
+      "PSC_VELZ_IMAX",
+      "Velocity Z integrator limit",
+      "cm/s/s",
+      ""
+     ]
+    ]
+   ],
+   [
+    "throttle",
+    "Vertical acceleration",
+    [
+     [
+      "PSC_ACCZ_P",
+      "Acceleration Z P",
+      "",
+      "The throttle loop. On most airframes this is the one gain that has to change with a large weight difference."
+     ],
+     [
+      "PSC_ACCZ_I",
+      "Acceleration Z I",
+      "",
+      ""
+     ],
+     [
+      "PSC_ACCZ_D",
+      "Acceleration Z D",
+      "",
+      ""
+     ],
+     [
+      "PSC_ACCZ_IMAX",
+      "Acceleration Z integrator limit",
+      "",
+      ""
+     ],
+     [
+      "PSC_ACCZ_FLTT",
+      "Acceleration Z target filter",
+      "Hz",
+      ""
+     ],
+     [
+      "PSC_ACCZ_FLTE",
+      "Acceleration Z error filter",
+      "Hz",
+      ""
+     ],
+     [
+      "PSC_ACCZ_FLTD",
+      "Acceleration Z derivative filter",
+      "Hz",
+      ""
+     ]
+    ]
+   ]
+  ],
+  "COPTER_POSITION_SECTIONS": [
+   [
+    "gains",
+    "Position gains",
+    [
+     [
+      "PSC_POSXY_P",
+      "Position XY P",
+      "",
+      "Position error to velocity demand. Raising it makes the aircraft hold a point harder and overshoot a waypoint more."
+     ],
+     [
+      "PSC_POSZ_P",
+      "Position Z P",
+      "",
+      "Altitude error to climb-rate demand."
+     ]
+    ]
+   ],
+   [
+    "shaping",
+    "Trajectory shaping",
+    [
+     [
+      "PSC_JERK_XY",
+      "Horizontal jerk limit",
+      "m/s/s/s",
+      "How abruptly the demanded acceleration may change. Lower is smoother and slower to react."
+     ],
+     [
+      "PSC_JERK_Z",
+      "Vertical jerk limit",
+      "m/s/s/s",
+      ""
+     ],
+     [
+      "WPNAV_SPEED",
+      "Waypoint speed",
+      "cm/s",
+      ""
+     ],
+     [
+      "WPNAV_ACCEL",
+      "Waypoint acceleration",
+      "cm/s/s",
+      ""
+     ],
+     [
+      "WPNAV_RADIUS",
+      "Waypoint radius",
+      "cm",
+      "How close counts as arrived."
+     ]
+    ]
+   ]
+  ],
+  "PLANE_RATE_SECTIONS": [
+   [
+    "roll",
+    "Roll",
+    [
+     [
+      "RLL_RATE_P",
+      "Roll rate P",
+      "",
+      "Roll rate error to aileron."
+     ],
+     [
+      "RLL_RATE_I",
+      "Roll rate I",
+      "",
+      ""
+     ],
+     [
+      "RLL_RATE_D",
+      "Roll rate D",
+      "",
+      ""
+     ],
+     [
+      "RLL_RATE_FF",
+      "Roll rate feed-forward",
+      "",
+      "The dominant term on a fixed wing: control surfaces are fast enough that most of the demand can go straight through."
+     ],
+     [
+      "RLL_RATE_IMAX",
+      "Roll rate integrator limit",
+      "",
+      ""
+     ]
+    ]
+   ],
+   [
+    "pitch",
+    "Pitch",
+    [
+     [
+      "PTCH_RATE_P",
+      "Pitch rate P",
+      "",
+      "Pitch rate error to elevator."
+     ],
+     [
+      "PTCH_RATE_I",
+      "Pitch rate I",
+      "",
+      ""
+     ],
+     [
+      "PTCH_RATE_D",
+      "Pitch rate D",
+      "",
+      ""
+     ],
+     [
+      "PTCH_RATE_FF",
+      "Pitch rate feed-forward",
+      "",
+      ""
+     ],
+     [
+      "PTCH_RATE_IMAX",
+      "Pitch rate integrator limit",
+      "",
+      ""
+     ]
+    ]
+   ],
+   [
+    "yaw",
+    "Yaw",
+    [
+     [
+      "YAW_RATE_P",
+      "Yaw rate P",
+      "",
+      ""
+     ],
+     [
+      "YAW_RATE_I",
+      "Yaw rate I",
+      "",
+      ""
+     ],
+     [
+      "YAW_RATE_D",
+      "Yaw rate D",
+      "",
+      ""
+     ],
+     [
+      "YAW_RATE_FF",
+      "Yaw rate feed-forward",
+      "",
+      ""
+     ],
+     [
+      "KFF_RDDRMIX",
+      "Rudder mix",
+      "",
+      "How much rudder follows aileron, to keep a turn coordinated."
+     ]
+    ]
+   ]
+  ],
+  "PLANE_ATTITUDE_SECTIONS": [
+   [
+    "limits",
+    "Attitude limits",
+    [
+     [
+      "LIM_ROLL_CD",
+      "Maximum bank angle",
+      "cdeg",
+      "Centidegrees, ArduPilot's own unit. 4500 is 45°."
+     ],
+     [
+      "LIM_PITCH_MAX",
+      "Maximum pitch up",
+      "cdeg",
+      ""
+     ],
+     [
+      "LIM_PITCH_MIN",
+      "Maximum pitch down",
+      "cdeg",
+      ""
+     ],
+     [
+      "ACRO_ROLL_RATE",
+      "Acro roll rate",
+      "deg/s",
+      ""
+     ],
+     [
+      "ACRO_PITCH_RATE",
+      "Acro pitch rate",
+      "deg/s",
+      ""
+     ]
+    ]
+   ],
+   [
+    "navigation",
+    "Navigation",
+    [
+     [
+      "NAVL1_PERIOD",
+      "L1 period",
+      "s",
+      "How tightly the aircraft tracks a line between waypoints. Lower turns harder and can weave; higher is smooth and cuts corners."
+     ],
+     [
+      "NAVL1_DAMPING",
+      "L1 damping",
+      "",
+      ""
+     ],
+     [
+      "WP_RADIUS",
+      "Waypoint radius",
+      "m",
+      ""
+     ],
+     [
+      "WP_LOITER_RAD",
+      "Loiter radius",
+      "m",
+      ""
+     ]
+    ]
+   ],
+   [
+    "speed_height",
+    "Speed and height (TECS)",
+    [
+     [
+      "TECS_TIME_CONST",
+      "TECS time constant",
+      "s",
+      "How quickly the total-energy controller trades speed for height."
+     ],
+     [
+      "TECS_PTCH_DAMP",
+      "Pitch damping",
+      "",
+      ""
+     ],
+     [
+      "TECS_THR_DAMP",
+      "Throttle damping",
+      "",
+      ""
+     ],
+     [
+      "TECS_CLMB_MAX",
+      "Maximum climb rate",
+      "m/s",
+      ""
+     ],
+     [
+      "TECS_SINK_MAX",
+      "Maximum sink rate",
+      "m/s",
+      ""
+     ],
+     [
+      "TRIM_ARSPD_CM",
+      "Cruise airspeed",
+      "cm/s",
+      ""
+     ]
+    ]
+   ]
+  ],
+  "ROVER_RATE_SECTIONS": [
+   [
+    "steering",
+    "Steering rate",
+    [
+     [
+      "ATC_STR_RAT_P",
+      "Steering rate P",
+      "",
+      ""
+     ],
+     [
+      "ATC_STR_RAT_I",
+      "Steering rate I",
+      "",
+      ""
+     ],
+     [
+      "ATC_STR_RAT_D",
+      "Steering rate D",
+      "",
+      ""
+     ],
+     [
+      "ATC_STR_RAT_FF",
+      "Steering rate feed-forward",
+      "",
+      ""
+     ],
+     [
+      "ATC_STR_RAT_IMAX",
+      "Steering rate integrator limit",
+      "",
+      ""
+     ],
+     [
+      "ATC_STR_RAT_MAX",
+      "Maximum turn rate",
+      "deg/s",
+      ""
+     ]
+    ]
+   ],
+   [
+    "speed",
+    "Speed",
+    [
+     [
+      "ATC_SPEED_P",
+      "Speed P",
+      "",
+      ""
+     ],
+     [
+      "ATC_SPEED_I",
+      "Speed I",
+      "",
+      ""
+     ],
+     [
+      "ATC_SPEED_D",
+      "Speed D",
+      "",
+      ""
+     ],
+     [
+      "ATC_SPEED_IMAX",
+      "Speed integrator limit",
+      "",
+      ""
+     ],
+     [
+      "ATC_ACCEL_MAX",
+      "Maximum acceleration",
+      "m/s/s",
+      ""
+     ],
+     [
+      "ATC_DECEL_MAX",
+      "Maximum deceleration",
+      "m/s/s",
+      ""
+     ]
+    ]
+   ]
+  ],
+  "ROVER_NAV_SECTIONS": [
+   [
+    "cruise",
+    "Cruise",
+    [
+     [
+      "CRUISE_SPEED",
+      "Cruise speed",
+      "m/s",
+      ""
+     ],
+     [
+      "CRUISE_THROTTLE",
+      "Cruise throttle",
+      "%",
+      ""
+     ],
+     [
+      "WP_SPEED",
+      "Waypoint speed",
+      "m/s",
+      ""
+     ],
+     [
+      "WP_RADIUS",
+      "Waypoint radius",
+      "m",
+      ""
+     ],
+     [
+      "WP_OVERSHOOT",
+      "Allowed overshoot",
+      "m",
+      ""
+     ]
+    ]
+   ]
+  ],
+  "RATE_CHARTS": [
+   {
+    "id": "rollrate",
+    "title": "Roll rate",
+    "unit": "deg/s",
+    "actual": "rollspeed",
+    "setpoint": "rollspeed_sp"
+   },
+   {
+    "id": "pitchrate",
+    "title": "Pitch rate",
+    "unit": "deg/s",
+    "actual": "pitchspeed",
+    "setpoint": "pitchspeed_sp"
+   },
+   {
+    "id": "yawrate",
+    "title": "Yaw rate",
+    "unit": "deg/s",
+    "actual": "yawspeed",
+    "setpoint": "yawspeed_sp"
+   }
+  ],
+  "ATTITUDE_CHARTS": [
+   {
+    "id": "roll",
+    "title": "Roll angle",
+    "unit": "deg",
+    "actual": "roll",
+    "setpoint": "roll_sp"
+   },
+   {
+    "id": "pitch",
+    "title": "Pitch angle",
+    "unit": "deg",
+    "actual": "pitch",
+    "setpoint": "pitch_sp"
+   }
+  ],
+  "VELOCITY_CHARTS": [
+   {
+    "id": "vx",
+    "title": "Velocity north",
+    "unit": "m/s",
+    "actual": "vx",
+    "setpoint": "vx_sp"
+   },
+   {
+    "id": "vy",
+    "title": "Velocity east",
+    "unit": "m/s",
+    "actual": "vy",
+    "setpoint": "vy_sp"
+   },
+   {
+    "id": "vz",
+    "title": "Velocity down",
+    "unit": "m/s",
+    "actual": "vz",
+    "setpoint": "vz_sp"
+   }
+  ],
+  "AUTOTUNE_AXES_BITS": [
+   {
+    "bit": 0,
+    "label": "Roll"
+   },
+   {
+    "bit": 1,
+    "label": "Pitch"
+   },
+   {
+    "bit": 2,
+    "label": "Yaw"
+   },
+   {
+    "bit": 3,
+    "label": "Yaw D"
+   }
+  ],
+  "PLANE_AUTOTUNE_AXES_BITS": [
+   {
+    "bit": 0,
+    "label": "Roll"
+   },
+   {
+    "bit": 1,
+    "label": "Pitch"
+   },
+   {
+    "bit": 2,
+    "label": "Yaw"
+   }
+  ],
+  "COPTER_AUTOTUNE_FIELDS": [
+   [
+    "AUTOTUNE_AGGR",
+    "Aggressiveness",
+    "",
+    "How much bounce-back the tune accepts before it stops raising a gain. 0.05 is gentle, 0.10 is sharp; 0.075 is the default and suits most airframes."
+   ],
+   [
+    "AUTOTUNE_MIN_D",
+    "Minimum D",
+    "",
+    "Floor on the D term, so the tune cannot leave an axis undamped."
+   ]
+  ],
+  "PLANE_AUTOTUNE_FIELDS": [
+   [
+    "AUTOTUNE_LEVEL",
+    "Tuning level",
+    "",
+    "1 is very soft, 10 is very sharp. 6 is the default and is a reasonable first flight for most airframes."
+   ]
+  ],
+  "COPTER_AUTOTUNE_STEPS": [
+   "Fly somewhere open and calm. The tune needs room to drift and is thrown off by wind.",
+   "Take off and hold a stable hover in Loiter or AltHold, 5-10 m up.",
+   "Start the tune. Corvus switches the vehicle into AUTOTUNE mode; ArduPilot takes the sticks from there.",
+   "Let go of the sticks. Expect visible twitching, one axis at a time, for several minutes. Nudging a stick pauses the tune, it does not break it.",
+   "When ArduPilot reports the tune is complete, land with the throttle down and leave the mode switch in AUTOTUNE to keep the new gains, then disarm.",
+   "Switching out of AUTOTUNE before landing discards the result; test the new gains gently before flying the aircraft normally."
+  ],
+  "PLANE_AUTOTUNE_STEPS": [
+   "Fly somewhere open, in calm air, with plenty of altitude.",
+   "Trim the aircraft in FBWA so it flies straight and level hands-off.",
+   "Start the tune. Corvus switches the vehicle into AUTOTUNE mode.",
+   "Fly it: the plane tunes from your own stick inputs, so give it full aileron and elevator rolls and pitches for a few minutes.",
+   "Switch out of AUTOTUNE when the response feels right. The gains are saved as they are learned."
+  ],
+  "COPTER_RUNNING_TEXT": "ArduPilot is tuning in AUTOTUNE mode, one axis at a time, and reports progress in the console rather than as a percentage. Keep the sticks centred: a nudge only pauses the tune. When the console says it is complete, land with the mode still AUTOTUNE and disarm to keep the gains.",
+  "PLANE_RUNNING_TEXT": "ArduPilot is learning in AUTOTUNE mode from your own stick inputs and reports in the console rather than as a percentage. Fly full roll and pitch movements. The gains are saved as they are learned; switch out of AUTOTUNE when the response feels right."
+ }
+}

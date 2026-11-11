@@ -152,6 +152,7 @@ impl Backend {
             .module(corvus_core::PeripheralsModule::new())
             .module(corvus_core::PluginsModule::new())
             .module(corvus_core::McpModule::new())
+            .module(corvus_core::SetupSchemasModule::new())
             .module(corvus_core::Http::new(corvus_core::HttpOptions {
                 port: 0,
                 ..corvus_core::HttpOptions::default()

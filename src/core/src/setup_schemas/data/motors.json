@@ -1,0 +1,597 @@
+{
+ "px4": {
+  "BANKS": [
+   {
+    "id": "MAIN",
+    "label": "MAIN",
+    "prefix": "PWM_MAIN",
+    "pins": 16,
+    "hint": "FMU PWM header",
+    "unit": "us",
+    "limits": [
+     {
+      "suffix": "MIN",
+      "label": "Minimum",
+      "min": 800,
+      "max": 1400
+     },
+     {
+      "suffix": "MAX",
+      "label": "Maximum",
+      "min": 1600,
+      "max": 2200
+     },
+     {
+      "suffix": "DIS",
+      "label": "Disarmed",
+      "min": 800,
+      "max": 2200
+     },
+     {
+      "suffix": "FAIL",
+      "label": "Failsafe",
+      "min": -1,
+      "max": 2200
+     }
+    ]
+   },
+   {
+    "id": "AUX",
+    "label": "AUX",
+    "prefix": "PWM_AUX",
+    "pins": 8,
+    "hint": "IO / AUX PWM header",
+    "unit": "us",
+    "limits": [
+     {
+      "suffix": "MIN",
+      "label": "Minimum",
+      "min": 800,
+      "max": 1400
+     },
+     {
+      "suffix": "MAX",
+      "label": "Maximum",
+      "min": 1600,
+      "max": 2200
+     },
+     {
+      "suffix": "DIS",
+      "label": "Disarmed",
+      "min": 800,
+      "max": 2200
+     },
+     {
+      "suffix": "FAIL",
+      "label": "Failsafe",
+      "min": -1,
+      "max": 2200
+     }
+    ]
+   },
+   {
+    "id": "CAN",
+    "label": "DroneCAN",
+    "prefix": "UAVCAN_EC",
+    "pins": 8,
+    "hint": "DroneCAN ESC index",
+    "unit": "",
+    "limits": [
+     {
+      "suffix": "MIN",
+      "label": "Minimum",
+      "min": 0,
+      "max": 8191
+     },
+     {
+      "suffix": "MAX",
+      "label": "Maximum",
+      "min": 0,
+      "max": 8191
+     },
+     {
+      "suffix": "FAIL",
+      "label": "Failsafe",
+      "min": -1,
+      "max": 8191
+     }
+    ]
+   },
+   {
+    "id": "SIM",
+    "label": "Simulation",
+    "prefix": "SIM_GZ_EC",
+    "pins": 16,
+    "hint": "Gazebo SITL ESC",
+    "unit": "",
+    "limits": [
+     {
+      "suffix": "MIN",
+      "label": "Minimum",
+      "min": 0,
+      "max": 1000
+     },
+     {
+      "suffix": "MAX",
+      "label": "Maximum",
+      "min": 0,
+      "max": 1000
+     },
+     {
+      "suffix": "DIS",
+      "label": "Disarmed",
+      "min": 0,
+      "max": 1000
+     },
+     {
+      "suffix": "FAIL",
+      "label": "Failsafe",
+      "min": -1,
+      "max": 1000
+     }
+    ]
+   }
+  ],
+  "AIRFRAME_FAMILIES": {
+   "0": "multirotor",
+   "1": "wing",
+   "2": "vtol",
+   "3": "vtol",
+   "4": "vtol",
+   "5": "rover",
+   "6": "rover",
+   "7": "multirotor",
+   "8": "multirotor",
+   "9": "multirotor",
+   "10": "helicopter",
+   "11": "helicopter",
+   "12": "helicopter"
+  },
+  "AIRFRAME_OPTIONS": [
+   {
+    "value": 0,
+    "label": "Multirotor"
+   },
+   {
+    "value": 1,
+    "label": "Fixed wing"
+   },
+   {
+    "value": 2,
+    "label": "Standard VTOL"
+   },
+   {
+    "value": 3,
+    "label": "Tiltrotor VTOL"
+   },
+   {
+    "value": 4,
+    "label": "Tailsitter VTOL"
+   },
+   {
+    "value": 5,
+    "label": "Rover (Ackermann)"
+   },
+   {
+    "value": 6,
+    "label": "Rover (Differential)"
+   },
+   {
+    "value": 7,
+    "label": "Motors (6DOF)"
+   },
+   {
+    "value": 8,
+    "label": "Multirotor with tilt"
+   },
+   {
+    "value": 9,
+    "label": "Custom"
+   },
+   {
+    "value": 10,
+    "label": "Helicopter (tail ESC)"
+   },
+   {
+    "value": 11,
+    "label": "Helicopter (tail Servo)"
+   },
+   {
+    "value": 12,
+    "label": "Helicopter (Coaxial)"
+   }
+  ],
+  "PROTOCOL_OPTIONS": [
+   {
+    "value": -5,
+    "label": "DShot150"
+   },
+   {
+    "value": -4,
+    "label": "DShot300"
+   },
+   {
+    "value": -3,
+    "label": "DShot600"
+   },
+   {
+    "value": -1,
+    "label": "OneShot"
+   },
+   {
+    "value": 50,
+    "label": "PWM 50 Hz"
+   },
+   {
+    "value": 100,
+    "label": "PWM 100 Hz"
+   },
+   {
+    "value": 200,
+    "label": "PWM 200 Hz"
+   },
+   {
+    "value": 400,
+    "label": "PWM 400 Hz"
+   }
+  ],
+  "BIDIR_PROTOCOL_OPTIONS": [
+   {
+    "value": -8,
+    "label": "Bidirectional DShot150"
+   },
+   {
+    "value": -7,
+    "label": "Bidirectional DShot300"
+   },
+   {
+    "value": -6,
+    "label": "Bidirectional DShot600"
+   }
+  ],
+  "DSHOT_CONFIG_OPTIONS": [
+   {
+    "value": 0,
+    "label": "PWM (DShot off)"
+   },
+   {
+    "value": 150,
+    "label": "DShot150"
+   },
+   {
+    "value": 300,
+    "label": "DShot300"
+   },
+   {
+    "value": 600,
+    "label": "DShot600"
+   },
+   {
+    "value": 1200,
+    "label": "DShot1200"
+   }
+  ],
+  "FRAME_HINT": "Scales the motor positions around the middle of the frame, and keeps where the centre of gravity sits relative to that middle. The diagonal is the distance between opposite motors that frames are sold by, 450 mm on a 450 frame. Length and width change one axis alone, for an H or a stretched frame. PX4 normalises the mix, so the proportions and the centre of gravity matter more than the overall size."
+ },
+ "ardupilot": {
+  "MOTOR_FUNCTIONS": {
+   "1": 33,
+   "2": 34,
+   "3": 35,
+   "4": 36,
+   "5": 37,
+   "6": 38,
+   "7": 39,
+   "8": 40,
+   "9": 82,
+   "10": 83,
+   "11": 84,
+   "12": 85
+  },
+  "SERVO_FUNCTIONS": {
+   "0": "Disabled",
+   "1": "RC passthrough",
+   "4": "Aileron",
+   "19": "Elevator",
+   "21": "Rudder",
+   "26": "Ground steering",
+   "27": "Parachute release",
+   "28": "Gripper",
+   "29": "Landing gear",
+   "51": "RC input 1",
+   "54": "Throttle",
+   "56": "Throttle left",
+   "57": "Throttle right",
+   "58": "Tilt motor front",
+   "59": "Tilt motor rear",
+   "70": "Throttle (scaled)",
+   "88": "Winch"
+  },
+  "FRAME_CLASSES": {
+   "0": [
+    "Undefined",
+    0,
+    "multirotor"
+   ],
+   "1": [
+    "Quad",
+    4,
+    "multirotor"
+   ],
+   "2": [
+    "Hexa",
+    6,
+    "multirotor"
+   ],
+   "3": [
+    "Octa",
+    8,
+    "multirotor"
+   ],
+   "4": [
+    "OctaQuad",
+    8,
+    "multirotor"
+   ],
+   "5": [
+    "Y6",
+    6,
+    "multirotor"
+   ],
+   "6": [
+    "Helicopter",
+    1,
+    "helicopter"
+   ],
+   "7": [
+    "Tri",
+    3,
+    "multirotor"
+   ],
+   "8": [
+    "Single copter",
+    1,
+    "helicopter"
+   ],
+   "9": [
+    "Coax copter",
+    2,
+    "helicopter"
+   ],
+   "10": [
+    "Bicopter",
+    2,
+    "multirotor"
+   ],
+   "11": [
+    "Dual helicopter",
+    2,
+    "helicopter"
+   ],
+   "12": [
+    "DodecaHexa",
+    12,
+    "multirotor"
+   ],
+   "13": [
+    "Quad helicopter",
+    4,
+    "helicopter"
+   ],
+   "14": [
+    "Deca",
+    10,
+    "multirotor"
+   ],
+   "15": [
+    "Scripting matrix",
+    0,
+    "multirotor"
+   ],
+   "16": [
+    "6DoF scripting",
+    0,
+    "multirotor"
+   ],
+   "17": [
+    "Dynamic scripting matrix",
+    0,
+    "multirotor"
+   ]
+  },
+  "FRAME_CLASS_OPTIONS": [
+   {
+    "value": 0,
+    "label": "Undefined"
+   },
+   {
+    "value": 1,
+    "label": "Quad"
+   },
+   {
+    "value": 2,
+    "label": "Hexa"
+   },
+   {
+    "value": 3,
+    "label": "Octa"
+   },
+   {
+    "value": 4,
+    "label": "OctaQuad"
+   },
+   {
+    "value": 5,
+    "label": "Y6"
+   },
+   {
+    "value": 6,
+    "label": "Helicopter"
+   },
+   {
+    "value": 7,
+    "label": "Tri"
+   },
+   {
+    "value": 8,
+    "label": "Single copter"
+   },
+   {
+    "value": 9,
+    "label": "Coax copter"
+   },
+   {
+    "value": 10,
+    "label": "Bicopter"
+   },
+   {
+    "value": 11,
+    "label": "Dual helicopter"
+   },
+   {
+    "value": 12,
+    "label": "DodecaHexa"
+   },
+   {
+    "value": 13,
+    "label": "Quad helicopter"
+   },
+   {
+    "value": 14,
+    "label": "Deca"
+   },
+   {
+    "value": 15,
+    "label": "Scripting matrix"
+   },
+   {
+    "value": 16,
+    "label": "6DoF scripting"
+   },
+   {
+    "value": 17,
+    "label": "Dynamic scripting matrix"
+   }
+  ],
+  "FRAME_TYPE_OPTIONS": [
+   {
+    "value": 0,
+    "label": "Plus"
+   },
+   {
+    "value": 1,
+    "label": "X"
+   },
+   {
+    "value": 2,
+    "label": "V"
+   },
+   {
+    "value": 3,
+    "label": "H"
+   },
+   {
+    "value": 4,
+    "label": "V-Tail"
+   },
+   {
+    "value": 5,
+    "label": "A-Tail"
+   },
+   {
+    "value": 10,
+    "label": "Y6B"
+   },
+   {
+    "value": 11,
+    "label": "Y6F"
+   },
+   {
+    "value": 12,
+    "label": "BetaFlight X"
+   },
+   {
+    "value": 13,
+    "label": "DJI X"
+   },
+   {
+    "value": 14,
+    "label": "Clockwise X"
+   },
+   {
+    "value": 15,
+    "label": "I"
+   },
+   {
+    "value": 18,
+    "label": "BetaFlight X reversed"
+   },
+   {
+    "value": 19,
+    "label": "Y4"
+   }
+  ],
+  "MOT_PWM_TYPE_OPTIONS": [
+   {
+    "value": 0,
+    "label": "Normal PWM"
+   },
+   {
+    "value": 1,
+    "label": "OneShot"
+   },
+   {
+    "value": 2,
+    "label": "OneShot125"
+   },
+   {
+    "value": 3,
+    "label": "Brushed"
+   },
+   {
+    "value": 4,
+    "label": "DShot150"
+   },
+   {
+    "value": 5,
+    "label": "DShot300"
+   },
+   {
+    "value": 6,
+    "label": "DShot600"
+   },
+   {
+    "value": 7,
+    "label": "DShot1200"
+   },
+   {
+    "value": 8,
+    "label": "PWM range"
+   },
+   {
+    "value": 9,
+    "label": "PWM angle"
+   }
+  ],
+  "ON_OFF_OPTIONS": [
+   {
+    "value": 0,
+    "label": "Disabled"
+   },
+   {
+    "value": 1,
+    "label": "Enabled"
+   }
+  ],
+  "BANKS": [
+   {
+    "id": "SERVO",
+    "label": "Output",
+    "prefix": "SERVO",
+    "pins": 16,
+    "hint": "ArduPilot numbers every output on the board in one run, so there is no separate MAIN and AUX here. SERVO9 is usually the first AUX pin on a Pixhawk."
+   }
+  ],
+  "FRAME_NOTE": "ArduPilot mixes a fixed layout for the frame class and type. How far apart the motors are is not a parameter there, and the tuning absorbs the size of the frame, so there is nothing to set for it."
+ }
+}
