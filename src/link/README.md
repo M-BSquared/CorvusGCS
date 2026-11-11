@@ -227,6 +227,7 @@ pymavlink stays in the `test` dependency group as the reference:
   (CRC-24Q, the bootloader CRC-32, CRC-8 DVB-S2, UBX Fletcher), the RTCM and
   UBX framers however a stream is cut, the fragment plan, the CSV row cutter,
   Python's slicing and number rules, the port parser.
+- The per protocol parity tests named below (`test_*_parity.py` for params, missions, FTP and logs, shell, setup, Remote ID, telemetry, flight, receive, status, requests, fleet, forwarder, auto-connect, RTK, SiK and tlog) were removed from `python/tests/`. The cases they ran against the Python reference were frozen as fixtures in `src/core/tests/data` (written by `python/tools/dump_*_cases.py` from `python/tests/reference/`) and the Rust tests in `src/core/tests` hold the code to them without Python. The descriptions stay as the record of what each one covered.
 - `tests/test_param_engine_parity.py` runs the parameter protocol Corvus had
   in Python (kept in `tests/reference/`) and the Rust engine through the same
   PARAM_VALUE streams, downloads, writes, reads, verifies and uploads, and
