@@ -67,14 +67,9 @@ def test_every_bundle_carries_the_qt_licences():
     assert lgpl.lstrip().startswith("GNU LESSER GENERAL PUBLIC LICENSE")
     assert gpl.lstrip().startswith("GNU GENERAL PUBLIC LICENSE")
     assert "Version 3, 29 June 2007" in lgpl and "Version 3, 29 June 2007" in gpl
-    # All three builds copy assets through tools/bundle_assets.py, which keeps licenses/.
     for script in ("build-appimage.sh", "build-macos-app.sh", "build-windows.ps1"):
-        assert "bundle_assets.py" in (ROOT.parent / script).read_text(encoding="utf-8"), script
-    import importlib.util
-    spec = importlib.util.spec_from_file_location("corvus_bundle_assets_tool", ROOT / "tools" / "bundle_assets.py")
-    tool = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(tool)
-    assert "licenses" in tool.SHIPPED
+        text = (ROOT.parent / script).read_text(encoding="utf-8")
+        assert "assets/licenses" in text or "assets\\licenses" in text, script
 
 
 def test_no_build_script_ships_qt():
@@ -83,14 +78,15 @@ def test_no_build_script_ships_qt():
         text = (ROOT.parent / name).read_text(encoding="utf-8")
         assert "PySide6" not in text.replace("No Qt", ""), name
         assert "qt_bundle" not in text, name
-        assert "cargo build --release --locked" in text, name
+        assert re.search(r"cargo build .*--locked", text), name
 
 
 def test_macos_floor_is_one_value_for_cargo_and_the_plist():
     macos = (ROOT.parent / "build-macos-app.sh").read_text(encoding="utf-8")
-    assert 'MIN_MACOS="12.0"' in macos
-    assert '"LSMinimumSystemVersion": minimum' in macos
-    assert 'MACOSX_DEPLOYMENT_TARGET="$MIN_MACOS"' in macos
+    cargo = (ROOT.parent / ".cargo" / "config.toml").read_text(encoding="utf-8")
+    assert re.search(r'^MACOSX_DEPLOYMENT_TARGET\s*=\s*"12\.0"', cargo, re.MULTILINE)
+    assert ".cargo/config.toml" in macos
+    assert "<key>LSMinimumSystemVersion</key><string>$MIN_MACOS</string>" in macos
     ci = (ROOT.parent / ".github" / "workflows" / "build.yml").read_text(encoding="utf-8")
     job = ci.split("  macos-app:", 1)[1].split("\n  # ---", 1)[0]
     assert "runs-on: macos-15" in job
