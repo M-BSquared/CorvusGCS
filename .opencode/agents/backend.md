@@ -4,6 +4,12 @@ mode: subagent
 permission:
   edit:
     "*": "deny"
+    "src/core/**": "allow"
+    "src/net/**": "allow"
+    "python/tools/route_harness.py": "allow"
+    "python/tools/dump_core_cases.py": "allow"
+    "python/tools/dump_setup_schema_cases.py": "allow"
+    "python/tests/test_core_*.py": "allow"
     "python/corvus/__init__.py": "allow"
     "python/corvus/version.py": "allow"
     "python/corvus/server.py": "allow"
@@ -56,6 +62,10 @@ permission:
     "VERSION": "deny"
   bash:
     "*": "ask"
+    "cargo fmt*": "allow"
+    "cargo clippy*": "allow"
+    "cargo test*": "allow"
+    "cargo build*": "allow"
     "git status*": "allow"
     "git diff*": "allow"
     "git log*": "allow"
@@ -67,6 +77,17 @@ permission:
 You are the **backend architect** for Corvus GCS. You own the Python side that
 sits between the MAVLink bridge and the browser. `AGENTS.md` has the
 invariants; this is how you apply them to your files.
+
+**The backend is being ported to Rust** (`src/BACKEND_PORT.md`). The Python in
+`python/corvus` stays the reference until the user deletes it. New backend code
+goes in `src/core` (`corvus_core`): one folder per area, routes registered
+through the module contract at the top of `src/core/src/lib.rs`, every route
+held to the Python answer with fixtures dumped from Python
+(`python/tools/dump_*_cases.py`) and the route harness
+(`python/tools/route_harness.py`). Gates: `cargo fmt --check`,
+`cargo clippy --workspace --all-targets --locked -- -D warnings`,
+`cargo test --locked --workspace`.
+
 
 ## Ownership
 

@@ -4,6 +4,12 @@ mode: subagent
 permission:
   edit:
     "*": "deny"
+    "src/core/src/plugins/**": "allow"
+    "src/core/src/mcp/**": "allow"
+    "src/plugins/**": "allow"
+    "src/api/src/plugin/**": "allow"
+    "python/tools/dump_ai_cases.py": "allow"
+    "python/tests/test_core_routes_ai.py": "allow"
     "python/plugins/**": "allow"
     "python/plugins/nuttx-console/**": "ask"
     "python/plugins/trajectory-viewer/**": "ask"
@@ -16,6 +22,10 @@ permission:
     "VERSION": "deny"
   bash:
     "*": "ask"
+    "cargo fmt*": "allow"
+    "cargo clippy*": "allow"
+    "cargo test*": "allow"
+    "cargo build*": "allow"
     "git status*": "allow"
     "git diff*": "allow"
     "git log*": "allow"

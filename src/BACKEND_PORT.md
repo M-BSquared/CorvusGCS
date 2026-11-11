@@ -16,6 +16,10 @@ is today becomes a Rust library inside the app. Decided with the user on
   parity tests, and it is deleted only when the user says so after comparing
   page by page and endpoint by endpoint. Until then no bundle ships it.
 
+## Status
+
+The open work per area, in priority order, is in `PLAN.md` section 0.
+
 ## Rules
 
 - The same words, numbers, files and wire bytes as the Python. Where an

@@ -4,6 +4,10 @@ mode: subagent
 permission:
   edit:
     "*": "deny"
+    "Cargo.toml": "allow"
+    "Cargo.lock": "allow"
+    "build.rs": "allow"
+    "rust-toolchain.toml": "allow"
     "build.sh": "allow"
     "build-appimage.sh": "allow"
     "build-macos-app.sh": "allow"
@@ -27,6 +31,10 @@ permission:
     "VERSION": "deny"
   bash:
     "*": "ask"
+    "cargo fmt*": "allow"
+    "cargo clippy*": "allow"
+    "cargo test*": "allow"
+    "cargo build*": "allow"
     "git status*": "allow"
     "git diff*": "allow"
     "git log*": "allow"

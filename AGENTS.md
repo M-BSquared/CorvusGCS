@@ -19,8 +19,10 @@ assets/  docs/  VERSION  LICENSE.md                shared by both
 build*.sh  build-windows.ps1  run.sh  release.sh   packaging for the Rust interface plus its backend
 ```
 
-The interface still starts `python/serve.py` as its child until the backend is
-ported. Paths in this file that name `corvus/`, `src/js`, `tests/`, `tools/`,
+The backend is being ported to Rust as `corvus_core` (`src/core`, plan in
+`src/BACKEND_PORT.md`, open work in `PLAN.md` section 0). The interface starts
+`python/serve.py` as its child until the port is complete; `--core` runs the
+Rust backend in its own process. Paths in this file that name `corvus/`, `src/js`, `tests/`, `tools/`,
 `plugins/` or `pyproject.toml` are relative to `python/`.
 
 ## Agent roster

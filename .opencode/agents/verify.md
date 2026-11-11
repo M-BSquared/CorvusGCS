@@ -42,9 +42,9 @@ sees. You report observations, not hopes.
   builds every scene. `--set key=value` overrides any field (theme, airframe,
   path, language, fleet, plugin settings). `tools/SCENES.md` documents the
   fields. Nothing it runs touches the operator's own Corvus.
-- **Dev servers.** `.claude/launch.json` names the static, backend, verify and
-  scene servers with their ports (for example `corvus-backend-verify` with
-  `CORVUS_ALLOW_MULTI=1`). Use the one that fits; never leave one running.
+- **Dev servers.** Start the backend or a scene with its own port
+  (`python/tools/scene.py run <name>`, or `serve.py` with `CORVUS_ALLOW_MULTI=1`
+  for a sandboxed one). Never leave one running.
 - **The API.** `curl -s http://127.0.0.1:<port>/api/...` for state, version,
   capabilities, modes. Reading the page's JSON is often a better proof than a
   picture.

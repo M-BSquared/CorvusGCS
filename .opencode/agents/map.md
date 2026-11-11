@@ -4,6 +4,10 @@ mode: subagent
 permission:
   edit:
     "*": "deny"
+    "src/core/src/mapdata/**": "allow"
+    "src/map/**": "allow"
+    "src/map3d/**": "allow"
+    "python/tools/dump_mapdata_cases.py": "allow"
     "src/js/map.js": "allow"
     "src/js/map-*.js": "allow"
     "src/js/tiles.js": "allow"
@@ -33,6 +37,10 @@ permission:
     "VERSION": "deny"
   bash:
     "*": "ask"
+    "cargo fmt*": "allow"
+    "cargo clippy*": "allow"
+    "cargo test*": "allow"
+    "cargo build*": "allow"
     "git status*": "allow"
     "git diff*": "allow"
     "git log*": "allow"

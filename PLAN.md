@@ -80,6 +80,120 @@ be seen live, see 1.2):
 
 ---
 
+## 0. Rust port (state of 2026-11-11)
+
+The native interface (`src/`) is a client of the backend; the backend is being
+ported from `python/corvus` to `corvus_core` (`src/core`, plan and rules in
+`src/BACKEND_PORT.md`). `python/` stays the reference until the user deletes it.
+`corvus-gcs` starts `serve.py` by default; `--core` runs `corvus_core` in the
+interface's own process. The switch to `--core` as the default happens when no
+route of the interface answers 501 ("Not available in this build").
+
+Done and merged: the router, state store, settings, HTTP server, the protocols
+(parameters, logs, shell, FTP, flight, setup, telemetry, missions, Remote ID,
+bridge requests and status) and the dialect, the bridge, vehicle list,
+forwarder, planner and fence, auto connect, the vehicle and fleet routes,
+serial ports, RTK, SiK, the local shell and console, the plugin registry and
+config, MCP, settings export and import, the update check, the setup schemas of
+every page for both stacks, and the first parts of map data (crs, geocode, tile
+sources, cache, proxy, downloader) and logs (ULog reader, flight review,
+telemetry review).
+
+### 0.1 Vehicle and control (`src/core/src/vehicle.rs`)
+
+* P1 `/api/motors`, `/api/rc`, `/api/params*`, the calibration, autotune and
+  motor routes of `routes/control.py`: use the helpers of `setup_schemas`
+  (`motors`, `rc::calibration_writes`, `mounting::positions`, `safety`).
+* P1 A `fresh` flag on `Bridge::fetch_params`; `transport()` and
+  `board_identity()` for first setup; `GET /api/mission/return`;
+  `/api/mavlink/scope` (needs the vehicle's `record_scope` hook);
+  `/api/tuning/stream`, `/api/vibration/stream`, `/api/warnings/clear`.
+* P2 Register the routes of the forwarder (`/api/forwarding`) and of Remote ID
+  (`/api/remoteid*`); the engines exist.
+* P2 `Bridge::set_connection` and a way to ask whether the bridge runs, so SiK
+  on the link's own port can retune and restart it.
+* P3 Two root crate tests in `net::backend` take their port from
+  `free_port()` and can collide when run in parallel.
+
+### 0.2 Map data (`src/core/src/mapdata/`)
+
+* P1 DEM tiles, custom DEM and DEM import, buildings and the Overpass cell, the
+  `MapDataModule` (resources in `start`, every thread joined in `stop`), its
+  registration in `src/net/backend.rs` and `src/core/src/bin/corvus-core.rs`,
+  the routes of `routes/tiles.py` and `routes/dem.py`, `/api/geocode`, the
+  tile and buildings URL patterns, and the `tiles` event topic.
+* P2 A route harness test against `serve.py` for these routes; compare the
+  derived elevation PNGs on decoded pixels, not bytes.
+* P3 A download thread can outlive `shutdown` by up to the 15 s fetch timeout.
+
+### 0.3 Logs and firmware (`src/core/src/logs/`, `firmware/`)
+
+* P1 Log service (`log_service.py`) on the log protocol engine, firmware
+  catalog and ArduPilot firmware (against local stub servers), uploader and
+  flash service (against the pty and subprocess simulations), then
+  `routes/logs.py` and `routes/firmware.py` with the two upload handlers, and
+  register both modules (neither is registered yet).
+* P2 A route harness test with the flight and tlog kits; the review `ok: true`
+  field is added by the route layer; the `review.sensitivity` config read.
+* P2 The Rust tlog parser keeps 18 frames more than `corvus_link` on the
+  `damaged_tail` recording (279 against 261): decide which is right.
+* P3 `src/core/tests/data/logs` is about 5 MB; thin it. `first_setup`'s private
+  `vehicle_for_mav_type` should reuse the firmware module's.
+
+### 0.4 Peripherals (`src/core/src/peripherals/`)
+
+* P1 Video (`video.py`, `routes/video.py`; keep the ffmpeg boundary).
+* P1 SSH transport (`connect`, `connections`, `run`, `power`): choose the
+  crate (`ssh2` needs libssh2 and a crypto backend in every bundle, `russh` is
+  pure Rust but needs tokio), keep `~/.corvus/known_hosts`.
+* P3 ELRS (no route in Python), the Windows branches of the shell and runner
+  are compile gated but untested.
+
+### 0.5 AI and plugins (`src/core/src/plugins/`, `mcp/`)
+
+* P2 See the Rust side of the MCP window (heartbeat, plugin calls) against the
+  running interface; test Direct Control (5 Hz, then hold) against a simulated
+  vehicle, not only a fake clock.
+* P3 Give the plugin crates a `plugin.json` and replace the table in
+  `registry.rs` by `include_str!`.
+
+### 0.6 Setup schemas (`src/core/src/setup_schemas/`)
+
+* P1 First setup routes; `/api/params/metadata*` (the fetch state machine over
+  `ftp_read_file` and `ftp_file_crc32`, plus the cache routes).
+* P2 Extend the route harness with the four pages; model PX4 v1.16, v1.17 and
+  v1.18 by name in the tests; honour `?fresh=1`.
+* P3 The fixtures are about 12 MB; reduce the value set counts.
+
+### 0.7 The switch
+
+* P1 Make `--core` the default once 0.1 to 0.6 leave nothing at 501; the build
+  scripts and CI drop CPython, PyInstaller and `pip`; the bundle smoke test
+  checks that no Python is inside; `corvus_link` loses its `python` feature.
+* P1 `python/` is deleted only on the user's word, after the page by page and
+  route by route comparison. Qt and the web interface go with it.
+
+### 0.8 The interface (`src/PARITY.md` is the source of truth)
+
+* P1 Compare each bundled plugin with its web original side by side with
+  screenshots (Vibration Monitor, SSH Launcher, Map Entities, Schwalby); the
+  last three items in Schwalby's list were never clicked through.
+* P1 3D: not seen live on Linux, Windows, a second DPI screen and with the
+  offline notice; re-measure the memory (target below 1 GB while open).
+* P2 Not seen live: the crash notice screen, the console jump chip, the native
+  file dialogs (the sandbox cannot click them).
+* P2 Remaining parity rows, in order: mission flown against the simulator
+  (extend `scene_kit` so `MISSION_START` works for both dialects), setup (Radio
+  Control wizard steps 2 to 5, radio table under 580 px, motor dialog border,
+  PID run bar), settings (vehicles section, effects of the HUD, track and top
+  bar switches, update dialog against a stub, welcome steps), home (ground
+  vehicle flight bar, Esc for distance and plan mode, fullscreen console),
+  tablet and touch mode, USB gamepad.
+* P2 Decide on the `gilrs` crate (needs libudev on the Linux build host).
+* P2 Run `build-appimage.sh` and `build-windows.ps1` for the first time (CI is
+  the first run) and check that the language files, plugin `lang` folders and
+  the core are inside every artifact.
+
 ## 1. Live checks
 
 Nothing below has run against a real PX4 yet: the development machine has
