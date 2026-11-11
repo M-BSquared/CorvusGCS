@@ -129,17 +129,21 @@ telemetry review).
 
 ### 0.3 Logs and firmware (`src/core/src/logs/`, `firmware/`)
 
-* P1 Log service (`log_service.py`) on the log protocol engine, firmware
-  catalog and ArduPilot firmware (against local stub servers), uploader and
-  flash service (against the pty and subprocess simulations), then
-  `routes/logs.py` and `routes/firmware.py` with the two upload handlers, and
-  register both modules (neither is registered yet).
-* P2 A route harness test with the flight and tlog kits; the review `ok: true`
-  field is added by the route layer; the `review.sensitivity` config read.
-* P2 The Rust tlog parser keeps 18 frames more than `corvus_link` on the
-  `damaged_tail` recording (279 against 261): decide which is right.
-* P3 `src/core/tests/data/logs` is about 5 MB; thin it. `first_setup`'s private
-  `vehicle_for_mav_type` should reuse the firmware module's.
+* P2 `/api/mavlink/scope` and `/api/mavlink/scope/clear` (`routes/logs.py`,
+  `mavlink_inspector.py`) answer 501: they need a message scope in the bridge
+  (`record_scope` in `bridge.rs` is empty), which the vehicle area owns.
+* P2 The raw upload routes (`/api/logs/review/upload`, `/api/firmware/upload`)
+  answer 413 with the router's `{"error": "request too large"}` beyond the
+  cap; Python answers `{"ok": false, "error": "that log is too large to
+  review"}` and `{"ok": false, "error": "request too large"}`. The router cap
+  runs before the handler.
+* P3 The text Python's libraries give for a damaged firmware container (bad
+  zlib data other than the header, a ZIP that fails its CRC) is not copied
+  word for word; the JSON, base64 and header texts are.
+* P3 `src/core/tests/data/logs` is about 5 MB (two thirds are the full reviews
+  of `clean_quad` and `legacy_names`); thin it by shortening those flights in
+  `tools/logs_kit.py`. `first_setup`'s private `vehicle_for_mav_type` should
+  reuse the firmware module's.
 
 ### 0.4 Peripherals (`src/core/src/peripherals/`)
 

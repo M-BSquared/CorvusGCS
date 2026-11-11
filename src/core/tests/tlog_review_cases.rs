@@ -17,8 +17,7 @@ fn every_recording_reviews_as_python_reviews_it() {
     assert!(names.len() >= 20);
     let mut failures = Vec::new();
     for name in names {
-        // Known difference, see the hand-over: after garbage, a bad checksum and an unknown
-        // message the Rust parser resyncs on 18 more frames than corvus_link's parser keeps.
+        // Decided difference, see `a_damaged_tail_keeps_every_frame_that_is_there`.
         if name == "damaged_tail" {
             continue;
         }
@@ -61,4 +60,20 @@ fn a_file_is_reviewed_once_and_its_errors_read_as_python_words() {
     let err = review_file(&dir.join("missing.tlog"), "", "normal").unwrap_err();
     assert_eq!(err.0, "could not read that recording (No such file or directory)");
     std::fs::remove_dir_all(&dir).ok();
+}
+
+/// The recording holds 279 frames with a valid checksum, between garbage, frames with a
+/// bad checksum, a frame of an unknown message and a cut last frame. `corvus_link`'s
+/// pymavlink compatible parser keeps 261 of them: a stray byte that looks like a start
+/// of frame makes it swallow the length that byte claims, valid frames included. The
+/// Rust parser resyncs byte by byte and keeps all 279. A review that counts frames the
+/// file does not hold, or drops frames it does, is wrong, so the Rust answer is the one
+/// to keep and the Python is the one that loses data.
+#[test]
+fn a_damaged_tail_keeps_every_frame_that_is_there() {
+    let blob = std::fs::read(data_path("logs/damaged_tail.tlog")).unwrap();
+    let python = load("logs/damaged_tail.tlog.review.json");
+    assert_eq!(python["normal"]["summary"]["frames"], 261);
+    let got = review_bytes(&blob, "damaged_tail.tlog", "normal").unwrap();
+    assert_eq!(got["summary"]["frames"], 279);
 }
