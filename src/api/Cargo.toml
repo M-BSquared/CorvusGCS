@@ -8,15 +8,15 @@ description = "What a Corvus GCS plugin builds on: the interface widgets, the tr
 build = "build.rs"
 
 [dependencies]
-eframe = { version = "0.37", features = ["glow"] }
-egui_extras = { version = "0.37", features = ["svg", "image"] }
-image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
-serde_json = "1"
-regex = "1"
-rfd = "0.17"
+eframe = { workspace = true }
+egui_extras = { workspace = true }
+image = { workspace = true }
+serde_json = { workspace = true }
+regex = { workspace = true }
+rfd = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
-libc = "0.2"
+libc = { workspace = true }
 
 [build-dependencies]
 wuff = "0.2"

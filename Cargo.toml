@@ -16,6 +16,25 @@ members = ["src/core", "src/api", "src/plugins/vibration", "src/plugins/ssh-laun
 default-members = [".", "src/core", "src/api", "src/plugins/vibration", "src/plugins/ssh-launcher", "src/plugins/map-entities", "src/plugins/schwalby"]
 exclude = ["src/link"]
 
+[workspace.dependencies]
+# One place for the versions and features the crates share, so a feature added
+# in one crate cannot quietly widen what the others compile.
+#
+# eframe without its default features: they include wgpu (wgpu-core, naga and
+# the shader front ends, about a third of a clean build) and the web screen
+# reader, and the interface draws with glow only. What stays is what a desktop
+# window needs: accessibility, clipboard, fonts, links, and X11 and Wayland.
+eframe = { version = "0.37", default-features = false, features = ["glow", "accesskit", "clipboard", "default_fonts", "links", "system_fonts", "wayland", "x11"] }
+# The SVG loader draws the Lucide icons the web interface uses.
+egui_extras = { version = "0.37", features = ["svg", "image"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
+serde_json = "1"
+regex = "1"
+rfd = "0.17"
+libc = "0.2"
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+ctrlc = { version = "3", features = ["termination"] }
+
 [[bin]]
 name = "corvus-gcs"
 path = "src/main.rs"
@@ -32,25 +51,25 @@ corvus_plugin_schwalby = { path = "src/plugins/schwalby" }
 # glow: the OpenGL renderer, whose paint callbacks can read what is already
 # drawn, which the frosted glass (frost.rs) needs; wgpu draws a frame in one
 # pass and cannot.
-eframe = { version = "0.37", features = ["glow"] }
+eframe = { workspace = true }
 # The SVG loader draws the Lucide icons the web interface uses.
-egui_extras = { version = "0.37", features = ["svg", "image"] }
-image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
+egui_extras = { workspace = true }
+image = { workspace = true }
 # The map: slippy tiles from the backend's own tile proxy (offline cache).
 walkers = "0.63"
-serde_json = "1"
+serde_json = { workspace = true }
 # The backend keeps building cells gzipped and sends them as they are.
-flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+flate2 = { workspace = true }
 # SIGINT/SIGTERM (and Ctrl+C on Windows) end the app through the same path
 # as closing the window, so the backend child is always taken down.
-ctrlc = { version = "3", features = ["termination"] }
+ctrlc = { workspace = true }
 vte = "0.15.0"
 # The calibration wizard reads the autopilot's own STATUSTEXT wording with the
 # same patterns the web page uses (calib-protocol.js).
-regex = "1"
+regex = { workspace = true }
 # The system file dialog (Cocoa, Windows, and the desktop portal on Linux, so
 # no GTK or Qt is linked): a person picks a file instead of typing its path.
-rfd = "0.17"
+rfd = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # Finds the window of a terminal to blur what is behind it (app/vibrancy.rs).
@@ -59,11 +78,90 @@ objc2-app-kit = { version = "0.3", default-features = false, features = ["std", 
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString", "NSArray"] }
 
 [target.'cfg(unix)'.dependencies]
-libc = "0.2"
+libc = { workspace = true }
 
+# `cargo run` and ./run.sh. egui at opt-level 0 redraws a frame in tens of
+# milliseconds, which makes the interface unusable to look at, so the program
+# is built at 1, the crates that draw every frame at 3, and everything else
+# (dependencies and the backend) at 0, so a cold build and an edit stay short.
+# Line tables are enough for a backtrace and keep the debuginfo, the largest
+# part of a link, small.
+[profile.dev]
+opt-level = 1
+debug = "line-tables-only"
+split-debuginfo = "unpacked"
+incremental = true
+codegen-units = 256
+
+[profile.dev.package."*"]
+opt-level = 0
+debug = false
+
+# The backend and the MAVLink crate do their work on threads of their own, a
+# message at a time, never per frame: unoptimised they cost nothing a person
+# sees, and an edit to either rebuilds in seconds, not tens of seconds.
+[profile.dev.package.corvus_core]
+opt-level = 0
+[profile.dev.package.corvus_link]
+opt-level = 0
+
+# What runs on every frame, or on every pixel of one: the egui crates, the
+# font and image decoders, the rasteriser, and the compression behind the tiles.
+[profile.dev.package.egui]
+opt-level = 3
+[profile.dev.package.epaint]
+opt-level = 3
+[profile.dev.package.ecolor]
+opt-level = 3
+[profile.dev.package.emath]
+opt-level = 3
+[profile.dev.package.egui_glow]
+opt-level = 3
+[profile.dev.package.egui_extras]
+opt-level = 3
+[profile.dev.package.image]
+opt-level = 3
+[profile.dev.package.png]
+opt-level = 3
+[profile.dev.package.zune-jpeg]
+opt-level = 3
+[profile.dev.package.image-webp]
+opt-level = 3
+[profile.dev.package.miniz_oxide]
+opt-level = 3
+[profile.dev.package.fdeflate]
+opt-level = 3
+[profile.dev.package.resvg]
+opt-level = 3
+[profile.dev.package.tiny-skia]
+opt-level = 3
+[profile.dev.package.skrifa]
+opt-level = 3
+[profile.dev.package.read-fonts]
+opt-level = 3
+[profile.dev.package.vello_cpu]
+opt-level = 3
+[profile.dev.package.walkers]
+opt-level = 3
+
+# Build scripts and proc macros run on the build machine once per build.
+[profile.dev.build-override]
+opt-level = 0
+debug = false
+
+# The optimised program as a bundle ships it. `lto = "thin"` and one codegen
+# unit are the slow part of a release build; `fast` below drops both.
 [profile.release]
 lto = "thin"
 codegen-units = 1
+
+# `./build.sh --fast` and `./run.sh --fast`: release code without LTO, with
+# parallel codegen and incremental builds, for a local bundle in minutes.
+[profile.fast]
+inherits = "release"
+lto = false
+codegen-units = 16
+incremental = true
 
 [build-dependencies]
 # build.rs lists the plugin crates, and reads their Cargo.toml for it.
