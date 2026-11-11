@@ -64,7 +64,230 @@ def checklists() -> None:
     write("ai_checklists.json", cases)
 
 
-COMMANDS = {"checklists": checklists}
+def _materialize(root: pathlib.Path, tree: dict) -> None:
+    for rel, content in tree.items():
+        path = root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if isinstance(content, dict):
+            path.write_bytes(b"x" * int(content["repeat"]))
+        else:
+            path.write_text(content, encoding="utf-8", newline="")
+
+
+def _manifest(**kw: object) -> str:
+    return json.dumps(kw)
+
+
+def _plugin_tree() -> dict:
+    return {
+        "bundled/alpha/plugin.json": _manifest(id="alpha", name="Alpha", order=20, icon="bolt",
+                                               description=" first ", version="1.0.0", author="A",
+                                               scripts=["alpha.js"], styles=["alpha.css"]),
+        "bundled/alpha/alpha.js": "a", "bundled/alpha/alpha.css": "a",
+        "bundled/beta/plugin.json": _manifest(name="Beta", order=20),
+        "bundled/beta/beta.js": "b",
+        "bundled/gamma/plugin.json": "{not json",
+        "bundled/gamma/gamma.js": "g",
+        "bundled/delta/plugin.json": _manifest(id="bad id", scripts=["d.js"]),
+        "bundled/delta/d.js": "d",
+        "bundled/eps/plugin.json": _manifest(id="eps", scripts=["missing.js"]),
+        "bundled/zeta/plugin.json": _manifest(
+            id="zeta", name="  ", order=5.7, icon="", scripts=[
+                "./a.js", "a.js", "../outside.js", "/abs.js", "sub/b.js", "c.exe", "sub\\b.js", 5, "",
+                "sub/../a.js", ".dot.js", "./sub/b.js"],
+            styles=["s.css", "nope.css"]),
+        "bundled/zeta/a.js": "a", "bundled/zeta/s.css": "s", "bundled/zeta/sub/b.js": "b",
+        "bundled/zeta/c.exe": "c", "bundled/zeta/.dot.js": "d", "bundled/outside.js": "o",
+        "bundled/.hid/plugin.json": _manifest(id="hid", scripts=["h.js"]), "bundled/.hid/h.js": "h",
+        "bundled/stray.txt": "not a folder",
+        "bundled/eta/plugin.json": _manifest(id="eta", name="eta", order=True, scripts=["eta.js"]),
+        "bundled/eta/eta.js": "e",
+        "bundled/theta/plugin.json": _manifest(id="theta-id", name="Theta", order="3", scripts=["x.js"]),
+        "bundled/theta/x.js": "t",
+        "bundled/iota/plugin.json": "[1, 2]", "bundled/iota/iota.js": "i",
+        "bundled/\u00fcber/plugin.json": _manifest(name="\u00dcber", scripts=["u.js"]),
+        "bundled/\u00fcber/u.js": "u",
+        "user/alpha/plugin.json": _manifest(id="alpha", name="Alpha (mine)", order=1, scripts=["mine.js"]),
+        "user/alpha/mine.js": "m", "user/alpha/config.json": "{}",
+        "user/Omega/plugin.json": _manifest(name="omega", order=20, scripts=["o.js"]),
+        "user/Omega/o.js": "o",
+        "user/B/plugin.json": _manifest(name="b", order=20, scripts=["b.js"]), "user/B/b.js": "b",
+        "user/only-config/config.json": "{}",
+        "user/.staged/plugin.json": _manifest(id="staged", scripts=["s.js"]), "user/.staged/s.js": "s",
+    }
+
+
+def plugins() -> None:
+    import tempfile
+
+    from corvus import plugin_registry as R
+
+    tree = _plugin_tree()
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+        _materialize(root, tree)
+        rel = lambda d: str(pathlib.Path(d).relative_to(root))  # noqa: E731
+        found = R.discover(str(root / "user"), str(root / "bundled"))
+        discovered = [dict(m, dir=rel(m["dir"])) for m in found]
+        public = R.public_list(str(root / "user"), str(root / "bundled"))
+        dirs = {i: (rel(R.find_dir(i, str(root / "user"), str(root / "bundled"))) if R.find_dir(
+            i, str(root / "user"), str(root / "bundled")) else None)
+            for i in ["alpha", "zeta", "beta", "gamma", "hid", "staged", "theta-id", "theta", "../x",
+                      "", "nope", "Omega", "alpha\n"]}
+        alpha = root / "bundled" / "zeta"
+        asset_inputs = ["a.js", "./a.js", "sub/b.js", "sub\\b.js", "../outside.js", "/abs.js", "C:/x.js",
+                        "c.exe", "s.css", "sub", "", "nope.js", ".dot.js", "sub/../a.js", "a.js/", "a\u0000.js",
+                        "A.JS", "x:y"]
+        assets = []
+        for a in asset_inputs:
+            got = R.resolve_asset(str(alpha), a)
+            assets.append([a, None if got is None else str(got.relative_to(alpha.resolve()))])
+        ids = ["a", "a.b-c_d", "A" * 64, "A" * 65, "", ".a", "-a", "a b", "a/b", "a\n", "a\n\n", "\u00e9"]
+        bundled_only = [dict(m, dir=rel(m["dir"])) for m in R.discover(str(root / "none"), str(root / "bundled"))]
+    write("ai_plugins.json", {
+        "tree": tree, "discover": discovered, "public": public, "find_dir": dirs,
+        "assets": assets, "ids": [[i, R.is_valid_id(i)] for i in ids], "bundled_only": bundled_only,
+        "readme": R._README,
+    })
+
+    bundled_real = R.public_list(str(pathlib.Path(tempfile.gettempdir()) / "corvus-no-such-user-dir"))
+    write("ai_plugins_bundled.json", bundled_real)
+
+
+def plugin_config() -> None:
+    import tempfile
+
+    from corvus import plugin_config as PC
+
+    ops: list[list] = [
+        ["load", "a"], ["save", "a", {"x": 1, "y": [1, 2, {"z": "\u00e9\u0001"}], "n": None, "f": 1.5, "e": {}}],
+        ["load", "a"], ["update", "a", {"x": 2, "k": True}, False], ["load", "a"],
+        ["update", "a", {"only": 1}, True], ["load", "a"],
+        ["update", "a", {"_options": {"m": 1}, "q": 1}, False],
+        ["update", "a", {"fresh": 1}, True], ["load", "a"],
+        ["update", "a", {"_options": {"m": 2}}, True], ["load", "a"],
+        ["update", "b", {"n": 1}, False], ["update", "c", {}, False], ["update", "c", {"k": 1}, False],
+        ["save", "bad id", {"a": 1}], ["save", "..", {}], ["load", "../a"], ["update", "", {}, False],
+        ["raw", "d", "{not json"], ["load", "d"], ["update", "d", {"k": 1}, False],
+        ["raw", "e", "[1, 2]"], ["load", "e"],
+        ["raw", "f", "{\"keep\": 1}"], ["load", "f"],
+        ["mkdir", "emptyfolder"], ["mkdir", ".hidden"], ["raw", ".hidden", "{}"],
+        ["load_all"],
+        ["migrate", {"a": {"legacy": 1}, "g": {"legacy": 2}, "h": 5, "bad id": {"x": 1}, "d": {"l": 1}}],
+        ["load", "g"], ["load", "h"], ["load_all"],
+        ["migrate", None], ["migrate", {}], ["migrate", []],
+    ]
+    out = []
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+        for op in ops:
+            kind = op[0]
+            result: object
+            try:
+                if kind == "load":
+                    result = PC.load(op[1], str(root))
+                elif kind == "load_all":
+                    result = PC.load_all(str(root))
+                elif kind == "save":
+                    PC.save(op[1], op[2], str(root))
+                    result = "ok"
+                elif kind == "update":
+                    result = PC.update(op[1], op[2], replace=op[3], user_dir=str(root))
+                elif kind == "raw":
+                    (root / op[1]).mkdir(parents=True, exist_ok=True)
+                    (root / op[1] / "config.json").write_text(op[2], encoding="utf-8")
+                    result = "ok"
+                elif kind == "mkdir":
+                    (root / op[1]).mkdir(parents=True, exist_ok=True)
+                    result = "ok"
+                else:
+                    result = PC.migrate(op[1], str(root))
+            except ValueError as exc:
+                result = {"error": str(exc)}
+            out.append({"op": op, "result": result})
+        files = {}
+        for path in sorted(root.rglob("config.json")):
+            files[str(path.relative_to(root))] = path.read_text(encoding="utf-8")
+    write("ai_plugin_config.json", {"ops": out, "files": files})
+
+
+def plugin_files() -> None:
+    import tempfile
+
+    from corvus import plugin_files as PF
+
+    paths = ["a.js", "sub/a.js", "a.JS", "config.json", "sub/config.json", "a.exe", "a", ".a.js", "sub/.a.js",
+             "../a.js", "sub/../a.js", "./a.js", "/a.js", "C:/a.js", "a:b.js", "a\\b.js", "a b .js",
+             "a.js ", "a.js.", "con.js", "CON", "nul.txt", "com1.json", "lpt9.md", "COM0.js", "aux.d.js",
+             "a|b.js", "a?.js", "a*.js", "a\"b.js", "a<b.js", "a\tb.js", "", "x" * 241, "/".join(["d"] * 8) + "/a.js",
+             "/".join(["d"] * 9) + "/a.js", "d//a.js", "d/a.js/", "img/Logo.PNG", "lang/de.json", "a.tar.gz",
+             ".js", "sub/.js", "a.mjs", "a.map", "style.css", "t.csv", "n.md", "n.txt", "f.woff2", "\u00e9.js"]
+    cleaned = [[p, PF.clean_path(p)] for p in paths]
+    tree = {
+        "p/plugin.json": "{}", "p/z.js": "z", "p/a.js": "a", "p/config.json": "{}", "p/sub/b.css": "b",
+        "p/sub/deep/c.json": "c", "p/.hidden.js": "h", "p/.git/x.js": "g", "p/__pycache__/m.js": "m",
+        "p/bad.exe": "b", "p/sub/.h.js": "h", "p/B.js": "B", "p/a b.js": "ab", "p/\u00e9.js": "e",
+        "q/plugin.json": "{}", "q/big.txt": {"repeat": PF.MAX_PLUGIN_BYTES + 1},
+        "r/plugin.json": "{}", **{f"r/f{i:03}.js": "x" for i in range(PF.MAX_FILES)},
+        "s/plugin.json": "{}", "s/big.txt": {"repeat": PF.MAX_PLUGIN_BYTES},
+    }
+    collected = {}
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+        _materialize(root, tree)
+        for name in ("p", "q", "r", "s"):
+            try:
+                got = PF.collect(root / name)
+                collected[name] = {"files": [[k, v.decode("utf-8")] for k, v in got.items()]
+                                   if name == "p" else sorted(got)[:3] + [len(got)]}
+            except ValueError as exc:
+                collected[name] = {"error": str(exc)}
+    checks = []
+    bad_sets = [
+        ("empty", {}), ("none", None), ("manifest only", {"plugin.json": b"{}"}),
+        ("no manifest", {"a.js": b"a"}), ("unclean", {"plugin.json": b"{}", "../a.js": b"a"}),
+        ("config", {"plugin.json": b"{}", "config.json": b"{}"}),
+        ("backslash", {"plugin.json": b"{}", "a\\b.js": b"a"}),
+        ("not bytes", {"plugin.json": "text"}),
+        ("big", {"plugin.json": b"{}", "a.txt": b"x" * (PF.MAX_PLUGIN_BYTES + 1)}),
+        ("just fits", {"plugin.json": b"x" * PF.MAX_PLUGIN_BYTES}),
+        ("many", {"plugin.json": b"{}", **{f"f{i}.js": b"x" for i in range(PF.MAX_FILES)}}),
+        ("just many", {"plugin.json": b"{}", **{f"f{i}.js": b"x" for i in range(PF.MAX_FILES - 1)}}),
+    ]
+    for label, files in bad_sets:
+        try:
+            got = PF.check(files)
+            checks.append([label, {"ok": sorted(got)}])
+        except ValueError as exc:
+            checks.append([label, {"error": str(exc)}])
+    installs = []
+    with tempfile.TemporaryDirectory() as tmp:
+        user = pathlib.Path(tmp) / "plugins"
+
+        def listing() -> dict:
+            return {str(p.relative_to(user)): p.read_text(encoding="utf-8")
+                    for p in sorted(user.rglob("*")) if p.is_file()}
+
+        steps = [
+            ("bad id", "bad id", {"plugin.json": b"{}"}),
+            ("no files", "x", {}),
+            ("first", "x", {"plugin.json": b"{\"v\": 1}", "x.js": b"one", "sub/y.css": b"y"}),
+            ("again", "x", {"plugin.json": b"{\"v\": 2}", "x.js": b"two"}),
+        ]
+        for label, pid, files in steps:
+            if label == "again":
+                (user / "x" / "config.json").write_text("{\"saved\": 1}\n", encoding="utf-8")
+            try:
+                PF.install(pid, files, str(user))
+                installs.append({"step": label, "ok": True, "files": listing()})
+            except ValueError as exc:
+                installs.append({"step": label, "error": str(exc), "files": listing() if user.exists() else {}})
+    write("ai_plugin_files.json", {"clean": cleaned, "tree": tree, "collected": collected, "checks": checks,
+                                   "installs": installs, "limits": [PF.MAX_PLUGIN_BYTES, PF.MAX_FILES]})
+
+
+COMMANDS = {"checklists": checklists, "plugins": plugins, "plugin_config": plugin_config,
+            "plugin_files": plugin_files}
 
 
 def main(argv: list[str]) -> int:

@@ -1,0 +1,66 @@
+[
+  {
+    "id": "vibration",
+    "name": "Vibration Monitor",
+    "order": 10,
+    "icon": "activity",
+    "description": "Live PX4 vibration metrics and accelerometer clipping",
+    "version": "1.0.0",
+    "author": "Maximilian Böck",
+    "scripts": [
+      "vibration.js"
+    ],
+    "styles": [
+      "vibration.css"
+    ],
+    "source": "bundled"
+  },
+  {
+    "id": "ssh-launcher",
+    "name": "SSH Launcher",
+    "order": 20,
+    "icon": "rocket",
+    "description": "One-press buttons that start programs on a companion computer",
+    "version": "1.3.0",
+    "author": "Maximilian Böck",
+    "scripts": [
+      "ssh-launcher.js"
+    ],
+    "styles": [
+      "ssh-launcher.css"
+    ],
+    "source": "bundled"
+  },
+  {
+    "id": "schwalby",
+    "name": "Schwalby",
+    "order": 30,
+    "icon": "bird",
+    "description": "One-press buttons that start programs on this computer or over SSH",
+    "version": "1.1.0",
+    "author": "Maximilian Böck",
+    "scripts": [
+      "schwalby.js"
+    ],
+    "styles": [
+      "schwalby.css"
+    ],
+    "source": "bundled"
+  },
+  {
+    "id": "map-entities",
+    "name": "Map Entities",
+    "order": 35,
+    "icon": "map-pin",
+    "description": "Gates, trees, people and devices with a range, placed exactly on the Home map",
+    "version": "1.0.0",
+    "author": "Maximilian Böck",
+    "scripts": [
+      "map-entities.js"
+    ],
+    "styles": [
+      "map-entities.css"
+    ],
+    "source": "bundled"
+  }
+]
