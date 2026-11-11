@@ -18,6 +18,9 @@ pub mod motors;
 pub mod mounting;
 pub mod param_metadata;
 pub mod rc;
+mod routes;
 pub mod safety;
 mod tables;
+
+pub use routes::SetupSchemasModule;
 pub mod tuning;

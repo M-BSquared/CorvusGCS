@@ -37,6 +37,7 @@ fn main() -> ExitCode {
     }
     let core = match CoreBuilder::new(options)
         .module(VehicleModule::new())
+        .module(corvus_core::SetupSchemasModule::new())
         .module(Http::new(HttpOptions {
             port,
             ..HttpOptions::default()
