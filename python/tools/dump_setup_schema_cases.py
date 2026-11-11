@@ -342,7 +342,7 @@ def safety() -> None:
                    ["A" * 16, "A" * 17], ["COM_ARM_WO_GPS", "COM_ARM_WO_GPS", "SYS_AUTOSTART"], [], [],
                    ["GF_ACTION", "SENS_EN_SF1XX", "EKF2_OF_QMIN"], [f"P{i}" for i in range(30)]]
     rows = []
-    sets = value_sets(names, SAFETY_POOLS, seed=1, count=80)
+    sets = value_sets(names, SAFETY_POOLS, seed=1, count=24)
     for i, values in enumerate(sets):
         extra = extras_pool[i % len(extras_pool)]
         rows.append([values, extra, S.build(dict(values), list(extra))])
@@ -390,7 +390,7 @@ def ardupilot_safety() -> None:
     extras_pool = [[], ["RTL_ALT"], ["WPNAV_SPEED", "NOT_A_PARAM"], ["wpnav_speed "], ["FENCE_ENABLE", "ATC_RAT_RLL_P"],
                    ["bad name"], ["A" * 17], [f"P{i}" for i in range(30)]]
     rows = []
-    for i, values in enumerate(value_sets(names, AP_SAFETY_POOLS, seed=7, count=70)):
+    for i, values in enumerate(value_sets(names, AP_SAFETY_POOLS, seed=7, count=21)):
         vehicle = VEHICLES[i % len(VEHICLES)]
         extra = A.normalise_extra(extras_pool[i % len(extras_pool)])
         rows.append([values, extra, vehicle, A.build(dict(values), list(extra), vehicle)])
@@ -417,15 +417,23 @@ def mounting() -> None:
     ap_pools = {"AHRS_ORIENTATION": [0.0, 2.0, 25.0, 41.0, 42.0, 101.0, 102.0, 103.0], "GPS_TYPE2": [0.0, 0.0, 9.0],
                 "GPS2_TYPE": [0.0, 0.0, 9.0], "INS_POS*": [0.0, 0.0, 0.01, -0.05, 0.0000005, 0.05],
                 "GPS*_POS*": [0.0, 0.1, -0.2], "AHRS_TRIM_*": [0.0, 0.01, -0.1]}
-    px4 = [[v, P.build(dict(v))] for v in value_sets(P.param_names(), px4_pools, seed=11, count=70)]
-    ap = [[v, A.build(dict(v))] for v in value_sets(A.param_names(), ap_pools, seed=12, count=70)]
+    px4 = [[v, P.build(dict(v))] for v in value_sets(P.param_names(), px4_pools, seed=11, count=21)]
+    ap = [[v, A.build(dict(v))] for v in value_sets(A.param_names(), ap_pools, seed=12, count=21)]
     # Pairs that agree to the last digit, and ones a hair apart.
     for first in (0.0, 0.05):
         for second in (first, first + 5e-7, first + 2e-6):
             v = {"INS_POS1_X": first, "INS_POS2_X": second, "INS_POS3_X": first + 1e-6, "INS_POS1_Y": 0.1,
                  "INS_POS2_Y": 0.1, "INS_POS1_Z": -0.2}
             ap.append([v, A.build(dict(v))])
+    imu = {"EKF2_IMU_POS_X": 0.02, "EKF2_IMU_POS_Y": -0.01, "EKF2_IMU_POS_Z": 0.05, "SENS_BOARD_ROT": 0.0}
+    named = {
+        "PX4 v1.16": dict(imu, EKF2_GPS_POS_X=0.1, EKF2_GPS_POS_Y=0.0, EKF2_GPS_POS_Z=-0.1),
+        "PX4 v1.17": dict(imu, EKF2_GPS_POS_X=0.1, EKF2_GPS_POS_Y=0.0, EKF2_GPS_POS_Z=-0.1, SENS_BOARD_ROT=2.0),
+        "PX4 v1.18": dict(imu, SENS_GPS0_OFFX=0.1, SENS_GPS0_OFFY=0.0, SENS_GPS0_OFFZ=-0.1),
+        "PX4 v1.18 migrated": dict(imu, EKF2_GPS_POS_X=0.3, SENS_GPS0_OFFX=0.1, SENS_GPS0_OFFY=0.0, SENS_GPS0_OFFZ=-0.1),
+    }
     write("setup_mounting_cases.json", clean({
+        "versions": {name: [v, P.build(dict(v))] for name, v in named.items()},
         "px4": {"names": P.param_names(), "orientation_names": P.orientation_param_names(),
                 "position_names": P.position_param_names(), "cases": px4},
         "ardupilot": {"names": A.param_names(), "orientation_names": A.orientation_param_names(),
@@ -474,7 +482,7 @@ def motors() -> None:
         "PWM_*_DISARM": [900.0], "DSHOT_MIN": [0.055, 0.1],
     }
     names = P.param_names()
-    sets = value_sets(names, px4_pools, seed=21, count=60)
+    sets = value_sets(names, px4_pools, seed=21, count=18)
     sets += [_quad(4, 0.25), _quad(6, 0.3), _quad(4, 0.25, pusher=True), _quad(4, 0.0), _quad(8, 0.5, outputs="SIM"),
              _quad(4, 0.2, outputs="CAN"), _quad(3, 0.3, outputs="AUX"), _quad(12, 0.4, pins=16)]
     straight = {"CA_ROTOR_COUNT": 2.0, "CA_ROTOR0_PX": 0.3, "CA_ROTOR0_PY": 0.0, "CA_ROTOR1_PX": -0.3, "CA_ROTOR1_PY": 0.0}
@@ -491,7 +499,7 @@ def motors() -> None:
                 "SERVO*_FUNCTION": [0.0, 33.0, 34.0, 35.0, 36.0, 37.0, 38.0, 39.0, 40.0, 82.0, 83.0, 84.0, 85.0, 1.0, 4.0, 19.0, 54.0,
                                     88.0, 77.0, 32.0, 41.0, 33.4, 33.5],
                 "SERVO_BLH_AUTO": [0.0, 1.0], "MOT_SAFE_DISARM": [0.0, 1.0, 2.0]}
-    ap_sets = value_sets(A.param_names(), ap_pools, seed=22, count=60)
+    ap_sets = value_sets(A.param_names(), ap_pools, seed=22, count=18)
     for cls in (1, 2, 3, 6, 12, 15):
         v = {"FRAME_CLASS": float(cls), "FRAME_TYPE": 1.0}
         for pin in range(1, 17):
@@ -551,14 +559,14 @@ def rc() -> None:
                  "RC*_MIN": [800.0, 1000.0, 1100.0], "RC*_MAX": [1000.0, 1100.0, 1900.0, 2000.0], "RC*_TRIM": [1500.0, 1000.0],
                  "RC*_DZ": [0.0, 10.0], "RC*_REV": [1.0, -1.0, 0.0]}
     px4 = []
-    for i, v in enumerate(value_sets(P.param_names(), px4_pools, seed=31, count=50)):
+    for i, v in enumerate(value_sets(P.param_names(), px4_pools, seed=31, count=16)):
         channels = (18, 8, 0, 4, 25, -3)[i % 6]
         px4.append([v, channels, P.build(dict(v), channels)])
     ap_pools = {"RCMAP_*": [0.0, 1.0, 2.0, 3.0, 4.0, 18.0], "FLTMODE_CH": [0.0, 5.0, 8.0], "FLTMODE?": [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 9.0, 99.0],
                 "RC*_OPTION": [0.0, 2.0, 4.0, 7.0, 31.0, 41.0, 99.0, 153.0], "RC*_MIN": [1000.0, 1100.0], "RC*_MAX": [1900.0, 2000.0],
                 "RC*_TRIM": [1500.0], "RC*_DZ": [0.0, 30.0], "RC*_REVERSED": [0.0, 1.0, 2.0], "THR_FAILSAFE": [0.0, 1.0, 2.0]}
     ap = []
-    for i, v in enumerate(value_sets(A.param_names(), ap_pools, seed=32, count=50)):
+    for i, v in enumerate(value_sets(A.param_names(), ap_pools, seed=32, count=16)):
         channels = (18, 8, 0, 6, 25, -3)[i % 6]
         vehicle = (2, 1, 10, 12, 13, 0)[i % 6]
         ap.append([v, channels, vehicle, A.build(dict(v), channels, vehicle)])
@@ -571,7 +579,12 @@ def rc() -> None:
             return {"error": str(exc)}
 
     inputs = _calibration_inputs()
+    rc_base = {"COM_RC_IN_MODE": 0.0, "NAV_RCL_ACT": 2.0, "RC_MAP_ROLL": 1.0, "RC_MAP_PITCH": 2.0, "RC_MAP_THROTTLE": 3.0,
+               "RC_MAP_YAW": 4.0, "RC_MAP_FLTMODE": 5.0, "RC1_MIN": 1000.0, "RC1_MAX": 2000.0, "RC1_TRIM": 1500.0}
+    rc_named = {"PX4 v1.16": dict(rc_base, COM_RC_IN_MODE=4.0), "PX4 v1.17": dict(rc_base, COM_RC_IN_MODE=6.0),
+                "PX4 v1.18": dict(rc_base, COM_RC_IN_MODE=8.0)}
     write("setup_rc_cases.json", clean({
+        "versions": {name: [v, 16, P.build(dict(v), 16)] for name, v in rc_named.items()},
         "px4": {"names": {str(n): P.param_names(n) for n in (18, 8, 0, 1, 25, -3)}, "cases": px4,
                 "options": {str(n): P.channel_options(n) for n in (0, 1, 8, 18, 30, -2)},
                 "calibration": [[e, calibrate(P, e)] for e in inputs]},
@@ -586,7 +599,7 @@ def tuning() -> None:
 
     px4_pools = {"MC_AT_EN": [0.0, 1.0, 2.0], "FW_AT_EN": [0.0, 1.0], "MC_AT_APPLY": [0.0, 1.0, 2.0, 3.0], "FW_AT_APPLY": [0.0, 1.0, 2.0, 5.0],
                  "FW_AT_AXES": [0.0, 1.0, 3.0, 7.0, 9.0]}
-    px4 = [[v, P.build(dict(v))] for v in value_sets(P.param_names(), px4_pools, seed=41, count=80)]
+    px4 = [[v, P.build(dict(v))] for v in value_sets(P.param_names(), px4_pools, seed=41, count=24)]
     mc = {n: 0.1 for n in P.param_names() if n.startswith(("MC_", "MPC_"))}
     fw = {n: 0.2 for n in P.param_names() if n.startswith("FW_")}
     for extra in ({"MC_AT_EN": 1.0, "MC_AT_APPLY": 0.0}, {"MC_AT_EN": 0.0, "MC_AT_APPLY": 2.0}, {"MC_AT_EN": 1.0}):
@@ -596,7 +609,7 @@ def tuning() -> None:
     ap_pools = {"AUTOTUNE_AXES": [0.0, 1.0, 7.0, 15.0], "AUTOTUNE_OPTIONS": [0.0, 1.0, 2.0]}
     ap = []
     vehicles = ("copter", "plane", "rover", "sub", "other", "")
-    for i, v in enumerate(value_sets(A.param_names(), ap_pools, seed=42, count=80)):
+    for i, v in enumerate(value_sets(A.param_names(), ap_pools, seed=42, count=24)):
         vehicle = vehicles[i % len(vehicles)]
         ap.append([v, vehicle, A.build(dict(v), vehicle)])
     full = {n: 0.5 for n in A.param_names()}
@@ -618,7 +631,7 @@ def first_setup() -> None:
     cases = []
     for stack in ("px4", "ardupilot", "generic", ""):
         names = F.param_names(stack)
-        for i, v in enumerate(value_sets(F.param_names("px4") + F.param_names("ardupilot"), pools, seed=51, count=60)):
+        for i, v in enumerate(value_sets(F.param_names("px4") + F.param_names("ardupilot"), pools, seed=51, count=18)):
             vehicle = ("Copter", "Plane", "Heli", "Rover", "Sub", "")[i % 6]
             transport = ("usb", "sik", "udp", "tcp", "unknown", "serial")[i % 6]
             cases.append([stack, vehicle, transport, v, F.assess(stack, vehicle, transport, dict(v))])
@@ -643,12 +656,12 @@ def battery() -> None:
                  "BAT*_V_LOAD_DROP": [0.0, 0.3], "BAT*_R_INTERNAL": [-1.0, 0.0, 0.012345, 0.00004],
                  "BAT_LOW_THR": [0.0, 0.15, 0.1234, 0.155], "BAT_CRIT_THR": [0.0, 0.07, 0.05],
                  "BAT_EMERGEN_THR": [0.0, 0.05, 0.0449]}
-    px4 = [[v, P.build(dict(v))] for v in value_sets(P.param_names(), px4_pools, seed=5, count=60)]
+    px4 = [[v, P.build(dict(v))] for v in value_sets(P.param_names(), px4_pools, seed=5, count=18)]
     ap_pools = {"BATT*_MONITOR": [0.0, 3.0, 4.0, 8.0, 9.0, 13.0, 26.0, 29.0], "BATT*_FS_*_ACT": [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 9.0],
                 "BATT*_FS_VOLTSRC": [0.0, 1.0, 2.0, 3.0], "BATT_LOW_VOLT": [0.0, 21.0, 10.55, 14.444], "BATT_CRT_VOLT": [0.0, 19.5, 10.555],
                 "BATT_LOW_MAH": [0.0, 500.0, 600.5, 1234.5], "BATT_CRT_MAH": [0.0, 300.0, 200.5], "BATT_CAPACITY": [0.0, 3300.0, 5000.55, -5.0]}
     ap = []
-    for i, v in enumerate(value_sets(A.param_names(), ap_pools, seed=6, count=60)):
+    for i, v in enumerate(value_sets(A.param_names(), ap_pools, seed=6, count=18)):
         vehicle = VEHICLES[i % len(VEHICLES)]
         ap.append([v, vehicle, A.build(dict(v), vehicle)])
     ap.append([{"BATT_MONITOR": 4.0}, None, A.build({"BATT_MONITOR": 4.0})])

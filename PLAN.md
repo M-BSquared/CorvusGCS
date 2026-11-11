@@ -148,9 +148,7 @@ telemetry review).
 
 ### 0.6 Setup schemas (`src/core/src/setup_schemas/`)
 
-* P2 Extend the route harness with the four pages; model PX4 v1.16, v1.17 and
-  v1.18 by name in the tests.
-* P3 The fixtures are about 12 MB; reduce the value set counts.
+Nothing open: every setup route answers, the harness compares them with `serve.py`.
 
 ### 0.7 The switch
 
