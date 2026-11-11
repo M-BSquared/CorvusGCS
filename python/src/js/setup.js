@@ -19,6 +19,7 @@ window.Corvus = window.Corvus || {};
  *   - setup-remoteid.js     (Corvus.setupRemoteId)
  *   - setup-parameters.js   (Corvus.setupParameters)
  *   - setup-firmware.js     (Corvus.setupFirmware)
+ *   - setup-betaflight.js   (Corvus.setupBetaflight)
  *   - setup-firstsetup.js   (Corvus.setupFirstSetup), the wizard that hosts the others
  * Shared helpers live in setup-shared.js (Corvus.setupShared).
  *
@@ -34,7 +35,7 @@ Corvus.setup = (function () {
 
   // Active view of the Setup page: "tiles" (the grid) | "calibration" |
   // "control" | "tuning" | "motors" | "safety" | "battery" | "sik" | "rtk" |
-  // "remoteid" | "parameters" | "firmware" | "firstsetup".
+  // "remoteid" | "parameters" | "firmware" | "betaflight" | "video" | "firstsetup".
   let activeView = "tiles";
 
   // Teardown handle for the currently-rendered view. `render` calls this before
@@ -47,6 +48,10 @@ Corvus.setup = (function () {
   // "—" forever). Paired 1:1 with `teardown()`: every subscribe has a matching
   // unsub, so the grid never leaks a listener across re-render / sub-page swaps.
   let gridUnsub = null;
+
+  // The stack the tiles were last painted for, so a telemetry push repaints
+  // only when the vehicle on the link changes.
+  let paintedStack = null;
 
   /**
    * Public entry: render the Setup page into `container`. Always tears down any
@@ -142,10 +147,13 @@ Corvus.setup = (function () {
       "Edit, load and save every parameter."));
     grid.appendChild(makeTile("firmware", "cpu", "Firmware",
       "Flash PX4 or ArduPilot over direct USB."));
+    grid.appendChild(makeTile("betaflight", "circuit-board", "Betaflight",
+      "Read a Betaflight flight controller over USB."));
     grid.appendChild(makeTile("video", "video", "Video",
       "RTSP or WebRTC cameras in floating windows."));
     container.appendChild(grid);
     if (Corvus.anim) Corvus.anim.stagger(grid.children);
+    paintAvailability(grid, state);
 
     // Subscribe to telemetry so the Vehicle Info rows update live. The firmware version
     // only arrives a few seconds after connect via AUTOPILOT_VERSION, so the
@@ -163,10 +171,41 @@ Corvus.setup = (function () {
           const span = rowValues[key];
           if (span && span.textContent !== next[key]) span.textContent = next[key];
         }
+        paintAvailability(grid, s);
       });
     }
 
     S.refreshIcons();
+  }
+
+  /**
+   * Grey the tiles the connected flight stack cannot serve, each with its
+   * reason in place of its description. A stack that only sends telemetry
+   * (Betaflight) has no parameters or commands behind most of these pages, and
+   * a tile that opens onto a page that can only fail is worse than one that
+   * says so. Fetched per stack (Corvus.capabilities caches it), repainted when
+   * the stack on the link changes, and left alone while it does not.
+   */
+  function paintAvailability(grid, snapshot) {
+    const caps = Corvus.capabilities;
+    if (!caps || typeof caps.get !== "function") return;
+    const stack = (snapshot && snapshot.autopilot_stack) || "";
+    if (stack === paintedStack && grid.dataset.painted === "1") return;
+    paintedStack = stack;
+    grid.dataset.painted = "1";
+    caps.get().then((doc) => {
+      if (!grid.isConnected) return;
+      const blocked = (doc && doc.setup_unavailable) || {};
+      for (const tile of grid.querySelectorAll(".setup-tile")) {
+        const reason = typeof blocked[tile.dataset.view] === "string" ? blocked[tile.dataset.view] : "";
+        const desc = tile.querySelector(".tile-desc");
+        if (desc && tile.dataset.desc === undefined) tile.dataset.desc = desc.textContent;
+        tile.disabled = !!reason;
+        tile.dataset.unavailable = reason ? "1" : "";
+        if (desc) desc.textContent = reason || tile.dataset.desc;
+        if (reason) tile.title = reason; else tile.removeAttribute("title");
+      }
+    });
   }
 
   /** Flight stack and version in one value, e.g. "PX4 v1.18.0" or "ArduPilot v4.5.7". */
@@ -195,7 +234,7 @@ Corvus.setup = (function () {
   /** Swap the container to a sub-page. Tears the grid down first. */
   function openView(viewId, opts) {
     if (["calibration", "control", "tuning", "motors", "safety", "battery",
-         "sik", "rtk", "remoteid", "parameters", "firmware", "video",
+         "sik", "rtk", "remoteid", "parameters", "firmware", "betaflight", "video",
          "firstsetup"].indexOf(viewId) < 0) return;
     teardown();
     activeView = viewId;
@@ -231,6 +270,8 @@ Corvus.setup = (function () {
       activeDestroy = Corvus.setupRemoteId.render(container, navigateBack);
     } else if (viewId === "parameters") {
       activeDestroy = Corvus.setupParameters.render(container, navigateBack);
+    } else if (viewId === "betaflight") {
+      activeDestroy = Corvus.setupBetaflight.render(container, navigateBack);
     } else if (viewId === "video") {
       activeDestroy = Corvus.setupVideo.render(container, navigateBack);
     } else if (viewId === "firstsetup") {

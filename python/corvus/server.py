@@ -95,6 +95,7 @@ from .routes.dem import DemRoutes
 from .routes.control import ControlRoutes
 from .routes.firmware import FirmwareRoutes
 from .routes.fleet import FleetRoutes, targets_vehicle
+from .routes.betaflight import BetaflightRoutes
 from .routes.first_setup import FirstSetupRoutes
 from .routes.geofence import GeofenceRoutes
 from .routes.languages import LanguageRoutes
@@ -1161,6 +1162,7 @@ def _serialize_telemetry_snapshot(
 # The route handlers of each area live in corvus/routes/; their @route
 # entries land in the same registry, wired onto this class below.
 class CorvusHandler(
+    BetaflightRoutes,
     ConsoleRoutes,
     ControlRoutes,
     DemRoutes,

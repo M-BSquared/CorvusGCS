@@ -19,7 +19,8 @@ window.Corvus = window.Corvus || {};
  *
  *   await Corvus.capabilities.get()  -> the document, fetched at most once per stack
  *   Corvus.capabilities.peek()       -> what is cached right now, or null
- *   Corvus.capabilities.stack()      -> "px4" | "ardupilot" | "generic" | ""
+ *   Corvus.capabilities.stack()      -> "px4" | "ardupilot" | "betaflight" | "generic" | ""
+ *   Corvus.capabilities.setupUnavailable(id) -> why a Setup tile is greyed, or ""
  *
  * Everything degrades to "allowed": a fetch that fails returns the permissive
  * default, because a page that hides its own controls whenever the network
@@ -46,6 +47,8 @@ Corvus.capabilities = (function () {
     vehicle_type: 0,
     vehicle: "",
     ground: false,
+    telemetry_only: false,
+    setup_unavailable: {},
   };
 
   /* MAV_TYPE names (as the telemetry snapshot carries them) of the vehicles
@@ -134,6 +137,18 @@ Corvus.capabilities = (function () {
     return inflight;
   }
 
+  /**
+   * Why the Setup tile *id* cannot be used on the connected stack, or "".
+   *
+   * A stack that only sends telemetry (Betaflight) lists every tile that
+   * needs parameters or commands, each with the sentence the greyed tile
+   * carries. Unknown is "available", like everything else here.
+   */
+  function setupUnavailable(id) {
+    const table = cached && cached.setup_unavailable;
+    return (table && typeof table[id] === "string") ? table[id] : "";
+  }
+
   /** Forget what is cached — for tests, and for an explicit reconnect. */
   function reset() {
     cached = null;
@@ -154,5 +169,8 @@ Corvus.capabilities = (function () {
     return cached.calibrations.indexOf(name) !== -1;
   }
 
-  return { DEFAULT, get, peek, reset, stack, hasCalibration, isGround, moveVerb, GROUND_TYPES };
+  return {
+    DEFAULT, get, peek, reset, stack, hasCalibration, setupUnavailable,
+    isGround, moveVerb, GROUND_TYPES,
+  };
 })();

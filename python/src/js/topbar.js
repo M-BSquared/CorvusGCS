@@ -1300,9 +1300,12 @@ Corvus.topbar = (function () {
 
   // The bar is updated on every telemetry frame and almost nothing in it
   // changes between two; an unchanged write still costs a style pass.
+  function shows(el, text) {
+    return Corvus.i18n ? Corvus.i18n.shows(el, text) : el.textContent === text;
+  }
   function setText(el, value) {
     const text = value == null ? "" : String(value);
-    if (el.textContent !== text) el.textContent = text;
+    if (!shows(el, text)) el.textContent = text;
   }
   function setClass(el, name) {
     if (el.className !== name) el.className = name;
@@ -1320,14 +1323,14 @@ Corvus.topbar = (function () {
       if (!cached) return;
       const el = cached.root;
       const valEl = cached.vMain;
-      if (valEl && valEl.textContent !== b.value) {
+      if (valEl && !shows(valEl, b.value)) {
         const had = valEl.textContent;
         valEl.textContent = b.value;
         if (had && POP_KEYS.has(b.key) && Corvus.anim) {
           Corvus.anim.pop(cached.value || valEl, { origin: "left center" });
         }
       }
-      if (cached.vShort && b.short !== undefined && cached.vShort.textContent !== b.short) {
+      if (cached.vShort && b.short !== undefined && !shows(cached.vShort, b.short)) {
         cached.vShort.textContent = b.short;
       }
       const subEl = cached.sub;

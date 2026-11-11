@@ -3,7 +3,12 @@
 Kept unchanged as the reference tests/test_elrs_parity.py holds the Rust
 module to; not imported by the app.
 
-**Not wired.** Nothing in the app imports this module: no route, no bridge
+**Not wired.** This is the CRSF reader, and only it. ExpressLRS in MAVLink mode
+is a different path and is live: it is an ordinary serial MAVLink link with
+``?link=elrs&dtr=off&rts=off`` on its connection string (see
+:mod:`corvus.serial_open` and :mod:`corvus.serial_ports`), and a Betaflight
+flight controller behind it is the ``betaflight`` dialect. Nothing in the app
+imports this module: no route, no bridge
 hook, no frontend control. :data:`ENABLED` is ``False`` and
 :meth:`ElrsTelemetryReader.start` refuses to run while it is. It exists as
 code to build on, with tests, so that switching it on later is a wiring job

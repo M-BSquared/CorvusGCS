@@ -15,7 +15,7 @@
 
 <div align="center">
   <!-- corvus:version-badge -->
-  <img src="https://img.shields.io/badge/Version-2026.11.59-f7ebe1?style=for-the-badge" height="28" alt="Version 2026.11.59" />
+  <img src="https://img.shields.io/badge/Version-2026.11.60-f7ebe1?style=for-the-badge" height="28" alt="Version 2026.11.60" />
   <img width="8" />
   <!-- <a href="https://www.python.org/" target="_blank"><img src="https://img.shields.io/badge/Python_3.12%2B-3776AB?logo=python&logoColor=white&style=for-the-badge" height="28" alt="Python 3.12+" /></a>
   <img width="8" />
@@ -192,6 +192,7 @@ run it. Python and every dependency are already inside.
 | **macOS** 12 or later (Apple Silicon) | `Corvus_GCS-<version>-macOS-arm64.dmg` | Drag to Applications. Not notarized: allow it once under **System Settings → Privacy & Security → Open Anyway**. |
 | **Linux** (x86_64) | `Corvus_GCS-<version>-x86_64.AppImage` | `chmod +x` it, then run it. |
 | **Windows** (x64) | `Corvus_GCS-<version>-windows-x64.zip` | Unzip anywhere and run `Corvus GCS.exe`. SmartScreen asks once: *More info → Run anyway*. |
+| **Android** (7 or later) | `Corvus_GCS-<version>-android.apk` | A full screen window in tablet mode on a Corvus GCS running on a computer. Enter that computer's address on the first start. |
 
 **From source** (Python 3.12+ and a Rust toolchain, for the MAVLink module in
 [`src/link`](src/link) and the interface in
@@ -251,6 +252,12 @@ Its source is plain HTML in [`docs/guide`](docs/guide).
 Primary target: **PX4 v1.16, v1.17, v1.18.** Secondary target: **ArduPilot
 4.3 to 4.6** for Copter, Plane, Rover/Boat and Sub. Older PX4 (v1.12 to v1.15)
 works on a best-effort basis.
+
+**Betaflight** is supported for telemetry over MAVLink, for example through an
+ExpressLRS link: you see where the aircraft is and how it is doing. Betaflight
+takes no parameters or commands over MAVLink, so the Setup tiles that need
+them are greyed out with the reason. See
+[ExpressLRS and Betaflight](https://m-bsquared.github.io/CorvusGCS/guide/hardware.html#expresslrs).
 
 Corvus detects the stack and firmware version on connect, loads the matching
 parameter set, and refuses to send a command or write a parameter the

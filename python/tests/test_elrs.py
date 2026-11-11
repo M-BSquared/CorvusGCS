@@ -238,7 +238,10 @@ def test_switch_is_off():
 
 
 def test_nothing_in_the_app_uses_the_module():
-    pattern = re.compile(r"\belrs\b|corvus\.elrs|from \. import elrs|/api/elrs", re.IGNORECASE)
+    # The MAVLink link profile (``link=elrs`` on a serial string, see
+    # tests/test_elrs_link.py) is a connection option, not this CRSF reader, so
+    # the bare word is allowed. Importing the module or serving it is not.
+    pattern = re.compile(r"corvus\.elrs|from \. import elrs|from \.elrs import|/api/elrs", re.IGNORECASE)
     users = []
     for path in [*ROOT.joinpath("corvus").rglob("*.py"), ROOT / "serve.py",
                  *ROOT.joinpath("src", "js").rglob("*.js"), ROOT / "src" / "index.html"]:

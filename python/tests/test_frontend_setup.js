@@ -364,6 +364,7 @@ require("../src/js/setup-sik.js");
 require("../src/js/setup-remoteid.js");
 require("../src/js/setup-parameters.js");
 require("../src/js/setup-firmware.js");
+require("../src/js/setup-betaflight.js");
 require("../src/js/setup-firstsetup.js");
 require("../src/js/setup.js");
 
@@ -386,7 +387,7 @@ async function testTileGridRendersEveryTile() {
   assert.equal(video.disabled, false, "the Video tile opens its page");
   assert.deepEqual(tiles.map((t) => t.dataset.view),
     ["firstsetup", "calibration", "control", "tuning", "motors", "safety", "battery", "sik",
-     "rtk", "remoteid", "parameters", "firmware", "video"],
+     "rtk", "remoteid", "parameters", "firmware", "betaflight", "video"],
     "every Setup tile, in order");
 
   // Tile titles are real text nodes. Setup tiles are Corvus.ui.tile instances
@@ -396,7 +397,7 @@ async function testTileGridRendersEveryTile() {
   assert.deepEqual(titles,
     ["First Setup", "Calibration", "Radio Control", "PID Tuning", "Motors", "Safety & Sensors",
      "Battery & Power", "Telemetry Radio", "RTK GPS", "Remote ID", "Parameters",
-     "Firmware", "Video"]);
+     "Firmware", "Betaflight", "Video"]);
 }
 
 async function testClickTileSwapsToSubPageAndBackReturns() {

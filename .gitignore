@@ -33,3 +33,10 @@ __pycache__/
 
 # cargo's build output for the native interface
 /target/
+
+# android
+/android/.gradle/
+/android/build/
+/android/app/build/
+/android/local.properties
+*.apk

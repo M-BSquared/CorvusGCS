@@ -98,6 +98,7 @@ Corvus.link = (function () {
   let fwdEnabled, fwdPort, fwdAllow, fwdWarning, fwdError, fwdStats, fwdHint;
   let fwdInFlight = false;
   let serialSelect, baudSelect, refreshBtn, connectBtn, reconnectBtn;
+  let profileSelect, elrsFields, fcSelect, dtrSelect, rtsSelect;
   let customInput, portHint;
   let kindSerialBtn, kindNetBtn, serialFields, netFields;
   let statusDot, statusLabel, statusConn, statusError, statusErrorText;
@@ -117,20 +118,47 @@ Corvus.link = (function () {
   let shownSuggestion = "";      // connection string currently on the suggestion row
   let dismissedSuggestion = "";  // one the operator answered — offered once, not again
 
-  /** Pure: build a serial connection string `serial:<device>:<baud>`. */
-  function buildConnectionString(device, baud) {
+  /* What an ExpressLRS link starts from: the baud its MAVLink mode defaults to,
+     and both control lines released so an ESP32 module is not reset when the
+     port opens. Betaflight is the flight controller most of these links end in. */
+  const ELRS_DEFAULTS = { baud: "460800", dtr: "off", rts: "off", fc: "betaflight" };
+
+  /** Pure: build a serial connection string `serial:<device>:<baud>`, with the
+   *  ExpressLRS options after a `?` when the link has any:
+   *  `serial:/dev/ttyUSB0:460800?link=elrs&dtr=off&rts=off&fc=betaflight`.
+   *  A line left at "default" is not written, so the backend leaves it alone. */
+  function buildConnectionString(device, baud, opts) {
     if (!device) return "";
-    return `serial:${device}:${baud}`;
+    const o = opts || {};
+    const parts = [];
+    if (o.link) parts.push(`link=${o.link}`);
+    if (o.dtr === "on" || o.dtr === "off") parts.push(`dtr=${o.dtr}`);
+    if (o.rts === "on" || o.rts === "off") parts.push(`rts=${o.rts}`);
+    if (o.fc) parts.push(`fc=${o.fc}`);
+    return `serial:${device}:${baud}${parts.length ? `?${parts.join("&")}` : ""}`;
   }
 
   /** Pure: split a connection string back into the fields that built it.
    *  A serial string is cut at the LAST colon: `COM3` has none and a POSIX
-   *  device is a path, so neither end may swallow the baud. */
+   *  device is a path, so neither end may swallow the baud. The options after
+   *  `?` come back as `opts`, with a line that was not written as "default". */
   function parseConnection(conn) {
     const s = String(conn || "").trim();
     if (!s) return null;
-    const m = /^serial:(.+):(\d+)$/.exec(s);
-    if (m) return { kind: "serial", device: m[1], baud: m[2], conn: s };
+    const m = /^serial:(.+):(\d+)(?:\?(.*))?$/.exec(s);
+    if (m) {
+      const opts = { link: "", dtr: "default", rts: "default", fc: "" };
+      for (const pair of String(m[3] || "").split("&")) {
+        const eq = pair.indexOf("=");
+        if (eq < 0) continue;
+        const key = pair.slice(0, eq).toLowerCase();
+        const value = pair.slice(eq + 1).toLowerCase();
+        if (key === "link" && value === "elrs") opts.link = value;
+        else if ((key === "dtr" || key === "rts") && (value === "on" || value === "off")) opts[key] = value;
+        else if (key === "fc" && value === "betaflight") opts.fc = value;
+      }
+      return { kind: "serial", device: m[1], baud: m[2], opts, conn: s };
+    }
     return { kind: "net", device: "", baud: "", conn: s };
   }
 
@@ -141,7 +169,8 @@ Corvus.link = (function () {
     const p = parseConnection(conn);
     if (!p) return { icon: "plug", label: "", detail: "" };
     if (p.kind === "serial") {
-      return { icon: "cable", label: p.device, detail: `${p.baud} baud` };
+      const radio = p.opts && p.opts.link === "elrs" ? "ExpressLRS, " : "";
+      return { icon: "cable", label: p.device, detail: `${radio}${p.baud} baud` };
     }
     const t = /^(udpout|udpin|udp|tcpout|tcpin|tcp):(.+)$/i.exec(p.conn);
     if (t) return { icon: "network", label: t[2], detail: t[1].toLowerCase() };
@@ -422,6 +451,7 @@ Corvus.link = (function () {
       if (baudSelect && p.baud && baudSelect.querySelector(`option[value="${p.baud}"]`)) {
         baudSelect.value = p.baud;
       }
+      paintRadioOptions(p.opts);
       setKind("serial");
     } else {
       if (customInput) customInput.value = p.conn;
@@ -624,6 +654,50 @@ Corvus.link = (function () {
     }
   }
 
+  /** Show the options of a remembered link in the Radio fields. */
+  function paintRadioOptions(opts) {
+    const o = opts || { link: "", dtr: "default", rts: "default", fc: "" };
+    if (profileSelect) profileSelect.value = o.link;
+    if (fcSelect) fcSelect.value = o.fc;
+    if (dtrSelect) dtrSelect.value = o.dtr;
+    if (rtsSelect) rtsSelect.value = o.rts;
+    paintRadioFields();
+  }
+
+  function paintRadioFields() {
+    if (elrsFields) elrsFields.hidden = !(profileSelect && profileSelect.value === "elrs");
+  }
+
+  /** Choosing ExpressLRS fills in what its MAVLink mode needs; choosing the
+   *  plain radio puts the lines back to the operating system's. */
+  function onProfileChange() {
+    const elrs = !!profileSelect && profileSelect.value === "elrs";
+    if (elrs) {
+      if (baudSelect && baudSelect.querySelector(`option[value="${ELRS_DEFAULTS.baud}"]`)) {
+        baudSelect.value = ELRS_DEFAULTS.baud;
+      }
+      if (fcSelect) fcSelect.value = ELRS_DEFAULTS.fc;
+      if (dtrSelect) dtrSelect.value = ELRS_DEFAULTS.dtr;
+      if (rtsSelect) rtsSelect.value = ELRS_DEFAULTS.rts;
+    } else {
+      if (fcSelect) fcSelect.value = "";
+      if (dtrSelect) dtrSelect.value = "default";
+      if (rtsSelect) rtsSelect.value = "default";
+    }
+    paintRadioFields();
+  }
+
+  /** The options the Radio fields describe, for buildConnectionString. */
+  function radioOptions() {
+    if (!profileSelect || profileSelect.value !== "elrs") return {};
+    return {
+      link: "elrs",
+      dtr: dtrSelect ? dtrSelect.value : "default",
+      rts: rtsSelect ? rtsSelect.value : "default",
+      fc: fcSelect ? fcSelect.value : "",
+    };
+  }
+
   /** The one Connect button, dispatched to whichever branch is showing. */
   function connect() {
     if (kind === "net") connectCustom();
@@ -645,7 +719,7 @@ Corvus.link = (function () {
     }
     showError("");
     wantDevice = device;
-    doConnect(buildConnectionString(device, baud));
+    doConnect(buildConnectionString(device, baud, radioOptions()));
   }
 
   function connectCustom() {
@@ -844,6 +918,11 @@ Corvus.link = (function () {
   function init() {
     serialSelect = document.getElementById("linkSerialPort");
     baudSelect = document.getElementById("linkBaud");
+    profileSelect = document.getElementById("linkProfile");
+    elrsFields = document.getElementById("linkElrsFields");
+    fcSelect = document.getElementById("linkFc");
+    dtrSelect = document.getElementById("linkDtr");
+    rtsSelect = document.getElementById("linkRts");
     refreshBtn = document.getElementById("linkRefreshPorts");
     connectBtn = document.getElementById("linkConnect");
     reconnectBtn = document.getElementById("linkReconnect");
@@ -883,6 +962,7 @@ Corvus.link = (function () {
     if (kindSerialBtn) kindSerialBtn.addEventListener("click", () => setKind("serial"));
     if (kindNetBtn) kindNetBtn.addEventListener("click", () => setKind("net"));
     if (serialSelect) serialSelect.addEventListener("change", onPortChange);
+    if (profileSelect) profileSelect.addEventListener("change", onProfileChange);
 
     // Custom connect on Enter.
     if (customInput) {
@@ -1047,6 +1127,7 @@ Corvus.link = (function () {
     init,
     // Exposed for unit tests:
     buildConnectionString,
+    ELRS_DEFAULTS,
     parseConnection,
     describeConnection,
     portOptionText,

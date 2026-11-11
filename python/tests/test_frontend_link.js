@@ -133,11 +133,13 @@ function testParseConnection() {
   const link = Corvus.link;
   // The panel restores the last link from this, so the baud has to survive a
   // device path full of colons and a Windows device with none.
+  const plain = { link: "", dtr: "default", rts: "default", fc: "" };
   assert.deepEqual(link.parseConnection("serial:/dev/ttyUSB0:57600"), {
-    kind: "serial", device: "/dev/ttyUSB0", baud: "57600", conn: "serial:/dev/ttyUSB0:57600",
+    kind: "serial", device: "/dev/ttyUSB0", baud: "57600", opts: plain,
+    conn: "serial:/dev/ttyUSB0:57600",
   });
   assert.deepEqual(link.parseConnection("serial:COM3:115200"), {
-    kind: "serial", device: "COM3", baud: "115200", conn: "serial:COM3:115200",
+    kind: "serial", device: "COM3", baud: "115200", opts: plain, conn: "serial:COM3:115200",
   });
   assert.equal(link.parseConnection("serial:/dev/tty.usbserial-0001:57600").device,
     "/dev/tty.usbserial-0001", "device keeps its dashes and dots");
@@ -155,6 +157,31 @@ function testParseConnection() {
   // "serial:" without a trailing baud is not a serial string we built, and
   // must not be torn apart as if it were.
   assert.equal(link.parseConnection("serial:/dev/ttyUSB0").kind, "net");
+}
+
+function testExpressLrsConnection() {
+  const link = Corvus.link;
+  const elrs = { link: "elrs", dtr: "off", rts: "off", fc: "betaflight" };
+  const conn = link.buildConnectionString("/dev/ttyUSB0", 460800, elrs);
+  assert.equal(conn, "serial:/dev/ttyUSB0:460800?link=elrs&dtr=off&rts=off&fc=betaflight");
+  // What the builder writes, the parser reads back, baud and device intact.
+  const back = link.parseConnection(conn);
+  assert.equal(back.device, "/dev/ttyUSB0");
+  assert.equal(back.baud, "460800");
+  assert.deepEqual(back.opts, elrs);
+  // A line left at the operating system's default is not written at all.
+  assert.equal(
+    link.buildConnectionString("COM7", 460800, { link: "elrs", dtr: "default", rts: "on", fc: "" }),
+    "serial:COM7:460800?link=elrs&rts=on",
+  );
+  // No options, no query: the string every existing link already uses.
+  assert.equal(link.buildConnectionString("COM7", 57600, {}), "serial:COM7:57600");
+  // Values the backend would reject are not carried over.
+  assert.deepEqual(link.parseConnection("serial:COM7:57600?dtr=maybe&fc=px4").opts,
+    { link: "", dtr: "default", rts: "default", fc: "" });
+  assert.deepEqual(link.describeConnection(conn),
+    { icon: "cable", label: "/dev/ttyUSB0", detail: "ExpressLRS, 460800 baud" });
+  assert.equal(link.ELRS_DEFAULTS.baud, "460800");
 }
 
 function testDescribeConnection() {
@@ -765,6 +792,7 @@ function testSuggestionText() {
 function run() {
   testBuildConnectionString();
   testParseConnection();
+  testExpressLrsConnection();
   testDescribeConnection();
   testPortOptionText();
   testStatusInfo();
