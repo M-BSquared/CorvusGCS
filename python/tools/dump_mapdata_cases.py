@@ -14,7 +14,6 @@ has corvus_link installed.
 from __future__ import annotations
 
 import json
-import math
 import pathlib
 import sys
 
@@ -335,12 +334,752 @@ def tile_math_cases() -> None:
     })
 
 
+def _png_with_filters(width: int, height: int, rows: list[list[int]], colour: int, kinds: list[int]) -> bytes:
+    """A PNG whose scanlines use the given filter kinds (for the decoder)."""
+    import struct
+    import zlib
+    bpp = 3 if colour == 2 else 4
+    stride = width * bpp
+    raw = bytearray()
+    prev = [0] * stride
+    for r, kind in zip(rows, kinds):
+        out = []
+        for i, v in enumerate(r):
+            a = r[i - bpp] if i >= bpp else 0
+            b = prev[i]
+            c = prev[i - bpp] if i >= bpp else 0
+            if kind == 0:
+                f = v
+            elif kind == 1:
+                f = v - a
+            elif kind == 2:
+                f = v - b
+            elif kind == 3:
+                f = v - ((a + b) >> 1)
+            else:
+                p = a + b - c
+                pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
+                pr = a if pa <= pb and pa <= pc else (b if pb <= pc else c)
+                f = v - pr
+            out.append(f & 255)
+        raw.append(kind)
+        raw.extend(out)
+        prev = r
+
+    def chunk(kind: bytes, body: bytes) -> bytes:
+        return (struct.pack(">I", len(body)) + kind + body
+                + struct.pack(">I", zlib.crc32(kind + body) & 0xFFFFFFFF))
+
+    header = struct.pack(">IIBBBBB", width, height, 8, colour, 0, 0, 0)
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header)
+            + chunk(b"IDAT", zlib.compress(bytes(raw))) + chunk(b"IEND", b""))
+
+
+def dem_tiles_cases() -> None:
+    import random
+    from array import array
+    from corvus import dem_tiles as d
+
+    def grid_of(values):
+        return list(values)
+
+    rnd = random.Random(7)
+    size = 8
+
+    def tile(base: int, slope: int) -> bytes:
+        vals = array(d._U32, [32768 * 256 + base + slope * (r * size + c) + rnd.randrange(0, 40)
+                              for r in range(size) for c in range(size)])
+        return d.encode(size, size, vals)
+
+    decode_cases = []
+    for colour in (2, 6):
+        bpp = 3 if colour == 2 else 4
+        for kinds in ([0] * 4, [1] * 4, [2] * 4, [3] * 4, [4] * 4, [1, 2, 3, 4], [4, 3, 2, 1]):
+            rows = [[rnd.randrange(256) for _ in range(4 * bpp)] for _ in range(4)]
+            png = _png_with_filters(4, 4, rows, colour, kinds)
+            g = d.decode(png)
+            decode_cases.append({"png": _b64(png), "width": g.width, "height": g.height,
+                                 "values": list(g.values)})
+    bad = []
+    good = tile(1000, 3)
+    for name, blob in [("empty", b""), ("magic", b"\x89PNG\r\n\x1a\nxx"), ("text", b"hello"),
+                       ("truncated", good[:40]), ("noidat", good[:33] + good[-12:])]:
+        bad.append({"name": name, "png": _b64(blob), "decoded": d.decode(blob) is not None})
+    anc = tile(5000, 7)
+    overzoom = []
+    for dz, sx, sy in [(1, 0, 0), (1, 1, 1), (2, 3, 0), (2, 1, 2), (3, 5, 6), (3, 0, 7), (0, 0, 0), (1, 2, 0), (2, -1, 0)]:
+        out = d.overzoom(anc, dz, sx, sy)
+        overzoom.append({"dz": dz, "x": sx, "y": sy,
+                         "values": None if out is None else list(d.decode(out).values)})
+    trans = []
+    for a, b, sz in [("terrarium", "mapbox", 4), ("mapbox", "terrarium", 8), ("terrarium", "terrarium", 16),
+                     ("terrarium", "nope", 4), ("terrarium", "mapbox", 1)]:
+        out = d.transcode(anc, a, b, sz)
+        trans.append({"from": a, "to": b, "size": sz,
+                      "values": None if out is None else list(d.decode(out).values)})
+    heights = []
+    for enc, dz, sx, sy, sz in [("terrarium", 0, 0, 0, None), ("mapbox", 1, 1, 0, None), ("terrarium", 2, 3, 3, 4),
+                                ("nope", 0, 0, 0, None)]:
+        h = d.heights(anc, enc, dz, sx, sy, sz)
+        heights.append({"enc": enc, "dz": dz, "x": sx, "y": sy, "size": sz, "values": h})
+    eh = [float(v) * 1.37 - 40 for v in range(16)]
+    enc_heights = {"values": eh, "terrarium": list(d.decode(d.encode_heights(4, eh, "terrarium")).values),
+                   "mapbox": list(d.decode(d.encode_heights(4, eh, "mapbox")).values)}
+    store = {(0, 0, 0): tile(3000, 2), (3, 2, 2): tile(6000, 5), (3, 3, 2): tile(6500, 1), (2, 3, 3): tile(2000, 9)}
+    fall = d.DemFallback()
+    requests = []
+    for z, x, y in [(1, 0, 0), (1, 1, 1), (3, 2, 3), (3, 3, 3), (3, 4, 2), (3, 1, 2), (4, 5, 4), (4, 4, 4),
+                    (4, 5, 5), (2, 0, 0), (2, 3, 3), (0, 0, 0), (5, 0, 0)]:
+        out = fall.tile("src", z, x, y, lambda a, b, c: store.get((a, b, c)))
+        requests.append({"z": z, "x": x, "y": y,
+                         "values": None if out is None else list(d.decode(out).values)})
+    write("mapdata_dem_tiles_cases.json", {
+        "decode": decode_cases, "bad": bad, "size": size, "ancestor": _b64(anc),
+        "overzoom": overzoom, "transcode": trans, "heights": heights, "encode_heights": enc_heights,
+        "store": [{"z": k[0], "x": k[1], "y": k[2], "png": _b64(v)} for k, v in store.items()],
+        "fallback": requests})
+
+
+def write_bin(path: pathlib.Path, data: bytes) -> None:
+    if CHECK:
+        if not path.is_file() or path.read_bytes() != data:
+            STALE.append(str(path.relative_to(DATA)))
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(data)
+
+
+def _lzw_encode(data: bytes) -> bytes:
+    """TIFF LZW, MSB first, early change."""
+    out = bytearray()
+    acc = 0
+    nbits = 0
+
+    def emit(code: int, bits: int) -> None:
+        nonlocal acc, nbits
+        acc = (acc << bits) | code
+        nbits += bits
+        while nbits >= 8:
+            out.append((acc >> (nbits - 8)) & 255)
+            nbits -= 8
+        acc &= (1 << nbits) - 1
+
+    table = {bytes([i]): i for i in range(256)}
+    bits = 9
+    emit(256, bits)
+    w = b""
+    for byte in data:
+        wc = w + bytes([byte])
+        if wc in table:
+            w = wc
+            continue
+        emit(table[w], bits)
+        table[wc] = len(table) + 2
+        if len(table) + 2 >= (1 << bits) and bits < 12:
+            bits += 1
+        if len(table) + 2 >= 4094:
+            emit(256, bits)
+            table = {bytes([i]): i for i in range(256)}
+            bits = 9
+        w = bytes([byte])
+    if w:
+        emit(table[w], bits)
+    emit(257, bits)
+    if nbits:
+        out.append((acc << (8 - nbits)) & 255)
+    return bytes(out)
+
+
+def _packbits_encode(data: bytes) -> bytes:
+    out = bytearray()
+    i = 0
+    while i < len(data):
+        run = 1
+        while i + run < len(data) and data[i + run] == data[i] and run < 128:
+            run += 1
+        if run >= 3:
+            out.append(257 - run)
+            out.append(data[i])
+            i += run
+            continue
+        j = i
+        while j < len(data) and j - i < 128 and not (j + 2 < len(data) and data[j] == data[j + 1] == data[j + 2]):
+            j += 1
+        j = max(j, i + 1)
+        out.append(j - i - 1)
+        out += data[i:j]
+        i = j
+    return bytes(out)
+
+
+def _tiff(values, width, height, *, bo="<", fmt="f", compression="none", predictor=1,
+          tile=None, rows_per_strip=5, geo="tie", epsg=4326, projected=True,
+          point=False, nodata=None, flip=False, scale=(1.0, 1.0), origin=(100.0, 200.0),
+          planar_missing=False, georef=True) -> bytes:
+    """A small GeoTIFF with the options the reader has to cope with."""
+    import struct
+    import zlib
+    code = {"f": (3, 32), "d": (3, 64), "B": (1, 8), "h": (2, 16), "H": (1, 16), "i": (2, 32)}[fmt]
+    size = code[1] // 8
+    pack = {"f": "f", "d": "d", "B": "B", "h": "h", "H": "H", "i": "i"}[fmt]
+    comp = {"none": 1, "lzw": 5, "deflate": 8, "packbits": 32773}[compression]
+
+    def encode_block(block_rows: list[list[float]], bw: int) -> bytes:
+        rows_bytes = []
+        for r in block_rows:
+            vals = list(r) + [0] * (bw - len(r))
+            if predictor == 2:
+                vals = [vals[0]] + [(vals[k] - vals[k - 1]) for k in range(1, len(vals))]
+                mask = (1 << (8 * size)) - 1
+                vals = [(v & mask) - ((1 << (8 * size)) if fmt in "hi" and (v & mask) >= (1 << (8 * size - 1)) else 0)
+                        for v in vals]
+            raw = struct.pack(bo + pack * len(vals), *[v if fmt in "fd" else int(v) for v in vals])
+            if predictor == 3:
+                n = len(vals)
+                planes = bytearray(len(raw))
+                for k in range(size):
+                    pos = size - 1 - k if bo == "<" else k
+                    planes[k * n:(k + 1) * n] = raw[pos::size]
+                for i in range(len(planes) - 1, 0, -1):
+                    planes[i] = (planes[i] - planes[i - 1]) & 255
+                raw = bytes(planes)
+            rows_bytes.append(raw)
+        data = b"".join(rows_bytes)
+        if comp == 8:
+            return zlib.compress(data)
+        if comp == 5:
+            return _lzw_encode(data)
+        if comp == 32773:
+            return _packbits_encode(data)
+        return data
+
+    grid_rows = [values[r * width:(r + 1) * width] for r in range(height)]
+    blocks = []
+    if tile:
+        tw, th = tile
+        for ty in range(0, height, th):
+            for tx in range(0, width, tw):
+                rows = [grid_rows[r][tx:tx + tw] if r < height else [] for r in range(ty, ty + th)]
+                blocks.append(encode_block(rows, tw))
+    else:
+        for ty in range(0, height, rows_per_strip):
+            rows = grid_rows[ty:ty + rows_per_strip]
+            blocks.append(encode_block(rows, width))
+
+    e = bo
+    entries: list[tuple[int, int, int, bytes]] = []
+
+    def short(tag, *vals):
+        entries.append((tag, 3, len(vals), struct.pack(e + "H" * len(vals), *vals)))
+
+    def long(tag, *vals):
+        entries.append((tag, 4, len(vals), struct.pack(e + "I" * len(vals), *vals)))
+
+    def dbl(tag, *vals):
+        entries.append((tag, 12, len(vals), struct.pack(e + "d" * len(vals), *vals)))
+
+    def ascii_(tag, text):
+        b = text.encode() + b"\x00"
+        entries.append((tag, 2, len(b), b))
+
+    long(256, width)
+    long(257, height)
+    short(258, code[1])
+    short(259, comp)
+    short(262, 1)
+    short(277, 1)
+    short(284, 1)
+    if predictor != 1:
+        short(317, predictor)
+    short(339, code[0])
+    if tile:
+        long(322, tile[0])
+        long(323, tile[1])
+    else:
+        long(278, rows_per_strip)
+    if georef:
+        dx, dy = scale
+        x0, y0 = origin
+        if geo == "tie":
+            dbl(33550, dx, -dy if flip else dy, 0.0)
+            dbl(33922, 0.0, 0.0, 0.0, x0, y0, 0.0)
+        elif geo == "matrix":
+            dbl(34264, dx, 0, 0, x0, 0, -dy if not flip else dy, 0, y0, 0, 0, 1, 0, 0, 0, 0, 1)
+        elif geo == "rotated":
+            dbl(34264, dx, 0.5, 0, x0, 0.5, -dy, 0, y0, 0, 0, 1, 0, 0, 0, 0, 1)
+        keys = [(1024, 0, 1, 1 if projected else 2), (1025, 0, 1, 2 if point else 1)]
+        if epsg:
+            keys.append((3072 if projected else 2048, 0, 1, epsg))
+        directory = [1, 1, 0, len(keys)] + [v for k in keys for v in k]
+        short(34735, *directory)
+    if nodata is not None:
+        ascii_(42113, nodata)
+    # Strip or tile data, laid out after the IFD.
+    offs_tag, counts_tag = (324, 325) if tile else (273, 279)
+    entries.append((offs_tag, 4, len(blocks), b"\x00" * 4 * len(blocks)))
+    entries.append((counts_tag, 4, len(blocks), struct.pack(e + "I" * len(blocks), *[len(b) for b in blocks])))
+    entries.sort(key=lambda t: t[0])
+    head = (b"II*\x00" if bo == "<" else b"MM\x00*") + struct.pack(e + "I", 8)
+    ifd_size = 2 + 12 * len(entries) + 4
+    extra_at = 8 + ifd_size
+    # First pass: size the extra area to know where the blocks start.
+    big = [len(v) for (_t, _ty, _n, v) in entries if len(v) > 4]
+    total_extra = sum(big + [(-n) % 2 for n in big])
+    data_at = extra_at + total_extra
+    offsets = []
+    pos = data_at
+    for b in blocks:
+        offsets.append(pos)
+        pos += len(b)
+    fixed = []
+    for tag, typ, n, val in entries:
+        if tag == offs_tag:
+            val = struct.pack(e + "I" * len(blocks), *offsets)
+        fixed.append((tag, typ, n, val))
+    out = bytearray(head)
+    out += struct.pack(e + "H", len(fixed))
+    cursor = extra_at
+    extras = bytearray()
+    for tag, typ, n, val in fixed:
+        if len(val) <= 4:
+            ref = val.ljust(4, b"\x00")
+        else:
+            ref = struct.pack(e + "I", cursor + len(extras))
+            extras += val
+            if len(val) % 2:
+                extras += b"\x00"
+        out += struct.pack(e + "HHI", tag, typ, n) + ref
+    out += struct.pack(e + "I", 0)
+    out += extras
+    for b in blocks:
+        out += b
+    return bytes(out)
+
+
+def dem_import_cases() -> None:
+    import math
+    import tempfile
+    from corvus import dem_import as di
+
+    folder = DATA / "dem_import"
+    w, h = 17, 13
+    heights = [100.0 + 30.0 * math.sin(c / 3.0) + 20.0 * math.cos(r / 2.0) + (r * w + c) % 7 * 0.25
+               for r in range(h) for c in range(w)]
+    ints = [int(v) for v in heights]
+    bytes_ = [int(v) % 256 for v in heights]
+    big_w, big_h = 70, 50
+    big = [500.0 + ((r * 31 + c * 17) % 97) * 0.5 + math.sin(r / 5) * 40 for r in range(big_h) for c in range(big_w)]
+    nodata_values = list(heights)
+    for i in (3, 20, 21, 100):
+        nodata_values[i] = -9999.0
+    nodata_values[7] = 15000.0
+    cases = []
+    files: dict[str, bytes] = {}
+
+    def add(name: str, data: bytes, filename: str | None = None) -> None:
+        files[name] = data
+        cases.append({"file": name, "filename": filename or name})
+
+    for bo in "<>":
+        tag = "le" if bo == "<" else "be"
+        for comp in ("none", "deflate", "packbits", "lzw"):
+            add(f"f32_{tag}_{comp}_strip.tif", _tiff(heights, w, h, bo=bo, compression=comp, epsg=25832))
+            add(f"f32_{tag}_{comp}_tile.tif", _tiff(heights, w, h, bo=bo, compression=comp, tile=(8, 8), epsg=25832))
+        add(f"f32_{tag}_deflate_pred3.tif", _tiff(heights, w, h, bo=bo, compression="deflate", predictor=3))
+        add(f"f32_{tag}_lzw_pred3_tile.tif", _tiff(heights, w, h, bo=bo, compression="lzw", predictor=3, tile=(16, 16)))
+        add(f"i16_{tag}_lzw_pred2.tif", _tiff(ints, w, h, bo=bo, fmt="h", compression="lzw", predictor=2))
+        add(f"i16_{tag}_deflate_pred2_tile.tif", _tiff(ints, w, h, bo=bo, fmt="h", compression="deflate", predictor=2, tile=(8, 8)))
+        add(f"u8_{tag}_packbits.tif", _tiff(bytes_, w, h, bo=bo, fmt="B", compression="packbits"))
+        add(f"f64_{tag}_none.tif", _tiff(heights, w, h, bo=bo, fmt="d"))
+    add("big_lzw.tif", _tiff(big, big_w, big_h, compression="lzw", predictor=3, rows_per_strip=9))
+    add("big_deflate_tile.tif", _tiff(big, big_w, big_h, compression="deflate", tile=(32, 16)))
+    add("nodata_tag.tif", _tiff(nodata_values, w, h, nodata="-9999"))
+    add("nodata_text.tif", _tiff(nodata_values, w, h, nodata="-9999.0 "))
+    add("pixel_point.tif", _tiff(heights, w, h, point=True))
+    add("flipped.tif", _tiff(heights, w, h, flip=True))
+    add("matrix.tif", _tiff(heights, w, h, geo="matrix", epsg=3857))
+    add("matrix_flipped.tif", _tiff(heights, w, h, geo="matrix", flip=True, epsg=32633))
+    add("geographic.tif", _tiff(heights, w, h, projected=False, epsg=4258, scale=(0.0001, 0.0001), origin=(11.5, 48.1)))
+    add("no_epsg.tif", _tiff(heights, w, h, epsg=0))
+    add("no_georef.tif", _tiff(heights, w, h, georef=False))
+    add("rotated.tif", _tiff(heights, w, h, geo="rotated"))
+    add("int32_none.tif", _tiff(ints, w, h, fmt="i"))
+    good = _tiff(heights, w, h)
+    add("truncated.tif", good[:len(good) // 2])
+    add("garbage.tif", b"hello world, not a tiff at all" * 4)
+    add("zero_size.tif", _tiff(heights, 1, 1, rows_per_strip=1) if False else good[:8] + b"\x00\x00\x00\x00")
+    comp7 = bytearray(good)
+    ifd = 8
+    n = int.from_bytes(comp7[ifd:ifd + 2], "little")
+    for k in range(n):
+        at = ifd + 2 + 12 * k
+        if int.from_bytes(comp7[at:at + 2], "little") == 259:
+            comp7[at + 8:at + 10] = (7).to_bytes(2, "little")
+    add("jpeg.tif", bytes(comp7))
+
+    ascii_ok = "ncols 6\nnrows 4\nxllcorner 500000\nyllcorner 5300000\ncellsize 2\nNODATA_value -9999\n" + "\n".join(
+        " ".join(str(-9999 if (r + c) % 11 == 0 else 100 + r * 6 + c * 0.5) for c in range(6)) for r in range(4)) + "\n"
+    add("ok.asc", ascii_ok.encode())
+    add("center.asc", ascii_ok.replace("xllcorner", "xllcenter").replace("yllcorner", "yllcenter").encode())
+    add("crlf.asc", ascii_ok.replace("\n", "\r\n").encode())
+    add("cr_only.asc", ascii_ok.replace("\n", "\r").encode())
+    add("one_line.asc", ("ncols 3\nnrows 3\nxllcorner 0\nyllcorner 0\ncellsize 1\n" + "1 2 3 4 5 6 7 8 9\n").encode())
+    add("short.asc", ascii_ok.rsplit("\n", 3)[0].encode() + b"\n")
+    add("bad_token.asc", ascii_ok.replace("100.5", "abc").encode())
+    add("bad_header.asc", ascii_ok.replace("cellsize 2", "cellsize x2").encode())
+    add("no_cellsize.asc", ascii_ok.replace("cellsize 2\n", "").encode())
+    add("no_corner.asc", ascii_ok.replace("xllcorner 500000\n", "").encode())
+    add("no_ycorner.asc", ascii_ok.replace("yllcorner 5300000\n", "").encode())
+    add("no_cols.asc", ascii_ok.replace("ncols 6\n", "nrows 4\n").encode())
+    add("tiny.asc", b"ncols 1\nnrows 1\nxllcorner 0\nyllcorner 0\ncellsize 1\n5\n")
+    add("header_only.asc", b"ncols 3\nnrows 3\nxllcorner 0\nyllcorner 0\ncellsize 1\n")
+    add("wrongext.tif", ascii_ok.encode())
+
+    xyz = [(690000 + c * 1.0, 5331000 + (8 - r) * 1.0, 500 + r * 0.7 + c * 0.1 + (r * c) % 5) for r in range(9) for c in range(12)]
+    add("grid.xyz", "\n".join(f"{x} {y} {z}" for x, y, z in xyz).encode() + b"\n")
+    add("grid_commas.xyz", ("x,y,z\n" + "\n".join(f"{x},{y},{z}" for x, y, z in reversed(xyz)) + "\n").encode())
+    add("grid_semi.txt", ("# header\n" + "\n".join(f"{x};{y};{z}" for x, y, z in xyz) + "\n").encode())
+    holes = [p for i, p in enumerate(xyz) if i % 5 != 3]
+    add("holes.xyz", "\n".join(f"{x} {y} {z}" for x, y, z in holes).encode())
+    far = [(x, y, -99999.0 if (i % 13 == 0) else z) for i, (x, y, z) in enumerate(xyz)]
+    add("sentinel.xyz", "\n".join(f"{x} {y} {z}" for x, y, z in far).encode())
+    rnd = __import__("random").Random(3)
+    scattered = [(rnd.uniform(0, 100), rnd.uniform(0, 100), rnd.uniform(0, 50)) for _ in range(400)]
+    add("scattered.xyz", "\n".join(f"{x:.3f} {y:.3f} {z:.3f}" for x, y, z in scattered).encode())
+    add("line.xyz", "\n".join(f"{c} 5 {c}" for c in range(20)).encode())
+    add("few.xyz", b"1 2 3\n4 5 6\n")
+    add("empty.xyz", b"")
+    add("degrees.xyz", "\n".join(f"{11.5 + c * 0.0005:.4f} {48.1 - r * 0.0005:.4f} {500 + r + c}" for r in range(8) for c in range(8)).encode())
+
+    out = []
+    for case in cases:
+        write_bin(folder / case["file"], files[case["file"]])
+        path = str(folder / case["file"]) if not CHECK else None
+        with tempfile.NamedTemporaryFile(suffix=".bin") as tmp:
+            tmp.write(files[case["file"]])
+            tmp.flush()
+            try:
+                kind = di.detect_format(tmp.name, case["filename"])
+            except di.DemImportError as exc:
+                kind = None
+                out.append({**case, "error": str(exc), "format": None})
+                continue
+            try:
+                g = di.read_grid(tmp.name, case["filename"])
+            except di.DemImportError as exc:
+                out.append({**case, "format": kind, "error": str(exc)})
+                continue
+            except Exception as exc:  # noqa: BLE001 - an uncaught error is a 500 in Python
+                out.append({**case, "format": kind, "crash": type(exc).__name__})
+                continue
+            out.append({**case, "format": kind, "width": g.width, "height": g.height, "x0": g.x0, "y0": g.y0,
+                        "dx": g.dx, "dy": g.dy, "epsg": g.epsg, "guess": di.guess_epsg(g),
+                        "values": [None if v != v else v for v in g.values]})
+        del path
+    write("mapdata_dem_import_cases.json", {"cases": out})
+
+
+def custom_dem_cases() -> None:
+    import math
+    import shutil
+    import tempfile
+    from array import array
+    from corvus import custom_dem as cd
+    from corvus import dem_tiles
+
+    names = [("  Hello <b>World</b> & 'co' ", "x"), ("", "fallback name"), ("", ""), ("a" * 90, ""),
+             ("\u00e4\u00f6\u00fc   mix\t\ttabs", ""), ("`tick` \"q\"", "z"), ("   ", "   spaced   ")]
+    clean = [{"raw": r, "fallback": f, "name": cd._clean_name(r, f)} for r, f in names]
+    zooms = [(0.05, 48.0), (1.0, 48.0), (0.5, 0.0), (30.0, 48.0), (1000.0, 70.0), (0.0, 10.0), (2.0, 89.0), (0.0004, 10.0)]
+    maxzoom = [{"res": r, "lat": la, "z": cd._maxzoom_for(r, la)} for r, la in zooms]
+    lonlat = []
+    for z, px, py in [(0, 0, 0), (3, 700.5, 300.25), (14, 8765432.0, 5678901.5), (18, 1.0, 2.0)]:
+        lonlat.append({"z": z, "px": px, "py": py, "lonlat": list(cd.tile_lonlat(z, px, py)),
+                       "pixel": list(cd.lonlat_pixel(z, *cd.tile_lonlat(z, px, py)))})
+    ovs = []
+    for wi, hi in [(4, 4), (3, 5), (5, 3), (17, 1)]:
+        vals = array("f", [(i * 1.5 if i % 7 else math.nan) for i in range(wi * hi)])
+        o, w2, h2 = cd._overview(vals, wi, hi)
+        ovs.append({"width": wi, "height": hi, "values": [None if v != v else v for v in vals], "w2": w2, "h2": h2,
+                    "out": [None if v != v else v for v in o]})
+    cls = []
+    import random
+    rnd = random.Random(5)
+    for name, wi, hi, res, step_fn in [
+        ("flat", 80, 60, 1.0, lambda r, c: 100.0 + r * 0.1),
+        ("walls", 80, 60, 1.0, lambda r, c: 100.0 + (8.0 if (c // 9) % 2 else 0.0)),
+        ("noise", 80, 60, 1.0, lambda r, c: 100.0 + rnd.random()),
+        ("coarse", 80, 60, 9.0, lambda r, c: 100.0 + (8.0 if (c // 9) % 2 else 0.0)),
+        ("tiny", 20, 20, 1.0, lambda r, c: 100.0),
+        ("holes", 80, 60, 1.0, lambda r, c: math.nan if c % 3 else 100.0 + (r % 5) * 4.0),
+    ]:
+        vals = array("f", [step_fn(r, c) for r in range(hi) for c in range(wi)])
+        cls.append({"name": name, "width": wi, "height": hi, "res": res,
+                    "values": [None if v != v else v for v in vals], "kind": cd.classify(vals, wi, hi, res)})
+
+    # A whole model: import, list, render.
+    from corvus import dem_import as di
+    folder = DATA / "custom_dem"
+    gw, gh = 300, 240
+    vals = [120.0 + 15.0 * math.sin(c / 17.0) + 10.0 * math.cos(r / 11.0) + (6.0 if 100 < c < 130 and 80 < r < 110 else 0.0)
+            for r in range(gh) for c in range(gw)]
+    asc = f"ncols {gw}\nnrows {gh}\nxllcorner 690000\nyllcorner 5330000\ncellsize 1\nNODATA_value -9999\n"
+    asc += "\n".join(" ".join(f"{v:.3f}" for v in vals[r * gw:(r + 1) * gw]) for r in range(gh)) + "\n"
+    write_bin(folder / "model.asc", asc.encode())
+
+    def base(z, x, y):
+        if z < 15:
+            return None
+        return [300.0 + (x * 7 + y * 3 + i % 256 * 0.01 + (i // 256) * 0.02) % 50 for i in range(65536)]
+
+    with tempfile.TemporaryDirectory() as tmp:
+        src = pathlib.Path(tmp) / "model.asc"
+        src.write_bytes(asc.encode())
+        store = cd.CustomDemStore(str(pathlib.Path(tmp) / "store"))
+        os_makedirs = __import__("os").makedirs
+        os_makedirs(store.root, exist_ok=True)
+        model = store.import_file(str(src), "Ground Model.asc", "  My <Model>  ", 25832)
+        second = store.import_file(str(src), "Second.asc", "", 25832, model["id"])
+        listing = store.list_models()
+        terrain = store.terrain_entries()
+        zxy = []
+        lon, lat = 11.5, 48.1
+        for z in (12, 14, 15, 16, 17, 18):
+            px, py = cd.lonlat_pixel(z, lon, lat)
+            cx, cy = int(px // 256), int(py // 256)
+            for dxy in ((0, 0), (1, 0), (0, 1), (-1, -1)):
+                zxy.append((z, cx + dxy[0], cy + dxy[1]))
+        zxy.append((14, 1, 1))
+        tiles = []
+        for z, x, y in zxy:
+            for use_base in (True, False):
+                res = store.tile(model["id"], z, x, y, base if use_base else None)
+                if res is None:
+                    tiles.append({"z": z, "x": x, "y": y, "base": use_base, "none": True})
+                    continue
+                blob, complete = res
+                px = list(dem_tiles.decode(blob).values)
+                tiles.append({"z": z, "x": x, "y": y, "base": use_base, "complete": complete,
+                              "sum": sum(px), "samples": px[::997],
+                              "covers": store.covers(model["id"], z, x, y)})
+        renamed = store.rename(model["id"], " <new> name ")
+        norename = store.rename("dem_0000000000", "x")
+        removed = store.remove(model["id"])
+        gone = store.remove(model["id"])
+        store.close()
+
+    def strip(m):
+        return {k: v for k, v in m.items() if k not in ("id", "created_at", "bytes")}
+    def strip_listing(ms):
+        return [strip(m) for m in ms]
+    errors = []
+    with tempfile.TemporaryDirectory() as tmp:
+        store = cd.CustomDemStore(str(pathlib.Path(tmp) / "store"))
+        __import__("os").makedirs(store.root, exist_ok=True)
+        for label, text, filename, epsg in [
+            ("no crs", "ncols 4\nnrows 4\nxllcorner 500000\nyllcorner 5300000\ncellsize 2\n" + "1 2 3 4\n" * 4, "a.asc", None),
+            ("unknown crs", "ncols 4\nnrows 4\nxllcorner 500000\nyllcorner 5300000\ncellsize 2\n" + "1 2 3 4\n" * 4, "a.asc", 1234),
+            ("off earth", "ncols 4\nnrows 4\nxllcorner 5\nyllcorner 5\ncellsize 2\n" + "1 2 3 4\n" * 4, "a.asc", 25832),
+            ("no data", "ncols 4\nnrows 4\nxllcorner 500000\nyllcorner 5300000\ncellsize 2\nnodata_value 1\n" + "1 1 1 1\n" * 4, "a.asc", 25832),
+            ("degrees", "ncols 4\nnrows 4\nxllcorner 11.5\nyllcorner 48.1\ncellsize 0.001\n" + "1 2 3 4\n" * 4, "d.asc", None),
+        ]:
+            src = pathlib.Path(tmp) / "in.asc"
+            src.write_text(text)
+            try:
+                m = store.import_file(str(src), filename, "", epsg)
+                errors.append({"label": label, "ok": strip(m), "epsg": epsg, "text": text, "filename": filename})
+            except di.DemImportError as exc:
+                errors.append({"label": label, "error": str(exc), "epsg": epsg, "text": text, "filename": filename})
+        try:
+            store.import_file(str(src), "a.asc", "", 25832, "dem_ffffffffff")
+            missing = None
+        except di.DemImportError as exc:
+            missing = str(exc)
+        store.close()
+        try:
+            store.import_file(str(src), "a.asc", "", 25832)
+            closed = None
+        except di.DemImportError as exc:
+            closed = str(exc)
+    del shutil
+    write("mapdata_custom_dem_cases.json", {
+        "clean_name": clean, "maxzoom": maxzoom, "lonlat": lonlat, "overview": ovs, "classify": cls,
+        "grid": {"width": gw, "height": gh, "epsg": 25832, "file": "custom_dem/model.asc"},
+        "model": strip(model), "second": strip(second), "listing": strip_listing(listing),
+        "terrain": [{k: v for k, v in t.items() if k != "id"} for t in terrain],
+        "tiles": tiles, "renamed": renamed, "norename": norename, "removed": removed, "gone": gone,
+        "errors": errors, "missing": missing, "closed": closed})
+
+
+def buildings_cases() -> None:
+    import gzip
+    import http.server
+    import tempfile
+    import threading
+    import time
+    import urllib.parse
+    from corvus import buildings as b
+
+    lengths = ["12", "12 m", "12,5", " 7.5m", "-3", "- 3", "abc", "", "1.2.3", "1e3", ".", "-", "12-4", 12, 12.5, True, None, [1], {"a": 1}, float("inf"), "99999999999999999999999999999999999999999999999"
+               + "9" * 300, "3 4", "0", "  8"]
+    parse = []
+    for v in lengths:
+        r = b._parse_length(v)
+        parse.append({"raw": v if not isinstance(v, float) or v == v and abs(v) != float("inf") else "inf-float",
+                      "value": r, "skip": isinstance(v, float) and abs(v) == float("inf")})
+    heights = [{}, {"height": "20"}, {"height": "1"}, {"height": "5000"}, {"building:levels": "3"},
+               {"building:levels": "0"}, {"building:levels": "-2", "height": "x"}, {"height": "10", "min_height": "4"},
+               {"height": "10", "min_height": "40"}, {"height": "10", "building:min_level": "1"},
+               {"height": "10", "min_height": "-5"}, {"building:min_level": "2"}, {"height": "4", "min_height": "3.5"},
+               {"height": "abc", "building:levels": "2"}, "notadict", None, [], {"height": 12.345},
+               {"min_height": "x", "building:min_level": "x", "height": "7"}]
+    hs = [{"tags": t, "result": list(b.building_height(t))} for t in heights]
+    bounds = [{"z": z, "x": x, "y": y, "bounds": list(b.cell_bounds(z, x, y))}
+              for z, x, y in [(15, 17430, 11376), (15, 0, 0), (14, 8715, 5688), (0, 0, 0), (15, 32767, 32767), (10, 100, 200)]]
+    cells = [{"lon": lo, "lat": la, "zoom": zm, "cell": list(b.cell_of(lo, la, zm))}
+             for lo, la, zm in [(11.5, 48.1, 15), (-180, 85.1, 15), (179.9999, -85.5, 15), (0, 0, 14), (11.5, 48.1, 14),
+                                (200, 10, 15), (-200, -10, 15), (11.5, 90, 15)]]
+    w, s_, e, n = b.cell_bounds(14, 8715, 5688)
+
+    def sq(lon, lat, d=0.0002, closed=True, n_pts=4):
+        pts = [(lon, lat), (lon + d, lat), (lon + d, lat + d), (lon, lat + d)]
+        if closed:
+            pts.append((lon, lat))
+        return [{"lon": x, "lat": y} for x, y in pts]
+
+    def way(i, geometry, tags):
+        return {"type": "way", "id": i, "tags": tags, "geometry": geometry}
+
+    elements = []
+    rnd = __import__("random").Random(11)
+    for i in range(12):
+        lon = w + (e - w) * rnd.random() * 0.9
+        lat = s_ + (n - s_) * rnd.random() * 0.9
+        tags = {"building": "yes"}
+        if i % 3 == 0:
+            tags["height"] = f"{rnd.randint(3, 60)} m"
+        if i % 3 == 1:
+            tags["building:levels"] = str(rnd.randint(1, 12))
+        if i % 4 == 0:
+            tags["min_height"] = "2"
+        elements.append(way(1000 + i, sq(round(lon, 7), round(lat, 7), closed=bool(i % 2)), tags))
+    elements += [
+        way(1000, sq(w + 0.001, s_ + 0.001), {"building": "yes", "height": "5"}),
+        way(2000, sq(w + 0.001, s_ + 0.001)[:3], {"building": "yes"}),
+        way(2001, [], {"building": "yes"}),
+        way(2002, sq(w + 0.002, s_ + 0.002), {"amenity": "x"}),
+        way(2003, sq(w + 0.002, s_ + 0.002), {"building": ""}),
+        way(2004, sq(w + 0.0025, s_ + 0.0025), "notdict"),
+        {"type": "node", "id": 5, "tags": {"building": "yes"}},
+        {"type": "way", "id": 2005, "tags": {"building": "yes"}, "geometry": [{"lon": 1}] * 5},
+        {"type": "way", "id": 2006, "tags": {"building": "roof"}, "geometry": [1, 2, 3, 4]},
+        "junk", None,
+        {"type": "relation", "id": 3000, "tags": {"building": "yes", "type": "multipolygon", "height": "14"},
+         "members": [{"role": "outer", "geometry": sq(e - 0.003, n - 0.003, 0.0004)},
+                     {"role": "inner", "geometry": sq(e - 0.0029, n - 0.0029, 0.0001)},
+                     {"role": "outer", "geometry": sq(e - 0.002, n - 0.002, 0.0003)},
+                     {"role": "outer", "geometry": [{"lon": 1, "lat": 2}]}, "bad"]},
+        {"type": "relation", "id": 3001, "tags": {"building": "yes"}, "members": "x"},
+        {"type": "way", "tags": {"building": "yes", "height": "9"}, "geometry": sq(w + 0.004, s_ + 0.004)},
+        {"type": "way", "tags": {"building": "yes", "height": "9"}, "geometry": sq(w + 0.004, s_ + 0.004)},
+        way(1000, sq(w + 0.005, s_ + 0.005), {"building": "yes", "height": "70"}),
+        {"type": "relation", "id": 1000, "tags": {"building": "yes"}, "members": [{"role": "outer", "geometry": sq(w + 0.006, s_ + 0.006)}]},
+        way(4000, [{"lon": 11.5, "lat": 48.1}, {"lon": 11.5003, "lat": 48.1}, {"lon": 11.5003, "lat": 48.1003}, {"lon": 11.5, "lat": 48.1003}],
+            {"building": "yes", "height": "4"}),
+        way(4001, [{"lon": w - 0.001, "lat": s_ - 0.001}, {"lon": w + 0.0004, "lat": s_ - 0.001}, {"lon": w + 0.0004, "lat": s_ + 0.0004},
+                   {"lon": w - 0.001, "lat": s_ + 0.0004}], {"building": "yes"}),
+    ]
+    payloads = [{"elements": elements}, {"elements": []}, {}, [], {"elements": "x"}, None,
+                {"elements": elements[:3], "remark": "runtime error: Query timed out"}]
+    geo = [{"overpass": p, "geojson": b.to_geojson(p)} for p in payloads]
+    remarks = [{"payload": r, "failed": b.overpass_failed(r)} for r in
+               [{}, [], "x", None, {"remark": ""}, {"remark": "  "}, {"remark": "runtime error: x"},
+                {"remark": "Query timed out"}, {"remark": "Out of memory"}, {"remark": "fine, nothing wrong"},
+                {"remark": 5}, {"elements": []}]]
+    block = (14, 8715, 5688)
+    split = b.split_by_cell(b.to_geojson(payloads[0]), b.cells_of_block(*block))
+    split_out = [{"cell": list(c), "collection": v} for c, v in split.items()]
+    split_other = b.split_by_cell(b.to_geojson(payloads[0]), [(15, 1, 1)])
+    split_edge = b.split_by_cell({"features": [
+        {"geometry": {"coordinates": [[[11.5, 48.1]]]}}, {"geometry": {"coordinates": []}}, {"geometry": {}}, {},
+        {"geometry": {"coordinates": [[[11.5, 48.1], [11.5002, 48.1], [11.5, 48.1]]]}},
+        {"geometry": {"coordinates": [[["a", 1], [2, 3]]]}}]}, b.cells_of_block(14, 8715, 5688))
+    queries = [{"bounds": list(bd), "query": b.overpass_query(*bd)} for bd in
+               [b.cell_bounds(14, 8715, 5688), (-0.000001, 1.5, 2.25, 3.0), (11.123456789, 48.987654321, 11.2, 49.0)]]
+    blocks = []
+    for bd in [(11.5, 48.1, 11.6, 48.2), (11.5, 48.1, 11.5, 48.1), (11.0, 47.9, 12.5, 48.6), (0, 0, 1, 1), (10, 10, 5, 5),
+               (-180, -90, 180, 90), (float("nan"), 0, 1, 1), (11.5, 48.1, 11.5001, 48.1001), (-0.5, -0.5, 0.5, 0.5)]:
+        gen = b.blocks_outward(bd)
+        first = []
+        for blk in gen:
+            first.append(list(blk))
+            if len(first) >= 120:
+                break
+        blocks.append({"bounds": [None if v != v else v for v in bd], "blocks": first, "nan": bd[0] != bd[0],
+                       "cells": [list(c) for c in b.cells_for_bounds(bd, 15)][:50] if (bd[2] - bd[0]) < 0.2 else None,
+                       "cell_count": len(b.cells_for_bounds(bd, 15)) if (bd[2] - bd[0]) < 0.2 else None})
+    spans = [{"z": z, "x": x, "y": y, "block": list(b.block_of(z, x, y)), "cells": [list(c) for c in b.cells_of_block(z, x, y)]}
+             for z, x, y in [(15, 17430, 11377), (14, 8715, 5688), (13, 1, 2), (16, 5, 5), (15, 0, 0)]]
+
+    # The service against a local Overpass.
+    seen: list[dict] = []
+    answer: dict = {"status": 200, "body": json.dumps(payloads[0]).encode()}
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_POST(self):  # noqa: N802
+            length = int(self.headers.get("Content-Length", "0"))
+            body = self.rfile.read(length)
+            seen.append({"path": self.path, "ctype": self.headers.get("Content-Type"), "ua": self.headers.get("User-Agent"),
+                         "form": urllib.parse.parse_qs(body.decode())})
+            self.send_response(answer["status"])
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(answer["body"])))
+            self.end_headers()
+            self.wfile.write(answer["body"])
+
+        def log_message(self, *args):
+            pass
+
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=srv.serve_forever, daemon=True)
+    thread.start()
+    service_out = {}
+    with tempfile.TemporaryDirectory() as tmp:
+        svc = b.BuildingService(str(pathlib.Path(tmp) / "b.sqlite"), url=f"http://127.0.0.1:{srv.server_port}/api",
+                                user_agent="CorvusTest", workers=1)
+        first = svc.lookup(15, 17430, 11376)
+        deadline = time.time() + 10
+        while svc.cache.get(15, 17430, 11376) is None and time.time() < deadline:
+            time.sleep(0.02)
+        time.sleep(0.1)
+        stored = {}
+        for c in b.cells_of_block(*block):
+            hit = svc.cache.get(*c)
+            stored[f"{c[0]}/{c[1]}/{c[2]}"] = None if hit is None else json.loads(gzip.decompress(hit[0]))
+        after = svc.lookup(15, 17430, 11376)
+        service_out = {"first": [first[0] is not None, first[1]], "after_coming": after[1],
+                       "requests": seen, "stored": stored, "stats": svc.stats()}
+        svc.close()
+    srv.shutdown()
+    srv.server_close()
+    write("mapdata_buildings_cases.json", {
+        "parse_length": parse, "heights": hs, "bounds": bounds, "cells": cells, "geojson": geo,
+        "failed": remarks, "block": list(block), "split": split_out,
+        "split_other": [{"cell": list(c), "collection": v} for c, v in split_other.items()],
+        "split_edge": [{"cell": list(c), "n": len(v["features"])} for c, v in split_edge.items()],
+        "queries": queries, "blocks": blocks, "spans": spans, "service": service_out})
+
+
 SECTIONS = {
     "tile_math": tile_math_cases,
     "tile_sources": tile_sources_cases,
     "tile_cache": tile_cache_cases,
     "crs": crs_cases,
     "geocode": geocode_cases,
+    "dem_tiles": dem_tiles_cases,
+    "dem_import": dem_import_cases,
+    "custom_dem": custom_dem_cases,
+    "buildings": buildings_cases,
 }
 
 

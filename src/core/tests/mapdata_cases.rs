@@ -1269,3 +1269,143 @@ mod downloads {
         assert_eq!(cache.stats()["count"], 0);
     }
 }
+
+mod dem {
+    use super::cases;
+    use base64::Engine;
+    use corvus_core::mapdata::dem_tiles as d;
+    use serde_json::Value;
+
+    fn unb64(v: &Value) -> Vec<u8> {
+        base64::engine::general_purpose::STANDARD
+            .decode(v.as_str().unwrap())
+            .unwrap()
+    }
+
+    fn u32s(v: &Value) -> Vec<u32> {
+        v.as_array()
+            .unwrap()
+            .iter()
+            .map(|x| x.as_u64().unwrap() as u32)
+            .collect()
+    }
+
+    fn decoded(png: &[u8]) -> Vec<u32> {
+        d::decode(png).expect("decodes").values
+    }
+
+    fn pixels(out: Option<Vec<u8>>) -> Value {
+        match out {
+            None => Value::Null,
+            Some(png) => Value::from(decoded(&png)),
+        }
+    }
+
+    #[test]
+    fn png_decoding_and_the_encoder_round_trip() {
+        let c = cases("dem_tiles");
+        for case in c["decode"].as_array().unwrap() {
+            let g = d::decode(&unb64(&case["png"])).expect("decodes");
+            assert_eq!(g.width, case["width"].as_u64().unwrap() as usize);
+            assert_eq!(g.height, case["height"].as_u64().unwrap() as usize);
+            assert_eq!(g.values, u32s(&case["values"]));
+        }
+        for case in c["bad"].as_array().unwrap() {
+            let ok = d::decode(&unb64(&case["png"])).is_some();
+            assert_eq!(ok, case["decoded"].as_bool().unwrap(), "{}", case["name"]);
+        }
+        let values: Vec<u32> = (0..64u32).map(|i| i * 1000 + 7).collect();
+        assert_eq!(decoded(&d::encode(8, 8, &values)), values);
+    }
+
+    #[test]
+    fn derived_tiles_match_python_on_decoded_pixels() {
+        let c = cases("dem_tiles");
+        let anc = unb64(&c["ancestor"]);
+        for case in c["overzoom"].as_array().unwrap() {
+            let out = d::overzoom(
+                &anc,
+                case["dz"].as_u64().unwrap() as u32,
+                case["x"].as_i64().unwrap(),
+                case["y"].as_i64().unwrap(),
+            );
+            assert_eq!(pixels(out), case["values"], "overzoom {case}");
+        }
+        for case in c["transcode"].as_array().unwrap() {
+            let out = d::transcode(
+                &anc,
+                case["from"].as_str().unwrap(),
+                case["to"].as_str().unwrap(),
+                case["size"].as_u64().unwrap() as usize,
+            );
+            assert_eq!(pixels(out), case["values"], "transcode {case}");
+        }
+        for case in c["heights"].as_array().unwrap() {
+            let h = d::heights(
+                &anc,
+                case["enc"].as_str().unwrap(),
+                case["dz"].as_u64().unwrap() as u32,
+                case["x"].as_i64().unwrap(),
+                case["y"].as_i64().unwrap(),
+                case["size"].as_u64().map(|s| s as usize),
+            );
+            match (&h, &case["values"]) {
+                (None, Value::Null) => {}
+                (Some(h), Value::Array(want)) => {
+                    assert_eq!(h.len(), want.len());
+                    for (a, b) in h.iter().zip(want) {
+                        assert!((a - b.as_f64().unwrap()).abs() < 1e-9, "heights {case}: {a} vs {b}");
+                    }
+                }
+                other => panic!("heights {case}: {other:?}"),
+            }
+        }
+        let e = &c["encode_heights"];
+        let vals: Vec<f64> = e["values"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_f64().unwrap())
+            .collect();
+        for enc in ["terrarium", "mapbox"] {
+            let png = d::encode_heights(4, &vals, enc).unwrap();
+            assert_eq!(decoded(&png), u32s(&e[enc]), "{enc}");
+        }
+    }
+
+    #[test]
+    fn fallback_tiles_bend_their_edges_like_python() {
+        let c = cases("dem_tiles");
+        let mut store = std::collections::HashMap::new();
+        for t in c["store"].as_array().unwrap() {
+            store.insert(
+                (
+                    t["z"].as_i64().unwrap(),
+                    t["x"].as_i64().unwrap(),
+                    t["y"].as_i64().unwrap(),
+                ),
+                unb64(&t["png"]),
+            );
+        }
+        let fall = d::DemFallback::default();
+        let get = |z: i64, x: i64, y: i64| store.get(&(z, x, y)).cloned();
+        for r in c["fallback"].as_array().unwrap() {
+            let (z, x, y) = (
+                r["z"].as_i64().unwrap(),
+                r["x"].as_i64().unwrap(),
+                r["y"].as_i64().unwrap(),
+            );
+            let out = fall.tile("src", z, x, y, &get);
+            let got = pixels(out);
+            if let (Value::Array(a), Value::Array(b)) = (&got, &r["values"]) {
+                assert_eq!(a.len(), b.len());
+                for (i, (p, q)) in a.iter().zip(b).enumerate() {
+                    let diff = (p.as_i64().unwrap() - q.as_i64().unwrap()).abs();
+                    assert!(diff <= 1, "tile {z}/{x}/{y} pixel {i}: {p} vs {q}");
+                }
+            } else {
+                assert_eq!(got, r["values"], "tile {z}/{x}/{y}");
+            }
+        }
+    }
+}

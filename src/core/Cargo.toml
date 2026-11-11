@@ -38,6 +38,10 @@ rusqlite = { version = "0.37", features = ["bundled"] }
 # the platform's own certificate store (as Python's urllib uses the system's),
 # no async runtime, no thread of its own.
 ureq = { version = "3", default-features = false, features = ["rustls", "platform-verifier"] }
+# The operator's own elevation grids are float32 files read through a memory map, as
+# Python's mmap did, so a model larger than the RAM it would need still serves. Already
+# in the lock file (a dependency of the interface's crates).
+memmap2 = "0.9"
 # Elevation tiles are PNG: flate2 is the zlib the Python decoder used.
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 # The update check reads the release list of GitHub over https: the one request the

@@ -117,14 +117,15 @@ telemetry review).
 
 ### 0.2 Map data (`src/core/src/mapdata/`)
 
-* P1 DEM tiles, custom DEM and DEM import, buildings and the Overpass cell, the
-  `MapDataModule` (resources in `start`, every thread joined in `stop`), its
-  registration in `src/net/backend.rs` and `src/core/src/bin/corvus-core.rs`,
-  the routes of `routes/tiles.py` and `routes/dem.py`, `/api/geocode`, the
-  tile and buildings URL patterns, and the `tiles` event topic.
-* P2 A route harness test against `serve.py` for these routes; compare the
-  derived elevation PNGs on decoded pixels, not bytes.
-* P3 A download thread can outlive `shutdown` by up to the 15 s fetch timeout.
+* P3 A download thread can outlive `shutdown` by up to the 15 s fetch timeout;
+  so can a building worker inside an Overpass call (up to 65 s), which `close`
+  waits 2 s for and then lets go.
+* P3 `POST /api/dem/import` is a raw route, so the router holds the whole body
+  (up to 1 GB) in memory before the handler streams nothing; its 413 answers
+  `{"error": "request too large"}` where Python names the 1 GB limit. A raw
+  route that writes its body to a file as it arrives needs the foundation.
+* P3 `buildings::parse_length` reads ASCII digits only; Python's `isdigit`
+  also takes other scripts' digits.
 
 ### 0.3 Logs and firmware (`src/core/src/logs/`, `firmware/`)
 
