@@ -28,7 +28,7 @@ pub(super) fn register(reg: &mut Registry) {
     reg.post("/api/logs/dir", api_dir);
     reg.post_with(
         "/api/logs/review/upload",
-        RouteOptions::raw(MAX_ULOG_BODY_BYTES),
+        RouteOptions::raw(MAX_ULOG_BODY_BYTES).too_large("that log is too large to review"),
         api_review_upload,
     );
 }
