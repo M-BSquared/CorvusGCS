@@ -7,7 +7,8 @@ from __future__ import annotations
 import pathlib
 import re
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent
+PYTHON = pathlib.Path(__file__).resolve().parent.parent
+ROOT = PYTHON.parent
 ANDROID = ROOT / "android"
 VERSION_RE = re.compile(r"\b20\d\d\.\d\d\.\d\d\b")
 
@@ -33,8 +34,8 @@ def test_no_version_literal_in_the_android_sources() -> None:
 def test_user_agent_marker_matches_the_frontend() -> None:
     java = _text(ANDROID / "app" / "src" / "main" / "java" / "de" / "corvusgcs" / "app" / "MainActivity.java")
     assert '" CorvusAndroid/"' in java
-    assert "CorvusAndroid" in _text(ROOT / "src" / "js" / "touch.js")
-    assert "CorvusAndroid" in _text(ROOT / "src" / "index.html")
+    assert "CorvusAndroid" in _text(PYTHON / "src" / "js" / "touch.js")
+    assert "CorvusAndroid" in _text(PYTHON / "src" / "index.html")
 
 
 def test_cleartext_is_allowed_for_the_lan_server() -> None:
