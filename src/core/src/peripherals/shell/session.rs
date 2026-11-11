@@ -151,6 +151,8 @@ struct Registry {
     errors: HashMap<String, String>,
     auth_failed: HashSet<String>,
     shutting_down: bool,
+    /// Sessions still connecting: not in `sessions` yet, but `shutdown` ends them.
+    pending: Vec<Arc<dyn Terminal>>,
 }
 
 /// Manages terminal sessions keyed by name.
@@ -183,7 +185,15 @@ impl Terminals {
             old.disconnect();
         }
         let session = make();
+        {
+            let mut r = lock(&self.inner);
+            if r.shutting_down {
+                return false;
+            }
+            r.pending.push(Arc::clone(&session));
+        }
         let ok = session.connect();
+        lock(&self.inner).pending.retain(|p| !Arc::ptr_eq(p, &session));
         if !ok {
             let mut r = lock(&self.inner);
             if r.attempts.get(name) == Some(&attempt) {
@@ -300,7 +310,9 @@ impl Terminals {
             }
             r.errors.clear();
             r.auth_failed.clear();
-            r.sessions.drain(..).map(|(_, s)| s).collect()
+            let mut all: Vec<Arc<dyn Terminal>> = r.sessions.drain(..).map(|(_, s)| s).collect();
+            all.extend(r.pending.iter().cloned());
+            all
         };
         self.closed.store(true, Ordering::SeqCst);
         for s in sessions {

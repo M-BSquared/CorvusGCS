@@ -14,6 +14,7 @@ pub mod ports;
 pub mod rtk;
 pub mod shell;
 pub mod sik;
+pub mod ssh;
 pub mod util;
 pub mod video;
 
@@ -38,6 +39,8 @@ pub struct Peripherals {
     pub runner: shell::LocalRunner,
     rtk: OnceLock<Arc<rtk::RtkService>>,
     video: OnceLock<Arc<video::VideoService>>,
+    /// Set on the core's stop: a one shot SSH command ends its wait.
+    pub ssh_stop: Arc<std::sync::atomic::AtomicBool>,
     sik: OnceLock<Arc<sik::SikService>>,
     console: Arc<console::ConsoleHub>,
 }
@@ -72,6 +75,7 @@ impl PeripheralsModule {
                 runner: shell::LocalRunner::new(),
                 rtk: OnceLock::new(),
                 video: OnceLock::new(),
+                ssh_stop: Arc::default(),
                 sik: OnceLock::new(),
                 console: Arc::default(),
             }),
@@ -98,6 +102,7 @@ impl Module for PeripheralsModule {
         console::register(reg, Arc::clone(&self.inner.console));
         shell::register(reg);
         video::register(reg);
+        ssh::register(reg);
     }
 
     fn start(&self, core: &Core) -> std::io::Result<()> {
@@ -155,6 +160,7 @@ impl Module for PeripheralsModule {
         if let Some(video) = self.inner.video() {
             video.shutdown();
         }
+        self.inner.ssh_stop.store(true, std::sync::atomic::Ordering::SeqCst);
         self.inner.runner.shutdown();
         self.inner.terminals.shutdown();
         self.inner.pinger.shutdown();

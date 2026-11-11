@@ -49,6 +49,15 @@ rustls-native-certs = "0.8.5"
 # PX4 keeps its parameter metadata in parameters.json.xz (setup_schemas::param_metadata); the stdlib has no xz.
 lzma-rs = "0.3"
 
+# The SSH client (the terminal, one shot commands, power): pure Rust, so no
+# libssh2 and no OpenSSL has to be built into or shipped with any bundle. It
+# is asynchronous, so every session runs a private single threaded tokio
+# runtime on its own thread; nothing async leaks out of peripherals/ssh and
+# nothing runs on the interface thread. `ring` is the provider the link
+# crate's TLS already uses.
+russh = { version = "0.65", default-features = false, features = ["ring", "rsa", "flate2"] }
+tokio = { version = "1", default-features = false, features = ["rt", "net", "time", "sync", "io-util", "macros"] }
+
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 

@@ -430,3 +430,75 @@ def test_the_other_video_endpoints_answer_as_python_does(video_pair, path, body)
 def test_a_frame_request_is_refused_as_python_does(video_pair, query) -> None:
     diffs = video_pair.compare_get("/api/video/frame?" + query)
     assert not diffs, "\n".join(diffs)
+
+
+SSH_SEED = {"config": {
+    "mavlink_connection": "udp:0.0.0.0:14550",
+    "ssh_connections": [
+        {"name": "nav", "host": "127.0.0.1", "port": 1, "username": "pilot", "key_path": "", "password": "hunter2"},
+        {"name": "nohost", "host": "", "port": 22, "username": "pilot", "key_path": "", "password": ""},
+        {"name": "nouser", "host": "127.0.0.1", "port": 1, "username": "", "key_path": "", "password": ""},
+    ],
+}}
+
+
+@pytest.fixture(scope="module")
+def ssh_pair():
+    with harness.Pair(seed=SSH_SEED) as p:
+        yield p
+
+
+def test_the_saved_connections_are_listed_without_a_password(ssh_pair) -> None:
+    diffs = ssh_pair.compare_get("/api/ssh/connections")
+    assert not diffs, "\n".join(diffs)
+    assert "hunter2" not in json.dumps(ssh_pair.rs_json("GET", "/api/ssh/connections"))
+
+
+@pytest.mark.parametrize("body", [
+    {"name": "added", "host": "10.0.0.2", "port": 2222, "username": "u", "password": "pw"},
+    {"name": "added", "host": "10.0.0.3"},
+    {"name": "nav", "host": "127.0.0.1", "port": 1, "username": "pilot"},
+    {"name": "renamed", "host": "127.0.0.1", "port": 1, "username": "pilot", "original_name": "nav"},
+    {"name": "nouser", "host": "h", "original_name": "renamed"},
+    {"name": "added", "host": "h", "original_name": "nouser"},
+    {"name": "", "host": "h"}, {"name": 5, "host": "h"}, {"name": "x", "host": ""}, {"name": "x", "host": 5},
+    {"name": "x", "host": "h", "port": True}, {"name": "x", "host": "h", "port": "abc"}, {"name": "x", "host": "h", "port": 70000},
+    {"name": "x", "host": "h", "port": -1}, {"name": "x", "host": "h", "port": "2222"}, {"name": "x", "host": "h", "port": 22.9},
+    {"name": "x", "host": "h", "username": 5}, {"name": "x", "host": "h", "key_path": 5, "password": 5},
+])
+def test_a_saved_connection_is_stored_or_refused_as_python_does(ssh_pair, body) -> None:
+    diffs = ssh_pair.compare_post("/api/ssh/connections", body)
+    diffs += ssh_pair.compare_get("/api/config")
+    assert not diffs, "\n".join(diffs)
+
+
+def test_the_ssh_block_of_the_config_file_is_the_pythons(ssh_pair) -> None:
+    def block(server):
+        return json.loads((server.state_dir / "config.json").read_text(encoding="utf-8"))["ssh_connections"]
+    assert block(ssh_pair.rs) == block(ssh_pair.py)
+
+
+@pytest.mark.parametrize("path,body", [
+    ("/api/ssh/connect", {"name": 5}), ("/api/ssh/connect", {"name": ""}), ("/api/ssh/connect", {"name": "x", "host": 5}),
+    ("/api/ssh/connect", {"name": "x", "from": 5}), ("/api/ssh/connect", {"name": "x", "host": "h", "port": "abc"}),
+    ("/api/ssh/connect", {"name": "x", "host": "h", "port": 70000}), ("/api/ssh/connect", {"name": "ghost"}),
+    ("/api/ssh/connect", {"name": "x", "from": "ghost"}), ("/api/ssh/connect", {"name": "nohost"}),
+    ("/api/ssh/connect", {"name": "nouser"}), ("/api/ssh/connect", {"name": "x", "host": "127.0.0.1", "username": ""}),
+    ("/api/ssh/connect", {"name": "x", "host": "127.0.0.1", "port": 1, "username": "u", "password": "p"}),
+    ("/api/ssh/connect", {"name": "nav"}), ("/api/ssh/connect", {"name": "x", "from": "nav"}),
+    ("/api/ssh/connections/remove", {}), ("/api/ssh/connections/remove", {"name": ""}), ("/api/ssh/connections/remove", {"name": "nothing"}),
+    ("/api/ssh/run", {}), ("/api/ssh/run", {"command": "  "}), ("/api/ssh/run", {"command": "ls", "directory": 5}),
+    ("/api/ssh/run", {"command": "ls", "detach": "yes"}), ("/api/ssh/run", {"command": "ls", "name": 5}),
+    ("/api/ssh/run", {"command": "ls", "host": 5}), ("/api/ssh/run", {"command": "ls", "port": True}),
+    ("/api/ssh/run", {"command": "ls", "name": "ghost"}), ("/api/ssh/run", {"command": "ls"}),
+    ("/api/ssh/run", {"command": "ls", "host": "127.0.0.1"}), ("/api/ssh/run", {"command": "ls", "name": "nohost"}),
+    ("/api/ssh/run", {"command": "ls", "name": "nouser"}),
+    ("/api/ssh/run", {"command": "ls", "host": "127.0.0.1", "port": 1, "username": "u", "directory": "/a b", "detach": True}),
+    ("/api/ssh/run", {"command": "ls", "name": "added"}),
+    ("/api/ssh/power", {}), ("/api/ssh/power", {"action": "format", "name": "nav"}), ("/api/ssh/power", {"action": "reboot"}),
+    ("/api/ssh/power", {"action": "reboot", "name": "ghost"}), ("/api/ssh/power", {"action": "reboot", "name": "nohost"}),
+    ("/api/ssh/power", {"action": "shutdown", "name": "nouser"}), ("/api/ssh/power", {"action": "shutdown", "name": "added"}),
+])
+def test_the_ssh_endpoints_refuse_and_fail_as_python_does(ssh_pair, path, body) -> None:
+    diffs = ssh_pair.compare_post(path, body)
+    assert not diffs, "\n".join(diffs)

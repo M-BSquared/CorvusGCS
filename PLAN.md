@@ -142,11 +142,7 @@ telemetry review).
 
 ### 0.4 Peripherals (`src/core/src/peripherals/`)
 
-* P1 SSH transport (`connect`, `connections`, `run`, `power`): choose the
-  crate (`ssh2` needs libssh2 and a crypto backend in every bundle, `russh` is
-  pure Rust but needs tokio), keep `~/.corvus/known_hosts`.
-* P3 ELRS (no route in Python), the Windows branches of the shell and runner
-  are compile gated but untested.
+* P3 The Windows branches of the shell and runner are compile gated but untested. ELRS stays in `corvus_link` (dormant, no route in Python), so the core has nothing to port. SSH: the agent (`SSH_AUTH_SOCK`) is not asked for keys, only `~/.ssh/id_*` files without a passphrase; a key with a passphrase is refused as Python refused it.
 
 ### 0.5 AI and plugins (`src/core/src/plugins/`, `mcp/`)
 
