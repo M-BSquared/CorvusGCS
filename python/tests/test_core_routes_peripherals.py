@@ -8,6 +8,7 @@ binary is not built:
 """
 from __future__ import annotations
 
+import json
 import pathlib
 import sys
 
@@ -339,3 +340,165 @@ def test_a_terminal_over_a_websocket_answers_as_python_does(pair) -> None:
         assert kinds[-1] == "closed", (server.name, kinds)
         ws.close()
         harness.http("POST", server.url + "/api/ssh/disconnect", {"name": "w1"})
+
+
+VIDEO_SEED = {"config": {
+    "mavlink_connection": "udp:0.0.0.0:14550",
+    "video": {"streams": [
+        {"id": "cam1", "name": "Front", "url": "rtsp://10.0.0.5/live", "username": "u", "password": "pw", "transport": "tcp"},
+        {"id": "web1", "name": "Web", "url": "http://127.0.0.1:9/whep", "kind": "webrtc", "password": "tok"},
+    ], "ffmpeg": ""},
+}}
+
+# What the machine decides, not the code: where ffmpeg is and what it says.
+VIDEO_IGNORE = ["ffmpeg", "available", "reason", "hides_password", "id"]
+
+
+@pytest.fixture(scope="module")
+def video_pair():
+    with harness.Pair(seed=VIDEO_SEED) as p:
+        yield p
+
+
+def test_the_video_status_is_the_pythons_and_has_no_password(video_pair) -> None:
+    diffs = video_pair.compare_get("/api/video/status", ignore=VIDEO_IGNORE)
+    assert not diffs, "\n".join(diffs)
+    assert "pw" not in json.dumps(video_pair.rs_json("GET", "/api/video/status")).replace("pwd", "")
+
+
+@pytest.mark.parametrize("name,body", [
+    ("rename", {"id": "cam1", "name": "Nose", "url": "rtsp://10.0.0.5/live"}),
+    ("same_host_keeps_the_password", {"id": "cam1", "name": "Nose", "url": "rtsp://10.0.0.5/other"}),
+    ("another_host_drops_it", {"id": "cam1", "name": "Nose", "url": "rtsp://10.0.0.9/live"}),
+    ("credentials_in_the_address", {"id": "cam1", "name": "Nose", "url": "rtsp://pilot:p%40ss@10.0.0.9/live"}),
+    ("explicit_password", {"id": "cam1", "name": "N", "url": "rtsp://10.0.0.9/live", "username": " me ", "password": " x "}),
+    ("udp_listener", {"id": "cam1", "name": "N", "url": "udp://@:5600", "transport": "udp"}),
+    ("unknown_id", {"id": "nope", "url": "rtsp://h/x"}),
+    ("bad_scheme", {"url": "ftp://h/x"}),
+    ("no_host", {"url": "rtsp:///x"}),
+    ("empty", {"url": ""}),
+    ("spaces", {"url": "rtsp://h/a b"}),
+    ("bad_port", {"url": "rtsp://h:99999/x"}),
+    ("long_name", {"url": "rtsp://h/x", "name": "n" * 65}),
+    ("bad_kind", {"url": "rtsp://h/x", "kind": "hls"}),
+    ("bad_transport", {"url": "rtsp://h/x", "transport": "sctp"}),
+    ("not_strings", {"url": 5}),
+    ("whep_kind", {"id": "web1", "name": "Web", "url": "https://cam.example:8889/x/whep", "kind": "webrtc"}),
+    ("whep_wrong_scheme", {"url": "rtsp://h/x", "kind": "webrtc"}),
+    ("junk_password_type", {"id": "cam1", "url": "rtsp://10.0.0.9/live", "username": "u", "password": 5}),
+])
+def test_a_camera_is_saved_or_refused_as_python_does(video_pair, name, body) -> None:
+    diffs = video_pair.compare_post("/api/video/streams", body, ignore=VIDEO_IGNORE)
+    diffs += video_pair.compare_get("/api/config", ignore=["id"])
+    assert not diffs, "\n".join(diffs)
+
+
+def test_the_video_block_of_the_config_file_is_the_pythons(video_pair) -> None:
+    def block(server):
+        data = json.loads((server.state_dir / "config.json").read_text(encoding="utf-8"))["video"]
+        for s in data["streams"]:
+            s["id"] = "<id>"
+        return data
+    assert block(video_pair.rs) == block(video_pair.py)
+
+
+@pytest.mark.parametrize("path,body", [
+    ("/api/video/streams/remove", {}),
+    ("/api/video/streams/remove", {"id": ""}),
+    ("/api/video/streams/remove", {"id": 5}),
+    ("/api/video/streams/remove", {"id": "nothing"}),
+    ("/api/video/settings", {"ffmpeg": 5}),
+    ("/api/video/settings", {"ffmpeg": "/no/such/ffmpeg"}),
+    ("/api/video/settings", {"ffmpeg": "   "}),
+    ("/api/video/settings", {}),
+    ("/api/video/webrtc/offer", {}),
+    ("/api/video/webrtc/offer", {"id": "web1"}),
+    ("/api/video/webrtc/offer", {"id": "", "sdp": "v=0"}),
+    ("/api/video/webrtc/offer", {"id": "nope", "sdp": "v=0"}),
+    ("/api/video/webrtc/offer", {"id": "web1", "sdp": "not sdp"}),
+    ("/api/video/webrtc/offer", {"id": "web1", "sdp": "v=0\r\n"}),
+    ("/api/video/webrtc/close", {}),
+    ("/api/video/webrtc/close", {"session": ""}),
+    ("/api/video/webrtc/close", {"session": "unknown"}),
+])
+def test_the_other_video_endpoints_answer_as_python_does(video_pair, path, body) -> None:
+    diffs = video_pair.compare_post(path, body, ignore=VIDEO_IGNORE + ["error"] if path.endswith("offer") and body.get("sdp") == "v=0\r\n" else VIDEO_IGNORE)
+    assert not diffs, "\n".join(diffs)
+
+
+@pytest.mark.parametrize("query", ["id=zz", "id=", "", "id=web1", "id=web1&after=abc"])
+def test_a_frame_request_is_refused_as_python_does(video_pair, query) -> None:
+    diffs = video_pair.compare_get("/api/video/frame?" + query)
+    assert not diffs, "\n".join(diffs)
+
+
+SSH_SEED = {"config": {
+    "mavlink_connection": "udp:0.0.0.0:14550",
+    "ssh_connections": [
+        {"name": "nav", "host": "127.0.0.1", "port": 1, "username": "pilot", "key_path": "", "password": "hunter2"},
+        {"name": "nohost", "host": "", "port": 22, "username": "pilot", "key_path": "", "password": ""},
+        {"name": "nouser", "host": "127.0.0.1", "port": 1, "username": "", "key_path": "", "password": ""},
+    ],
+}}
+
+
+@pytest.fixture(scope="module")
+def ssh_pair():
+    with harness.Pair(seed=SSH_SEED) as p:
+        yield p
+
+
+def test_the_saved_connections_are_listed_without_a_password(ssh_pair) -> None:
+    diffs = ssh_pair.compare_get("/api/ssh/connections")
+    assert not diffs, "\n".join(diffs)
+    assert "hunter2" not in json.dumps(ssh_pair.rs_json("GET", "/api/ssh/connections"))
+
+
+@pytest.mark.parametrize("body", [
+    {"name": "added", "host": "10.0.0.2", "port": 2222, "username": "u", "password": "pw"},
+    {"name": "added", "host": "10.0.0.3"},
+    {"name": "nav", "host": "127.0.0.1", "port": 1, "username": "pilot"},
+    {"name": "renamed", "host": "127.0.0.1", "port": 1, "username": "pilot", "original_name": "nav"},
+    {"name": "nouser", "host": "h", "original_name": "renamed"},
+    {"name": "added", "host": "h", "original_name": "nouser"},
+    {"name": "", "host": "h"}, {"name": 5, "host": "h"}, {"name": "x", "host": ""}, {"name": "x", "host": 5},
+    {"name": "x", "host": "h", "port": True}, {"name": "x", "host": "h", "port": "abc"}, {"name": "x", "host": "h", "port": 70000},
+    {"name": "x", "host": "h", "port": -1}, {"name": "x", "host": "h", "port": "2222"}, {"name": "x", "host": "h", "port": 22.9},
+    {"name": "x", "host": "h", "username": 5}, {"name": "x", "host": "h", "key_path": 5, "password": 5},
+])
+def test_a_saved_connection_is_stored_or_refused_as_python_does(ssh_pair, body) -> None:
+    diffs = ssh_pair.compare_post("/api/ssh/connections", body)
+    diffs += ssh_pair.compare_get("/api/config")
+    assert not diffs, "\n".join(diffs)
+
+
+def test_the_ssh_block_of_the_config_file_is_the_pythons(ssh_pair) -> None:
+    def block(server):
+        return json.loads((server.state_dir / "config.json").read_text(encoding="utf-8"))["ssh_connections"]
+    assert block(ssh_pair.rs) == block(ssh_pair.py)
+
+
+@pytest.mark.parametrize("path,body", [
+    ("/api/ssh/connect", {"name": 5}), ("/api/ssh/connect", {"name": ""}), ("/api/ssh/connect", {"name": "x", "host": 5}),
+    ("/api/ssh/connect", {"name": "x", "from": 5}), ("/api/ssh/connect", {"name": "x", "host": "h", "port": "abc"}),
+    ("/api/ssh/connect", {"name": "x", "host": "h", "port": 70000}), ("/api/ssh/connect", {"name": "ghost"}),
+    ("/api/ssh/connect", {"name": "x", "from": "ghost"}), ("/api/ssh/connect", {"name": "nohost"}),
+    ("/api/ssh/connect", {"name": "nouser"}), ("/api/ssh/connect", {"name": "x", "host": "127.0.0.1", "username": ""}),
+    ("/api/ssh/connect", {"name": "x", "host": "127.0.0.1", "port": 1, "username": "u", "password": "p"}),
+    ("/api/ssh/connect", {"name": "nav"}), ("/api/ssh/connect", {"name": "x", "from": "nav"}),
+    ("/api/ssh/connections/remove", {}), ("/api/ssh/connections/remove", {"name": ""}), ("/api/ssh/connections/remove", {"name": "nothing"}),
+    ("/api/ssh/run", {}), ("/api/ssh/run", {"command": "  "}), ("/api/ssh/run", {"command": "ls", "directory": 5}),
+    ("/api/ssh/run", {"command": "ls", "detach": "yes"}), ("/api/ssh/run", {"command": "ls", "name": 5}),
+    ("/api/ssh/run", {"command": "ls", "host": 5}), ("/api/ssh/run", {"command": "ls", "port": True}),
+    ("/api/ssh/run", {"command": "ls", "name": "ghost"}), ("/api/ssh/run", {"command": "ls"}),
+    ("/api/ssh/run", {"command": "ls", "host": "127.0.0.1"}), ("/api/ssh/run", {"command": "ls", "name": "nohost"}),
+    ("/api/ssh/run", {"command": "ls", "name": "nouser"}),
+    ("/api/ssh/run", {"command": "ls", "host": "127.0.0.1", "port": 1, "username": "u", "directory": "/a b", "detach": True}),
+    ("/api/ssh/run", {"command": "ls", "name": "added"}),
+    ("/api/ssh/power", {}), ("/api/ssh/power", {"action": "format", "name": "nav"}), ("/api/ssh/power", {"action": "reboot"}),
+    ("/api/ssh/power", {"action": "reboot", "name": "ghost"}), ("/api/ssh/power", {"action": "reboot", "name": "nohost"}),
+    ("/api/ssh/power", {"action": "shutdown", "name": "nouser"}), ("/api/ssh/power", {"action": "shutdown", "name": "added"}),
+])
+def test_the_ssh_endpoints_refuse_and_fail_as_python_does(ssh_pair, path, body) -> None:
+    diffs = ssh_pair.compare_post(path, body)
+    assert not diffs, "\n".join(diffs)

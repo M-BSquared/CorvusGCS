@@ -14,7 +14,9 @@ pub mod ports;
 pub mod rtk;
 pub mod shell;
 pub mod sik;
+pub mod ssh;
 pub mod util;
+pub mod video;
 
 use std::sync::{Arc, OnceLock};
 
@@ -36,6 +38,9 @@ pub struct Peripherals {
     /// Programs started on this computer without a window.
     pub runner: shell::LocalRunner,
     rtk: OnceLock<Arc<rtk::RtkService>>,
+    video: OnceLock<Arc<video::VideoService>>,
+    /// Set on the core's stop: a one shot SSH command ends its wait.
+    pub ssh_stop: Arc<std::sync::atomic::AtomicBool>,
     sik: OnceLock<Arc<sik::SikService>>,
     console: Arc<console::ConsoleHub>,
 }
@@ -44,6 +49,11 @@ impl Peripherals {
     /// The RTK base station service, once the module has started.
     pub fn rtk(&self) -> Option<Arc<rtk::RtkService>> {
         self.rtk.get().cloned()
+    }
+
+    /// The camera video service, once the module has started.
+    pub fn video(&self) -> Option<Arc<video::VideoService>> {
+        self.video.get().cloned()
     }
 
     /// The SiK radio configuration service, once the module has started.
@@ -64,6 +74,8 @@ impl PeripheralsModule {
                 terminals: Arc::default(),
                 runner: shell::LocalRunner::new(),
                 rtk: OnceLock::new(),
+                video: OnceLock::new(),
+                ssh_stop: Arc::default(),
                 sik: OnceLock::new(),
                 console: Arc::default(),
             }),
@@ -89,9 +101,14 @@ impl Module for PeripheralsModule {
         sik::register(reg);
         console::register(reg, Arc::clone(&self.inner.console));
         shell::register(reg);
+        video::register(reg);
+        ssh::register(reg);
     }
 
     fn start(&self, core: &Core) -> std::io::Result<()> {
+        // Built only: no ffmpeg runs until a camera window asks for a frame.
+        let video_cfg = core.settings().get().get("video").cloned().unwrap_or(Value::Null);
+        let _ = self.inner.video.set(video::VideoService::new(&video_cfg));
         // RTK is the one service whose default is to act: it is built and, when
         // switched on in the config, started here, so a base plugged in before
         // the ground station opened is found without anybody asking.
@@ -140,6 +157,10 @@ impl Module for PeripheralsModule {
         if let Some(sik) = self.inner.sik() {
             sik.shutdown();
         }
+        if let Some(video) = self.inner.video() {
+            video.shutdown();
+        }
+        self.inner.ssh_stop.store(true, std::sync::atomic::Ordering::SeqCst);
         self.inner.runner.shutdown();
         self.inner.terminals.shutdown();
         self.inner.pinger.shutdown();

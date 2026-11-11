@@ -160,3 +160,87 @@ fn the_cores_stop_ends_every_terminal_and_background_program() {
     assert!(t.elapsed() < std::time::Duration::from_secs(10), "{:?}", t.elapsed());
     let _ = std::fs::remove_dir_all(d);
 }
+
+#[test]
+fn the_video_routes_keep_the_list_hide_the_passwords_and_stop_joins_the_decoders() {
+    let d = dir("video");
+    let core = core_in(&d);
+    core.start().unwrap();
+    let video = core
+        .service::<Peripherals>()
+        .unwrap()
+        .video()
+        .expect("the video service is built at start");
+    let call = |path: &str, body: Value| core.internal_call("POST", path, body.as_object().cloned());
+
+    let (status, answer) = core.internal_call("GET", "/api/video/status", None);
+    assert_eq!(status, 200);
+    assert_eq!(answer["streams"], json!([]));
+    assert_eq!(answer["max_streams"], 8);
+
+    let (status, answer) = call(
+        "/api/video/streams",
+        json!({"name": "Front", "url": "rtsp://pilot:hunter2@10.1.2.3/live", "transport": "udp"}),
+    );
+    assert_eq!(status, 200, "{answer}");
+    let id = answer["id"].as_str().unwrap().to_string();
+    assert_eq!(answer["status"]["streams"][0]["address"], "10.1.2.3/live");
+    assert_eq!(answer["status"]["streams"][0]["has_password"], true);
+    assert!(!answer.to_string().contains("hunter2"), "no password in an answer");
+    let saved: Value = serde_json::from_str(&std::fs::read_to_string(d.join("config.json")).unwrap()).unwrap();
+    assert_eq!(saved["video"]["streams"][0]["password"], "hunter2");
+    assert_eq!(saved["video"]["streams"][0]["username"], "pilot");
+    assert_eq!(saved["video"]["streams"][0]["url"], "rtsp://10.1.2.3/live");
+    assert_eq!(
+        video.settings()["streams"][0]["id"],
+        json!(id),
+        "the service has the list"
+    );
+
+    let (status, answer) = call(
+        "/api/video/streams",
+        json!({"id": id, "name": "Front", "url": "rtsp://other.example/live"}),
+    );
+    assert_eq!(status, 200);
+    assert!(answer["warning"].as_str().unwrap().contains("moved to another host"));
+    let saved: Value = serde_json::from_str(&std::fs::read_to_string(d.join("config.json")).unwrap()).unwrap();
+    assert_eq!(saved["video"]["streams"][0]["password"], "");
+    assert_eq!(
+        call("/api/video/streams", json!({"id": "nope", "url": "rtsp://h/x"})).0,
+        404
+    );
+    assert_eq!(call("/api/video/streams", json!({"url": "ftp://h/x"})).0, 400);
+    assert_eq!(
+        call("/api/video/streams", json!({"url": "rtsp://h/x", "kind": "x"})).0,
+        400
+    );
+    assert_eq!(call("/api/video/streams", json!({"url": 5})).0, 400);
+    assert_eq!(call("/api/video/settings", json!({"ffmpeg": "/no/such/ffmpeg"})).0, 400);
+    assert_eq!(call("/api/video/settings", json!({"ffmpeg": 5})).0, 400);
+
+    assert_eq!(core.internal_call("GET", "/api/video/frame?id=zz", None).0, 404);
+    assert_eq!(call("/api/video/webrtc/offer", json!({"id": id, "sdp": "v=0"})).0, 409);
+    assert_eq!(
+        call("/api/video/webrtc/offer", json!({"id": "zz", "sdp": "v=0"})).0,
+        404
+    );
+    assert_eq!(call("/api/video/webrtc/offer", json!({"id": "zz"})).0, 400);
+    assert_eq!(
+        call("/api/video/webrtc/close", json!({"session": "unknown"})).1["closed"],
+        false
+    );
+    assert_eq!(call("/api/video/webrtc/close", json!({})).0, 400);
+
+    let (status, answer) = call("/api/video/streams/remove", json!({"id": id}));
+    assert_eq!((status, answer["status"]["streams"].clone()), (200, json!([])));
+    assert_eq!(
+        call("/api/video/streams/remove", json!({"id": id})).0,
+        200,
+        "removing twice is harmless"
+    );
+    assert_eq!(call("/api/video/streams/remove", json!({})).0, 400);
+
+    core.stop();
+    assert!(!video.any_alive());
+    let _ = std::fs::remove_dir_all(d);
+}

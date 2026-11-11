@@ -1,0 +1,6499 @@
+{
+  "urls": [
+    "",
+    "  ",
+    "rtsp://192.168.144.25:8554/main.264",
+    "RTSP://Host:554/a?b=c#d",
+    "rtsps://h/x",
+    "rtsp://admin:secret@10.0.0.1/stream",
+    "rtsp://admin:p%40ss%3Aword@10.0.0.1:8554/s",
+    "rtsp://user@10.0.0.1/s",
+    "rtsp://:pw@10.0.0.1/s",
+    "rtsp://a:b@c:d@host/x",
+    "udp://@:5600",
+    "udp://:5600",
+    "udp://@239.0.0.1:5600",
+    "udp://",
+    "udp://@",
+    "udp://host",
+    "srt://h:9000?mode=caller",
+    "http://cam/stream.mjpg",
+    "https://cam:8443/whep",
+    "http://[::1]:8889/cam/whep",
+    "http://[::1/x",
+    "http://::1]/x",
+    "http://h:99999/x",
+    "http://h:abc/x",
+    "http://h:/x",
+    "http://h:0/x",
+    "http://h:-1/x",
+    "http://h:١٢/x",
+    "rtsp://",
+    "rtsp:///path",
+    "rtsp:/host/x",
+    "rtsp:host",
+    "file:///etc/passwd",
+    "ftp://h/x",
+    "javascript:alert(1)",
+    "//host/x",
+    "host:554/x",
+    "192.168.1.1",
+    "rtsp://a b/c",
+    "rtsp://h/a\tb",
+    "rtsp://h/",
+    "\u0000rtsp://h/x",
+    "  rtsp://h/x  ",
+    "rtsp://h/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "rtsp://h/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "1http://h",
+    "ht+tp://h",
+    "h_t://h",
+    "rtsp://h?x",
+    "rtsp://h#f",
+    "rtsp://h:554",
+    "rtsp://H.Example.COM/x",
+    "rtsp://äö.de/x",
+    "http://h/ä",
+    "rtsp://bad space/x",
+    "rtsp://us er@h/x",
+    "rtsp://h\n/x",
+    "RTSPS://H",
+    "http://[foo]/x",
+    "http://[v1.x]/x",
+    "http://[v1.]/x",
+    "http://[127.0.0.1]/x",
+    "http://[fe80::1%25eth0]/",
+    "http://[::1]:abc/x",
+    "rtsp://h:000000000000000000554/x",
+    "rtsp://h:65535/x",
+    "rtsp://h:65536/x",
+    "rtsp://u:p@[::1]:8554/x",
+    "http://u@h/x?a=b#c"
+  ],
+  "urlparts": [
+    {
+      "url": "",
+      "split": [
+        "",
+        "",
+        ""
+      ],
+      "display": "",
+      "problem": {
+        "rtsp": "Enter the camera's address, for example rtsp://192.168.144.25:8554/main.264.",
+        "webrtc": "Enter the camera's address, for example http://192.168.144.25:8889/cam/whep."
+      }
+    },
+    {
+      "url": "  ",
+      "split": [
+        "",
+        "",
+        ""
+      ],
+      "display": "",
+      "problem": {
+        "rtsp": "Enter the camera's address, for example rtsp://192.168.144.25:8554/main.264.",
+        "webrtc": "Enter the camera's address, for example http://192.168.144.25:8889/cam/whep."
+      }
+    },
+    {
+      "url": "rtsp://192.168.144.25:8554/main.264",
+      "split": [
+        "rtsp://192.168.144.25:8554/main.264",
+        "",
+        ""
+      ],
+      "display": "192.168.144.25:8554/main.264",
+      "problem": {
+        "rtsp": "",
+        "webrtc": "A WebRTC camera is its WHEP address, for example http://192.168.144.25:8889/cam/whep."
+      }
+    },
+    {
+      "url": "RTSP://Host:554/a?b=c#d",
+      "split": [
+        "RTSP://Host:554/a?b=c#d",
+        "",
+        ""
+      ],
+      "display": "Host:554/a?b=c",
+      "problem": {
+        "rtsp": "",
+        "webrtc": "A WebRTC camera is its WHEP address, for example http://192.168.144.25:8889/cam/whep."
+      }
+    },
+    {
+      "url": "rtsps://h/x",
+      "split": [
+        "rtsps://h/x",
+        "",
+        ""
+      ],
+      "display": "h/x",
+      "problem": {
+        "rtsp": "",
+        "webrtc": "A WebRTC camera is its WHEP address, for example http://192.168.144.25:8889/cam/whep."
+      }
+    },
+    {
+      "url": "rtsp://admin:secret@10.0.0.1/stream",
+      "split": [
+        "rtsp://10.0.0.1/stream",
+        "admin",
+        "secret"
+      ],
+      "display": "10.0.0.1/stream",
+      "problem": {
+        "rtsp": "",
+        "webrtc": "A WebRTC camera is its WHEP address, for example http://192.168.144.25:8889/cam/whep."
+      }
+    },
+    {
+      "url": "rtsp://admin:p%40ss%3Aword@10.0.0.1:8554/s",
+      "split": [
+        "rtsp://10.0.0.1:8554/s",
+        "admin",
+        "p@ss:word"
+      ],
+      "display": "10.0.0.1:8554/s",
+      "problem": {
+        "rtsp": "",
+        "webrtc": "A WebRTC camera is its WHEP address, for example http://192.168.144.25:8889/cam/whep."
+      }
+    },
+    {
+      "url": "rtsp://user@10.0.0.1/s",
+      "split": [
+        "rtsp://10.0.0.1/s",
+        "user",
+        ""
+      ],
+      "display": "10.0.0.1/s",
+      "problem": {
+        "rtsp": "",
+        "webrtc": "A WebRTC camera is its WHEP address, for example http://192.168.144.25:8889/cam/whep."
+      }
+    },
+    {
+      "url": "rtsp://:pw@10.0.0.1/s",
+      "split": [
+        "rtsp://10.0.0.1/s",
+        "",
+        "pw"
+      ],
+      "display": "10.0.0.1/s",
+      "problem": {
+        "rtsp": "",
+        "webrtc": "A WebRTC camera is its WHEP address, for example http://192.168.144.25:8889/cam/whep."
+      }
+    },
+    {
+      "url": "rtsp://a:b@c:d@host/x",
+      "split": [
+        "rtsp://host/x",
+        "a",
+        "b@c:d"
+      ],
+      "display": "host/x",
+      "problem": {
+        "rtsp": "",
+        "webrtc": "A WebRTC camera is its WHEP address, for example http://192.168.144.25:8889/cam/whep."
+      }
+    },
+    {
+      "url": "udp://@:5600",
+      "split": [
+        "udp://:5600",
+        "",
+        ""
+      ],
+      "display": ":5600",
+      "problem": {
+        "rtsp": "",
+        "webrtc": "A WebRTC camera is its WHEP address, for example http://192.168.144.25:8889/cam/whep."
+      }
+    },
+    {
+      "url": "udp://:5600",
+      "split": [
+        "udp://:5600",
+        "",
+        ""
+      ],
+      "display": ":5600",
+      "problem": {
+        "rtsp": "",
+        "webrtc": "A WebRTC camera is its WHEP address, for example http://192.168.144.25:8889/cam/whep."
+      }
+    },
+    {
+      "url": "udp://@239.0.0.1:5600",
+      "split": [
+        "udp://239.0.0.1:5600",
+        "",
+        ""
+      ],
+      "display": "239.0.0.1:5600",
+      "problem": {
+        "rtsp": "",
+        "webrtc": "A WebRTC camera is its WHEP address, for example http://192.168.144.25:8889/cam/whep."
+      }
+    },
+    {
+      "url": "udp://",
+      "split": [
+        "udp://",
+        "",
+        ""
+      ],
+      "display": "udp://",
+      "problem": {
+        "rtsp": "A udp:// address needs at least a port, for example udp://@:5600.",
+        "webrtc": "A WebRTC camera is its WHEP address, for example http://192.168.144.25:8889/cam/whep."
+      }
+    },
+    {
+      "url": "udp://@",
+      "split": [
+        "udp:",
+        "",
+        ""
+      ],
+      "display": "udp:",
+      "problem": {
+        "rtsp": "A udp:// address needs at least a port, for example udp://@:5600.",
+        "webrtc": "A WebRTC camera is its WHEP address, for example http://192.168.144.25:8889/cam/whep."
+      }
+    },
+    {
+      "url": "udp://host",
+      "split": [
+        "udp://host",
+        "",
+        ""
+      ],
+      "display": "host",
+      "problem": {
+        "rtsp": "",
+        "webrtc": "A WebRTC camera is its WHEP address, for example http://192.168.144.25:8889/cam/whep."
+      }
+    },
+    {
+      "url": "srt://h:9000?mode=caller",
+      "split": [
+        "srt://h:9000?mode=caller",
+        "",
+        ""
+      ],
+      "display": "h:9000?mode=caller",
+      "problem": {
+        "rtsp": "",
+        "webrtc": "A WebRTC camera is its WHEP address, for example http://192.168.144.25:8889/cam/whep."
+      }
+    },
+    {
+      "url": "http://cam/stream.mjpg",
+      "split": [
+        "http://cam/stream.mjpg",
+        "",
+        ""
+      ],
+      "display": "cam/stream.mjpg",
+      "problem": {
+        "rtsp": "",
+        "webrtc": ""
+      }
+    },
+    {
+      "url": "https://cam:8443/whep",
+      "split": [
+        "https://cam:8443/whep",
+        "",
+        ""
+      ],
+      "display": "cam:8443/whep",
+      "problem": {
+        "rtsp": "",
+        "webrtc": ""
+      }
+    },
+    {
+      "url": "http://[::1]:8889/cam/whep",
+      "split": [
+        "http://[::1]:8889/cam/whep",
+        "",
+        ""
+      ],
+      "display": "[::1]:8889/cam/whep",
+      "problem": {
+        "rtsp": "",
+        "webrtc": ""
+      }
+    },
+    {
+      "url": "http://[::1/x",
+      "split": [
+        "http://[::1/x",
+        "",
+        ""
+      ],
+      "display": "http://[::1/x",
+      "problem": {
+        "rtsp": "The port in the address is not a number.",
+        "webrtc": "The port in the address is not a number."
+      }
+    },
+    {
+      "url": "http://::1]/x",
+      "split": [
+        "http://::1]/x",
+        "",
+        ""
+      ],
+      "display": "http://::1]/x",
+      "problem": {
+        "rtsp": "The port in the address is not a number.",
+        "webrtc": "The port in the address is not a number."
+      }
+    },
+    {
+      "url": "http://h:99999/x",
+      "split": [
+        "http://h:99999/x",
+        "",
+        ""
+      ],
+      "display": "h:99999/x",
+      "problem": {
+        "rtsp": "The port in the address is not a number.",
+        "webrtc": "The port in the address is not a number."
+      }
+    },
+    {
+      "url": "http://h:abc/x",
+      "split": [
+        "http://h:abc/x",
+        "",
+        ""
+      ],
+      "display": "h:abc/x",
+      "problem": {
+        "rtsp": "The port in the address is not a number.",
+        "webrtc": "The port in the address is not a number."
+      }
+    },
+    {
+      "url": "http://h:/x",
+      "split": [
+        "http://h:/x",
+        "",
+        ""
+      ],
+      "display": "h:/x",
+      "problem": {
+        "rtsp": "",
+        "webrtc": ""
+      }
+    },
+    {
+      "url": "http://h:0/x",
+      "split": [
+        "http://h:0/x",
+        "",
+        ""
+      ],
+      "display": "h:0/x",
+      "problem": {
+        "rtsp": "",
+        "webrtc": ""
+      }
+    },
+    {
+      "url": "http://h:-1/x",
+      "split": [
+        "http://h:-1/x",
+        "",
+        ""
+      ],
+      "display": "h:-1/x",
+      "problem": {
+        "rtsp": "The port in the address is not a number.",
+        "webrtc": "The port in the address is not a number."
+      }
+    },
+    {
+      "url": "http://h:١٢/x",
+      "split": [
+        "http://h:١٢/x",
+        "",
+        ""
+      ],
+      "display": "h:١٢/x",
+      "problem": {
+        "rtsp": "The port in the address is not a number.",
+        "webrtc": "The port in the address is not a number."
+      }
+    },
+    {
+      "url": "rtsp://",
+      "split": [
+        "rtsp://",
+        "",
+        ""
+      ],
+      "display": "rtsp://",
+      "problem": {
+        "rtsp": "The address has no host.",
+        "webrtc": "A WebRTC camera is its WHEP address, for example http://192.168.144.25:8889/cam/whep."
+      }
+    },
+    {
+      "url": "rtsp:///path",
+      "split": [
+        "rtsp:///path",
+        "",
+        ""
+      ],
+      "display": "/path",
+      "problem": {
+        "rtsp": "The address has no host.",
+        "webrtc": "A WebRTC camera is its WHEP address, for example http://192.168.144.25:8889/cam/whep."
+      }
+    },
+    {
+      "url": "rtsp:/host/x",
+      "split": [
+        "rtsp:/host/x",
+        "",
+        ""
+      ],
+      "display": "/host/x",
+      "problem": {
+        "rtsp": "The address has no host.",
+        "webrtc": "A WebRTC camera is its WHEP address, for example http://192.168.144.25:8889/cam/whep."
+      }
+    },
+    {
+      "url": "rtsp:host",
+      "split": [
+        "rtsp:host",
+        "",
+        ""
+      ],
+      "display": "host",
+      "problem": {
+        "rtsp": "The address has no host.",
+        "webrtc": "A WebRTC camera is its WHEP address, for example http://192.168.144.25:8889/cam/whep."
+      }
+    },
+    {
+      "url": "file:///etc/passwd",
+      "split": [
+        "file:///etc/passwd",
+        "",
+        ""
+      ],
+      "display": "/etc/passwd",
+      "problem": {
+        "rtsp": "The address has to start with rtsp://, or udp://, srt:// or http:// for other streams.",
+        "webrtc": "A WebRTC camera is its WHEP address, for example http://192.168.144.25:8889/cam/whep."
+      }
+    },
+    {
+      "url": "ftp://h/x",
+      "split": [
+        "ftp://h/x",
+        "",
+        ""
+      ],
+      "display": "h/x",
+      "problem": {
+        "rtsp": "The address has to start with rtsp://, or udp://, srt:// or http:// for other streams.",
+        "webrtc": "A WebRTC camera is its WHEP address, for example http://192.168.144.25:8889/cam/whep."
+      }
+    },
+    {
+      "url": "javascript:alert(1)",
+      "split": [
+        "javascript:alert(1)",
+        "",
+        ""
+      ],
+      "display": "alert(1)",
+      "problem": {
+        "rtsp": "The address has to start with rtsp://, or udp://, srt:// or http:// for other streams.",
+        "webrtc": "A WebRTC camera is its WHEP address, for example http://192.168.144.25:8889/cam/whep."
+      }
+    },
+    {
+      "url": "//host/x",
+      "split": [
+        "//host/x",
+        "",
+        ""
+      ],
+      "display": "host/x",
+      "problem": {
+        "rtsp": "The address has to start with rtsp://, or udp://, srt:// or http:// for other streams.",
+        "webrtc": "A WebRTC camera is its WHEP address, for example http://192.168.144.25:8889/cam/whep."
+      }
+    },
+    {
+      "url": "host:554/x",
+      "split": [
+        "host:554/x",
+        "",
+        ""
+      ],
+      "display": "554/x",
+      "problem": {
+        "rtsp": "The address has to start with rtsp://, or udp://, srt:// or http:// for other streams.",
+        "webrtc": "A WebRTC camera is its WHEP address, for example http://192.168.144.25:8889/cam/whep."
+      }
+    },
+    {
+      "url": "192.168.1.1",
+      "split": [
+        "192.168.1.1",
+        "",
+        ""
+      ],
+      "display": "192.168.1.1",
+      "problem": {
+        "rtsp": "The address has to start with rtsp://, or udp://, srt:// or http:// for other streams.",
+        "webrtc": "A WebRTC camera is its WHEP address, for example http://192.168.144.25:8889/cam/whep."
+      }
+    },
+    {
+      "url": "rtsp://a b/c",
+      "split": [
+        "rtsp://a b/c",
+        "",
+        ""
+      ],
+      "display": "a b/c",
+      "problem": {
+        "rtsp": "The address cannot contain spaces.",
+        "webrtc": "The address cannot contain spaces."
+      }
+    },
+    {
+      "url": "rtsp://h/a\tb",
+      "split": [
+        "rtsp://h/a\tb",
+        "",
+        ""
+      ],
+      "display": "h/ab",
+      "problem": {
+        "rtsp": "The address cannot contain spaces.",
+        "webrtc": "The address cannot contain spaces."
+      }
+    },
+    {
+      "url": "rtsp://h/",
+      "split": [
+        "rtsp://h/",
+        "",
+        ""
+      ],
+      "display": "h/",
+      "problem": {
+        "rtsp": "The address cannot contain spaces.",
+        "webrtc": "The address cannot contain spaces."
+      }
+    },
+    {
+      "url": "\u0000rtsp://h/x",
+      "split": [
+        "\u0000rtsp://h/x",
+        "",
+        ""
+      ],
+      "display": "h/x",
+      "problem": {
+        "rtsp": "The address cannot contain spaces.",
+        "webrtc": "The address cannot contain spaces."
+      }
+    },
+    {
+      "url": "  rtsp://h/x  ",
+      "split": [
+        "rtsp://h/x",
+        "",
+        ""
+      ],
+      "display": "h/x",
+      "problem": {
+        "rtsp": "",
+        "webrtc": "A WebRTC camera is its WHEP address, for example http://192.168.144.25:8889/cam/whep."
+      }
+    },
+    {
+      "url": "rtsp://h/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "split": [
+        "rtsp://h/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "",
+        ""
+      ],
+      "display": "h/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "problem": {
+        "rtsp": "The address is too long.",
+        "webrtc": "The address is too long."
+      }
+    },
+    {
+      "url": "rtsp://h/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "split": [
+        "rtsp://h/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "",
+        ""
+      ],
+      "display": "h/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "problem": {
+        "rtsp": "",
+        "webrtc": "A WebRTC camera is its WHEP address, for example http://192.168.144.25:8889/cam/whep."
+      }
+    },
+    {
+      "url": "1http://h",
+      "split": [
+        "1http://h",
+        "",
+        ""
+      ],
+      "display": "1http://h",
+      "problem": {
+        "rtsp": "The address has to start with rtsp://, or udp://, srt:// or http:// for other streams.",
+        "webrtc": "A WebRTC camera is its WHEP address, for example http://192.168.144.25:8889/cam/whep."
+      }
+    },
+    {
+      "url": "ht+tp://h",
+      "split": [
+        "ht+tp://h",
+        "",
+        ""
+      ],
+      "display": "h",
+      "problem": {
+        "rtsp": "The address has to start with rtsp://, or udp://, srt:// or http:// for other streams.",
+        "webrtc": "A WebRTC camera is its WHEP address, for example http://192.168.144.25:8889/cam/whep."
+      }
+    },
+    {
+      "url": "h_t://h",
+      "split": [
+        "h_t://h",
+        "",
+        ""
+      ],
+      "display": "h_t://h",
+      "problem": {
+        "rtsp": "The address has to start with rtsp://, or udp://, srt:// or http:// for other streams.",
+        "webrtc": "A WebRTC camera is its WHEP address, for example http://192.168.144.25:8889/cam/whep."
+      }
+    },
+    {
+      "url": "rtsp://h?x",
+      "split": [
+        "rtsp://h?x",
+        "",
+        ""
+      ],
+      "display": "h?x",
+      "problem": {
+        "rtsp": "",
+        "webrtc": "A WebRTC camera is its WHEP address, for example http://192.168.144.25:8889/cam/whep."
+      }
+    },
+    {
+      "url": "rtsp://h#f",
+      "split": [
+        "rtsp://h#f",
+        "",
+        ""
+      ],
+      "display": "h",
+      "problem": {
+        "rtsp": "",
+        "webrtc": "A WebRTC camera is its WHEP address, for example http://192.168.144.25:8889/cam/whep."
+      }
+    },
+    {
+      "url": "rtsp://h:554",
+      "split": [
+        "rtsp://h:554",
+        "",
+        ""
+      ],
+      "display": "h:554",
+      "problem": {
+        "rtsp": "",
+        "webrtc": "A WebRTC camera is its WHEP address, for example http://192.168.144.25:8889/cam/whep."
+      }
+    },
+    {
+      "url": "rtsp://H.Example.COM/x",
+      "split": [
+        "rtsp://H.Example.COM/x",
+        "",
+        ""
+      ],
+      "display": "H.Example.COM/x",
+      "problem": {
+        "rtsp": "",
+        "webrtc": "A WebRTC camera is its WHEP address, for example http://192.168.144.25:8889/cam/whep."
+      }
+    },
+    {
+      "url": "rtsp://äö.de/x",
+      "split": [
+        "rtsp://äö.de/x",
+        "",
+        ""
+      ],
+      "display": "äö.de/x",
+      "problem": {
+        "rtsp": "",
+        "webrtc": "A WebRTC camera is its WHEP address, for example http://192.168.144.25:8889/cam/whep."
+      }
+    },
+    {
+      "url": "http://h/ä",
+      "split": [
+        "http://h/ä",
+        "",
+        ""
+      ],
+      "display": "h/ä",
+      "problem": {
+        "rtsp": "",
+        "webrtc": ""
+      }
+    },
+    {
+      "url": "rtsp://bad space/x",
+      "split": [
+        "rtsp://bad space/x",
+        "",
+        ""
+      ],
+      "display": "bad space/x",
+      "problem": {
+        "rtsp": "The address cannot contain spaces.",
+        "webrtc": "The address cannot contain spaces."
+      }
+    },
+    {
+      "url": "rtsp://us er@h/x",
+      "split": [
+        "rtsp://h/x",
+        "us er",
+        ""
+      ],
+      "display": "h/x",
+      "problem": {
+        "rtsp": "The address cannot contain spaces.",
+        "webrtc": "The address cannot contain spaces."
+      }
+    },
+    {
+      "url": "rtsp://h\n/x",
+      "split": [
+        "rtsp://h\n/x",
+        "",
+        ""
+      ],
+      "display": "h/x",
+      "problem": {
+        "rtsp": "The address cannot contain spaces.",
+        "webrtc": "The address cannot contain spaces."
+      }
+    },
+    {
+      "url": "RTSPS://H",
+      "split": [
+        "RTSPS://H",
+        "",
+        ""
+      ],
+      "display": "H",
+      "problem": {
+        "rtsp": "",
+        "webrtc": "A WebRTC camera is its WHEP address, for example http://192.168.144.25:8889/cam/whep."
+      }
+    },
+    {
+      "url": "http://[foo]/x",
+      "split": [
+        "http://[foo]/x",
+        "",
+        ""
+      ],
+      "display": "http://[foo]/x",
+      "problem": {
+        "rtsp": "The port in the address is not a number.",
+        "webrtc": "The port in the address is not a number."
+      }
+    },
+    {
+      "url": "http://[v1.x]/x",
+      "split": [
+        "http://[v1.x]/x",
+        "",
+        ""
+      ],
+      "display": "[v1.x]/x",
+      "problem": {
+        "rtsp": "",
+        "webrtc": ""
+      }
+    },
+    {
+      "url": "http://[v1.]/x",
+      "split": [
+        "http://[v1.]/x",
+        "",
+        ""
+      ],
+      "display": "http://[v1.]/x",
+      "problem": {
+        "rtsp": "The port in the address is not a number.",
+        "webrtc": "The port in the address is not a number."
+      }
+    },
+    {
+      "url": "http://[127.0.0.1]/x",
+      "split": [
+        "http://[127.0.0.1]/x",
+        "",
+        ""
+      ],
+      "display": "http://[127.0.0.1]/x",
+      "problem": {
+        "rtsp": "The port in the address is not a number.",
+        "webrtc": "The port in the address is not a number."
+      }
+    },
+    {
+      "url": "http://[fe80::1%25eth0]/",
+      "split": [
+        "http://[fe80::1%25eth0]/",
+        "",
+        ""
+      ],
+      "display": "[fe80::1%25eth0]/",
+      "problem": {
+        "rtsp": "",
+        "webrtc": ""
+      }
+    },
+    {
+      "url": "http://[::1]:abc/x",
+      "split": [
+        "http://[::1]:abc/x",
+        "",
+        ""
+      ],
+      "display": "[::1]:abc/x",
+      "problem": {
+        "rtsp": "The port in the address is not a number.",
+        "webrtc": "The port in the address is not a number."
+      }
+    },
+    {
+      "url": "rtsp://h:000000000000000000554/x",
+      "split": [
+        "rtsp://h:000000000000000000554/x",
+        "",
+        ""
+      ],
+      "display": "h:000000000000000000554/x",
+      "problem": {
+        "rtsp": "",
+        "webrtc": "A WebRTC camera is its WHEP address, for example http://192.168.144.25:8889/cam/whep."
+      }
+    },
+    {
+      "url": "rtsp://h:65535/x",
+      "split": [
+        "rtsp://h:65535/x",
+        "",
+        ""
+      ],
+      "display": "h:65535/x",
+      "problem": {
+        "rtsp": "",
+        "webrtc": "A WebRTC camera is its WHEP address, for example http://192.168.144.25:8889/cam/whep."
+      }
+    },
+    {
+      "url": "rtsp://h:65536/x",
+      "split": [
+        "rtsp://h:65536/x",
+        "",
+        ""
+      ],
+      "display": "h:65536/x",
+      "problem": {
+        "rtsp": "The port in the address is not a number.",
+        "webrtc": "The port in the address is not a number."
+      }
+    },
+    {
+      "url": "rtsp://u:p@[::1]:8554/x",
+      "split": [
+        "rtsp://[::1]:8554/x",
+        "u",
+        "p"
+      ],
+      "display": "[::1]:8554/x",
+      "problem": {
+        "rtsp": "",
+        "webrtc": "A WebRTC camera is its WHEP address, for example http://192.168.144.25:8889/cam/whep."
+      }
+    },
+    {
+      "url": "http://u@h/x?a=b#c",
+      "split": [
+        "http://h/x?a=b#c",
+        "u",
+        ""
+      ],
+      "display": "h/x?a=b",
+      "problem": {
+        "rtsp": "",
+        "webrtc": ""
+      }
+    }
+  ],
+  "with_credentials": [
+    {
+      "url": "rtsp://h/x",
+      "user": "",
+      "password": "",
+      "result": "rtsp://h/x"
+    },
+    {
+      "url": "rtsp://h/x",
+      "user": "",
+      "password": "x",
+      "result": "rtsp://h/x"
+    },
+    {
+      "url": "rtsp://h/x",
+      "user": "a",
+      "password": "",
+      "result": "rtsp://a@h/x"
+    },
+    {
+      "url": "rtsp://h/x",
+      "user": "a",
+      "password": "b",
+      "result": "rtsp://a:b@h/x"
+    },
+    {
+      "url": "rtsp://h/x",
+      "user": "a b",
+      "password": "p@ss:w/rd",
+      "result": "rtsp://a%20b:p%40ss%3Aw%2Frd@h/x"
+    },
+    {
+      "url": "rtsp://h/x",
+      "user": "ä",
+      "password": "ü",
+      "result": "rtsp://%C3%A4:%C3%BC@h/x"
+    },
+    {
+      "url": "rtsp://h:554/x?a=b",
+      "user": "",
+      "password": "",
+      "result": "rtsp://h:554/x?a=b"
+    },
+    {
+      "url": "rtsp://h:554/x?a=b",
+      "user": "",
+      "password": "x",
+      "result": "rtsp://h:554/x?a=b"
+    },
+    {
+      "url": "rtsp://h:554/x?a=b",
+      "user": "a",
+      "password": "",
+      "result": "rtsp://a@h:554/x?a=b"
+    },
+    {
+      "url": "rtsp://h:554/x?a=b",
+      "user": "a",
+      "password": "b",
+      "result": "rtsp://a:b@h:554/x?a=b"
+    },
+    {
+      "url": "rtsp://h:554/x?a=b",
+      "user": "a b",
+      "password": "p@ss:w/rd",
+      "result": "rtsp://a%20b:p%40ss%3Aw%2Frd@h:554/x?a=b"
+    },
+    {
+      "url": "rtsp://h:554/x?a=b",
+      "user": "ä",
+      "password": "ü",
+      "result": "rtsp://%C3%A4:%C3%BC@h:554/x?a=b"
+    },
+    {
+      "url": "udp://:5600",
+      "user": "",
+      "password": "",
+      "result": "udp://:5600"
+    },
+    {
+      "url": "udp://:5600",
+      "user": "",
+      "password": "x",
+      "result": "udp://:5600"
+    },
+    {
+      "url": "udp://:5600",
+      "user": "a",
+      "password": "",
+      "result": "udp://a@:5600"
+    },
+    {
+      "url": "udp://:5600",
+      "user": "a",
+      "password": "b",
+      "result": "udp://a:b@:5600"
+    },
+    {
+      "url": "udp://:5600",
+      "user": "a b",
+      "password": "p@ss:w/rd",
+      "result": "udp://a%20b:p%40ss%3Aw%2Frd@:5600"
+    },
+    {
+      "url": "udp://:5600",
+      "user": "ä",
+      "password": "ü",
+      "result": "udp://%C3%A4:%C3%BC@:5600"
+    },
+    {
+      "url": "http://[::1]/x",
+      "user": "",
+      "password": "",
+      "result": "http://[::1]/x"
+    },
+    {
+      "url": "http://[::1]/x",
+      "user": "",
+      "password": "x",
+      "result": "http://[::1]/x"
+    },
+    {
+      "url": "http://[::1]/x",
+      "user": "a",
+      "password": "",
+      "result": "http://a@[::1]/x"
+    },
+    {
+      "url": "http://[::1]/x",
+      "user": "a",
+      "password": "b",
+      "result": "http://a:b@[::1]/x"
+    },
+    {
+      "url": "http://[::1]/x",
+      "user": "a b",
+      "password": "p@ss:w/rd",
+      "result": "http://a%20b:p%40ss%3Aw%2Frd@[::1]/x"
+    },
+    {
+      "url": "http://[::1]/x",
+      "user": "ä",
+      "password": "ü",
+      "result": "http://%C3%A4:%C3%BC@[::1]/x"
+    }
+  ],
+  "redact": [
+    {
+      "text": "",
+      "secret": "",
+      "result": ""
+    },
+    {
+      "text": "abc",
+      "secret": "",
+      "result": "abc"
+    },
+    {
+      "text": "a secret b secret",
+      "secret": "secret",
+      "result": "a *** b ***"
+    },
+    {
+      "text": "p%40ss and p@ss",
+      "secret": "p@ss",
+      "result": "*** and ***"
+    },
+    {
+      "text": "nothing",
+      "secret": "x",
+      "result": "nothing"
+    },
+    {
+      "text": "x",
+      "secret": "x",
+      "result": "***"
+    }
+  ],
+  "explain": [
+    {
+      "line": "",
+      "result": ""
+    },
+    {
+      "line": "[tcp @ 0x7f8a1c0] Connection refused",
+      "result": "Nothing answered at that address and port. (Connection refused)"
+    },
+    {
+      "line": "Server returned 401 Unauthorized (authorization failed)",
+      "result": "The camera refused the user or password. (Server returned 401 Unauthorized (authorization failed))"
+    },
+    {
+      "line": "method DESCRIBE failed: 404 Not Found",
+      "result": "The camera has no stream at that path. (method DESCRIBE failed: 404 Not Found)"
+    },
+    {
+      "line": "[rtsp @ 0x1][tcp @ 0x2] Connection timed out",
+      "result": "The camera did not answer. (Connection timed out)"
+    },
+    {
+      "line": "No route to host",
+      "result": "That address cannot be reached from this computer. (No route to host)"
+    },
+    {
+      "line": "Network is unreachable",
+      "result": "That address cannot be reached from this computer. (Network is unreachable)"
+    },
+    {
+      "line": "Name or service not known",
+      "result": "That host name is unknown. (Name or service not known)"
+    },
+    {
+      "line": "nodename nor servname provided",
+      "result": "That host name is unknown. (nodename nor servname provided)"
+    },
+    {
+      "line": "Invalid data found when processing input",
+      "result": "No readable video came from that address. (Invalid data found when processing input)"
+    },
+    {
+      "line": "[Errno 61] Connection refused",
+      "result": "Nothing answered at that address and port. (Connection refused)"
+    },
+    {
+      "line": "Something unknown",
+      "result": "Something unknown"
+    },
+    {
+      "line": "Server returned 403 Forbidden",
+      "result": "The camera refused access. (Server returned 403 Forbidden)"
+    },
+    {
+      "line": "operation TIMED OUT",
+      "result": "The camera did not answer. (operation TIMED OUT)"
+    },
+    {
+      "line": "  padded  ",
+      "result": "padded"
+    }
+  ],
+  "whep_error": [
+    {
+      "code": 401,
+      "body": "",
+      "result": "The camera server refused the user or password."
+    },
+    {
+      "code": 401,
+      "body": "{\"error\": \"no such stream\"}",
+      "result": "The camera server refused the user or password. (no such stream)"
+    },
+    {
+      "code": 401,
+      "body": "plain  text\nbody",
+      "result": "The camera server refused the user or password. (plain text body)"
+    },
+    {
+      "code": 401,
+      "body": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "result": "The camera server refused the user or password. (xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx)"
+    },
+    {
+      "code": 401,
+      "body": "{\"error\":\"yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\"}",
+      "result": "The camera server refused the user or password. ({\"error\":\"yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy)"
+    },
+    {
+      "code": 403,
+      "body": "",
+      "result": "The camera server refused the user or password."
+    },
+    {
+      "code": 403,
+      "body": "{\"error\": \"no such stream\"}",
+      "result": "The camera server refused the user or password. (no such stream)"
+    },
+    {
+      "code": 403,
+      "body": "plain  text\nbody",
+      "result": "The camera server refused the user or password. (plain text body)"
+    },
+    {
+      "code": 403,
+      "body": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "result": "The camera server refused the user or password. (xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx)"
+    },
+    {
+      "code": 403,
+      "body": "{\"error\":\"yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\"}",
+      "result": "The camera server refused the user or password. ({\"error\":\"yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy)"
+    },
+    {
+      "code": 404,
+      "body": "",
+      "result": "The camera server has no stream at that address."
+    },
+    {
+      "code": 404,
+      "body": "{\"error\": \"no such stream\"}",
+      "result": "The camera server has no stream at that address. (no such stream)"
+    },
+    {
+      "code": 404,
+      "body": "plain  text\nbody",
+      "result": "The camera server has no stream at that address. (plain text body)"
+    },
+    {
+      "code": 404,
+      "body": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "result": "The camera server has no stream at that address. (xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx)"
+    },
+    {
+      "code": 404,
+      "body": "{\"error\":\"yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\"}",
+      "result": "The camera server has no stream at that address. ({\"error\":\"yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy)"
+    },
+    {
+      "code": 301,
+      "body": "",
+      "result": "The camera server redirected the request, which Corvus does not follow."
+    },
+    {
+      "code": 301,
+      "body": "{\"error\": \"no such stream\"}",
+      "result": "The camera server redirected the request, which Corvus does not follow. (no such stream)"
+    },
+    {
+      "code": 301,
+      "body": "plain  text\nbody",
+      "result": "The camera server redirected the request, which Corvus does not follow. (plain text body)"
+    },
+    {
+      "code": 301,
+      "body": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "result": "The camera server redirected the request, which Corvus does not follow. (xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx)"
+    },
+    {
+      "code": 301,
+      "body": "{\"error\":\"yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\"}",
+      "result": "The camera server redirected the request, which Corvus does not follow. ({\"error\":\"yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy)"
+    },
+    {
+      "code": 307,
+      "body": "",
+      "result": "The camera server redirected the request, which Corvus does not follow."
+    },
+    {
+      "code": 307,
+      "body": "{\"error\": \"no such stream\"}",
+      "result": "The camera server redirected the request, which Corvus does not follow. (no such stream)"
+    },
+    {
+      "code": 307,
+      "body": "plain  text\nbody",
+      "result": "The camera server redirected the request, which Corvus does not follow. (plain text body)"
+    },
+    {
+      "code": 307,
+      "body": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "result": "The camera server redirected the request, which Corvus does not follow. (xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx)"
+    },
+    {
+      "code": 307,
+      "body": "{\"error\":\"yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\"}",
+      "result": "The camera server redirected the request, which Corvus does not follow. ({\"error\":\"yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy)"
+    },
+    {
+      "code": 500,
+      "body": "",
+      "result": "The camera server refused the connection (500)."
+    },
+    {
+      "code": 500,
+      "body": "{\"error\": \"no such stream\"}",
+      "result": "The camera server refused the connection (500). (no such stream)"
+    },
+    {
+      "code": 500,
+      "body": "plain  text\nbody",
+      "result": "The camera server refused the connection (500). (plain text body)"
+    },
+    {
+      "code": 500,
+      "body": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "result": "The camera server refused the connection (500). (xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx)"
+    },
+    {
+      "code": 500,
+      "body": "{\"error\":\"yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\"}",
+      "result": "The camera server refused the connection (500). ({\"error\":\"yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy)"
+    },
+    {
+      "code": 400,
+      "body": "",
+      "result": "The camera server refused the connection (400)."
+    },
+    {
+      "code": 400,
+      "body": "{\"error\": \"no such stream\"}",
+      "result": "The camera server refused the connection (400). (no such stream)"
+    },
+    {
+      "code": 400,
+      "body": "plain  text\nbody",
+      "result": "The camera server refused the connection (400). (plain text body)"
+    },
+    {
+      "code": 400,
+      "body": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "result": "The camera server refused the connection (400). (xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx)"
+    },
+    {
+      "code": 400,
+      "body": "{\"error\":\"yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\"}",
+      "result": "The camera server refused the connection (400). ({\"error\":\"yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy)"
+    }
+  ],
+  "versions": [
+    {
+      "version": "",
+      "major": null,
+      "hides": true
+    },
+    {
+      "version": "7.1",
+      "major": 7,
+      "hides": true
+    },
+    {
+      "version": "n7.1",
+      "major": 7,
+      "hides": true
+    },
+    {
+      "version": "8.1.2",
+      "major": 8,
+      "hides": true
+    },
+    {
+      "version": "4.4.2-0ubuntu1",
+      "major": 4,
+      "hides": false
+    },
+    {
+      "version": "N-112345-g1234",
+      "major": null,
+      "hides": true
+    },
+    {
+      "version": "5.0",
+      "major": 5,
+      "hides": true
+    },
+    {
+      "version": "4.99",
+      "major": 4,
+      "hides": false
+    },
+    {
+      "version": "garbage",
+      "major": null,
+      "hides": true
+    },
+    {
+      "version": "n5.1.2",
+      "major": 5,
+      "hides": true
+    },
+    {
+      "version": "10.0",
+      "major": 10,
+      "hides": true
+    },
+    {
+      "version": "3.4.8",
+      "major": 3,
+      "hides": false
+    }
+  ],
+  "input_options": [
+    {
+      "url": "rtsp://h/x",
+      "transport": "tcp",
+      "version": "",
+      "result": [
+        [
+          "protocol_whitelist",
+          "rtsp,tcp,udp,rtp"
+        ],
+        [
+          "rtsp_transport",
+          "tcp"
+        ],
+        [
+          "timeout",
+          "8000000"
+        ],
+        [
+          "fflags",
+          "nobuffer"
+        ],
+        [
+          "analyzeduration",
+          "1000000"
+        ],
+        [
+          "probesize",
+          "1000000"
+        ]
+      ]
+    },
+    {
+      "url": "rtsp://h/x",
+      "transport": "tcp",
+      "version": "4.4",
+      "result": [
+        [
+          "protocol_whitelist",
+          "rtsp,tcp,udp,rtp"
+        ],
+        [
+          "rtsp_transport",
+          "tcp"
+        ],
+        [
+          "stimeout",
+          "8000000"
+        ],
+        [
+          "fflags",
+          "nobuffer"
+        ],
+        [
+          "analyzeduration",
+          "1000000"
+        ],
+        [
+          "probesize",
+          "1000000"
+        ]
+      ]
+    },
+    {
+      "url": "rtsp://h/x",
+      "transport": "tcp",
+      "version": "5.1",
+      "result": [
+        [
+          "protocol_whitelist",
+          "rtsp,tcp,udp,rtp"
+        ],
+        [
+          "rtsp_transport",
+          "tcp"
+        ],
+        [
+          "timeout",
+          "8000000"
+        ],
+        [
+          "fflags",
+          "nobuffer"
+        ],
+        [
+          "analyzeduration",
+          "1000000"
+        ],
+        [
+          "probesize",
+          "1000000"
+        ]
+      ]
+    },
+    {
+      "url": "rtsp://h/x",
+      "transport": "tcp",
+      "version": "N-1-g",
+      "result": [
+        [
+          "protocol_whitelist",
+          "rtsp,tcp,udp,rtp"
+        ],
+        [
+          "rtsp_transport",
+          "tcp"
+        ],
+        [
+          "timeout",
+          "8000000"
+        ],
+        [
+          "fflags",
+          "nobuffer"
+        ],
+        [
+          "analyzeduration",
+          "1000000"
+        ],
+        [
+          "probesize",
+          "1000000"
+        ]
+      ]
+    },
+    {
+      "url": "rtsp://h/x",
+      "transport": "udp",
+      "version": "",
+      "result": [
+        [
+          "protocol_whitelist",
+          "rtsp,tcp,udp,rtp"
+        ],
+        [
+          "rtsp_transport",
+          "udp"
+        ],
+        [
+          "timeout",
+          "8000000"
+        ],
+        [
+          "fflags",
+          "nobuffer"
+        ],
+        [
+          "analyzeduration",
+          "1000000"
+        ],
+        [
+          "probesize",
+          "1000000"
+        ]
+      ]
+    },
+    {
+      "url": "rtsp://h/x",
+      "transport": "udp",
+      "version": "4.4",
+      "result": [
+        [
+          "protocol_whitelist",
+          "rtsp,tcp,udp,rtp"
+        ],
+        [
+          "rtsp_transport",
+          "udp"
+        ],
+        [
+          "stimeout",
+          "8000000"
+        ],
+        [
+          "fflags",
+          "nobuffer"
+        ],
+        [
+          "analyzeduration",
+          "1000000"
+        ],
+        [
+          "probesize",
+          "1000000"
+        ]
+      ]
+    },
+    {
+      "url": "rtsp://h/x",
+      "transport": "udp",
+      "version": "5.1",
+      "result": [
+        [
+          "protocol_whitelist",
+          "rtsp,tcp,udp,rtp"
+        ],
+        [
+          "rtsp_transport",
+          "udp"
+        ],
+        [
+          "timeout",
+          "8000000"
+        ],
+        [
+          "fflags",
+          "nobuffer"
+        ],
+        [
+          "analyzeduration",
+          "1000000"
+        ],
+        [
+          "probesize",
+          "1000000"
+        ]
+      ]
+    },
+    {
+      "url": "rtsp://h/x",
+      "transport": "udp",
+      "version": "N-1-g",
+      "result": [
+        [
+          "protocol_whitelist",
+          "rtsp,tcp,udp,rtp"
+        ],
+        [
+          "rtsp_transport",
+          "udp"
+        ],
+        [
+          "timeout",
+          "8000000"
+        ],
+        [
+          "fflags",
+          "nobuffer"
+        ],
+        [
+          "analyzeduration",
+          "1000000"
+        ],
+        [
+          "probesize",
+          "1000000"
+        ]
+      ]
+    },
+    {
+      "url": "rtsps://h/x",
+      "transport": "tcp",
+      "version": "",
+      "result": [
+        [
+          "protocol_whitelist",
+          "rtsps,rtsp,tcp,tls,udp,rtp"
+        ],
+        [
+          "rtsp_transport",
+          "tcp"
+        ],
+        [
+          "timeout",
+          "8000000"
+        ],
+        [
+          "fflags",
+          "nobuffer"
+        ],
+        [
+          "analyzeduration",
+          "1000000"
+        ],
+        [
+          "probesize",
+          "1000000"
+        ]
+      ]
+    },
+    {
+      "url": "rtsps://h/x",
+      "transport": "tcp",
+      "version": "4.4",
+      "result": [
+        [
+          "protocol_whitelist",
+          "rtsps,rtsp,tcp,tls,udp,rtp"
+        ],
+        [
+          "rtsp_transport",
+          "tcp"
+        ],
+        [
+          "stimeout",
+          "8000000"
+        ],
+        [
+          "fflags",
+          "nobuffer"
+        ],
+        [
+          "analyzeduration",
+          "1000000"
+        ],
+        [
+          "probesize",
+          "1000000"
+        ]
+      ]
+    },
+    {
+      "url": "rtsps://h/x",
+      "transport": "tcp",
+      "version": "5.1",
+      "result": [
+        [
+          "protocol_whitelist",
+          "rtsps,rtsp,tcp,tls,udp,rtp"
+        ],
+        [
+          "rtsp_transport",
+          "tcp"
+        ],
+        [
+          "timeout",
+          "8000000"
+        ],
+        [
+          "fflags",
+          "nobuffer"
+        ],
+        [
+          "analyzeduration",
+          "1000000"
+        ],
+        [
+          "probesize",
+          "1000000"
+        ]
+      ]
+    },
+    {
+      "url": "rtsps://h/x",
+      "transport": "tcp",
+      "version": "N-1-g",
+      "result": [
+        [
+          "protocol_whitelist",
+          "rtsps,rtsp,tcp,tls,udp,rtp"
+        ],
+        [
+          "rtsp_transport",
+          "tcp"
+        ],
+        [
+          "timeout",
+          "8000000"
+        ],
+        [
+          "fflags",
+          "nobuffer"
+        ],
+        [
+          "analyzeduration",
+          "1000000"
+        ],
+        [
+          "probesize",
+          "1000000"
+        ]
+      ]
+    },
+    {
+      "url": "rtsps://h/x",
+      "transport": "udp",
+      "version": "",
+      "result": [
+        [
+          "protocol_whitelist",
+          "rtsps,rtsp,tcp,tls,udp,rtp"
+        ],
+        [
+          "rtsp_transport",
+          "tcp"
+        ],
+        [
+          "timeout",
+          "8000000"
+        ],
+        [
+          "fflags",
+          "nobuffer"
+        ],
+        [
+          "analyzeduration",
+          "1000000"
+        ],
+        [
+          "probesize",
+          "1000000"
+        ]
+      ]
+    },
+    {
+      "url": "rtsps://h/x",
+      "transport": "udp",
+      "version": "4.4",
+      "result": [
+        [
+          "protocol_whitelist",
+          "rtsps,rtsp,tcp,tls,udp,rtp"
+        ],
+        [
+          "rtsp_transport",
+          "tcp"
+        ],
+        [
+          "stimeout",
+          "8000000"
+        ],
+        [
+          "fflags",
+          "nobuffer"
+        ],
+        [
+          "analyzeduration",
+          "1000000"
+        ],
+        [
+          "probesize",
+          "1000000"
+        ]
+      ]
+    },
+    {
+      "url": "rtsps://h/x",
+      "transport": "udp",
+      "version": "5.1",
+      "result": [
+        [
+          "protocol_whitelist",
+          "rtsps,rtsp,tcp,tls,udp,rtp"
+        ],
+        [
+          "rtsp_transport",
+          "tcp"
+        ],
+        [
+          "timeout",
+          "8000000"
+        ],
+        [
+          "fflags",
+          "nobuffer"
+        ],
+        [
+          "analyzeduration",
+          "1000000"
+        ],
+        [
+          "probesize",
+          "1000000"
+        ]
+      ]
+    },
+    {
+      "url": "rtsps://h/x",
+      "transport": "udp",
+      "version": "N-1-g",
+      "result": [
+        [
+          "protocol_whitelist",
+          "rtsps,rtsp,tcp,tls,udp,rtp"
+        ],
+        [
+          "rtsp_transport",
+          "tcp"
+        ],
+        [
+          "timeout",
+          "8000000"
+        ],
+        [
+          "fflags",
+          "nobuffer"
+        ],
+        [
+          "analyzeduration",
+          "1000000"
+        ],
+        [
+          "probesize",
+          "1000000"
+        ]
+      ]
+    },
+    {
+      "url": "udp://:5600",
+      "transport": "tcp",
+      "version": "",
+      "result": [
+        [
+          "protocol_whitelist",
+          "udp,rtp"
+        ],
+        [
+          "timeout",
+          "8000000"
+        ],
+        [
+          "fflags",
+          "nobuffer"
+        ],
+        [
+          "analyzeduration",
+          "1000000"
+        ],
+        [
+          "probesize",
+          "1000000"
+        ]
+      ]
+    },
+    {
+      "url": "udp://:5600",
+      "transport": "tcp",
+      "version": "4.4",
+      "result": [
+        [
+          "protocol_whitelist",
+          "udp,rtp"
+        ],
+        [
+          "timeout",
+          "8000000"
+        ],
+        [
+          "fflags",
+          "nobuffer"
+        ],
+        [
+          "analyzeduration",
+          "1000000"
+        ],
+        [
+          "probesize",
+          "1000000"
+        ]
+      ]
+    },
+    {
+      "url": "udp://:5600",
+      "transport": "tcp",
+      "version": "5.1",
+      "result": [
+        [
+          "protocol_whitelist",
+          "udp,rtp"
+        ],
+        [
+          "timeout",
+          "8000000"
+        ],
+        [
+          "fflags",
+          "nobuffer"
+        ],
+        [
+          "analyzeduration",
+          "1000000"
+        ],
+        [
+          "probesize",
+          "1000000"
+        ]
+      ]
+    },
+    {
+      "url": "udp://:5600",
+      "transport": "tcp",
+      "version": "N-1-g",
+      "result": [
+        [
+          "protocol_whitelist",
+          "udp,rtp"
+        ],
+        [
+          "timeout",
+          "8000000"
+        ],
+        [
+          "fflags",
+          "nobuffer"
+        ],
+        [
+          "analyzeduration",
+          "1000000"
+        ],
+        [
+          "probesize",
+          "1000000"
+        ]
+      ]
+    },
+    {
+      "url": "udp://:5600",
+      "transport": "udp",
+      "version": "",
+      "result": [
+        [
+          "protocol_whitelist",
+          "udp,rtp"
+        ],
+        [
+          "timeout",
+          "8000000"
+        ],
+        [
+          "fflags",
+          "nobuffer"
+        ],
+        [
+          "analyzeduration",
+          "1000000"
+        ],
+        [
+          "probesize",
+          "1000000"
+        ]
+      ]
+    },
+    {
+      "url": "udp://:5600",
+      "transport": "udp",
+      "version": "4.4",
+      "result": [
+        [
+          "protocol_whitelist",
+          "udp,rtp"
+        ],
+        [
+          "timeout",
+          "8000000"
+        ],
+        [
+          "fflags",
+          "nobuffer"
+        ],
+        [
+          "analyzeduration",
+          "1000000"
+        ],
+        [
+          "probesize",
+          "1000000"
+        ]
+      ]
+    },
+    {
+      "url": "udp://:5600",
+      "transport": "udp",
+      "version": "5.1",
+      "result": [
+        [
+          "protocol_whitelist",
+          "udp,rtp"
+        ],
+        [
+          "timeout",
+          "8000000"
+        ],
+        [
+          "fflags",
+          "nobuffer"
+        ],
+        [
+          "analyzeduration",
+          "1000000"
+        ],
+        [
+          "probesize",
+          "1000000"
+        ]
+      ]
+    },
+    {
+      "url": "udp://:5600",
+      "transport": "udp",
+      "version": "N-1-g",
+      "result": [
+        [
+          "protocol_whitelist",
+          "udp,rtp"
+        ],
+        [
+          "timeout",
+          "8000000"
+        ],
+        [
+          "fflags",
+          "nobuffer"
+        ],
+        [
+          "analyzeduration",
+          "1000000"
+        ],
+        [
+          "probesize",
+          "1000000"
+        ]
+      ]
+    },
+    {
+      "url": "srt://h:9000",
+      "transport": "tcp",
+      "version": "",
+      "result": [
+        [
+          "protocol_whitelist",
+          "srt"
+        ],
+        [
+          "timeout",
+          "8000000"
+        ],
+        [
+          "fflags",
+          "nobuffer"
+        ],
+        [
+          "analyzeduration",
+          "1000000"
+        ],
+        [
+          "probesize",
+          "1000000"
+        ]
+      ]
+    },
+    {
+      "url": "srt://h:9000",
+      "transport": "tcp",
+      "version": "4.4",
+      "result": [
+        [
+          "protocol_whitelist",
+          "srt"
+        ],
+        [
+          "timeout",
+          "8000000"
+        ],
+        [
+          "fflags",
+          "nobuffer"
+        ],
+        [
+          "analyzeduration",
+          "1000000"
+        ],
+        [
+          "probesize",
+          "1000000"
+        ]
+      ]
+    },
+    {
+      "url": "srt://h:9000",
+      "transport": "tcp",
+      "version": "5.1",
+      "result": [
+        [
+          "protocol_whitelist",
+          "srt"
+        ],
+        [
+          "timeout",
+          "8000000"
+        ],
+        [
+          "fflags",
+          "nobuffer"
+        ],
+        [
+          "analyzeduration",
+          "1000000"
+        ],
+        [
+          "probesize",
+          "1000000"
+        ]
+      ]
+    },
+    {
+      "url": "srt://h:9000",
+      "transport": "tcp",
+      "version": "N-1-g",
+      "result": [
+        [
+          "protocol_whitelist",
+          "srt"
+        ],
+        [
+          "timeout",
+          "8000000"
+        ],
+        [
+          "fflags",
+          "nobuffer"
+        ],
+        [
+          "analyzeduration",
+          "1000000"
+        ],
+        [
+          "probesize",
+          "1000000"
+        ]
+      ]
+    },
+    {
+      "url": "srt://h:9000",
+      "transport": "udp",
+      "version": "",
+      "result": [
+        [
+          "protocol_whitelist",
+          "srt"
+        ],
+        [
+          "timeout",
+          "8000000"
+        ],
+        [
+          "fflags",
+          "nobuffer"
+        ],
+        [
+          "analyzeduration",
+          "1000000"
+        ],
+        [
+          "probesize",
+          "1000000"
+        ]
+      ]
+    },
+    {
+      "url": "srt://h:9000",
+      "transport": "udp",
+      "version": "4.4",
+      "result": [
+        [
+          "protocol_whitelist",
+          "srt"
+        ],
+        [
+          "timeout",
+          "8000000"
+        ],
+        [
+          "fflags",
+          "nobuffer"
+        ],
+        [
+          "analyzeduration",
+          "1000000"
+        ],
+        [
+          "probesize",
+          "1000000"
+        ]
+      ]
+    },
+    {
+      "url": "srt://h:9000",
+      "transport": "udp",
+      "version": "5.1",
+      "result": [
+        [
+          "protocol_whitelist",
+          "srt"
+        ],
+        [
+          "timeout",
+          "8000000"
+        ],
+        [
+          "fflags",
+          "nobuffer"
+        ],
+        [
+          "analyzeduration",
+          "1000000"
+        ],
+        [
+          "probesize",
+          "1000000"
+        ]
+      ]
+    },
+    {
+      "url": "srt://h:9000",
+      "transport": "udp",
+      "version": "N-1-g",
+      "result": [
+        [
+          "protocol_whitelist",
+          "srt"
+        ],
+        [
+          "timeout",
+          "8000000"
+        ],
+        [
+          "fflags",
+          "nobuffer"
+        ],
+        [
+          "analyzeduration",
+          "1000000"
+        ],
+        [
+          "probesize",
+          "1000000"
+        ]
+      ]
+    },
+    {
+      "url": "http://h/x.mjpg",
+      "transport": "tcp",
+      "version": "",
+      "result": [
+        [
+          "protocol_whitelist",
+          "http,https,tcp,tls,crypto"
+        ],
+        [
+          "rw_timeout",
+          "8000000"
+        ],
+        [
+          "fflags",
+          "nobuffer"
+        ],
+        [
+          "analyzeduration",
+          "1000000"
+        ],
+        [
+          "probesize",
+          "1000000"
+        ]
+      ]
+    },
+    {
+      "url": "http://h/x.mjpg",
+      "transport": "tcp",
+      "version": "4.4",
+      "result": [
+        [
+          "protocol_whitelist",
+          "http,https,tcp,tls,crypto"
+        ],
+        [
+          "rw_timeout",
+          "8000000"
+        ],
+        [
+          "fflags",
+          "nobuffer"
+        ],
+        [
+          "analyzeduration",
+          "1000000"
+        ],
+        [
+          "probesize",
+          "1000000"
+        ]
+      ]
+    },
+    {
+      "url": "http://h/x.mjpg",
+      "transport": "tcp",
+      "version": "5.1",
+      "result": [
+        [
+          "protocol_whitelist",
+          "http,https,tcp,tls,crypto"
+        ],
+        [
+          "rw_timeout",
+          "8000000"
+        ],
+        [
+          "fflags",
+          "nobuffer"
+        ],
+        [
+          "analyzeduration",
+          "1000000"
+        ],
+        [
+          "probesize",
+          "1000000"
+        ]
+      ]
+    },
+    {
+      "url": "http://h/x.mjpg",
+      "transport": "tcp",
+      "version": "N-1-g",
+      "result": [
+        [
+          "protocol_whitelist",
+          "http,https,tcp,tls,crypto"
+        ],
+        [
+          "rw_timeout",
+          "8000000"
+        ],
+        [
+          "fflags",
+          "nobuffer"
+        ],
+        [
+          "analyzeduration",
+          "1000000"
+        ],
+        [
+          "probesize",
+          "1000000"
+        ]
+      ]
+    },
+    {
+      "url": "http://h/x.mjpg",
+      "transport": "udp",
+      "version": "",
+      "result": [
+        [
+          "protocol_whitelist",
+          "http,https,tcp,tls,crypto"
+        ],
+        [
+          "rw_timeout",
+          "8000000"
+        ],
+        [
+          "fflags",
+          "nobuffer"
+        ],
+        [
+          "analyzeduration",
+          "1000000"
+        ],
+        [
+          "probesize",
+          "1000000"
+        ]
+      ]
+    },
+    {
+      "url": "http://h/x.mjpg",
+      "transport": "udp",
+      "version": "4.4",
+      "result": [
+        [
+          "protocol_whitelist",
+          "http,https,tcp,tls,crypto"
+        ],
+        [
+          "rw_timeout",
+          "8000000"
+        ],
+        [
+          "fflags",
+          "nobuffer"
+        ],
+        [
+          "analyzeduration",
+          "1000000"
+        ],
+        [
+          "probesize",
+          "1000000"
+        ]
+      ]
+    },
+    {
+      "url": "http://h/x.mjpg",
+      "transport": "udp",
+      "version": "5.1",
+      "result": [
+        [
+          "protocol_whitelist",
+          "http,https,tcp,tls,crypto"
+        ],
+        [
+          "rw_timeout",
+          "8000000"
+        ],
+        [
+          "fflags",
+          "nobuffer"
+        ],
+        [
+          "analyzeduration",
+          "1000000"
+        ],
+        [
+          "probesize",
+          "1000000"
+        ]
+      ]
+    },
+    {
+      "url": "http://h/x.mjpg",
+      "transport": "udp",
+      "version": "N-1-g",
+      "result": [
+        [
+          "protocol_whitelist",
+          "http,https,tcp,tls,crypto"
+        ],
+        [
+          "rw_timeout",
+          "8000000"
+        ],
+        [
+          "fflags",
+          "nobuffer"
+        ],
+        [
+          "analyzeduration",
+          "1000000"
+        ],
+        [
+          "probesize",
+          "1000000"
+        ]
+      ]
+    },
+    {
+      "url": "https://h/x",
+      "transport": "tcp",
+      "version": "",
+      "result": [
+        [
+          "protocol_whitelist",
+          "http,https,tcp,tls,crypto"
+        ],
+        [
+          "rw_timeout",
+          "8000000"
+        ],
+        [
+          "fflags",
+          "nobuffer"
+        ],
+        [
+          "analyzeduration",
+          "1000000"
+        ],
+        [
+          "probesize",
+          "1000000"
+        ]
+      ]
+    },
+    {
+      "url": "https://h/x",
+      "transport": "tcp",
+      "version": "4.4",
+      "result": [
+        [
+          "protocol_whitelist",
+          "http,https,tcp,tls,crypto"
+        ],
+        [
+          "rw_timeout",
+          "8000000"
+        ],
+        [
+          "fflags",
+          "nobuffer"
+        ],
+        [
+          "analyzeduration",
+          "1000000"
+        ],
+        [
+          "probesize",
+          "1000000"
+        ]
+      ]
+    },
+    {
+      "url": "https://h/x",
+      "transport": "tcp",
+      "version": "5.1",
+      "result": [
+        [
+          "protocol_whitelist",
+          "http,https,tcp,tls,crypto"
+        ],
+        [
+          "rw_timeout",
+          "8000000"
+        ],
+        [
+          "fflags",
+          "nobuffer"
+        ],
+        [
+          "analyzeduration",
+          "1000000"
+        ],
+        [
+          "probesize",
+          "1000000"
+        ]
+      ]
+    },
+    {
+      "url": "https://h/x",
+      "transport": "tcp",
+      "version": "N-1-g",
+      "result": [
+        [
+          "protocol_whitelist",
+          "http,https,tcp,tls,crypto"
+        ],
+        [
+          "rw_timeout",
+          "8000000"
+        ],
+        [
+          "fflags",
+          "nobuffer"
+        ],
+        [
+          "analyzeduration",
+          "1000000"
+        ],
+        [
+          "probesize",
+          "1000000"
+        ]
+      ]
+    },
+    {
+      "url": "https://h/x",
+      "transport": "udp",
+      "version": "",
+      "result": [
+        [
+          "protocol_whitelist",
+          "http,https,tcp,tls,crypto"
+        ],
+        [
+          "rw_timeout",
+          "8000000"
+        ],
+        [
+          "fflags",
+          "nobuffer"
+        ],
+        [
+          "analyzeduration",
+          "1000000"
+        ],
+        [
+          "probesize",
+          "1000000"
+        ]
+      ]
+    },
+    {
+      "url": "https://h/x",
+      "transport": "udp",
+      "version": "4.4",
+      "result": [
+        [
+          "protocol_whitelist",
+          "http,https,tcp,tls,crypto"
+        ],
+        [
+          "rw_timeout",
+          "8000000"
+        ],
+        [
+          "fflags",
+          "nobuffer"
+        ],
+        [
+          "analyzeduration",
+          "1000000"
+        ],
+        [
+          "probesize",
+          "1000000"
+        ]
+      ]
+    },
+    {
+      "url": "https://h/x",
+      "transport": "udp",
+      "version": "5.1",
+      "result": [
+        [
+          "protocol_whitelist",
+          "http,https,tcp,tls,crypto"
+        ],
+        [
+          "rw_timeout",
+          "8000000"
+        ],
+        [
+          "fflags",
+          "nobuffer"
+        ],
+        [
+          "analyzeduration",
+          "1000000"
+        ],
+        [
+          "probesize",
+          "1000000"
+        ]
+      ]
+    },
+    {
+      "url": "https://h/x",
+      "transport": "udp",
+      "version": "N-1-g",
+      "result": [
+        [
+          "protocol_whitelist",
+          "http,https,tcp,tls,crypto"
+        ],
+        [
+          "rw_timeout",
+          "8000000"
+        ],
+        [
+          "fflags",
+          "nobuffer"
+        ],
+        [
+          "analyzeduration",
+          "1000000"
+        ],
+        [
+          "probesize",
+          "1000000"
+        ]
+      ]
+    },
+    {
+      "url": "ftp://h",
+      "transport": "tcp",
+      "version": "",
+      "result": [
+        [
+          "protocol_whitelist",
+          "tcp"
+        ],
+        [
+          "rw_timeout",
+          "8000000"
+        ],
+        [
+          "fflags",
+          "nobuffer"
+        ],
+        [
+          "analyzeduration",
+          "1000000"
+        ],
+        [
+          "probesize",
+          "1000000"
+        ]
+      ]
+    },
+    {
+      "url": "ftp://h",
+      "transport": "tcp",
+      "version": "4.4",
+      "result": [
+        [
+          "protocol_whitelist",
+          "tcp"
+        ],
+        [
+          "rw_timeout",
+          "8000000"
+        ],
+        [
+          "fflags",
+          "nobuffer"
+        ],
+        [
+          "analyzeduration",
+          "1000000"
+        ],
+        [
+          "probesize",
+          "1000000"
+        ]
+      ]
+    },
+    {
+      "url": "ftp://h",
+      "transport": "tcp",
+      "version": "5.1",
+      "result": [
+        [
+          "protocol_whitelist",
+          "tcp"
+        ],
+        [
+          "rw_timeout",
+          "8000000"
+        ],
+        [
+          "fflags",
+          "nobuffer"
+        ],
+        [
+          "analyzeduration",
+          "1000000"
+        ],
+        [
+          "probesize",
+          "1000000"
+        ]
+      ]
+    },
+    {
+      "url": "ftp://h",
+      "transport": "tcp",
+      "version": "N-1-g",
+      "result": [
+        [
+          "protocol_whitelist",
+          "tcp"
+        ],
+        [
+          "rw_timeout",
+          "8000000"
+        ],
+        [
+          "fflags",
+          "nobuffer"
+        ],
+        [
+          "analyzeduration",
+          "1000000"
+        ],
+        [
+          "probesize",
+          "1000000"
+        ]
+      ]
+    },
+    {
+      "url": "ftp://h",
+      "transport": "udp",
+      "version": "",
+      "result": [
+        [
+          "protocol_whitelist",
+          "tcp"
+        ],
+        [
+          "rw_timeout",
+          "8000000"
+        ],
+        [
+          "fflags",
+          "nobuffer"
+        ],
+        [
+          "analyzeduration",
+          "1000000"
+        ],
+        [
+          "probesize",
+          "1000000"
+        ]
+      ]
+    },
+    {
+      "url": "ftp://h",
+      "transport": "udp",
+      "version": "4.4",
+      "result": [
+        [
+          "protocol_whitelist",
+          "tcp"
+        ],
+        [
+          "rw_timeout",
+          "8000000"
+        ],
+        [
+          "fflags",
+          "nobuffer"
+        ],
+        [
+          "analyzeduration",
+          "1000000"
+        ],
+        [
+          "probesize",
+          "1000000"
+        ]
+      ]
+    },
+    {
+      "url": "ftp://h",
+      "transport": "udp",
+      "version": "5.1",
+      "result": [
+        [
+          "protocol_whitelist",
+          "tcp"
+        ],
+        [
+          "rw_timeout",
+          "8000000"
+        ],
+        [
+          "fflags",
+          "nobuffer"
+        ],
+        [
+          "analyzeduration",
+          "1000000"
+        ],
+        [
+          "probesize",
+          "1000000"
+        ]
+      ]
+    },
+    {
+      "url": "ftp://h",
+      "transport": "udp",
+      "version": "N-1-g",
+      "result": [
+        [
+          "protocol_whitelist",
+          "tcp"
+        ],
+        [
+          "rw_timeout",
+          "8000000"
+        ],
+        [
+          "fflags",
+          "nobuffer"
+        ],
+        [
+          "analyzeduration",
+          "1000000"
+        ],
+        [
+          "probesize",
+          "1000000"
+        ]
+      ]
+    },
+    {
+      "url": "RTSP://H/x",
+      "transport": "tcp",
+      "version": "",
+      "result": [
+        [
+          "protocol_whitelist",
+          "rtsp,tcp,udp,rtp"
+        ],
+        [
+          "rtsp_transport",
+          "tcp"
+        ],
+        [
+          "timeout",
+          "8000000"
+        ],
+        [
+          "fflags",
+          "nobuffer"
+        ],
+        [
+          "analyzeduration",
+          "1000000"
+        ],
+        [
+          "probesize",
+          "1000000"
+        ]
+      ]
+    },
+    {
+      "url": "RTSP://H/x",
+      "transport": "tcp",
+      "version": "4.4",
+      "result": [
+        [
+          "protocol_whitelist",
+          "rtsp,tcp,udp,rtp"
+        ],
+        [
+          "rtsp_transport",
+          "tcp"
+        ],
+        [
+          "stimeout",
+          "8000000"
+        ],
+        [
+          "fflags",
+          "nobuffer"
+        ],
+        [
+          "analyzeduration",
+          "1000000"
+        ],
+        [
+          "probesize",
+          "1000000"
+        ]
+      ]
+    },
+    {
+      "url": "RTSP://H/x",
+      "transport": "tcp",
+      "version": "5.1",
+      "result": [
+        [
+          "protocol_whitelist",
+          "rtsp,tcp,udp,rtp"
+        ],
+        [
+          "rtsp_transport",
+          "tcp"
+        ],
+        [
+          "timeout",
+          "8000000"
+        ],
+        [
+          "fflags",
+          "nobuffer"
+        ],
+        [
+          "analyzeduration",
+          "1000000"
+        ],
+        [
+          "probesize",
+          "1000000"
+        ]
+      ]
+    },
+    {
+      "url": "RTSP://H/x",
+      "transport": "tcp",
+      "version": "N-1-g",
+      "result": [
+        [
+          "protocol_whitelist",
+          "rtsp,tcp,udp,rtp"
+        ],
+        [
+          "rtsp_transport",
+          "tcp"
+        ],
+        [
+          "timeout",
+          "8000000"
+        ],
+        [
+          "fflags",
+          "nobuffer"
+        ],
+        [
+          "analyzeduration",
+          "1000000"
+        ],
+        [
+          "probesize",
+          "1000000"
+        ]
+      ]
+    },
+    {
+      "url": "RTSP://H/x",
+      "transport": "udp",
+      "version": "",
+      "result": [
+        [
+          "protocol_whitelist",
+          "rtsp,tcp,udp,rtp"
+        ],
+        [
+          "rtsp_transport",
+          "udp"
+        ],
+        [
+          "timeout",
+          "8000000"
+        ],
+        [
+          "fflags",
+          "nobuffer"
+        ],
+        [
+          "analyzeduration",
+          "1000000"
+        ],
+        [
+          "probesize",
+          "1000000"
+        ]
+      ]
+    },
+    {
+      "url": "RTSP://H/x",
+      "transport": "udp",
+      "version": "4.4",
+      "result": [
+        [
+          "protocol_whitelist",
+          "rtsp,tcp,udp,rtp"
+        ],
+        [
+          "rtsp_transport",
+          "udp"
+        ],
+        [
+          "stimeout",
+          "8000000"
+        ],
+        [
+          "fflags",
+          "nobuffer"
+        ],
+        [
+          "analyzeduration",
+          "1000000"
+        ],
+        [
+          "probesize",
+          "1000000"
+        ]
+      ]
+    },
+    {
+      "url": "RTSP://H/x",
+      "transport": "udp",
+      "version": "5.1",
+      "result": [
+        [
+          "protocol_whitelist",
+          "rtsp,tcp,udp,rtp"
+        ],
+        [
+          "rtsp_transport",
+          "udp"
+        ],
+        [
+          "timeout",
+          "8000000"
+        ],
+        [
+          "fflags",
+          "nobuffer"
+        ],
+        [
+          "analyzeduration",
+          "1000000"
+        ],
+        [
+          "probesize",
+          "1000000"
+        ]
+      ]
+    },
+    {
+      "url": "RTSP://H/x",
+      "transport": "udp",
+      "version": "N-1-g",
+      "result": [
+        [
+          "protocol_whitelist",
+          "rtsp,tcp,udp,rtp"
+        ],
+        [
+          "rtsp_transport",
+          "udp"
+        ],
+        [
+          "timeout",
+          "8000000"
+        ],
+        [
+          "fflags",
+          "nobuffer"
+        ],
+        [
+          "analyzeduration",
+          "1000000"
+        ],
+        [
+          "probesize",
+          "1000000"
+        ]
+      ]
+    }
+  ],
+  "concat_list": [
+    {
+      "url": "rtsp://h/x",
+      "transport": "udp",
+      "version": "7.0",
+      "result": "ffconcat version 1.0\nfile 'rtsp://h/x'\noption protocol_whitelist 'rtsp,tcp,udp,rtp'\noption rtsp_transport 'udp'\noption timeout '8000000'\noption fflags 'nobuffer'\noption analyzeduration '1000000'\noption probesize '1000000'\n"
+    },
+    {
+      "url": "rtsps://h/x",
+      "transport": "udp",
+      "version": "7.0",
+      "result": "ffconcat version 1.0\nfile 'rtsps://h/x'\noption protocol_whitelist 'rtsps,rtsp,tcp,tls,udp,rtp'\noption rtsp_transport 'tcp'\noption timeout '8000000'\noption fflags 'nobuffer'\noption analyzeduration '1000000'\noption probesize '1000000'\n"
+    },
+    {
+      "url": "udp://:5600",
+      "transport": "udp",
+      "version": "7.0",
+      "result": "ffconcat version 1.0\nfile 'udp://:5600'\noption protocol_whitelist 'udp,rtp'\noption timeout '8000000'\noption fflags 'nobuffer'\noption analyzeduration '1000000'\noption probesize '1000000'\n"
+    },
+    {
+      "url": "srt://h:9000",
+      "transport": "udp",
+      "version": "7.0",
+      "result": "ffconcat version 1.0\nfile 'srt://h:9000'\noption protocol_whitelist 'srt'\noption timeout '8000000'\noption fflags 'nobuffer'\noption analyzeduration '1000000'\noption probesize '1000000'\n"
+    },
+    {
+      "url": "http://h/x.mjpg",
+      "transport": "udp",
+      "version": "7.0",
+      "result": "ffconcat version 1.0\nfile 'http://h/x.mjpg'\noption protocol_whitelist 'http,https,tcp,tls,crypto'\noption rw_timeout '8000000'\noption fflags 'nobuffer'\noption analyzeduration '1000000'\noption probesize '1000000'\n"
+    },
+    {
+      "url": "https://h/x",
+      "transport": "udp",
+      "version": "7.0",
+      "result": "ffconcat version 1.0\nfile 'https://h/x'\noption protocol_whitelist 'http,https,tcp,tls,crypto'\noption rw_timeout '8000000'\noption fflags 'nobuffer'\noption analyzeduration '1000000'\noption probesize '1000000'\n"
+    },
+    {
+      "url": "ftp://h",
+      "transport": "udp",
+      "version": "7.0",
+      "result": "ffconcat version 1.0\nfile 'ftp://h'\noption protocol_whitelist 'tcp'\noption rw_timeout '8000000'\noption fflags 'nobuffer'\noption analyzeduration '1000000'\noption probesize '1000000'\n"
+    },
+    {
+      "url": "RTSP://H/x",
+      "transport": "udp",
+      "version": "7.0",
+      "result": "ffconcat version 1.0\nfile 'RTSP://H/x'\noption protocol_whitelist 'rtsp,tcp,udp,rtp'\noption rtsp_transport 'udp'\noption timeout '8000000'\noption fflags 'nobuffer'\noption analyzeduration '1000000'\noption probesize '1000000'\n"
+    },
+    {
+      "url": "rtsp://u:it's@h/x",
+      "transport": "udp",
+      "version": "7.0",
+      "result": "ffconcat version 1.0\nfile 'rtsp://u:it'\\''s@h/x'\noption protocol_whitelist 'rtsp,tcp,udp,rtp'\noption rtsp_transport 'udp'\noption timeout '8000000'\noption fflags 'nobuffer'\noption analyzeduration '1000000'\noption probesize '1000000'\n"
+    },
+    {
+      "url": "rtsp://u:a'b'c@h/y",
+      "transport": "udp",
+      "version": "7.0",
+      "result": "ffconcat version 1.0\nfile 'rtsp://u:a'\\''b'\\''c@h/y'\noption protocol_whitelist 'rtsp,tcp,udp,rtp'\noption rtsp_transport 'udp'\noption timeout '8000000'\noption fflags 'nobuffer'\noption analyzeduration '1000000'\noption probesize '1000000'\n"
+    }
+  ],
+  "command": [
+    {
+      "url": "rtsp://h/x",
+      "transport": "tcp",
+      "list_path": "",
+      "version": "",
+      "result": [
+        "/usr/bin/ffmpeg",
+        "-hide_banner",
+        "-nostdin",
+        "-loglevel",
+        "error",
+        "-protocol_whitelist",
+        "rtsp,tcp,udp,rtp",
+        "-rtsp_transport",
+        "tcp",
+        "-timeout",
+        "8000000",
+        "-fflags",
+        "nobuffer",
+        "-analyzeduration",
+        "1000000",
+        "-probesize",
+        "1000000",
+        "-flags",
+        "low_delay",
+        "-i",
+        "rtsp://h/x",
+        "-an",
+        "-sn",
+        "-dn",
+        "-vf",
+        "scale='min(1280,iw)':-2",
+        "-f",
+        "mjpeg",
+        "-q:v",
+        "5",
+        "pipe:1"
+      ]
+    },
+    {
+      "url": "rtsp://h/x",
+      "transport": "tcp",
+      "list_path": "",
+      "version": "4.4",
+      "result": [
+        "/usr/bin/ffmpeg",
+        "-hide_banner",
+        "-nostdin",
+        "-loglevel",
+        "error",
+        "-protocol_whitelist",
+        "rtsp,tcp,udp,rtp",
+        "-rtsp_transport",
+        "tcp",
+        "-stimeout",
+        "8000000",
+        "-fflags",
+        "nobuffer",
+        "-analyzeduration",
+        "1000000",
+        "-probesize",
+        "1000000",
+        "-flags",
+        "low_delay",
+        "-i",
+        "rtsp://h/x",
+        "-an",
+        "-sn",
+        "-dn",
+        "-vf",
+        "scale='min(1280,iw)':-2",
+        "-f",
+        "mjpeg",
+        "-q:v",
+        "5",
+        "pipe:1"
+      ]
+    },
+    {
+      "url": "rtsp://h/x",
+      "transport": "tcp",
+      "list_path": "",
+      "version": "7.0",
+      "result": [
+        "/usr/bin/ffmpeg",
+        "-hide_banner",
+        "-nostdin",
+        "-loglevel",
+        "error",
+        "-protocol_whitelist",
+        "rtsp,tcp,udp,rtp",
+        "-rtsp_transport",
+        "tcp",
+        "-timeout",
+        "8000000",
+        "-fflags",
+        "nobuffer",
+        "-analyzeduration",
+        "1000000",
+        "-probesize",
+        "1000000",
+        "-flags",
+        "low_delay",
+        "-i",
+        "rtsp://h/x",
+        "-an",
+        "-sn",
+        "-dn",
+        "-vf",
+        "scale='min(1280,iw)':-2",
+        "-f",
+        "mjpeg",
+        "-q:v",
+        "5",
+        "pipe:1"
+      ]
+    },
+    {
+      "url": "rtsp://h/x",
+      "transport": "tcp",
+      "list_path": "/tmp/corvus-video-x/v1-1.ffconcat",
+      "version": "",
+      "result": [
+        "/usr/bin/ffmpeg",
+        "-hide_banner",
+        "-nostdin",
+        "-loglevel",
+        "error",
+        "-protocol_whitelist",
+        "file",
+        "-f",
+        "concat",
+        "-safe",
+        "0",
+        "-analyzeduration",
+        "1000000",
+        "-probesize",
+        "1000000",
+        "-flags",
+        "low_delay",
+        "-i",
+        "/tmp/corvus-video-x/v1-1.ffconcat",
+        "-an",
+        "-sn",
+        "-dn",
+        "-vf",
+        "scale='min(1280,iw)':-2",
+        "-f",
+        "mjpeg",
+        "-q:v",
+        "5",
+        "pipe:1"
+      ]
+    },
+    {
+      "url": "rtsp://h/x",
+      "transport": "tcp",
+      "list_path": "/tmp/corvus-video-x/v1-1.ffconcat",
+      "version": "4.4",
+      "result": [
+        "/usr/bin/ffmpeg",
+        "-hide_banner",
+        "-nostdin",
+        "-loglevel",
+        "error",
+        "-protocol_whitelist",
+        "file",
+        "-f",
+        "concat",
+        "-safe",
+        "0",
+        "-analyzeduration",
+        "1000000",
+        "-probesize",
+        "1000000",
+        "-flags",
+        "low_delay",
+        "-i",
+        "/tmp/corvus-video-x/v1-1.ffconcat",
+        "-an",
+        "-sn",
+        "-dn",
+        "-vf",
+        "scale='min(1280,iw)':-2",
+        "-f",
+        "mjpeg",
+        "-q:v",
+        "5",
+        "pipe:1"
+      ]
+    },
+    {
+      "url": "rtsp://h/x",
+      "transport": "tcp",
+      "list_path": "/tmp/corvus-video-x/v1-1.ffconcat",
+      "version": "7.0",
+      "result": [
+        "/usr/bin/ffmpeg",
+        "-hide_banner",
+        "-nostdin",
+        "-loglevel",
+        "error",
+        "-protocol_whitelist",
+        "file",
+        "-f",
+        "concat",
+        "-safe",
+        "0",
+        "-analyzeduration",
+        "1000000",
+        "-probesize",
+        "1000000",
+        "-flags",
+        "low_delay",
+        "-i",
+        "/tmp/corvus-video-x/v1-1.ffconcat",
+        "-an",
+        "-sn",
+        "-dn",
+        "-vf",
+        "scale='min(1280,iw)':-2",
+        "-f",
+        "mjpeg",
+        "-q:v",
+        "5",
+        "pipe:1"
+      ]
+    },
+    {
+      "url": "rtsps://h/x",
+      "transport": "tcp",
+      "list_path": "",
+      "version": "",
+      "result": [
+        "/usr/bin/ffmpeg",
+        "-hide_banner",
+        "-nostdin",
+        "-loglevel",
+        "error",
+        "-protocol_whitelist",
+        "rtsps,rtsp,tcp,tls,udp,rtp",
+        "-rtsp_transport",
+        "tcp",
+        "-timeout",
+        "8000000",
+        "-fflags",
+        "nobuffer",
+        "-analyzeduration",
+        "1000000",
+        "-probesize",
+        "1000000",
+        "-flags",
+        "low_delay",
+        "-i",
+        "rtsps://h/x",
+        "-an",
+        "-sn",
+        "-dn",
+        "-vf",
+        "scale='min(1280,iw)':-2",
+        "-f",
+        "mjpeg",
+        "-q:v",
+        "5",
+        "pipe:1"
+      ]
+    },
+    {
+      "url": "rtsps://h/x",
+      "transport": "tcp",
+      "list_path": "",
+      "version": "4.4",
+      "result": [
+        "/usr/bin/ffmpeg",
+        "-hide_banner",
+        "-nostdin",
+        "-loglevel",
+        "error",
+        "-protocol_whitelist",
+        "rtsps,rtsp,tcp,tls,udp,rtp",
+        "-rtsp_transport",
+        "tcp",
+        "-stimeout",
+        "8000000",
+        "-fflags",
+        "nobuffer",
+        "-analyzeduration",
+        "1000000",
+        "-probesize",
+        "1000000",
+        "-flags",
+        "low_delay",
+        "-i",
+        "rtsps://h/x",
+        "-an",
+        "-sn",
+        "-dn",
+        "-vf",
+        "scale='min(1280,iw)':-2",
+        "-f",
+        "mjpeg",
+        "-q:v",
+        "5",
+        "pipe:1"
+      ]
+    },
+    {
+      "url": "rtsps://h/x",
+      "transport": "tcp",
+      "list_path": "",
+      "version": "7.0",
+      "result": [
+        "/usr/bin/ffmpeg",
+        "-hide_banner",
+        "-nostdin",
+        "-loglevel",
+        "error",
+        "-protocol_whitelist",
+        "rtsps,rtsp,tcp,tls,udp,rtp",
+        "-rtsp_transport",
+        "tcp",
+        "-timeout",
+        "8000000",
+        "-fflags",
+        "nobuffer",
+        "-analyzeduration",
+        "1000000",
+        "-probesize",
+        "1000000",
+        "-flags",
+        "low_delay",
+        "-i",
+        "rtsps://h/x",
+        "-an",
+        "-sn",
+        "-dn",
+        "-vf",
+        "scale='min(1280,iw)':-2",
+        "-f",
+        "mjpeg",
+        "-q:v",
+        "5",
+        "pipe:1"
+      ]
+    },
+    {
+      "url": "rtsps://h/x",
+      "transport": "tcp",
+      "list_path": "/tmp/corvus-video-x/v1-1.ffconcat",
+      "version": "",
+      "result": [
+        "/usr/bin/ffmpeg",
+        "-hide_banner",
+        "-nostdin",
+        "-loglevel",
+        "error",
+        "-protocol_whitelist",
+        "file",
+        "-f",
+        "concat",
+        "-safe",
+        "0",
+        "-analyzeduration",
+        "1000000",
+        "-probesize",
+        "1000000",
+        "-flags",
+        "low_delay",
+        "-i",
+        "/tmp/corvus-video-x/v1-1.ffconcat",
+        "-an",
+        "-sn",
+        "-dn",
+        "-vf",
+        "scale='min(1280,iw)':-2",
+        "-f",
+        "mjpeg",
+        "-q:v",
+        "5",
+        "pipe:1"
+      ]
+    },
+    {
+      "url": "rtsps://h/x",
+      "transport": "tcp",
+      "list_path": "/tmp/corvus-video-x/v1-1.ffconcat",
+      "version": "4.4",
+      "result": [
+        "/usr/bin/ffmpeg",
+        "-hide_banner",
+        "-nostdin",
+        "-loglevel",
+        "error",
+        "-protocol_whitelist",
+        "file",
+        "-f",
+        "concat",
+        "-safe",
+        "0",
+        "-analyzeduration",
+        "1000000",
+        "-probesize",
+        "1000000",
+        "-flags",
+        "low_delay",
+        "-i",
+        "/tmp/corvus-video-x/v1-1.ffconcat",
+        "-an",
+        "-sn",
+        "-dn",
+        "-vf",
+        "scale='min(1280,iw)':-2",
+        "-f",
+        "mjpeg",
+        "-q:v",
+        "5",
+        "pipe:1"
+      ]
+    },
+    {
+      "url": "rtsps://h/x",
+      "transport": "tcp",
+      "list_path": "/tmp/corvus-video-x/v1-1.ffconcat",
+      "version": "7.0",
+      "result": [
+        "/usr/bin/ffmpeg",
+        "-hide_banner",
+        "-nostdin",
+        "-loglevel",
+        "error",
+        "-protocol_whitelist",
+        "file",
+        "-f",
+        "concat",
+        "-safe",
+        "0",
+        "-analyzeduration",
+        "1000000",
+        "-probesize",
+        "1000000",
+        "-flags",
+        "low_delay",
+        "-i",
+        "/tmp/corvus-video-x/v1-1.ffconcat",
+        "-an",
+        "-sn",
+        "-dn",
+        "-vf",
+        "scale='min(1280,iw)':-2",
+        "-f",
+        "mjpeg",
+        "-q:v",
+        "5",
+        "pipe:1"
+      ]
+    },
+    {
+      "url": "udp://:5600",
+      "transport": "tcp",
+      "list_path": "",
+      "version": "",
+      "result": [
+        "/usr/bin/ffmpeg",
+        "-hide_banner",
+        "-nostdin",
+        "-loglevel",
+        "error",
+        "-protocol_whitelist",
+        "udp,rtp",
+        "-timeout",
+        "8000000",
+        "-fflags",
+        "nobuffer",
+        "-analyzeduration",
+        "1000000",
+        "-probesize",
+        "1000000",
+        "-flags",
+        "low_delay",
+        "-i",
+        "udp://:5600",
+        "-an",
+        "-sn",
+        "-dn",
+        "-vf",
+        "scale='min(1280,iw)':-2",
+        "-f",
+        "mjpeg",
+        "-q:v",
+        "5",
+        "pipe:1"
+      ]
+    },
+    {
+      "url": "udp://:5600",
+      "transport": "tcp",
+      "list_path": "",
+      "version": "4.4",
+      "result": [
+        "/usr/bin/ffmpeg",
+        "-hide_banner",
+        "-nostdin",
+        "-loglevel",
+        "error",
+        "-protocol_whitelist",
+        "udp,rtp",
+        "-timeout",
+        "8000000",
+        "-fflags",
+        "nobuffer",
+        "-analyzeduration",
+        "1000000",
+        "-probesize",
+        "1000000",
+        "-flags",
+        "low_delay",
+        "-i",
+        "udp://:5600",
+        "-an",
+        "-sn",
+        "-dn",
+        "-vf",
+        "scale='min(1280,iw)':-2",
+        "-f",
+        "mjpeg",
+        "-q:v",
+        "5",
+        "pipe:1"
+      ]
+    },
+    {
+      "url": "udp://:5600",
+      "transport": "tcp",
+      "list_path": "",
+      "version": "7.0",
+      "result": [
+        "/usr/bin/ffmpeg",
+        "-hide_banner",
+        "-nostdin",
+        "-loglevel",
+        "error",
+        "-protocol_whitelist",
+        "udp,rtp",
+        "-timeout",
+        "8000000",
+        "-fflags",
+        "nobuffer",
+        "-analyzeduration",
+        "1000000",
+        "-probesize",
+        "1000000",
+        "-flags",
+        "low_delay",
+        "-i",
+        "udp://:5600",
+        "-an",
+        "-sn",
+        "-dn",
+        "-vf",
+        "scale='min(1280,iw)':-2",
+        "-f",
+        "mjpeg",
+        "-q:v",
+        "5",
+        "pipe:1"
+      ]
+    },
+    {
+      "url": "udp://:5600",
+      "transport": "tcp",
+      "list_path": "/tmp/corvus-video-x/v1-1.ffconcat",
+      "version": "",
+      "result": [
+        "/usr/bin/ffmpeg",
+        "-hide_banner",
+        "-nostdin",
+        "-loglevel",
+        "error",
+        "-protocol_whitelist",
+        "file",
+        "-f",
+        "concat",
+        "-safe",
+        "0",
+        "-analyzeduration",
+        "1000000",
+        "-probesize",
+        "1000000",
+        "-flags",
+        "low_delay",
+        "-i",
+        "/tmp/corvus-video-x/v1-1.ffconcat",
+        "-an",
+        "-sn",
+        "-dn",
+        "-vf",
+        "scale='min(1280,iw)':-2",
+        "-f",
+        "mjpeg",
+        "-q:v",
+        "5",
+        "pipe:1"
+      ]
+    },
+    {
+      "url": "udp://:5600",
+      "transport": "tcp",
+      "list_path": "/tmp/corvus-video-x/v1-1.ffconcat",
+      "version": "4.4",
+      "result": [
+        "/usr/bin/ffmpeg",
+        "-hide_banner",
+        "-nostdin",
+        "-loglevel",
+        "error",
+        "-protocol_whitelist",
+        "file",
+        "-f",
+        "concat",
+        "-safe",
+        "0",
+        "-analyzeduration",
+        "1000000",
+        "-probesize",
+        "1000000",
+        "-flags",
+        "low_delay",
+        "-i",
+        "/tmp/corvus-video-x/v1-1.ffconcat",
+        "-an",
+        "-sn",
+        "-dn",
+        "-vf",
+        "scale='min(1280,iw)':-2",
+        "-f",
+        "mjpeg",
+        "-q:v",
+        "5",
+        "pipe:1"
+      ]
+    },
+    {
+      "url": "udp://:5600",
+      "transport": "tcp",
+      "list_path": "/tmp/corvus-video-x/v1-1.ffconcat",
+      "version": "7.0",
+      "result": [
+        "/usr/bin/ffmpeg",
+        "-hide_banner",
+        "-nostdin",
+        "-loglevel",
+        "error",
+        "-protocol_whitelist",
+        "file",
+        "-f",
+        "concat",
+        "-safe",
+        "0",
+        "-analyzeduration",
+        "1000000",
+        "-probesize",
+        "1000000",
+        "-flags",
+        "low_delay",
+        "-i",
+        "/tmp/corvus-video-x/v1-1.ffconcat",
+        "-an",
+        "-sn",
+        "-dn",
+        "-vf",
+        "scale='min(1280,iw)':-2",
+        "-f",
+        "mjpeg",
+        "-q:v",
+        "5",
+        "pipe:1"
+      ]
+    },
+    {
+      "url": "srt://h:9000",
+      "transport": "tcp",
+      "list_path": "",
+      "version": "",
+      "result": [
+        "/usr/bin/ffmpeg",
+        "-hide_banner",
+        "-nostdin",
+        "-loglevel",
+        "error",
+        "-protocol_whitelist",
+        "srt",
+        "-timeout",
+        "8000000",
+        "-fflags",
+        "nobuffer",
+        "-analyzeduration",
+        "1000000",
+        "-probesize",
+        "1000000",
+        "-flags",
+        "low_delay",
+        "-i",
+        "srt://h:9000",
+        "-an",
+        "-sn",
+        "-dn",
+        "-vf",
+        "scale='min(1280,iw)':-2",
+        "-f",
+        "mjpeg",
+        "-q:v",
+        "5",
+        "pipe:1"
+      ]
+    },
+    {
+      "url": "srt://h:9000",
+      "transport": "tcp",
+      "list_path": "",
+      "version": "4.4",
+      "result": [
+        "/usr/bin/ffmpeg",
+        "-hide_banner",
+        "-nostdin",
+        "-loglevel",
+        "error",
+        "-protocol_whitelist",
+        "srt",
+        "-timeout",
+        "8000000",
+        "-fflags",
+        "nobuffer",
+        "-analyzeduration",
+        "1000000",
+        "-probesize",
+        "1000000",
+        "-flags",
+        "low_delay",
+        "-i",
+        "srt://h:9000",
+        "-an",
+        "-sn",
+        "-dn",
+        "-vf",
+        "scale='min(1280,iw)':-2",
+        "-f",
+        "mjpeg",
+        "-q:v",
+        "5",
+        "pipe:1"
+      ]
+    },
+    {
+      "url": "srt://h:9000",
+      "transport": "tcp",
+      "list_path": "",
+      "version": "7.0",
+      "result": [
+        "/usr/bin/ffmpeg",
+        "-hide_banner",
+        "-nostdin",
+        "-loglevel",
+        "error",
+        "-protocol_whitelist",
+        "srt",
+        "-timeout",
+        "8000000",
+        "-fflags",
+        "nobuffer",
+        "-analyzeduration",
+        "1000000",
+        "-probesize",
+        "1000000",
+        "-flags",
+        "low_delay",
+        "-i",
+        "srt://h:9000",
+        "-an",
+        "-sn",
+        "-dn",
+        "-vf",
+        "scale='min(1280,iw)':-2",
+        "-f",
+        "mjpeg",
+        "-q:v",
+        "5",
+        "pipe:1"
+      ]
+    },
+    {
+      "url": "srt://h:9000",
+      "transport": "tcp",
+      "list_path": "/tmp/corvus-video-x/v1-1.ffconcat",
+      "version": "",
+      "result": [
+        "/usr/bin/ffmpeg",
+        "-hide_banner",
+        "-nostdin",
+        "-loglevel",
+        "error",
+        "-protocol_whitelist",
+        "file",
+        "-f",
+        "concat",
+        "-safe",
+        "0",
+        "-analyzeduration",
+        "1000000",
+        "-probesize",
+        "1000000",
+        "-flags",
+        "low_delay",
+        "-i",
+        "/tmp/corvus-video-x/v1-1.ffconcat",
+        "-an",
+        "-sn",
+        "-dn",
+        "-vf",
+        "scale='min(1280,iw)':-2",
+        "-f",
+        "mjpeg",
+        "-q:v",
+        "5",
+        "pipe:1"
+      ]
+    },
+    {
+      "url": "srt://h:9000",
+      "transport": "tcp",
+      "list_path": "/tmp/corvus-video-x/v1-1.ffconcat",
+      "version": "4.4",
+      "result": [
+        "/usr/bin/ffmpeg",
+        "-hide_banner",
+        "-nostdin",
+        "-loglevel",
+        "error",
+        "-protocol_whitelist",
+        "file",
+        "-f",
+        "concat",
+        "-safe",
+        "0",
+        "-analyzeduration",
+        "1000000",
+        "-probesize",
+        "1000000",
+        "-flags",
+        "low_delay",
+        "-i",
+        "/tmp/corvus-video-x/v1-1.ffconcat",
+        "-an",
+        "-sn",
+        "-dn",
+        "-vf",
+        "scale='min(1280,iw)':-2",
+        "-f",
+        "mjpeg",
+        "-q:v",
+        "5",
+        "pipe:1"
+      ]
+    },
+    {
+      "url": "srt://h:9000",
+      "transport": "tcp",
+      "list_path": "/tmp/corvus-video-x/v1-1.ffconcat",
+      "version": "7.0",
+      "result": [
+        "/usr/bin/ffmpeg",
+        "-hide_banner",
+        "-nostdin",
+        "-loglevel",
+        "error",
+        "-protocol_whitelist",
+        "file",
+        "-f",
+        "concat",
+        "-safe",
+        "0",
+        "-analyzeduration",
+        "1000000",
+        "-probesize",
+        "1000000",
+        "-flags",
+        "low_delay",
+        "-i",
+        "/tmp/corvus-video-x/v1-1.ffconcat",
+        "-an",
+        "-sn",
+        "-dn",
+        "-vf",
+        "scale='min(1280,iw)':-2",
+        "-f",
+        "mjpeg",
+        "-q:v",
+        "5",
+        "pipe:1"
+      ]
+    },
+    {
+      "url": "http://h/x.mjpg",
+      "transport": "tcp",
+      "list_path": "",
+      "version": "",
+      "result": [
+        "/usr/bin/ffmpeg",
+        "-hide_banner",
+        "-nostdin",
+        "-loglevel",
+        "error",
+        "-protocol_whitelist",
+        "http,https,tcp,tls,crypto",
+        "-rw_timeout",
+        "8000000",
+        "-fflags",
+        "nobuffer",
+        "-analyzeduration",
+        "1000000",
+        "-probesize",
+        "1000000",
+        "-flags",
+        "low_delay",
+        "-i",
+        "http://h/x.mjpg",
+        "-an",
+        "-sn",
+        "-dn",
+        "-vf",
+        "scale='min(1280,iw)':-2",
+        "-f",
+        "mjpeg",
+        "-q:v",
+        "5",
+        "pipe:1"
+      ]
+    },
+    {
+      "url": "http://h/x.mjpg",
+      "transport": "tcp",
+      "list_path": "",
+      "version": "4.4",
+      "result": [
+        "/usr/bin/ffmpeg",
+        "-hide_banner",
+        "-nostdin",
+        "-loglevel",
+        "error",
+        "-protocol_whitelist",
+        "http,https,tcp,tls,crypto",
+        "-rw_timeout",
+        "8000000",
+        "-fflags",
+        "nobuffer",
+        "-analyzeduration",
+        "1000000",
+        "-probesize",
+        "1000000",
+        "-flags",
+        "low_delay",
+        "-i",
+        "http://h/x.mjpg",
+        "-an",
+        "-sn",
+        "-dn",
+        "-vf",
+        "scale='min(1280,iw)':-2",
+        "-f",
+        "mjpeg",
+        "-q:v",
+        "5",
+        "pipe:1"
+      ]
+    },
+    {
+      "url": "http://h/x.mjpg",
+      "transport": "tcp",
+      "list_path": "",
+      "version": "7.0",
+      "result": [
+        "/usr/bin/ffmpeg",
+        "-hide_banner",
+        "-nostdin",
+        "-loglevel",
+        "error",
+        "-protocol_whitelist",
+        "http,https,tcp,tls,crypto",
+        "-rw_timeout",
+        "8000000",
+        "-fflags",
+        "nobuffer",
+        "-analyzeduration",
+        "1000000",
+        "-probesize",
+        "1000000",
+        "-flags",
+        "low_delay",
+        "-i",
+        "http://h/x.mjpg",
+        "-an",
+        "-sn",
+        "-dn",
+        "-vf",
+        "scale='min(1280,iw)':-2",
+        "-f",
+        "mjpeg",
+        "-q:v",
+        "5",
+        "pipe:1"
+      ]
+    },
+    {
+      "url": "http://h/x.mjpg",
+      "transport": "tcp",
+      "list_path": "/tmp/corvus-video-x/v1-1.ffconcat",
+      "version": "",
+      "result": [
+        "/usr/bin/ffmpeg",
+        "-hide_banner",
+        "-nostdin",
+        "-loglevel",
+        "error",
+        "-protocol_whitelist",
+        "file",
+        "-f",
+        "concat",
+        "-safe",
+        "0",
+        "-analyzeduration",
+        "1000000",
+        "-probesize",
+        "1000000",
+        "-flags",
+        "low_delay",
+        "-i",
+        "/tmp/corvus-video-x/v1-1.ffconcat",
+        "-an",
+        "-sn",
+        "-dn",
+        "-vf",
+        "scale='min(1280,iw)':-2",
+        "-f",
+        "mjpeg",
+        "-q:v",
+        "5",
+        "pipe:1"
+      ]
+    },
+    {
+      "url": "http://h/x.mjpg",
+      "transport": "tcp",
+      "list_path": "/tmp/corvus-video-x/v1-1.ffconcat",
+      "version": "4.4",
+      "result": [
+        "/usr/bin/ffmpeg",
+        "-hide_banner",
+        "-nostdin",
+        "-loglevel",
+        "error",
+        "-protocol_whitelist",
+        "file",
+        "-f",
+        "concat",
+        "-safe",
+        "0",
+        "-analyzeduration",
+        "1000000",
+        "-probesize",
+        "1000000",
+        "-flags",
+        "low_delay",
+        "-i",
+        "/tmp/corvus-video-x/v1-1.ffconcat",
+        "-an",
+        "-sn",
+        "-dn",
+        "-vf",
+        "scale='min(1280,iw)':-2",
+        "-f",
+        "mjpeg",
+        "-q:v",
+        "5",
+        "pipe:1"
+      ]
+    },
+    {
+      "url": "http://h/x.mjpg",
+      "transport": "tcp",
+      "list_path": "/tmp/corvus-video-x/v1-1.ffconcat",
+      "version": "7.0",
+      "result": [
+        "/usr/bin/ffmpeg",
+        "-hide_banner",
+        "-nostdin",
+        "-loglevel",
+        "error",
+        "-protocol_whitelist",
+        "file",
+        "-f",
+        "concat",
+        "-safe",
+        "0",
+        "-analyzeduration",
+        "1000000",
+        "-probesize",
+        "1000000",
+        "-flags",
+        "low_delay",
+        "-i",
+        "/tmp/corvus-video-x/v1-1.ffconcat",
+        "-an",
+        "-sn",
+        "-dn",
+        "-vf",
+        "scale='min(1280,iw)':-2",
+        "-f",
+        "mjpeg",
+        "-q:v",
+        "5",
+        "pipe:1"
+      ]
+    },
+    {
+      "url": "https://h/x",
+      "transport": "tcp",
+      "list_path": "",
+      "version": "",
+      "result": [
+        "/usr/bin/ffmpeg",
+        "-hide_banner",
+        "-nostdin",
+        "-loglevel",
+        "error",
+        "-protocol_whitelist",
+        "http,https,tcp,tls,crypto",
+        "-rw_timeout",
+        "8000000",
+        "-fflags",
+        "nobuffer",
+        "-analyzeduration",
+        "1000000",
+        "-probesize",
+        "1000000",
+        "-flags",
+        "low_delay",
+        "-i",
+        "https://h/x",
+        "-an",
+        "-sn",
+        "-dn",
+        "-vf",
+        "scale='min(1280,iw)':-2",
+        "-f",
+        "mjpeg",
+        "-q:v",
+        "5",
+        "pipe:1"
+      ]
+    },
+    {
+      "url": "https://h/x",
+      "transport": "tcp",
+      "list_path": "",
+      "version": "4.4",
+      "result": [
+        "/usr/bin/ffmpeg",
+        "-hide_banner",
+        "-nostdin",
+        "-loglevel",
+        "error",
+        "-protocol_whitelist",
+        "http,https,tcp,tls,crypto",
+        "-rw_timeout",
+        "8000000",
+        "-fflags",
+        "nobuffer",
+        "-analyzeduration",
+        "1000000",
+        "-probesize",
+        "1000000",
+        "-flags",
+        "low_delay",
+        "-i",
+        "https://h/x",
+        "-an",
+        "-sn",
+        "-dn",
+        "-vf",
+        "scale='min(1280,iw)':-2",
+        "-f",
+        "mjpeg",
+        "-q:v",
+        "5",
+        "pipe:1"
+      ]
+    },
+    {
+      "url": "https://h/x",
+      "transport": "tcp",
+      "list_path": "",
+      "version": "7.0",
+      "result": [
+        "/usr/bin/ffmpeg",
+        "-hide_banner",
+        "-nostdin",
+        "-loglevel",
+        "error",
+        "-protocol_whitelist",
+        "http,https,tcp,tls,crypto",
+        "-rw_timeout",
+        "8000000",
+        "-fflags",
+        "nobuffer",
+        "-analyzeduration",
+        "1000000",
+        "-probesize",
+        "1000000",
+        "-flags",
+        "low_delay",
+        "-i",
+        "https://h/x",
+        "-an",
+        "-sn",
+        "-dn",
+        "-vf",
+        "scale='min(1280,iw)':-2",
+        "-f",
+        "mjpeg",
+        "-q:v",
+        "5",
+        "pipe:1"
+      ]
+    },
+    {
+      "url": "https://h/x",
+      "transport": "tcp",
+      "list_path": "/tmp/corvus-video-x/v1-1.ffconcat",
+      "version": "",
+      "result": [
+        "/usr/bin/ffmpeg",
+        "-hide_banner",
+        "-nostdin",
+        "-loglevel",
+        "error",
+        "-protocol_whitelist",
+        "file",
+        "-f",
+        "concat",
+        "-safe",
+        "0",
+        "-analyzeduration",
+        "1000000",
+        "-probesize",
+        "1000000",
+        "-flags",
+        "low_delay",
+        "-i",
+        "/tmp/corvus-video-x/v1-1.ffconcat",
+        "-an",
+        "-sn",
+        "-dn",
+        "-vf",
+        "scale='min(1280,iw)':-2",
+        "-f",
+        "mjpeg",
+        "-q:v",
+        "5",
+        "pipe:1"
+      ]
+    },
+    {
+      "url": "https://h/x",
+      "transport": "tcp",
+      "list_path": "/tmp/corvus-video-x/v1-1.ffconcat",
+      "version": "4.4",
+      "result": [
+        "/usr/bin/ffmpeg",
+        "-hide_banner",
+        "-nostdin",
+        "-loglevel",
+        "error",
+        "-protocol_whitelist",
+        "file",
+        "-f",
+        "concat",
+        "-safe",
+        "0",
+        "-analyzeduration",
+        "1000000",
+        "-probesize",
+        "1000000",
+        "-flags",
+        "low_delay",
+        "-i",
+        "/tmp/corvus-video-x/v1-1.ffconcat",
+        "-an",
+        "-sn",
+        "-dn",
+        "-vf",
+        "scale='min(1280,iw)':-2",
+        "-f",
+        "mjpeg",
+        "-q:v",
+        "5",
+        "pipe:1"
+      ]
+    },
+    {
+      "url": "https://h/x",
+      "transport": "tcp",
+      "list_path": "/tmp/corvus-video-x/v1-1.ffconcat",
+      "version": "7.0",
+      "result": [
+        "/usr/bin/ffmpeg",
+        "-hide_banner",
+        "-nostdin",
+        "-loglevel",
+        "error",
+        "-protocol_whitelist",
+        "file",
+        "-f",
+        "concat",
+        "-safe",
+        "0",
+        "-analyzeduration",
+        "1000000",
+        "-probesize",
+        "1000000",
+        "-flags",
+        "low_delay",
+        "-i",
+        "/tmp/corvus-video-x/v1-1.ffconcat",
+        "-an",
+        "-sn",
+        "-dn",
+        "-vf",
+        "scale='min(1280,iw)':-2",
+        "-f",
+        "mjpeg",
+        "-q:v",
+        "5",
+        "pipe:1"
+      ]
+    },
+    {
+      "url": "ftp://h",
+      "transport": "tcp",
+      "list_path": "",
+      "version": "",
+      "result": [
+        "/usr/bin/ffmpeg",
+        "-hide_banner",
+        "-nostdin",
+        "-loglevel",
+        "error",
+        "-protocol_whitelist",
+        "tcp",
+        "-rw_timeout",
+        "8000000",
+        "-fflags",
+        "nobuffer",
+        "-analyzeduration",
+        "1000000",
+        "-probesize",
+        "1000000",
+        "-flags",
+        "low_delay",
+        "-i",
+        "ftp://h",
+        "-an",
+        "-sn",
+        "-dn",
+        "-vf",
+        "scale='min(1280,iw)':-2",
+        "-f",
+        "mjpeg",
+        "-q:v",
+        "5",
+        "pipe:1"
+      ]
+    },
+    {
+      "url": "ftp://h",
+      "transport": "tcp",
+      "list_path": "",
+      "version": "4.4",
+      "result": [
+        "/usr/bin/ffmpeg",
+        "-hide_banner",
+        "-nostdin",
+        "-loglevel",
+        "error",
+        "-protocol_whitelist",
+        "tcp",
+        "-rw_timeout",
+        "8000000",
+        "-fflags",
+        "nobuffer",
+        "-analyzeduration",
+        "1000000",
+        "-probesize",
+        "1000000",
+        "-flags",
+        "low_delay",
+        "-i",
+        "ftp://h",
+        "-an",
+        "-sn",
+        "-dn",
+        "-vf",
+        "scale='min(1280,iw)':-2",
+        "-f",
+        "mjpeg",
+        "-q:v",
+        "5",
+        "pipe:1"
+      ]
+    },
+    {
+      "url": "ftp://h",
+      "transport": "tcp",
+      "list_path": "",
+      "version": "7.0",
+      "result": [
+        "/usr/bin/ffmpeg",
+        "-hide_banner",
+        "-nostdin",
+        "-loglevel",
+        "error",
+        "-protocol_whitelist",
+        "tcp",
+        "-rw_timeout",
+        "8000000",
+        "-fflags",
+        "nobuffer",
+        "-analyzeduration",
+        "1000000",
+        "-probesize",
+        "1000000",
+        "-flags",
+        "low_delay",
+        "-i",
+        "ftp://h",
+        "-an",
+        "-sn",
+        "-dn",
+        "-vf",
+        "scale='min(1280,iw)':-2",
+        "-f",
+        "mjpeg",
+        "-q:v",
+        "5",
+        "pipe:1"
+      ]
+    },
+    {
+      "url": "ftp://h",
+      "transport": "tcp",
+      "list_path": "/tmp/corvus-video-x/v1-1.ffconcat",
+      "version": "",
+      "result": [
+        "/usr/bin/ffmpeg",
+        "-hide_banner",
+        "-nostdin",
+        "-loglevel",
+        "error",
+        "-protocol_whitelist",
+        "file",
+        "-f",
+        "concat",
+        "-safe",
+        "0",
+        "-analyzeduration",
+        "1000000",
+        "-probesize",
+        "1000000",
+        "-flags",
+        "low_delay",
+        "-i",
+        "/tmp/corvus-video-x/v1-1.ffconcat",
+        "-an",
+        "-sn",
+        "-dn",
+        "-vf",
+        "scale='min(1280,iw)':-2",
+        "-f",
+        "mjpeg",
+        "-q:v",
+        "5",
+        "pipe:1"
+      ]
+    },
+    {
+      "url": "ftp://h",
+      "transport": "tcp",
+      "list_path": "/tmp/corvus-video-x/v1-1.ffconcat",
+      "version": "4.4",
+      "result": [
+        "/usr/bin/ffmpeg",
+        "-hide_banner",
+        "-nostdin",
+        "-loglevel",
+        "error",
+        "-protocol_whitelist",
+        "file",
+        "-f",
+        "concat",
+        "-safe",
+        "0",
+        "-analyzeduration",
+        "1000000",
+        "-probesize",
+        "1000000",
+        "-flags",
+        "low_delay",
+        "-i",
+        "/tmp/corvus-video-x/v1-1.ffconcat",
+        "-an",
+        "-sn",
+        "-dn",
+        "-vf",
+        "scale='min(1280,iw)':-2",
+        "-f",
+        "mjpeg",
+        "-q:v",
+        "5",
+        "pipe:1"
+      ]
+    },
+    {
+      "url": "ftp://h",
+      "transport": "tcp",
+      "list_path": "/tmp/corvus-video-x/v1-1.ffconcat",
+      "version": "7.0",
+      "result": [
+        "/usr/bin/ffmpeg",
+        "-hide_banner",
+        "-nostdin",
+        "-loglevel",
+        "error",
+        "-protocol_whitelist",
+        "file",
+        "-f",
+        "concat",
+        "-safe",
+        "0",
+        "-analyzeduration",
+        "1000000",
+        "-probesize",
+        "1000000",
+        "-flags",
+        "low_delay",
+        "-i",
+        "/tmp/corvus-video-x/v1-1.ffconcat",
+        "-an",
+        "-sn",
+        "-dn",
+        "-vf",
+        "scale='min(1280,iw)':-2",
+        "-f",
+        "mjpeg",
+        "-q:v",
+        "5",
+        "pipe:1"
+      ]
+    },
+    {
+      "url": "RTSP://H/x",
+      "transport": "tcp",
+      "list_path": "",
+      "version": "",
+      "result": [
+        "/usr/bin/ffmpeg",
+        "-hide_banner",
+        "-nostdin",
+        "-loglevel",
+        "error",
+        "-protocol_whitelist",
+        "rtsp,tcp,udp,rtp",
+        "-rtsp_transport",
+        "tcp",
+        "-timeout",
+        "8000000",
+        "-fflags",
+        "nobuffer",
+        "-analyzeduration",
+        "1000000",
+        "-probesize",
+        "1000000",
+        "-flags",
+        "low_delay",
+        "-i",
+        "RTSP://H/x",
+        "-an",
+        "-sn",
+        "-dn",
+        "-vf",
+        "scale='min(1280,iw)':-2",
+        "-f",
+        "mjpeg",
+        "-q:v",
+        "5",
+        "pipe:1"
+      ]
+    },
+    {
+      "url": "RTSP://H/x",
+      "transport": "tcp",
+      "list_path": "",
+      "version": "4.4",
+      "result": [
+        "/usr/bin/ffmpeg",
+        "-hide_banner",
+        "-nostdin",
+        "-loglevel",
+        "error",
+        "-protocol_whitelist",
+        "rtsp,tcp,udp,rtp",
+        "-rtsp_transport",
+        "tcp",
+        "-stimeout",
+        "8000000",
+        "-fflags",
+        "nobuffer",
+        "-analyzeduration",
+        "1000000",
+        "-probesize",
+        "1000000",
+        "-flags",
+        "low_delay",
+        "-i",
+        "RTSP://H/x",
+        "-an",
+        "-sn",
+        "-dn",
+        "-vf",
+        "scale='min(1280,iw)':-2",
+        "-f",
+        "mjpeg",
+        "-q:v",
+        "5",
+        "pipe:1"
+      ]
+    },
+    {
+      "url": "RTSP://H/x",
+      "transport": "tcp",
+      "list_path": "",
+      "version": "7.0",
+      "result": [
+        "/usr/bin/ffmpeg",
+        "-hide_banner",
+        "-nostdin",
+        "-loglevel",
+        "error",
+        "-protocol_whitelist",
+        "rtsp,tcp,udp,rtp",
+        "-rtsp_transport",
+        "tcp",
+        "-timeout",
+        "8000000",
+        "-fflags",
+        "nobuffer",
+        "-analyzeduration",
+        "1000000",
+        "-probesize",
+        "1000000",
+        "-flags",
+        "low_delay",
+        "-i",
+        "RTSP://H/x",
+        "-an",
+        "-sn",
+        "-dn",
+        "-vf",
+        "scale='min(1280,iw)':-2",
+        "-f",
+        "mjpeg",
+        "-q:v",
+        "5",
+        "pipe:1"
+      ]
+    },
+    {
+      "url": "RTSP://H/x",
+      "transport": "tcp",
+      "list_path": "/tmp/corvus-video-x/v1-1.ffconcat",
+      "version": "",
+      "result": [
+        "/usr/bin/ffmpeg",
+        "-hide_banner",
+        "-nostdin",
+        "-loglevel",
+        "error",
+        "-protocol_whitelist",
+        "file",
+        "-f",
+        "concat",
+        "-safe",
+        "0",
+        "-analyzeduration",
+        "1000000",
+        "-probesize",
+        "1000000",
+        "-flags",
+        "low_delay",
+        "-i",
+        "/tmp/corvus-video-x/v1-1.ffconcat",
+        "-an",
+        "-sn",
+        "-dn",
+        "-vf",
+        "scale='min(1280,iw)':-2",
+        "-f",
+        "mjpeg",
+        "-q:v",
+        "5",
+        "pipe:1"
+      ]
+    },
+    {
+      "url": "RTSP://H/x",
+      "transport": "tcp",
+      "list_path": "/tmp/corvus-video-x/v1-1.ffconcat",
+      "version": "4.4",
+      "result": [
+        "/usr/bin/ffmpeg",
+        "-hide_banner",
+        "-nostdin",
+        "-loglevel",
+        "error",
+        "-protocol_whitelist",
+        "file",
+        "-f",
+        "concat",
+        "-safe",
+        "0",
+        "-analyzeduration",
+        "1000000",
+        "-probesize",
+        "1000000",
+        "-flags",
+        "low_delay",
+        "-i",
+        "/tmp/corvus-video-x/v1-1.ffconcat",
+        "-an",
+        "-sn",
+        "-dn",
+        "-vf",
+        "scale='min(1280,iw)':-2",
+        "-f",
+        "mjpeg",
+        "-q:v",
+        "5",
+        "pipe:1"
+      ]
+    },
+    {
+      "url": "RTSP://H/x",
+      "transport": "tcp",
+      "list_path": "/tmp/corvus-video-x/v1-1.ffconcat",
+      "version": "7.0",
+      "result": [
+        "/usr/bin/ffmpeg",
+        "-hide_banner",
+        "-nostdin",
+        "-loglevel",
+        "error",
+        "-protocol_whitelist",
+        "file",
+        "-f",
+        "concat",
+        "-safe",
+        "0",
+        "-analyzeduration",
+        "1000000",
+        "-probesize",
+        "1000000",
+        "-flags",
+        "low_delay",
+        "-i",
+        "/tmp/corvus-video-x/v1-1.ffconcat",
+        "-an",
+        "-sn",
+        "-dn",
+        "-vf",
+        "scale='min(1280,iw)':-2",
+        "-f",
+        "mjpeg",
+        "-q:v",
+        "5",
+        "pipe:1"
+      ]
+    }
+  ],
+  "streams": [
+    {
+      "raw": {
+        "id": "v1",
+        "name": "Front",
+        "url": "rtsp://h/x",
+        "username": "u",
+        "password": "p",
+        "transport": "udp",
+        "kind": "rtsp"
+      },
+      "result": {
+        "id": "v1",
+        "name": "Front",
+        "kind": "rtsp",
+        "url": "rtsp://h/x",
+        "username": "u",
+        "password": "p",
+        "transport": "udp"
+      },
+      "public": {
+        "id": "v1",
+        "name": "Front",
+        "kind": "rtsp",
+        "url": "rtsp://h/x",
+        "username": "u",
+        "transport": "udp",
+        "has_password": true,
+        "address": "h/x"
+      }
+    },
+    {
+      "raw": {
+        "id": "v2",
+        "url": "rtsp://a:b@h/x"
+      },
+      "result": {
+        "id": "v2",
+        "name": "h/x",
+        "kind": "rtsp",
+        "url": "rtsp://h/x",
+        "username": "a",
+        "password": "b",
+        "transport": "tcp"
+      },
+      "public": {
+        "id": "v2",
+        "name": "h/x",
+        "kind": "rtsp",
+        "url": "rtsp://h/x",
+        "username": "a",
+        "transport": "tcp",
+        "has_password": true,
+        "address": "h/x"
+      }
+    },
+    {
+      "raw": {
+        "id": "v3",
+        "url": "http://h/whep",
+        "kind": "webrtc",
+        "password": "tok"
+      },
+      "result": {
+        "id": "v3",
+        "name": "h/whep",
+        "kind": "webrtc",
+        "url": "http://h/whep",
+        "username": "",
+        "password": "tok",
+        "transport": "tcp"
+      },
+      "public": {
+        "id": "v3",
+        "name": "h/whep",
+        "kind": "webrtc",
+        "url": "http://h/whep",
+        "username": "",
+        "transport": "tcp",
+        "has_password": true,
+        "address": "h/whep"
+      }
+    },
+    {
+      "raw": {
+        "id": "v4",
+        "url": "rtsp://h/x",
+        "password": "nouser"
+      },
+      "result": {
+        "id": "v4",
+        "name": "h/x",
+        "kind": "rtsp",
+        "url": "rtsp://h/x",
+        "username": "",
+        "password": "",
+        "transport": "tcp"
+      },
+      "public": {
+        "id": "v4",
+        "name": "h/x",
+        "kind": "rtsp",
+        "url": "rtsp://h/x",
+        "username": "",
+        "transport": "tcp",
+        "has_password": false,
+        "address": "h/x"
+      }
+    },
+    {
+      "raw": {
+        "id": "v5",
+        "url": "nope"
+      },
+      "result": null,
+      "public": null
+    },
+    {
+      "raw": {
+        "id": "v6",
+        "url": "rtsp://h/x",
+        "kind": "x"
+      },
+      "result": {
+        "id": "v6",
+        "name": "h/x",
+        "kind": "rtsp",
+        "url": "rtsp://h/x",
+        "username": "",
+        "password": "",
+        "transport": "tcp"
+      },
+      "public": {
+        "id": "v6",
+        "name": "h/x",
+        "kind": "rtsp",
+        "url": "rtsp://h/x",
+        "username": "",
+        "transport": "tcp",
+        "has_password": false,
+        "address": "h/x"
+      }
+    },
+    {
+      "raw": {
+        "id": "v7",
+        "url": "rtsp://h/x",
+        "transport": "sctp"
+      },
+      "result": {
+        "id": "v7",
+        "name": "h/x",
+        "kind": "rtsp",
+        "url": "rtsp://h/x",
+        "username": "",
+        "password": "",
+        "transport": "tcp"
+      },
+      "public": {
+        "id": "v7",
+        "name": "h/x",
+        "kind": "rtsp",
+        "url": "rtsp://h/x",
+        "username": "",
+        "transport": "tcp",
+        "has_password": false,
+        "address": "h/x"
+      }
+    },
+    {
+      "raw": {
+        "id": "v8",
+        "name": "nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn",
+        "url": "rtsp://h/x"
+      },
+      "result": {
+        "id": "v8",
+        "name": "nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn",
+        "kind": "rtsp",
+        "url": "rtsp://h/x",
+        "username": "",
+        "password": "",
+        "transport": "tcp"
+      },
+      "public": {
+        "id": "v8",
+        "name": "nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn",
+        "kind": "rtsp",
+        "url": "rtsp://h/x",
+        "username": "",
+        "transport": "tcp",
+        "has_password": false,
+        "address": "h/x"
+      }
+    },
+    {
+      "raw": {
+        "id": "v9",
+        "url": "rtsp://h/x",
+        "username": " u ",
+        "password": " p "
+      },
+      "result": {
+        "id": "v9",
+        "name": "h/x",
+        "kind": "rtsp",
+        "url": "rtsp://h/x",
+        "username": "u",
+        "password": " p ",
+        "transport": "tcp"
+      },
+      "public": {
+        "id": "v9",
+        "name": "h/x",
+        "kind": "rtsp",
+        "url": "rtsp://h/x",
+        "username": "u",
+        "transport": "tcp",
+        "has_password": true,
+        "address": "h/x"
+      }
+    },
+    {
+      "raw": {
+        "id": "a b",
+        "url": "rtsp://h/x"
+      },
+      "result": {
+        "id": "<new>",
+        "name": "h/x",
+        "kind": "rtsp",
+        "url": "rtsp://h/x",
+        "username": "",
+        "password": "",
+        "transport": "tcp"
+      },
+      "public": {
+        "id": "<new>",
+        "name": "h/x",
+        "kind": "rtsp",
+        "url": "rtsp://h/x",
+        "username": "",
+        "transport": "tcp",
+        "has_password": false,
+        "address": "h/x"
+      }
+    },
+    {
+      "raw": {
+        "id": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "url": "rtsp://h/x"
+      },
+      "result": {
+        "id": "<new>",
+        "name": "h/x",
+        "kind": "rtsp",
+        "url": "rtsp://h/x",
+        "username": "",
+        "password": "",
+        "transport": "tcp"
+      },
+      "public": {
+        "id": "<new>",
+        "name": "h/x",
+        "kind": "rtsp",
+        "url": "rtsp://h/x",
+        "username": "",
+        "transport": "tcp",
+        "has_password": false,
+        "address": "h/x"
+      }
+    },
+    {
+      "raw": {
+        "id": 5,
+        "url": "rtsp://h/x"
+      },
+      "result": {
+        "id": "<new>",
+        "name": "h/x",
+        "kind": "rtsp",
+        "url": "rtsp://h/x",
+        "username": "",
+        "password": "",
+        "transport": "tcp"
+      },
+      "public": {
+        "id": "<new>",
+        "name": "h/x",
+        "kind": "rtsp",
+        "url": "rtsp://h/x",
+        "username": "",
+        "transport": "tcp",
+        "has_password": false,
+        "address": "h/x"
+      }
+    },
+    {
+      "raw": {
+        "url": "rtsp://h/x",
+        "name": 5
+      },
+      "result": {
+        "id": "<new>",
+        "name": "h/x",
+        "kind": "rtsp",
+        "url": "rtsp://h/x",
+        "username": "",
+        "password": "",
+        "transport": "tcp"
+      },
+      "public": {
+        "id": "<new>",
+        "name": "h/x",
+        "kind": "rtsp",
+        "url": "rtsp://h/x",
+        "username": "",
+        "transport": "tcp",
+        "has_password": false,
+        "address": "h/x"
+      }
+    },
+    {
+      "raw": {
+        "id": "w1",
+        "url": "rtsp://h/x",
+        "password": 5
+      },
+      "result": {
+        "id": "w1",
+        "name": "h/x",
+        "kind": "rtsp",
+        "url": "rtsp://h/x",
+        "username": "",
+        "password": "",
+        "transport": "tcp"
+      },
+      "public": {
+        "id": "w1",
+        "name": "h/x",
+        "kind": "rtsp",
+        "url": "rtsp://h/x",
+        "username": "",
+        "transport": "tcp",
+        "has_password": false,
+        "address": "h/x"
+      }
+    },
+    {
+      "raw": {
+        "id": "w2",
+        "url": " rtsp://h/x ",
+        "name": "  "
+      },
+      "result": {
+        "id": "w2",
+        "name": "h/x",
+        "kind": "rtsp",
+        "url": "rtsp://h/x",
+        "username": "",
+        "password": "",
+        "transport": "tcp"
+      },
+      "public": {
+        "id": "w2",
+        "name": "h/x",
+        "kind": "rtsp",
+        "url": "rtsp://h/x",
+        "username": "",
+        "transport": "tcp",
+        "has_password": false,
+        "address": "h/x"
+      }
+    },
+    {
+      "raw": {
+        "id": "w3",
+        "url": "rtsp://u:p@h/x",
+        "username": "own"
+      },
+      "result": {
+        "id": "w3",
+        "name": "h/x",
+        "kind": "rtsp",
+        "url": "rtsp://h/x",
+        "username": "own",
+        "password": "p",
+        "transport": "tcp"
+      },
+      "public": {
+        "id": "w3",
+        "name": "h/x",
+        "kind": "rtsp",
+        "url": "rtsp://h/x",
+        "username": "own",
+        "transport": "tcp",
+        "has_password": true,
+        "address": "h/x"
+      }
+    },
+    {
+      "raw": {
+        "id": "w4",
+        "url": "rtsp://h/x",
+        "password": "qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq",
+        "username": "u"
+      },
+      "result": {
+        "id": "w4",
+        "name": "h/x",
+        "kind": "rtsp",
+        "url": "rtsp://h/x",
+        "username": "u",
+        "password": "qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq",
+        "transport": "tcp"
+      },
+      "public": {
+        "id": "w4",
+        "name": "h/x",
+        "kind": "rtsp",
+        "url": "rtsp://h/x",
+        "username": "u",
+        "transport": "tcp",
+        "has_password": true,
+        "address": "h/x"
+      }
+    },
+    {
+      "raw": "str",
+      "result": null,
+      "public": null
+    },
+    {
+      "raw": 5,
+      "result": null,
+      "public": null
+    },
+    {
+      "raw": null,
+      "result": null,
+      "public": null
+    },
+    {
+      "raw": [],
+      "result": null,
+      "public": null
+    },
+    {
+      "raw": {},
+      "result": null,
+      "public": null
+    }
+  ],
+  "settings": [
+    {
+      "raw": null,
+      "result": {
+        "streams": [],
+        "ffmpeg": ""
+      }
+    },
+    {
+      "raw": {},
+      "result": {
+        "streams": [],
+        "ffmpeg": ""
+      }
+    },
+    {
+      "raw": [],
+      "result": {
+        "streams": [],
+        "ffmpeg": ""
+      }
+    },
+    {
+      "raw": "x",
+      "result": {
+        "streams": [],
+        "ffmpeg": ""
+      }
+    },
+    {
+      "raw": {
+        "streams": "no"
+      },
+      "result": {
+        "streams": [],
+        "ffmpeg": ""
+      }
+    },
+    {
+      "raw": {
+        "streams": [],
+        "ffmpeg": ""
+      },
+      "result": {
+        "streams": [],
+        "ffmpeg": ""
+      }
+    },
+    {
+      "raw": {
+        "streams": [
+          {
+            "id": "v1",
+            "name": "Front",
+            "url": "rtsp://h/x",
+            "username": "u",
+            "password": "p",
+            "transport": "udp",
+            "kind": "rtsp"
+          },
+          {
+            "id": "v1",
+            "name": "Front",
+            "url": "rtsp://h/x",
+            "username": "u",
+            "password": "p",
+            "transport": "udp",
+            "kind": "rtsp"
+          }
+        ],
+        "ffmpeg": " /usr/bin/ffmpeg "
+      },
+      "result": {
+        "streams": [
+          {
+            "id": "v1",
+            "name": "Front",
+            "kind": "rtsp",
+            "url": "rtsp://h/x",
+            "username": "u",
+            "password": "p",
+            "transport": "udp"
+          }
+        ],
+        "ffmpeg": "/usr/bin/ffmpeg"
+      }
+    },
+    {
+      "raw": {
+        "streams": [
+          {
+            "id": "s0",
+            "name": "Front",
+            "url": "rtsp://h/x",
+            "username": "u",
+            "password": "p",
+            "transport": "udp",
+            "kind": "rtsp"
+          },
+          {
+            "id": "s1",
+            "name": "Front",
+            "url": "rtsp://h/x",
+            "username": "u",
+            "password": "p",
+            "transport": "udp",
+            "kind": "rtsp"
+          },
+          {
+            "id": "s2",
+            "name": "Front",
+            "url": "rtsp://h/x",
+            "username": "u",
+            "password": "p",
+            "transport": "udp",
+            "kind": "rtsp"
+          },
+          {
+            "id": "s3",
+            "name": "Front",
+            "url": "rtsp://h/x",
+            "username": "u",
+            "password": "p",
+            "transport": "udp",
+            "kind": "rtsp"
+          },
+          {
+            "id": "s4",
+            "name": "Front",
+            "url": "rtsp://h/x",
+            "username": "u",
+            "password": "p",
+            "transport": "udp",
+            "kind": "rtsp"
+          },
+          {
+            "id": "s5",
+            "name": "Front",
+            "url": "rtsp://h/x",
+            "username": "u",
+            "password": "p",
+            "transport": "udp",
+            "kind": "rtsp"
+          },
+          {
+            "id": "s6",
+            "name": "Front",
+            "url": "rtsp://h/x",
+            "username": "u",
+            "password": "p",
+            "transport": "udp",
+            "kind": "rtsp"
+          },
+          {
+            "id": "s7",
+            "name": "Front",
+            "url": "rtsp://h/x",
+            "username": "u",
+            "password": "p",
+            "transport": "udp",
+            "kind": "rtsp"
+          },
+          {
+            "id": "s8",
+            "name": "Front",
+            "url": "rtsp://h/x",
+            "username": "u",
+            "password": "p",
+            "transport": "udp",
+            "kind": "rtsp"
+          },
+          {
+            "id": "s9",
+            "name": "Front",
+            "url": "rtsp://h/x",
+            "username": "u",
+            "password": "p",
+            "transport": "udp",
+            "kind": "rtsp"
+          },
+          {
+            "id": "s10",
+            "name": "Front",
+            "url": "rtsp://h/x",
+            "username": "u",
+            "password": "p",
+            "transport": "udp",
+            "kind": "rtsp"
+          },
+          {
+            "id": "s11",
+            "name": "Front",
+            "url": "rtsp://h/x",
+            "username": "u",
+            "password": "p",
+            "transport": "udp",
+            "kind": "rtsp"
+          }
+        ],
+        "ffmpeg": 5
+      },
+      "result": {
+        "streams": [
+          {
+            "id": "s0",
+            "name": "Front",
+            "kind": "rtsp",
+            "url": "rtsp://h/x",
+            "username": "u",
+            "password": "p",
+            "transport": "udp"
+          },
+          {
+            "id": "s1",
+            "name": "Front",
+            "kind": "rtsp",
+            "url": "rtsp://h/x",
+            "username": "u",
+            "password": "p",
+            "transport": "udp"
+          },
+          {
+            "id": "s2",
+            "name": "Front",
+            "kind": "rtsp",
+            "url": "rtsp://h/x",
+            "username": "u",
+            "password": "p",
+            "transport": "udp"
+          },
+          {
+            "id": "s3",
+            "name": "Front",
+            "kind": "rtsp",
+            "url": "rtsp://h/x",
+            "username": "u",
+            "password": "p",
+            "transport": "udp"
+          },
+          {
+            "id": "s4",
+            "name": "Front",
+            "kind": "rtsp",
+            "url": "rtsp://h/x",
+            "username": "u",
+            "password": "p",
+            "transport": "udp"
+          },
+          {
+            "id": "s5",
+            "name": "Front",
+            "kind": "rtsp",
+            "url": "rtsp://h/x",
+            "username": "u",
+            "password": "p",
+            "transport": "udp"
+          },
+          {
+            "id": "s6",
+            "name": "Front",
+            "kind": "rtsp",
+            "url": "rtsp://h/x",
+            "username": "u",
+            "password": "p",
+            "transport": "udp"
+          },
+          {
+            "id": "s7",
+            "name": "Front",
+            "kind": "rtsp",
+            "url": "rtsp://h/x",
+            "username": "u",
+            "password": "p",
+            "transport": "udp"
+          }
+        ],
+        "ffmpeg": ""
+      }
+    },
+    {
+      "raw": {
+        "streams": [
+          {
+            "id": "v5",
+            "url": "nope"
+          },
+          {
+            "id": "ok",
+            "url": "rtsp://a:b@h/x"
+          }
+        ],
+        "ffmpeg": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      },
+      "result": {
+        "streams": [
+          {
+            "id": "ok",
+            "name": "h/x",
+            "kind": "rtsp",
+            "url": "rtsp://h/x",
+            "username": "a",
+            "password": "b",
+            "transport": "tcp"
+          }
+        ],
+        "ffmpeg": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      }
+    }
+  ],
+  "origins": [
+    {
+      "a": "http://h/a",
+      "b": "http://h/b",
+      "result": true
+    },
+    {
+      "a": "http://h/a",
+      "b": "https://h/a",
+      "result": false
+    },
+    {
+      "a": "http://h:80/a",
+      "b": "http://h/a",
+      "result": true
+    },
+    {
+      "a": "rtsp://h/a",
+      "b": "rtsp://h:554/b",
+      "result": true
+    },
+    {
+      "a": "http://H/a",
+      "b": "http://h/a",
+      "result": true
+    },
+    {
+      "a": "http://h:8889/a",
+      "b": "http://h:8890/a",
+      "result": false
+    },
+    {
+      "a": "rtsps://h",
+      "b": "rtsps://h:322",
+      "result": true
+    },
+    {
+      "a": "http://h:x/a",
+      "b": "http://h:y/a",
+      "result": true
+    },
+    {
+      "a": "",
+      "b": "",
+      "result": true
+    }
+  ],
+  "auth": [
+    {
+      "stream": {},
+      "result": ""
+    },
+    {
+      "stream": {
+        "username": "u",
+        "password": "p"
+      },
+      "result": "Basic dTpw"
+    },
+    {
+      "stream": {
+        "username": "u"
+      },
+      "result": "Basic dTo="
+    },
+    {
+      "stream": {
+        "password": "tok"
+      },
+      "result": "Bearer tok"
+    },
+    {
+      "stream": {
+        "username": "ä",
+        "password": "ü"
+      },
+      "result": "Basic w6Q6w7w="
+    }
+  ],
+  "windows_paths": [
+    {
+      "env": {},
+      "result": []
+    },
+    {
+      "env": {
+        "LOCALAPPDATA": "C:\\L"
+      },
+      "result": [
+        "C:\\L/Microsoft/WinGet/Links/ffmpeg.exe"
+      ]
+    },
+    {
+      "env": {
+        "USERPROFILE": "C:\\U",
+        "ProgramData": "C:\\P"
+      },
+      "result": [
+        "C:\\U/scoop/shims/ffmpeg.exe",
+        "C:\\P/chocolatey/bin/ffmpeg.exe"
+      ]
+    },
+    {
+      "env": {
+        "LOCALAPPDATA": "C:\\L",
+        "USERPROFILE": "C:\\U",
+        "ProgramData": "C:\\P"
+      },
+      "result": [
+        "C:\\L/Microsoft/WinGet/Links/ffmpeg.exe",
+        "C:\\U/scoop/shims/ffmpeg.exe",
+        "C:\\P/chocolatey/bin/ffmpeg.exe"
+      ]
+    }
+  ],
+  "splitter": [
+    {
+      "chunks": [
+        "ffd8616263ffd9"
+      ],
+      "frames": [
+        [
+          "ffd8616263ffd9"
+        ]
+      ]
+    },
+    {
+      "chunks": [
+        "ffd8616263ffd9ffd864656667ffd9"
+      ],
+      "frames": [
+        [
+          "ffd8616263ffd9",
+          "ffd864656667ffd9"
+        ]
+      ]
+    },
+    {
+      "chunks": [
+        "ffd86162",
+        "6364ffd9"
+      ],
+      "frames": [
+        [],
+        [
+          "ffd861626364ffd9"
+        ]
+      ]
+    },
+    {
+      "chunks": [
+        "6a756e6bffd878ffd96d6f7265"
+      ],
+      "frames": [
+        [
+          "ffd878ffd9"
+        ]
+      ]
+    },
+    {
+      "chunks": [
+        "ffd8",
+        "616263",
+        "ffd9"
+      ],
+      "frames": [
+        [],
+        [],
+        [
+          "ffd8616263ffd9"
+        ]
+      ]
+    },
+    {
+      "chunks": [
+        "ffd8616263ff",
+        "ffd9"
+      ],
+      "frames": [
+        [],
+        [
+          "ffd8616263ffffd9"
+        ]
+      ]
+    },
+    {
+      "chunks": [
+        "ff",
+        "d8616263ffd9"
+      ],
+      "frames": [
+        [],
+        [
+          "ffd8616263ffd9"
+        ]
+      ]
+    },
+    {
+      "chunks": [
+        "6e6f206d61726b65727320617420616c6c"
+      ],
+      "frames": [
+        []
+      ]
+    },
+    {
+      "chunks": [
+        ""
+      ],
+      "frames": [
+        []
+      ]
+    },
+    {
+      "chunks": [
+        "ffd878787878787878787878787878787878787878787878787878787878787878787878787878787878"
+      ],
+      "frames": [
+        []
+      ]
+    },
+    {
+      "chunks": [
+        "ffd861ffd9",
+        "ffd862ffd9",
+        "ffd863ffd9"
+      ],
+      "frames": [
+        [
+          "ffd861ffd9"
+        ],
+        [
+          "ffd862ffd9"
+        ],
+        [
+          "ffd863ffd9"
+        ]
+      ]
+    },
+    {
+      "chunks": [
+        "ffd8ff00d8ffd9"
+      ],
+      "frames": [
+        [
+          "ffd8ff00d8ffd9"
+        ]
+      ]
+    },
+    {
+      "chunks": [
+        "ffd8ffd871ffd9"
+      ],
+      "frames": [
+        [
+          "ffd8ffd871ffd9"
+        ]
+      ]
+    },
+    {
+      "max": 16,
+      "chunks": [
+        "ffd8787878787878787878787878787878787878787878787878787878787878",
+        "7979",
+        "ffd86f6bffd9"
+      ],
+      "frames": [
+        [],
+        [],
+        [
+          "ffd86f6bffd9"
+        ]
+      ]
+    }
+  ],
+  "jpeg_size": [
+    {
+      "data": "ffd8ffe000040000ffc000110801e0028003012200021101031101ffd9",
+      "result": [
+        640,
+        480
+      ]
+    },
+    {
+      "data": "ffd8ffe000040000ffc20011080438078003012200021101031101ffd9",
+      "result": [
+        1920,
+        1080
+      ]
+    },
+    {
+      "data": "ffd8ffd9",
+      "result": null
+    },
+    {
+      "data": "",
+      "result": null
+    },
+    {
+      "data": "ffd8",
+      "result": null
+    },
+    {
+      "data": "ffd8ffe000040000ffc10011080001000103012200021101031101ffd9",
+      "result": [
+        1,
+        1
+      ]
+    },
+    {
+      "data": "000000000000000000000000000000000000000000000000000000000000",
+      "result": null
+    },
+    {
+      "data": "ffd8ffd0ffd1000000000000000000000000",
+      "result": null
+    }
+  ],
+  "urljoin": [
+    {
+      "base": "http://h:8889/cam/whep",
+      "ref": "",
+      "result": "http://h:8889/cam/whep"
+    },
+    {
+      "base": "http://h:8889/cam/whep",
+      "ref": "/session/1",
+      "result": "http://h:8889/session/1"
+    },
+    {
+      "base": "http://h:8889/cam/whep",
+      "ref": "session/1",
+      "result": "http://h:8889/cam/session/1"
+    },
+    {
+      "base": "http://h:8889/cam/whep",
+      "ref": "../s",
+      "result": "http://h:8889/s"
+    },
+    {
+      "base": "http://h:8889/cam/whep",
+      "ref": "./s",
+      "result": "http://h:8889/cam/s"
+    },
+    {
+      "base": "http://h:8889/cam/whep",
+      "ref": "?x=1",
+      "result": "http://h:8889/cam/whep?x=1"
+    },
+    {
+      "base": "http://h:8889/cam/whep",
+      "ref": "#f",
+      "result": "http://h:8889/cam/whep#f"
+    },
+    {
+      "base": "http://h:8889/cam/whep",
+      "ref": "http://other/s",
+      "result": "http://other/s"
+    },
+    {
+      "base": "http://h:8889/cam/whep",
+      "ref": "//other/s",
+      "result": "http://other/s"
+    },
+    {
+      "base": "http://h:8889/cam/whep",
+      "ref": "https://h/s",
+      "result": "https://h/s"
+    },
+    {
+      "base": "http://h:8889/cam/whep",
+      "ref": "../../../s",
+      "result": "http://h:8889/s"
+    },
+    {
+      "base": "http://h:8889/cam/whep",
+      "ref": "a/../b",
+      "result": "http://h:8889/cam/b"
+    },
+    {
+      "base": "http://h:8889/cam/whep",
+      "ref": "s/.",
+      "result": "http://h:8889/cam/s/"
+    },
+    {
+      "base": "http://h:8889/cam/whep",
+      "ref": "s/..",
+      "result": "http://h:8889/cam/"
+    },
+    {
+      "base": "http://h:8889/cam/whep",
+      "ref": "/a/./b/../c",
+      "result": "http://h:8889/a/c"
+    },
+    {
+      "base": "http://h:8889/cam/whep",
+      "ref": "mediamtx/whep/abc?x=1#z",
+      "result": "http://h:8889/cam/mediamtx/whep/abc?x=1#z"
+    },
+    {
+      "base": "http://h/a/b/c",
+      "ref": "",
+      "result": "http://h/a/b/c"
+    },
+    {
+      "base": "http://h/a/b/c",
+      "ref": "/session/1",
+      "result": "http://h/session/1"
+    },
+    {
+      "base": "http://h/a/b/c",
+      "ref": "session/1",
+      "result": "http://h/a/b/session/1"
+    },
+    {
+      "base": "http://h/a/b/c",
+      "ref": "../s",
+      "result": "http://h/a/s"
+    },
+    {
+      "base": "http://h/a/b/c",
+      "ref": "./s",
+      "result": "http://h/a/b/s"
+    },
+    {
+      "base": "http://h/a/b/c",
+      "ref": "?x=1",
+      "result": "http://h/a/b/c?x=1"
+    },
+    {
+      "base": "http://h/a/b/c",
+      "ref": "#f",
+      "result": "http://h/a/b/c#f"
+    },
+    {
+      "base": "http://h/a/b/c",
+      "ref": "http://other/s",
+      "result": "http://other/s"
+    },
+    {
+      "base": "http://h/a/b/c",
+      "ref": "//other/s",
+      "result": "http://other/s"
+    },
+    {
+      "base": "http://h/a/b/c",
+      "ref": "https://h/s",
+      "result": "https://h/s"
+    },
+    {
+      "base": "http://h/a/b/c",
+      "ref": "../../../s",
+      "result": "http://h/s"
+    },
+    {
+      "base": "http://h/a/b/c",
+      "ref": "a/../b",
+      "result": "http://h/a/b/b"
+    },
+    {
+      "base": "http://h/a/b/c",
+      "ref": "s/.",
+      "result": "http://h/a/b/s/"
+    },
+    {
+      "base": "http://h/a/b/c",
+      "ref": "s/..",
+      "result": "http://h/a/b/"
+    },
+    {
+      "base": "http://h/a/b/c",
+      "ref": "/a/./b/../c",
+      "result": "http://h/a/c"
+    },
+    {
+      "base": "http://h/a/b/c",
+      "ref": "mediamtx/whep/abc?x=1#z",
+      "result": "http://h/a/b/mediamtx/whep/abc?x=1#z"
+    },
+    {
+      "base": "https://h/x/",
+      "ref": "",
+      "result": "https://h/x/"
+    },
+    {
+      "base": "https://h/x/",
+      "ref": "/session/1",
+      "result": "https://h/session/1"
+    },
+    {
+      "base": "https://h/x/",
+      "ref": "session/1",
+      "result": "https://h/x/session/1"
+    },
+    {
+      "base": "https://h/x/",
+      "ref": "../s",
+      "result": "https://h/s"
+    },
+    {
+      "base": "https://h/x/",
+      "ref": "./s",
+      "result": "https://h/x/s"
+    },
+    {
+      "base": "https://h/x/",
+      "ref": "?x=1",
+      "result": "https://h/x/?x=1"
+    },
+    {
+      "base": "https://h/x/",
+      "ref": "#f",
+      "result": "https://h/x/#f"
+    },
+    {
+      "base": "https://h/x/",
+      "ref": "http://other/s",
+      "result": "http://other/s"
+    },
+    {
+      "base": "https://h/x/",
+      "ref": "//other/s",
+      "result": "https://other/s"
+    },
+    {
+      "base": "https://h/x/",
+      "ref": "https://h/s",
+      "result": "https://h/s"
+    },
+    {
+      "base": "https://h/x/",
+      "ref": "../../../s",
+      "result": "https://h/s"
+    },
+    {
+      "base": "https://h/x/",
+      "ref": "a/../b",
+      "result": "https://h/x/b"
+    },
+    {
+      "base": "https://h/x/",
+      "ref": "s/.",
+      "result": "https://h/x/s/"
+    },
+    {
+      "base": "https://h/x/",
+      "ref": "s/..",
+      "result": "https://h/x/"
+    },
+    {
+      "base": "https://h/x/",
+      "ref": "/a/./b/../c",
+      "result": "https://h/a/c"
+    },
+    {
+      "base": "https://h/x/",
+      "ref": "mediamtx/whep/abc?x=1#z",
+      "result": "https://h/x/mediamtx/whep/abc?x=1#z"
+    }
+  ],
+  "constants": {
+    "max_streams": 8,
+    "max_name": 64,
+    "max_url": 2048,
+    "schemes": [
+      "rtsp",
+      "rtsps",
+      "udp",
+      "srt",
+      "http",
+      "https"
+    ],
+    "transports": [
+      "tcp",
+      "udp"
+    ],
+    "kinds": [
+      "rtsp",
+      "webrtc"
+    ],
+    "idle_stop": 5.0,
+    "stall": 3.0,
+    "watchdog": 10.0,
+    "socket_timeout": 8.0,
+    "retry": [
+      1.0,
+      2.0,
+      4.0,
+      8.0
+    ],
+    "frame_wait": 2.0,
+    "term": 2.0,
+    "max_frame": 16777216,
+    "resolve_retry": 5.0,
+    "list_keep": 5.0,
+    "whep_timeout": 10.0,
+    "whep_close": 3.0,
+    "max_sdp": 262144,
+    "max_whep": 16,
+    "max_width": 1280,
+    "quality": 5
+  }
+}
