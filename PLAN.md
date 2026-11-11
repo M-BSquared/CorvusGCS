@@ -183,6 +183,24 @@ Nothing open: every setup route answers, the harness compares them with `serve.p
   the first run). The language files and the core are compiled into the one
   executable; check that plugin `lang` folders are too.
 
+### Python left in the repository
+
+Fixtures for every Rust test are frozen in `src/core/tests/data`; the Rust
+tests need no Python. Removed so far: 17 `test_*_parity.py` files. Kept, and why:
+
+* `python/corvus`, `serve.py`, `src/` (web interface), `corvus/app.py` (Qt
+  window): the web interface stays while `src/PARITY.md` has partial rows
+  (touch mode, gamepad, Settings vehicles section, Radio Control wizard,
+  mission dragging, Esc in the distance tool). It runs on the Python server.
+* `python/tests/reference`, `tools/dump_*_cases.py`: they regenerate the fixtures.
+* `test_corvus_link_parity.py` (against pymavlink), `test_bridge_cycle_parity.py`,
+  `test_param_threads_parity.py`, `test_entrypoint_parity.py`, `test_flash_parity.py`
+  (imported by the flash dump), `test_elrs_parity.py` (ELRS port in progress).
+* Tests of Python modules, the route harness and the packaging tests: they go
+  with the module or script they check, once the web interface is deleted.
+* 17 tests fail on the branch before and after (ELRS link, macOS signing,
+  Android packaging, Qt binding, packaging single source).
+
 ## 1. Live checks
 
 Nothing below has run against a real PX4 yet: the development machine has
