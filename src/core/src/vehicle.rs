@@ -18,6 +18,9 @@ use crate::autoconnect::{AutoConnectWatcher, SessionState, StartupOptions, Watch
 use crate::bridge::{Bridge, BridgeConfig};
 use crate::core::Core;
 use crate::fleet::{coerce_config, parse_vehicle_key, Fleet, FleetBridge, FleetStore, MAIN_LINK};
+use crate::forwarder::{
+    Forwarder, ForwarderConfig, DEFAULT_HOST, DEFAULT_LISTEN_HOST, DEFAULT_LISTEN_PORT, DEFAULT_PORT,
+};
 use crate::geofence;
 use crate::hub::StoreHub;
 use crate::mission;
@@ -43,9 +46,26 @@ pub struct VehicleService {
     pub session: Arc<SessionState>,
     links: Arc<Mutex<HashMap<String, Handles>>>,
     watcher: Mutex<Option<Arc<AutoConnectWatcher>>>,
+    /// The second station forwarder of the main link, when the config has one on.
+    forwarder: Mutex<Option<Arc<Forwarder>>>,
+    /// Stop old, start new: two overlapping changes must not both bind one port.
+    forward_lock: Mutex<()>,
 }
 
 impl VehicleService {
+    /// Hands every link's bridge the battery estimator settings and the Remote ID
+    /// identity of the config, so a change takes effect now and not at the next
+    /// launch: an operator who has just corrected a serial number is standing
+    /// beside an aircraft that is still broadcasting the old one.
+    pub fn apply_station_settings(&self, cfg: &crate::config::CorvusConfig) {
+        let battery = cfg.block("battery").map(|b| Value::Object(b.clone()));
+        let identity = cfg.block("remote_id").map(|b| Value::Object(b.clone()));
+        for h in lock(&self.links).values() {
+            h.bridge.set_battery_settings(battery.as_ref());
+            h.bridge.set_remote_id(identity.as_ref());
+        }
+    }
+
     /// The handles of link `link_id` while the fleet still has it.
     pub fn handles(&self, link_id: &str) -> Option<Handles> {
         self.fleet.link(link_id)?;
@@ -117,8 +137,17 @@ impl Module for VehicleModule {
                 initial: Some(svc.fleet.snapshot()),
             }
         }));
+        reg.config_block("battery", crate::battery::coerce_settings);
+        reg.config_block("remote_id", |v| {
+            v.as_object()?;
+            crate::protocol::remote_id::settings(Some(v))
+                .to_json()
+                .as_object()
+                .cloned()
+        });
         reg.on_config(|core, cfg| {
             if let Some(svc) = core.service::<VehicleService>() {
+                svc.apply_station_settings(cfg);
                 svc.session.apply_config(cfg.block("autoconnect"));
                 svc.active().store.update([("link_auto", svc.session.as_value())]);
             }
@@ -147,6 +176,11 @@ impl Module for VehicleModule {
         reg.post("/api/motors/test/stop", api_motors_test_stop);
         reg.post("/api/rangefinder/stream", api_rangefinder_stream);
         reg.post("/api/rc/stream", api_rc_stream);
+        reg.get("/api/forwarding", api_forwarding_status);
+        reg.post("/api/forwarding", api_forwarding_set);
+        reg.get("/api/mission/return", api_mission_return);
+        reg.get("/api/mavlink/scope", api_mavlink_scope);
+        reg.post("/api/mavlink/scope/clear", api_mavlink_scope_clear);
         reg.get("/api/fleet", api_fleet);
         reg.post("/api/fleet/select", api_fleet_select);
         reg.post("/api/fleet/vehicle", api_fleet_vehicle);
@@ -192,11 +226,15 @@ impl Module for VehicleModule {
 
         let pending: Arc<Mutex<Option<Arc<VehicleStateStore>>>> = Arc::default();
         let (factory_links, factory_pending) = (Arc::clone(&links), Arc::clone(&pending));
+        let factory_settings = Arc::clone(&settings);
         let bridge_factory: crate::fleet::BridgeFactory = Box::new(move |link_id, _store, connection| {
             let extra = lock(&factory_pending).take().ok_or("no store for the link")?;
             let mut cfg = BridgeConfig::new(connection, log_dir.clone());
             cfg.link_id = link_id.to_string();
             let bridge = Bridge::new(Arc::clone(&extra), cfg);
+            let station = factory_settings.get();
+            bridge.set_battery_settings(station.block("battery").map(|b| Value::Object(b.clone())).as_ref());
+            bridge.set_remote_id(station.block("remote_id").map(|b| Value::Object(b.clone())).as_ref());
             lock(&factory_links).insert(
                 link_id.to_string(),
                 Handles {
@@ -237,7 +275,13 @@ impl Module for VehicleModule {
             session: Arc::clone(&session),
             links,
             watcher: Mutex::new(None),
+            forwarder: Mutex::new(None),
+            forward_lock: Mutex::new(()),
         });
+        service.apply_station_settings(&config);
+        if let Some(main) = service.handles(MAIN_LINK) {
+            *lock(&service.forwarder) = build_forwarder(&main.bridge, config.block("forwarding"));
+        }
         if let Some(hub) = core.service::<StoreHub>() {
             let svc = Arc::clone(&service);
             hub.set_resolver(Arc::new(move |_core, key| vehicle_target(&svc, key).map(|h| h.store)));
@@ -290,6 +334,10 @@ impl Module for VehicleModule {
             }
             svc.fleet.stop();
             if let Some(main) = svc.handles(MAIN_LINK) {
+                if let Some(fwd) = lock(&svc.forwarder).take() {
+                    Forwarder::detach(&main.bridge);
+                    fwd.stop();
+                }
                 main.bridge.stop();
             }
         }
@@ -1363,4 +1411,225 @@ fn api_rc_stream(core: &Core, req: &Request) -> Response {
         error
     };
     Response::not_ok(if error.contains("not connected") { 503 } else { 409 }, &error)
+}
+
+// ------------------------------------------------- the second station forwarder
+
+fn py_int(v: Option<&Value>) -> Option<i64> {
+    match v {
+        Some(Value::Number(n)) => n.as_i64(),
+        _ => None,
+    }
+}
+
+/// `_build_forwarder`: the forwarder the config asks for, started and attached
+/// to `main`, or None when it is off. One that could not bind is returned
+/// anyway, stopped, so the settings can say why instead of showing a switch
+/// that silently does nothing.
+fn build_forwarder(main: &Bridge, cfg: Option<&Map<String, Value>>) -> Option<Arc<Forwarder>> {
+    let cfg = cfg?;
+    if !cfg.get("enabled").is_some_and(crate::protocol::common::py_truthy) {
+        return None;
+    }
+    let text = |k: &str, default: &str| match cfg.get(k) {
+        Some(Value::String(s)) if !s.is_empty() => s.clone(),
+        _ => default.to_string(),
+    };
+    let endpoints = cfg
+        .get("endpoints")
+        .and_then(Value::as_array)
+        .map(|a| a.iter().filter_map(|e| e.as_str().map(str::to_string)).collect())
+        .unwrap_or_default();
+    let config = ForwarderConfig {
+        host: text("host", DEFAULT_HOST),
+        port: py_int(cfg.get("port"))
+            .filter(|p| *p != 0)
+            .map_or(DEFAULT_PORT, |p| p as u16),
+        listen_host: text("listen_host", DEFAULT_LISTEN_HOST),
+        listen_port: py_int(cfg.get("listen_port")).map_or(DEFAULT_LISTEN_PORT, |p| p as u16),
+        endpoints,
+        allow_commands: cfg
+            .get("allow_commands")
+            .is_some_and(crate::protocol::common::py_truthy),
+        ..ForwarderConfig::default()
+    };
+    let forwarder = Forwarder::for_bridge(
+        config,
+        main,
+        Arc::new(|level, text| eprintln!("corvus: {level}: {text}")),
+    );
+    if forwarder.start() {
+        forwarder.attach(main);
+    }
+    Some(forwarder)
+}
+
+fn api_forwarding_status(core: &Core, _req: &Request) -> Response {
+    let Some(svc) = service(core) else {
+        return unavailable("not connected");
+    };
+    if let Some(fwd) = lock(&svc.forwarder).as_ref() {
+        return Response::json(fwd.status());
+    }
+    let settings = core.settings().get();
+    let empty = Map::new();
+    let cfg = settings.block("forwarding").unwrap_or(&empty);
+    let listen_port = py_int(cfg.get("listen_port")).unwrap_or(i64::from(DEFAULT_LISTEN_PORT));
+    let or_default = |k: &str, default: Value| match cfg.get(k) {
+        Some(v) if crate::protocol::common::py_truthy(v) => v.clone(),
+        _ => default,
+    };
+    Response::json(json!({
+        "running": false,
+        "host": or_default("host", json!(DEFAULT_HOST)),
+        "port": or_default("port", json!(DEFAULT_PORT)),
+        "listen_host": or_default("listen_host", json!(DEFAULT_LISTEN_HOST)),
+        "listen_port": listen_port,
+        "listen_port_requested": listen_port,
+        "allow_commands": cfg.get("allow_commands").is_some_and(crate::protocol::common::py_truthy),
+        "endpoints": or_default("endpoints", json!([])),
+        "peers": [], "targets": [], "frames_sent": 0, "datagrams_received": 0,
+        "frames_injected": 0, "dropped": 0, "sysid_conflict": false, "error": "",
+    }))
+}
+
+fn api_forwarding_set(core: &Core, req: &Request) -> Response {
+    let payload = req.payload();
+    let refuse = |status: u16, error: &str| Response::json_status(json!({"ok": false, "error": error}), status);
+    for key in ["enabled", "allow_commands"] {
+        if payload.get(key).is_some_and(|v| !v.is_boolean()) {
+            return refuse(400, &format!("{key} must be true or false"));
+        }
+    }
+    let int_in = |key: &str, lo: i64, hi: i64| -> Result<Option<i64>, ()> {
+        match payload.get(key) {
+            None | Some(Value::Null) => Ok(None),
+            Some(Value::Number(n)) => n.as_i64().filter(|p| (lo..hi).contains(p)).map(Some).ok_or(()),
+            Some(_) => Err(()),
+        }
+    };
+    let Ok(port) = int_in("port", 1, 65536) else {
+        return refuse(400, "port must be 1-65535");
+    };
+    let Ok(listen_port) = int_in("listen_port", 0, 65536) else {
+        return refuse(400, "listen_port must be 0-65535");
+    };
+    let endpoints: Option<Vec<String>> = match payload.get("endpoints") {
+        None | Some(Value::Null) => None,
+        Some(Value::Array(a)) if a.iter().all(Value::is_string) => Some(
+            a.iter()
+                .filter_map(|e| e.as_str().map(|s| s.trim().to_string()))
+                .filter(|s| !s.is_empty())
+                .collect(),
+        ),
+        Some(_) => return refuse(400, "endpoints must be strings"),
+    };
+    let Some(svc) = service(core) else {
+        return refuse(503, "no config available");
+    };
+    let Some(main) = svc.handles(MAIN_LINK) else {
+        return refuse(503, "no config available");
+    };
+    let _one = lock_unit(&svc.forward_lock);
+    let mut current = core.settings().get().block("forwarding").cloned().unwrap_or_default();
+    for key in ["enabled", "allow_commands"] {
+        if let Some(v) = payload.get(key) {
+            current.insert(key.into(), v.clone());
+        }
+    }
+    if let Some(p) = port {
+        current.insert("port".into(), json!(p));
+    }
+    if let Some(p) = listen_port {
+        current.insert("listen_port".into(), json!(p));
+    }
+    for key in ["host", "listen_host"] {
+        if let Some(Value::String(s)) = payload.get(key) {
+            if !s.trim().is_empty() {
+                current.insert(key.into(), json!(s.trim()));
+            }
+        }
+    }
+    if let Some(list) = endpoints {
+        current.insert("endpoints".into(), json!(list));
+    }
+    let saved = core
+        .settings()
+        .update(core, |cfg| cfg.set("forwarding", Some(Value::Object(current.clone()))));
+    if let Some(old) = lock(&svc.forwarder).take() {
+        Forwarder::detach(&main.bridge);
+        old.stop();
+    }
+    let forwarder = build_forwarder(&main.bridge, Some(&current));
+    *lock(&svc.forwarder) = forwarder.clone();
+    if saved.is_err() {
+        let status = forwarder
+            .as_ref()
+            .map_or_else(|| json!({"running": false}), |f| f.status());
+        return Response::json(json!({"ok": true, "status": status, "warning": "set for this session but not saved"}));
+    }
+    if let Some(f) = &forwarder {
+        if !f.status()["running"].as_bool().unwrap_or(false) {
+            let error = f.error();
+            let error = if error.is_empty() {
+                "could not start".to_string()
+            } else {
+                error
+            };
+            return Response::json_status(json!({"ok": false, "error": error, "status": f.status()}), 409);
+        }
+    }
+    let status = forwarder.map_or_else(
+        || json!({"running": false, "allow_commands": current.get("allow_commands").is_some_and(crate::protocol::common::py_truthy)}),
+        |f| f.status(),
+    );
+    Response::json(json!({"ok": true, "status": status}))
+}
+
+fn lock_unit(m: &Mutex<()>) -> MutexGuard<'_, ()> {
+    m.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+// ------------------------------------------------------- return, scope
+
+fn api_mission_return(core: &Core, req: &Request) -> Response {
+    use crate::setup_schemas::{ardupilot_safety, safety};
+    let Some(svc) = service(core) else {
+        return Response::json(json!({"connected": false}));
+    };
+    let h = svc.active();
+    let ardupilot = h.store.snapshot().get("autopilot_stack").and_then(Value::as_str) == Some("ardupilot");
+    let class = crate::dialect::vehicle_class(h.bridge.vehicle_type_id());
+    let fresh = matches!(req.query.get("fresh"), Some("1" | "true"));
+    let names = if ardupilot {
+        ardupilot_safety::return_param_names(class.as_str())
+    } else {
+        safety::return_param_names()
+    };
+    let values: crate::setup_schemas::fields::Values = h.bridge.fetch_params(&names, 4.0, fresh).into_iter().collect();
+    let mut payload = if ardupilot {
+        ardupilot_safety::return_profile(&values, class.as_str())
+    } else {
+        safety::return_profile(&values)
+    };
+    payload["connected"] = json!(!values.is_empty());
+    Response::json(payload)
+}
+
+fn api_mavlink_scope(core: &Core, req: &Request) -> Response {
+    let Some(svc) = service(core) else {
+        return Response::json(json!({"rows": [], "total": 0, "dropped": 0, "since": 0,
+                                     "selected": "", "fields": null, "connected": false}));
+    };
+    let select: String = req.query.get("select").unwrap_or("").chars().take(128).collect();
+    let mut data = svc.active().bridge.engines().scope.snapshot(&select);
+    data["connected"] = json!(true);
+    Response::json(data)
+}
+
+fn api_mavlink_scope_clear(core: &Core, _req: &Request) -> Response {
+    if let Some(svc) = service(core) {
+        svc.active().bridge.engines().scope.clear();
+    }
+    Response::json(json!({"ok": true}))
 }

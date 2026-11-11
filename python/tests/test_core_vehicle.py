@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+import re
 import shutil
 import signal
 import socket
@@ -97,7 +98,7 @@ PLAN = {"name": "Circuit", "aircraft": "multirotor", "speed": 5, "items": [
     {"type": "loiter_turns", "lat": 48.0760, "lon": 11.6430, "alt": 25, "turns": 1, "radius": 20},
     {"type": "land", "lat": 48.0757, "lon": 11.642}]}
 
-VOLATILE = ("revision", "time", "ts", "boot_ms", "seq", "winner")
+VOLATILE = ("dir", "revision", "time", "ts", "boot_ms", "seq", "winner")
 
 # One flight, in order: what the page would send.
 SEQUENCE = [
@@ -119,6 +120,132 @@ SEQUENCE = [
     ("POST", "/api/rangefinder/stream", {"enabled": True}), ("POST", "/api/rc/stream", {"enabled": True, "rate_hz": 10}),
     ("POST", "/api/mavlink/disconnect", {}), ("GET", "/api/mavlink/auto", None),
 ]
+
+
+def _same(flying, method, path, body=None, ignore=VOLATILE, pause=0.4):
+    (ps, pb) = harness.http(method, flying["python"] + path, body, timeout=40)
+    (rs, rb) = harness.http(method, flying["rust"] + path, body, timeout=40)
+    out = [f"status: python {ps} != rust {rs}"] if ps != rs else []
+    out += harness.diff_json(pb, rb, ignore)
+    time.sleep(pause)
+    if os.environ.get("CORVUS_HARNESS_TRACE"):
+        print(f"{method} {path} {json.dumps(body)[:50]} -> {ps} {json.dumps(pb)[:110]}")
+    return [f"{method} {path} {json.dumps(body)[:60]}: {d}" for d in out], (pb, rb)
+
+
+def _wait_complete(flying, timeout=40.0):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        done = all(harness.http("GET", flying[n] + "/api/params")[1].get("complete") for n in ("python", "rust"))
+        if done:
+            return
+        time.sleep(0.5)
+    raise RuntimeError("the parameter download did not finish")
+
+
+SETUP_PAGES = ["/api/remoteid", "/api/remoteid/status", "/api/mission/return", "/api/mission/return?fresh=1", "/api/first-setup", "/api/params/metadata", "/api/params/metadata/cache", "/api/motors", "/api/rc", "/api/motors?fresh=1", "/api/rc?fresh=1", "/api/mounting?fresh=1",
+               "/api/tuning?fresh=1", "/api/safety?fresh=1"]
+
+
+def test_the_setup_pages_and_the_parameter_routes_answer_as_python_answers_them(flying, tmp_path) -> None:
+    diffs = []
+
+    def step(method, path, body=None, ignore=VOLATILE, pause=0.4):
+        out, pair = _same(flying, method, path, body, ignore, pause)
+        diffs.extend(out)
+        return pair
+
+    for path in SETUP_PAGES:
+        step("GET", path)
+    harness.http("GET", flying["rust"] + "/api/mavlink/scope")
+    harness.http("GET", flying["python"] + "/api/mavlink/scope")
+    for _ in range(3):
+        time.sleep(1.5)
+        for name in ("python", "rust"):
+            harness.http("GET", flying[name] + "/api/mavlink/scope")
+    for name in ("python", "rust"):
+        scope = harness.http("GET", flying[name] + "/api/mavlink/scope?select=1:1:HEARTBEAT")[1]
+        assert scope["connected"] and any(r["name"] == "HEARTBEAT" for r in scope["rows"]), (name, scope)
+        assert scope["selected"] == "1:1:HEARTBEAT" and {f["name"] for f in scope["fields"]} >= {"type", "autopilot"}, name
+        assert harness.http("POST", flying[name] + "/api/mavlink/scope/clear", {})[1] == {"ok": True}
+    step("POST", "/api/params/download", {})
+    _wait_complete(flying)
+    step("POST", "/api/params/metadata", {})
+    time.sleep(6)
+    step("GET", "/api/params/metadata", None, ("source",))
+    step("POST", "/api/params/metadata", {}, ("source",))
+    step("POST", "/api/params/metadata/cache/clear", {})
+    step("POST", "/api/first-setup/airframe", {"preset": 4001})
+    py, rs = step("GET", "/api/params", None, ("params",))
+    assert [p["name"] for p in py["params"]] if "params" in py else True
+    for name in ("python", "rust"):
+        listed = harness.http("GET", flying[name] + "/api/params")[1]["params"]
+        assert listed == sorted(listed, key=lambda p: p["name"])
+    py_list = harness.http("GET", flying["python"] + "/api/params")[1]["params"]
+    rs_list = harness.http("GET", flying["rust"] + "/api/params")[1]["params"]
+    diffs += harness.diff_json(py_list, rs_list)
+    # armed: every write is refused the same way
+    armed = [("POST", "/api/params/set", {"name": "MPC_XY_VEL_MAX", "value": 8}),
+             ("POST", "/api/params/upload", {"params": [{"name": "MPC_XY_VEL_MAX", "value": 8}]}),
+             ("POST", "/api/rc/calibrate", {"channels": [{"channel": 1, "min": 1000, "max": 2000, "trim": 1500}]}),
+             ("POST", "/api/motors/assign", {"motor": 1, "bank": "MAIN", "pin": 5}),
+             ("POST", "/api/autotune", {"axis": "all"}), ("POST", "/api/calibrate", {"type": "gyro"}),
+             ("POST", "/api/calibrate/position", {"position": "level"}), ("POST", "/api/calibrate/cancel", {})]
+    for method, path, body in armed:
+        step(method, path, body)
+    step("POST", "/api/mavlink/arm", {"arm": False}, pause=1.0)
+    for method, path, body in [
+            ("POST", "/api/params/set", {"name": "MPC_XY_VEL_MAX", "value": 8}),
+            ("POST", "/api/params/set", {"name": "NO_SUCH_PARAM", "value": 8}),
+            ("POST", "/api/params/verify", {"params": [{"name": "MPC_XY_VEL_MAX", "value": 8}], "names": ["MPC_Z_VEL_MAX_UP"]}),
+            ("POST", "/api/params/verify", {"params": [{"name": "MPC_XY_VEL_MAX", "value": 9}]}),
+            ("POST", "/api/params/verify", {"names": ["NO_SUCH_PARAM"]}),
+            ("POST", "/api/params/upload", {"params": [{"name": "MPC_XY_VEL_MAX", "value": 7}, {"name": "NO_SUCH_PARAM", "value": 1}]}),
+            ]:
+        step(method, path, body, pause=1.0 if path.endswith("upload") else 0.4)
+    time.sleep(4)
+    step("GET", "/api/params/upload/result")
+    step("POST", "/api/motors/assign", {"motor": 1, "bank": "MAIN", "pin": 5}, pause=1.0)
+    step("POST", "/api/motors/assign", {"motor": 1, "bank": "MAIN", "pin": 99})
+    step("POST", "/api/motors/assign", {"motor": 1, "bank": "MAIN", "pin": 3}, pause=1.0)
+    step("POST", "/api/motors/assign", {"motor": 1, "bank": "MAIN", "pin": 3})
+    step("POST", "/api/motors/assign", {"motor": 2, "output": None}, pause=1.0)
+    step("GET", "/api/motors")
+    step("POST", "/api/rc/calibrate", {"channels": [{"channel": 1, "min": 1000, "max": 2000, "trim": 1500, "reversed": False}],
+                                       "count": 8}, pause=1.0)
+    step("POST", "/api/rc/calibrate", {"channels": [{"channel": 99, "min": 1000, "max": 2000, "trim": 1500}]})
+    step("GET", "/api/rc")
+    for method, path, body in [
+            ("POST", "/api/autotune", {"axis": "all"}), ("POST", "/api/autotune", {"axis": "all", "enabled": False}),
+            ("POST", "/api/calibrate", {"type": "gyro"}), ("POST", "/api/calibrate/cancel", {}),
+            ("POST", "/api/calibrate/position", {"position": "level"}),
+            ("POST", "/api/vibration/stream", {"enabled": True, "rate_hz": 10}),
+            ("POST", "/api/vibration/stream", {"enabled": False}),
+            ("POST", "/api/tuning/stream", {"enabled": True, "rate_hz": 20}),
+            ("POST", "/api/tuning/stream", {"enabled": False}),
+            ("POST", "/api/warnings/clear", {}), ("GET", "/api/params/export/target", None)]:
+        step(method, path, body, ("dir", "filename") + VOLATILE)
+    for fmt in ("qgc", "json", "mission-planner"):
+        written = {}
+        for name in ("python", "rust"):
+            target = tmp_path / name / fmt
+            body = {"dir": str(target), "filename": "p", "format": fmt, "params": [
+                {"name": "B", "value": 0.1, "type": 9}, {"name": "A", "value": 3, "type": 6},
+                {"name": "C", "value": 1e-5}]}
+            status, answer = harness.http("POST", flying[name] + "/api/params/export", body)
+            assert status == 200, answer
+            written[name] = (target / pathlib.Path(answer["path"]).name).read_text()
+        if fmt == "json":
+            docs = [json.loads(written[n]) for n in ("python", "rust")]
+            for doc in docs:
+                doc.pop("exported_at"), doc.pop("version")
+            assert docs[0] == docs[1], docs
+            assert written["python"].replace("1e-05", "0.00001").count("\n") == written["rust"].count("\n")
+        else:
+            py_text, rs_text = (re.sub(r"Exported [^\n]*|Corvus GCS [^\n]*", "", written[n]) for n in ("python", "rust"))
+            assert py_text == rs_text, (py_text, rs_text)
+    step("POST", "/api/mavlink/arm", {"arm": True}, pause=1.0)
+    assert not diffs, "\n".join(diffs)
 
 
 def test_a_flight_is_answered_as_python_answers_it(flying) -> None:

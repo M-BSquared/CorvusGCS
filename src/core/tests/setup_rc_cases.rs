@@ -81,3 +81,17 @@ fn ardupilot_calibration_matches() {
         assert_eq!(run(&row[0], ap::calibration_writes), row[1], "{}", row[0]);
     }
 }
+
+#[test]
+fn each_px4_release_is_built_as_python_builds_it() {
+    let versions = cases("setup_rc_cases.json")["versions"].clone();
+    let names: Vec<&str> = versions.as_object().unwrap().keys().map(String::as_str).collect();
+    assert_eq!(names, ["PX4 v1.16", "PX4 v1.17", "PX4 v1.18"]);
+    for (name, row) in versions.as_object().unwrap() {
+        assert_page(
+            &px4::build(&values_of(&row[0]), row[1].as_i64().unwrap()),
+            &row[2],
+            name,
+        );
+    }
+}
