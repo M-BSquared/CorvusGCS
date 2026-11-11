@@ -292,7 +292,51 @@ def tile_cache_cases() -> None:
     write("mapdata_tile_cache_cases.json", {"steps": steps, "final": final})
 
 
+def tile_math_cases() -> None:
+    import email.message
+    import urllib.error
+
+    from corvus import tile_downloader as d
+
+    lons = [-180.0, -179.99999, -74.006, -0.1, 0.0, 8.55, 11.5, 13.4, 179.999, 180.0, 123.456]
+    lats = [-90.0, -85.0511, -60.0, -0.1, 0.0, 47.35, 48.1, 52.5, 85.0, 90.0]
+    zs = [0, 1, 5, 10, 15, 19, 22]
+    boxes = [(11.0, 48.0, 11.5, 48.5), (-180.0, -85.0, 180.0, 85.0), (8.5, 47.3, 8.6, 47.4),
+             (11.5, 48.5, 11.0, 48.0), (179.0, -1.0, -179.0, 1.0), (0.0, 0.0, 0.0, 0.0),
+             (-10.0, 80.0, 10.0, 90.0), (5.0, 45.0, 6.0, 46.0)]
+    zooms = [(0, 0), (0, 3), (5, 8), (10, 12), (12, 10), (14, 16), (18, 19)]
+    ranges = [{"bounds": list(b), "min": lo, "max": hi,
+               "ranges": [list(r) for r in d.tile_ranges(b, lo, hi)], "count": d.tile_count(b, lo, hi)}
+              for b in boxes for lo, hi in zooms]
+    small = [{"bounds": list(b), "min": lo, "max": hi, "tiles": [list(t) for t in d.enumerate_tiles(b, lo, hi)]}
+             for b, lo, hi in [((8.5, 47.3, 8.56, 47.34), 9, 11), ((11.5, 48.5, 11.0, 48.0), 8, 9),
+                               ((-1.0, -1.0, 1.0, 1.0), 0, 4)]]
+    covers = []
+    for b, lo, hi in [((8.5, 47.3, 8.56, 47.34), 9, 11), ((0.0, 0.0, 30.0, 30.0), 2, 4)]:
+        cov = d.tile_cover(b, lo, hi)
+        pts = [(z, x, y) for z in range(0, 6) for x in range(0, 40, 3) for y in range(0, 40, 3)]
+        pts += [(z, x, y) for (z, x, y) in list(d.enumerate_tiles(b, lo, hi))[:20]]
+        covers.append({"bounds": list(b), "min": lo, "max": hi,
+                       "points": [{"t": list(t), "in": cov(t)} for t in pts]})
+    xs = [{"lon": lo, "z": z, "x": d.lon_to_x(lo, z)} for lo in lons for z in zs]
+    ys = [{"lat": la, "z": z, "y": d.lat_to_y(la, z)} for la in lats for z in zs]
+
+    def retry(raw):
+        headers = email.message.Message()
+        if raw is not None:
+            headers["Retry-After"] = raw
+        return d._retry_after(urllib.error.HTTPError("u", 429, "x", headers, None))
+
+    raws = [None, "5", " 7.5 ", "0", "-3", "inf", "nan", "abc", "1000", "Wed, 21 Oct 2015 07:28:00 GMT", "1e1", ""]
+    write("mapdata_tile_math_cases.json", {
+        "ranges": ranges, "small": small, "covers": covers, "lon_to_x": xs, "lat_to_y": ys,
+        "retry_after": [{"raw": r, "seconds": retry(r)} for r in raws],
+        "constants": [d.MAX_TILES_PER_JOB],
+    })
+
+
 SECTIONS = {
+    "tile_math": tile_math_cases,
     "tile_sources": tile_sources_cases,
     "tile_cache": tile_cache_cases,
     "crs": crs_cases,

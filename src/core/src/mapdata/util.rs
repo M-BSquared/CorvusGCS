@@ -2,6 +2,9 @@
 //! text, `urllib.parse.quote`, `round()` and the like, so a query string or a
 //! JSON value is read the same way the Python routes read it.
 
+use std::sync::{Condvar, Mutex};
+use std::time::Duration;
+
 use serde_json::Value;
 
 fn strip_underscores(s: &str) -> Option<String> {
@@ -240,6 +243,53 @@ pub fn normpath(path: &str) -> String {
     } else {
         joined
     }
+}
+
+/// A flag threads wait on, as Python's `threading.Event`.
+#[derive(Default)]
+pub struct Event {
+    flag: Mutex<bool>,
+    cv: Condvar,
+}
+
+impl Event {
+    pub fn new() -> Event {
+        Event::default()
+    }
+
+    pub fn set(&self) {
+        *self.flag.lock().unwrap_or_else(|e| e.into_inner()) = true;
+        self.cv.notify_all();
+    }
+
+    pub fn is_set(&self) -> bool {
+        *self.flag.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Waits up to `timeout`; true when the flag is set.
+    pub fn wait(&self, timeout: Duration) -> bool {
+        let guard = self.flag.lock().unwrap_or_else(|e| e.into_inner());
+        let (guard, _) = self
+            .cv
+            .wait_timeout_while(guard, timeout, |set| !*set)
+            .unwrap_or_else(|e| e.into_inner());
+        *guard
+    }
+}
+
+/// A random version 4 UUID as 32 hex digits (`uuid.uuid4().hex`).
+pub fn uuid4_hex() -> String {
+    let mut b = [0u8; 16];
+    if getrandom::fill(&mut b).is_err() {
+        let t = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        b.copy_from_slice(&t.to_le_bytes());
+    }
+    b[6] = (b[6] & 0x0f) | 0x40;
+    b[8] = (b[8] & 0x3f) | 0x80;
+    b.iter().map(|x| format!("{x:02x}")).collect()
 }
 
 #[cfg(test)]

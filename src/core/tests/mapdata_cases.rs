@@ -858,3 +858,414 @@ mod proxy {
         assert_eq!(content_type(b"GIF89a"), "image/png");
     }
 }
+
+mod tile_math {
+    use super::cases;
+    use corvus_core::mapdata::tile_downloader as d;
+    use serde_json::{json, Value};
+
+    fn bounds(v: &Value) -> d::Bounds {
+        let a = v.as_array().unwrap();
+        (
+            a[0].as_f64().unwrap(),
+            a[1].as_f64().unwrap(),
+            a[2].as_f64().unwrap(),
+            a[3].as_f64().unwrap(),
+        )
+    }
+
+    fn tile(v: &Value) -> (i64, i64, i64) {
+        let a = v.as_array().unwrap();
+        (a[0].as_i64().unwrap(), a[1].as_i64().unwrap(), a[2].as_i64().unwrap())
+    }
+
+    #[test]
+    fn tile_ranges_counts_and_covers_match_python() {
+        let c = cases("tile_math");
+        assert_eq!(d::MAX_TILES_PER_JOB, c["constants"][0].as_i64().unwrap());
+        for r in c["ranges"].as_array().unwrap() {
+            let (b, lo, hi) = (
+                bounds(&r["bounds"]),
+                r["min"].as_i64().unwrap(),
+                r["max"].as_i64().unwrap(),
+            );
+            let got: Vec<Value> = d::tile_ranges(b, lo, hi)
+                .iter()
+                .map(|t| json!([t.0, t.1, t.2, t.3, t.4]))
+                .collect();
+            assert_eq!(Value::Array(got), r["ranges"], "{r}");
+            assert_eq!(d::tile_count(b, lo, hi), r["count"].as_i64().unwrap(), "{r}");
+        }
+        for r in c["small"].as_array().unwrap() {
+            let (b, lo, hi) = (
+                bounds(&r["bounds"]),
+                r["min"].as_i64().unwrap(),
+                r["max"].as_i64().unwrap(),
+            );
+            let got: Vec<Value> = d::enumerate_tiles(b, lo, hi).map(|t| json!([t.0, t.1, t.2])).collect();
+            assert_eq!(Value::Array(got), r["tiles"]);
+        }
+        for r in c["covers"].as_array().unwrap() {
+            let cover = d::tile_cover(
+                bounds(&r["bounds"]),
+                r["min"].as_i64().unwrap(),
+                r["max"].as_i64().unwrap(),
+            );
+            for p in r["points"].as_array().unwrap() {
+                assert_eq!(cover(tile(&p["t"])), p["in"].as_bool().unwrap(), "{p}");
+            }
+        }
+        for r in c["lon_to_x"].as_array().unwrap() {
+            assert_eq!(
+                d::lon_to_x(r["lon"].as_f64().unwrap(), r["z"].as_i64().unwrap()),
+                r["x"].as_i64().unwrap(),
+                "{r}"
+            );
+        }
+        for r in c["lat_to_y"].as_array().unwrap() {
+            assert_eq!(
+                d::lat_to_y(r["lat"].as_f64().unwrap(), r["z"].as_i64().unwrap()),
+                r["y"].as_i64().unwrap(),
+                "{r}"
+            );
+        }
+        for r in c["retry_after"].as_array().unwrap() {
+            assert_eq!(d::retry_after(r["raw"].as_str()), r["seconds"].as_f64().unwrap(), "{r}");
+        }
+    }
+}
+
+mod downloads {
+    use super::cache::tempdir;
+    use super::stub_http::{Reply, Stub};
+    use corvus_core::mapdata::fetch::{Fetch, Http};
+    use corvus_core::mapdata::tile_cache::TileCache;
+    use corvus_core::mapdata::tile_downloader::{delete_region_tiles, DownloaderPool, TileDownloader, Timing};
+    use corvus_core::mapdata::tile_http::Listener;
+    use serde_json::{json, Value};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{Arc, Mutex};
+    use std::time::{Duration, Instant};
+
+    const PNG: &[u8] = b"\x89PNG\r\n\x1a\nxxxxxxxx";
+    const BOX: (f64, f64, f64, f64) = (8.5, 47.3, 8.56, 47.34); // z 9 to 10: a handful of tiles
+
+    fn fast() -> Timing {
+        Timing {
+            submit_pause: 0.0,
+            fetch_timeout: 3.0,
+            batch_seconds: 0.2,
+        }
+    }
+
+    fn make(tag: &str, stub: &Stub) -> (Arc<TileCache>, Arc<TileDownloader>, String) {
+        let cache = Arc::new(TileCache::new(tempdir(tag).join("t.mbtiles")).unwrap());
+        let net: Arc<dyn Fetch> = Arc::new(Http);
+        let dl = Arc::new(TileDownloader::with_timing(
+            cache.clone(),
+            net,
+            "CorvusGCS/test",
+            3,
+            fast(),
+        ));
+        (cache, dl, stub.url("/{z}/{x}/{y}.png"))
+    }
+
+    fn finish(dl: &TileDownloader, id: &str) -> Value {
+        assert!(dl.wait(id, 20.0), "the job did not end");
+        dl.status(id).unwrap()
+    }
+
+    #[test]
+    fn a_job_runs_to_done_reports_progress_and_fills_the_cache() {
+        let stub = Stub::start(|_| Reply::new(200, "image/png", PNG));
+        let (cache, dl, tpl) = make("done", &stub);
+        let seen: Arc<Mutex<Vec<Value>>> = Arc::default();
+        let s2 = seen.clone();
+        let cb: Listener = Arc::new(move |p| s2.lock().unwrap().push(p.clone()));
+        let id = dl.start("osm", &tpl, BOX, 9, 10, Some(cb), "");
+        assert_eq!(id.len(), 32);
+        let st = finish(&dl, &id);
+        let (total, done) = (st["total"].as_i64().unwrap(), st["done"].as_i64().unwrap());
+        assert!(total >= 2, "{st}");
+        assert_eq!(
+            (st["state"].as_str(), done, st["failed"].as_i64()),
+            (Some("done"), total, Some(0))
+        );
+        assert_eq!(st["source"], "osm");
+        assert_eq!(st["error"], Value::Null);
+        assert_eq!(stub.count() as i64, total);
+        assert_eq!(cache.stats()["count"].as_i64(), Some(total));
+        let snaps = seen.lock().unwrap();
+        assert_eq!(snaps.last().unwrap()["state"], "done");
+        assert!(snaps.iter().all(|s| s["job_id"] == id.as_str() && s["total"] == total));
+        let dones: Vec<i64> = snaps.iter().map(|s| s["done"].as_i64().unwrap()).collect();
+        assert!(dones.windows(2).all(|w| w[0] <= w[1]));
+        assert_eq!(dl.list_jobs().len(), 1);
+        assert_eq!(stub.requests()[0].header("user-agent"), Some("CorvusGCS/test"));
+        dl.shutdown();
+    }
+
+    #[test]
+    fn a_second_run_skips_what_is_on_disk() {
+        let stub = Stub::start(|_| Reply::new(200, "image/png", PNG));
+        let (_cache, dl, tpl) = make("resume", &stub);
+        let a = finish(&dl, &dl.start("osm", &tpl, BOX, 9, 10, None, ""));
+        let first = stub.count();
+        let b = finish(&dl, &dl.start("osm", &tpl, BOX, 9, 10, None, ""));
+        assert_eq!(stub.count(), first, "nothing is fetched twice");
+        assert_eq!(
+            (b["state"].as_str(), b["done"].clone()),
+            (Some("done"), a["total"].clone())
+        );
+        dl.shutdown();
+    }
+
+    #[test]
+    fn a_refused_job_is_recorded_failed_and_never_raises() {
+        let stub = Stub::start(|_| Reply::new(200, "image/png", PNG));
+        let (_cache, dl, tpl) = make("refused", &stub);
+        let empty = dl.start("osm", &tpl, BOX, 12, 9, None, "");
+        let st = dl.status(&empty).unwrap();
+        assert_eq!(
+            (st["state"].as_str(), st["error"].as_str()),
+            (Some("failed"), Some("no tiles in range"))
+        );
+        assert!(dl.wait(&empty, 0.0));
+        let big = dl.start("osm", &tpl, (-180.0, -85.0, 180.0, 85.0), 0, 12, None, "");
+        let st = dl.status(&big).unwrap();
+        assert_eq!(st["state"], "failed");
+        assert!(st["error"].as_str().unwrap().starts_with("too many tiles ("), "{st}");
+        assert!(st["error"].as_str().unwrap().ends_with("per-job cap is 50000"));
+        assert_eq!(stub.count(), 0);
+        assert!(!dl.cancel("nope") && dl.cancel(&empty));
+        assert_eq!(dl.list_jobs().len(), 2);
+        dl.shutdown();
+    }
+
+    #[test]
+    fn cancel_ends_the_job_cancelled_and_a_resume_completes_it() {
+        let stub = Stub::start(|_| {
+            std::thread::sleep(Duration::from_millis(60));
+            Reply::new(200, "image/png", PNG)
+        });
+        let (cache, dl, tpl) = make("cancel", &stub);
+        let id = dl.start("osm", &tpl, (8.5, 47.3, 8.9, 47.6), 11, 12, None, "");
+        let total = dl.status(&id).unwrap()["total"].as_i64().unwrap();
+        std::thread::sleep(Duration::from_millis(150));
+        assert!(dl.cancel(&id));
+        let st = finish(&dl, &id);
+        assert_eq!(st["state"], "cancelled");
+        let have = cache.stats()["count"].as_i64().unwrap();
+        assert!(have > 0 && have < total, "{have} of {total}");
+        assert_eq!(
+            st["done"].as_i64().unwrap(),
+            have,
+            "done means on disk, also after a cancel"
+        );
+        let again = finish(&dl, &dl.start("osm", &tpl, (8.5, 47.3, 8.9, 47.6), 11, 12, None, ""));
+        assert_eq!(
+            (again["state"].as_str(), again["done"].as_i64()),
+            (Some("done"), Some(total))
+        );
+        dl.shutdown();
+    }
+
+    #[test]
+    fn shutdown_stops_every_job_and_may_be_called_twice() {
+        let stub = Stub::start(|_| {
+            std::thread::sleep(Duration::from_millis(100));
+            Reply::new(200, "image/png", PNG)
+        });
+        let (_cache, dl, tpl) = make("shutdown", &stub);
+        let id = dl.start("osm", &tpl, (8.5, 47.3, 8.9, 47.6), 11, 12, None, "");
+        std::thread::sleep(Duration::from_millis(100));
+        let t = Instant::now();
+        dl.shutdown();
+        dl.shutdown();
+        assert!(t.elapsed() < Duration::from_secs(3));
+        assert_eq!(dl.status(&id).unwrap()["state"], "cancelled");
+    }
+
+    #[test]
+    fn failures_are_counted_and_all_failed_is_failed_not_done() {
+        let stub = Stub::start(|_| Reply::new(404, "text/plain", "no"));
+        let (_cache, dl, tpl) = make("fail", &stub);
+        let st = finish(&dl, &dl.start("osm", &tpl, BOX, 9, 10, None, ""));
+        assert_eq!(st["state"], "failed");
+        assert_eq!(st["done"], 0);
+        assert_eq!(st["failed"], st["total"]);
+        assert_eq!(
+            st["error"],
+            "no tile could be downloaded. Check the internet connection and try again"
+        );
+        assert_eq!(
+            stub.count() as i64,
+            st["total"].as_i64().unwrap(),
+            "a 404 is not asked twice"
+        );
+        dl.shutdown();
+        // Half of them: done, with the failures counted.
+        let n = Arc::new(AtomicUsize::new(0));
+        let stub = Stub::start(move |_| {
+            if n.fetch_add(1, Ordering::SeqCst).is_multiple_of(2) {
+                Reply::new(200, "image/png", PNG)
+            } else {
+                Reply::new(404, "text/plain", "")
+            }
+        });
+        let (_cache, dl, tpl) = make("partial", &stub);
+        let st = finish(&dl, &dl.start("osm", &tpl, BOX, 9, 10, None, ""));
+        assert_eq!(st["state"], "done");
+        assert!(st["done"].as_i64().unwrap() > 0 && st["failed"].as_i64().unwrap() > 0);
+        assert_eq!(
+            st["done"].as_i64().unwrap() + st["failed"].as_i64().unwrap(),
+            st["total"].as_i64().unwrap()
+        );
+        dl.shutdown();
+    }
+
+    #[test]
+    fn an_empty_body_or_a_page_that_is_not_an_image_is_a_failed_tile() {
+        for body in [&b""[..], &b"<html>log in</html>"[..]] {
+            let stub = Stub::start(move |_| Reply::new(200, "text/html", body));
+            let (cache, dl, tpl) = make("notimg", &stub);
+            let st = finish(&dl, &dl.start("osm", &tpl, BOX, 9, 9, None, ""));
+            assert_eq!(st["state"], "failed", "{st}");
+            assert_eq!(
+                cache.stats()["count"],
+                0,
+                "a stored login page would be served as a map forever"
+            );
+            dl.shutdown();
+        }
+    }
+
+    #[test]
+    fn a_server_error_is_retried_once_and_a_throttle_is_waited_out() {
+        let n = Arc::new(AtomicUsize::new(0));
+        let n2 = n.clone();
+        let stub = Stub::start(move |_| {
+            if n2.fetch_add(1, Ordering::SeqCst) == 0 {
+                Reply::new(503, "text/plain", "").with_header("Retry-After", "1")
+            } else {
+                Reply::new(200, "image/png", PNG)
+            }
+        });
+        let (_cache, dl, tpl) = make("throttle", &stub);
+        let t = Instant::now();
+        let st = finish(&dl, &dl.start("osm", &tpl, (8.5, 47.3, 8.5, 47.3), 9, 9, None, ""));
+        assert_eq!(
+            (st["state"].as_str(), st["done"].as_i64()),
+            (Some("done"), Some(1)),
+            "{st}"
+        );
+        assert!(
+            t.elapsed() >= Duration::from_millis(900),
+            "the asked for pause was kept"
+        );
+        assert_eq!(stub.count(), 2);
+        dl.shutdown();
+        let n = Arc::new(AtomicUsize::new(0));
+        let n2 = n.clone();
+        let stub = Stub::start(move |_| {
+            n2.fetch_add(1, Ordering::SeqCst);
+            Reply::new(500, "text/plain", "")
+        });
+        let (_cache, dl, tpl) = make("err500", &stub);
+        let st = finish(&dl, &dl.start("osm", &tpl, (8.5, 47.3, 8.5, 47.3), 9, 9, None, ""));
+        assert_eq!(st["state"], "failed");
+        assert_eq!(stub.count(), 2, "one retry, no more");
+        dl.shutdown();
+    }
+
+    #[test]
+    fn a_cancel_during_a_throttle_ends_the_job_promptly() {
+        let stub = Stub::start(|_| Reply::new(429, "text/plain", "").with_header("Retry-After", "30"));
+        let (_cache, dl, tpl) = make("throttlecancel", &stub);
+        let id = dl.start("osm", &tpl, BOX, 9, 10, None, "");
+        std::thread::sleep(Duration::from_millis(300));
+        let t = Instant::now();
+        dl.cancel(&id);
+        let st = finish(&dl, &id);
+        assert!(t.elapsed() < Duration::from_secs(3), "{:?}", t.elapsed());
+        assert_eq!(st["state"], "cancelled");
+        dl.shutdown();
+    }
+
+    #[test]
+    fn a_slow_upstream_still_gets_every_queued_tile() {
+        let stub = Stub::start(|_| {
+            std::thread::sleep(Duration::from_millis(40));
+            Reply::new(200, "image/png", PNG)
+        });
+        let (cache, dl, tpl) = make("slow", &stub);
+        let st = finish(&dl, &dl.start("osm", &tpl, (8.5, 47.3, 8.7, 47.5), 11, 12, None, ""));
+        assert_eq!(st["state"], "done");
+        assert_eq!(cache.stats()["count"], st["total"]);
+        dl.shutdown();
+    }
+
+    #[test]
+    fn the_pool_routes_by_source_and_by_job() {
+        let stub = Stub::start(|_| Reply::new(200, "image/png", PNG));
+        let net: Arc<dyn Fetch> = Arc::new(Http);
+        let a = Arc::new(TileCache::new(tempdir("poola").join("a.mbtiles")).unwrap());
+        let b = Arc::new(TileCache::new(tempdir("poolb").join("b.mbtiles")).unwrap());
+        let pool = DownloaderPool::from_downloaders(vec![
+            (
+                "a".into(),
+                Arc::new(TileDownloader::with_timing(a.clone(), net.clone(), "t", 2, fast())),
+            ),
+            (
+                "b".into(),
+                Arc::new(TileDownloader::with_timing(b.clone(), net, "t", 2, fast())),
+            ),
+        ]);
+        let tpl = stub.url("/{z}/{x}/{y}.png");
+        let ja = pool.start("a", &tpl, BOX, 9, 9, None, "").unwrap();
+        let jb = pool.start("b", &tpl, BOX, 10, 10, None, "").unwrap();
+        assert!(pool
+            .start("nope", &tpl, BOX, 9, 9, None, "")
+            .unwrap_err()
+            .contains("no downloader"));
+        assert!(pool.wait(&ja, 10.0) && pool.wait(&jb, 10.0) && pool.wait("unknown", 0.0));
+        assert_eq!(pool.status(&ja).unwrap()["source"], "a");
+        assert_eq!(pool.status(&jb).unwrap()["source"], "b");
+        assert_eq!(pool.list_jobs().len(), 2);
+        assert!(a.stats()["count"].as_i64().unwrap() > 0 && b.stats()["count"].as_i64().unwrap() > 0);
+        assert!(pool.cancel(&jb) && !pool.cancel("nope"));
+        pool.shutdown();
+    }
+
+    #[test]
+    fn deleting_a_region_keeps_every_tile_another_one_still_needs() {
+        let cache = TileCache::new(tempdir("overlap").join("t.mbtiles")).unwrap();
+        let outer = (8.0, 47.0, 9.0, 48.0);
+        let inner = (8.5, 47.3, 8.56, 47.34);
+        let all: Vec<_> = corvus_core::mapdata::tile_downloader::enumerate_tiles(outer, 8, 10)
+            .chain(corvus_core::mapdata::tile_downloader::enumerate_tiles(inner, 11, 12))
+            .map(|(z, x, y)| (z, x, y, vec![1u8]))
+            .collect();
+        cache.put_tiles(&all).unwrap();
+        let region = |id: &str, b: (f64, f64, f64, f64), lo: i64, hi: i64| {
+            cache.add_region(&json!({"id": id, "w": b.0, "s": b.1, "e": b.2, "n": b.3, "minzoom": lo, "maxzoom": hi, "state": "done"}))
+        };
+        let o = region("outer", outer, 8, 10);
+        let i = region("inner", inner, 8, 12);
+        let total = cache.stats()["count"].as_i64().unwrap();
+        // The inner area, minus what the outer one covers at z8 to 10.
+        let removed = delete_region_tiles(&cache, &i);
+        assert_eq!(
+            removed as i64,
+            total - corvus_core::mapdata::tile_downloader::tile_count(outer, 8, 10)
+        );
+        cache.remove_region("inner");
+        let removed = delete_region_tiles(&cache, &o);
+        assert_eq!(
+            removed as i64,
+            corvus_core::mapdata::tile_downloader::tile_count(outer, 8, 10)
+        );
+        assert_eq!(cache.stats()["count"], 0);
+    }
+}

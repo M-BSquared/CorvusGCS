@@ -41,6 +41,11 @@ impl Reply {
         }
     }
 
+    pub fn with_header(mut self, name: &str, value: &str) -> Reply {
+        self.headers.push((name.into(), value.into()));
+        self
+    }
+
     pub fn json(body: &serde_json::Value) -> Reply {
         Reply::new(200, "application/json", serde_json::to_vec(body).unwrap())
     }
