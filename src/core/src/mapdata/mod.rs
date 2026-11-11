@@ -5,6 +5,8 @@
 //! and `routes/dem.py` of the Python program).
 
 pub mod crs;
+pub mod custom_dem;
+pub mod dem_import;
 pub mod dem_tiles;
 pub mod fetch;
 pub mod geocode;

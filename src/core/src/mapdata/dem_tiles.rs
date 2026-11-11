@@ -162,14 +162,14 @@ pub fn decode(data: &[u8]) -> Option<Grid> {
 }
 
 /// A small least recently used map.
-struct Lru<K, V> {
+pub(crate) struct Lru<K, V> {
     map: HashMap<K, V>,
     order: VecDeque<K>,
     cap: usize,
 }
 
 impl<K: Hash + Eq + Clone, V: Clone> Lru<K, V> {
-    fn new(cap: usize) -> Lru<K, V> {
+    pub(crate) fn new(cap: usize) -> Lru<K, V> {
         Lru {
             map: HashMap::new(),
             order: VecDeque::new(),
@@ -184,7 +184,7 @@ impl<K: Hash + Eq + Clone, V: Clone> Lru<K, V> {
         }
     }
 
-    fn get(&mut self, key: &K) -> Option<V> {
+    pub(crate) fn get(&mut self, key: &K) -> Option<V> {
         let v = self.map.get(key).cloned();
         if v.is_some() {
             self.touch(key);
@@ -192,7 +192,7 @@ impl<K: Hash + Eq + Clone, V: Clone> Lru<K, V> {
         v
     }
 
-    fn put(&mut self, key: K, value: V) {
+    pub(crate) fn put(&mut self, key: K, value: V) {
         if self.map.insert(key.clone(), value).is_some() {
             self.touch(&key);
         } else {
@@ -205,12 +205,12 @@ impl<K: Hash + Eq + Clone, V: Clone> Lru<K, V> {
         }
     }
 
-    fn retain(&mut self, keep: impl Fn(&K) -> bool) {
+    pub(crate) fn retain(&mut self, keep: impl Fn(&K) -> bool) {
         self.map.retain(|k, _| keep(k));
         self.order.retain(|k| keep(k));
     }
 
-    fn clear(&mut self) {
+    pub(crate) fn clear(&mut self) {
         self.map.clear();
         self.order.clear();
     }
@@ -268,7 +268,8 @@ pub fn encode(width: usize, height: usize, values: &[u32]) -> Vec<u8> {
     out
 }
 
-type Axis = Vec<(usize, usize, f64)>;
+type Taps = (usize, usize, f64);
+type Axis = Vec<Taps>;
 
 /// Source index pair and weight for every output pixel along one axis.
 fn axis(size: usize, scale: i64, offset: i64, out_size: Option<usize>) -> Axis {
@@ -338,7 +339,7 @@ fn cut_edge(grid: &Grid, dz: u32, sub_x: i64, sub_y: i64, side: char) -> Vec<f64
     let (width, values) = (grid.width, &grid.values);
     let cols = axis(width, scale, sub_x, None);
     let rows = axis(grid.height, scale, sub_y, None);
-    let points: Vec<((usize, usize, f64), (usize, usize, f64))> = if side == 'w' || side == 'e' {
+    let points: Vec<(Taps, Taps)> = if side == 'w' || side == 'e' {
         let col = if side == 'w' { cols[0] } else { cols[cols.len() - 1] };
         rows.iter().map(|&r| (r, col)).collect()
     } else {

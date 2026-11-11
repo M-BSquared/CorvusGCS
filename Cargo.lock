@@ -882,6 +882,7 @@ dependencies = [
  "indexmap",
  "libc",
  "lzma-rs",
+ "memmap2 0.9.12",
  "rusqlite",
  "rustls",
  "rustls-native-certs",
