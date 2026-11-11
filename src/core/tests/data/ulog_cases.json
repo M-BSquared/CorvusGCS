@@ -1,0 +1,760 @@
+[
+ {
+  "name": "text_file",
+  "blob": "74686973206973206120746578742066696c652c206e6f74206120666c69676874206c6f67",
+  "topics": null,
+  "error": "not a ULog file"
+ },
+ {
+  "name": "empty",
+  "blob": "",
+  "topics": null,
+  "error": "not a ULog file"
+ },
+ {
+  "name": "dataflash",
+  "blob": "a39580805942484800000000000000000000000000000000000000000000000000000000000000000000000000000000",
+  "topics": null,
+  "error": "this is an ArduPilot DataFlash log (.bin), not a PX4 ULog. Corvus can download it but cannot yet analyse it. Open it in Mission Planner or at plot.ardupilot.org."
+ },
+ {
+  "name": "header_only",
+  "blob": "554c6f6701123501b168de3a00000000",
+  "topics": null,
+  "log": {
+   "start_timestamp": 987654321,
+   "truncated": false,
+   "info": {},
+   "params": {},
+   "messages": [],
+   "dropouts": [],
+   "data": {}
+  }
+ },
+ {
+  "name": "scalars_arrays",
+  "blob": "554c6f6701123501d20400000000000034004673616d706c653a75696e7436345f742074696d657374616d703b666c6f61745b335d2078797a3b75696e74385f7420666c61673b09004100010073616d706c651700440100e8030000000000000000c03f000020c000006040071700440100d007000000000000000080400000a0400000c04009",
+  "topics": null,
+  "log": {
+   "start_timestamp": 1234,
+   "truncated": false,
+   "info": {},
+   "params": {},
+   "messages": [],
+   "dropouts": [],
+   "data": {
+    "sample": {
+     "0": {
+      "timestamp": [
+       1000,
+       2000
+      ],
+      "xyz": [
+       [
+        1.5,
+        -2.5,
+        3.5
+       ],
+       [
+        4.0,
+        5.0,
+        6.0
+       ]
+      ],
+      "flag": [
+       7,
+       9
+      ]
+     }
+    }
+   }
+  }
+ },
+ {
+  "name": "padding",
+  "blob": "554c6f6701123501d2040000000000004400467061646465643a75696e7436345f742074696d657374616d703b75696e74385f7420613b75696e74385f745b335d205f70616464696e67303b75696e7433325f7420623b09004100010070616464656412004401000a0000000000000001000000efbeadde",
+  "topics": null,
+  "log": {
+   "start_timestamp": 1234,
+   "truncated": false,
+   "info": {},
+   "params": {},
+   "messages": [],
+   "dropouts": [],
+   "data": {
+    "padded": {
+     "0": {
+      "timestamp": [
+       10
+      ],
+      "a": [
+       1
+      ],
+      "b": [
+       3735928559
+      ]
+     }
+    }
+   }
+  }
+ },
+ {
+  "name": "nested",
+  "blob": "554c6f6701123501d204000000000000160046696e6e65723a666c6f617420783b666c6f617420793b3b00466f757465723a75696e7436345f742074696d657374616d703b696e6e657220706f733b75696e74385f74206e3b696e6e65725b325d20706169723b0800410001006f75746572230044010005000000000000000000a03f00002040030000803f000000400000404000008040",
+  "topics": null,
+  "log": {
+   "start_timestamp": 1234,
+   "truncated": false,
+   "info": {},
+   "params": {},
+   "messages": [],
+   "dropouts": [],
+   "data": {
+    "outer": {
+     "0": {
+      "timestamp": [
+       5
+      ],
+      "pos.x": [
+       1.25
+      ],
+      "pos.y": [
+       2.5
+      ],
+      "n": [
+       3
+      ],
+      "pair[0].x": [
+       1.0
+      ],
+      "pair[0].y": [
+       2.0
+      ],
+      "pair[1].x": [
+       3.0
+      ],
+      "pair[1].y": [
+       4.0
+      ]
+     }
+    }
+   }
+  }
+ },
+ {
+  "name": "nested_padding",
+  "blob": "554c6f6701123501d204000000000000230046696e6e65723a666c6f617420783b75696e74385f745b345d205f70616464696e67303b2300466f757465723a75696e7436345f742074696d657374616d703b696e6e657220706f733b0800410001006f75746572120044010005000000000000000000a03f00000000",
+  "topics": null,
+  "log": {
+   "start_timestamp": 1234,
+   "truncated": false,
+   "info": {},
+   "params": {},
+   "messages": [],
+   "dropouts": [],
+   "data": {
+    "outer": {
+     "0": {
+      "timestamp": [
+       5
+      ],
+      "pos.x": [
+       1.25
+      ],
+      "pos._padding0": [
+       [
+        0,
+        0,
+        0,
+        0
+       ]
+      ]
+     }
+    }
+   }
+  }
+ },
+ {
+  "name": "multi_instance",
+  "blob": "554c6f6701123501d204000000000000220046696d753a75696e7436345f742074696d657374616d703b666c6f61742074656d703b060041000100696d75060041010200696d750e0044010001000000000000000000a0410e00440200010000000000000000005c42",
+  "topics": null,
+  "log": {
+   "start_timestamp": 1234,
+   "truncated": false,
+   "info": {},
+   "params": {},
+   "messages": [],
+   "dropouts": [],
+   "data": {
+    "imu": {
+     "0": {
+      "timestamp": [
+       1
+      ],
+      "temp": [
+       20.0
+      ]
+     },
+     "1": {
+      "timestamp": [
+       1
+      ],
+      "temp": [
+       55.0
+      ]
+     }
+    }
+   }
+  }
+ },
+ {
+  "name": "topic_filter",
+  "blob": "554c6f6701123501d20400000000000022004677616e7465643a75696e7436345f742074696d657374616d703b666c6f617420763b23004669676e6f7265643a75696e7436345f742074696d657374616d703b666c6f617420763b09004100010077616e7465640a004100020069676e6f7265640e0044010001000000000000000000803f0e00440200010000000000000000000040",
+  "topics": [
+   "wanted"
+  ],
+  "log": {
+   "start_timestamp": 1234,
+   "truncated": false,
+   "info": {},
+   "params": {},
+   "messages": [],
+   "dropouts": [],
+   "data": {
+    "wanted": {
+     "0": {
+      "timestamp": [
+       1
+      ],
+      "v": [
+       1.0
+      ]
+     }
+    }
+   }
+  }
+ },
+ {
+  "name": "removed",
+  "blob": "554c6f6701123501d2040000000000001d0046743a75696e7436345f742074696d657374616d703b666c6f617420763b040041000100740e0044010001000000000000000000803f02005201000e00440100020000000000000000000040",
+  "topics": null,
+  "log": {
+   "start_timestamp": 1234,
+   "truncated": false,
+   "info": {},
+   "params": {},
+   "messages": [],
+   "dropouts": [],
+   "data": {
+    "t": {
+     "0": {
+      "timestamp": [
+       1
+      ],
+      "v": [
+       1.0
+      ]
+     }
+    }
+   }
+  }
+ },
+ {
+  "name": "info_params",
+  "blob": "554c6f6701123501d2040000000000001200490e636861725b335d207665725f68777636781a005015696e7433325f74205359535f4155544f5354415254a10f00001400500f666c6f6174204d435f524f4c4c5f500000d0401100490f626f6f6c2061726d65645f666c6167011500490c75696e7436345f742062696705000000000000800d00490c696e74385f742073686f72740f004d0009636861725b345d206b616263641b00510115696e7433325f74205359535f4155544f5354415254a20f00000c00490977656972645f7420787a7a",
+  "topics": null,
+  "log": {
+   "start_timestamp": 1234,
+   "truncated": false,
+   "info": {
+    "ver_hw": "v6x",
+    "armed_flag": true,
+    "big": 9223372036854775813,
+    "short": null,
+    "k": "abcd",
+    "x": null
+   },
+   "params": {
+    "SYS_AUTOSTART": 4002,
+    "MC_ROLL_P": 6.5
+   },
+   "messages": [],
+   "dropouts": [],
+   "data": {}
+  }
+ },
+ {
+  "name": "info_multi",
+  "blob": "554c6f6701123501d20400000000000011004d000b636861725b345d206b65796162636411004d000b636861725b345d206b65797778797a1000490c636861725b335d206b657932616200",
+  "topics": null,
+  "log": {
+   "start_timestamp": 1234,
+   "truncated": false,
+   "info": {
+    "key": "abcd",
+    "key2": "ab"
+   },
+   "params": {},
+   "messages": [],
+   "dropouts": [],
+   "data": {}
+  }
+ },
+ {
+  "name": "levels",
+  "blob": "554c6f6701123501d20400000000000014004c3488130000000000004c6f77206261747465727916004c30ec130000000000004d6f746f72206661696c75726513004c3750140000000000004465627567206c696e6516004c38b414000000000000556e6b6e6f776e206c6576656c0d004c031815000000000000626172650e004c067c150000000000007061640000",
+  "topics": null,
+  "log": {
+   "start_timestamp": 1234,
+   "truncated": false,
+   "info": {},
+   "params": {},
+   "messages": [
+    {
+     "t": 5000,
+     "level": "warning",
+     "text": "Low battery"
+    },
+    {
+     "t": 5100,
+     "level": "emergency",
+     "text": "Motor failure"
+    },
+    {
+     "t": 5200,
+     "level": "debug",
+     "text": "Debug line"
+    },
+    {
+     "t": 5300,
+     "level": "info",
+     "text": "Unknown level"
+    },
+    {
+     "t": 5400,
+     "level": "error",
+     "text": "bare"
+    },
+    {
+     "t": 5500,
+     "level": "info",
+     "text": "pad"
+    }
+   ],
+   "dropouts": [],
+   "data": {}
+  }
+ },
+ {
+  "name": "tagged",
+  "blob": "554c6f6701123501d204000000000000180043330201581b000000000000436f6d70617373206572726f72140043040000401f000000000000526177206c6576656c",
+  "topics": null,
+  "log": {
+   "start_timestamp": 1234,
+   "truncated": false,
+   "info": {},
+   "params": {},
+   "messages": [
+    {
+     "t": 7000,
+     "level": "error",
+     "text": "Compass error"
+    },
+    {
+     "t": 8000,
+     "level": "warning",
+     "text": "Raw level"
+    }
+   ],
+   "dropouts": [],
+   "data": {}
+  }
+ },
+ {
+  "name": "short_logging",
+  "blob": "554c6f6701123501d20400000000000003004c3401020500433434343434",
+  "topics": null,
+  "log": {
+   "start_timestamp": 1234,
+   "truncated": false,
+   "info": {},
+   "params": {},
+   "messages": [],
+   "dropouts": [],
+   "data": {}
+  }
+ },
+ {
+  "name": "dropouts",
+  "blob": "554c6f6701123501d20400000000000002004f2a0002004f080001004f01",
+  "topics": null,
+  "log": {
+   "start_timestamp": 1234,
+   "truncated": false,
+   "info": {},
+   "params": {},
+   "messages": [],
+   "dropouts": [
+    42,
+    8
+   ],
+   "data": {}
+  }
+ },
+ {
+  "name": "truncated",
+  "blob": "554c6f6701123501d2040000000000001d0046743a75696e7436345f742074696d657374616d703b666c6f617420763b040041000100740e0044010001000000000000000000803f0e00440100020000000000",
+  "topics": null,
+  "log": {
+   "start_timestamp": 1234,
+   "truncated": true,
+   "info": {},
+   "params": {},
+   "messages": [],
+   "dropouts": [],
+   "data": {
+    "t": {
+     "0": {
+      "timestamp": [
+       1
+      ],
+      "v": [
+       1.0
+      ]
+     }
+    }
+   }
+  }
+ },
+ {
+  "name": "truncated_header_only",
+  "blob": "554c6f6701123501d2040000000000001000",
+  "topics": null,
+  "log": {
+   "start_timestamp": 1234,
+   "truncated": false,
+   "info": {},
+   "params": {},
+   "messages": [],
+   "dropouts": [],
+   "data": {}
+  }
+ },
+ {
+  "name": "corrupt_info",
+  "blob": "554c6f6701123501d2040000000000001d0046743a75696e7436345f742074696d657374616d703b666c6f617420763b040041000100740e0044010001000000000000000000803f010049ff0e00440100020000000000000000000040",
+  "topics": null,
+  "log": {
+   "start_timestamp": 1234,
+   "truncated": false,
+   "info": {},
+   "params": {},
+   "messages": [],
+   "dropouts": [],
+   "data": {
+    "t": {
+     "0": {
+      "timestamp": [
+       1,
+       2
+      ],
+      "v": [
+       1.0,
+       2.0
+      ]
+     }
+    }
+   }
+  }
+ },
+ {
+  "name": "unknown_type",
+  "blob": "554c6f6701123501d2040000000000002700466261643a75696e7436345f742074696d657374616d703b6d7973746572795f74207468696e673b200046676f6f643a75696e7436345f742074696d657374616d703b666c6f617420763b060041000100626164070041000200676f6f640e00440200010000000000000000004040",
+  "topics": null,
+  "log": {
+   "start_timestamp": 1234,
+   "truncated": false,
+   "info": {},
+   "params": {},
+   "messages": [],
+   "dropouts": [],
+   "data": {
+    "good": {
+     "0": {
+      "timestamp": [
+       1
+      ],
+      "v": [
+       3.0
+      ]
+     }
+    }
+   }
+  }
+ },
+ {
+  "name": "no_format",
+  "blob": "554c6f6701123501d20400000000000008004100010067686f73740e00440100010000000000000000004040",
+  "topics": null,
+  "log": {
+   "start_timestamp": 1234,
+   "truncated": false,
+   "info": {},
+   "params": {},
+   "messages": [],
+   "dropouts": [],
+   "data": {}
+  }
+ },
+ {
+  "name": "trailing_padding",
+  "blob": "554c6f6701123501d2040000000000003c0046636c69707065643a75696e7436345f742074696d657374616d703b666c6f61742076616c75653b75696e74385f745b345d205f70616464696e67303b0a0041000100636c69707065640e00440100e80300000000000000002040",
+  "topics": null,
+  "log": {
+   "start_timestamp": 1234,
+   "truncated": false,
+   "info": {},
+   "params": {},
+   "messages": [],
+   "dropouts": [],
+   "data": {
+    "clipped": {
+     "0": {
+      "timestamp": [
+       1000
+      ],
+      "value": [
+       2.5
+      ]
+     }
+    }
+   }
+  }
+ },
+ {
+  "name": "short_record",
+  "blob": "554c6f6701123501d204000000000000280046776964653a75696e7436345f742074696d657374616d703b666c6f617420613b666c6f617420623b070041000100776964651200440100e8030000000000000000803f000000400e00440100d007000000000000000040400a00440100b80b000000000000030044010001",
+  "topics": null,
+  "log": {
+   "start_timestamp": 1234,
+   "truncated": false,
+   "info": {},
+   "params": {},
+   "messages": [],
+   "dropouts": [],
+   "data": {
+    "wide": {
+     "0": {
+      "timestamp": [
+       1000,
+       2000,
+       3000
+      ],
+      "a": [
+       1.0,
+       3.0
+      ],
+      "b": [
+       2.0
+      ]
+     }
+    }
+   }
+  }
+ },
+ {
+  "name": "char_arrays",
+  "blob": "554c6f6701123501d2040000000000002e00466e616d65643a75696e7436345f742074696d657374616d703b636861725b385d206c6162656c3b6368617220633b0800410001006e616d65641300440100e8030000000000006e6176000000000078",
+  "topics": null,
+  "log": {
+   "start_timestamp": 1234,
+   "truncated": false,
+   "info": {},
+   "params": {},
+   "messages": [],
+   "dropouts": [],
+   "data": {
+    "named": {
+     "0": {
+      "timestamp": [
+       1000
+      ],
+      "label": [
+       "nav"
+      ],
+      "c": [
+       "x"
+      ]
+     }
+    }
+   }
+  }
+ },
+ {
+  "name": "never_logged",
+  "blob": "554c6f6701123501d20400000000000025004671756965743a75696e7436345f742074696d657374616d703b666c6f61742076616c75653b0800410001007175696574",
+  "topics": null,
+  "log": {
+   "start_timestamp": 1234,
+   "truncated": false,
+   "info": {},
+   "params": {},
+   "messages": [],
+   "dropouts": [],
+   "data": {
+    "quiet": {
+     "0": {}
+    }
+   }
+  }
+ },
+ {
+  "name": "all_types",
+  "blob": "554c6f6701123501d204000000000000a70046616c6c743a75696e7436345f742074696d657374616d703b696e74385f7420613b75696e74385f7420623b696e7431365f7420633b75696e7431365f7420643b696e7433325f7420653b75696e7433325f7420663b696e7436345f7420673b75696e7436345f7420683b666c6f617420693b646f75626c65206a3b626f6f6c206b3b63686172206c3b696e7431365f745b335d206172723b646f75626c655b325d20646172723b070041000100616c6c744c004401000700000000000000fdfa18fc60ea90eefeff00286beefbffffffffffffff09000000000000800000c03f00000000000002c0015affff00000100000000000000e03f000000000000e0bf4c0044010008000000000000000301010001000100000001000000010000000000000001000000000000000000c07f000000000000f07f0041010002000300000000000000f03f0000000000000040",
+  "topics": null,
+  "log": {
+   "start_timestamp": 1234,
+   "truncated": false,
+   "info": {},
+   "params": {},
+   "messages": [],
+   "dropouts": [],
+   "data": {
+    "allt": {
+     "0": {
+      "timestamp": [
+       7,
+       8
+      ],
+      "a": [
+       -3,
+       3
+      ],
+      "b": [
+       250,
+       1
+      ],
+      "c": [
+       -1000,
+       1
+      ],
+      "d": [
+       60000,
+       1
+      ],
+      "e": [
+       -70000,
+       1
+      ],
+      "f": [
+       4000000000,
+       1
+      ],
+      "g": [
+       -5,
+       1
+      ],
+      "h": [
+       9223372036854775817,
+       1
+      ],
+      "i": [
+       1.5,
+       "nan"
+      ],
+      "j": [
+       -2.25,
+       "inf"
+      ],
+      "k": [
+       true,
+       false
+      ],
+      "l": [
+       "Z",
+       "A"
+      ],
+      "arr": [
+       [
+        -1,
+        0,
+        1
+       ],
+       [
+        1,
+        2,
+        3
+       ]
+      ],
+      "darr": [
+       [
+        0.5,
+        -0.5
+       ],
+       [
+        1.0,
+        2.0
+       ]
+      ]
+     }
+    }
+   }
+  }
+ },
+ {
+  "name": "redeclared",
+  "blob": "554c6f6701123501d2040000000000001d0046743a75696e7436345f742074696d657374616d703b666c6f617420763b040041000100740e0044010001000000000000000000803f040041000100740e00440100020000000000000000000040040041010200740e00440200090000000000000000001041",
+  "topics": null,
+  "log": {
+   "start_timestamp": 1234,
+   "truncated": false,
+   "info": {},
+   "params": {},
+   "messages": [],
+   "dropouts": [],
+   "data": {
+    "t": {
+     "0": {
+      "timestamp": [
+       1,
+       2
+      ],
+      "v": [
+       1.0,
+       2.0
+      ]
+     },
+     "1": {
+      "timestamp": [
+       9
+      ],
+      "v": [
+       9.0
+      ]
+     }
+    }
+   }
+  }
+ },
+ {
+  "name": "sync_flags",
+  "blob": "554c6f6701123501d2040000000000000800532f731320250a1b552800420000000000000000000000000000000000000000000000000000000000000000000000000000000001005a78",
+  "topics": null,
+  "log": {
+   "start_timestamp": 1234,
+   "truncated": false,
+   "info": {},
+   "params": {},
+   "messages": [],
+   "dropouts": [],
+   "data": {}
+  }
+ },
+ {
+  "name": "too_large",
+  "blob": "554c6f6701123501d20400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+  "topics": null,
+  "max_bytes": 32,
+  "error": "log is too large to review"
+ }
+]

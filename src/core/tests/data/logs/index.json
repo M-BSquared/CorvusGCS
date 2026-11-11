@@ -1,0 +1,22 @@
+[
+ "clean_quad",
+ "legacy_names",
+ "climb_all_pinned",
+ "vibration_throttle",
+ "clipping",
+ "clipping_legacy_counter",
+ "ekf_rejection",
+ "estimator_resets",
+ "failure_failsafe",
+ "gps_lost_rc_lost",
+ "battery_sag",
+ "battery_floor_unlogged",
+ "cpu_dropouts_truncated",
+ "ringing_rates",
+ "attitude_offset_setpoint",
+ "mag_interference",
+ "many_messages",
+ "header_only",
+ "no_global_reference",
+ "frozen_clock"
+]
