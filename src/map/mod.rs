@@ -769,7 +769,7 @@ impl Map {
                 if let (3..=5, Some(t)) = (n.len(), self.three.as_mut()) {
                     t.start_at(n[0], n[1], n[2], n.get(3).copied().unwrap_or(0.0));
                     if let Some(p) = n.get(4) {
-                        t.cam.pitch = *p;
+                        t.cam.pitch = p.clamp(0.0, crate::map3d::camera::MAX_PITCH);
                     }
                     self.follow = false;
                 }

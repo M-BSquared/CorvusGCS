@@ -283,6 +283,44 @@ impl Camera {
         }
     }
 
+    /// Whether every number of the camera is one it can draw from: finite,
+    /// the zoom and the tilt in range, the ground on Earth, the view not empty.
+    pub fn is_sane(&self) -> bool {
+        [
+            self.lng,
+            self.lat,
+            self.zoom,
+            self.pitch,
+            self.bearing,
+            self.size.0,
+            self.size.1,
+            self.ground,
+        ]
+        .iter()
+        .all(|v| v.is_finite())
+            && (MIN_ZOOM - 1.0..=30.0).contains(&self.zoom)
+            && (0.0..=MAX_PITCH).contains(&self.pitch)
+            && self.lat.abs() <= MAX_LAT
+            && self.lng.abs() <= 180.0
+            && (-12_000.0..=12_000.0).contains(&self.ground)
+            && self.size.0 > 0.0
+            && self.size.1 > 0.0
+    }
+
+    /// Brings finite values that are out of range back into it: the tilt,
+    /// the zoom, the latitude, the longitude and the ground. What is not
+    /// finite stays so, for `is_sane` to see.
+    pub fn clamp(&mut self) {
+        self.pitch = self.pitch.clamp(0.0, MAX_PITCH);
+        self.zoom = self.zoom.clamp(MIN_ZOOM - 1.0, 30.0);
+        self.lat = self.lat.clamp(-MAX_LAT, MAX_LAT);
+        if self.lng.is_finite() {
+            self.lng = wrap_lng(self.lng);
+        }
+        self.ground = self.ground.clamp(-12_000.0, 12_000.0);
+        self.bearing = self.bearing.rem_euclid(360.0);
+    }
+
     /// Turns by `dx` px and tilts by `dy` px of a right drag.
     pub fn turn(&mut self, dx: f64, dy: f64) {
         self.bearing = (self.bearing + dx * 0.4).rem_euclid(360.0);
@@ -493,5 +531,59 @@ mod tests {
         assert_eq!(c.pitch, MAX_PITCH);
         c.turn(0.0, 1000.0);
         assert_eq!(c.pitch, 0.0);
+    }
+
+    #[test]
+    fn a_camera_out_of_range_is_clamped_and_one_not_finite_is_not() {
+        let mut c = Camera {
+            pitch: 82.0,
+            zoom: 40.0,
+            lng: 190.0,
+            ground: 1e9,
+            ..cam(60.0, 0.0)
+        };
+        c.clamp();
+        assert!(c.is_sane(), "{c:?}");
+        assert_eq!((c.pitch, c.zoom, c.ground), (MAX_PITCH, 30.0, 12_000.0));
+        assert!((c.lng + 170.0).abs() < 1e-9);
+        let mut n = Camera {
+            zoom: f64::NAN,
+            ..cam(60.0, 0.0)
+        };
+        n.clamp();
+        assert!(!n.is_sane());
+    }
+
+    #[test]
+    fn a_camera_with_a_number_it_cannot_draw_from_is_not_sane() {
+        assert!(cam(60.0, 0.0).is_sane());
+        for broken in [
+            Camera {
+                zoom: f64::NAN,
+                ..cam(60.0, 0.0)
+            },
+            Camera {
+                lng: f64::INFINITY,
+                ..cam(60.0, 0.0)
+            },
+            Camera {
+                ground: 1e9,
+                ..cam(60.0, 0.0)
+            },
+            Camera {
+                pitch: 80.0,
+                ..cam(60.0, 0.0)
+            },
+            Camera {
+                size: (0.0, 600.0),
+                ..cam(60.0, 0.0)
+            },
+            Camera {
+                zoom: 40.0,
+                ..cam(60.0, 0.0)
+            },
+        ] {
+            assert!(!broken.is_sane(), "{broken:?}");
+        }
     }
 }

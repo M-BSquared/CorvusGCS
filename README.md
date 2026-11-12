@@ -15,7 +15,7 @@
 
 <div align="center">
   <!-- corvus:version-badge -->
-  <img src="https://img.shields.io/badge/Version-2026.11.64-f7ebe1?style=for-the-badge" height="28" alt="Version 2026.11.64" />
+  <img src="https://img.shields.io/badge/Version-2026.11.66-f7ebe1?style=for-the-badge" height="28" alt="Version 2026.11.66" />
   <img width="8" />
   <!-- <a href="https://www.python.org/" target="_blank"><img src="https://img.shields.io/badge/Python_3.12%2B-3776AB?logo=python&logoColor=white&style=for-the-badge" height="28" alt="Python 3.12+" /></a>
   <img width="8" />
@@ -97,9 +97,9 @@ ArduPilot.** It is the software you have open on a laptop while an aircraft is
 in the air: it shows you where the vehicle is, what it is doing, and lets you
 talk to it over a serial telemetry radio, UDP, or TCP.
 
-It is a Python backend plus a web frontend, wrapped into a single standalone
-desktop application. There is no server to deploy and no browser tab to
-manage: one window, one process, one clean shutdown.
+It is one native program, written in Rust, with its backend inside. There is
+no server to deploy and no browser tab to manage: one window, one process, one
+clean shutdown.
 
 - **Fly and monitor**: a live map with the vehicle, its home point and its
   flown track, a floating instrument panel, and a 3D view with real terrain
@@ -185,7 +185,7 @@ More on the <a href="https://m-bsquared.github.io/CorvusGCS/#screenshots">websit
 
 Download the build for your machine from the
 [latest release](https://github.com/M-BSquared/CorvusGCS/releases/latest) and
-run it. Python and every dependency are already inside.
+run it. Everything it needs is already inside.
 
 | Platform | File | First launch |
 |---|---|---|
@@ -194,11 +194,10 @@ run it. Python and every dependency are already inside.
 | **Windows** (x64) | `Corvus_GCS-<version>-windows-x64.zip` | Unzip anywhere and run `Corvus GCS.exe`. SmartScreen asks once: *More info → Run anyway*. |
 | **Android** (7 or later) | `Corvus_GCS-<version>-android.apk` | A full screen window in tablet mode on a Corvus GCS running on a computer. Enter that computer's address on the first start. |
 
-**From source** (Python 3.12+ and a Rust toolchain, for the MAVLink module in
-[`src/link`](src/link) and the interface in
-[`Cargo.toml` and `src/`](src)), one command creates `.venv/`, installs
-every dependency from [`python/pyproject.toml`](python/pyproject.toml), builds the MAVLink
-module and the interface and opens the app:
+**From source** (a Rust toolchain and nothing else; [rustup](https://rustup.rs)
+installs the version [`rust-toolchain.toml`](rust-toolchain.toml) names), one
+command builds the interface in [`Cargo.toml` and `src/`](src), with the
+backend and the MAVLink crate inside it, and opens the app:
 
 ```bash
 ./run.sh
@@ -311,7 +310,8 @@ imposition here, they are the most useful input there is.
   is all that is asked.
 - **Improve the documentation?** Every page has a link at the bottom to
   suggest a change. The pages are plain HTML in [`docs/guide`](docs/guide);
-  after editing one, run `python3 tools/guide.py`.
+  after editing one, run
+  `cargo run -q -p corvus_tools --bin corvus-build -- guide`.
 - **Just have a question?** Ask. Questions about the design decisions are
   particularly welcome, since a lot of them are deliberate.
 

@@ -2,7 +2,9 @@
 //!
 //! `get` is the whole interface for a frame: it answers from the cache and
 //! otherwise queues the tile, newest first, and the frame that finds it
-//! there picks it up. Requests nobody repeats age out of the queue.
+//! there picks it up. Requests nobody repeats age out of the queue. Past its
+//! bounds the cache lets go of the tiles least recently asked for, so a tile
+//! the view uses every frame stays however early it came.
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -25,13 +27,17 @@ type Decoder<T> = Arc<dyn Fn(&[u8]) -> Option<T> + Send + Sync>;
 
 enum Slot<T> {
     Loading,
-    Ready(Arc<T>),
+    /// The tile and when it was last asked for, as a count of asks.
+    Ready(Arc<T>, u64),
     Failed(Instant),
 }
 
 struct Inner<T> {
     slots: HashMap<Key, Slot<T>>,
-    order: VecDeque<Key>,
+    /// Counts asks, for the least recently used.
+    tick: u64,
+    /// How many slots are `Ready`.
+    ready: usize,
     queue: VecDeque<Key>,
     /// The weight of the tiles held, by `Shared::weigh`.
     bytes: usize,
@@ -114,7 +120,8 @@ impl<T: Send + Sync + 'static> TileCache<T> {
             retry,
             inner: Mutex::new(Inner {
                 slots: HashMap::new(),
-                order: VecDeque::new(),
+                tick: 0,
+                ready: 0,
                 queue: VecDeque::new(),
                 bytes: 0,
             }),
@@ -143,8 +150,13 @@ impl<T: Send + Sync + 'static> TileCache<T> {
     /// The tile when it is here; queues it when it is not.
     pub fn get(&self, key: &Key) -> Option<Arc<T>> {
         let mut g = self.shared.inner.lock().ok()?;
-        match g.slots.get(key) {
-            Some(Slot::Ready(t)) => return Some(t.clone()),
+        g.tick += 1;
+        let now = g.tick;
+        match g.slots.get_mut(key) {
+            Some(Slot::Ready(t, used)) => {
+                *used = now;
+                return Some(t.clone());
+            }
             Some(Slot::Loading) => {
                 if let Some(i) = g.queue.iter().position(|k| k == key) {
                     let k = g.queue.remove(i).expect("position is in range");
@@ -181,8 +193,14 @@ impl<T: Send + Sync + 'static> TileCache<T> {
 
     /// The tile when it is here, never queueing it.
     pub fn peek(&self, key: &Key) -> Option<Arc<T>> {
-        match self.shared.inner.lock().ok()?.slots.get(key) {
-            Some(Slot::Ready(t)) => Some(t.clone()),
+        let mut g = self.shared.inner.lock().ok()?;
+        g.tick += 1;
+        let now = g.tick;
+        match g.slots.get_mut(key) {
+            Some(Slot::Ready(t, used)) => {
+                *used = now;
+                Some(t.clone())
+            }
             _ => None,
         }
     }
@@ -202,7 +220,7 @@ impl<T: Send + Sync + 'static> TileCache<T> {
     pub fn clear(&self) {
         if let Ok(mut g) = self.shared.inner.lock() {
             g.slots.clear();
-            g.order.clear();
+            g.ready = 0;
             g.queue.clear();
             g.bytes = 0;
         }
@@ -224,17 +242,33 @@ impl<T: Send + Sync + 'static> TileCache<T> {
     /// How many decoded tiles are held.
     #[cfg(test)]
     pub fn held(&self) -> usize {
-        self.shared.inner.lock().map_or(0, |g| g.order.len())
+        self.shared.inner.lock().map_or(0, |g| g.ready)
     }
 
-    /// Evicts the oldest tiles past the capacity.
+    /// Evicts the least recently asked for tiles past the capacity and the
+    /// byte budget.
     pub fn trim(&self) {
-        if let Ok(mut g) = self.shared.inner.lock() {
-            while g.order.len() > self.capacity || (g.bytes > self.max_bytes && g.order.len() > 1) {
-                let Some(old) = g.order.pop_front() else { break };
-                if let Some(Slot::Ready(t)) = g.slots.remove(&old) {
-                    g.bytes = g.bytes.saturating_sub((self.shared.weigh)(&t));
-                }
+        let Ok(mut g) = self.shared.inner.lock() else { return };
+        let over = |g: &Inner<T>| g.ready > self.capacity || (g.bytes > self.max_bytes && g.ready > 1);
+        if !over(&g) {
+            return;
+        }
+        let mut by_age: Vec<(u64, Key)> = g
+            .slots
+            .iter()
+            .filter_map(|(k, s)| match s {
+                Slot::Ready(_, used) => Some((*used, k.clone())),
+                _ => None,
+            })
+            .collect();
+        by_age.sort_unstable_by_key(|(used, _)| *used);
+        for (_, key) in by_age {
+            if !over(&g) {
+                break;
+            }
+            if let Some(Slot::Ready(t, _)) = g.slots.remove(&key) {
+                g.bytes = g.bytes.saturating_sub((self.shared.weigh)(&t));
+                g.ready -= 1;
             }
         }
     }
@@ -276,8 +310,14 @@ fn worker<T: Send + Sync + 'static>(shared: Arc<Shared<T>>, server: Server, ctx:
                 match tile {
                     Some(t) => {
                         g.bytes += (shared.weigh)(&t);
-                        g.slots.insert(key.clone(), Slot::Ready(Arc::new(t)));
-                        g.order.push_back(key);
+                        g.tick += 1;
+                        let now = g.tick;
+                        if !matches!(
+                            g.slots.insert(key, Slot::Ready(Arc::new(t), now)),
+                            Some(Slot::Ready(..))
+                        ) {
+                            g.ready += 1;
+                        }
                         shared.generation.fetch_add(1, Ordering::Relaxed);
                     }
                     None => {
@@ -379,5 +419,51 @@ mod tests {
         cache.clear();
         assert_eq!((cache.held(), cache.bytes()), (0, 0));
         assert!(cache.generation() > before, "a clear is a change too");
+    }
+
+    #[test]
+    fn a_tile_in_use_stays_however_early_it_came() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let server = Server::local(listener.local_addr().unwrap().port());
+        std::thread::spawn(move || {
+            while let Ok((mut s, _)) = listener.accept() {
+                let mut buf = [0u8; 1024];
+                let _ = s.read(&mut buf);
+                let _ = s.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 10\r\nConnection: close\r\n\r\n0123456789");
+            }
+        });
+        let ctx = egui::Context::default();
+        let cache: TileCache<Vec<u8>> =
+            TileCache::weighed(&ctx, &server, 3, |t| t.len(), usize::MAX, |b| Some(b.to_vec()));
+        let key = |x: u32| -> Key { ("dem".into(), 18, x, 0) };
+        let fetch = |k: &Key| {
+            cache.get(k);
+            let deadline = Instant::now() + Duration::from_secs(3);
+            while cache.peek(k).is_none() {
+                assert!(Instant::now() < deadline, "{k:?} did not arrive");
+                std::thread::sleep(Duration::from_millis(5));
+            }
+        };
+        fetch(&key(0));
+        for x in 1..8 {
+            fetch(&key(x));
+            assert!(
+                cache.get(&key(0)).is_some(),
+                "the tile the view keeps using, after {x} others"
+            );
+            cache.trim();
+            assert!(cache.held() <= 3);
+        }
+        assert!(cache.peek(&key(1)).is_none(), "one nobody asked for again went");
+        let generation = cache.generation();
+        for _ in 0..20 {
+            assert!(cache.get(&key(0)).is_some());
+            cache.trim();
+        }
+        assert_eq!(
+            cache.generation(),
+            generation,
+            "nothing is fetched again while it is used"
+        );
     }
 }

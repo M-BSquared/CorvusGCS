@@ -192,6 +192,9 @@ pub struct Map3d {
     /// Since when most of the ground has had no image and the backend has
     /// failed to give some: the map has nothing saved here.
     blank_since: Option<std::time::Instant>,
+    /// The last camera every number of which was one to draw from: a frame
+    /// that leaves the camera broken goes back to it.
+    sane: Option<Camera>,
 }
 
 /// An elevation tile and the part `(u0, v0, size)` of it a leaf covers.
@@ -263,6 +266,7 @@ impl Map3d {
             pitch_goal: None,
             zoom_goal: None,
             blank_since: None,
+            sane: None,
         }
     }
 
@@ -856,6 +860,7 @@ impl Map3d {
                 KEEP_ABOVE_GROUND,
             );
         }
+        self.keep_sane();
         self.frame += 1;
         let painter = ui.painter_at(rect);
         painter.rect_filled(
@@ -922,6 +927,33 @@ impl Map3d {
             press,
             hover: resp.hover_pos(),
             over: resp.hovered(),
+        }
+    }
+
+    /// Brings what is out of range back into it, and puts the camera back to
+    /// the last sane one when this frame left a number that is not finite,
+    /// dropping any easing that was taking it there.
+    fn keep_sane(&mut self) {
+        self.cam.clamp();
+        if self.cam.is_sane() {
+            self.sane = Some(self.cam);
+            return;
+        }
+        eprintln!("corvus-gcs: 3D camera reset from {:?}", self.cam);
+        self.zoom_goal = None;
+        self.pitch_goal = None;
+        let size = self.cam.size;
+        self.cam = self.sane.unwrap_or(Camera {
+            lng: 0.0,
+            lat: 0.0,
+            zoom: 14.0,
+            pitch: crate::map3d::camera::THREE_D_PITCH,
+            bearing: 0.0,
+            size: (800.0, 600.0),
+            ground: 0.0,
+        });
+        if size.0.is_finite() && size.1.is_finite() && size.0 > 0.0 && size.1 > 0.0 {
+            self.cam.size = size;
         }
     }
 
@@ -1712,5 +1744,30 @@ mod tests {
             assert_eq!((k.2, k.3), (leaf.x >> shift, leaf.y >> shift), "zoom {} tile", k.1);
             assert!(k.1 <= 19, "never past the base layer's last zoom");
         }
+    }
+
+    #[test]
+    fn a_broken_camera_goes_back_to_the_last_sane_one() {
+        let mut m = view_at(11.6385, 48.0795, 18.0, 60.0);
+        m.keep_sane();
+        let good = m.cam;
+        m.cam.zoom = f64::NAN;
+        m.zoom_goal = Some(f64::NAN);
+        m.keep_sane();
+        assert!(m.cam.is_sane());
+        assert_eq!((m.cam.lng, m.cam.lat, m.cam.zoom), (good.lng, good.lat, good.zoom));
+        assert!(m.zoom_goal.is_none(), "the easing that broke it is dropped");
+        m.cam.pitch = 82.0;
+        m.keep_sane();
+        assert_eq!(
+            (m.cam.lng, m.cam.pitch),
+            (good.lng, crate::map3d::camera::MAX_PITCH),
+            "a tilt too far is only clamped"
+        );
+        let mut fresh = view_at(0.0, 0.0, 10.0, 60.0);
+        fresh.cam.ground = f64::INFINITY;
+        fresh.keep_sane();
+        assert!(fresh.cam.is_sane(), "without a sane one, a default");
+        assert!(!fresh.leaves().is_empty());
     }
 }
