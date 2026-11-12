@@ -811,10 +811,14 @@ fn an_unreachable_caster_and_a_missing_address_are_errors() {
     );
     svc.start();
     wait_for("the error", || state_of(&svc) == "error");
-    assert!(svc.status()["error"]
-        .as_str()
-        .unwrap()
-        .starts_with("could not open the correction source: [Errno"));
+    // Windows retries a refused connection until the connect timeout runs out,
+    // so what it reports is a timeout, which carries no errno.
+    let prefix = if cfg!(windows) {
+        "could not open the correction source: "
+    } else {
+        "could not open the correction source: [Errno"
+    };
+    assert!(svc.status()["error"].as_str().unwrap().starts_with(prefix));
     svc.stop(3.0);
     let svc = RtkService::new(
         Arc::new(FakeHost::default()),
