@@ -70,16 +70,14 @@ if (( VERIFY )); then
     cargo clippy --workspace --all-targets --locked -- -D warnings
     echo "--- cargo test"
     cargo test --workspace --locked
-    # python/ is the reference until it is deleted. A checkout without it, or
-    # without the dev venv run.sh creates, has nothing more to run.
+    # The Python tests check the Rust link and the bundles; they need the
+    # venv that ./run.sh --venv creates.
     PY="$REPO_DIR/.venv/bin/python"
     if [[ -d python && -x "$PY" ]]; then
         echo "--- pytest"
         (cd python && "$PY" -m pytest -q)
         echo "--- ruff"
-        (cd python && "$PY" -m ruff check corvus serve.py tests plugins)
-        echo "--- frontend"
-        (cd python && node tools/frontend_tests.js)
+        (cd python && "$PY" -m ruff check corvus tests tools)
     else
         echo "--- no python/ or .venv: skipping the Python gate"
     fi

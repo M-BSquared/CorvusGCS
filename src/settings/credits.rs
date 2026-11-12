@@ -36,7 +36,7 @@ pub const ORG: &str = "with Universit\u{e4}t der Bundeswehr M\u{fc}nchen";
 pub const CHAIR: &str = "In the context of the work at Chair LRT 1.1 of Prof. Dr. Matthias Gerdts.";
 pub const NOTE: &str = "Corvus GCS is designed, built and maintained by Maximilian B\u{f6}ck. Built for real field use with PX4 and ArduPilot aircraft.";
 pub const LICENSE: &str = "Sustainable Use License 1.0. See LICENSE.md in the application folder: internal business, non-commercial and personal use; not for resale.";
-pub const FOOTER: &str = "Every typeface and icon above is cut out of the files under python/src/vendor/ when the interface is built. The interface requests nothing from the internet. Map tiles are fetched by the backend and cached for offline use.";
+pub const FOOTER: &str = "Every typeface and icon above is cut out of the files under assets/ when the interface is built. The interface requests nothing from the internet. Map tiles are fetched by the backend and cached for offline use.";
 
 /// The crates the native interface is built from.
 pub const LIBRARIES: [Entry; 9] = [

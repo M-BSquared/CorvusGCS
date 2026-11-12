@@ -3,14 +3,13 @@
 # -----------------------------------------------------------------------------
 # Jobs:
 #   test        — pytest suite (python 3.12) on every push, PR, and tag:
-#                 tests/ and each plugin's own plugins/<id>/tests/.
+#                 python/tests, which hold corvus_link to pymavlink and the
+#                 bundles to their contracts.
 #   test-windows— the same suite on Windows; gates windows-app only.
-#   lint        — ruff over corvus/, serve.py, tests/ and plugins/.
+#   lint        — ruff over python/corvus, tests/ and tools/.
 #   rust-gui    — rustfmt, clippy and the tests of the whole workspace (the
 #                 native egui interface, corvus_core, the backend inside it,
 #                 and corvus_link, the MAVLink crate), all with --locked.
-#   frontend    — the plain-node frontend assertions, tests/*.js and
-#                 plugins/<id>/tests/*.js, via python/tools/frontend_tests.js.
 #   appimage    — Linux x86_64 AppImage and amd64 .deb via ./build.sh
 #                 (-> build-appimage.sh, build-deb.sh).
 #   macos-app   — macOS arm64 .app + .dmg via ./build.sh --dmg.
@@ -53,11 +52,8 @@ concurrency:
 
 jobs:
   # --- pytest ----------------------------------------------------------------
-  # pyproject.toml's `test` group: the headless runtime deps the non-GUI unit
-  # tests import at module load (corvus.server pulls corvus_link + paramiko;
-  # mavlink_bridge uses pyserial lazily) plus pytest, and pymavlink, which the
-  # corvus_link parity tests compare against. PySide6 is intentionally
-  # NOT installed — no headless test imports Qt. `--group` needs pip >= 25.1,
+  # pyproject.toml's `test` group: pytest, pyserial, and pymavlink, which the
+  # corvus_link parity tests compare against. `--group` needs pip >= 25.1,
   # hence the upgrade before it.
   test:
     runs-on: ubuntu-latest
@@ -82,11 +78,6 @@ jobs:
       # hosted runners carry cargo; the build fetches maturin and the crates.
       - name: Build corvus_link
         run: pip install ../src/link
-      # The route harness (tests/test_core_*.py) starts the Rust backend beside
-      # serve.py and holds its answers to the Python ones.
-      - name: Build corvus-core
-        working-directory: .
-        run: cargo build --locked -p corvus_core --bin corvus-core
       - name: pytest
         run: pytest -q
 
@@ -123,10 +114,7 @@ jobs:
         run: pytest -q
 
   # --- lint ------------------------------------------------------------------
-  # The pipeline ran no linter, which is how six dead locals — an unused
-  # AppUserModelID that left the Windows taskbar showing the launcher's icon
-  # among them — sat in the tree unnoticed. ruff over corvus/ takes about a
-  # second. Scoped to the checks that catch real mistakes rather than style:
+  # ruff over the Python that is left takes about a second. Scoped to the checks that catch real mistakes rather than style:
   # pyflakes (F), unused imports, and a handful of bug-shaped rules. Runs on
   # its own rather than gating the artifacts, because a lint finding is not a
   # reason to stop shipping.
@@ -147,7 +135,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install --group lint
       - name: ruff
-        run: ruff check corvus serve.py tests plugins
+        run: ruff check corvus tests tools
 
   # --- the native interface (Cargo.toml and src/, egui) --------------------------
   # Its own toolchain comes from rust-toolchain.toml at the repository root,
@@ -178,20 +166,6 @@ jobs:
         run: cargo clippy -p corvus_link --all-targets --features tls --locked -- -D warnings
       - name: cargo test
         run: cargo test --workspace --locked
-
-  # --- frontend assertions (no browser, no test runner) ----------------------
-  frontend:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
-        with:
-          node-version: '24'
-      - name: Run frontend tests
-        # tests/*.js and every plugin's tests/*.js. The runner fails when it
-        # finds nothing at all, so a broken pattern cannot pass by running
-        # nothing; a plugin folder that is not there simply has no tests.
-        run: node python/tools/frontend_tests.js
 
   # --- Linux artifact --------------------------------------------------------
   # ubuntu-22.04 on purpose: the interface links the host's glibc, so building
@@ -330,7 +304,7 @@ jobs:
   # A WebView shell (android/) on a Corvus GCS server on the network, so no
   # Python is bundled. The runner image ships the Android SDK and Gradle.
   android-app:
-    needs: [frontend]
+    needs: [rust-gui]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -352,7 +326,7 @@ jobs:
 
   # --- release (version tags only) -------------------------------------------
   release:
-    needs: [test, test-windows, frontend, rust-gui, appimage, macos-app, windows-app, android-app]
+    needs: [test, test-windows, rust-gui, appimage, macos-app, windows-app, android-app]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     permissions:

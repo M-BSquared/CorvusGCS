@@ -12,19 +12,21 @@ consistent.
 Cargo.toml  build.rs  rust-toolchain.toml  src/    the Rust program: the egui interface (src/main.rs, one
                                                    folder per area) and, in src/link/, the MAVLink crate
                                                    (its own Cargo.toml, PyO3, built by maturin)
-python/                                            the Python program that is being ported to Rust:
-                                                   corvus/ (backend), serve.py, src/ (web interface),
-                                                   plugins/, tests/, tools/, pyproject.toml
+python/                                            tests and tools, no program: tests/ (corvus_link
+                                                   against pymavlink, the bundles), tools/ (the
+                                                   simulated aircraft scene.py, build helpers),
+                                                   corvus/buildings.py (3D map shots), pyproject.toml
 assets/  docs/  VERSION  LICENSE.md                shared by both
 build*.sh  build-windows.ps1  run.sh  release.sh   packaging for the Rust interface plus its backend
 ```
 
-The backend is ported to Rust as `corvus_core` (`src/core`, plan in
-`src/BACKEND_PORT.md`, open work in `PLAN.md` section 0). The interface runs it
-in its own process by default; `--root DIR [--python PY]` runs `python/serve.py`
-as its child instead. `python/` is the reference the parity tests hold the core
-to, and is deleted only on the user's word. Paths in this file that name `corvus/`, `src/js`, `tests/`, `tools/`,
-`plugins/` or `pyproject.toml` are relative to `python/`.
+The backend is `corvus_core` (`src/core`, open work in `PLAN.md` section 0),
+run inside the interface's process. The Python program (`serve.py`, the
+`corvus/` backend, the web interface and its Qt window) was deleted on
+2026-11-12 once Rust had replaced it; its answers live on as the fixtures in
+`src/core/tests/data`. Sections below that still describe the Python backend
+or the web page are history: the Rust code is the reference now. Paths in this
+file that name `tests/`, `tools/` or `pyproject.toml` are relative to `python/`.
 
 ## Agent roster
 
@@ -162,11 +164,7 @@ Corvus GCS ships as a self-contained desktop artifact per platform. Every
 artifact is the native Rust interface (`Cargo.toml` and `src/`, egui, built with
 cargo) with the backend (`corvus_core`) inside the same executable; no artifact
 holds Python. All of them derive their version from the one `VERSION` read at
-build time. The interface runs the core in its own process by default;
-`--root DIR [--python PY]` runs `python/serve.py` as a child instead, for
-development and comparison. The Qt window around the web
-interface (`corvus/app.py`, `./run.sh --web`) stays in the repository for
-development until the native interface has every page; no bundle ships it.
+build time. The interface runs the core in its own process.
 
 `./build.sh` is the one entry point: it dispatches to the platform script for
 the current host and fails loudly rather than pretending to cross-build.
@@ -213,9 +211,7 @@ Shared packaging invariants — a violation of any of these is a build bug:
   every desktop program does.
 - **No Qt in a bundle.** The interface is egui on OpenGL (glow) with a 24 bit
   depth buffer for the 3D map; nothing in a bundle links Qt or a web engine.
-  The one place Qt remains is `corvus/app.py` behind `./run.sh --web`, and
-  there the rule stands: PySide6 (LGPL v3), never PyQt6 (GPL v3, which does not
-  combine with the Sustainable Use License). macOS 12 is the floor
+  macOS 12 is the floor
   (`MIN_MACOS` in `build-macos-app.sh`, read by both cargo and `Info.plist`).
 - **The interface is built by cargo, locked.** `cargo build --release
   --locked` from the repository root (its `rust-toolchain.toml` pins the Rust),
@@ -484,15 +480,16 @@ Rules that keep the chain honest:
 cargo run                       # the same as ./run.sh, from a clean checkout (rust-toolchain.toml is honoured)
 cargo fmt --check && cargo clippy --workspace --all-targets --locked -- -D warnings && cargo test --locked --workspace   # the Rust gates, src/link included
 cargo build --timings           # where a build spends its time (target/cargo-timings/)
-.venv/bin/python -m pytest -q   # test suite (the gate for every change)
-.venv/bin/python -m ruff check corvus serve.py tests plugins   # lint, as CI runs it
-.venv/bin/python serve.py       # backend only, UI in a normal browser
-(cd src/link && maturin develop --release)   # the Python reference only: corvus_link with its `python` feature, built into the venv
+./run.sh --venv                 # .venv for the Python tests and tools (pymavlink, corvus_link with its `python` feature)
+(cd python && ../.venv/bin/python -m pytest -q)   # the Python tests: corvus_link against pymavlink, the bundles
+(cd python && ../.venv/bin/python -m ruff check corvus tests tools)   # lint, as CI runs it
+python3 python/tools/scene.py run flight   # a sandboxed corvus-core with a simulated PX4 (needs a cargo build)
+python3 src/map3d/shots/run.py  # the 3D map pictures against ref/
 ./build.sh [--dmg] [--no-deb] [--fast]   # artifact for the current host (dispatches below); --fast: release code without LTO, to try locally
 ./build-appimage.sh [--no-deb|--deb-only|--fast]   # Linux artifact  (x86_64)
 ./build-macos-app.sh [--dmg] [--fast]    # macOS artifact  (arm64 / x86_64)
 .\build-windows.ps1 [-Zip] [-Fast]       # Windows artifact (PowerShell)
-node tools/frontend_tests.js    # frontend assertions: tests/ + plugins/*/tests/
-python3 tools/guide.py          # after editing docs/guide/*.html: rewrite each page's frame
+python3 python/tools/guide.py   # after editing docs/guide/*.html: rewrite each page's frame
+python3 python/tools/i18n.py check   # the language files in src/lang and src/plugins/*/lang
 git config core.hooksPath .githooks   # one-time, enables the VERSION auto-bump
 ```

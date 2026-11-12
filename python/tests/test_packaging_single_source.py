@@ -44,12 +44,9 @@ INSTALLERS = {
     GITHUB_CI: ["pip install --group test", "pip install --group lint"],
 }
 
-# The packages the application needs at runtime. Adding one here without
+# The packages the tests and tools need at runtime. Adding one here without
 # adding it to pyproject.toml fails, which is the point.
-EXPECTED_RUNTIME = {
-    "paramiko", "pyserial", "PySide6-Essentials", "PySide6-Addons",
-    "PySide6-WebEngine",
-}
+EXPECTED_RUNTIME = {"paramiko", "pyserial"}
 QT = {"PySide6-Essentials", "PySide6-Addons", "PySide6-WebEngine"}
 
 
@@ -85,17 +82,13 @@ def test_pyproject_is_the_only_dependency_file() -> None:
 
 
 def test_every_runtime_dependency_states_a_floor() -> None:
-    """A package with no floor is a package the build may get wrong."""
-    app = _group("app")
-    assert set(app) == EXPECTED_RUNTIME, (
-        f"the app group lists {sorted(app)}, expected {sorted(EXPECTED_RUNTIME)}"
+    """A package with no floor is a package a test run may get wrong."""
+    headless = _group("headless")
+    assert set(headless) == EXPECTED_RUNTIME, (
+        f"the headless group lists {sorted(headless)}, expected {sorted(EXPECTED_RUNTIME)}"
     )
-    for name, spec in app.items():
-        assert re.search(r"[><=~]=", spec), (
-            f"{name} has no version floor in pyproject.toml; the AppImage "
-            "used to be built this way and could ship against a pymavlink "
-            "older than the code needs"
-        )
+    for name, spec in headless.items():
+        assert re.search(r"[><=~]=", spec), f"{name} has no version floor in pyproject.toml"
 
 
 def test_the_pipeline_checks_the_rust_side() -> None:
@@ -106,7 +99,7 @@ def test_the_pipeline_checks_the_rust_side() -> None:
 
 
 def test_pymavlink_is_a_test_reference_only() -> None:
-    assert "pymavlink" not in _group("app")
+    assert "pymavlink" not in _group("headless")
     assert "pymavlink" in _group("test")
     for path in (ROOT / "corvus").rglob("*.py"):
         for line in path.read_text(encoding="utf-8").splitlines():
@@ -116,29 +109,20 @@ def test_pymavlink_is_a_test_reference_only() -> None:
             )
 
 
-def test_the_headless_group_is_the_app_group_without_qt() -> None:
-    """CI runs the suite without Qt on purpose; the floors still apply."""
-    app = _group("app")
-    headless = _group("headless")
-    assert set(app) - set(headless) == QT
-    for name, spec in headless.items():
-        assert app[name] == spec, f"{name}: headless and app disagree on the floor"
-
-
 def test_the_ci_groups_do_not_drag_qt_into_a_test_job() -> None:
     """~100 MB of Chromium in every test job, to import none of it."""
     test = _group("test")
     lint = _group("lint")
-    assert not QT & set(test), "the test group must stay headless"
+    assert not QT & set(test), "no test needs Qt"
     assert set(_group("headless")) <= set(test)
     assert "pytest" in test
     assert set(lint) == {"ruff"}, "the lint job needs ruff and nothing else"
 
 
 def test_the_dev_venv_has_everything_the_other_groups_have() -> None:
-    """run.sh's venv runs the app, the suite and the linter."""
+    """run.sh's venv runs the suite and the linter."""
     dev = set(_group("dev"))
-    for name in ("app", "test", "lint"):
+    for name in ("test", "lint"):
         assert set(_group(name)) <= dev, f"dev is missing part of {name}"
     assert not {"pyinstaller", "Pillow"} & dev, "build tools stay out of the dev venv"
 
@@ -219,16 +203,3 @@ def test_builds_write_into_dist_not_the_repo_root() -> None:
     assert "/dist/" in gitignore
 
 
-def test_the_qt_wheels_move_together_and_include_webengine() -> None:
-    """PySide6 6.12 ships QtWebEngine as its own wheel, PySide6-WebEngine.
-
-    With only Essentials and Addons named, 6.12 installs without a web view:
-    the macOS and Linux builds stop at the Qt trim, and the Windows build and a
-    fresh run.sh venv produce an app that dies on its first import. The three
-    wheels also share one range, so pip cannot pair a WebEngine built for one
-    Qt with the Essentials of another.
-    """
-    app = _group("app")
-    assert "PySide6-WebEngine" in app, "6.12 and later have no web view without PySide6-WebEngine"
-    ranges = {re.sub(r"^[\w-]+", "", app[package]) for package in QT}
-    assert len(ranges) == 1, f"the Qt wheels name different ranges: {ranges}"

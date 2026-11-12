@@ -4,61 +4,29 @@ build-backend = "setuptools.build_meta"
 
 [project]
 # Tooling-only placeholder. The real app version is the VERSION file at the
-# repo root consumed by corvus.version; it is never read from here.
+# repo root; it is never read from here.
 name = "corvus-gcs"
 version = "0.0.0"
-# 3.12: the version CI tests, run.sh creates the dev venv with, and the three
-# build scripts ship. It used to be >=3.10 here, 3.11 in a conda file and 3.12
-# in CI, so the tested, the developed and the shipped interpreter
-# could all be different ones.
+# 3.12: the version CI tests and run.sh creates the venv with.
 requires-python = ">=3.12"
 
-# Every Python package Corvus installs, anywhere, is named in this table and
-# nowhere else: the dev venv (run.sh), the CI pipeline and all three build
-# scripts read it with `pip install --group <file>:<group>` (pip >= 25.1; every
-# installer upgrades pip in its fresh venv first). It replaces environment.yml
-# and three requirements*.txt files that used to restate the same list.
-#
-# Floors, not pins, on purpose: this states what the code requires. Pins live
-# in requirements.lock, which is generated, not written, and not normally in
-# the repo — every build writes the set it resolved to beside its artifact
-# (dist/Corvus_GCS-<version>-<platform>.lock), and each build script installs
-# from requirements.lock in preference to this table when one is present
-# (override either with $CORVUS_REQUIREMENTS). Pinning a release is one copy:
-#
-#     cp dist/Corvus_GCS-<version>-macOS-arm64.lock requirements.lock
+# Every Python package the tests and tools install is named in this table and
+# nowhere else: the venv (run.sh --venv) and the CI pipeline read it with
+# `pip install --group <file>:<group>` (pip >= 25.1).
 [dependency-groups]
-# What browser mode (serve.py) and the whole test suite need at runtime —
-# everything except the desktop window. CI runs the suite without Qt on
-# purpose: no headless test imports it, and ~100 MB of Chromium per test job
-# buys nothing.
+# What is left of Python here is tests and tools: the tests that hold the Rust
+# link (corvus_link) and the bundles to their contracts, the simulated aircraft
+# in tools/scene_kit and the build helpers. The program itself is Rust and
+# ships no Python.
 #
 # MAVLink is not in this table: it is corvus_link, built from src/link
-# (a Rust extension with pymavlink's interface), and every installer builds it
-# with `pip install <repo>/src/link` after the group. That needs a Rust
-# toolchain (cargo) on the build machine, never on the target.
+# (a Rust extension with pymavlink's interface), and the venv builds it with
+# `pip install <repo>/src/link` after the group. That needs a Rust toolchain.
 headless = [
-    # SSH to the companion computer.
+    # The simulated companion computer's SSH server (tools/scene_kit).
     "paramiko>=3.0",
-    # The serial transport under MAVLink, and the firmware uploader's own use
-    # of the bootloader device.
+    # The serial links the corvus_link tests open.
     "pyserial>=3.5",
-]
-# The Qt window around the web interface (`./run.sh --web`, corvus/app.py), kept
-# while the native interface (the interface at the repository root) is completed; no packaged build
-# ships it. PySide6 (LGPL v3), not
-# PyQt6 (GPL v3), because the GPL does not combine with the Sustainable Use
-# License. Essentials carries QtCore/Gui/Widgets/Network, Addons QtWebChannel
-# and QtPositioning, and WebEngine QtWebEngineCore/Widgets: since 6.12 the web
-# view is a wheel of its own, and without it the app has no window. Its
-# version carries the Chromium major as a fourth part (6.12.0.140), which the
-# 6.12 range below still matches. The ceiling keeps the Qt, and so the
-# Chromium, the app was tested on; the next minor is moved to in one change.
-app = [
-    { include-group = "headless" },
-    "PySide6-Essentials>=6.12,<6.13",
-    "PySide6-Addons>=6.12,<6.13",
-    "PySide6-WebEngine>=6.12,<6.13",
 ]
 # The CI test jobs.
 test = [
@@ -77,37 +45,24 @@ test = [
 smoke = ["pytest>=7.0"]
 # The linter CI runs.
 lint = ["ruff>=0.5"]
-# The local development venv that run.sh creates: the app, the suite and the
-# linter in one place.
+# The venv that `./run.sh --venv` creates: the suite and the linter.
 dev = [
-    { include-group = "app" },
     { include-group = "test" },
     { include-group = "lint" },
 ]
 
 [tool.pytest.ini_options]
-# Each plugin keeps its own checks in plugins/<id>/tests/, so a plugin that is
-# not installed takes its tests with it and leaves nothing to fail. Name a
-# plugin's test files after the plugin (test_<id>_*.py): test files are
-# imported by their bare name, so two plugins with a test_settings.py would
-# collide.
-testpaths = ["tests", "plugins"]
-# The repo root on sys.path, so `import corvus` resolves however pytest is
-# started. Without it only `python -m pytest` works — that form injects the
-# working directory, the bare `pytest` console script does not — so the suite
-# passed locally and failed in CI with "No module named 'corvus'" while loading
-# conftest. Setting it here fixes every entry point at once: the bare script,
-# `python -m pytest`, an IDE runner, and a run from any directory.
+testpaths = ["tests"]
+# python/ on sys.path, so `import tools...` resolves however pytest is started.
 pythonpath = ["."]
 addopts = "-ra --strict-markers"
 markers = [
     "slow: marks tests as slow (deselect with `-m \"not slow\"`)",
     "sitl: marks tests requiring a live PX4 SITL connection",
-    "frontend: marks tests for the JS frontend (currently run via node, but declare the marker for future)",
 ]
 
 [tool.ruff]
-# CI runs `ruff check corvus serve.py tests plugins`. This section is
+# CI runs `ruff check corvus tests tools`. This section is
 # what "clean" means, and it is deliberately narrow: the point of adding a
 # linter to a codebase this size is to catch mistakes, not to start a
 # reformatting argument. Line length is not enforced at all.

@@ -6,8 +6,9 @@ aircraft and compared with the pictures kept in ref/.
     python3 src/map3d/shots/run.py --update   # take the pictures again
     python3 src/map3d/shots/run.py --only buildings --keep
 
-Needs: a release build (cargo build --release), Pillow for the comparison
-(pip install pillow), the Python environment of python/ (CORVUS_PYTHON, else
+Needs: a release build (cargo build --release, which builds corvus-gcs and the
+corvus-core the scene runs), Pillow for the comparison (pip install pillow),
+the Python environment of python/ for the simulated aircraft (CORVUS_PYTHON, else
 .venv/bin/python of the repository or of a sibling checkout), and the network
 for the map and elevation tiles (Esri imagery, Copernicus GLO-30). The pictures
 are the map area only, with the instrument panel left out, scaled to 1280 by 800

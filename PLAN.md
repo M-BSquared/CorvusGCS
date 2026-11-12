@@ -84,7 +84,7 @@ be seen live, see 1.2):
 
 The native interface (`src/`) is a client of the backend; the backend is being
 ported from `python/corvus` to `corvus_core` (`src/core`, plan and rules in
-`src/BACKEND_PORT.md`). `python/` stays the reference until the user deletes it.
+`src/BACKEND_PORT.md`). The Python program was deleted on 2026-11-12.
 `corvus-gcs` runs `corvus_core` in its own process by default (the switch is
 done: `tests/no_unavailable_routes.rs` shows no route of the Python server is
 left at 501); `--root DIR [--python PY]` runs `serve.py` as a child for the
@@ -185,21 +185,27 @@ Nothing open: every setup route answers, the harness compares them with `serve.p
 
 ### Python left in the repository
 
-Fixtures for every Rust test are frozen in `src/core/tests/data`; the Rust
-tests need no Python. Removed so far: 17 `test_*_parity.py` files. Kept, and why:
+The Python program was deleted on 2026-11-12: `serve.py`, the `corvus/`
+backend, the web interface (`python/src`, the web plugins, their JS tests),
+the Qt window, `tests/reference`, the dump scripts, the route harness and every
+test of a deleted module. The fixtures they made stay frozen in
+`src/core/tests/data`. `corvus-gcs --root/--python` and `./run.sh --web`,
+`--python-backend` are gone. Kept, and why:
 
-* `python/corvus`, `serve.py`, `src/` (web interface), `corvus/app.py` (Qt
-  window): the web interface stays while `src/PARITY.md` has partial rows
-  (touch mode, gamepad, Settings vehicles section, Radio Control wizard,
-  mission dragging, Esc in the distance tool). It runs on the Python server.
-* `python/tests/reference`, `tools/dump_*_cases.py`: they regenerate the fixtures.
-* `test_corvus_link_parity.py` (against pymavlink), `test_bridge_cycle_parity.py`,
-  `test_param_threads_parity.py`, `test_entrypoint_parity.py`, `test_flash_parity.py`
-  (imported by the flash dump), `test_elrs_parity.py` (ELRS port in progress).
-* Tests of Python modules, the route harness and the packaging tests: they go
-  with the module or script they check, once the web interface is deleted.
-* 17 tests fail on the branch before and after (ELRS link, macOS signing,
-  Android packaging, Qt binding, packaging single source).
+* The 3D map shots (`src/map3d/shots`): `tools/scene.py` with `scene_kit`
+  (the simulated PX4, now in front of `corvus-core`) and `corvus/buildings.py`
+  for `make_city.py`. `gui_soak.py` and `geofence_roundtrip.py` use the same
+  scene.
+* Tests of Rust and of the bundles: `test_corvus_link_*.py` (against
+  pymavlink), the packaging, bundle and website tests.
+* Build and docs helpers: `appimage_libs.py` with `qt_bundle.py` (its ELF
+  reader), `png_icon.py`, `bundle_trim.py`, `guide.py`, `i18n.py` (now on
+  `src/lang`).
+* Open: the Android app (`android/`) is a WebView on the web interface, which
+  is gone, so it has no page to show; `src/PARITY.md` still lists partial rows
+  that can no longer be compared against the web page. One Python test fails
+  on this machine and uses nothing that was deleted
+  (`test_child_process_link_and_its_teardown`).
 
 ## 1. Live checks
 

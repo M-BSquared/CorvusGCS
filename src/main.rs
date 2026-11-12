@@ -2,9 +2,8 @@
 //!
 //!     corvus-gcs                         run `corvus_core` in this process and show it (no Python)
 //!     corvus-gcs --server http://h:8080  connect to a backend elsewhere
-//!     corvus-gcs --root DIR [--python PY]  run the reference backend (serve.py) as a child instead
 //!
-//! A running Corvus on this computer is joined, not started twice. Either
+//! A running Corvus on this computer is joined, not started twice. The
 //! backend is stopped on every way out; see `net::backend`.
 
 mod analysis;
@@ -31,7 +30,6 @@ mod welcome;
 
 pub use corvus_api::{i18n, ui};
 
-use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::OnceLock;
 use std::time::Duration;
@@ -48,8 +46,6 @@ static CONTEXT: OnceLock<egui::Context> = OnceLock::new();
 #[derive(Debug, Default)]
 struct Args {
     server: Option<String>,
-    root: Option<PathBuf>,
-    python: Option<PathBuf>,
     page: Option<String>,
     scroll: Option<f32>,
 }
@@ -61,13 +57,11 @@ fn parse_args() -> Result<Args, String> {
         let mut value = |name: &str| it.next().ok_or_else(|| format!("{name} needs a value"));
         match a.as_str() {
             "--server" => args.server = Some(value("--server")?),
-            "--root" => args.root = Some(PathBuf::from(value("--root")?)),
-            "--python" => args.python = Some(PathBuf::from(value("--python")?)),
             "--core" => {}
             "--page" => args.page = Some(value("--page")?),
             "--scroll" => args.scroll = value("--scroll")?.parse().ok(),
             "-h" | "--help" => {
-                println!("usage: corvus-gcs [--server http://host:port] [--root DIR] [--python PATH] (run serve.py from DIR instead of the built in core) [--page setup|TILE|safety:SENSOR|mission|mission:NAME|settings|logs|analysis] [--scroll PX]");
+                println!("usage: corvus-gcs [--server http://host:port] [--page setup|TILE|safety:SENSOR|mission|mission:NAME|settings|logs|analysis] [--scroll PX]");
                 std::process::exit(0);
             }
             other => return Err(format!("unknown argument {other}")),
@@ -83,10 +77,9 @@ fn install_signal_handler() {
             ctx.request_repaint();
         }
         // The window normally closes and main tears everything down. If it
-        // does not in time, the backend still must not outlive us.
+        // does not in time, the process ends and the core's threads with it.
         std::thread::spawn(|| {
             std::thread::sleep(SIGNAL_DEADLINE);
-            net::backend::kill_from_signal();
             std::process::exit(130);
         });
     });
@@ -120,20 +113,7 @@ fn main() -> ExitCode {
                 eprintln!("corvus-gcs: Corvus is already running, joining it at {}", peer.url());
                 peer
             } else {
-                let started = if args.root.is_some() || args.python.is_some() {
-                    let start = args.root.clone().unwrap_or_else(|| {
-                        std::env::current_exe()
-                            .ok()
-                            .and_then(|p| p.parent().map(PathBuf::from))
-                            .unwrap_or_else(|| PathBuf::from("."))
-                    });
-                    net::backend::Launch::find(&start, args.python.clone()).and_then(|launch| {
-                        let port = net::backend::free_port().map_err(|e| format!("no free port: {e}"))?;
-                        net::backend::Backend::start(&launch, port)
-                    })
-                } else {
-                    net::backend::Backend::start_core()
-                };
+                let started = net::backend::Backend::start_core();
                 match started {
                     Ok(b) => {
                         let s = b.server().clone();

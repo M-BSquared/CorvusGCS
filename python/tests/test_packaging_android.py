@@ -31,11 +31,9 @@ def test_no_version_literal_in_the_android_sources() -> None:
         assert not VERSION_RE.search(_text(path)), path
 
 
-def test_user_agent_marker_matches_the_frontend() -> None:
+def test_user_agent_carries_the_marker() -> None:
     java = _text(ANDROID / "app" / "src" / "main" / "java" / "de" / "corvusgcs" / "app" / "MainActivity.java")
     assert '" CorvusAndroid/"' in java
-    assert "CorvusAndroid" in _text(PYTHON / "src" / "js" / "touch.js")
-    assert "CorvusAndroid" in _text(PYTHON / "src" / "index.html")
 
 
 def test_cleartext_is_allowed_for_the_lan_server() -> None:

@@ -24,13 +24,6 @@ __pycache__/
 # cargo's build output for the MAVLink extension
 /src/link/target/
 
-# plugins besides the ones that ship with Corvus
-/python/plugins/*/
-!/python/plugins/map-entities/
-!/python/plugins/schwalby/
-!/python/plugins/ssh-launcher/
-!/python/plugins/vibration/
-
 # cargo's build output for the native interface
 /target/
 

@@ -335,40 +335,6 @@ pub fn plugin() -> Box<dyn Plugin> {
 #[cfg(test)]
 mod tests {
 
-    #[test]
-    fn the_plugin_says_what_the_web_plugins_manifest_says() {
-        let path = concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../../python/plugins/vibration/plugin.json"
-        );
-        let manifest: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
-        let info = Vibration::default().info();
-        assert_eq!(manifest["id"], info.id);
-        assert_eq!(manifest["name"], info.name);
-        assert_eq!(manifest["icon"], info.icon);
-        assert_eq!(manifest["description"], info.description);
-        assert_eq!(manifest["version"], info.version);
-        assert_eq!(manifest["order"], info.order);
-    }
-
-    #[test]
-    fn the_language_files_hold_every_string_of_the_web_plugins_files() {
-        for (code, ours) in LANG {
-            let path = format!(
-                concat!(
-                    env!("CARGO_MANIFEST_DIR"),
-                    "/../../../python/plugins/vibration/lang/{}.json"
-                ),
-                code
-            );
-            let web = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
-            let (ours, web): (Value, Value) =
-                (serde_json::from_str(ours).unwrap(), serde_json::from_str(&web).unwrap());
-            for (k, v) in web["strings"].as_object().unwrap() {
-                assert_eq!(&ours["strings"][k], v, "{code}: {k}");
-            }
-        }
-    }
     use super::*;
 
     fn s(x: f64, y: f64, z: f64) -> Value {

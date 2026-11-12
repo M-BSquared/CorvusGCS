@@ -1,9 +1,10 @@
 """Standing a scene up: a sandboxed Corvus, an aircraft, and a URL.
 
 Running a scene starts two things. The aircraft is in-process (see
-:mod:`vehicle`). Corvus itself is a subprocess — the real ``serve.py``, not a
-stub — because the whole value of these pictures is that they are the real
-program.
+:mod:`vehicle`). Corvus itself is a subprocess, the real backend
+``corvus-core`` (``CORVUS_CORE``, else ``target/release`` or ``target/debug``
+of the repository), not a stub, because the whole value of these pictures is
+that they are the real program.
 
 The one thing this module is careful about is *the operator's own Corvus*.
 A screenshot run must not touch it, so:
@@ -30,7 +31,6 @@ import os
 import shutil
 import socket
 import subprocess
-import sys
 import time
 import urllib.error
 import urllib.request
@@ -44,6 +44,7 @@ from .library import CHATTER, Scene
 from .vehicle import LogEntry, SimVehicle, VehicleOptions, mavlink2
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+CHECKOUT = REPO_ROOT.parent
 DEFAULT_HTTP_PORT = 8777
 DEFAULT_MAV_PORT = 14555
 
@@ -57,6 +58,19 @@ class RunnerOptions:
     start_backend: bool = True         # False = drive a Corvus already running
     verbose: bool = False
     keep_sandbox: bool = False
+
+
+def core_binary() -> Path:
+    """The ``corvus-core`` to run: ``CORVUS_CORE``, else the newest cargo build."""
+    if os.environ.get("CORVUS_CORE"):
+        return Path(os.environ["CORVUS_CORE"]).resolve()
+    name = "corvus-core.exe" if os.name == "nt" else "corvus-core"
+    found = [CHECKOUT / "target" / kind / name for kind in ("release", "fast", "debug")]
+    found = [p for p in found if p.is_file()]
+    if not found:
+        raise RuntimeError("no corvus-core build: run `cargo build -p corvus_core --bin corvus-core` "
+                           "or point CORVUS_CORE at one")
+    return max(found, key=lambda p: p.stat().st_mtime)
 
 
 class SceneRunner:
@@ -229,18 +243,18 @@ class SceneRunner:
         env["HOME"] = str(self.sandbox)
         env["USERPROFILE"] = str(self.sandbox)     # the same move on Windows
         env["CORVUS_ALLOW_MULTI"] = "1"
-        env["PYTHONUNBUFFERED"] = "1"
 
+        binary = core_binary()
         log_path = self.sandbox / "backend.log"
         self._backend_log = log_path.open("w")
         self.backend = subprocess.Popen(
-            [sys.executable, "serve.py", str(self.opts.http_port),
-             f"udpin:127.0.0.1:{self.opts.mav_port}"],
-            cwd=str(REPO_ROOT), env=env,
+            [str(binary), "--port", str(self.opts.http_port),
+             "--mavlink", f"udpin:127.0.0.1:{self.opts.mav_port}"],
+            cwd=str(CHECKOUT), env=env,
             stdout=(None if self.opts.verbose else self._backend_log),
             stderr=subprocess.STDOUT if not self.opts.verbose else None,
         )
-        self.log(f"backend    serve.py on {self.url} (pid {self.backend.pid})")
+        self.log(f"backend    {binary.name} on {self.url} (pid {self.backend.pid})")
         if not _wait_for_http(self.url + "api/version", timeout=20.0):
             raise RuntimeError(
                 f"the backend did not answer within 20 s — see {log_path}")

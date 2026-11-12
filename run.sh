@@ -4,7 +4,7 @@
 #   ./run.sh [corvus-gcs flags]    e.g. ./run.sh --page motors
 #   ./run.sh --release [flags]     the optimised build a bundle ships (slow to build)
 #   ./run.sh --fast [flags]        release code without LTO (a few minutes, not ten)
-#   ./run.sh --web [PORT] [MAVLINK_CONNECTION]   # the Qt window around the web UI
+#   ./run.sh --venv               # only set up .venv for the tests and python/tools
 #   ./run.sh --desktop-entry      # Linux: add this checkout to the app launcher
 #
 # The desktop app is the native Rust interface (Cargo.toml and src/), built with
@@ -12,13 +12,11 @@
 # needs; rustup installs that on the first run. The backend (corvus_core) is
 # inside it: nothing else is needed, and no Python is started.
 #
-#   ./run.sh --python-backend [flags]   run the reference backend python/serve.py
-#                                       as the interface's child instead
-#
-# Only --web and --python-backend create .venv (from a Python >= 3.12), install
-# the `dev` group of python/pyproject.toml and build corvus_link into it. Later
-# runs re-install only when pyproject.toml or src/link changed, and an update
-# that fails offline still starts on the set already installed.
+# Only --venv creates .venv (from a Python >= 3.12), installs the `dev` group of
+# python/pyproject.toml and builds corvus_link into it, for the tests and the
+# simulator scripts in python/tools. Later runs re-install only when
+# pyproject.toml or src/link changed, and an update that fails offline keeps the
+# set already installed.
 #
 # $CORVUS_PYTHON picks the interpreter the venv is created from.
 
@@ -37,7 +35,7 @@ STAMP="$VENV/.corvus-deps"
 # Wayland dock has no other way to find one. Its paths are this checkout's,
 # resolved here, and an existing entry is brought up to date on every run, so
 # it follows the checkout when it moves. StartupWMClass is the id a source
-# checkout's window carries (desktop_id in corvus/app_icon.py).
+# checkout's window carries (CORVUS_APP_ID below).
 ENTRY="${XDG_DATA_HOME:-$HOME/.local/share}/applications/corvus-gcs-dev.desktop"
 desktop_entry() {
     local exec_path
@@ -142,11 +140,10 @@ while [ $# -gt 0 ]; do
 done
 PROFILE="${CORVUS_PROFILE:-$PROFILE}"
 
-if [ "${1:-}" = "--web" ]; then
-    shift
+if [ "${1:-}" = "--venv" ]; then
     ensure_venv
-    # exec, so SIGINT/SIGTERM reach corvus/app.py's own handlers directly.
-    exec "$PY" "$REPO_DIR/python/corvus/app.py" "$@"
+    echo ">>> .venv is ready: $PY"
+    exit 0
 fi
 
 command -v cargo >/dev/null 2>&1 || {
@@ -165,9 +162,4 @@ BIN="$TARGET/$DIR/corvus-gcs"
 [ -x "$BIN" ] || BIN="$BIN.exe"
 # exec, so SIGINT/SIGTERM reach the interface's own handlers directly, which
 # stop the core and join its threads.
-if [ "${1:-}" = "--python-backend" ]; then
-    shift
-    ensure_venv
-    CORVUS_APP_ID=corvus-gcs-dev exec "$BIN" --root "$REPO_DIR" --python "$PY" "$@"
-fi
 CORVUS_APP_ID=corvus-gcs-dev exec "$BIN" "$@"

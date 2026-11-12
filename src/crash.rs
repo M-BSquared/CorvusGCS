@@ -1,10 +1,9 @@
 //! A panic anywhere is written, with its backtrace, to `~/.corvus/gui-crash.log`
 //! and never shown: a field laptop has nobody to read a console. A panic on the
-//! main thread also takes the backend child down before the process ends, as
-//! the lifecycle rules ask; a panic on a worker thread leaves the interface
-//! running (every lock in it is poison tolerant).
+//! main thread unwinds through `main`, which stops the core; a panic on a
+//! worker thread leaves the interface running (every lock in it is poison
+//! tolerant).
 
-use std::cell::Cell;
 use std::fmt::Write as _;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
@@ -23,20 +22,13 @@ pub fn log_path() -> Option<PathBuf> {
 /// A panic that repeats every frame is written once in this long.
 const SAME_PANIC: Duration = Duration::from_secs(5);
 
-thread_local! {
-    static GUARDED: Cell<bool> = const { Cell::new(false) };
-}
-
 static LAST: Mutex<Option<(String, Instant)>> = Mutex::new(None);
 
 /// Runs `f`; a panic inside it comes back as the message instead of ending
 /// the program, and does not take the backend down with it. The frame that
 /// panicked shows a notice and the next one tries again.
 pub fn guarded<R>(f: impl FnOnce() -> R) -> Result<R, String> {
-    GUARDED.with(|g| g.set(true));
-    let out = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f));
-    GUARDED.with(|g| g.set(false));
-    out.map_err(|p| payload(p.as_ref()))
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)).map_err(|p| payload(p.as_ref()))
 }
 
 /// Whether this `place` and `message` was written less than `SAME_PANIC` ago.
@@ -72,9 +64,6 @@ pub fn install() {
             if let Some(path) = log_path() {
                 let _ = append(&path, &entry);
             }
-        }
-        if name == "main" && !GUARDED.with(Cell::get) {
-            crate::net::backend::kill_from_signal();
         }
         if std::env::var_os("CORVUS_GUI_PANIC_ECHO").is_some() {
             default(info);

@@ -6,32 +6,17 @@
 //! later). An area that is not ported yet answers 501 "Not available in this
 //! build", which the pages show as their error text.
 //!
-//! The Python backend (`serve.py`) stays available as a child with `--root`
-//! or `--python`, as the reference to compare against. The field laptop is
-//! rebooted between flights, so the app must never leave a server behind: on
-//! every way out (window closed, SIGINT, SIGTERM, a panic unwinding through
-//! `main`) the core is stopped, which joins every thread it started, or the
-//! child gets SIGTERM, which runs its own teardown (links, tlogs, bridges),
-//! then SIGKILL if it has not gone within the grace period.
+//! The field laptop is rebooted between flights, so the app must never leave a
+//! server behind: on every way out (window closed, SIGINT, SIGTERM, a panic
+//! unwinding through `main`) the core is stopped, which joins every thread it
+//! started.
 
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
-use std::sync::atomic::{AtomicU32, Ordering};
-use std::time::{Duration, Instant};
 
 use crate::net::http::{self, Server};
 
-/// How long the server may take to answer `/api/version` after starting.
-const STARTUP: Duration = Duration::from_secs(45);
-/// How long it may take to stop after SIGTERM before it is killed.
-const GRACE: Duration = Duration::from_secs(8);
-
-/// The child's pid, for a signal handler that has to act without the
-/// `Backend` itself. 0 when there is none.
-static CHILD_PID: AtomicU32 = AtomicU32::new(0);
-
 /// A backend of an earlier run that still holds the instance lock and answers:
-/// its address when there is one. The Python backend refuses to start beside
+/// its address when there is one. The core refuses to start beside
 /// it ("already running"), so a second start joins it instead of exiting.
 pub fn running_peer() -> Option<Server> {
     if std::env::var("CORVUS_ALLOW_MULTI")
@@ -52,60 +37,16 @@ fn peer_from_lock(lock: &Path) -> Option<Server> {
     Some(server)
 }
 
-/// Where the backend comes from.
-#[derive(Debug, Clone)]
-pub struct Launch {
-    /// The repository (or bundle) root that holds `serve.py`.
-    pub root: PathBuf,
-    /// The Python interpreter to run it with.
-    pub python: PathBuf,
-}
-
-impl Launch {
-    /// The root found from `start` upwards: a folder that holds `serve.py`
-    /// and `corvus/` (a bundle's app folder), or whose `python/` folder does
-    /// (a checkout). Its `.venv` Python is used when there is one beside it or
-    /// in the folder above, else `python3` on PATH. `python` overrides the
-    /// interpreter.
-    pub fn find(start: &Path, python: Option<PathBuf>) -> Result<Launch, String> {
-        let holds = |d: &Path| d.join("serve.py").is_file() && d.join("corvus").is_dir();
-        let root = start
-            .ancestors()
-            .find_map(|d| [d.to_path_buf(), d.join("python")].into_iter().find(|c| holds(c)))
-            .ok_or_else(|| format!("no serve.py above {}; pass --root", start.display()))?;
-        let python = python.unwrap_or_else(|| {
-            let rel = if cfg!(windows) {
-                ".venv/Scripts/python.exe"
-            } else {
-                ".venv/bin/python"
-            };
-            [Some(root.as_path()), root.parent()]
-                .into_iter()
-                .flatten()
-                .map(|d| d.join(rel))
-                .find(|v| v.is_file())
-                .unwrap_or_else(|| PathBuf::from(if cfg!(windows) { "python" } else { "python3" }))
-        });
-        Ok(Launch { root, python })
-    }
-}
-
 /// A running backend.
 pub struct Backend {
-    child: Option<Child>,
     core: Option<corvus_core::Core>,
     server: Server,
-}
-
-/// A port nothing listens on right now, from the operating system.
-pub fn free_port() -> std::io::Result<u16> {
-    Ok(std::net::TcpListener::bind("127.0.0.1:0")?.local_addr()?.port())
 }
 
 impl Backend {
     /// Starts the core in this process, serving on a free loopback port. A
     /// second Corvus on this computer is refused (`CORVUS_ALLOW_MULTI=1`
-    /// allows it), the way `serve.py` refuses it.
+    /// allows it).
     pub fn start_core() -> Result<Backend, String> {
         let options = corvus_core::Options::default();
         let core = corvus_core::CoreBuilder::new(options)
@@ -133,38 +74,9 @@ impl Backend {
             .map(|a| a.port())
             .ok_or("the backend has no port")?;
         Ok(Backend {
-            child: None,
             core: Some(core),
             server: Server::local(port),
         })
-    }
-
-    /// Starts `serve.py <port>` and waits until it answers.
-    pub fn start(launch: &Launch, port: u16) -> Result<Backend, String> {
-        let mut command = Command::new(&launch.python);
-        command.arg(launch.root.join("serve.py"));
-        let program = &launch.python;
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::CommandExt;
-            // No console window for a backend the operator never types into.
-            command.creation_flags(0x0800_0000);
-        }
-        let child = command
-            .arg(port.to_string())
-            .env("CORVUS_PARENT_PID", std::process::id().to_string())
-            .current_dir(&launch.root)
-            .stdin(Stdio::null())
-            .spawn()
-            .map_err(|e| format!("could not start {}: {e}", program.display()))?;
-        CHILD_PID.store(child.id(), Ordering::SeqCst);
-        let mut backend = Backend {
-            child: Some(child),
-            core: None,
-            server: Server::local(port),
-        };
-        backend.wait_ready()?;
-        Ok(backend)
     }
 
     /// The server to talk to.
@@ -172,51 +84,11 @@ impl Backend {
         &self.server
     }
 
-    fn wait_ready(&mut self) -> Result<(), String> {
-        let deadline = Instant::now() + STARTUP;
-        loop {
-            if let Some(child) = self.child.as_mut() {
-                if let Ok(Some(status)) = child.try_wait() {
-                    self.child = None;
-                    CHILD_PID.store(0, Ordering::SeqCst);
-                    return Err(format!(
-                        "the backend exited at startup ({status}); see its output above"
-                    ));
-                }
-            }
-            if http::get_json(&self.server, "/api/version").is_ok() {
-                return Ok(());
-            }
-            if Instant::now() >= deadline {
-                self.stop();
-                return Err(format!(
-                    "the backend did not answer on {} within {}s",
-                    self.server.url(),
-                    STARTUP.as_secs()
-                ));
-            }
-            std::thread::sleep(Duration::from_millis(200));
-        }
-    }
-
-    /// Stops the core (every thread it started is joined), or sends the
-    /// child SIGTERM, waits up to the grace period, then SIGKILL. Idempotent.
+    /// Stops the core; every thread it started is joined. Idempotent.
     pub fn stop(&mut self) {
         if let Some(core) = self.core.take() {
             core.stop();
         }
-        let Some(mut child) = self.child.take() else { return };
-        CHILD_PID.store(0, Ordering::SeqCst);
-        terminate(child.id());
-        let deadline = Instant::now() + GRACE;
-        while Instant::now() < deadline {
-            if let Ok(Some(_)) = child.try_wait() {
-                return;
-            }
-            std::thread::sleep(Duration::from_millis(50));
-        }
-        let _ = child.kill();
-        let _ = child.wait();
     }
 }
 
@@ -226,72 +98,9 @@ impl Drop for Backend {
     }
 }
 
-/// Asks process `pid` to stop the polite way.
-fn terminate(pid: u32) {
-    #[cfg(unix)]
-    // SAFETY: kill(2) with a pid this process spawned and has not reaped yet.
-    unsafe {
-        libc::kill(pid as libc::pid_t, libc::SIGTERM);
-    }
-    #[cfg(not(unix))]
-    {
-        // Windows has no SIGTERM for a console child; the kill is all there is.
-        let _ = std::process::Command::new("taskkill")
-            .args(["/PID", &pid.to_string(), "/T", "/F"])
-            .status();
-    }
-}
-
-/// Last resort from a signal handler when the interface did not close in
-/// time: kill the child outright. Does nothing when there is none.
-pub fn kill_from_signal() {
-    let pid = CHILD_PID.swap(0, Ordering::SeqCst);
-    if pid == 0 {
-        return;
-    }
-    #[cfg(unix)]
-    // SAFETY: as in `terminate`.
-    unsafe {
-        libc::kill(pid as libc::pid_t, libc::SIGKILL);
-    }
-    #[cfg(not(unix))]
-    terminate(pid);
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn the_root_is_found_from_below_it() {
-        let here = Path::new(env!("CARGO_MANIFEST_DIR"));
-        let launch = Launch::find(here, Some(PathBuf::from("/bin/true"))).unwrap();
-        assert!(launch.root.join("serve.py").is_file());
-        assert_eq!(launch.python, PathBuf::from("/bin/true"));
-        assert!(Launch::find(Path::new("/"), None).is_err());
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn a_child_that_ignores_sigterm_is_killed_after_the_grace_period() {
-        // sh traps TERM and keeps sleeping; stop() must still end it.
-        let child = Command::new("sh")
-            .args(["-c", "trap '' TERM; sleep 60"])
-            .spawn()
-            .unwrap();
-        // Let sh set its trap first, or the TERM beats it.
-        std::thread::sleep(Duration::from_millis(300));
-        let mut b = Backend {
-            child: Some(child),
-            core: None,
-            server: Server::local(1),
-        };
-        let begun = Instant::now();
-        b.stop();
-        assert!(b.child.is_none());
-        assert!(begun.elapsed() >= GRACE - Duration::from_millis(100));
-        assert!(begun.elapsed() < GRACE + Duration::from_secs(2));
-    }
 
     #[cfg(unix)]
     fn answer_version_once() -> u16 {
@@ -330,7 +139,11 @@ mod tests {
 
     #[test]
     fn a_lock_that_names_a_port_nobody_answers_on_is_ignored() {
-        let free = free_port().unwrap();
+        let free = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
         let lock = lock_file(&format!(r#"{{"pid": 1, "port": {free}, "started": 1.0}}"#));
         assert!(peer_from_lock(&lock).is_none());
     }
@@ -341,19 +154,6 @@ mod tests {
         assert!(peer_from_lock(&lock_file("")).is_none());
         assert!(peer_from_lock(&lock_file("not json")).is_none());
         assert!(peer_from_lock(&lock_file(r#"{"pid": 1, "port": 0}"#)).is_none());
-    }
-
-    #[test]
-    fn a_child_that_honours_sigterm_stops_at_once() {
-        let child = Command::new("sleep").arg("60").spawn().unwrap();
-        let mut b = Backend {
-            child: Some(child),
-            core: None,
-            server: Server::local(1),
-        };
-        let begun = Instant::now();
-        b.stop();
-        assert!(begun.elapsed() < Duration::from_secs(1));
     }
 
     fn core_in(dir: &str) -> Result<Backend, String> {
@@ -372,7 +172,6 @@ mod tests {
             .map(|a| a.port())
             .unwrap();
         Ok(Backend {
-            child: None,
             core: Some(core),
             server: Server::local(port),
         })

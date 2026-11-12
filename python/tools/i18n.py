@@ -1,24 +1,20 @@
 #!/usr/bin/env python3
 """Check and start interface language files (src/lang/*.json).
 
-    python3 tools/i18n.py check            every language file: valid, consistent
-    python3 tools/i18n.py new es Spanish Español
+    python3 python/tools/i18n.py check            every language file: valid, consistent
+    python3 python/tools/i18n.py new es Spanish Español
                                             a file with every known text, blank
-    python3 tools/i18n.py fmt              rewrite the files sorted and indented
+    python3 python/tools/i18n.py fmt              rewrite the files sorted and indented
 
-A plugin keeps its own translations in plugins/<id>/lang/<code>.json, in the
+A plugin keeps its own translations in src/plugins/<id>/lang/<code>.json, in the
 same format (meta is optional there). check and fmt cover those files too; a
 plugin file is compared with the other languages of the same plugin only.
 
 A language file maps the English text of the interface to its translation (see
-corvus/languages.py). There is no source of truth for the list of texts: it is
+src/core/src/languages.rs). There is no source of truth for the list of texts: it is
 the union of what the files already carry, which grows as languages are
 translated. `new` starts a file from that union, and `check` lists what a
 language still lacks against it.
-
-To find texts nobody has translated yet, open the app in the language, use the
-pages, and call Corvus.i18n.template() in the browser console: it returns the
-texts that were shown in English, each with a blank to fill in.
 
 stdlib only.
 """
@@ -27,15 +23,18 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
+ROOT = Path(__file__).resolve().parents[2]
+LANG_DIR = ROOT / "src" / "lang"
+DEFAULT_CODE = "en"
+# The rule of src/core/src/languages.rs: a primary subtag, then at most two more.
+CODE = re.compile(r"^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8}){0,2}$")
 
-from corvus import languages  # noqa: E402
 
-LANG_DIR = Path(languages.bundled_languages_dir())
+def is_valid_code(code: object) -> bool:
+    return isinstance(code, str) and bool(CODE.match(code))
+
 HOLE = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
 # The project writes no dashes in prose: not an em dash, and not an en dash or
 # a hyphen standing between words as one.
@@ -43,14 +42,14 @@ DASH = re.compile("—|–| - ")
 
 
 def files(directory: Path = LANG_DIR) -> list[Path]:
-    return sorted(p for p in directory.glob("*.json") if languages.is_valid_code(p.stem))
+    return sorted(p for p in directory.glob("*.json") if is_valid_code(p.stem))
 
 
-def plugin_files(root: Path = ROOT / "plugins") -> dict[Path, list[Path]]:
+def plugin_files(root: Path = ROOT / "src" / "plugins") -> dict[Path, list[Path]]:
     """Every plugin's language files, keyed by its ``lang`` folder."""
     out: dict[Path, list[Path]] = {}
     for folder in sorted(root.glob("*/lang")):
-        found = sorted(p for p in folder.glob("*.json") if languages.is_valid_code(p.stem))
+        found = sorted(p for p in folder.glob("*.json") if is_valid_code(p.stem))
         if found:
             out[folder] = found
     return out
@@ -91,7 +90,7 @@ def problems(path: Path, union: set[str], need_meta: bool = True) -> list[str]:
             out.append(f"{key!r}: the translation uses a dash")
         if "\n" in value and "\n" not in key:
             out.append(f"{key!r}: the translation has a line break the English lacks")
-    if path.stem != languages.DEFAULT_CODE:
+    if path.stem != DEFAULT_CODE:
         missing = len(union - set(strings))
         if missing:
             out.append(f"note: {missing} known texts have no translation yet")
@@ -150,7 +149,7 @@ def write(path: Path, name: str | None, native: str | None, strings: dict[str, s
 
 
 def cmd_new(args: argparse.Namespace) -> int:
-    if not languages.is_valid_code(args.code):
+    if not is_valid_code(args.code):
         print(f"{args.code!r} is not a language code such as es or pt-BR")
         return 2
     target = LANG_DIR / f"{args.code}.json"

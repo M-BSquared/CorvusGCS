@@ -10,17 +10,35 @@ and fails the build when a library the window needs cannot be found.
 from __future__ import annotations
 
 import importlib.util
+import struct
 import sys
 from pathlib import Path
 
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-_TESTS_DIR = Path(__file__).resolve().parent
-if str(_TESTS_DIR) not in sys.path:
-    sys.path.insert(0, str(_TESTS_DIR))
+def elf(*needed: str) -> bytes:
+    """A 64-bit little-endian ELF whose dynamic section lists *needed*."""
+    base = 0x400000
+    phoff, phnum = 64, 2
+    dyn_off = phoff + 56 * phnum
+    strtab = b"\0"
+    offsets = []
+    for name in needed:
+        offsets.append(len(strtab))
+        strtab += name.encode() + b"\0"
+    entries = [(1, o) for o in offsets] + [(5, 0), (0, 0)]
+    str_off = dyn_off + 16 * len(entries)
+    entries[-2] = (5, base + str_off)
+    dynamic = b"".join(struct.pack("<qQ", tag, value) for tag, value in entries)
+    total = str_off + len(strtab)
+    header = (b"\x7fELF" + bytes([2, 1, 1, 0]) + bytes(8)
+              + struct.pack("<HHIQQQIHHHHHH", 3, 0x3E, 1, 0, phoff, 0, 0, 64, 56, phnum, 64, 0, 0))
+    load = struct.pack("<IIQQQQQQ", 1, 5, 0, base, base, total, total, 0x1000)
+    dyn = struct.pack("<IIQQQQQQ", 2, 6, dyn_off, base + dyn_off, base + dyn_off,
+                      len(dynamic), len(dynamic), 8)
+    return header + load + dyn + dynamic + strtab
 
-from test_qt_bundle import elf  # noqa: E402
 
 _spec = importlib.util.spec_from_file_location("corvus_appimage_libs_tool", ROOT / "tools" / "appimage_libs.py")
 al = importlib.util.module_from_spec(_spec)

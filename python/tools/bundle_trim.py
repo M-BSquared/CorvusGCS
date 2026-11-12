@@ -47,8 +47,7 @@ _CHUNK = 1 << 20
 
 def walk(root: Path) -> Iterator[Path]:
     """Every file and folder under ``root``, symlinks not followed."""
-    for path in sorted(root.rglob("*")):
-        yield path
+    yield from sorted(root.rglob("*"))
 
 
 def names_python(path: Path) -> bool:

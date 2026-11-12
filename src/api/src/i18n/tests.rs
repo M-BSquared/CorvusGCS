@@ -130,16 +130,6 @@ fn every_language_file_keeps_its_placeholders_and_has_no_dash() {
     }
 }
 
-#[test]
-fn the_bundled_files_are_the_web_interfaces_files() {
-    let root = &repo_root();
-    for code in ["en", "de", "fr", "dl"] {
-        let ours = std::fs::read_to_string(root.join("src/lang").join(format!("{code}.json"))).unwrap();
-        let web = std::fs::read_to_string(root.join("python/src/lang").join(format!("{code}.json"))).unwrap();
-        assert_eq!(ours, web, "{code}.json differs between src/lang and python/src/lang");
-    }
-}
-
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
