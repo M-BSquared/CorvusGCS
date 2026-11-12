@@ -1,0 +1,22 @@
+[package]
+name = "corvus_tools"
+version = "0.0.0"
+edition = "2021"
+rust-version = "1.99"
+publish = false
+description = "Build, documentation and language tools of the Corvus GCS repository (corvus-build); never shipped"
+
+[[bin]]
+name = "corvus-build"
+path = "src/main.rs"
+
+[lib]
+name = "corvus_tools"
+path = "src/lib.rs"
+
+[dependencies]
+# The AppImage icon is the logo fitted onto a square.
+image = { workspace = true }
+regex = { workspace = true }
+# Language files keep `meta` before `strings` and their texts sorted as written.
+serde_json = { version = "1", features = ["preserve_order"] }

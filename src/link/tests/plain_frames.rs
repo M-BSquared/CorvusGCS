@@ -1,5 +1,5 @@
 //! The plain MAVLink layer held to pymavlink: every frame in
-//! `tests/data/plain_frames.json` (dumped by `python/tools/dump_link_cases.py`)
+//! `tests/data/plain_frames.json` (dumped from pymavlink while Corvus was Python)
 //! is produced byte for byte from its field values, and read back to them.
 
 use corvus_link::plain::frame::{encode, Event, Parser, Proto, Signing};

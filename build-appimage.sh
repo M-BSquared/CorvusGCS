@@ -3,10 +3,10 @@
 #
 # Bundles the native Rust interface (Cargo.toml and src/, built with cargo)
 # with the backend (corvus_core) inside it, then packs it with appimagetool.
-# No CPython, no pip, no PyInstaller, no Qt, no web engine; corvus_link is built
-# without its `python` feature. The build host needs a Rust toolchain (rustup,
-# cargo); python3 is used only for small build helpers (the library bundler,
-# the icon fallback) and never ends up in the artifact.
+# No CPython, no pip, no PyInstaller, no Qt, no web engine. The build host needs
+# a Rust toolchain (rustup, cargo) and nothing else of its own: the helpers (the
+# library bundler, the icon, the AppImage checks) are corvus-build (src/tools),
+# which cargo builds here too and which never ends up in the artifact.
 #
 # The same AppDir is also packed as a Debian package (build-deb.sh, installed
 # under /opt/corvus-gcs), so one assembly feeds both Linux artifacts.
@@ -53,7 +53,6 @@ echo "AppDir:  $APPDIR"
 echo "Output:  $OUTPUT"
 echo ""
 
-command -v python3 >/dev/null 2>&1 || { echo "ERROR: python3 not found (a build helper, not shipped)" >&2; exit 1; }
 command -v cargo >/dev/null 2>&1 || {
     echo "ERROR: cargo not found; install Rust from https://rustup.rs" >&2
     exit 1
@@ -71,7 +70,7 @@ fi
 MISSING=""
 for required in \
     VERSION LICENSE.md assets/CorvusGCS_logo.png assets/licenses \
-    Cargo.toml Cargo.lock src/main.rs
+    Cargo.toml Cargo.lock src/main.rs src/tools/Cargo.toml
 do
     [ -e "$REPO_DIR/$required" ] || MISSING="$MISSING  $required"
 done
@@ -135,12 +134,21 @@ fi
 mkdir -p "$APPDIR/usr/bin"
 install -m 0755 "$TARGET/$PROFILE/corvus-gcs" "$APPDIR/usr/bin/corvus-gcs-ui"
 
+# The build's own helpers (src/tools), built into the same target folder.
+if ! ( cd "$REPO_DIR" \
+        && CARGO_TARGET_DIR="$TARGET" cargo build --release --locked -p corvus_tools --bin corvus-build ) >>"$GUI_LOG" 2>&1; then
+    echo "ERROR: corvus-build (src/tools) did not build; log: $GUI_LOG" >&2
+    tail -n 30 "$GUI_LOG" >&2 || true
+    exit 1
+fi
+CORVUS_BUILD="$TARGET/release/corvus-build"
+
 # ---- 3d. the system libraries the AppDir links but a clean host lacks ---------
 # Read from the binary's own DT_NEEDED entries: whatever the interface links
 # and the AppDir does not carry is copied in from this host, and the build fails if anything the app cannot
 # start without is still unresolved.
 echo ">>> Bundling the system libraries the AppDir links ..."
-python3 "$REPO_DIR/python/tools/appimage_libs.py" bundle "$APPDIR"
+"$CORVUS_BUILD" appimage-libs bundle "$APPDIR"
 
 # ---- 2. files that travel with it ------------------------------------------
 # The Sustainable Use License requires that anyone who receives a copy of the
@@ -154,13 +162,7 @@ cp -a "$REPO_DIR/assets/licenses" "$APPDIR/assets/licenses"
 find "$APPDIR/assets" -name .DS_Store -delete
 
 # The bundle holds no Python and no PyO3: the build fails if one came back.
-python_inside="$(find "$APPDIR" \( -iname 'python*' -o -iname 'libpython*' -o -name 'site-packages' \
-    -o -name 'pip' -o -name '*.pyc' -o -name 'serve.py' -o -name 'corvus_link*' -o -name 'PySide*' \) -print)"
-if [ -n "$python_inside" ]; then
-    echo "ERROR: the AppDir must hold no Python, and it does:" >&2
-    printf '%s\n' "$python_inside" | sed 's/^/    /' >&2
-    exit 1
-fi
+"$CORVUS_BUILD" bundle-check "$APPDIR" --require usr/bin/corvus-gcs-ui VERSION LICENSE.md
 
 # ---- 3. generate AppRun (no version literal) ---------------------------------
 echo ">>> Generating AppRun + desktop entry ..."
@@ -219,14 +221,8 @@ if [ ! -f "$LOGO" ]; then
     echo "ERROR: assets/CorvusGCS_logo.png not found" >&2
     exit 1
 fi
-if command -v convert >/dev/null 2>&1; then
-    convert "$LOGO" -resize 256x256 -background none -gravity center \
-        -extent 256x256 "PNG32:$ICON"
-else
-    echo ">>> ImageMagick 'convert' not found; fitting the icon with tools/png_icon.py"
-    python3 "$REPO_DIR/python/tools/png_icon.py" "$LOGO" "$ICON" 256
-fi
-ICON_SIZE="$(python3 -c 'import struct, sys; d = open(sys.argv[1], "rb").read(24); print("%dx%d" % struct.unpack(">II", d[16:24]))' "$ICON")"
+"$CORVUS_BUILD" icon "$LOGO" "$ICON" 256
+ICON_SIZE="$("$CORVUS_BUILD" png-size "$ICON")"
 if [ "$ICON_SIZE" != "256x256" ]; then
     echo "ERROR: the AppImage icon is $ICON_SIZE, not 256x256" >&2
     exit 1
@@ -295,29 +291,7 @@ run_appimagetool_extracted() {  # <tool_appimage> <args...>
     rm -rf "$workdir" "$sqfs"
     # Find the embedded squashfs 4.0 superblock and slice the file from there.
     local result
-    result="$(python3 - "$tool" "$sqfs" <<'PY' || true
-import struct, re, sys
-data = open(sys.argv[1], 'rb').read()
-for m in re.finditer(b'hsqs', data):
-    off = m.start()
-    if off + 56 > len(data):
-        continue
-    sb = data[off:off + 56]
-    s_major, s_minor = struct.unpack('<HH', sb[28:32])
-    block_size = struct.unpack('<I', sb[12:16])[0]
-    block_log = struct.unpack('<H', sb[22:24])[0]
-    compression = struct.unpack('<H', sb[20:22])[0]
-    bytes_used = struct.unpack('<Q', sb[40:48])[0]
-    if (s_major == 4 and s_minor == 0 and block_size == (1 << block_log)
-            and compression in (1, 2, 3, 4, 5, 6)
-            and 0 < bytes_used <= len(data) - off):
-        open(sys.argv[2], 'wb').write(data[off:])
-        print("OK %d" % off)
-        sys.exit(0)
-print("FAIL")
-sys.exit(1)
-PY
-)"
+    result="$("$CORVUS_BUILD" squashfs "$tool" "$sqfs" 2>&1 || true)"
     case "$result" in
         OK\ *) ;;
         *) echo "ERROR: no valid squashfs superblock in $tool ($result)" >&2; return 1 ;;
@@ -348,20 +322,7 @@ fi
 
 # The old runtime is a dynamic ELF (PT_INTERP, libfuse.so.2); the type-2
 # runtime is static. Refuse to ship the former.
-if ! python3 - "$OUTPUT" <<'PY'
-import struct, sys
-with open(sys.argv[1], "rb") as f:
-    head = f.read(64)
-    if head[:4] != b"\x7fELF" or head[4] != 2:
-        sys.exit("not a 64-bit ELF runtime")
-    phoff, = struct.unpack_from("<Q", head, 32)
-    phentsize, phnum = struct.unpack_from("<HH", head, 54)
-    f.seek(phoff)
-    table = f.read(phentsize * phnum)
-for i in range(phnum):
-    if struct.unpack_from("<I", table, i * phentsize)[0] == 3:
-        sys.exit("dynamically linked runtime (needs libfuse2 and the system glibc)")
-PY
+if ! "$CORVUS_BUILD" elf-static "$OUTPUT"
 then
     echo "ERROR: $OUTPUT carries the old AppImage runtime" >&2
     exit 1

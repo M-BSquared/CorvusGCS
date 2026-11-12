@@ -190,17 +190,23 @@ backend, the web interface (`python/src`, the web plugins, their JS tests),
 the Qt window, `tests/reference`, the dump scripts, the route harness and every
 test of a deleted module. The fixtures they made stay frozen in
 `src/core/tests/data`. `corvus-gcs --root/--python` and `./run.sh --web`,
-`--python-backend` are gone. Kept, and why:
+`--python-backend` are gone. The rest of `python/` followed the same day, and
+the repository needs no Python and no `.venv` any more:
 
-* The 3D map shots (`src/map3d/shots`): `tools/scene.py` with `scene_kit`
-  (the simulated PX4, now in front of `corvus-core`) and `corvus/buildings.py`
-  for `make_city.py`. `gui_soak.py` and `geofence_roundtrip.py` use the same
-  scene.
-* Tests of Rust and of the bundles: `test_corvus_link_*.py` (against
-  pymavlink), the packaging, bundle and website tests.
-* Build and docs helpers: `appimage_libs.py` with `qt_bundle.py` (its ELF
-  reader), `png_icon.py`, `bundle_trim.py`, `guide.py`, `i18n.py` (now on
-  `src/lang`).
+* `test_corvus_link_*.py`: pymavlink's answers (every table, enum and constant,
+  a frame of every message in both versions, a damaged stream, signing, x25)
+  are frozen in `src/link/tests/data/pymavlink.json.gz` and held by
+  `src/link/tests/pymavlink_frozen.rs`. The PyO3 layer of `corvus_link`, which
+  only the Python program used, is deleted with them.
+* The packaging, bundle, manual and website tests: `src/tools/tests`.
+* The build and docs helpers (`appimage_libs.py`, `png_icon.py`,
+  `bundle_trim.py`, `guide.py`, `i18n.py`, `gui_soak.py`): `corvus-build`
+  (`src/tools`), byte for byte where they write files.
+* Gone without a successor: the simulated aircraft (`scene.py`, `scene_kit`),
+  with the 3D map pictures (`src/map3d/shots`), `make_city.py` and
+  `geofence_roundtrip.py` that ran on it. Open: render the five 3D views from
+  the app itself (`CORVUS_GUI_3D` and `CORVUS_GUI_SHOT` already exist) and
+  compare them in a Rust test.
 * Open: the Android app (`android/`) is a WebView on the web interface, which
   is gone, so it has no page to show; `src/PARITY.md` still lists partial rows
   that can no longer be compared against the web page. One Python test fails

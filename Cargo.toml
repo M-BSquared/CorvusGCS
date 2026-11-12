@@ -10,9 +10,9 @@ build = "build.rs"
 [workspace]
 # One lock file and one target folder for the interface and the crates it is
 # made of (the API plugins build on and the plugins themselves), src/link (the
-# MAVLink crate) included: it builds without its optional python feature, so
-# it needs no Python and no toolchain of its own.
-members = ["src/link", "src/core", "src/api", "src/plugins/vibration", "src/plugins/ssh-launcher", "src/plugins/map-entities", "src/plugins/schwalby"]
+# MAVLink crate) and src/tools (corvus-build, the repository's own tools, which
+# the build scripts run through cargo and no bundle carries).
+members = ["src/link", "src/core", "src/api", "src/tools", "src/plugins/vibration", "src/plugins/ssh-launcher", "src/plugins/map-entities", "src/plugins/schwalby"]
 default-members = [".", "src/core", "src/api", "src/plugins/vibration", "src/plugins/ssh-launcher", "src/plugins/map-entities", "src/plugins/schwalby"]
 
 [workspace.dependencies]

@@ -1,6 +1,5 @@
-> This folder is the one the native interface (`src/i18n`) compiles in. `python/src/lang` is the same
-> set for the web interface, held identical by a test until the web interface is removed: change a
-> file in both places.
+> This folder is the one the native interface compiles in (`src/api/src/i18n`, and the backend's
+> `src/core/src/languages.rs`).
 
 # Interface languages
 
@@ -54,24 +53,19 @@ In a checkout, this writes a file with every text the other languages already
 list, each blank:
 
 ```bash
-python3 tools/i18n.py new es Spanish Español
+cargo run -q -p corvus_tools --bin corvus-build -- i18n new es Spanish Español
 ```
 
 Fill in the blanks. Leave a text blank, or delete the line, where the English is
 fine as it is (`PX4`, `GPS`).
 
-To find texts nobody has translated, open Corvus in the language, go through the
-pages, and run this in the browser console. It prints the English texts that
-were on screen without a translation, each with a blank:
-
-```js
-copy(JSON.stringify(Corvus.i18n.template(), null, 2))
-```
+The texts a language still lacks against the others are what `i18n check`
+counts below; `i18n new` lists them blank in a new file.
 
 Check the result before you send it:
 
 ```bash
-python3 tools/i18n.py check
+cargo run -q -p corvus_tools --bin corvus-build -- i18n check
 ```
 
 It reads every file and reports a text whose `{placeholders}` differ from the
@@ -81,13 +75,13 @@ language lacks.
 ## Plugins
 
 A plugin keeps its own translations in its own folder, the way it keeps its own
-tests: `plugins/<id>/lang/<code>.json`, with the same `strings` map (`meta` is
+tests: `src/plugins/<id>/lang/<code>.json`, with the same `strings` map (`meta` is
 optional there, the main file names the language). When a language is loaded,
 the files of every bundled and installed plugin are merged into it. If the main
 file and a plugin translate the same English text, the main file wins. Texts
 that only one plugin shows belong in that plugin's folder, not here.
 
-`python3 tools/i18n.py check` reads the plugin files as well and compares each
+`corvus-build i18n check` reads the plugin files as well and compares each
 plugin's languages with one another.
 
 ## Keeping buttons short

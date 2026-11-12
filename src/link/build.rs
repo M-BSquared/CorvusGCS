@@ -3,8 +3,8 @@
 //! This follows pymavlink's `mavparse` and `mavgen_python` step for step, so
 //! the tables are the ones pymavlink would generate for the `all` dialect:
 //! the same include order, the same field sort, the same CRC_EXTRA, the same
-//! enum merging and the same constants. The parity tests compare every
-//! message and constant against pymavlink, which is what keeps it honest.
+//! enum merging and the same constants. `tests/pymavlink_frozen.rs` compares
+//! every table and constant with pymavlink's frozen answers.
 
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;

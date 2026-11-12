@@ -70,17 +70,9 @@ if (( VERIFY )); then
     cargo clippy --workspace --all-targets --locked -- -D warnings
     echo "--- cargo test"
     cargo test --workspace --locked
-    # The Python tests check the Rust link and the bundles; they need the
-    # venv that ./run.sh --venv creates.
-    PY="$REPO_DIR/.venv/bin/python"
-    if [[ -d python && -x "$PY" ]]; then
-        echo "--- pytest"
-        (cd python && "$PY" -m pytest -q)
-        echo "--- ruff"
-        (cd python && "$PY" -m ruff check corvus tests tools)
-    else
-        echo "--- no python/ or .venv: skipping the Python gate"
-    fi
+    echo "--- manual frames and language files"
+    cargo run -q --locked -p corvus_tools --bin corvus-build -- guide --check
+    cargo run -q --locked -p corvus_tools --bin corvus-build -- i18n check
 else
     echo "--- skipping tests (--no-verify)"
 fi

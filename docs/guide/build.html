@@ -1,6 +1,6 @@
 <!DOCTYPE html>
-<!-- Written by tools/guide.py around the content block below. Edit the text
-     between the guide:content markers; run the script for everything else. -->
+<!-- Written by corvus-build guide (src/tools) around the content block below.
+     Edit the text between the guide:content markers; run it for everything else. -->
 <html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8">
@@ -153,11 +153,12 @@
 <h1>Build the apps</h1>
 <p class="doc-lead">
   The release files are built by the same scripts you can run yourself. Each
-  produces a self-contained bundle with the native interface, a Python
-  interpreter and every runtime dependency inside, named from the
-  <code>VERSION</code> file. The interface is the Rust program in
-  <code>Cargo.toml</code> and <code>src/</code>, built with cargo; the build machine therefore
-  needs a Rust toolchain from <a href="https://rustup.rs">rustup.rs</a>.
+  produces a self-contained bundle: one native program, the interface with the
+  backend inside it, named from the <code>VERSION</code> file. It is the Rust
+  program in <code>Cargo.toml</code> and <code>src/</code>, built with cargo,
+  so the build machine needs a Rust toolchain from
+  <a href="https://rustup.rs">rustup.rs</a> and nothing else of its own. No
+  Python is needed to build, test or run Corvus.
 </p>
 
 <h2 id="entry-points">Entry points</h2>
@@ -175,29 +176,34 @@
   <thead><tr><th>Platform</th><th>Script</th><th>Result in <code>dist/</code></th></tr></thead>
   <tbody>
     <tr><td>Linux x86_64</td><td><code>build-appimage.sh</code>, <code>build-deb.sh</code></td><td><code>Corvus_GCS-&lt;version&gt;-x86_64.AppImage</code> and <code>Corvus_GCS-&lt;version&gt;-amd64.deb</code></td></tr>
-    <tr><td>macOS arm64 / x86_64</td><td><code>build-macos-app.sh</code></td><td><code>Corvus GCS.app</code>, and <code>Corvus_GCS-&lt;version&gt;-macOS-&lt;arch&gt;.dmg</code> with <code>--dmg</code></td></tr>
+    <tr><td>macOS arm64 or x86_64</td><td><code>build-macos-app.sh</code></td><td><code>Corvus GCS.app</code>, and <code>Corvus_GCS-&lt;version&gt;-macOS-&lt;arch&gt;.dmg</code> with <code>--dmg</code></td></tr>
     <tr><td>Windows x64</td><td><code>build-windows.ps1</code></td><td><code>Corvus GCS\</code>, and <code>Corvus_GCS-&lt;version&gt;-windows-x64.zip</code> with <code>-Zip</code></td></tr>
   </tbody>
 </table>
 </div>
 
-<h2 id="rust">The MAVLink module needs Rust</h2>
+<h2 id="rust">Rust is all a build needs</h2>
 <p>
-  Corvus speaks MAVLink through <code>corvus_link</code>, a module written in
-  Rust that lives in <code>src/link</code>. Every build, and
-  <code>./run.sh</code>, compiles it, so the build machine needs a Rust
-  toolchain: install it from <a href="https://rustup.rs/">rustup.rs</a> and
-  check that <code>cargo --version</code> answers. The finished app does not
-  need Rust. The first build downloads the Rust libraries the module uses and
-  the <code>maturin</code> build tool once.
+  Install Rust from <a href="https://rustup.rs/">rustup.rs</a> and check that
+  <code>cargo --version</code> answers. The repository names its Rust version
+  in <code>rust-toolchain.toml</code>, and rustup fetches it on the first
+  build. The first build also downloads the Rust libraries once; later builds
+  work offline. The finished app needs no Rust.
+</p>
+<p>
+  The helpers the scripts need besides the compiler (bundling the Linux
+  libraries, the AppImage icon, the bundle checks) are a small Rust program of
+  the repository, <code>corvus-build</code> in <code>src/tools</code>, which the
+  scripts build with cargo as they go.
 </p>
 
 <h2 id="linux">Linux</h2>
 <p>
-  Needs Ubuntu or Debian on x86_64, <code>python3</code> 3.12 or newer,
-  <code>pip</code>, <code>wget</code> or <code>curl</code>, and about 1 GB of
-  free disk. The first run downloads <code>appimagetool</code> and the Python
-  wheels and caches them under <code>build/</code>.
+  Needs Ubuntu or Debian on x86_64, <code>wget</code> or <code>curl</code>,
+  <code>squashfs-tools</code> and <code>dpkg-dev</code>, the X11 and Wayland
+  development headers the interface builds against, and about 1 GB of free
+  disk. The first run downloads <code>appimagetool</code> and caches it under
+  <code>build/</code>.
 </p>
 <p>
   An AppImage links against the C library of the machine it was built on, so
@@ -208,15 +214,9 @@
 
 <h2 id="macos">macOS</h2>
 <p>
-  Needs the Xcode command line tools (<code>xcode-select --install</code>) and
-  a <strong>framework</strong> CPython 3.12 or newer, such as Homebrew's
-  <code>python@3.12</code> or a python.org install. A conda interpreter cannot
-  be moved into a bundle and is rejected with a clear error.
-</p>
-<p>
-  The app needs macOS 12 or later. The bundle keeps only the architecture of
-  the Mac it is built on, and the build stops if the interface, the launcher
-  or the interpreter is of another one.
+  Needs the Xcode command line tools (<code>xcode-select --install</code>).
+  The app needs macOS 12 or later. The bundle holds the architecture of the
+  Mac it is built on, and the build stops if the program is of another one.
 </p>
 <p>
   The bundle is ad hoc signed. To sign it with a developer certificate, set
@@ -242,23 +242,15 @@
 
 <h2 id="windows">Windows</h2>
 <p>
-  Needs a 64 bit python.org CPython 3.12 or newer on <code>PATH</code> and
-  a Rust toolchain. A conda interpreter is rejected, because its
-  DLLs live outside its own folder and cannot be packaged.
-</p>
-<p>
-  The Windows bundle is not frozen. The script lays out python.org's embeddable
-  CPython beside the packages pip resolved and the backend's own files, in
-  <code>backend\</code>, and the interface (<code>Corvus GCS.exe</code>, one
-  Rust program) starts <code>backend\python\python.exe serve.py</code> as its
-  child. Nothing is unpacked at launch. Once the backend is part of the Rust
-  program, <code>backend\</code> goes away and the folder is the executable.
+  Needs a Rust toolchain with the MSVC build tools that rustup asks for. The
+  folder it makes holds <code>Corvus GCS.exe</code>, the version and the
+  licence files, and nothing is unpacked at launch.
 </p>
 
 <h2 id="rules">What every build guarantees</h2>
 <ul>
-  <li><strong>Self-contained.</strong> No system Python, conda or Rust is needed on the target machine, and no Qt is shipped.</li>
-  <li><strong>Offline at run time.</strong> The build may download wheels and tools once; the running app never needs the network.</li>
+  <li><strong>Self-contained.</strong> No Python, conda, Rust or Qt is needed on the target machine, and none is shipped.</li>
+  <li><strong>Offline at run time.</strong> The build may download libraries and tools once; the running app never needs the network.</li>
   <li><strong>One version.</strong> Every file name, window title and launcher reads the one <code>VERSION</code> file; no script carries a version of its own.</li>
   <li><strong>The licence travels with it.</strong> <code>LICENSE.md</code> is inside every bundle, because the licence requires that whoever receives the software also receives its terms.</li>
   <li><strong>Clean signals.</strong> The launcher hands over to the interface, so quitting from the operating system reaches Corvus's own shutdown directly, and the interface then stops the backend.</li>
@@ -266,25 +258,26 @@
 
 <h2 id="ci">Continuous integration</h2>
 <p>
-  GitHub Actions runs the tests on Linux and Windows, the linter, the frontend
-  checks, and all three builds with the same scripts, in
+  GitHub Actions checks formatting and lints, runs the tests on Linux and
+  Windows, and makes all the builds with the same scripts, in
   <code>.github/workflows/build.yml</code>. A tag <code>v&lt;version&gt;</code>
-  publishes the AppImage, the .deb, the macOS disk image and the Windows zip as a GitHub
-  release. Build output (<code>build/</code>, <code>dist/</code>,
-  <code>*.AppImage</code>, <code>*.dmg</code>, the Windows zip) is never
-  committed.
+  publishes the AppImage, the .deb, the macOS disk image, the Windows zip and
+  the Android app as a GitHub release. Build output (<code>build/</code>,
+  <code>dist/</code>, <code>*.AppImage</code>, <code>*.dmg</code>, the Windows
+  zip) is never committed.
 </p>
 
 <h2 id="tests">Running the tests</h2>
-<pre><code>.venv/bin/python -m pytest -q
-.venv/bin/python -m ruff check corvus serve.py tests plugins
-node tools/frontend_tests.js</code></pre>
+<pre><code>cargo fmt --check
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo test --workspace --locked</code></pre>
 <p>
-  Both runners take the tests in <code>tests/</code> and those of every
-  plugin in <code>plugins/</code>, which keeps its own in
-  <code>plugins/&lt;id&gt;/tests/</code>. A plugin that is not installed has
-  no tests to run, so leaving one out never fails the suite.
+  The tests cover the interface, the backend, the MAVLink crate (held to the
+  answers of pymavlink, frozen when the project was Python), the plugins, and
+  the repository itself: the build scripts, the manual, the website and the
+  language files. After editing a page of this manual, rewrite its frame:
 </p>
+<pre><code>cargo run -q -p corvus_tools --bin corvus-build -- guide</code></pre>
 <!-- /guide:content -->
 </article>
 
@@ -301,7 +294,7 @@ node tools/frontend_tests.js</code></pre>
   <p class="guide-toc-title" id="toc-title">On this page</p>
   <ul>
     <li><a href="#entry-points">Entry points</a></li>
-    <li><a href="#rust">The MAVLink module needs Rust</a></li>
+    <li><a href="#rust">Rust is all a build needs</a></li>
     <li><a href="#linux">Linux</a></li>
     <li><a href="#macos">macOS</a></li>
     <li><a href="#windows">Windows</a></li>

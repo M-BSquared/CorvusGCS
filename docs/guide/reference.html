@@ -1,6 +1,6 @@
 <!DOCTYPE html>
-<!-- Written by tools/guide.py around the content block below. Edit the text
-     between the guide:content markers; run the script for everything else. -->
+<!-- Written by corvus-build guide (src/tools) around the content block below.
+     Edit the text between the guide:content markers; run it for everything else. -->
 <html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8">
@@ -230,16 +230,18 @@
 </p>
 
 <h2 id="command-line">Command-line arguments</h2>
-<p>All three ways of starting Corvus take the same two optional arguments:</p>
-<pre><code>corvus-gcs [PORT] [CONNECTION]
-./run.sh [PORT] [CONNECTION]
-python serve.py [PORT] [CONNECTION]      # backend only, UI in a browser</code></pre>
+<p>The program, and <code>./run.sh</code> from a checkout, take these optional arguments:</p>
+<pre><code>corvus-gcs [--server http://host:port] [--page PAGE] [--scroll PX]
+./run.sh [--release | --fast] [the same arguments]</code></pre>
 <dl>
-  <dt><code>PORT</code></dt>
-  <dd>The local HTTP port, 1 to 65535. Overrides <code>http_port</code>. If it is taken, Corvus tries the next ones, up to twenty, and reports the one it got.</dd>
-  <dt><code>CONNECTION</code></dt>
-  <dd>A MAVLink connection string. Wins over every automatic choice for this launch.</dd>
+  <dt><code>--server</code></dt>
+  <dd>Use the backend of another Corvus at that address instead of the one inside this program.</dd>
+  <dt><code>--page</code></dt>
+  <dd>The page to open on: <code>setup</code>, a setup tile, <code>safety:SENSOR</code>, <code>mission</code>, <code>mission:NAME</code>, <code>settings</code>, <code>logs</code> or <code>analysis</code>.</dd>
+  <dt><code>--scroll</code></dt>
+  <dd>How far down that page to start, in pixels.</dd>
 </dl>
+<p>The connection is chosen on the Link panel; these are the strings it takes.</p>
 
 <h3 id="connection-strings">Connection strings</h3>
 <div class="table-wrap">
@@ -267,7 +269,6 @@ python serve.py [PORT] [CONNECTION]      # backend only, UI in a browser</code><
     <tr><td><code>CORVUS_MAVLINK_SIGNING_KEY_FILE</code></td><td>Turn on MAVLink 2 signing with the key in this file. See <a href="security.html#signing">MAVLink signing</a>.</td></tr>
     <tr><td><code>CORVUS_FFMPEG</code></td><td>The ffmpeg to use for RTSP cameras, when it is not on the path and not set on the Video page.</td></tr>
     <tr><td><code>CORVUS_TILE_CACHE_DIR</code></td><td>Where the offline map store lives, overriding the default.</td></tr>
-    <tr><td><code>CORVUS_PYTHON</code></td><td><code>run.sh</code> only: the Python interpreter to create <code>.venv/</code> from.</td></tr>
     <tr><td><code>CORVUS_DIST</code>, <code>CODESIGN_IDENTITY</code></td><td>Build only; see <a href="build.html#macos">Build the apps</a>.</td></tr>
   </tbody>
 </table>

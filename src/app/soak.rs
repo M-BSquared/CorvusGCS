@@ -2,7 +2,8 @@
 //! seconds it moves on to the next step of a fixed cycle (the map panned and
 //! zoomed, the 3D map opened and moved, every page, a setup tile at a time, the
 //! language switched). Nothing is sent to the vehicle; it only changes what is
-//! shown. `python/tools/gui_soak.py` starts it and samples the memory.
+//! shown. `corvus-build soak` (src/tools) starts it in a sandbox home and samples
+//! the memory.
 //! `CORVUS_GUI_SOAK_STEP=2.5` sets the seconds a step lasts (4 by default).
 //! `CORVUS_GUI_SOAK=3d` stays in the 3D map and jumps between mountains, cities
 //! and zoom levels at every step, to hold the view's memory at its worst.

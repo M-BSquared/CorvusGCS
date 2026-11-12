@@ -3,9 +3,9 @@
 #
 # The folder is one executable: the Rust interface (Cargo.toml and src/, built
 # with cargo) with the backend (corvus_core) inside it. No CPython, no pip, no
-# PyInstaller, no embeddable interpreter, no Qt; corvus_link is built without
-# its `python` feature. The build host needs a Rust toolchain (rustup, cargo)
-# and nothing else; the target machine needs nothing.
+# PyInstaller, no embeddable interpreter, no Qt, no PyO3. The build host needs a
+# Rust toolchain (rustup, cargo) and nothing else; the target machine needs
+# nothing.
 #
 #   Corvus GCS\Corvus GCS.exe      the interface and the backend
 #   Corvus GCS\VERSION             the version of the build
@@ -109,8 +109,8 @@ Copy-Item -Recurse (Join-Path $RepoDir "assets\licenses") (Join-Path $AppDir "as
 
 # ---- 3. verify ----------------------------------------------------------------
 # The folder holds the executable and the licence files and no Python of any
-# kind. The same rule is checked on a finished bundle by
-# python\tests\test_bundle_smoke.py.
+# kind. `corvus-build bundle-check` (src/tools) makes the same check on a
+# finished bundle.
 if (-not $NoVerify) {
     Write-Host ">>> Verifying the bundle ..."
     foreach ($needed in @("$AppName.exe", "VERSION", "LICENSE.md", "assets\licenses")) {

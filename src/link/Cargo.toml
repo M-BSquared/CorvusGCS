@@ -10,23 +10,15 @@ build = "build.rs"
 [lib]
 name = "corvus_link"
 path = "lib.rs"
-crate-type = ["cdylib", "rlib"]
 
 [features]
-# None on by default: a workspace build is the plain crate the program uses,
-# and `tls` or `python` are asked for where wanted (pyproject.toml asks for python).
+# None on by default; `tls` is asked for where wanted.
 default = []
-# The Python extension module (what python/ imports as corvus_link). Without it
-# the crate is plain Rust: the dialect tables, the transports and the `plain`
-# layer, with no PyO3 and no Python on the build machine.
-python = ["dep:pyo3"]
 # wss: needs a C compiler for ring.
 tls = ["dep:rustls", "dep:rustls-native-certs"]
 
 [dependencies]
-pyo3 = { version = "0.25", features = ["abi3-py312"], optional = true }
 sha2 = "0.10"
-indexmap = "2"
 serde_json = "1"
 socket2 = { version = "0.5", features = ["all"] }
 tungstenite = { version = "0.30.0", default-features = false, features = ["handshake"] }
@@ -44,5 +36,7 @@ serialport = { version = "4", default-features = false }
 roxmltree = "0.20"
 
 [dev-dependencies]
-# The plain layer's tests read the frames pymavlink produced.
+# The plain layer's tests read the frames and tables pymavlink produced,
+# frozen once into tests/data (pymavlink.json.gz is gzipped).
 serde_json = "1"
+flate2 = { workspace = true }

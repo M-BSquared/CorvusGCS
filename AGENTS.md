@@ -10,13 +10,11 @@ consistent.
 
 ```
 Cargo.toml  build.rs  rust-toolchain.toml  src/    the Rust program: the egui interface (src/main.rs, one
-                                                   folder per area) and, in src/link/, the MAVLink crate
-                                                   (its own Cargo.toml, PyO3, built by maturin)
-python/                                            tests and tools, no program: tests/ (corvus_link
-                                                   against pymavlink, the bundles), tools/ (the
-                                                   simulated aircraft scene.py, build helpers),
-                                                   corvus/buildings.py (3D map shots), pyproject.toml
-assets/  docs/  VERSION  LICENSE.md                shared by both
+                                                   folder per area), src/core (the backend), src/link
+                                                   (the MAVLink crate), src/api and src/plugins, and
+                                                   src/tools (corvus-build: the build, manual and
+                                                   language tools, never shipped)
+assets/  docs/  VERSION  LICENSE.md                artwork, website and manual, version, licence
 build*.sh  build-windows.ps1  run.sh  release.sh   packaging for the Rust interface plus its backend
 ```
 
@@ -24,9 +22,12 @@ The backend is `corvus_core` (`src/core`, open work in `PLAN.md` section 0),
 run inside the interface's process. The Python program (`serve.py`, the
 `corvus/` backend, the web interface and its Qt window) was deleted on
 2026-11-12 once Rust had replaced it; its answers live on as the fixtures in
-`src/core/tests/data`. Sections below that still describe the Python backend
-or the web page are history: the Rust code is the reference now. Paths in this
-file that name `tests/`, `tools/` or `pyproject.toml` are relative to `python/`.
+`src/core/tests/data`. The rest of `python/` (the pymavlink parity tests, the
+simulated aircraft, the build helpers) followed the same day: pymavlink's
+answers are frozen in `src/link/tests/data`, the helpers are `corvus-build`
+(`src/tools`). Nothing in the repository needs Python to build, test or run,
+and no `.venv` is used. Sections below that still describe the Python backend
+or the web page are history: the Rust code is the reference now.
 
 ## Agent roster
 
@@ -49,7 +50,7 @@ agents. An agent's name is its file name: `backend` is `.opencode/agents/backend
 - `map` — map engine, GIS transforms, offline tile cache, DEM, buildings.
 - `plugins` — the plugins in `plugins/`, the plugin registry and the
   `Corvus.plugins` API a plugin sees.
-- `i18n` — interface language files, the loader and `tools/i18n.py`.
+- `i18n` — interface language files, the loader and `corvus-build i18n`.
 - `perf` — frame-rate/latency optimization, leak hunting; measures before and
   after.
 - `doc` — code/architecture/user documentation only; never changes logic.
@@ -73,9 +74,10 @@ agents. An agent's name is its file name: `backend` is `.opencode/agents/backend
   Release); automates the build after every major change; never hardcodes a
   version.
 - `review` — final safety/reliability audit and test authoring.
-- `verify` — runs the real app against a simulated aircraft (`tools/scene.py`,
-  sandboxed servers), reports what it saw, and makes the README and website
-  pictures. Edits no product code.
+- `verify` — runs the real app in a sandbox home (`corvus-build soak`, the
+  `CORVUS_GUI_SOAK` modes), reports what it saw, and makes the README and
+  website pictures. Edits no product code. The simulated aircraft went with
+  Python; a vehicle is a real one or a SITL the operator runs.
 
 ## Product
 
@@ -201,12 +203,11 @@ Shared packaging invariants — a violation of any of these is a build bug:
 
 - **Self-contained, and no Python.** The compiled interface with `corvus_core`
   inside it, and nothing else that runs: no CPython, no `pip`, no PyInstaller,
-  no `site-packages`, no `serve.py`, no PyO3 extension. `corvus_link` is
-  built without its `python` feature (the root workspace depends on it with
-  `default-features = false`). Every build script fails when it finds a Python
-  file in the bundle, and `tools/bundle_trim.py check <bundle>` makes the same
-  check on a finished artifact (CI runs it on the AppImage, the macOS smoke
-  test on the `.app`). No system Python, no conda, no Qt on the target machine.
+  no `site-packages`, no `serve.py`, no PyO3 (`corvus_link` is plain Rust).
+  Every build script fails when it finds a Python file in the bundle, and
+  `corvus-build bundle-check <bundle>` makes the same check on a finished
+  artifact (CI runs `.github/scripts/check-bundle.sh` on the AppImage, the
+  macOS job `src/tools/tests/bundle_smoke.rs` on the `.app`). No system Python, no conda, no Qt on the target machine.
   The interface opens OpenGL, X11 and Wayland from the machine it runs on, as
   every desktop program does.
 - **No Qt in a bundle.** The interface is egui on OpenGL (glow) with a 24 bit
@@ -223,9 +224,11 @@ Shared packaging invariants — a violation of any of these is a build bug:
   by `AppRun`, which `exec`s it so signals reach it) and `Corvus GCS.exe`.
   Backend teardown is the interface's normal exit path: the core is stopped and
   its threads joined; there is no child process to kill.
-- **Build host.** A Rust toolchain (cargo) and the platform's own tools. The
-  Linux script uses `python3` for small helpers (the library bundler
-  `tools/appimage_libs.py`, an icon fallback); it never enters the artifact.
+- **Build host.** A Rust toolchain (cargo) and the platform's own tools, and
+  nothing else: no Python, no ImageMagick. The Linux script's helpers (the
+  library bundler, the icon, the squashfs and runtime checks) are
+  `corvus-build` (`src/tools`), which cargo builds alongside; it never enters
+  the artifact.
 - **Offline at runtime.** The build may download wheels and packaging tools
   once; the *running* app must never need the network.
 - **Layout contract.** `VERSION`, `LICENSE.md` and `assets/licenses/` sit
@@ -278,9 +281,8 @@ commit**, so it tracks every change — small or large — with no manual editin
   clone:
   `git config core.hooksPath .githooks`. Skip for a single commit (rare) with
   `git commit --no-verify`; the version then does not bump for that commit.
-- **Python:** `corvus/version.py` reads `VERSION` at import time and exposes
-  `__version__`, `VERSION` (the string), and `get_version()`. No other Python
-  module may contain a literal version string — it imports from `corvus.version`.
+- **Rust:** `corvus_core::version` reads `VERSION` at compile time
+  (`include_str!`); nothing else carries a version literal.
 - **HTTP:** the backend serves the running version at `GET /api/version` (JSON:
   `{"product": "Corvus GCS", "version": "...", "px4_profile": "..."}`). The
   frontend fetches it once on load; the HUD / About dialog / window title all
@@ -405,18 +407,16 @@ logs.
   direct, not marketing copy.
 - **Comments:** do not add comments unless asked. When you do, keep them
   short and explain *why*, not *what*.
-- **Typing:** Python code uses type annotations; public functions carry
-  docstrings.
-- **Dependencies:** stdlib first. Justify any third-party add. Every Python
-  package — runtime, test, lint and build tooling — is named in
-  `pyproject.toml`'s `[dependency-groups]` (`headless`, `app`, `test`, `lint`,
-  `dev`) and nowhere else; every installer reads it with
-  `pip install --group`. No `requirements*.txt`, no conda environment file —
-  `tests/test_packaging_single_source.py` fails if one comes back.
-  (`requirements.lock` is the one exception, and it is generated, never
-  written: a build's resolved set, promoted to pin a release rebuild.)
-- **Testing:** `pytest` for unit/integration tests. MAVLink parsers, the
-  state store, and HTTP/SSE endpoints must have tests.
+- **Language:** the program and its tools are Rust. No Python, no venv, no
+  `pyproject.toml`; `src/tools/tests/repo.rs` fails if a build step calls
+  Python or a `.py` file comes back.
+- **Dependencies:** the standard library first. Justify any third-party crate;
+  shared versions live in the root `Cargo.toml`'s `[workspace.dependencies]`,
+  and every build is `--locked`.
+- **Testing:** `cargo test --workspace --locked`. MAVLink parsing, the state
+  store and the HTTP/SSE endpoints must have tests; behaviour the Python
+  program defined is held to the fixtures dumped from it (`src/core/tests/data`,
+  `src/link/tests/data`), which are not regenerated to match the code.
 - **Attribution (mandatory wording).** Corvus GCS is developed **with** the
   Universität der Bundeswehr München — never *at* it. That preposition is not a
   stylistic choice and it is not negotiable: it applies to the README, the
@@ -440,8 +440,8 @@ does not accept a handoff that skips one; `review` fails it.
    v1.17 and v1.18, with a graceful fallback when absent.
 4. **Lifecycle.** Every thread, socket, subprocess and file handle the change
    introduces is torn down on the `atexit` + `SIGINT`/`SIGTERM` path.
-5. **Tests.** `python3 -m pytest -q` passes; new behaviour has a test, fixed
-   bugs have a regression test.
+5. **Tests.** `cargo test --workspace --locked` passes; new behaviour has a
+   test, fixed bugs have a regression test.
 6. **Packaging.** If the change adds a file, dependency, or runtime path, both
    `build-appimage.sh` and `build-macos-app.sh` still bundle it, and the CI
    pipeline (`.github/workflows/build.yml`) still passes.
@@ -458,7 +458,7 @@ DONE:    <one line: what changed>
 FILES:   <paths touched>
 CONTRACT:<endpoints / SSE event names / state-store fields / function
           signatures other agents must match — or "none">
-CHECKS:  <commands run and their result, e.g. "pytest -q: 42 passed">
+CHECKS:  <commands run and their result, e.g. "cargo test: 42 passed">
 RISKS:   <what a reviewer should look at hardest — or "none">
 NEXT:    <follow-up work and the agent that owns it — or "none">
 ```
@@ -480,16 +480,12 @@ Rules that keep the chain honest:
 cargo run                       # the same as ./run.sh, from a clean checkout (rust-toolchain.toml is honoured)
 cargo fmt --check && cargo clippy --workspace --all-targets --locked -- -D warnings && cargo test --locked --workspace   # the Rust gates, src/link included
 cargo build --timings           # where a build spends its time (target/cargo-timings/)
-./run.sh --venv                 # .venv for the Python tests and tools (pymavlink, corvus_link with its `python` feature)
-(cd python && ../.venv/bin/python -m pytest -q)   # the Python tests: corvus_link against pymavlink, the bundles
-(cd python && ../.venv/bin/python -m ruff check corvus tests tools)   # lint, as CI runs it
-python3 python/tools/scene.py run flight   # a sandboxed corvus-core with a simulated PX4 (needs a cargo build)
-python3 src/map3d/shots/run.py  # the 3D map pictures against ref/
+cargo run -q -p corvus_tools --bin corvus-build -- soak --mode 3d --at 11.6385,48.0795 --minutes 5   # a soak run in a sandbox home, memory sampled
 ./build.sh [--dmg] [--no-deb] [--fast]   # artifact for the current host (dispatches below); --fast: release code without LTO, to try locally
 ./build-appimage.sh [--no-deb|--deb-only|--fast]   # Linux artifact  (x86_64)
 ./build-macos-app.sh [--dmg] [--fast]    # macOS artifact  (arm64 / x86_64)
 .\build-windows.ps1 [-Zip] [-Fast]       # Windows artifact (PowerShell)
-python3 python/tools/guide.py   # after editing docs/guide/*.html: rewrite each page's frame
-python3 python/tools/i18n.py check   # the language files in src/lang and src/plugins/*/lang
+cargo run -q -p corvus_tools --bin corvus-build -- guide   # after editing docs/guide/*.html: rewrite each page's frame
+cargo run -q -p corvus_tools --bin corvus-build -- i18n check   # the language files in src/lang and src/plugins/*/lang (fmt, new CODE NAME NATIVE)
 git config core.hooksPath .githooks   # one-time, enables the VERSION auto-bump
 ```

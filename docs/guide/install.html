@@ -1,6 +1,6 @@
 <!DOCTYPE html>
-<!-- Written by tools/guide.py around the content block below. Edit the text
-     between the guide:content markers; run the script for everything else. -->
+<!-- Written by corvus-build guide (src/tools) around the content block below.
+     Edit the text between the guide:content markers; run it for everything else. -->
 <html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8">
@@ -153,8 +153,8 @@
 <h1>Install and run</h1>
 <p class="doc-lead">
   Corvus ships as one self-contained app per platform. Download it, start it,
-  and it is ready: Python and every library are already inside, and
-  nothing else is installed on the machine.
+  and it is ready: everything it needs is already inside, and nothing else
+  is installed on the machine.
 </p>
 
 <h2 id="download">Download the app</h2>
@@ -175,7 +175,7 @@
     <tr>
       <th scope="row">Linux (x86_64)</th>
       <td><code>Corvus_GCS-&lt;version&gt;-x86_64.AppImage</code></td>
-      <td>Mark it executable (<code>chmod +x</code>) and run it. Works on a clean Ubuntu or Debian with no system Python.</td>
+      <td>Mark it executable (<code>chmod +x</code>) and run it. Works on a clean Ubuntu or Debian.</td>
     </tr>
     <tr>
       <th scope="row">Windows (x64)</th>
@@ -276,21 +276,17 @@
 
 <h2 id="from-source">Running from source</h2>
 <p>
-  From a clone of the repository you need <strong>Python 3.12 or newer</strong>
-  and a Rust toolchain (<a href="https://rustup.rs/">rustup.rs</a>) for the
-  MAVLink module. One command creates a virtual environment in
-  <code>.venv/</code>, installs every dependency named in
-  <code>pyproject.toml</code>, builds the MAVLink module and opens the app:
+  From a clone of the repository you need a Rust toolchain
+  (<a href="https://rustup.rs/">rustup.rs</a>) and nothing else. One command
+  builds the app, with its backend and the MAVLink module inside, and opens it:
 </p>
 <pre><code>./run.sh
-./run.sh 8000 serial:/dev/ttyUSB0:57600    # with a port and a connection</code></pre>
+./run.sh --page setup      # open on a page
+./run.sh --release         # the optimised build a release ships</code></pre>
 <p>
-  Later starts reuse <code>.venv/</code> and only reinstall when
-  <code>pyproject.toml</code> has changed, so relaunching needs no network. To
-  create the environment from a particular interpreter, point
-  <code>CORVUS_PYTHON</code> at it:
+  The first build downloads the Rust libraries and takes a few minutes; later
+  starts rebuild only what changed and need no network.
 </p>
-<pre><code>CORVUS_PYTHON=/opt/homebrew/bin/python3.12 ./run.sh</code></pre>
 <p>
   On a Linux desktop the dock and the applications grid find the app's icon
   through a launcher entry, and a source checkout has none until you add it:
@@ -301,18 +297,10 @@
   with the paths of this checkout. Later runs keep it pointing at the checkout
   if you move it. Delete the file to remove the entry.
 </p>
-<p>For development you can run just the backend and open the interface in a normal browser:</p>
-<pre><code>.venv/bin/python serve.py        # then open http://localhost:8000/</code></pre>
-<p>On Windows, from PowerShell:</p>
-<pre><code>py -3.12 -m venv .venv
-.venv\Scripts\python -m pip install --upgrade pip
-.venv\Scripts\python -m pip install --group dev
-.venv\Scripts\python corvus\app.py</code></pre>
 <p>
-  Every Python package the project uses, for running, testing, linting and
-  building, is listed in the <code>[dependency-groups]</code> of
-  <code>pyproject.toml</code> and nowhere else. To build the standalone apps
-  yourself, see <a href="build.html">Build the apps</a>.
+  On Windows, <code>cargo run --release</code> from PowerShell does the same.
+  To build the standalone apps yourself, see
+  <a href="build.html">Build the apps</a>.
 </p>
 
 <h2 id="quitting">Quitting</h2>

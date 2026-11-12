@@ -4,9 +4,8 @@
 # The bundle is the native Rust interface (Cargo.toml and src/, built with
 # cargo) and nothing else that runs: the backend (corvus_core) is a library
 # inside that one executable. No CPython, no pip, no PyInstaller, no Qt, no web
-# engine, and corvus_link is built without its `python` feature (PyO3 is never
-# compiled). The build host needs the Xcode command line tools and a Rust
-# toolchain (rustup, cargo); the target Mac needs neither.
+# engine, and no PyO3. The build host needs the Xcode command line tools and a
+# Rust toolchain (rustup, cargo) and nothing else; the target Mac needs neither.
 #
 # Version is read exclusively from the repo-root VERSION file — never hardcoded.
 #
@@ -124,8 +123,7 @@ RES="$APP/Contents/Resources"
 # there and rustup fetches it on first use. The fonts and icons are cut out of
 # src/vendor by build.rs and the logos are read from assets/, so the binary
 # carries them; the languages, the version and the bundled plugins are
-# compiled in as well. corvus_link comes in without its `python` feature:
-# nothing here links PyO3 or a Python.
+# compiled in as well. Nothing here links PyO3 or a Python.
 echo ">>> Building the interface ($PROFILE profile, locked) ..."
 GUI_LOG="$BUILD_DIR/cargo-gui-macos.log"
 : > "$GUI_LOG"
@@ -192,8 +190,8 @@ printf 'APPL????' > "$APP/Contents/PkgInfo"
 
 # ---- 6. the bundle holds no Python and nothing from this Mac -----------------
 # Fails the build rather than shipping a bundle that only runs here, or one
-# that carries an interpreter again. python/tools/bundle_trim.py and
-# python/tests/test_bundle_smoke.py make the same check on a finished bundle.
+# that carries an interpreter again. `corvus-build bundle-check` and
+# src/tools/tests/bundle_smoke.rs make the same check on a finished bundle.
 foreign_refs() {  # <binary>
     local ref
     otool -L "$1" 2>/dev/null | awk 'NR>1 && !/:$/ {print $1}' | while IFS= read -r ref; do
@@ -214,7 +212,7 @@ if [ -n "$python_inside" ]; then
     exit 1
 fi
 if nm "$APP/Contents/MacOS/corvus-gcs" 2>/dev/null | grep -qi 'PyInit_\|Py_Initialize'; then
-    echo "ERROR: the interface was built with PyO3 (corvus_link's python feature)" >&2
+    echo "ERROR: the interface was built against Python (PyO3 or an embedded interpreter)" >&2
     exit 1
 fi
 

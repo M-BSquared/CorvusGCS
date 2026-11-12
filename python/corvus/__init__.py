@@ -1,1 +1,0 @@
-"""Corvus GCS backend package."""

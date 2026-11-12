@@ -1,6 +1,6 @@
 <!DOCTYPE html>
-<!-- Written by tools/guide.py around the content block below. Edit the text
-     between the guide:content markers; run the script for everything else. -->
+<!-- Written by corvus-build guide (src/tools) around the content block below.
+     Edit the text between the guide:content markers; run it for everything else. -->
 <html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8">
@@ -812,21 +812,16 @@ c.velocity({ vx: 2, vy: 0, vz: 0, yawRate: 10, frame: "body" });   // m/s and de
   the main language file and a plugin both translate the same English text, the
   main file wins, so a plugin cannot change what the application itself says. A
   plugin file that cannot be read costs that plugin its translation and nothing
-  else. In a checkout, <code>python3 tools/i18n.py check</code> reads the plugin
+  else. In a checkout, <code>corvus-build i18n check</code> reads the plugin
   files too.
 </p>
 
 <h3 id="tests">Tests</h3>
 <p>
-  A plugin keeps its own tests in a <code>tests</code> folder inside its
-  folder. In a Corvus checkout, a plugin in <code>plugins/</code> is tested
-  with the rest: <code>node tools/frontend_tests.js</code> runs every
-  <code>plugins/&lt;id&gt;/tests/*.js</code> and <code>pytest</code> every
-  <code>plugins/&lt;id&gt;/tests/test_*.py</code>. Name Python test files
-  after the plugin (<code>test_&lt;id&gt;_*.py</code>) so they cannot clash
-  with another plugin's. A plugin that is not installed has no tests to run,
-  so leaving one out never fails the suite, and a plugin's tests stay out of
-  the application when it is built.
+  A bundled plugin is a Rust crate in <code>src/plugins/&lt;id&gt;</code> and
+  keeps its tests in it, as Rust tests: <code>cargo test --workspace</code>
+  runs them with the rest of Corvus, and they stay out of the application when
+  it is built.
 </p>
 <p>
   A test finds Corvus's own scripts through <code>CORVUS_ROOT</code>, and

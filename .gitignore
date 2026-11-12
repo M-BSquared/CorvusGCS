@@ -4,13 +4,12 @@
 *.AppImage
 appimagetool-x86_64.AppImage
 *.dmg
-# Windows build output: the versioned zip and the icon build-windows.ps1
-# renders from the logo when Pillow is available.
+# Windows build output: the versioned zip, and an icon an older build rendered.
 Corvus_GCS-*-windows-x64.zip
 /assets/corvus-gcs.ico
 *.app/
 
-# python
+# left behind by the Python era; nothing in the repository makes them now
 __pycache__/
 *.pyc
 .pytest_cache/
@@ -18,10 +17,10 @@ __pycache__/
 # macOS
 .DS_Store
 
-# dev venv created by run.sh
+# the old dev venv; nothing uses it any more, so it can be deleted
 /.venv/
 
-# cargo's build output for the MAVLink extension
+# cargo's build output of src/link built on its own
 /src/link/target/
 
 # cargo's build output for the native interface

@@ -842,7 +842,7 @@
       <header class="section-head reveal">
         <p class="eyebrow"><span class="eyebrow-index">04</span>Technical</p>
         <h2 id="technical-title">What it talks to, and what it runs on.</h2>
-        <p class="section-sub">A Python backend and a web frontend in one standalone desktop application. No server to deploy, no browser tab to manage.</p>
+        <p class="section-sub">One native program, written in Rust, with its backend inside. No server to deploy, no browser tab to manage.</p>
       </header>
 
       <div class="spec-wrap reveal">
@@ -879,11 +879,11 @@
             </tr>
             <tr>
               <th scope="row"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-monitor"></use></svg>Platforms</th>
-              <td>macOS 15 or later on Apple Silicon <span class="mono">.dmg</span>, Linux x86_64 <span class="mono">.AppImage</span>, Windows x64 <span class="mono">.zip</span>. Nothing else to install: Python, Qt and every dependency are inside.</td>
+              <td>macOS 12 or later on Apple Silicon <span class="mono">.dmg</span>, Linux x86_64 <span class="mono">.AppImage</span>, Windows x64 <span class="mono">.zip</span>. Nothing else to install: everything it needs is inside.</td>
             </tr>
             <tr>
               <th scope="row"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-terminal"></use></svg>From source</th>
-              <td>Python 3.12+ and one command, <span class="mono">./run.sh</span>. The frontend is plain HTML, CSS and JavaScript; the desktop shell is PySide6.</td>
+              <td>A Rust toolchain and one command, <span class="mono">./run.sh</span>. The interface is egui on OpenGL, the backend runs in the same process.</td>
             </tr>
             <tr>
               <th scope="row"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-scale"></use></svg>License</th>
@@ -983,7 +983,7 @@
           <li data-os="linux">
             <span class="platform-name">Linux</span>
             <span class="platform-meta mono">x86_64 · .AppImage</span>
-            <span class="platform-note">Mark it executable and run it. No system Python or Qt needed.</span>
+            <span class="platform-note">Mark it executable and run it. Nothing else needed.</span>
           </li>
           <li data-os="windows">
             <span class="platform-name">Windows</span>

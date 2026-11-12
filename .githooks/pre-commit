@@ -3,7 +3,7 @@
 #
 # Bumps the repo-root VERSION on every commit so the version tracks every
 # change automatically. VERSION is the single source of truth consumed by
-# corvus/version.py, GET /api/version, the AppImage filename, and release
+# corvus_core::version, GET /api/version, the AppImage filename, and release
 # tags. Nobody hand-edits VERSION for routine commits.
 #
 # Format: YYYY.MM.PP   (e.g. 2026.09.01)

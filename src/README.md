@@ -2,10 +2,9 @@
 
 The Corvus GCS desktop interface as a native Rust app (egui/eframe), built
 from `Cargo.toml` and this `src/` folder at the repository root. It replaces
-the web interface in `python/src/`, page by page, and later becomes the
-Android app as well. `src/link/` is the MAVLink crate, a member of the same
-workspace (the `python` feature adds the PyO3 layer the Python reference imports
-as `corvus_link`, and is off in every build of the program); see its README.
+the web interface that was `python/src/`, and later becomes the Android app as
+well. `src/link/` is the MAVLink crate, plain Rust, a member of the same
+workspace; see its README. Nothing here needs Python.
 
 ```
 src/main.rs            entry point, arguments, signals
@@ -18,7 +17,8 @@ src/mission/ setup/    the Mission planner and the Setup pages
 src/lang/              the interface language files (the translation layer is in src/api/src/i18n)
 src/settings/ logs/ analysis/ notify/ panel/ term/
 src/plugins/           the registry and one crate per bundled plugin (src/plugins/<id>/)
-src/link/              the MAVLink crate (corvus_link; its PyO3 layer is a feature only the Python reference uses)
+src/link/              the MAVLink crate (corvus_link), held to pymavlink's frozen answers
+src/tools/             corvus-build: the build, manual, language and soak tools (never shipped)
 ```
 
 ## Building and running
@@ -52,7 +52,6 @@ uses, so the backend does not change for it:
 ```bash
 cargo run                                             # run the backend (corvus_core) in this process and show it (--release for the shipped build)
 cargo run --release -- --server http://10.0.0.5:8080  # a backend elsewhere
-cargo run --release -- --root DIR --python PATH       # run the Python backend (serve.py) as a child instead, the reference
 cargo run --release -- --page motors --scroll 560     # open on a page (setup, any tile such as battery or motors, safety:SENSOR, mission, mission:NAME, settings, logs, analysis), scrolled
 # looking at it without a hand on the mouse
 CORVUS_GUI_SHOT=out.png cargo run -- --page motors     # save the window's own pixels after 9 s and quit
@@ -71,11 +70,8 @@ computer is joined, or refused with `CORVUS_ALLOW_MULTI` unset and a lock the
 running one holds). No Python is needed to start and no bundle carries any.
 Every way out (window closed, SIGINT, SIGTERM) stops the core, which joins
 every thread it started. Every route the Python server answers is registered
-by a module of the core (`tests/no_unavailable_routes.rs` lists them). With
-`--root` or `--python` the Python backend runs as a child instead: every way out sends it SIGTERM, which
-runs its own teardown, and SIGKILL if it is still there after 8 s. If the window
-does not close within 10 s of a signal, the child is killed and the process
-exits.
+by a module of the core (`tests/no_unavailable_routes.rs` lists them). If the
+window does not close within 10 s of a signal, the process exits.
 
 ## The core (`src/core`, crate `corvus_core`)
 
@@ -85,8 +81,8 @@ settings under `~/.corvus`, the instance lock, the version, the languages and
 the optional HTTP server; every other area (vehicle, map data, logs and
 firmware, peripherals, AI and plugins) is a module that registers its routes
 through the contract below, in its own folder, and is held to the Python routes
-by tests whose expected values are dumped from the Python
-(`python/tools/dump_core_cases.py`).
+by tests whose expected values were dumped from the Python before it was
+deleted (`src/core/tests/data`).
 
 | | |
 | --- | --- |
@@ -102,8 +98,8 @@ by tests whose expected values are dumped from the Python
 | `Settings` (`core.settings()`) | the live `~/.corvus/config.json` (`config.rs`: the same files, coercion and bytes as `config.py`): `get()` is a snapshot, `update(core, \|cfg\| ...)` is one read-modify-write that saves atomically (mode 0600) and tells the listeners, `apply_partial` is `POST /api/config`. An area's block (`battery`, `remote_id`, `rtk`, `video`, `checklists`, `fleet`, `mcp`) is coerced by `reg.config_block(key, f)` and passes through as an object until then. `reg.on_config(f)` hears every change. |
 | Also owned | `GET /api/version`, `GET`/`POST /api/config`, `GET`/`POST /api/welcome`, `GET /api/languages`, `GET /api/languages/strings` (compiled-in languages, `~/.corvus/languages`, plugin `lang/` folders from `reg.language_roots`), `bundle.rs` (settings export/import: sections, redact, merge, parse; the routes are the plugins area's), `lock.rs` (`core.claim_instance()`, `CORVUS_ALLOW_MULTI`, the same lock file as Python), `priority_lock.rs` (the bridge's command lock: re-entrant, aborts first). |
 | HTTP (`Http` module, `http/`) | optional: `CoreBuilder::new(o).module(Http::new(HttpOptions { port: 8000, .. }))`; `core.service::<HttpInfo>()` says where it listens. Standard library only, one thread per connection, HTTP/1.0 and close like Python's server; static files from `Options::web_root`; the CORS, Host, cross-site and header rules of `server.py` (`http/security.rs`, held to values dumped from Python); `POST/GET/DELETE /mcp` gated by loopback, the switch and the bearer token (`McpEndpoint`, which the AI module registers as `McpHandle`; `TokenStore` is `~/.corvus/mcp-token`). Event streams are `Response::sse(Box<dyn SseStream>)`; a WebSocket is `Response::upgrade(req, \|ws\| ...)`, whose closure runs on the connection thread and must return once `core.is_stopping()`. No async runtime exists anywhere. |
-| Tests in Python | the program is Rust; the tests that hold it to the original stay Python. `python/tools/dump_core_cases.py` dumps expected values from the Python code into `src/core/tests/data/*.json` (`--check` fails when one is stale), and `python/tests/test_core_routes.py` starts `serve.py` and the headless `corvus-core` binary (`src/core/src/bin`, `cargo build -p corvus_core --bin corvus-core`) on identical state folders and diffs their answers through `python/tools/route_harness.py` (`Pair`, `compare_get`, `compare_post`, `diff_json`). An area adds its routes to a test there and reuses the helper. |
-| MAVLink | `corvus_core::link` is `corvus_link` without its Python layer (`default-features = false`, a path dependency; `src/link` stays outside the workspace with its own lock for maturin): the dialect tables, the transports and `link::plain` (message, codec, frames, signing). The Vehicle area builds its bridge on it. |
+| Tests | the program and its tests are Rust. What the Python program answered was dumped into `src/core/tests/data/*.json` before it was deleted, and pymavlink's answers into `src/link/tests/data`; the tests hold the Rust code to those fixtures, which are not regenerated to match the code. |
+| MAVLink | `corvus_core::link` is `corvus_link`, plain Rust: the dialect tables, the transports and `link::plain` (message, codec, frames, signing). The Vehicle area builds its bridge on it. |
 | Battery (`corvus_core::battery`) | `battery.py` in Rust: chemistry tables, settings coercion, cell count from the pack voltage, sag correction, state of charge from the cell curve, the drain rate fit behind the time to empty. Held to Python by `dump_core_cases.py battery`: about 2 500 estimates over settings, voltages and currents, plus the settings, cell, rest voltage, charge and drain grids, played by `tests/battery_cases.rs`. |
 | Dialect (`corvus_core::dialect`) | `autopilot.py` in Rust: the one place that tells PX4 from ArduPilot (mode tables and decoding, takeoff order and frame, calibration, motor test, autotune, mission start, status text events, capabilities). Held to Python by `python/tools/dump_core_cases.py dialect`, a matrix of about 10 000 answers over the three stacks, 48 vehicle types and 10 firmware versions, played by `tests/dialect_cases.rs`. |
 | Bridge (`corvus_core::bridge`) | One MAVLink link to one vehicle: `Bridge::start` and `stop`, the connect and reconnect cycle (exponential backoff with jitter, a superseded cycle stands down), the heartbeat wait that skips a ground station's heartbeat, the receive loop with its two tier heartbeat timeout, the GCS heartbeat, the deferred interval and version retry workers, signing from `CORVUS_MAVLINK_SIGNING_KEY_FILE`. `Shared` is the host of the receive path, status, requests, telemetry, RTCM, tlog and flight engines. Wired to the same link: parameters (with the watchdog thread), missions and the geofence, FTP, logs, shell, setup and Remote ID (on the GCS heartbeat). The vehicle list is wired: `Bridge::fleet_tracker` binds at connect and sees every frame of the flown system. The forwarder is wired through `Forwarder::for_bridge` and `attach` (the frame sink, `Bridge::inject_raw`, `Bridge::local_udp_address`). The planner (`corvus_core::mission`, `corvus_core::geofence`) answers the mission engine's callbacks. Auto connect is a module of its own (`corvus_core::autoconnect`) the vehicle module does not start yet. Held by `tests/bridge_udp.rs` against a simulated vehicle over real UDP (connect, store, status text, ACK confirmed arm, tlog, a parameter download, a mission upload handshake, Remote ID on the heartbeat, stop and start again); the cycle's threads are not line for line parity tested against Python. |
@@ -114,7 +110,7 @@ by tests whose expected values are dumped from the Python
 | Serial ports and auto connect (`corvus_core::serial_ports`, `corvus_core::autoconnect`) | `serial_ports` classifies a port by its name and USB descriptor (`usb`, `sik`, `rtk`, bootloader, phantom node, `usb_identity`, `same_port`, `port_present`) and enumerates without opening one (`list_serial_ports`: the system's list through the `serialport` crate, a `/dev` glob when it is empty). `autoconnect` has the pure policy (`classify_ports`, `pick_usb_serial`, `resolve_startup_connection`, `suggest_connection`, `SessionState`) and `AutoConnectWatcher` (one thread, never steals a live link, manual override wins the session, follows a device that came back under another name by its USB identity, publishes `link_suggestion`, `link_bootloader`, `link_auto`) over the `AutoBridge` and `AutoStore` traits (`Bridge` and `VehicleStateStore` implement them). `Bridge` gained `set_connection`, `switch_connection`, `is_running`, `validate_connection` and a connection that can change. Held to `corvus/serial_ports.py` (`serial_ports_cases.json`, about 1500 classifications) and to `tests/reference/autoconnect_python.py` (15 scenarios and 947 startup decisions, `tests/autoconnect_scenarios.rs`). A port written with a description Linux's sysfs scan does not report classifies by name only. |
 | Vehicle link routes (`corvus_core::vehicle`, second part) | `GET /api/mavlink/modes`, `/capabilities`, `/serial-ports`, `/auto`; `POST /api/mavlink/connect`, `/disconnect`, `/arm`, `/mode`, `/takeoff`, `/land`, `/rtl`, `/hold`, `/reboot`, `/shell/send`, `/shell/close`, `/manual`, `/sethome`, `/gotopoints`, `/command`, `/velocity` (every body validated with Python's words and order: the target vehicle first, then the body). `VehicleService::session` is the auto connect session; a manual connect or a disconnect on the main link takes it (`note_manual_link`), a config save refreshes it. `VehicleOptions { autostart, connection }`: with `autostart` the module resolves the startup connection (command line, USB, SiK, configured, UDP fallback), opens the main link and runs `AutoConnectWatcher`; without it the link waits for `/connect`. `corvus-core --autostart` and `--mavlink CONNECTION` set it, and the interface autostarts. `Bridge` gained `available_modes`, `mode_labels`, `capabilities`, `manual_control`, `set_home`, `plugin_command`, `velocity_setpoint`. Held to the Python server by 93 more cases in `tests/test_core_routes.py` and to a simulated vehicle by `tests/vehicle_routes.rs`. Differences: the mode list comes from the dialect's table (Python asks corvus_link for the live mapping), and `last_error` is one string for the bridge where Python keeps one per thread. |
 | Control routes without a schema (`corvus_core::vehicle`, third part) | `POST /api/motors/test`, `/api/motors/test/stop`, `/api/rangefinder/stream`, `/api/rc/stream`, held to the Python server by 24 cases. The four others of `routes/control.py` read the setup schemas and are registered by the setup schemas area. |
-| Core against a simulated vehicle (`python/tests/test_core_vehicle.py`) | Two copies of the `scene_kit` simulated PX4 (one per backend), `serve.py` on one and `corvus-core --mavlink udpin:...` on the other, then 33 requests of one flight to both (capabilities, modes, arm, mode, hold, takeoff, set home, mission upload, download, start and clear, fly to points, plugin command, velocity, manual control, shell, RTL, land, reboot, fence upload and clear, motor test, streams, disconnect): every status and body equal. Found and fixed two real bugs the sparse test vehicles hid: the heartbeat wait gave up when a busy stream returned from `recv` early, and `fly_to_points` still called a stub for the mission upload. |
+| Core against a simulated vehicle (history: the test and its simulator went with Python) | Two copies of the `scene_kit` simulated PX4 (one per backend), `serve.py` on one and `corvus-core --mavlink udpin:...` on the other, then 33 requests of one flight to both (capabilities, modes, arm, mode, hold, takeoff, set home, mission upload, download, start and clear, fly to points, plugin command, velocity, manual control, shell, RTL, land, reboot, fence upload and clear, motor test, streams, disconnect): every status and body equal. Found and fixed two real bugs the sparse test vehicles hid: the heartbeat wait gave up when a busy stream returned from `recv` early, and `fly_to_points` still called a stub for the mission upload. |
 | Peripherals (`corvus_core::peripherals`, `PeripheralsModule`) | Radios, shell, SSH and video, in `src/core/src/peripherals/`, published as `Peripherals` (`core.service::<Peripherals>()`); every child process, thread and pty is ended in the module's `stop`. Done: `ports` (`serial_ports.py`: phantom, bootloader, RTK and USB classification, `serial:` strings, USB identity, `list_serial_ports` from sysfs on Linux and from `serialport` on macOS and Windows), `net_probe` (`net_probe.py`: `Pinger`, one ping child per probe, four at a time, killed at its deadline and on shutdown), `child_env` (`child_env.py`), `rtk` (`rtk.py`, `rtk_service.py`, `routes/rtk.py` over the RTK engine of `src/link`, rewritten on plain types: `rtk::wire` (RTCM 3 framer, UBX parser and frames for F9 and M8P receivers, MON-VER, NAV-SVIN), `rtk::config` (settings bounds, redacted copy, checks, survey progress), `rtk::io` (serial port, TCP socket, NTRIP request and header), `rtk::service::RtkService` (one thread `rtk-base`, the search, identify, survey and forward loop, base mode taken back on exit; `RtkHost` is what it needs from the vehicle side, `VehicleRtkHost` the real one over the vehicle list's RTCM fan out), `GET /api/rtk/status`, `POST /api/rtk/settings` and `/restart`, the `rtk` config block, started from the config at module start) `sik` (`sik_config.py`, `sik_service.py` and the radio endpoints of `server.py`: the register table is data dumped from Python into `sik/registers.json`, `sik::config` parses ATI5, ATI7 and ATI, describes a radio, compares a pair and validates writes with the regular expressions' own backtracking; `sik::service::SikService` runs one AT session at a time on the caller's thread (escape with guard times, baud scan, far radio written first, commit and reboot, factory reset), refuses while armed or busy and stops and restores the link through `SikHost`; `GET /api/sik/status`, `POST /api/sik/load`, `/save`, `/reset`) `console` (`routes/console.py`: `POST /api/console/command` and `/save`, `GET /api/console/stream`, and the `console` topic, fed from the main bridge's console by one listener because a bridge listener cannot be removed), `shell` (`local_shell.py` and the session half of `ssh_bridge.py`: `Terminals`, the named session registry with its replay buffer and subscribers, `LocalSession` on a pty started as its own session with the pty as controlling terminal and stopped with SIGHUP to every group of the session, then SIGKILL after 2 s, `LocalRunner` for programs without a window, stopped with SIGTERM then SIGKILL on shutdown; `GET /api/local/status`, `POST /api/local/connect`, `/run`, `GET /api/ssh/sessions`, `POST /api/ssh/send`, `/resize`, `/disconnect`, `GET /api/ssh/stream` and `/api/ssh/ws`) and the routes `POST /api/local/ping`. Held to Python by `tests/peripherals_rtk.rs` (every frame byte for byte, about 40 settings blocks, framer and parser over chunkings; a simulated u-blox receiver, a local NTRIP caster and a pty serial port for the session) and by `tests/peripherals_ports.rs` (about 800 ports, 14 connection strings, 13 descriptors, 3 platforms of ping commands and replies, from `python/tools/dump_peripherals_cases.py`) and `python/tests/test_core_routes_peripherals.py`. Video, the SSH transport (`~/.corvus/known_hosts`) and the other routes of this area are registered too; ExpressLRS (`elrs.py`) has no route and nothing calls it in the Python program, so it is not ported. Differences from Python: the console topic carries the main link's lines only (not another vehicle's), a shell is started directly on its pty (Python went through a two line interpreter trampoline), a background program's stdout and stderr share one pipe as Python's do; a SiK session on the link's own port stops the bridge only when it is connected (the bridge reports no running state) and can put it back on the same connection string only, so a changed SERIAL_SPEED does not retune the link until `Bridge::set_connection` exists; the RTK session reports every failure as its own words (Python also wraps an unexpected exception as `the correction session failed: ...`), the OS error text of an NTRIP connect is `[Errno N] text` as Python's, a baud that does not fit 32 bits is not a baud, a Linux port has no `LOCATION` when sysfs does not say, a macOS or Windows port carries no `LOCATION`. |
 | Plugins area (`corvus_core::plugins`, `PluginsModule`) | The plugin folders and what is kept in them, the settings export and import, the update check and the host services the pages use, each held to its Python original. `registry`: discovery of `~/.corvus/plugins` with the rules of `plugin_registry.py` (ids, `order`, scripts, asset containment, a user plugin overrides a bundled one); the bundled plugins are the Rust crates of `src/plugins`, listed with the `plugin.json` fields of the web plugins they replace (a test fails when a crate is not listed). `config`: `<id>/config.json`, atomic and byte for byte as `plugin_config.py` writes it, so both programs share the folder. `files`: collect, check and install a plugin's files (limits and staging swap of `plugin_files.py`). `settings_routes`: `/api/settings/export`, `/import`, `/reset`, `/export/target` and the company logo routes, on `bundle.rs`. `update_check`: `/api/update`, `/skip`, `/open` over `update.json` (an https GET with rustls in `http_client`, tested against a local stub of the release API). `checklists` is the `checklists` config block and `file_manager` opens a folder or a web address. Routes: `GET /api/plugins`, `/api/plugins/asset/{id}/{rest*}`, `POST /api/plugins/settings`, `/api/plugins/folder`; the plugin folders are language roots. `PluginDirs` names other folders (and what opens them) for a test. Held by `tests/ai_*.rs` against fixtures from `python/tools/dump_ai_cases.py` and by `python/tests/test_core_routes_ai.py` against `serve.py`. Differences from Python: an OS error in a message reads Rust's text, a case insensitive disk answers an asset path with the name as spelled on disk, version tags with non ASCII digits are not versions. |
 | MCP (`corvus_core::mcp`, `McpModule`) | The AI client's server: `POST/GET/DELETE /mcp` (Streamable HTTP, off by default, this computer only, bearer token in `~/.corvus/mcp-token`, gated in `http/mcp.rs`) and `/api/mcp*` for the settings card and the window. `settings` is the `mcp` config block and the ten permissions, `tools` the built in tools with their schemas, `engine::McpService` the protocol, sessions, confirmations, plugin calls and direct control (a thread that repeats a stick or velocity call at 5 Hz and puts the vehicle in hold when no new call came; joined in `shutdown`). A tool never talks to the link: it runs an endpoint with `Core::internal_call`, so a new endpoint that changes the vehicle is not reachable until a tool and its permission are added in `tools.rs` on purpose. Plugin tools come from the open window's heartbeat (`POST /api/mcp/window`) and their answers return on `/api/mcp/result`. The `mcp` event topic carries status, confirmations, calls and log lines. Held to `McpService` of `mcp.py` by about 100 scripted steps (`dump_ai_cases.py mcp_engine`: tool lists, schemas, refusals, error texts, JSON-RPC envelopes, events, calls to the endpoints) and to `serve.py` over HTTP by `test_core_routes_ai.py`. |
@@ -139,7 +135,7 @@ by tests whose expected values are dumped from the Python
 | `src/crash.rs` | the panic hook, the crash log and the frame guard (see Reliability) |
 | `src/data/intern.rs` | a `'static` text for an API that wants one, kept once and capped |
 | `src/api/src/ui/tip.rs` | hover texts through the translation layer: use `on_hover_tr`, never `on_hover_text` |
-| `src/app/soak.rs`, `python/tools/gui_soak.py` | the soak driver and the script that samples memory, threads and descriptors |
+| `src/app/soak.rs`, `src/tools/src/soak.rs` | the soak driver and `corvus-build soak`, which samples memory, threads and descriptors |
 | `src/map/measure.rs` | the distance tool: great circle distance, bearing and the two click rule (`map-measure.js`) |
 | `src/map/search.rs`, `src/map/search_card.rs` | the place search: coordinate notations read offline, area names, `/api/geocode`, the box and its list (`map-search.js`) |
 | `src/map/tiles_model.rs`, `src/map/tiles_card.rs` | the offline map dialog: tile counts and sizes, the download and its jobs, the areas on this laptop (`tiles.js`) |
@@ -298,7 +294,7 @@ let line = tr_fmt("Reloaded. {n} languages installed.", &[("n", "4")]);
   the width of their text, as a grid does.
 - `CORVUS_GUI_I18N_MISSING=file.json` (with `CORVUS_GUI_SHOT`) writes the
   English texts the page showed that the language lacks, as a blank file's
-  `strings`. `tools/i18n.py` in `python/` still checks the files.
+  `strings`. `corvus-build i18n check` checks the files.
 
 `cargo test i18n` holds the loader, the fallback, a missing key, placeholders
 and that every literal given to `tr` or `tr_fmt` in `src/` is in every language
@@ -535,8 +531,9 @@ on the CPU and stay on the GPU; a frame is uniforms and draw calls.
 - **Looking at what it costs.** F3 over the 3D map, or `CORVUS_GUI_3D_DEBUG=1`,
   shows leaves, meshes built, draws, imaged draws, uploads, live GPU objects
   and the milliseconds of planning and submitting, and logs them every 5 s.
-- **Pictures.** `src/map3d/shots/run.py` renders five fixed views and compares
-  them with `ref/*.jpg` (see its README for how to refresh them).
+- **Close up.** `CORVUS_GUI_SOAK=3d CORVUS_GUI_SOAK_AT=lng,lat` flies eight
+  close views over one place, to the closest zoom, for an own elevation model
+  for instance; with `CORVUS_GUI_3D_DEBUG=1` the counters go to stderr.
 - **Camera.** The wheel zooms to the pointer, tilt stops at 60 degrees as
   MapLibre's does, the camera is kept 8 m above the ground under it by lowering
   the tilt, and two fingers pinch, twist and tilt.
@@ -644,34 +641,30 @@ The interface is used in the field, so it must not crash, hang or grow.
   the 3D map (at most 480 GPU textures and 2400 meshes, the least recently
   drawn go first, and 160 MB of decoded imagery and 48 MB of decoded elevation
   on the CPU side, counted in bytes so a source with larger tiles is held too), `data::intern` (256 texts). A test holds each bound.
-- **Soak.** `python/tools/gui_soak.py` starts a sandboxed backend with a
-  simulated PX4 (never the operator's own Corvus), starts the interface with
-  `CORVUS_GUI_SOAK=1` and writes a CSV row every 10 s with the resident memory,
-  threads and open descriptors of the interface and the backend:
+- **Soak.** `corvus-build soak` starts the interface in a sandbox home (never
+  the operator's own `~/.corvus`) with `CORVUS_GUI_SOAK=1`, its built in
+  backend and no vehicle, and writes a CSV row every 10 s with the memory
+  (the physical footprint on macOS), threads and open files:
 
   ```bash
-  python3 python/tools/gui_soak.py --binary target/release/corvus-gcs \
-      --python .venv/bin/python --minutes 15 --csv soak.csv
+  cargo run -q -p corvus_tools --bin corvus-build -- soak --binary target/release/corvus-gcs --minutes 15 --csv soak.csv
   ```
 
   The driver cycles twelve steps of 4 s: the map panned and zoomed, the 3D map
   opened and moved, every page, one setup tile at a time, a Settings tab, the
   Mission page, the language switched. `--mode 3d` stays in the 3D map and
   jumps between eight places (Alps, Munich, San Francisco, Everest, Tokyo,
-  Madrid, ...) every step, the worst case for the view's memory; `--max-mb N`
-  makes the script exit with 2 when the interface's footprint passes N. On the
-  development machine a 7 minute 3D run held 0.9 GB (1.2 GB before the byte
-  budgets) with a flat slope; `the_worst_case_the_view_can_hold_stays_under_a_gigabyte`
-  holds the arithmetic.
-- **Geofence round trip.** `python/tools/geofence_roundtrip.py` drives the
-  fence endpoints against three sandboxed simulators (one accepting, one
-  refusing, one that stops answering after two corners, `CORVUS_SIM_FENCE`).
+  Madrid, ...) every step, the worst case for the view's memory, and `--at
+  lng,lat` keeps it over one place, close up; `--max-mb N` exits with 2 when
+  the interface passes N. A 7 minute 3D run held 0.9 GB with a flat slope;
+  `the_worst_case_the_view_can_hold_stays_under_a_gigabyte` holds the
+  arithmetic.
 
 ## Toolchain
 
 eframe 0.37 needs Rust 1.95 or newer. `rust-toolchain.toml` at the repository
-root pins 1.99 for the interface; `src/link` has its own toolchain file and
-keeps the default. rustup installs what is pinned on first use.
+root pins 1.99 for the whole workspace. rustup installs what is pinned on first
+use.
 
 ## Checks
 
@@ -681,11 +674,9 @@ cargo clippy --all-targets -- -D warnings
 cargo test
 ```
 
-The root `Cargo.toml` is also a cargo workspace over `src/api` and the plugin
-crates (`default-members` lists them all, so the three commands above cover
-every crate, with one lock file and one target folder). `src/link` is left out
-on purpose: it has its own toolchain file (stable), its own lock and the
-maturin build, so the two pinned toolchains never meet.
+The root `Cargo.toml` is also a cargo workspace over `src/core`, `src/api`,
+`src/link`, `src/tools` and the plugin crates, with one lock file and one
+target folder; `cargo test --workspace --locked` covers every crate.
 
 Every rule a block of the bar follows has a test with the web interface's
 expected text, including `toFixed` and `Math.round` rounding.
