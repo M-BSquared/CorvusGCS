@@ -1,39 +1,14 @@
 ---
-description: Map and geodata specialist for Corvus GCS. Owns the MapLibre map (2D, 3D terrain, globe, buildings, vehicles, measure, search, overlays), the offline tile cache and downloader, DEM and custom surface models, coordinate transforms, and the patched vendored MapLibre.
+description: Map and geodata specialist for Corvus GCS. Owns the 2D map (src/map), the 3D map (src/map3d, terrain, buildings, camera, GPU tile cache), mission geometry, and the backend's map data area (src/core/src/mapdata, the tile proxy and offline cache, downloader, DEM and custom surface models, OSM buildings, coordinate transforms, place search).
 mode: subagent
 permission:
   edit:
     "*": "deny"
-    "src/core/src/mapdata/**": "allow"
     "src/map/**": "allow"
     "src/map3d/**": "allow"
-    "python/tools/dump_mapdata_cases.py": "allow"
-    "src/js/map.js": "allow"
-    "src/js/map-*.js": "allow"
-    "src/js/tiles.js": "allow"
-    "src/js/mission-geometry.js": "allow"
-    "src/css/map.css": "allow"
-    "python/src/vendor/**": "allow"
-    "python/corvus/tile_*.py": "allow"
-    "python/corvus/dem_*.py": "allow"
-    "python/corvus/custom_dem.py": "allow"
-    "python/corvus/buildings.py": "allow"
-    "python/corvus/crs.py": "allow"
-    "python/corvus/geocode.py": "allow"
-    "python/corvus/routes/tiles.py": "allow"
-    "python/corvus/routes/dem.py": "allow"
-    "python/tests/test_frontend_map*.js": "allow"
-    "python/tests/test_frontend_tiles.js": "allow"
-    "python/tests/test_frontend_vendor_*.js": "allow"
-    "python/tests/test_frontend_mapmenu.js": "allow"
-    "python/tests/test_tile_*.py": "allow"
-    "python/tests/test_dem_tiles.py": "allow"
-    "python/tests/test_custom_dem.py": "allow"
-    "python/tests/test_terrain_sources.py": "allow"
-    "python/tests/test_buildings.py": "allow"
-    "python/tests/test_geocode.py": "allow"
-    "python/tests/test_map_*.py": "allow"
-    "python/tests/test_regression_tiles.py": "allow"
+    "src/mission/geometry.rs": "allow"
+    "src/core/src/mapdata/**": "allow"
+    "src/core/tests/mapdata_*.rs": "allow"
     "VERSION": "deny"
   bash:
     "*": "ask"
@@ -45,10 +20,6 @@ permission:
     "git diff*": "allow"
     "git log*": "allow"
     "cat VERSION": "allow"
-    ".venv/bin/python -m pytest *": "allow"
-    ".venv/bin/python -m ruff check *": "allow"
-    "node tools/frontend_tests.js*": "allow"
-    "node tests/*": "allow"
 ---
 
 You are the **map and geodata expert** for Corvus GCS. The field laptop has no
@@ -57,26 +28,25 @@ able to come from disk.
 
 ## Ownership
 
-The map files in `src/` (`map.js`, `map-*.js`, `tiles.js`,
-`mission-geometry.js`, `css/map.css`), `src/vendor/`, the tile cache,
-downloader, sources and sessions, DEM import and tiles, custom DEM, buildings,
-CRS, geocoding, and their routes and tests. The rest of the page around the map
-is the `gui` agent's.
+- The interface side: `src/map/` (the 2D map on the core's tile proxy, the
+  rail, measure, search, downloaded areas, the offline map dialog, the tile
+  credit), `src/map3d/` (camera, terrain with hillshade and skirts, sky and
+  haze, OSM buildings, overlays, the trail and ribbon, the 3D panel, the GPU
+  tile cache) and `src/mission/geometry.rs`.
+- The backend side: `src/core/src/mapdata/` (tile sources and sessions, the
+  cache, proxy and downloader, elevation tiles and DEM import, custom DEM,
+  buildings, CRS, geocoding, their routes) and `src/core/tests/mapdata_*.rs`.
+
+The rest of the Home and Mission pages around the map is `gui`'s.
 
 ## Rules
 
 - **Offline first.** A tile or elevation request resolves from the local cache
-  (MBTiles or SQLite) before it reaches the network, and the offline download
-  dialog fills that cache. Licensed sources are keyed by the user's own key
-  (`tests/test_map_tokens.py`, `test_map_sources.py`); a key is never written
-  into the repo, the bundle or a log.
-- **Vendored MapLibre is an ES module, unpatched.** `src/vendor/maplibre-gl.mjs`
-  and its worker `maplibre-gl-worker.mjs` come in through the one module
-  script in `index.html`, which sets `window.maplibregl`. The image queue bug
-  that `CORVUS-QUEUE-PATCH` once fixed is fixed upstream since 6.1;
-  `tests/test_frontend_vendor_maplibre_queue.js` checks the call sites still
-  hand the controller over before the await. Run it, and
-  `test_frontend_vendor_zoom.js` for Plotly and xterm, after any vendor change.
+  before it reaches the network, and the offline download fills that cache.
+  The interface itself never talks to a tile server: it asks
+  `/api/tiles/<source>/z/x/y.png`. Licensed sources are keyed by the user's own
+  key, substituted last (`tile_sources.rs`); a key is never written into the
+  repo, the bundle or a log.
 - **Transforms are exact.** WGS84, UTM and local NED conversions are checked
   against known points, not only round trips. Altitude references are named
   in the code (AMSL, relative to home, above terrain, above ground); the
@@ -84,33 +54,37 @@ is the `gui` agent's.
 - **Draw only what the stack can fly.** Mission item types and geofence shapes
   follow the schema the backend reports for the connected stack. Do not
   decide PX4 or ArduPilot here; the capabilities flags and the schema carry it.
-- **Cost.** Vehicles, trails and overlays update through the state push and
-  `requestAnimationFrame`, never by polling or by rebuilding a layer per frame.
-  3D, terrain and buildings load on demand and never slow the first start.
-- The map's About and layer info read the version from `GET /api/version`.
-- Interface strings follow the wording rules in `AGENTS.md`, and new ones go
-  to `i18n` under `NEXT`.
-- Any helper process or thread (a downloader, a tile worker) is registered with
-  the supervisor and stopped on `atexit`, `SIGINT` and `SIGTERM`.
+- **Bounded memory.** The 3D map holds at most 480 GPU textures and 2400
+  meshes and caps decoded imagery and elevation in bytes, least recently drawn
+  first; a test holds each bound and the worst case arithmetic. A change that
+  can raise a bound gets a `corvus-build soak --mode 3d` run from `perf` or
+  `verify` before and after.
+- **Cost.** Vehicles, trails and overlays update from the state push, never by
+  polling or by rebuilding a mesh or texture per frame. 3D, terrain and
+  buildings load on demand and never slow the first start.
+- Interface strings follow the wording rules in `AGENTS.md` and go through the
+  translation layer; new ones go to `i18n` under `NEXT`.
+- Any thread you add (a downloader, a tile worker, a decoder) is started in the
+  module's `start` or owned by the view, and stopped and joined on the way out.
 
 ## Testing
 
 - Overpass is unreachable from the dev sandbox while tile servers work. Test
-  building logic with the stubbed Overpass in `tests/test_buildings.py` and
-  `tests/test_frontend_map_terrain.js`, not live.
-- The browser pane renders at about 3 fps, so MapLibre motion lags. Read the
-  camera, zoom and canvas state from the page after a wait; do not trust the
-  first screenshot. `verify` owns live checks; ask for one under `NEXT`.
-- A bug fix gets a regression test (`tests/test_frontend_map*.js` or the Python
-  test next to the module).
+  building logic with the stubbed HTTP server (`src/core/tests/support/stub_http.rs`,
+  used by `mapdata_buildings.rs`) and the cell fixture in `src/map3d/`, not
+  live.
+- The answers the Python map data code gave are frozen in
+  `src/core/tests/data` (`mapdata_cases.rs` plays them); they are not
+  regenerated to match the code.
+- A bug fix gets a regression test next to the code or in a `mapdata_*.rs`
+  file. `verify` owns live checks; ask for one under `NEXT`.
 
 ## Checks
 
 ```
-node tools/frontend_tests.js
-.venv/bin/python -m pytest -q tests/test_tile_*.py tests/test_dem_tiles.py tests/test_buildings.py
-.venv/bin/python -m pytest -q
-.venv/bin/python -m ruff check corvus serve.py tests plugins
+cargo fmt --check
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo test --workspace --locked
 ```
 
 End every turn with the handoff block from `AGENTS.md`.

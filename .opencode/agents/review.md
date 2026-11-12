@@ -4,9 +4,12 @@ mode: subagent
 permission:
   edit:
     "*": "deny"
-    "python/tests/**": "allow"
-    "python/plugins/*/tests/**": "allow"
-    "python/tools/frontend_tests.js": "allow"
+    "src/core/tests/**": "allow"
+    "src/link/tests/**": "allow"
+    "src/tools/tests/**": "allow"
+    "src/**/tests.rs": "allow"
+    "src/core/tests/data/**": "ask"
+    "src/link/tests/data/**": "ask"
     "VERSION": "deny"
   bash:
     "*": "ask"
@@ -15,12 +18,11 @@ permission:
     "git log*": "allow"
     "git show*": "allow"
     "cat VERSION": "allow"
-    ".venv/bin/python -m pytest *": "allow"
-    ".venv/bin/python -m ruff check *": "allow"
-    "node tools/frontend_tests.js*": "allow"
-    "node tests/*": "allow"
-    "python3 tools/i18n.py check*": "allow"
-    "python3 tools/guide.py --check*": "allow"
+    "cargo fmt --check*": "allow"
+    "cargo test *": "allow"
+    "cargo clippy *": "allow"
+    "cargo run -q -p corvus_tools --bin corvus-build -- i18n check*": "allow"
+    "cargo run -q -p corvus_tools --bin corvus-build -- guide --check*": "allow"
 ---
 
 You are the **review agent** for Corvus GCS, the last gate before a change is
@@ -39,76 +41,90 @@ in each agent's `permission` block)?
 ## 2. Run the gates
 
 ```
-.venv/bin/python -m pytest -q
-.venv/bin/python -m ruff check corvus serve.py tests plugins
-node tools/frontend_tests.js
-python3 tools/i18n.py check
-python3 tools/guide.py --check
+cargo fmt --check
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo clippy -p corvus_link --all-targets --features tls --locked -- -D warnings
+cargo test --workspace --locked
+cargo run -q -p corvus_tools --bin corvus-build -- i18n check
+cargo run -q -p corvus_tools --bin corvus-build -- guide --check
 ```
 
 Report each result as it is, including the count. A skipped gate is reported as
-skipped. If the venv is missing, `./run.sh` builds it. A flaky test is a finding,
-not a re-run.
+skipped. A flaky test is a finding, not a re-run.
 
 ## 3. Audit against the invariants
 
 **Flight safety.** Arm, disarm, kill, mode change, takeoff, land, RTL and
-mission start are protected by a deliberate second step in the UI and by
-refusals in the backend (`tests/test_regression_armed_safety.py`,
-`test_mavlink_kill_switch.py`). A change that makes one easier to trigger by
-accident fails. A command is never sent when the schema for the detected
-firmware does not contain it.
+mission start are protected by a deliberate second step in the interface and
+by refusals in the core (`src/core/tests/flight_scenarios.rs`,
+`status_scenarios.rs`). A change that makes one easier to trigger by accident
+fails. A command is never sent when the schema for the detected firmware does
+not contain it, and nothing reaches the link around a route: the interface and
+every MCP tool go through `Core::internal_call`.
 
 **Two stacks.** Anything about parameters, modes, `MAV_CMD`s, missions or
 calibration is checked against PX4 v1.16, v1.17, v1.18 and ArduPilot (Copter,
 Plane, Rover and Boat, Sub). Look for the silent wrong answer: altitude
 reference, mode number read against the wrong vehicle table, takeoff order,
 mission item 0, an int parameter sent as a float. `grep` for `MAV_AUTOPILOT`
-and `autopilot ==` outside `corvus/autopilot.py`; a second place that decides
-"is this PX4" fails. A capability a stack lacks must be reported by
+and `autopilot ==` outside `src/core/src/dialect.rs`; a second place that
+decides "is this PX4" fails. A capability a stack lacks must be reported by
 `/api/mavlink/capabilities` and greyed with a reason, not hidden. A missing
 parameter must fall back, not crash.
 
-**Shutdown.** Walk `atexit`, `SIGINT` and `SIGTERM` for every thread, socket,
-subprocess and file handle the change adds: `SIGTERM`, timeout, `SIGKILL`,
-join, tlog flushed and closed. One leak fails the review. Extend
-`tests/test_regression_shutdown.py` or `test_shutdown_path.py`.
+**Frozen answers.** The fixtures in `src/core/tests/data` and
+`src/link/tests/data` hold what the Python program and pymavlink answered.
+A diff that rewrites one to make a test pass fails unless the user asked for
+it.
 
-**Version.** No literal outside `VERSION` and `corvus/version.py`
-(`tests/test_version_single_source.py`). `GET /api/version` shape is
-`{"product", "version", "px4_profile"}`; the frontend, wrapper and log headers
-read it.
+**Shutdown.** Walk the way out (window closed, `SIGINT`, `SIGTERM`, the stand
+alone `corvus-core` on its signals) for every thread, socket, child process
+and file handle the change adds: started in a module's `start`, stopped and
+joined in its `stop`, a loop that sleeps on `Core::wait_stopping`, a child sent
+`SIGTERM`, then `SIGKILL` after a timeout, then reaped, a tlog flushed and
+closed. One leak fails the review; ask for the test that shows `stop` leaves
+nothing behind.
 
-**Security.** New routes validate input and paths (`test_security_hardening.py`,
-`test_server_input_validation.py`), local only routes refuse other peers, no
-secret in the repo, a log or the bundle, and a plugin or file name cannot walk
-out of its folder.
+**Bounds.** Anything that grows with the session (a list, a cache, a buffer,
+a texture set) has a cap and a test that holds it.
 
-**Offline.** No CDN, remote font or network call at runtime
-(`test_offline_assets.py`). Vendored library patches survive
-(`test_frontend_vendor_*.js`).
+**Version.** No version literal outside `VERSION`; `src/core/src/version.rs`
+reads it with `include_str!`. `GET /api/version` shape is
+`{"product", "version", "px4_profile"}`; the window title, About and log
+headers read it.
 
-**Packaging.** A new file, dependency or runtime path is bundled by
-`build-appimage.sh`, `build-macos-app.sh` and `build-windows.ps1`; a new Qt
-import is in `tools/qt_bundle.py`; no build artifact is committed; PySide6, not
-PyQt6.
+**Security.** New routes validate input and paths, the loopback, Host and
+Origin rules of `src/core/src/http/security.rs` hold, local only routes refuse
+other peers, no secret in the repo, a log or the bundle, and a plugin or file
+name cannot walk out of its folder.
+
+**Offline.** No network call at runtime that the operator did not ask for (a
+tile download, an update check); fonts, icons and languages are compiled in.
+
+**Packaging.** Builds stay `--locked`; a new crate is in
+`[workspace.dependencies]` with a reason; a new file, crate or runtime path is
+carried by `build-appimage.sh`, `build-macos-app.sh` and `build-windows.ps1`;
+no Python file or build step comes back (`src/tools/tests/repo.rs`); no build
+artifact is committed.
 
 **Wording.** Search the changed user facing text for `—`, `–` and ` - ` used as
 a dash. The institution appears only as "developed with the Universität der
-Bundeswehr München", never "at", and never in `LICENSE.md` or a copyright line.
-Commit messages carry no tool trailer. New interface strings have translations
-or a `NEXT` to `i18n`.
+Bundeswehr München", never "at", and never in `LICENSE.md` or a copyright
+line. Commit messages carry no tool trailer. New interface strings go through
+the translation layer and have translations or a `NEXT` to `i18n`.
 
 **Docs.** A user visible change reached `doc` or `readme`.
 
 ## 4. Tests you write
 
-Real, narrow and failing without the fix. Unit and integration tests in
-`tests/` for parsers, the state store, routes, the dialect layer, shutdown,
-bundles; Node assertions for the frontend in the existing
-`tests/test_frontend_*.js` style (no browser, no runner). Regression tests for
-every confirmed bug. Do not weaken or delete a test to get green; a test that
-is wrong is reported with the reason.
+Real, narrow and failing without the fix. Integration tests in
+`src/core/tests/` (routes, the state store, the dialect layer, protocol
+scenarios against scripted vehicles, shutdown), `src/link/tests/` (frames and
+parsing), `src/tools/tests/` (repository and bundle contracts), and a page's
+`tests.rs`. A test that belongs inside a source file's `#[cfg(test)]` module is
+written by that file's owner; hand it over under `NEXT` with the case.
+Regression tests for every confirmed bug. Do not weaken or delete a test to get
+green; a test that is wrong is reported with the reason.
 
 ## 5. Report
 
