@@ -129,9 +129,9 @@ pub fn resolve(root: &Path, url_path: &str) -> Option<PathBuf> {
         // A file that is not there resolves to nothing; whether it would have
         // been outside the root is told by its parent.
         Err(_) => {
-            let ok = joined
-                .components()
-                .all(|c| !matches!(c, std::path::Component::ParentDir));
+            // Read off the text, not the joined path: on Windows the canonical
+            // root is a verbatim `\\?\` path, whose components never report `..`.
+            let ok = decoded.split(['/', '\\']).all(|segment| segment != "..");
             ok.then_some(joined)
         }
     }

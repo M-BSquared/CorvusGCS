@@ -179,7 +179,9 @@ mod unix {
         assert!(s.connect());
         let (feed, _) = subscribe(&s);
         s.send("pwd\n");
-        assert!(output_of(&s, &feed, "\n/\r").contains("\n/"), "starts in /");
+        // Neither the banner nor the echoed command holds a slash, and a
+        // prompt may sit in front of the answer, so the answer is the first one.
+        assert!(output_of(&s, &feed, "/\r").contains("/\r"), "starts in /");
         s.disconnect();
     }
 

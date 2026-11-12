@@ -927,11 +927,14 @@ mod routes {
         );
         let (_, a) = call("/api/ssh/power", json!({"name": "ghost", "action": "reboot"}));
         assert_eq!(a["error"], "no saved connection named 'ghost'");
+        // A key file named on the connection, not whatever ~/.ssh holds: a
+        // computer with no keys must give the same answer.
+        let key = format!("{}/tests/ssh_keys/client", env!("CARGO_MANIFEST_DIR"));
         call(
             "/api/ssh/connections",
-            json!({"name": "keyless", "host": "127.0.0.1", "port": port, "username": "pilot"}),
+            json!({"name": "nopassword", "host": "127.0.0.1", "port": port, "username": "pilot", "key_path": key}),
         );
-        let (_, a) = call("/api/ssh/power", json!({"name": "keyless", "action": "shutdown"}));
+        let (_, a) = call("/api/ssh/power", json!({"name": "nopassword", "action": "shutdown"}));
         assert_eq!(
             a["error"],
             "sudo needs a password on this computer. Save the password with the connection or allow passwordless sudo.",

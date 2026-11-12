@@ -15,7 +15,7 @@
 
 <div align="center">
   <!-- corvus:version-badge -->
-  <img src="https://img.shields.io/badge/Version-2026.11.72-f7ebe1?style=for-the-badge" height="28" alt="Version 2026.11.72" />
+  <img src="https://img.shields.io/badge/Version-2026.11.73-f7ebe1?style=for-the-badge" height="28" alt="Version 2026.11.73" />
   <img width="8" />
   <a href="https://www.rust-lang.org/" target="_blank"><img src="https://img.shields.io/badge/Rust-000000?logo=rust&logoColor=white&style=for-the-badge" height="28" alt="Rust" /></a>
   <img width="8" />

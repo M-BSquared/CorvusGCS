@@ -952,8 +952,15 @@ fn a_real_serial_port_on_a_pty_is_identified_and_configured() {
         }
     });
     let host = Arc::new(FakeHost::default());
+    // Linux names a pty /dev/pts/N, which the service rightly never takes for
+    // a receiver, so the receiver is reached through a link with a plain name.
+    let dir = std::env::temp_dir().join(format!("corvus-pty-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let link = dir.join("ttyACM9");
+    let _ = std::fs::remove_file(&link);
+    std::os::unix::fs::symlink(&path, &link).unwrap();
     let rows = vec![PortRow {
-        device: path.clone(),
+        device: link.to_string_lossy().into_owned(),
         description: "u-blox GNSS receiver".into(),
         hwid: "USB VID:PID=1546:01A9".into(),
     }];
@@ -980,6 +987,7 @@ fn a_real_serial_port_on_a_pty_is_identified_and_configured() {
         .unwrap()
         .contains(&(wire::UBX_CLASS_MON, wire::UBX_ID_MON_VER)));
     drop(m.write(b""));
+    let _ = std::fs::remove_dir_all(&dir);
     let _ = SerialPort::open("/definitely/not/a/port", 9600, 0.1, 0.1)
         .err()
         .expect("a missing port does not open");

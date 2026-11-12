@@ -135,8 +135,11 @@ impl Udp {
             if broadcast {
                 socket.set_broadcast(true)?;
             }
+            // Windows fails a read on a socket nothing has sent from yet, so it
+            // is bound first, to any free port: the destination's own number
+            // would make a peer on this computer answer to itself.
             if cfg!(windows) {
-                socket.bind(&SocketAddr::from(([0, 0, 0, 0], port)).into())?;
+                socket.bind(&SocketAddr::from(([0, 0, 0, 0], 0)).into())?;
             }
         }
         socket.set_nonblocking(true)?;

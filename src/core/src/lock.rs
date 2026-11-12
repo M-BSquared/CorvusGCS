@@ -307,9 +307,12 @@ mod tests {
 
     #[test]
     fn an_unwritable_place_is_allowed() {
-        let mut l = InstanceLock::new("/proc/definitely/not/here/corvus.lock");
+        let blocker = std::env::temp_dir().join(format!("corvus-lock-blocker-{}", std::process::id()));
+        std::fs::write(&blocker, b"a file, not a folder").unwrap();
+        let mut l = InstanceLock::new(blocker.join("not/here/corvus.lock"));
         assert!(l.acquire(None));
         assert!(!l.held());
+        let _ = std::fs::remove_file(&blocker);
     }
 
     #[test]

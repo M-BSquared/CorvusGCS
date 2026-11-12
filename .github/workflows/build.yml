@@ -76,7 +76,7 @@ jobs:
       - name: clippy, corvus_link with TLS
         run: cargo clippy -p corvus_link --all-targets --features tls --locked -- -D warnings
       - name: cargo test
-        run: cargo test --workspace --locked
+        run: cargo test --workspace --locked --no-fail-fast
 
   # --- the tests on Windows --------------------------------------------------
   # Its own job rather than a matrix leg of rust-gui: `needs:` waits for every
@@ -90,7 +90,7 @@ jobs:
         with:
           workspaces: . -> target
       - name: cargo test
-        run: cargo test --workspace --locked
+        run: cargo test --workspace --locked --no-fail-fast
 
   # --- Linux artifact --------------------------------------------------------
   # ubuntu-22.04 on purpose: the interface links the host's glibc, so building

@@ -285,20 +285,23 @@ mod tests {
         pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
     }
 
+    const SEP: &str = if cfg!(windows) { ";" } else { ":" };
+
     #[test]
     fn only_entries_inside_this_corvus_are_taken_out() {
         let root = Path::new("/mnt/AppDir/usr/bin");
+        let ld = ["/mnt/AppDir/usr/lib", "/opt/mine", "/mnt/AppDirOther"].join(SEP);
         let e = env(&[
             ("APPDIR", "/mnt/AppDir"),
             ("APPIMAGE", "/x/Corvus.AppImage"),
-            ("LD_LIBRARY_PATH", "/mnt/AppDir/usr/lib:/opt/mine:/mnt/AppDirOther"),
+            ("LD_LIBRARY_PATH", ld.as_str()),
             ("QT_PLUGIN_PATH", "/mnt/AppDir/usr/plugins"),
             ("PYTHONHOME", "/mnt/AppDir/usr"),
             ("PATH", "/usr/bin"),
             ("_PYI_X", "1"),
         ]);
         let out = clean_env(&e, root);
-        assert_eq!(out["LD_LIBRARY_PATH"], "/opt/mine:/mnt/AppDirOther");
+        assert_eq!(out["LD_LIBRARY_PATH"], ["/opt/mine", "/mnt/AppDirOther"].join(SEP));
         for gone in ["QT_PLUGIN_PATH", "PYTHONHOME", "APPDIR", "APPIMAGE", "_PYI_X"] {
             assert!(!out.contains_key(gone), "{gone}");
         }

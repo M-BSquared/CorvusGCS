@@ -163,10 +163,13 @@ mod tests {
         pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
     }
 
+    const SEP: &str = if cfg!(windows) { ";" } else { ":" };
+
     #[test]
     fn entries_inside_the_bundle_go_and_the_operators_stay() {
+        let ld = ["/opt/corvus/lib", "/usr/local/lib", "/opt/corvus/lib/qt"].join(SEP);
         let e = env(&[
-            ("LD_LIBRARY_PATH", "/opt/corvus/lib:/usr/local/lib:/opt/corvus/lib/qt"),
+            ("LD_LIBRARY_PATH", ld.as_str()),
             ("QT_PLUGIN_PATH", "/opt/corvus/plugins"),
             ("PYTHONHOME", "/opt/corvus/py"),
             ("_PYI_X", "1"),
@@ -195,10 +198,8 @@ mod tests {
 
     #[test]
     fn the_app_bundle_folder_counts_as_ours() {
-        let e = env(&[(
-            "DYLD_LIBRARY_PATH",
-            "/Applications/Corvus GCS.app/Contents/Frameworks:/opt/x",
-        )]);
+        let dyld = ["/Applications/Corvus GCS.app/Contents/Frameworks", "/opt/x"].join(SEP);
+        let e = env(&[("DYLD_LIBRARY_PATH", dyld.as_str())]);
         let out = child_env_from(&e, "/Applications/Corvus GCS.app/Contents/Resources");
         assert_eq!(out.get("DYLD_LIBRARY_PATH").map(String::as_str), Some("/opt/x"));
     }

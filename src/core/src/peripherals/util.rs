@@ -83,7 +83,11 @@ mod tests {
     #[test]
     fn os_error_has_no_code() {
         let e = std::io::Error::from_raw_os_error(2);
-        assert_eq!(os_error_text(&e), "No such file or directory");
+        let text = os_error_text(&e);
+        assert!(!text.is_empty() && !text.contains("(os error"), "{text}");
+        if cfg!(unix) {
+            assert_eq!(text, "No such file or directory");
+        }
         assert_eq!(os_error_text(&std::io::Error::other("custom")), "custom");
     }
 }
