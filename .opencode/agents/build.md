@@ -161,7 +161,10 @@ app's identity on macOS; ask the orchestrator before touching it.
 does not unpack anything.
 
 **Android.** `android/` is a WebView shell on a Corvus server on the network,
-with nothing of the program inside. Its `versionName` reads `VERSION`.
+with nothing of the program inside. The web interface it showed was deleted with
+the Python program, so today it has no page to show (`PLAN.md`); do not report
+the APK as a working app, and keep the job building so the contract holds. Its
+`versionName` reads `VERSION`.
 
 ## Verify, do not assume
 

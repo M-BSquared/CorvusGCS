@@ -1,5 +1,8 @@
 {
   "$schema": "https://opencode.ai/config.json",
   "default_agent": "orchestrator",
-  "instructions": ["AGENTS.md"]
+  "instructions": ["AGENTS.md", "src/BACKEND_PORT.md"],
+  "watcher": {
+    "ignore": ["target/**", "build/**", "dist/**", "src/link/target/**", "android/**/build/**", "node_modules/**", ".git/**"]
+  }
 }

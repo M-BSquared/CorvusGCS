@@ -101,6 +101,11 @@ validity, shell, on board log format.
 - The engines run on threads the core starts in a module's `start` and joins
   in `stop`. Tests drive them against scripted vehicles over real UDP or a
   stub; no test needs hardware or a SITL.
+- A parser never panics. A truncated frame, a bad CRC or signature, an unknown
+  message id, a payload shorter than its extension fields (MAVLink v2 trims
+  trailing zeros) and a stream with garbage between frames all produce an error
+  or a skipped byte. A change to a codec or a reader gets a test with a damaged
+  input next to the happy one.
 - Detect firmware from `AUTOPILOT_VERSION`. Never send a `MAV_CMD` or write a
   parameter the connected firmware does not understand; refuse and return the
   reason. Absent parameters fall back, never crash, and are not re-requested on

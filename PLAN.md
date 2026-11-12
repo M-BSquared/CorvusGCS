@@ -2,8 +2,9 @@
 
 The one working list for the project. Only open work is listed; finished items
 are removed rather than ticked, and the decisions that closed the old audit
-gaps are pinned by their tests (`tests/test_mavlink_audit_gaps.py`,
-`tests/test_mavlink_router.py`, `tests/test_mavlink_stream_fallback.py`).
+gaps are pinned by their tests in `src/core/tests` and `src/link/tests`
+(for example `params_scenarios.rs`, `receive_scenarios.rs`,
+`requests_scenarios.rs`, `setup_scenarios.rs`).
 
 Priorities:
 
@@ -82,13 +83,11 @@ be seen live, see 1.2):
 
 ## 0. Rust port (state of 2026-11-11)
 
-The native interface (`src/`) is a client of the backend; the backend is being
-ported from `python/corvus` to `corvus_core` (`src/core`, plan and rules in
-`src/BACKEND_PORT.md`). The Python program was deleted on 2026-11-12.
-`corvus-gcs` runs `corvus_core` in its own process by default (the switch is
-done: `tests/no_unavailable_routes.rs` shows no route of the Python server is
-left at 501); `--root DIR [--python PY]` runs `serve.py` as a child for the
-comparison. No artifact holds Python.
+The native interface (`src/`) runs the backend, `corvus_core` (`src/core`, how
+it was ported and the rules that still hold in `src/BACKEND_PORT.md`), in its
+own process. The Python program was deleted on 2026-11-12 (the switch is done:
+`tests/no_unavailable_routes.rs` shows no route of the Python server is left at
+501). No artifact holds Python and nothing in the repository needs it.
 
 Done and merged: the router, state store, settings, HTTP server, the protocols
 (parameters, logs, shell, FTP, flight, setup, telemetry, missions, Remote ID,
@@ -106,9 +105,9 @@ Done: dev, `fast` and release profiles, eframe without wgpu, workspace
 dependencies, `src/link` in the workspace, the packaging scripts and CI on the
 shared `target/`, with `--fast` flags. Open: `aws-lc-sys` (about 40 s of a cold
 build) comes in through walkers' reqwest and cannot be dropped without
-patching walkers; the CI Python jobs (`test`, `test-windows`, `lint`,
-`frontend`) still gate `release`; Windows and Linux packaging were changed
-without being run.
+patching walkers; Windows and Linux packaging were changed without being run.
+CI has no Python job left (`rust-gui`, `rust-windows`, the three bundle jobs,
+`android-app`, `release`).
 
 ### 0.1 Vehicle and control (`src/core/src/vehicle.rs`)
 
@@ -137,7 +136,6 @@ without being run.
 
 * P3 The Windows branches of the shell and runner are compile gated but untested. The dormant CRSF reader ELRS stays in `corvus_link` (no route in Python). ExpressLRS over MAVLink and Betaflight are ported: the serial options `?link=elrs&dtr=off&rts=off&fc=betaflight` (`serial_ports.rs`, held lines in `corvus_link` `Serial::open_held`), the generic heartbeat hint and the `betaflight` dialect (`dialect.rs`), the MSP reader (`corvus_link::plain::msp`) and its two routes (`peripherals/betaflight.rs`), all held to the Python by fixtures. Not done: a test with real hardware (an ELRS module resetting on connect, a Betaflight board over USB), none was available. SSH: the agent (`SSH_AUTH_SOCK`) is not asked for keys, only `~/.ssh/id_*` files without a passphrase; a key with a passphrase is refused as Python refused it.
 * P2 The native interface lacks the pieces of master's ExpressLRS and Betaflight work: the Betaflight setup page, the greyed Setup tiles for a telemetry only stack, and the Link panel's Radio selector (rows in `src/PARITY.md`). The backend is ready for all three.
-* P3 `python/corvus/serial_open.py` now opens through `corvus_link.mavutil` (`dtr` and `rts` keyword arguments) so the Python reference needs no pymavlink; `python/tests/test_qt_binding.py` and `test_macos_signing_order.py` still describe the Python and Qt bundles the switch removed and fail; update or delete them with `python/`.
 
 ### 0.5 AI and plugins (`src/core/src/plugins/`, `mcp/`)
 
@@ -149,7 +147,7 @@ without being run.
 
 ### 0.6 Setup schemas (`src/core/src/setup_schemas/`)
 
-Nothing open: every setup route answers, the harness compares them with `serve.py`.
+Nothing open: every setup route answers, and the frozen fixtures (`src/core/tests/data`, `setup_*_cases.rs`) hold them.
 
 ### 0.7 The switch
 
@@ -157,10 +155,6 @@ Nothing open: every setup route answers, the harness compares them with `serve.p
   scripts are written to the same contract as the macOS one, which was built and
   smoke tested); CI is their first run. Check that the Windows folder and the
   AppImage start without Python on a clean machine.
-* P3 `corvus_link` keeps its `python` feature for the reference; it is dropped
-  with `python/`.
-* P1 `python/` is deleted only on the user's word, after the page by page and
-  route by route comparison. Qt and the web interface go with it.
 
 ### 0.8 The interface (`src/PARITY.md` is the source of truth)
 
@@ -172,7 +166,7 @@ Nothing open: every setup route answers, the harness compares them with `serve.p
 * P2 Not seen live: the crash notice screen, the console jump chip, the native
   file dialogs (the sandbox cannot click them).
 * P2 Remaining parity rows, in order: mission flown against the simulator
-  (extend `scene_kit` so `MISSION_START` works for both dialects), setup (Radio
+  (against a PX4 and an ArduPilot SITL the operator runs, `MISSION_START` for both dialects; the simulated aircraft is gone), setup (Radio
   Control wizard steps 2 to 5, radio table under 580 px, motor dialog border,
   PID run bar), settings (vehicles section, effects of the HUD, track and top
   bar switches, update dialog against a stub, welcome steps), home (ground
@@ -207,11 +201,10 @@ the repository needs no Python and no `.venv` any more:
   `geofence_roundtrip.py` that ran on it. Open: render the five 3D views from
   the app itself (`CORVUS_GUI_3D` and `CORVUS_GUI_SHOT` already exist) and
   compare them in a Rust test.
-* Open: the Android app (`android/`) is a WebView on the web interface, which
-  is gone, so it has no page to show; `src/PARITY.md` still lists partial rows
-  that can no longer be compared against the web page. One Python test fails
-  on this machine and uses nothing that was deleted
-  (`test_child_process_link_and_its_teardown`).
+* P2 The Android app (`android/`) is a WebView on the web interface, which is
+  gone, so it has no page to show. Decide: a build of the Rust interface for
+  Android, or a page the core's HTTP server serves. `src/PARITY.md` still lists
+  partial rows that can no longer be compared against the web page.
 
 ## 1. Live checks
 

@@ -15,10 +15,10 @@
 
 <div align="center">
   <!-- corvus:version-badge -->
-  <img src="https://img.shields.io/badge/Version-2026.11.70-f7ebe1?style=for-the-badge" height="28" alt="Version 2026.11.70" />
+  <img src="https://img.shields.io/badge/Version-2026.11.71-f7ebe1?style=for-the-badge" height="28" alt="Version 2026.11.71" />
   <img width="8" />
-  <!-- <a href="https://www.rust-lang.org/" target="_blank"><img src="https://img.shields.io/badge/Rust-000000?logo=rust&logoColor=white&style=for-the-badge" height="28" alt="Rust" /></a>
-  <img width="8" /> -->
+  <a href="https://www.rust-lang.org/" target="_blank"><img src="https://img.shields.io/badge/Rust-000000?logo=rust&logoColor=white&style=for-the-badge" height="28" alt="Rust" /></a>
+  <img width="8" />
   <!-- <br>-->
   <a href="https://px4.io/" target="_blank"><img src="https://img.shields.io/badge/PX4-v1.16%20%7C%201.17%20%7C%201.18-9f2dfe?logoColor=white&style=for-the-badge" height="28" alt="PX4 v1.16 | 1.17 | 1.18" /></a>
   <img width="8" />
@@ -35,6 +35,8 @@
   <img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-6E7681?style=for-the-badge" height="28" alt="Platform: macOS | Linux | Windows" />
   <img width="8" />
   <img src="https://img.shields.io/badge/Offline-First-b91701?style=for-the-badge" height="28" alt="Offline first" />
+  <img width="8" />
+  <img src="https://img.shields.io/badge/MCP-Ready-2b6cb0?style=for-the-badge" height="28" alt="MCP ready" />
   <img width="8" />
   <img src="https://img.shields.io/badge/Ready%20to%20Fly-in%20seconds-38c602?style=for-the-badge" height="28" alt="Ready to fly in seconds" />
   <img width="8" />

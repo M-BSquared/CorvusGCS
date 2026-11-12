@@ -2,8 +2,8 @@
 
 The Corvus GCS desktop interface as a native Rust app (egui/eframe), built
 from `Cargo.toml` and this `src/` folder at the repository root. It replaces
-the web interface that was `python/src/`, and later becomes the Android app as
-well. `src/link/` is the MAVLink crate, plain Rust, a member of the same
+the web interface that was `python/src/` (deleted on 2026-11-12), and may later
+become the Android app as well. `src/link/` is the MAVLink crate, plain Rust, a member of the same
 workspace; see its README. Nothing here needs Python.
 
 ```
@@ -75,8 +75,8 @@ window does not close within 10 s of a signal, the process exits.
 
 ## The core (`src/core`, crate `corvus_core`)
 
-The backend of the Python program (`python/corvus`) becomes this library
-(plan: `src/BACKEND_PORT.md`). The foundation is the router, the state store,
+The backend of the Python program (`python/corvus`, deleted on 2026-11-12) is
+this library (history and rules: `src/BACKEND_PORT.md`). The foundation is the router, the state store,
 settings under `~/.corvus`, the instance lock, the version, the languages and
 the optional HTTP server; every other area (vehicle, map data, logs and
 firmware, peripherals, AI and plugins) is a module that registers its routes
@@ -121,7 +121,7 @@ deleted (`src/core/tests/data`).
 
 | | |
 | --- | --- |
-| `src/net/backend.rs` | starts the core in this process (the default; or `serve.py` as a child with `--root`/`--python`) and stops it |
+| `src/net/backend.rs` | starts the core in this process (or connects to `--server`) and stops it |
 | `src/api/src/net/http.rs` | a small HTTP/1.1 client, with a read timeout per read so a stream reader can stop |
 | `src/net/sse.rs` | server-sent events |
 | `src/data/telemetry.rs` | the `/api/telemetry` reader thread and the latest state |

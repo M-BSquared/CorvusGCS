@@ -85,6 +85,15 @@ joined in its `stop`, a loop that sleeps on `Core::wait_stopping`, a child sent
 closed. One leak fails the review; ask for the test that shows `stop` leaves
 nothing behind.
 
+**Rust quality.** In the changed non test code: no `unwrap`, `expect`, slice
+indexing or truncating `as` cast on data that comes from a vehicle, a file, the
+network or a request body (a damaged frame, a short payload, a hostile path must
+produce an error, never a panic); a new `unsafe` stays in a file that already
+needs it and has a `// SAFETY:` note; a lock a panic could poison does not take
+the interface down; nothing blocks the frame loop or polls per frame; no
+`std::process::exit` or `thread::sleep` loop that ignores `Core::wait_stopping`.
+Search the changed files for `unwrap()`, `expect(` and `unsafe` and read each hit.
+
 **Bounds.** Anything that grows with the session (a list, a cache, a buffer,
 a texture set) has a cap and a test that holds it.
 

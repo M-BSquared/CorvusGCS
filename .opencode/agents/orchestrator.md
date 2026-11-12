@@ -57,6 +57,10 @@ interface's process), `src/link` (`corvus_link`, MAVLink), `src/api`
 no Python and no web page any more; behaviour the Python program defined is
 held by the frozen fixtures in `src/core/tests/data` and `src/link/tests/data`.
 
+The slash commands in `.opencode/commands/` start the usual jobs: `/next
+[area]` (the next open `PLAN.md` item, end to end), `/gates` (every gate, no
+fixes) and `/audit` (the diff against the invariants, findings only).
+
 ## 1. Decide how big the job is
 
 - A question, a one line fix or a read only look: answer or delegate to one

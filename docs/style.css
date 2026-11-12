@@ -1082,12 +1082,8 @@ a:hover { color: var(--accent); }
    =================================================================== */
 .gallery-tabs {
   position: relative;
-  display: inline-flex; flex-wrap: wrap; gap: 4px;
+  display: inline-flex; flex-wrap: wrap; gap: 6px;
   margin-bottom: 28px;
-  padding: 4px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--surface-1);
 }
 /* The pill that slides under the selected tab. */
 .gallery-tabs::before {
@@ -1097,23 +1093,23 @@ a:hover { color: var(--accent); }
   width: var(--tab-w, 0);
   height: var(--tab-h, 0);
   translate: var(--tab-x, 0) var(--tab-y, 0);
-  border-radius: 4px;
-  background: var(--surface-3);
-  box-shadow: inset 0 -2px 0 var(--mark);
+  border-radius: 999px;
+  background: var(--accent-dim);
   transition: translate 0.45s var(--ease-out), width 0.45s var(--ease-out), height 0.45s var(--ease-out);
 }
 .gallery-tab {
   position: relative;
   display: inline-flex; align-items: center; gap: 8px;
-  padding: 9px 16px;
+  padding: 8px 16px;
   border: 0;
-  border-radius: 4px;
+  border-radius: 999px;
   background: none;
   color: var(--text-2);
   font: inherit; font-size: 0.875rem; font-weight: 600;
   cursor: pointer;
   transition: color 0.2s ease;
 }
+.gallery-tab:not([aria-selected="true"]):hover { background: var(--surface-2); }
 .gallery-tab:hover { color: var(--text-1); }
 .gallery-tab[aria-selected="true"] { color: var(--text-1); }
 .gallery-tab .icon { width: 16px; height: 16px; color: var(--accent-bright); }
@@ -1203,12 +1199,6 @@ a:hover { color: var(--accent); }
 .shot.is-current {
   background: var(--accent-faint);
   border-color: color-mix(in srgb, var(--accent) 40%, transparent);
-}
-.shot.is-current::before {
-  content: "";
-  position: absolute; left: -1px; top: 14px; bottom: 14px;
-  width: 3px; border-radius: 0 3px 3px 0;
-  background: var(--mark);
 }
 .shot-btn {
   display: block; padding: 0;
@@ -1597,7 +1587,6 @@ html:not(.js) .shot figcaption { -webkit-line-clamp: unset; }
     gap: 10px;
     scroll-snap-align: start;
   }
-  .shot.is-current::before { display: none; }
   .shot figcaption { -webkit-line-clamp: 2; }
 
   .spec, .spec tbody, .spec tr { display: block; }
@@ -1635,9 +1624,9 @@ html:not(.js) .shot figcaption { -webkit-line-clamp: unset; }
   .bento { grid-template-columns: 1fr; }
   .card-wide { grid-template-columns: 1fr; gap: 20px; }
 
-  .gallery-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-radius: var(--radius-lg); }
-  .gallery-tabs::before { border-radius: 10px; }
-  .gallery-tab { justify-content: center; gap: 5px; padding: 9px 4px; border-radius: 10px; font-size: 0.8125rem; }
+  .gallery-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .gallery-tabs::before { border-radius: 999px; }
+  .gallery-tab { justify-content: center; gap: 5px; padding: 9px 4px; border-radius: 999px; font-size: 0.8125rem; }
   .gallery-tab .icon { display: none; }
   .download-panel { padding: 32px 18px; border-radius: 20px; }
   .viewer-meta { flex-direction: column; gap: 6px; }
