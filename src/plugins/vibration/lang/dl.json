@@ -2,10 +2,10 @@
   "strings": {
     "Accel HF": "Beschl. HF",
     "Accel HF vibration (z)": "Beschleunigungs-HF-Vibradion (z)",
-    "Gyro HF": "Gyro HF",
-    "Gyro HF vibration (y)": "Gyro-HF-Vibradion (y)",
     "Gyro coning": "Gyro-Coning",
     "Gyro coning (x)": "Gyro-Coning (x)",
+    "Gyro HF": "Gyro HF",
+    "Gyro HF vibration (y)": "Gyro-HF-Vibradion (y)",
     "Live PX4 vibration metrics and accelerometer clipping": "Live-Vibradionswedde von PX4 und Clipping des Beschleunigungssensors",
     "PX4 repurposes these fields: vibration_x = gyro delta-angle coning, vibration_y = gyro high-frequency, vibration_z = accel high-frequency vibration. Higher accel-HF (red) = more mechanical vibration.": "PX4 vawendet de Felder annerscht: vibration_x = Coning vom Gyro-Delta-Winkel, vibration_y = Gyro Hochfrequenz, vibration_z = Beschleunigung Hochfrequenz. Hehere Beschleunigung-HF (rot) = mehr mechanische Vibradion.",
     "Vibration metric (unitless)": "Vibradionswert (ohne Aihaid)"
