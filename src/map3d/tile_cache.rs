@@ -5,7 +5,7 @@
 //! there picks it up. Requests nobody repeats age out of the queue.
 
 use std::collections::{HashMap, VecDeque};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
@@ -46,6 +46,9 @@ struct Shared<T> {
     inner: Mutex<Inner<T>>,
     wake: Condvar,
     stop: AtomicBool,
+    /// Counts every tile that came and every clear, so what was made from
+    /// the tiles knows when it may be out of date.
+    generation: AtomicU64,
 }
 
 /// A cache of decoded tiles of type `T`.
@@ -117,6 +120,7 @@ impl<T: Send + Sync + 'static> TileCache<T> {
             }),
             wake: Condvar::new(),
             stop: AtomicBool::new(false),
+            generation: AtomicU64::new(0),
         });
         let decode = Arc::new(decode);
         let threads = (0..WORKERS)
@@ -163,6 +167,18 @@ impl<T: Send + Sync + 'static> TileCache<T> {
         None
     }
 
+    /// Every tile asked for and not here yet.
+    #[cfg(test)]
+    pub fn queued(&self) -> Vec<Key> {
+        self.shared.inner.lock().map_or(Vec::new(), |g| {
+            g.slots
+                .iter()
+                .filter(|(_, s)| matches!(s, Slot::Loading))
+                .map(|(k, _)| k.clone())
+                .collect()
+        })
+    }
+
     /// The tile when it is here, never queueing it.
     pub fn peek(&self, key: &Key) -> Option<Arc<T>> {
         match self.shared.inner.lock().ok()?.slots.get(key) {
@@ -190,6 +206,13 @@ impl<T: Send + Sync + 'static> TileCache<T> {
             g.queue.clear();
             g.bytes = 0;
         }
+        self.shared.generation.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Moves on whenever a tile arrives or the cache is cleared. Tiles
+    /// trimmed away do not move it: what was made from them stays right.
+    pub fn generation(&self) -> u64 {
+        self.shared.generation.load(Ordering::Relaxed)
     }
 
     /// What the tiles held weigh, as `weigh` counts them.
@@ -255,6 +278,7 @@ fn worker<T: Send + Sync + 'static>(shared: Arc<Shared<T>>, server: Server, ctx:
                         g.bytes += (shared.weigh)(&t);
                         g.slots.insert(key.clone(), Slot::Ready(Arc::new(t)));
                         g.order.push_back(key);
+                        shared.generation.fetch_add(1, Ordering::Relaxed);
                     }
                     None => {
                         g.slots.insert(key, Slot::Failed(Instant::now()));
@@ -311,6 +335,7 @@ mod tests {
             std::thread::sleep(Duration::from_millis(10));
         };
         assert_eq!(*tile, 3);
+        assert_eq!(cache.generation(), 1, "one tile came");
         assert!(cache.get(&key).is_some());
         assert_eq!(hits.load(Ordering::SeqCst), 1);
         let missing: Key = ("sat".into(), 9, 9, 9);
@@ -350,7 +375,9 @@ mod tests {
         assert_eq!((cache.held(), cache.bytes()), (2, 20));
         assert!(cache.peek(&("sat".into(), 3, 4, 0)).is_some(), "the newest stays");
         assert!(cache.peek(&("sat".into(), 3, 0, 0)).is_none(), "the oldest goes");
+        let before = cache.generation();
         cache.clear();
         assert_eq!((cache.held(), cache.bytes()), (0, 0));
+        assert!(cache.generation() > before, "a clear is a change too");
     }
 }

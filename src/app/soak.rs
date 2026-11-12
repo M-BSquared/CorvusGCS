@@ -6,6 +6,9 @@
 //! `CORVUS_GUI_SOAK_STEP=2.5` sets the seconds a step lasts (4 by default).
 //! `CORVUS_GUI_SOAK=3d` stays in the 3D map and jumps between mountains, cities
 //! and zoom levels at every step, to hold the view's memory at its worst.
+//! `CORVUS_GUI_SOAK_AT=lng,lat` keeps the 3D soak over that one place and
+//! goes in as close as the view allows, over an operator's own elevation
+//! model for instance.
 
 use eframe::egui;
 
@@ -46,6 +49,27 @@ const SPOTS: [(f64, f64, f64, f64, f64); 8] = [
     (-3.7, 40.4, 17.0, 250.0, 60.0),
 ];
 
+/// Close views around one place for `CORVUS_GUI_SOAK_AT`: east and north
+/// offsets in degrees, zoom, bearing, pitch. A zoom of 99 is the closest the
+/// view goes.
+const CLOSE: [(f64, f64, f64, f64, f64); 8] = [
+    (0.0, 0.0, 17.0, 0.0, 60.0),
+    (0.001, 0.0, 19.0, 90.0, 60.0),
+    (0.0, 0.001, 99.0, 180.0, 60.0),
+    (-0.002, 0.0, 20.0, 270.0, 30.0),
+    (0.0, -0.002, 99.0, 45.0, 0.0),
+    (0.003, 0.002, 18.0, 135.0, 60.0),
+    (-0.001, 0.003, 99.0, 315.0, 60.0),
+    (0.002, -0.001, 21.0, 225.0, 50.0),
+];
+
+/// `CORVUS_GUI_SOAK_AT` as a longitude and latitude.
+pub fn soak_at(value: &str) -> Option<(f64, f64)> {
+    let (a, b) = value.split_once(',')?;
+    let (lng, lat) = (a.trim().parse::<f64>().ok()?, b.trim().parse::<f64>().ok()?);
+    ((-180.0..=180.0).contains(&lng) && (-85.0..=85.0).contains(&lat)).then_some((lng, lat))
+}
+
 /// The step number at `now`, `None` before the start.
 pub fn step_at(now: f64, step_s: f64) -> Option<u64> {
     (now >= START_S && step_s > 0.0).then(|| ((now - START_S) / step_s) as u64)
@@ -69,6 +93,13 @@ impl App {
         if std::env::var("CORVUS_GUI_SOAK").is_ok_and(|v| v == "3d") {
             self.page = Page::Home;
             self.map.set_three_d(true);
+            if let Some((lng, lat)) = std::env::var("CORVUS_GUI_SOAK_AT").ok().as_deref().and_then(soak_at) {
+                let (de, dn, zoom, bearing, pitch) = CLOSE[(k as usize) % CLOSE.len()];
+                let (t, _) = self.map.three_settings(ctx);
+                t.start_at(lng + de, lat + dn, zoom.min(t.closest_zoom()), bearing);
+                t.cam.pitch = pitch;
+                return;
+            }
             let (lng, lat, zoom, bearing, pitch) = SPOTS[(k as usize) % SPOTS.len()];
             let lap = k / SPOTS.len() as u64;
             let wobble = (lap % 24) as f64 * 0.04 * if lap.is_multiple_of(2) { 1.0 } else { -1.0 };
@@ -131,5 +162,12 @@ mod tests {
         assert_eq!(step_at(START_S, 4.0), Some(0));
         assert_eq!(step_at(START_S + 9.0, 4.0), Some(2));
         assert_eq!(step_at(100.0, 0.0), None);
+    }
+
+    #[test]
+    fn the_close_soak_reads_its_place() {
+        assert_eq!(soak_at("11.6385, 48.0795"), Some((11.6385, 48.0795)));
+        assert_eq!(soak_at("11.6"), None);
+        assert_eq!(soak_at("200,10"), None);
     }
 }

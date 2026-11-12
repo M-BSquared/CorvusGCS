@@ -172,8 +172,8 @@ impl DemTile {
 }
 
 /// Zooms between a leaf of the ground mesh and the elevation tile it reads:
-/// 256 pixels over 16 cells is `2^4` leaves a side.
-pub const LEAF_LEVELS: u8 = 4;
+/// 256 pixels over 32 cells is `2^3` leaves a side.
+pub const LEAF_LEVELS: u8 = 3;
 
 /// The tile a leaf `(z, x, y)` reads, `(z, x, y)` of it, and the part of that
 /// tile the leaf covers: `(fx, fy, size)` in 0 to 1.
@@ -257,6 +257,25 @@ impl Terrain {
     /// answer: a building placed by one would stay at the wrong height when
     /// the real tile arrives.
     pub fn exact_height_at(&self, lng: f64, lat: f64, zoom: u8) -> Option<f64> {
+        self.height_of_tile(lng, lat, zoom, true)
+    }
+
+    /// The ground height at a position from the finest tile that is here,
+    /// from the model's last zoom down to `zoom`, else as `height_at` reads
+    /// it at `zoom`. Only `zoom` is ever asked for: the finer tiles are
+    /// the ones the ground mesh close to the camera brought in, so what
+    /// stands on the ground follows the ground as it is drawn there.
+    pub fn finest_height_at(&self, lng: f64, lat: f64, zoom: u8) -> Option<f64> {
+        let top = self.spec.maxzoom;
+        ((zoom.min(top) + 1)..=top)
+            .rev()
+            .find_map(|z| self.height_of_tile(lng, lat, z, false))
+            .or_else(|| self.height_at(lng, lat, f64::from(zoom)))
+    }
+
+    /// The height from the tile of zoom `zoom` under a position, asked for
+    /// when `ask` and it is not here.
+    fn height_of_tile(&self, lng: f64, lat: f64, zoom: u8, ask: bool) -> Option<f64> {
         let z = zoom.min(self.spec.maxzoom);
         let (mx, my) = crate::map3d::camera::mercator(lng, lat);
         let world = 2.0 * std::f64::consts::PI * crate::map3d::camera::R;
@@ -264,8 +283,17 @@ impl Terrain {
         let (fx, fy) = ((mx + world / 2.0) / world * n, (world / 2.0 - my) / world * n);
         let (tx, ty) = (fx.floor().max(0.0) as u32, fy.floor().max(0.0) as u32);
         let key: Key = (self.spec.id.clone(), z, tx, ty);
-        let tile = self.cache.get(&key)?;
+        let tile = if ask {
+            self.cache.get(&key)?
+        } else {
+            self.cache.peek(&key)?
+        };
         Some(tile.sample(fx - tx as f64, fy - ty as f64) as f64)
+    }
+
+    /// Moves on whenever elevation arrives or is dropped.
+    pub fn generation(&self) -> u64 {
+        self.cache.generation()
     }
 
     /// Drops every elevation tile held.
@@ -347,7 +375,7 @@ mod tests {
     fn a_leaf_reads_the_tile_that_gives_it_a_pixel_a_cell() {
         assert_eq!(
             leaf_part(12, 2185, 1420),
-            ((8, 136, 88), (9.0 / 16.0, 12.0 / 16.0, 1.0 / 16.0))
+            ((9, 273, 177), (1.0 / 8.0, 4.0 / 8.0, 1.0 / 8.0))
         );
         let (tile, (fx, fy, s)) = leaf_part(2, 3, 1);
         assert_eq!(tile, (0, 0, 0), "near the top of the pyramid it is the world tile");
@@ -366,5 +394,92 @@ mod tests {
         assert_eq!(t.sample(1.0, 1.0), 30.0);
         assert_eq!(t.sample(0.5, 0.5), 15.0);
         assert_eq!(t.sample(2.0, -1.0), 10.0, "outside is clamped");
+    }
+
+    fn spec(maxzoom: u8) -> Spec {
+        Spec {
+            id: "dem_0123456789".into(),
+            label: "Own".into(),
+            provider: "custom".into(),
+            encoding: Encoding::Terrarium,
+            maxzoom,
+            usable: true,
+            attribution: String::new(),
+        }
+    }
+
+    /// A backend whose elevation tile at zoom z is 100 z metres everywhere,
+    /// and the paths it was asked for.
+    fn backend() -> (Server, std::sync::Arc<std::sync::Mutex<Vec<String>>>) {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let server = Server::local(listener.local_addr().unwrap().port());
+        let asked = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let log = asked.clone();
+        std::thread::spawn(move || {
+            while let Ok((mut s, _)) = listener.accept() {
+                let mut buf = [0u8; 2048];
+                let n = s.read(&mut buf).unwrap_or(0);
+                let head = String::from_utf8_lossy(&buf[..n]).to_string();
+                let path = head.split_whitespace().nth(1).unwrap_or("").to_string();
+                let z: u32 = path.split('/').nth(4).and_then(|z| z.parse().ok()).unwrap_or(0);
+                log.lock().unwrap().push(path);
+                let v = (100 * z) as f32 + 32768.0;
+                let (r, g) = ((v / 256.0).floor() as u8, (v % 256.0) as u8);
+                let img = image::RgbImage::from_pixel(4, 4, image::Rgb([r, g, 0]));
+                let mut png = Vec::new();
+                img.write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+                    .unwrap();
+                let _ = s.write_all(
+                    format!(
+                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                        png.len()
+                    )
+                    .as_bytes(),
+                );
+                let _ = s.write_all(&png);
+            }
+        });
+        (server, asked)
+    }
+
+    fn near(a: Option<f64>, b: f64) -> bool {
+        a.is_some_and(|a| (a - b).abs() < 0.01)
+    }
+
+    fn wait_for(f: impl Fn() -> Option<f64>) -> f64 {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        loop {
+            if let Some(h) = f() {
+                return h;
+            }
+            assert!(std::time::Instant::now() < deadline, "the tile did not come");
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+    }
+
+    #[test]
+    fn the_finest_tile_here_is_read_and_no_finer_one_is_asked_for() {
+        let (server, asked) = backend();
+        let t = Terrain::new(&egui::Context::default(), &server, spec(18));
+        let (lng, lat) = (11.6385, 48.0795);
+        assert!(near(Some(wait_for(|| t.finest_height_at(lng, lat, 15))), 1500.0));
+        let zoom_of = |p: &String| p.split('/').nth(4).and_then(|z| z.parse::<u8>().ok()).unwrap_or(99);
+        assert!(
+            asked.lock().unwrap().iter().all(|p| zoom_of(p) <= 15),
+            "nothing finer than the zoom asked for is fetched: {:?}",
+            asked.lock().unwrap()
+        );
+        assert!(near(Some(wait_for(|| t.exact_height_at(lng, lat, 18))), 1800.0));
+        assert!(
+            near(t.finest_height_at(lng, lat, 15), 1800.0),
+            "the finer tile, once here"
+        );
+        assert!(
+            near(t.finest_height_at(lng, lat, 30), 1800.0),
+            "past the last zoom is the last zoom"
+        );
+        let coarse = Terrain::new(&egui::Context::default(), &server, spec(15));
+        assert!(near(Some(wait_for(|| coarse.finest_height_at(lng, lat, 15))), 1500.0));
     }
 }

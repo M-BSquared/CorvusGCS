@@ -480,12 +480,15 @@ on the CPU and stay on the GPU; a frame is uniforms and draw calls.
   coarse. A leaf is dropped when it is outside the real view frustum (taken
   over the sea level plane up to 5000 m, the ground not being known yet), and
   the copy of the world a leaf is in is counted, so the map continues over
-  longitude 180; the centre stops at the mercator limit. Each leaf is a 16 by
-  16 grid of quads. Heights come from the elevation tiles (`terrain.rs`,
+  longitude 180; the centre stops at the mercator limit. Each leaf is a 32 by
+  32 grid of quads. Heights come from the elevation tiles (`terrain.rs`,
   terrarium or mapbox packing, PNG or WebP, 256 or 512 px) through
   `/api/tiles/<dem>/z/x/y.png`, the proxy the web map reads, so its cache
-  serves offline. A leaf reads the tile four zooms up (`terrain::leaf_part`),
-  which gives it one pixel a cell and 16 times fewer tiles than one per leaf. The imagery is the base layer's own
+  serves offline. A leaf reads the tile three zooms up (`terrain::leaf_part`),
+  which gives it one pixel a cell and 64 times fewer tiles than one per leaf.
+  Leaves go past the base layer's last zoom where the elevation model is finer
+  (`deepest_leaf`, at most 22): an own 20 cm surface model is drawn from its
+  zoom 18 tiles, 40 cm a cell, so a roof is a roof and not a tent. The imagery is the base layer's own
   tiles from the same proxy, draped by texture coordinates. A tile whose
   data has not come yet is drawn from its nearest ancestor, never left out.
 - **Depth.** The depth buffer settles what hides what: a ridge hides the
@@ -493,7 +496,7 @@ on the CPU and stay on the GPU; a frame is uniforms and draw calls.
   its clip, draws the ground opaque and the buildings blended after it.
   Imagery is a mipmapped, anisotropic texture per tile; hillshade is baked
   into a per vertex shade.
-- **Meshes.** A leaf is a 16 by 16 grid plus skirts around its north west
+- **Meshes.** A leaf is a 32 by 32 grid plus skirts around its north west
   corner, made once per elevation tile (`build_leaf`); its place is a uniform,
   so panning moves nothing on the GPU. Heights are f32 around the leaf's own
   origin, which keeps millimetres at tens of kilometres.
@@ -509,9 +512,19 @@ on the CPU and stay on the GPU; a frame is uniforms and draw calls.
   frame and the view asks for it. A leaf whose own image is not on the GPU yet
   draws its nearest ancestor's (`Item::fallback`), so a tile arriving does not
   blink. Tiles are asked for from the far leaves to the near ones because the
-  cache serves the last asked first. The GPU holds at most 2400 meshes and 700
+  cache serves the last asked first. The GPU holds at most 1600 meshes and 480
   textures (`gpu::Pool`, longest unused go first); the track ribbons follow the
   camera and are made, drawn and freed in one paint (`Item::transient`).
+- **On the ground.** Reading the ground is what costs, so it is done once: a
+  plugin's line or area is laid on the ground when it appears, moves or more
+  elevation arrives (`overlays::Draped`, at most 6 ms a frame), and the flown
+  track keeps the ground under each point and reads only its new end
+  (`trail::Trail`, 3 ms a frame). Both read the finest elevation tile the
+  ground mesh has brought in (`Terrain::finest_height_at`), so they lie on the
+  ground as it is drawn. A dashed line is cut only where it is in front of the
+  camera, into at most 600 dashes, and a stroke is one mesh: a radar zone
+  around a close camera once made some 200 000 meshes a frame and stalled
+  the GPU driver.
 - **Failure.** `gpu::check_caps` reads the context (GLSL with `in` and `out`,
   depth bits, texture size) before the first draw, a shader that does not
   compile or link is reported with its log, and `gpu::failure()` then makes the

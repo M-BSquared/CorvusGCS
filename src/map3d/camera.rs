@@ -109,6 +109,12 @@ impl Camera {
         self.focal() * metres_per_pixel(self.lat, self.zoom)
     }
 
+    /// How far along the view the nearest thing drawn is, in metres: nothing
+    /// nearer is on the screen.
+    pub fn near(&self) -> f64 {
+        self.distance() * 0.02
+    }
+
     /// Where the camera is and which way it faces, in local metres.
     pub fn view(&self) -> View {
         let (pos, right, _, forward) = self.basis();
@@ -134,7 +140,7 @@ impl Camera {
         let (pos, r, u, f) = self.basis();
         let (w, h) = self.size;
         let focal = self.focal();
-        let near = self.distance() * 0.02;
+        let near = self.near();
         let far = self.distance() * 60.0;
         let a = (far + near) / (far - near);
         let b = -2.0 * far * near / (far - near);
@@ -187,7 +193,7 @@ impl Camera {
     /// Whether a box of local points (its corners) can be seen: false only
     /// when every corner is outside the same side of the view, or behind it.
     pub fn sees(&self, corners: &[V3]) -> bool {
-        let near = self.distance() * 0.02;
+        let near = self.near();
         let (hw, hh) = (self.size.0 / 2.0, self.size.1 / 2.0);
         let c: Vec<V3> = corners.iter().map(|p| self.clip(*p)).collect();
         if c.iter().all(|p| p[2] < near) {
@@ -206,7 +212,7 @@ impl Camera {
         let (pos, r, u, f) = self.basis();
         let v = sub(p, pos);
         let depth = dot(v, f);
-        if depth < self.distance() * 0.02 {
+        if depth < self.near() {
             return None;
         }
         let k = self.focal() / depth;

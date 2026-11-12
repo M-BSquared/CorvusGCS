@@ -11,6 +11,7 @@ pub mod panel;
 pub mod ribbon;
 pub mod terrain;
 pub mod tile_cache;
+mod trail;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -18,7 +19,7 @@ use std::sync::Arc;
 use eframe::egui::{self, Color32, Mesh, Pos2, Rect, Stroke, Vec2};
 use eframe::egui_glow;
 
-use crate::data::track::{self, Point, Track};
+use crate::data::track::Track;
 use crate::map3d::buildings::Building;
 use crate::map3d::camera::{Camera, V3};
 use crate::map3d::gpu::{MeshData, Scene, FLOATS};
@@ -31,8 +32,11 @@ use crate::net::http::Server;
 /// A leaf is split while it would cover more than this many pixels.
 const SPLIT_PX: f64 = 230.0;
 /// Quads per side of a leaf.
-const GRID: usize = 16;
+const GRID: usize = 32;
 const MAX_LEAVES: usize = 900;
+/// The deepest a leaf goes whatever the elevation model: 22 is a leaf of
+/// about 6 m with cells of 20 cm in central Europe.
+const DEEPEST_LEAF: u8 = 22;
 /// Leaf meshes built in one frame at most; the rest wait for the next, nearest first.
 const MESH_BUILDS_PER_FRAME: usize = 40;
 /// Milliseconds of one frame the leaf meshes may take; the rest wait.
@@ -46,10 +50,14 @@ const RELIEF: [f64; 2] = [-600.0, 2500.0];
 /// The tilt takes 500 ms (`TILT_MS`).
 pub(crate) const TILT_S: f64 = 0.5;
 /// The elevation zoom things standing on the ground (buildings, lines, the
-/// aircraft) are placed by: the one the ground mesh reads close up, so a
-/// building is not sunk into a bump the mesh has and they do not.
+/// aircraft) are placed by at least; finer tiles the ground mesh has brought
+/// in are read first (`Terrain::finest_height_at`), so a line is not sunk
+/// into a roof or a tree the mesh has and it does not.
 const GROUND_ZOOM: f64 = 15.0;
 const KEEP_ABOVE_GROUND: f64 = 8.0;
+/// Milliseconds a frame may spend reading the ground under the flown track;
+/// the rest of a long flight is read in the frames after.
+const TRAIL_MS: u64 = 3;
 /// Cells of buildings turned into a mesh in one frame at most; one cell is up
 /// to a few thousand houses, and the rest wait their turn, nearest first.
 const CELL_MESHES_PER_FRAME: usize = 1;
@@ -169,6 +177,11 @@ pub struct Map3d {
     used: Vec<Key>,
     leaf_meshes: HashMap<(u8, u32, u32), LeafMesh>,
     cell_meshes: HashMap<(u32, u32), CellMesh>,
+    /// What plugins draw, laid on the ground, by owner and key.
+    draped: HashMap<String, overlays::Draped>,
+    /// The flights laid on the ground: earlier ones by number, the current
+    /// one as `usize::MAX`.
+    trails: HashMap<usize, trail::Trail>,
     frame: u64,
     /// The numbers of the last frame over the map (F3, or `CORVUS_GUI_3D_DEBUG`).
     debug: bool,
@@ -242,6 +255,8 @@ impl Map3d {
             used: Vec::new(),
             leaf_meshes: HashMap::new(),
             cell_meshes: HashMap::new(),
+            draped: HashMap::new(),
+            trails: HashMap::new(),
             frame: 0,
             debug: std::env::var_os("CORVUS_GUI_3D_DEBUG").is_some(),
             logged: std::time::Instant::now(),
@@ -277,10 +292,15 @@ impl Map3d {
         self.cam.pitch < 0.05 && self.pitch_goal.is_none_or(|g| g < 0.05)
     }
 
+    /// The closest the view zooms in.
+    pub fn closest_zoom(&self) -> f64 {
+        f64::from(self.max_zoom) + 2.0
+    }
+
     /// One zoom step in or out, eased like the rail's buttons in MapLibre.
     pub fn zoom_by(&mut self, by: f64) {
         let from = self.zoom_goal.unwrap_or(self.cam.zoom);
-        self.zoom_goal = Some((from + by).clamp(crate::map3d::camera::MIN_ZOOM, f64::from(self.max_zoom) + 2.0));
+        self.zoom_goal = Some((from + by).clamp(crate::map3d::camera::MIN_ZOOM, self.closest_zoom()));
     }
 
     /// Moves the zoom and the pitch a step towards their goals.
@@ -333,6 +353,8 @@ impl Map3d {
         self.used.clear();
         self.leaf_meshes.clear();
         self.cell_meshes.clear();
+        self.draped.clear();
+        self.trails.clear();
         gpu::request_release();
     }
 
@@ -433,11 +455,27 @@ impl Map3d {
 
     /// The ground height at a position, the centre's when none is loaded.
     fn ground_at(&self, lng: f64, lat: f64) -> f64 {
+        self.known_ground(lng, lat).unwrap_or(self.cam.ground)
+    }
+
+    /// The ground height at a position from the elevation loaded, `None`
+    /// while none is.
+    fn known_ground(&self, lng: f64, lat: f64) -> Option<f64> {
+        let z = GROUND_ZOOM as u8;
         self.terrain
             .as_ref()
-            .and_then(|t| t.height_at(lng, lat, GROUND_ZOOM))
-            .or_else(|| self.fallback.as_ref().and_then(|t| t.height_at(lng, lat, GROUND_ZOOM)))
-            .unwrap_or(self.cam.ground)
+            .and_then(|t| t.finest_height_at(lng, lat, z))
+            .or_else(|| self.fallback.as_ref().and_then(|t| t.finest_height_at(lng, lat, z)))
+    }
+
+    /// Moves on whenever elevation arrives, or the model in use changes.
+    fn terrain_generation(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        for t in [&self.terrain, &self.fallback] {
+            t.as_ref().map(|t| (t.spec.id.as_str(), t.generation())).hash(&mut h);
+        }
+        h.finish()
     }
 
     /// The ground the view sees, as east and north metres around the centre:
@@ -473,7 +511,7 @@ impl Map3d {
         let k = c.lat.to_radians().cos();
         let (cx, cy) = crate::map3d::camera::mercator(c.lng, c.lat);
         let (min, max) = self.ground_box();
-        let z0 = (c.zoom.floor() as i32 - 4).clamp(0, self.max_zoom as i32) as u8;
+        let z0 = (c.zoom.floor() as i32 - 4).clamp(0, self.deepest_leaf() as i32) as u8;
         let n_tiles = 2f64.powi(z0 as i32);
         let world = 2.0 * std::f64::consts::PI * crate::map3d::camera::R;
         let to_tile = |mx: f64, my: f64| {
@@ -518,6 +556,21 @@ impl Map3d {
         [at(0.0, 0.0), at(1.0, 0.0), at(1.0, 1.0), at(0.0, 1.0)]
     }
 
+    /// The deepest zoom a leaf of the ground is split to: the base layer's
+    /// last, or deeper where the elevation model is finer than that, so a
+    /// leaf still reads one elevation pixel a cell. An own surface model of
+    /// 20 cm is then drawn at its tiles' 40 cm and not at metres.
+    fn deepest_leaf(&self) -> u8 {
+        let elevation = self
+            .terrain
+            .iter()
+            .chain(self.fallback.iter())
+            .map(|t| t.spec.maxzoom.saturating_add(terrain::LEAF_LEVELS))
+            .max()
+            .unwrap_or(0);
+        self.max_zoom.max(elevation.min(DEEPEST_LEAF))
+    }
+
     fn split(&self, l: Leaf, out: &mut Vec<Leaf>) {
         let pts = self.corners(l);
         // The tile is on the sea level plane here, the ground over it up to
@@ -528,6 +581,7 @@ impl Map3d {
             return;
         }
         let c = &self.cam;
+        let deepest = self.deepest_leaf();
         let k = c.lat.to_radians().cos();
         let metres = 2.0 * std::f64::consts::PI * crate::map3d::camera::R * k / 2f64.powi(l.z as i32);
         // How far along the view the tile is, nearest corner, but never
@@ -539,7 +593,7 @@ impl Map3d {
             .fold(f64::MAX, f64::min)
             .max(c.distance() * 0.3);
         let px = metres / depth * c.focal();
-        if px > SPLIT_PX && l.z < self.max_zoom && out.len() < MAX_LEAVES {
+        if px > SPLIT_PX && l.z < deepest && out.len() < MAX_LEAVES {
             for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
                 self.split(
                     Leaf {
@@ -585,7 +639,9 @@ impl Map3d {
             if d == coarse && d > 0 {
                 want = true;
             }
-            let (z, x, y) = (top - d, l.x >> d, l.y >> d);
+            // A leaf deeper than the base layer goes reads its tile at `top`.
+            let up = l.z - top + d;
+            let (z, x, y) = (top - d, l.x >> up, l.y >> up);
             let key: Key = (self.source.clone(), z, x, y);
             let image = if want {
                 self.imagery.get(&key)
@@ -714,7 +770,7 @@ impl Map3d {
             let keep: std::collections::HashSet<&Key> = self.used.iter().collect();
             self.tex_ids.retain(|k, _| keep.contains(k));
         }
-        if self.leaf_meshes.len() > MAX_LEAVES * 3 {
+        if self.leaf_meshes.len() > MAX_LEAVES * 2 {
             let frame = self.frame;
             self.leaf_meshes.retain(|_, m| m.used + 30 >= frame);
         }
@@ -739,7 +795,7 @@ impl Map3d {
             let at = local(t.center_pos);
             if (t.zoom_delta - 1.0).abs() > 1e-4 {
                 let zoom = (self.cam.zoom + f64::from(t.zoom_delta).log2())
-                    .clamp(crate::map3d::camera::MIN_ZOOM, self.max_zoom as f64 + 2.0);
+                    .clamp(crate::map3d::camera::MIN_ZOOM, self.closest_zoom());
                 self.cam.zoom_at(at.0, at.1, zoom);
             }
             self.cam.bearing = (self.cam.bearing - f64::from(t.rotation_delta).to_degrees()).rem_euclid(360.0);
@@ -769,8 +825,8 @@ impl Map3d {
             if let (true, Some(p)) = (scroll != 0.0, ui.input(|i| i.pointer.hover_pos())) {
                 self.zoom_goal = None;
                 let at = local(p);
-                let zoom = (self.cam.zoom + scroll as f64 * 0.004)
-                    .clamp(crate::map3d::camera::MIN_ZOOM, self.max_zoom as f64 + 2.0);
+                let zoom =
+                    (self.cam.zoom + scroll as f64 * 0.004).clamp(crate::map3d::camera::MIN_ZOOM, self.closest_zoom());
                 self.cam.zoom_at(at.0, at.1, zoom);
             }
         }
@@ -795,7 +851,7 @@ impl Map3d {
                     terrain
                         .iter()
                         .chain(fallback.iter())
-                        .find_map(|t| t.height_at(lng, lat, GROUND_ZOOM))
+                        .find_map(|t| t.finest_height_at(lng, lat, GROUND_ZOOM as u8))
                 },
                 KEEP_ABOVE_GROUND,
             );
@@ -1111,7 +1167,7 @@ impl Map3d {
     /// What lies on or above the ground as geometry the depth test can hide
     /// behind a hill: what plugins draw, then the flown track as ribbons, a
     /// dark casing and the colour on top, earlier flights quieter.
-    fn line_items(&self, layers: &Layers3d<'_>) -> Vec<gpu::Item> {
+    fn line_items(&mut self, layers: &Layers3d<'_>) -> Vec<gpu::Item> {
         let rgb = |c: Color32| {
             [
                 f32::from(c.r()) / 255.0,
@@ -1121,45 +1177,62 @@ impl Map3d {
         };
         let centre = crate::map3d::camera::mercator(self.cam.lng, self.cam.lat);
         let mut items = self.shape_items(layers.shapes);
-        let mut add = |pts: &[Point], color: Color32, past: bool, air: bool| {
-            let local: Vec<V3> = track::smooth(pts)
-                .iter()
-                .map(|p| {
-                    let up = if air { p.alt.unwrap_or(0.0) } else { 0.0 };
-                    self.cam.local_of(p.lng, p.lat, self.ground_at(p.lng, p.lat) + up)
-                })
-                .collect();
-            let (casing, casing_a, core, core_a) = match (past, air) {
-                (_, true) => (2.4, 0.4, 1.2, 0.8),
-                (true, false) => (4.6, 0.45, 2.2, 0.85),
-                (false, false) => (5.5, 0.55, 2.6, 0.95),
-            };
-            for (width, color, alpha) in [(casing, [0.0, 0.0, 0.0], casing_a), (core, rgb(color), core_a)] {
-                if let Some((verts, indices)) = ribbon::build(&local, width, &self.cam, self.cam.ground) {
-                    items.push(gpu::Item {
-                        mesh: Arc::new(gpu::MeshData::new(verts, indices)),
-                        origin: centre,
-                        texture: None,
-                        uv: [0.0, 0.0, 1.0, 1.0],
-                        fallback: None,
-                        flat: false,
-                        color,
-                        alpha,
-                        transient: true,
-                    });
+        let generation = self.terrain_generation();
+        let until = std::time::Instant::now() + std::time::Duration::from_millis(TRAIL_MS);
+        let flights = layers
+            .track
+            .past
+            .iter()
+            .zip(&layers.past_colors)
+            .enumerate()
+            .map(|(i, (f, c))| (i, f.as_slice(), *c, true))
+            .chain(std::iter::once((
+                usize::MAX,
+                layers.track.current.as_slice(),
+                layers.track_color,
+                false,
+            )));
+        for (key, raw, color, past) in flights {
+            let mut trail = self.trails.remove(&key).unwrap_or_default();
+            trail.follow(raw, generation);
+            trail.lay(&|lng, lat| self.ground_at(lng, lat), until);
+            if !trail.settled() {
+                self.ctx.request_repaint();
+            }
+            trail.used = self.frame;
+            for air in [false, true].into_iter().filter(|a| !a || layers.in_air) {
+                let local: Vec<V3> = trail
+                    .laid()
+                    .map(|(p, ground)| {
+                        let up = if air { p.alt.unwrap_or(0.0) } else { 0.0 };
+                        self.cam.local_of(p.lng, p.lat, ground + up)
+                    })
+                    .collect();
+                let (casing, casing_a, core, core_a) = match (past, air) {
+                    (_, true) => (2.4, 0.4, 1.2, 0.8),
+                    (true, false) => (4.6, 0.45, 2.2, 0.85),
+                    (false, false) => (5.5, 0.55, 2.6, 0.95),
+                };
+                for (width, color, alpha) in [(casing, [0.0, 0.0, 0.0], casing_a), (core, rgb(color), core_a)] {
+                    if let Some((verts, indices)) = ribbon::build(&local, width, &self.cam, self.cam.ground) {
+                        items.push(gpu::Item {
+                            mesh: Arc::new(gpu::MeshData::new(verts, indices)),
+                            origin: centre,
+                            texture: None,
+                            uv: [0.0, 0.0, 1.0, 1.0],
+                            fallback: None,
+                            flat: false,
+                            color,
+                            alpha,
+                            transient: true,
+                        });
+                    }
                 }
             }
-        };
-        for (flight, color) in layers.track.past.iter().zip(&layers.past_colors) {
-            add(flight, *color, true, false);
-            if layers.in_air {
-                add(flight, *color, true, true);
-            }
+            self.trails.insert(key, trail);
         }
-        add(&layers.track.current, layers.track_color, false, false);
-        if layers.in_air {
-            add(&layers.track.current, layers.track_color, false, true);
-        }
+        let frame = self.frame;
+        self.trails.retain(|_, t| t.used + 2 >= frame);
         items
     }
 
@@ -1483,7 +1556,7 @@ mod tests {
             most_meshes = most_meshes.max(m.leaf_meshes.len());
             most_textures = most_textures.max(m.tex_ids.len());
         }
-        assert!(most_meshes <= MAX_LEAVES * 4, "{most_meshes} leaf meshes held");
+        assert!(most_meshes <= MAX_LEAVES * 3, "{most_meshes} leaf meshes held");
         assert!(
             most_textures <= TEXTURES + MAX_LEAVES * 2,
             "{most_textures} texture ids held"
@@ -1565,12 +1638,12 @@ mod tests {
     fn the_worst_case_the_view_can_hold_stays_under_a_gigabyte() {
         let mib = 1usize << 20;
         let texture = 256 * 256 * 4 * 4 / 3;
-        let (mesh_verts, mesh_indices) = (17 * 17 + 4 * 17 * 2, GRID * GRID * 6 + GRID * 24);
+        let (mesh_verts, mesh_indices) = ((GRID + 1) * (GRID + 1) + 4 * GRID * 4, GRID * GRID * 6 + GRID * 24);
         let mesh = mesh_verts * gpu::FLOATS * 4 + mesh_indices * 4;
         let cpu = IMAGE_BYTES
             + terrain::DEM_BYTES
             + TEXTURES.max(MAX_LEAVES * 2) * std::mem::size_of::<usize>()
-            + MAX_LEAVES * 3 * mesh;
+            + MAX_LEAVES * 2 * mesh;
         let gpu = gpu::MAX_TEXTURES * texture * 2 + gpu::MAX_MESHES * mesh * 2;
         assert!(
             cpu / mib < 400,
@@ -1579,5 +1652,65 @@ mod tests {
         );
         assert!(gpu / mib < 600, "{} MiB of textures and meshes for the GPU", gpu / mib);
         assert!((cpu + gpu) / mib < 900, "{} MiB in all", (cpu + gpu) / mib);
+    }
+
+    fn own_model(maxzoom: u8) -> terrain::Spec {
+        terrain::Spec {
+            id: "dem_0123456789".into(),
+            label: "Own".into(),
+            provider: "custom".into(),
+            encoding: terrain::Encoding::Terrarium,
+            maxzoom,
+            usable: true,
+            attribution: String::new(),
+        }
+    }
+
+    #[test]
+    fn a_fine_own_model_is_drawn_with_cells_as_fine_as_its_tiles() {
+        // A 20 cm surface model has tiles to zoom 18. Leaves stopped at the
+        // base layer's 19 and read the tile four zooms above with 16
+        // cells, three metres a cell, and roofs came out as tents.
+        let mut m = view_at(11.6385, 48.0795, 21.0, 60.0);
+        m.cam.size = (1400.0, 900.0);
+        let deepest = |m: &Map3d| m.leaves().iter().map(|l| l.z).max().unwrap();
+        assert_eq!(deepest(&m), 19, "no elevation: the base layer's last zoom");
+        let server = Server::local(9);
+        m.terrain = Some(Terrain::new(&m.ctx, &server, own_model(15)));
+        assert_eq!(deepest(&m), 19, "a model to zoom 15 needs nothing deeper");
+        m.terrain = Some(Terrain::new(&m.ctx, &server, own_model(18)));
+        let leaves = m.leaves();
+        let fine = 18 + terrain::LEAF_LEVELS;
+        assert_eq!(deepest(&m), fine, "zoom 18 tiles, one pixel a cell");
+        assert!(leaves.len() <= MAX_LEAVES + 8, "{} leaves", leaves.len());
+        let leaf = leaves.iter().find(|l| l.z == fine).unwrap();
+        let ((z, ..), _) = terrain::leaf_part(leaf.z, leaf.x, leaf.y);
+        assert_eq!(z, 18);
+        let side =
+            2.0 * std::f64::consts::PI * crate::map3d::camera::R * 48.08f64.to_radians().cos() / 2f64.powi(fine.into());
+        assert!(side / GRID as f64 <= 0.45, "{} m a cell", side / GRID as f64);
+        m.terrain = Some(Terrain::new(&m.ctx, &server, own_model(24)));
+        assert_eq!(deepest(&m), DEEPEST_LEAF, "and never deeper than the limit");
+        m.cam.zoom = 15.0;
+        assert!(deepest(&m) < 20, "far out the leaves stay coarse whatever the model");
+    }
+
+    #[test]
+    fn a_leaf_deeper_than_the_base_layer_reads_the_tile_it_lies_in() {
+        let mut m = view_at(11.6385, 48.0795, 21.0, 60.0);
+        let leaf = Leaf {
+            z: 22,
+            x: 2_195_000,
+            y: 1_420_000,
+            wrap: 0,
+        };
+        m.imagery_for(leaf);
+        let asked = m.imagery.queued();
+        assert!(!asked.is_empty());
+        for k in &asked {
+            let shift = 22 - k.1;
+            assert_eq!((k.2, k.3), (leaf.x >> shift, leaf.y >> shift), "zoom {} tile", k.1);
+            assert!(k.1 <= 19, "never past the base layer's last zoom");
+        }
     }
 }
