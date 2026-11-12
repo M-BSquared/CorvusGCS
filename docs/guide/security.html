@@ -152,80 +152,68 @@
 <!-- guide:content -->
 <h1>Network and security</h1>
 <p class="doc-lead">
-  Corvus is a web interface served by a local HTTP server, and the API behind
-  that interface is the whole application: arming, a takeoff, a parameter
-  write and a firmware upload are each one request. There is no login, because
-  the ground station is a program on your laptop rather than a service on a
-  network. This page explains how that stays true.
+  Corvus is one native program, and its interface talks to the backend inside
+  it over a local HTTP API. That API is the whole application: arming, a
+  takeoff, a parameter write and a firmware upload are each one request. There
+  is no login, because the ground station is a program on your laptop rather
+  than a service on a network. This page explains how that stays true.
 </p>
 
 <h2 id="loopback">This machine only</h2>
 <p>
-  The server listens on <code>127.0.0.1</code>, so it answers only programs on
-  the same computer. On a flight line hotspot the alternative would be every
-  laptop and phone on that WiFi being able to arm your aircraft.
+  The API listens on <code>127.0.0.1</code>, on port 8000 (the HTTP port in the
+  config, or the next free one when another program holds it), so it answers only programs on the same computer. On a flight line
+  hotspot the alternative would be every laptop and phone on that WiFi being
+  able to arm your aircraft.
 </p>
 <p>
   Requests are also checked for the name they were addressed to. A web page
-  that tricks the browser into treating a hostile name as
+  that tricks your browser into treating a hostile name as
   <code>127.0.0.1</code> (DNS rebinding) still sends that name, and is refused.
 </p>
 
 <h3 id="second-screen">A second screen on the network</h3>
 <p>
-  If you really want a second screen, for example a tablet showing the
-  interface off the same link, set <code>CORVUS_BIND</code> and the server
-  listens where you point it:
+  If you really want a second screen, for example another laptop showing the
+  same aircraft, set <code>CORVUS_BIND</code> and the API listens where you
+  point it:
 </p>
 <pre><code>CORVUS_BIND=0.0.0.0 ./run.sh</code></pre>
 <p>
-  That lets the tablet show the interface, but its browser still may not
-  command the aircraft or change a setting: those requests come from an
-  address that is not this computer's, and are refused. Name the address the
-  tablet opens as well, and it can:
+  On the second computer, start Corvus with <code>--server</code> and the
+  first one's address and port. That is 8000 unless the first Corvus found it
+  taken; the port it really took is in <code>~/.corvus/corvus.lock</code>.
 </p>
-<pre><code>CORVUS_BIND=0.0.0.0 CORVUS_ALLOWED_ORIGIN=http://192.168.1.20:8000 ./run.sh</code></pre>
+<pre><code>corvus-gcs --server http://192.168.1.20:PORT</code></pre>
 <p>
-  Use this computer's own address and port, exactly as they stand in the
-  tablet's address bar, or as typed into the
-  <a href="install.html#android">Android app</a>. Switch on
-  <a href="settings.html#tablet-mode">Tablet mode</a> on the tablet for a
-  layout made for a finger.
-</p>
-<p>
-  Corvus says so in its log at every launch. There is still no
-  authentication, so treat that network the way you would treat handing
-  someone the transmitter.
+  Corvus says so in its log at every launch. There is no authentication, and
+  a program on the network that reaches the port can arm the aircraft, so
+  treat that network the way you would treat handing someone the transmitter.
 </p>
 
 <h2 id="browser">What a web page can do</h2>
 <h3 id="cors">Reading your telemetry: no</h3>
 <p>
-  A website you visit cannot read your telemetry. The API names only loopback
-  origins as allowed to read its answers, so another tool on your own machine
-  still works and the web at large gets nothing. Before this, any page open in
-  any tab could have fetched <code>http://localhost:8000/api/state</code> and
-  read back position, battery and mode, or pulled the SSH host, user name and
-  key path out of the configuration. If a tool on another origin genuinely
-  needs access, name exactly that origin in
-  <code>CORVUS_ALLOWED_ORIGIN</code>.
+  A website open in your browser cannot read your telemetry. The API names
+  only loopback origins as allowed to read its answers, so another tool on
+  your own machine still works and the web at large gets nothing: no page can
+  fetch the position, battery and mode, or the SSH host, user name and key
+  path out of the configuration. If a tool on another origin genuinely needs
+  access, name exactly that origin in <code>CORVUS_ALLOWED_ORIGIN</code>.
 </p>
 
-<h3 id="csp">Sending data out: no</h3>
+<h3 id="csp">Commanding the aircraft: no</h3>
 <p>
-  The interface is fenced in with a Content Security Policy. Everything the
-  page loads comes from the Corvus server, and, the line that matters most, the
-  page may not talk to any other host. If something ever managed to inject a
-  script (a plugin you installed, a value that slipped through), it could not
-  send your telemetry, SSH credentials or map keys off the machine. The page
-  also refuses to be embedded in another page, so nobody can frame the
-  interface and trick you into clicking ARM.
+  A request that changes something and comes from a page on another site is
+  refused, whatever the page tries. Every answer of the API also carries a
+  Content Security Policy that forbids embedding it in another page and
+  loading anything from another host.
 </p>
 
 <h2 id="secrets">Keys and passwords</h2>
 <ul>
   <li><strong>Map keys</strong> stay in the config file, which is readable by you alone. Corvus fetches tiles itself, so a key never appears in a page, a URL or a log line. See <a href="settings.html#map-service">Map service</a>.</li>
-  <li><strong>Camera passwords</strong> never reach the browser and never appear on a command line. See <a href="video.html#passwords">Camera passwords</a>.</li>
+  <li><strong>Camera passwords</strong> never leave the backend and never appear on a command line. See <a href="video.html#passwords">Camera passwords</a>.</li>
   <li><strong>SSH passwords</strong> are never held by a plugin; a launcher button names a saved connection and the backend takes the credentials from there.</li>
   <li><strong>Settings exports</strong> leave passwords and map keys out unless you switch them on.</li>
 </ul>

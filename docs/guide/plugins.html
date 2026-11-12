@@ -155,8 +155,7 @@
   The <strong>PLUGINS</strong> tab in the side workspace is an extension point.
   A plugin adds its own view there without a fork and without touching the
   rest of the app, settings of its own, and, when you allow it, a tab of its own. Four ship with
-  Corvus, two more are a download away, and a folder dropped into your plugin
-  folder adds your own.
+  Corvus, and your own is a Rust crate built in beside them.
 </p>
 
 <figure class="doc-shot">
@@ -331,16 +330,14 @@
 </p>
 
 <h2 id="more">Plugins to install</h2>
+<div class="callout callout-warn">
+  <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-alert"></use></svg>
+  <div><p>These two are JavaScript plugins of the old web interface, and the native program does not run them yet. Dropped into the plugin folder they are listed under Settings, Plugins as <strong>not loaded</strong>. They come back once each is a Rust crate, as described in <a href="#your-own">Adding your own</a>.</p></div>
+</div>
 <p>
   Two more plugins are not included with Corvus. Each has a repository of its
-  own, and you add it the way you add any plugin:
+  own:
 </p>
-<ol>
-  <li>Download the plugin from its repository: <strong>Code, Download ZIP</strong> on GitHub, or <code>git clone</code>.</li>
-  <li>Open <strong>Settings, Plugins, Open plugin folder</strong>.</li>
-  <li>Put the plugin's folder there and name it after the plugin's id, <code>nuttx-console</code> or <code>trajectory-viewer</code>. That is the folder its settings are kept in.</li>
-  <li>Press <strong>Reload plugins</strong> beside it. The plugin is on the PLUGINS tab.</li>
-</ol>
 <div class="table-wrap">
 <table>
   <thead><tr><th>Plugin</th><th>Repository</th><th>Folder</th></tr></thead>
@@ -350,17 +347,11 @@
   </tbody>
 </table>
 </div>
-<p>
-  To update one, replace its folder with the new download and press
-  <strong>Reload plugins</strong>. Its
-  settings are in <code>config.json</code> inside the folder, so keep that
-  file when you replace the rest.
-</p>
 
 <h2 id="nuttx-console">NuttX Console</h2>
 <div class="callout">
   <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-info"></use></svg>
-  <div><p>Not included with Corvus. Install it from <a href="https://github.com/M-BSquared/corvus-nuttx-console">corvus-nuttx-console</a>, see <a href="#more">Plugins to install</a>.</p></div>
+  <div><p>Not included with Corvus, and not run by the native program yet. Its repository is <a href="https://github.com/M-BSquared/corvus-nuttx-console">corvus-nuttx-console</a>, see <a href="#more">Plugins to install</a>.</p></div>
 </div>
 <p>
   PX4's own shell: NSH, the NuttShell of NuttX, the operating system PX4 runs
@@ -396,7 +387,7 @@
   terminal window, the way the SSH terminals open: in the desktop app a
   <a href="video.html#windows">window of its own</a>, free to go to another
   screen, with the pin that keeps it above Corvus; inside the Corvus window
-  when Settings asks for that, or in a browser. There the prompt is NSH's own
+  when Settings asks for that. There the prompt is NSH's own
   and <code>top</code> redraws in place.
 </p>
 <p>
@@ -434,7 +425,7 @@
 <h2 id="trajectory-viewer">Trajectory Viewer</h2>
 <div class="callout">
   <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-info"></use></svg>
-  <div><p>Not included with Corvus. Install it from <a href="https://github.com/M-BSquared/corvus-trajectory-viewer">corvus-trajectory-viewer</a>, see <a href="#more">Plugins to install</a>.</p></div>
+  <div><p>Not included with Corvus, and not run by the native program yet. Its repository is <a href="https://github.com/M-BSquared/corvus-trajectory-viewer">corvus-trajectory-viewer</a>, see <a href="#more">Plugins to install</a>.</p></div>
 </div>
 <p>
   Draws a trajectory from a file on the Home map: a route someone planned
@@ -497,309 +488,183 @@
 </p>
 
 <h2 id="your-own">Adding your own</h2>
-<p>Plugins are folders. Corvus reads two places:</p>
-<div class="table-wrap">
-<table>
-  <thead><tr><th>Where</th><th>What it is</th></tr></thead>
-  <tbody>
-    <tr><td><code>~/.corvus/plugins</code> (<code>%USERPROFILE%\.corvus\plugins</code> on Windows)</td><td>Yours. Survives updates.</td></tr>
-    <tr><td><code>plugins/</code> inside the application</td><td>The three that ship with Corvus. Replaced by an update.</td></tr>
-  </tbody>
-</table>
-</div>
 <p>
-  <strong>Settings, Plugins, Open plugin folder</strong> opens the first one in
-  Finder, Explorer or your file manager, and lists what Corvus found. Drop a
-  folder in, press <strong>Reload plugins</strong>, and the plugin is on the
-  PLUGINS tab. The same button picks up a plugin you changed or deleted, no
-  restart needed. A plugin in your
-  folder with the same id as a shipped one replaces it, so you can patch one
-  without editing inside the app bundle.
+  A plugin is a Rust crate that is compiled into Corvus. There is no loader
+  and no script engine, so a plugin works the same on every platform Corvus is
+  built for, and it cannot break the program at run time in a way the compiler
+  did not see. Adding one means building Corvus from a checkout (see
+  <a href="build.html">Build the apps</a>).
+</p>
+<p>
+  A folder dropped into <code>~/.corvus/plugins</code> is still listed under
+  <a href="settings.html#plugins">Settings, Plugins</a>, but reads
+  <strong>not loaded</strong>: those are the JavaScript plugins of the old web
+  interface, and the native program does not run them.
 </p>
 
 <h3 id="layout">Folder layout</h3>
-<pre><code>~/.corvus/plugins/
+<pre><code>src/plugins/
   my-plugin/
-    plugin.json
-    my-plugin.js
-    my-plugin.css      (optional)
-    lang/              (optional, see Translations below)
-    tests/             (optional, see Tests below)</code></pre>
+    Cargo.toml
+    src/lib.rs
+    lang/de.json       (optional, see Translations below)</code></pre>
+<p>
+  The folder name is the plugin's id and the name of the folder its settings
+  are kept in, so it must be a safe name (letters, digits, <code>_</code>,
+  <code>.</code> and <code>-</code>). The crate is called
+  <code>corvus_plugin_&lt;id&gt;</code>, with dashes as underscores, and
+  depends on <code>corvus_api</code> and on nothing inside the program: copy
+  the <code>Cargo.toml</code> of one of the four that ship.
+</p>
+<p>Then add it to the root <code>Cargo.toml</code> in two places:</p>
+<pre><code>[workspace]
+members = [..., "src/plugins/my-plugin"]
+default-members = [..., "src/plugins/my-plugin"]
 
-<h3 id="manifest">plugin.json</h3>
-<pre><code>{
-  "id": "my-plugin",
-  "name": "My Plugin",
-  "icon": "puzzle",
-  "description": "What it does, one line.",
-  "version": "1.0.0",
-  "order": 100,
-  "scripts": ["my-plugin.js"],
-  "styles": ["my-plugin.css"]
+[dependencies]
+corvus_plugin_my_plugin = { path = "src/plugins/my-plugin" }</code></pre>
+<p>
+  The build finds every folder in <code>src/plugins</code> with a
+  <code>Cargo.toml</code> and fails, naming the missing line, when one is not
+  in <code>[dependencies]</code>, so a plugin never goes missing silently.
+</p>
+
+<h3 id="script">The plugin</h3>
+<p>
+  A plugin is a type behind the <code>Plugin</code> trait of
+  <code>corvus_api</code>. Only <code>info</code> and <code>show</code> are
+  required:
+</p>
+<pre><code>use corvus_api::plugin::{Host, Info, Plugin};
+use corvus_api::ui::style::{self, Weight};
+use eframe::egui;
+
+#[derive(Default)]
+pub struct Hello;
+
+impl Plugin for Hello {
+    fn info(&amp;self) -&gt; Info {
+        Info { id: "my-plugin", name: "My Plugin", icon: "puzzle",
+               description: "What it does, one line.", version: "1.0.0",
+               order: 100, can_tab: false }
+    }
+    fn show(&amp;mut self, ui: &amp;mut egui::Ui, area: egui::Rect, _h: &amp;mut Host) -&gt; f32 {
+        let g = style::galley(ui, "Hello", 13.0, Weight::W600, style::text_1(), 0.0);
+        ui.painter().galley(area.min, g.clone(), style::text_1());
+        g.size().y
+    }
+}
+
+pub const LANG: &amp;[(&amp;str, &amp;str)] = &amp;[("de", include_str!("../lang/de.json"))];
+
+pub fn plugin() -&gt; Box&lt;dyn Plugin&gt; {
+    Box::new(Hello)
 }</code></pre>
 <div class="table-wrap">
 <table>
-  <thead><tr><th>Key</th><th>Meaning</th><th>Default</th></tr></thead>
+  <thead><tr><th><code>Info</code></th><th>Meaning</th></tr></thead>
   <tbody>
-    <tr><td><code>id</code></td><td>The plugin's identity. A plugin in your folder with a shipped plugin's id replaces it.</td><td>the folder name</td></tr>
-    <tr><td><code>name</code></td><td>The title on its card.</td><td></td></tr>
-    <tr><td><code>icon</code></td><td>Any <a href="https://lucide.dev">Lucide</a> icon name.</td><td></td></tr>
-    <tr><td><code>description</code></td><td>One line under the title.</td><td></td></tr>
-    <tr><td><code>version</code></td><td>Your plugin's own version.</td><td></td></tr>
-    <tr><td><code>order</code></td><td>Where the card sits in the grid, lower first; ties are broken by name.</td><td>100</td></tr>
-    <tr><td><code>scripts</code></td><td>JavaScript files to load, in order.</td><td><code>&lt;id&gt;.js</code></td></tr>
-    <tr><td><code>styles</code></td><td>Stylesheets to load.</td><td>none</td></tr>
+    <tr><td><code>id</code></td><td>The plugin's identity, the same as its folder name.</td></tr>
+    <tr><td><code>name</code></td><td>The title on its card.</td></tr>
+    <tr><td><code>icon</code></td><td>Any <a href="https://lucide.dev">Lucide</a> icon name.</td></tr>
+    <tr><td><code>description</code></td><td>One line under the title.</td></tr>
+    <tr><td><code>version</code></td><td>Your plugin's own version.</td></tr>
+    <tr><td><code>order</code></td><td>Where the card sits in the grid, lower first; ties are broken by name.</td></tr>
+    <tr><td><code>can_tab</code></td><td>Whether it may have a tab of its own; see below.</td></tr>
   </tbody>
 </table>
 </div>
-
-<h3 id="script">The script</h3>
+<p>The rest of the trait is optional:</p>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Method</th><th>When it runs</th></tr></thead>
+  <tbody>
+    <tr><td><code>start</code></td><td>Once per session, as soon as the saved settings are known, whether or not the plugin is ever opened: to put a saved line back on the map.</td></tr>
+    <tr><td><code>tick</code></td><td>Every frame, open or not. The live telemetry is <code>h.state</code>.</td></tr>
+    <tr><td><code>open</code>, <code>close</code></td><td>The view is about to be shown, and is gone. Leave nothing behind in <code>close</code>.</td></tr>
+    <tr><td><code>show</code></td><td>Draws the view into <code>area</code>, from its top, and returns the height used. The area scrolls.</td></tr>
+    <tr><td><code>options</code>, <code>options_changed</code></td><td>The plugin's settings, and a change to one of them.</td></tr>
+    <tr><td><code>map_event</code></td><td>The pointer clicked or dragged one of the plugin's shapes, or picked the point it asked for.</td></tr>
+    <tr><td><code>mcp_tools</code>, <code>mcp_call</code>, <code>mcp_take</code></td><td>Tools for an AI client; see below.</td></tr>
+  </tbody>
+</table>
+</div>
 <p>
-  The script registers itself as it loads. It gets a container to build into
-  and a small <code>api</code>: live telemetry, the MAVLink console,
-  notifications, JSON requests to the backend, and its own saved settings.
-</p>
-<pre><code>Corvus.plugins.register("my-plugin", {
-  name: "My Plugin",
-  icon: "puzzle",
-  description: "What it does, one line.",
-  init: function (containerEl, api) { /* build your UI */ },
-  destroy: function (containerEl) { /* tear it down again */ },
-});</code></pre>
-<p>
-  More keys are optional. <code>start: function (api) {}</code> runs once
-  when Corvus starts (and again after <strong>Reload plugins</strong>),
-  whether or not the plugin is ever opened, for what has to be there from the
-  beginning (the Trajectory Viewer puts its saved line back on the map there).
-  <code>tab: true</code> lets it have a tab of its own, and
-  <code>options</code> gives it settings; see below. Write the script as one
-  function that runs itself, as the shipped plugins do, so a reload can run it
-  a second time.
+  The <code>Host</code> a method is handed is how a plugin talks to Corvus:
+  <code>h.map()</code> draws on the Home map, <code>h.settings()</code> and
+  <code>h.save_settings()</code> read and keep its own state,
+  <code>h.get</code> and <code>h.post</code> call the backend on a thread of
+  their own (poll the returned reply in a later frame),
+  <code>h.notify</code> shows a toast and a line on the notification board,
+  <code>h.console</code> writes to the MAVLink console, <code>h.terminal</code>
+  opens a terminal window on a saved SSH connection, <code>h.fit</code> frames
+  points on the map and <code>h.pick_point</code> waits for a click on it.
+  Build the view from the widgets in <code>corvus_api::ui</code>, so a plugin
+  looks like the rest of the app.
 </p>
 
 <h3 id="tabs">Plugin tabs</h3>
 <p>
-  A plugin registered with <code>tab: true</code> gets an <strong>Own
-  tab</strong> switch in its settings in
+  A plugin whose <code>Info</code> says <code>can_tab: true</code> gets an
+  <strong>Own tab</strong> switch in its settings in
   <a href="settings.html#plugins">Settings, Plugins</a>. On, the plugin has a
   tab in the side panel, captioned with its name and placed before PLUGINS.
   Off (the default), it is a card like any other, so a plugin must work in
-  both. In a tab,
-  <code>init</code> runs the first time the tab is shown and the view is kept
-  while you move between tabs; <code>destroy</code> runs when the tab goes
-  away. PLUGINS stays the last tab.
+  both. PLUGINS stays the last tab.
 </p>
 
 <h3 id="options">Plugin settings</h3>
 <p>
-  A plugin that lists <code>options</code> gets a gear beside its version in
-  <a href="settings.html#plugins">Settings, Plugins</a>. The gear opens a
-  dialog with one control per option, drawn by Corvus so every plugin's
-  settings look alike. A change is saved at once.
+  A plugin whose <code>options</code> lists anything gets a gear beside its
+  version in <a href="settings.html#plugins">Settings, Plugins</a>. The gear
+  opens a dialog with one control per option, drawn by Corvus so every
+  plugin's settings look alike. A change is in force and saved at once.
 </p>
-<pre><code>Corvus.plugins.register("my-plugin", {
-  // name, icon, description, init, destroy as above
-  options: [
-    { key: "units", label: "Units", type: "select", default: "m",
-      choices: [{ value: "m", label: "Metres" }, { value: "ft", label: "Feet" }] },
-    { key: "labels", label: "Show labels", type: "toggle", default: true,
-      hint: "Names beside the points on the map." },
-    { key: "radius", label: "Radius (m)", type: "number", default: 50, min: 1, max: 5000 },
-    { key: "prefix", label: "Prefix", type: "text", placeholder: "WP" },
-  ],
-  optionsChanged: function (options, api) { /* follow the new values */ },
-});</code></pre>
+<pre><code>fn options(&amp;self) -&gt; Vec&lt;OptionSpec&gt; {
+    vec![OptionSpec::toggle("labels", "Show labels", true)]
+}
+
+fn options_changed(&amp;mut self, h: &amp;mut Host) {
+    let labels = h.options().get("labels").and_then(|v| v.as_bool()).unwrap_or(true);
+    // follow the new value
+}</code></pre>
 <p>
   The types are <code>toggle</code>, <code>select</code>, <code>text</code>
-  and <code>number</code>. Read the values with
-  <code>api.getOptions()</code>: each is its saved value or its default.
-  <code>optionsChanged</code> runs after every change, with all of them.
-  They are kept in the plugin's own <code>config.json</code> under
-  <code>_options</code>, apart from what the plugin saves itself, so
-  <code>api.saveSettings</code> never overwrites them. The key
-  <code>tab</code> is taken by the <a href="#tabs">Own tab</a> switch.
+  and <code>number</code>. The options are the operator's: a plugin reads them
+  and never writes them.
 </p>
 
 <h3 id="map">Drawing on the map</h3>
 <p>
-  <code>api.map</code> draws lines, areas, text, buttons and icon markers on the Home map. Lines and
-  areas lie under the flown track; text, buttons and markers sit over it. Keys are the plugin's
-  own, so two plugins can both use <code>"path"</code>, and one key holds one
-  shape: drawing it again replaces it.
-</p>
-<pre><code>const color = api.map.colors[0].color;   // cyan, lime, magenta, blue, white
-
-// A line through the points.
-api.map.drawLine("route", [[11.641, 48.075], [11.643, 48.076]], { color, width: 3, dashed: false });
-
-// An area: the points are its corners, the surface between them is filled.
-api.map.drawPolygon("zone", [[11.640, 48.074], [11.645, 48.074], [11.645, 48.077], [11.640, 48.077]], {
-  color, fillOpacity: 0.25, width: 2,   // width 0: no outline
-});
-
-// A circle of 120 m around a point, as an area.
-api.map.drawCircle("keep-out", [11.642, 48.0755], 120, { color: api.map.colors[2].color });
-
-// Text at a point, with or without a dot.
-api.map.drawText("home-label", [11.642, 48.0755], "Landing zone", { color, size: 13, dot: true });
-
-// A button at a point. The handler is the plugin's; a click never reaches the map.
-api.map.drawButton("go", [11.642, 48.0755], "Start survey", { color, title: "Fly the survey", onClick() { startSurvey(); } });
-
-// An icon marker: a round badge with a symbol in it and a label below. It can be clicked and
-// dragged; a dragged marker keeps its new place. The icon is a name from api.map.icons(), or
-// an array of your own SVG path strings on a 24 by 24 grid.
-api.map.drawMarker("tree-1", [11.642, 48.0755], {
-  icon: "tree",
-  label: "Tree 1", color, size: 28, selected: false, draggable: true,
-  onClick() { select("tree-1"); },
-  onDragEnd(point) { save("tree-1", point); },   // point is [lng, lat]
-});
-
-// Wait for one click on the map. Esc or a right click calls onCancel.
-const cancel = api.map.pickPoint((point) => place(point), { onCancel() { stopPlacing(); } });
-
-const flown = api.map.track();   // [[lng, lat], ...] flown so far
-
-api.map.icons();            // [{name: "gate", label: "Gate"}, {name: "tree", ...}, ...]
-api.map.iconPaths("tree");  // the symbol's SVG paths, to draw the same glyph in your own view
-
-api.map.setVisible("zone", false);
-api.map.fit([[11.641, 48.075], [11.643, 48.076]]);   // bring Home forward and frame it
-api.map.remove("route");</code></pre>
-<p>
-  A shape outlives the plugin's view: closing the card does not remove it.
-  Remove it when the operator asks. Text and button labels are plain text, never markup, and at
-  most 200 characters.
+  <code>h.map()</code> draws lines, areas, circles, text, buttons and markers
+  on the Home map, flat and 3D. Each shape has a key of the plugin's own, and
+  drawing the same key again replaces it, so a moving thing is drawn again
+  each time it moves. Lines and areas lie under the flown track. Markers and
+  buttons answer the pointer on the flat map (<code>map_event</code>); in 3D
+  they are drawn, not clickable.
 </p>
 
-<h3 id="control">Flying the vehicle</h3>
-<p>
-  <code>api.control</code> flies the aircraft through the same endpoints the
-  station's own buttons use, so a plugin gets the same checks and the same
-  PX4 and ArduPilot sequences. Each command returns a promise: it resolves
-  with the station's answer and rejects with an error that says why the
-  station or the vehicle refused. Every command writes a line to the MAVLink
-  console with the plugin's name, so the operator can see who flew the
-  aircraft.
-</p>
-<pre><code>const c = api.control;              // the vehicle the operator has selected
-
-await c.takeoff(15);                 // climb to 15 m above home
-await c.flyTo([11.642, 48.0755, 30]);   // [lng, lat, alt], or {lat, lon, alt}
-await c.flyTo([[11.641, 48.075, 30], [11.643, 48.076, 30]]);   // through several points
-await c.hold();                      // stop where it is
-await c.setMode("LOITER");           // a name from await c.modes()
-await c.rtl();                       // or c.land()
-
-// Pick the point on the map and fly there.
-api.map.pickPoint((point) => c.flyTo([point[0], point[1], 25]));
-
-// Several vehicles: each one by its id from the vehicle list.
-const vehicles = await c.vehicles();   // [{id: "main:1", name, armed, mode, ...}, ...]
-const second = c.vehicle("link-2:1");  // flown whether or not it is selected
-await second.takeoff(10);
-const stop = c.watchVehicles((fleet) => draw(fleet.vehicles));   // live list
-
-// A MAVLink command from the list the connected autopilot accepts.
-const caps = await c.capabilities();   // caps.commands, caps.hold_mode, caps.velocity_mode
-await c.command("DO_CHANGE_SPEED", [1, 5, -1]);          // ground speed 5 m/s
-await c.command("DO_SET_ROI_LOCATION", [], { lat: 48.0755, lon: 11.642, alt: 0 });
-
-// Steering. Both are streams: send again at 2 Hz or more, 10 to 20 Hz for sticks.
-c.manual({ x: 0.3, y: 0, z: 0.5, r: 0 });                 // stick frame, as the joystick sends
-c.velocity({ vx: 2, vy: 0, vz: 0, yawRate: 10, frame: "body" });   // m/s and degrees per second</code></pre>
-<p>
-  Heights are metres above home. Without a vehicle id, a command goes to the
-  vehicle selected when it is sent; bind to one with
-  <code>c.vehicle(id)</code> when the plugin flies a particular aircraft. A
-  command for a vehicle whose link is closed, or that flies another system,
-  is refused rather than sent somewhere else.
-</p>
-<p>
-  <code>command()</code> sends only the MAV_CMDs in
-  <code>capabilities().commands</code>: the ones the connected autopilot
-  handles, without arming, takeoff, mode changes and mission start (they have
-  their own calls, with the stack's order behind them) and without anything
-  that does lasting harm from one call, such as a reboot, a calibration or
-  flight termination. A command that names a place (DO_REPOSITION,
-  DO_SET_ROI_LOCATION, DO_ORBIT) takes up to four params and the place as its
-  third argument, with <code>frame</code> "relative" (above home, the
-  default) or "amsl".
-</p>
-<p>
-  <code>velocity()</code> is flown in <code>capabilities().velocity_mode</code>
-  only: OFFBOARD on PX4, GUIDED on ArduPilot, nothing on a plane. PX4 accepts
-  OFFBOARD only once setpoints are arriving, so start the stream, then call
-  <code>setMode(caps.velocity_mode)</code>. When either stream stops, the
-  vehicle ends the motion by its own timeout. Stop the stream in
-  <code>destroy</code>, and hand the aircraft back with <code>hold()</code>.
-</p>
 <h3 id="mcp">Tools for an AI client</h3>
 <p>
-  A plugin can offer tools to an AI client through the
-  <a href="mcp.html">MCP server</a>. Give its spec <code>mcpTools</code>: a
-  list, or a function that returns one and is asked again whenever the list
-  is announced, so it can follow the plugin's own settings. Schwalby uses that
-  to offer its tools only when its switches are on.
-</p>
-<pre><code>Corvus.plugins.register("logbook", {
-  name: "Logbook",
-  init: function (el, api) { /* ... */ },
-  destroy: function (el) { /* ... */ },
-  mcpTools: function (api) {
-    if (!api.getOptions().ai) return [];      // a switch of the plugin's own
-    return [{
-      name: "add_note",                       // listed as logbook_add_note
-      title: "Add a logbook note",
-      description: "Write one line into the flight logbook.",
-      inputSchema: { type: "object", properties: { text: { type: "string" } }, required: ["text"] },
-      confirm: false,                         // true: ask the operator every time
-      handler: async function (args, api) {
-        if (!args.text) throw new Error("text is required");   // the agent is told why
-        await api.saveSettings({ last: args.text });
-        return { saved: true };
-      },
-    }];
-  },
-});</code></pre>
-<p>
-  A tool exists only while a Corvus window is open, because its handler runs
-  there. The operator still decides: the client sees a plugin's tools only
-  with <strong>Plugin tools</strong> on and that plugin's switch on under
-  Settings, Connections, MCP, and with <strong>Ask me first</strong> on each
-  call waits for them. Call <code>api.mcp.changed()</code> when the list
-  changes for a reason Corvus cannot see; registering and setting an option
-  announce it by themselves.
-</p>
-<p>
-  The full <code>api</code> is documented at the top of
-  <code>src/js/plugins.js</code>, and the manifest in
-  <code>corvus/plugin_registry.py</code>. The shipped plugins are complete
-  worked examples that go through exactly this path. Copy one and start from
-  there:
-</p>
-<ul>
-  <li><code>plugins/ssh-launcher</code>: a form, saved settings and a backend call.</li>
-  <li><code>plugins/schwalby</code>: the same, with a control and a stylesheet of its own.</li>
-  <li><code>plugins/vibration</code>: a live chart on the telemetry stream.</li>
-  <li><code>plugins/map-entities</code>: placing things on the map by clicking, markers that can be dragged, and watching the aircraft's track against them.</li>
-</ul>
-<p>
-  The two plugins to install are worked examples too:
-  <a href="https://github.com/M-BSquared/corvus-trajectory-viewer">the Trajectory Viewer</a> for reading a file, a start hook and
-  a line on the map, <a href="https://github.com/M-BSquared/corvus-nuttx-console">the NuttX Console</a> for a tab of its own
-  and a stream from <code>/api/events</code>.
+  A plugin offers tools to an <a href="mcp.html">AI client</a> with
+  <code>mcp_tools</code>, runs a call in <code>mcp_call</code> and hands the
+  answer back from <code>mcp_take</code> once it has one, which may take a few
+  frames. A tool exists only while a Corvus window is open, because the
+  plugin runs there. The operator still decides: the client sees a plugin's
+  tools only with <strong>Plugin tools</strong> on and that plugin's switch on
+  under Settings, Connections, MCP, and with <strong>Ask me first</strong> on
+  each call waits for them. Schwalby is the shipped plugin that offers tools.
 </p>
 
 <h3 id="translations">Translations</h3>
 <p>
-  A plugin brings its own translations the way it brings its own tests: one
-  file per language in a <code>lang</code> folder inside its folder, named after
-  the language code (<code>lang/de.json</code>, <code>lang/fr.json</code>). The
-  format is the one the interface languages use, with the English text as the
-  key and <code>meta</code> left out, because the language itself is named by
-  the main file:
+  A plugin brings its own translations: one file per language in a
+  <code>lang</code> folder inside its folder, named after the language code
+  (<code>lang/de.json</code>, <code>lang/fr.json</code>), and listed in its
+  <code>LANG</code> so they are compiled in. The format is the one the
+  interface languages use, with the English text as the key and
+  <code>meta</code> left out, because the language itself is named by the main
+  file:
 </p>
 <pre><code>{
   "strings": {
@@ -810,50 +675,41 @@ c.velocity({ vx: 2, vy: 0, vz: 0, yawRate: 10, frame: "body" });   // m/s and de
 <p>
   When a language is loaded, Corvus merges the files of every plugin into it. If
   the main language file and a plugin both translate the same English text, the
-  main file wins, so a plugin cannot change what the application itself says. A
-  plugin file that cannot be read costs that plugin its translation and nothing
-  else. In a checkout, <code>corvus-build i18n check</code> reads the plugin
-  files too.
+  main file wins, so a plugin cannot change what the application itself says.
+  <code>corvus-build i18n check</code> reads the plugin files too.
 </p>
 
 <h3 id="tests">Tests</h3>
 <p>
-  A bundled plugin is a Rust crate in <code>src/plugins/&lt;id&gt;</code> and
-  keeps its tests in it, as Rust tests: <code>cargo test --workspace</code>
-  runs them with the rest of Corvus, and they stay out of the application when
-  it is built.
+  A plugin keeps its tests in its own crate, as Rust tests:
+  <code>cargo test --workspace</code> runs them with the rest of Corvus, and
+  they stay out of the application when it is built. Keep the rules in a
+  module without <code>egui</code> in it, so they can be tested without a
+  window, as the shipped plugins do.
 </p>
-<p>
-  A test finds Corvus's own scripts through <code>CORVUS_ROOT</code>, and
-  three folders up when that is not set:
-</p>
-<pre><code>const path = require("node:path");
-const CORVUS = process.env.CORVUS_ROOT
-  ? path.resolve(process.env.CORVUS_ROOT)
-  : path.join(__dirname, "..", "..", "..");
-require(path.join(CORVUS, "src", "js", "ui.js"));
-require(path.join(CORVUS, "src", "js", "plugins.js"));
-require("../my-plugin.js");</code></pre>
 <p>
   A plugin's settings are kept in its own file,
   <code>~/.corvus/plugins/&lt;id&gt;/config.json</code>, not in the main
-  config. A plugin that fails to load costs itself and nothing else: the rest
-  of the app, and the other plugins, come up regardless.
+  config. The shipped plugins are complete worked examples. Copy one and start
+  from there:
 </p>
+<ul>
+  <li><code>src/plugins/ssh-launcher</code>: a form, saved settings and a backend call.</li>
+  <li><code>src/plugins/schwalby</code>: the same, with a control and tools for an AI client.</li>
+  <li><code>src/plugins/vibration</code>: a live chart on the telemetry stream.</li>
+  <li><code>src/plugins/map-entities</code>: placing things on the map by clicking, markers that can be dragged, and watching the aircraft's track against them.</li>
+</ul>
 
 <div class="callout callout-warn">
   <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-alert"></use></svg>
-  <div><p>A plugin is ordinary JavaScript running in the app's own page, and the launchers run whatever command you give them as the account you point them at. Read a plugin before you drop it in, exactly as you would a script you were about to run yourself.</p></div>
+  <div><p>A plugin is code compiled into the program, and the launchers run whatever command you give them as the account you point them at. Read a plugin before you build it in, exactly as you would a script you were about to run yourself.</p></div>
 </div>
 
 <h2 id="moving">Taking a plugin to another station</h2>
 <p>
-  Switch on the plugin's <strong>Files</strong> in <strong>Settings, Export
-  and import, Export settings</strong>. The file then carries the plugin's
-  folder (scripts, styles, images, up to 4 MB) as well as its settings, and an
-  import installs it into the plugin folder there, replacing a copy with the
-  same id and keeping that copy's settings unless the file's are imported too.
-  Install plugin files only from a settings file you trust.
+  A plugin's code is part of Corvus, so the other station has it when it runs
+  the same build. Its settings travel with
+  <strong>Settings, Export and import, Export settings</strong>.
 </p>
 <!-- /guide:content -->
 </article>

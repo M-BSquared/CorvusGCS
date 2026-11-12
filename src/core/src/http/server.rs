@@ -31,6 +31,9 @@ pub struct HttpOptions {
     /// The interface; `CORVUS_BIND` or loopback when `None`.
     pub host: Option<String>,
     pub span: u16,
+    /// Try the config's `http_port` instead of `port`, then the next ones,
+    /// then any free port: an address an AI client keeps across restarts.
+    pub from_config: bool,
 }
 
 impl Default for HttpOptions {
@@ -39,6 +42,7 @@ impl Default for HttpOptions {
             port: 8000,
             host: None,
             span: PORT_SEARCH_SPAN,
+            from_config: false,
         }
     }
 }
@@ -99,6 +103,11 @@ fn ipv6_loopback_taken(port: u16) -> bool {
     matches!(TcpListener::bind(("::1", port)), Err(e) if e.kind() == std::io::ErrorKind::AddrInUse)
 }
 
+/// The config's `http_port` as a port to bind; out of range is the default.
+fn configured_port(port: i64) -> u16 {
+    u16::try_from(port).unwrap_or(crate::config::DEFAULT_HTTP_PORT as u16)
+}
+
 /// A listener actually bound to `port` or the next free one: the bind is the
 /// test, so two Corvus windows launched together cannot both be told it is free.
 pub fn bind(host: &str, port: u16, span: u16) -> std::io::Result<TcpListener> {
@@ -136,7 +145,18 @@ impl Module for Http {
 
     fn start(&self, core: &Core) -> std::io::Result<()> {
         let host = self.opts.host.clone().unwrap_or_else(security::bind_host);
-        let listener = bind(&host, self.opts.port, self.opts.span)?;
+        let listener = if self.opts.from_config {
+            let port = configured_port(core.settings().get().http_port());
+            match bind(&host, port, self.opts.span) {
+                Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
+                    eprintln!("corvus: {e}; taking any free port");
+                    bind(&host, 0, 1)?
+                }
+                other => other?,
+            }
+        } else {
+            bind(&host, self.opts.port, self.opts.span)?
+        };
         let addr = listener.local_addr()?;
         *self.info.addr.lock().unwrap_or_else(|e| e.into_inner()) = Some(addr);
         core.advertise_port(addr.port());

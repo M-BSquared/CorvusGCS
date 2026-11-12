@@ -15,14 +15,8 @@
 
 <div align="center">
   <!-- corvus:version-badge -->
-  <img src="https://img.shields.io/badge/Version-2026.11.69-f7ebe1?style=for-the-badge" height="28" alt="Version 2026.11.69" />
+  <img src="https://img.shields.io/badge/Version-2026.11.70-f7ebe1?style=for-the-badge" height="28" alt="Version 2026.11.70" />
   <img width="8" />
-  <!-- <a href="https://www.python.org/" target="_blank"><img src="https://img.shields.io/badge/Python_3.12%2B-3776AB?logo=python&logoColor=white&style=for-the-badge" height="28" alt="Python 3.12+" /></a>
-  <img width="8" />
-  <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript" target="_blank"><img src="https://img.shields.io/badge/JavaScript-F7DF1E?style=for-the-badge&logo=javascript&logoColor=black" height="28" alt="JavaScript" /></a>
-  <img width="8" />
-  <img src="https://img.shields.io/badge/%F0%9F%A4%96-Vibe%20Coded-5B2C6F?style=for-the-badge" height="28" alt="Vibe Coded" />
-  <img width="8" />-->
   <!-- <a href="https://www.rust-lang.org/" target="_blank"><img src="https://img.shields.io/badge/Rust-000000?logo=rust&logoColor=white&style=for-the-badge" height="28" alt="Rust" /></a>
   <img width="8" /> -->
   <!-- <br>-->
@@ -192,7 +186,7 @@ run it. Everything it needs is already inside.
 | **macOS** 12 or later (Apple Silicon) | `Corvus_GCS-<version>-macOS-arm64.dmg` | Drag to Applications. Not notarized: allow it once under **System Settings → Privacy & Security → Open Anyway**. |
 | **Linux** (x86_64) | `Corvus_GCS-<version>-x86_64.AppImage` | `chmod +x` it, then run it. |
 | **Windows** (x64) | `Corvus_GCS-<version>-windows-x64.zip` | Unzip anywhere and run `Corvus GCS.exe`. SmartScreen asks once: *More info → Run anyway*. |
-| **Android** (7 or later) | `Corvus_GCS-<version>-android.apk` | A full screen window in tablet mode on a Corvus GCS running on a computer. Enter that computer's address on the first start. |
+| **Android** (7 or later) | `Corvus_GCS-<version>-android.apk` | A full screen window in tablet mode on a Corvus GCS running on a computer. It shows the old web interface, which the native program no longer serves, so it has nothing to show for now. |
 
 **From source** (a Rust toolchain and nothing else; [rustup](https://rustup.rs)
 installs the version [`rust-toolchain.toml`](rust-toolchain.toml) names), one

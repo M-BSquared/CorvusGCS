@@ -161,7 +161,6 @@
 <h2 id="automatic">Automatic connection</h2>
 <p>At launch Corvus goes through this list and takes the first rule that produces a link:</p>
 <ol>
-  <li><strong>A connection on the command line.</strong> Only a person types one, so it outranks any hardware.</li>
   <li><strong>A flight controller on a USB cable</strong>, recognised by its USB descriptor.</li>
   <li><strong>A SiK telemetry radio</strong>, recognised as a USB serial adapter (FTDI, CP210x or CH340).</li>
   <li><strong>The connection saved in the config file</strong>, used exactly as written.</li>
@@ -216,9 +215,8 @@
 
 <h2 id="manual">Connecting by hand</h2>
 <p>
-  Open the <strong>LINK</strong> tab in the side panel. This is the normal way
-  to override the automatic choice; a command-line connection is only for
-  scripting. Serial and UDP/TCP share one card and one <strong>Connect</strong>
+  Open the <strong>LINK</strong> tab in the side panel. This is the way
+  to override the automatic choice. Serial and UDP/TCP share one card and one <strong>Connect</strong>
   button. The switch at the top chooses which, and it opens on the kind you
   connected with last.
 </p>

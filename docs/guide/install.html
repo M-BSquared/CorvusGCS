@@ -185,7 +185,7 @@
     <tr>
       <th scope="row">Android (tablet or phone, Android 7 or later)</th>
       <td><code>Corvus_GCS-&lt;version&gt;-android.apk</code></td>
-      <td>Copy it to the device and open it; Android asks once to allow installs from that source. The app is a full screen window on a Corvus GCS running on a computer, see <a href="#android">The Android app</a>.</td>
+      <td>Copy it to the device and open it; Android asks once to allow installs from that source. The app is a full screen window on a Corvus GCS running on a computer, and has nothing to show for now, see <a href="#android">The Android app</a>.</td>
     </tr>
   </tbody>
 </table>
@@ -199,6 +199,10 @@
 </p>
 
 <h2 id="android">The Android app</h2>
+<div class="callout callout-warn">
+  <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-alert"></use></svg>
+  <div><p>The Android app shows the web interface of the Corvus on the computer. The native program no longer serves one, so for now the app has nothing to show. The steps below are kept for when it does again.</p></div>
+</div>
 <p>
   The Android app does not run the ground station itself. It is a full screen
   window on the Corvus GCS of a computer on the same network, and it opens in
@@ -217,23 +221,17 @@
   puts the address in, so the app never asks.
 </p>
 
-<h2 id="command-line">Starting with a port and a link</h2>
+<h2 id="command-line">Choosing the link</h2>
 <p>
-  Normally you just open the app. To choose the local HTTP port and a MAVLink
-  connection at startup, for a script or a field laptop that should always
-  open the same radio, start it from a terminal. The first argument is the
-  port, the second the connection string:
-</p>
-<pre><code>"/Applications/Corvus GCS.app/Contents/MacOS/corvus-gcs" 8000 serial:/dev/tty.usbserial-0001:57600</code></pre>
-<pre><code>./Corvus_GCS-&lt;version&gt;-x86_64.AppImage 8000 udp:0.0.0.0:14550</code></pre>
-<pre><code>&amp; ".\Corvus GCS\Corvus GCS.exe" 8000 serial:COM7:57600</code></pre>
-<p>
-  A connection given on the command line always wins over the automatic
-  choice, because only a person types one. If the port is already taken,
-  Corvus tries the next ones (up to twenty) rather than failing, and the port
-  it ended up on is the one it reports. See
-  <a href="reference.html#command-line">Files, settings and variables</a> for
-  every connection string form.
+  Normally you just open the app. The connection is picked on the LINK tab,
+  remembered, and opened again at the next start; with auto-connect on,
+  Corvus finds a radio or a flight controller on USB by itself (see
+  <a href="connect.html">Connect to the aircraft</a>). The backend inside the
+  program listens on port 8000 of this computer, or the next free one when
+  another program holds it.
+  The few command-line arguments the program takes are in
+  <a href="reference.html#command-line">Files, settings and variables</a>,
+  with every connection string form.
 </p>
 <p>
   On Windows the serial port is a <code>COM</code> name rather than a device
@@ -329,7 +327,7 @@
   <ul>
     <li><a href="#download">Download the app</a></li>
     <li><a href="#android">The Android app</a></li>
-    <li><a href="#command-line">Starting with a port and a link</a></li>
+    <li><a href="#command-line">Choosing the link</a></li>
     <li><a href="#first-start">The first start</a></li>
     <li><a href="#updates">Updates</a></li>
     <li><a href="#from-source">Running from source</a></li>

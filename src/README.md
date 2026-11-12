@@ -64,10 +64,10 @@ CORVUS_GUI_3D_PANEL=1 CORVUS_GUI_3D=1 cargo run         # with the 3D panel (bui
 CORVUS_GUI_SOAK=1 cargo run --release                   # the window drives itself: pages, map, 3D, language (src/app/soak.rs)
 ```
 
-Locally the backend is `corvus_core` in this process, with its HTTP server on a
-free loopback port that the interface's client reads (a second Corvus on this
-computer is joined, or refused with `CORVUS_ALLOW_MULTI` unset and a lock the
-running one holds). No Python is needed to start and no bundle carries any.
+Locally the backend is `corvus_core` in this process, with its HTTP server on the
+configured loopback port (`http_port`, 8000) or the next free one, which the
+interface's client reads (a second Corvus on this computer is joined, or
+refused with `CORVUS_ALLOW_MULTI` unset and a lock the running one holds). No Python is needed to start and no bundle carries any.
 Every way out (window closed, SIGINT, SIGTERM) stops the core, which joins
 every thread it started. Every route the Python server answers is registered
 by a module of the core (`tests/no_unavailable_routes.rs` lists them). If the

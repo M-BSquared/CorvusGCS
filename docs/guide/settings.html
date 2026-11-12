@@ -166,7 +166,7 @@
 <p>How the whole app reads. <strong>General</strong> holds the language, the colours, the size, tablet mode and the units; <strong>Branding</strong> the logo and the app icon.</p>
 <dl>
   <dt id="language">Language</dt>
-  <dd>The language of the interface: English, German or French, from a dropdown, with <strong>Reload languages</strong> beside it. Switching is instant, with no reload. The first start setup opens in the browser's own language when Corvus has a file for it, and offers the choice in its first step, <strong>Look</strong>. A text that a language does not translate stays English. More languages can be added without touching the program, see <a href="#adding-a-language">Adding a language</a>.</dd>
+  <dd>The language of the interface: English, German or French, from a dropdown, with <strong>Reload languages</strong> beside it. Switching is instant, with no reload. The first start setup opens in English and offers the choice in its first step, <strong>Look</strong>. A text that a language does not translate stays English. More languages can be added without touching the program, see <a href="#adding-a-language">Adding a language</a>.</dd>
   <dt>Colour theme</dt>
   <dd>Six themes, two light and four dark: Light (the default), Light Orange, Blue, Green, Orange and Pink. Switching is instant, with no reload and no flash, and the map, the plots and the instruments all follow.</dd>
   <dt>Interface size</dt>
@@ -182,11 +182,10 @@
       <li>Controls that only showed under a mouse pointer (the HUD's buttons, the tools on a mission row, the handles that add a fence corner) are always shown. Buttons no longer keep the tint of the last tap, so a pressed LAND does not look like it is still active.</li>
       <li>In the Mission planner a <strong>FINISH</strong> button appears while an area or corridor is drawn, in place of Enter or a double click, and the hints under the tool bar name the finger's gestures. Rows are reordered by their number, which is wider.</li>
       <li>Charts on Analysis and in tuning no longer take a swipe as a zoom, so the page scrolls under a finger.</li>
-      <li>Gone: the + and − zoom buttons (two fingers zoom the map), the side panel's resize edge, the SSH terminal tab, the App icon card, and in a browser the Camera and terminal windows card. Saved SSH connections stay, and plugins still use them.</li>
-      <li>The side panel starts folded below a width of 1280, so the map keeps its room on a tablet held either way. The page no longer zooms or reloads under a stray pinch, double tap or pull down, and an upright tablet drops the CORVUS wordmark so the top bar fits.</li>
-      <li>Where the browser allows it, the left rail gets a full screen button above <strong>SET</strong>.</li>
+      <li>Gone: the + and − zoom buttons (two fingers zoom the map), the side panel's resize edge, the SSH terminal tab and the App icon card. Saved SSH connections stay, and plugins still use them.</li>
+      <li>The side panel starts folded below a width of 1280, so the map keeps its room on a tablet held either way. An upright tablet drops the CORVUS wordmark so the top bar fits.</li>
     </ul>
-    The switch is saved on the device that sets it, not in the shared settings, so a tablet and the computer it connects to each keep their own. A device whose main pointer is a finger starts in tablet mode until it is switched off, and so does the <a href="install.html#android">Android app</a>, whatever its screen reports. To reach Corvus from a tablet over the network, see <a href="security.html#second-screen">A second screen on the network</a>; added to the home screen from there, it opens without the browser's bars.
+    The switch is saved on the device that sets it, not in the shared settings, so a tablet and the computer it connects to each keep their own. A device whose main pointer is a finger starts in tablet mode until it is switched off, and so does the <a href="install.html#android">Android app</a>, whatever its screen reports.
   </dd>
   <dt>Units</dt>
   <dd>A unit system (metric, imperial, aviation) that sets altitude and length, distance, speed and temperature at once, and each of the four on its own afterwards. Units are for display only: parameters, mission files and everything sent to the aircraft stay in the units the autopilot uses.</dd>
@@ -261,8 +260,8 @@
 </div>
 <p>
   <strong>API keys</strong> is the button that takes a key. The key never
-  reaches the browser: Corvus fetches the tiles itself and hands the images to
-  the page, so the key stays in the config file (readable by you alone), never
+  leaves the backend: Corvus fetches the tiles itself and hands the images to
+  the interface, so the key stays in the config file (readable by you alone), never
   appears in a page, a URL or a log line, and is never sent back out by the
   API. The Settings page is only told <em>that</em> a key is saved. You will
   not see it again after saving; <strong>REMOVE</strong> clears it.

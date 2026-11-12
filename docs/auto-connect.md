@@ -7,20 +7,20 @@ For the operator's version of this, see
 [Connect to the aircraft](https://m-bsquared.github.io/CorvusGCS/guide/connect.html)
 in the documentation. This file is the interface: the resolution order, the two state
 fields, the endpoint, the config block, and the reason strings. Implementation
-lives in `corvus/autoconnect.py`, whose module docstring carries the reasoning
-behind each rule.
+lives in `src/core/src/autoconnect.rs` and `src/core/src/serial_ports.rs`,
+whose module documentation carries the reasoning behind each rule.
 
 ---
 
 ## 1. Resolution order
 
-At startup, `apply_startup_connection()` (`corvus/server.py`) asks
+At startup, the vehicle module (`src/core/src/vehicle.rs`) asks
 `resolve_startup_connection()` for a connection string. The first rule that
 produces one wins:
 
 | # | Rule | `reason` | Notes |
 |---|---|---|---|
-| 1 | Command-line argument | `cli` | `serve.py <port> <connection>` or `corvus/app.py <port> <connection>`. Only a person types this, so it outranks hardware. An unusable value falls through rather than failing the launch. |
+| 1 | Command-line argument | `cli` | A connection the program was started with. The desktop program takes none and passes `None`, so this rule does not fire there; it stays for a caller that embeds the core. An unusable value falls through rather than failing the launch. |
 | 2 | Direct USB flight controller | `usb-direct` | A CDC ACM node, or a `/dev/serial/by-id/` name matching a Pixhawk-class vendor. Dialled as `serial:<device>:<baud>`, where the baud rate is the configured connection's when that names the same port, and 57600 otherwise. |
 | 3 | SiK telemetry radio | `sik` | A USB-to-serial bridge (FTDI / CP210x / CH340). Same string shape. |
 | 4 | Configured connection | `configured` | `mavlink_connection` from `~/.corvus/config.json`. Honoured **verbatim**, including a stale `14540`, which is warned about and never rewritten. |
@@ -28,11 +28,12 @@ produces one wins:
 | 6 | Built-in default | `default-invalid-fallback` | Reached only when everything above is absent or rejected by `validate_connection`. Uses `DEFAULT_MAVLINK_CONNECTION`. |
 
 Rules 2 and 3 are skipped when their config toggle is off; rule 5 likewise.
-Both launchers pass `None` (not the config value) when no command-line
-argument was given, so rule 1 cannot shadow rules 2 to 4.
+The program passes `None` (not the config value) as that connection, so rule 1
+cannot shadow rules 2 to 4.
 
 **Ports are never opened to classify them.** Enumeration is
-`MavlinkBridge.list_serial_ports()`, a `pyserial` describe plus a `/dev` glob.
+`serial_ports::list_serial_ports()`, the operating system's port list plus a
+`/dev` glob.
 Classification is `classify_serial_device()`, the same function the firmware
 flasher uses, so the two cannot disagree about what is a flight controller.
 
@@ -59,7 +60,7 @@ Ports excluded before any rule sees them:
   check: only a positive match is treated as a base, because refusing to
   auto-connect a real flight controller is by far the worse error.
   `classify_serial_device()` returns `rtk` for these, which is also what
-  `corvus/rtk_service.py` picks its candidates by: one table, so the two
+  the RTK service (`src/core/src/peripherals/rtk`) picks its candidates by: one table, so the two
   cannot disagree about what is a receiver.
 
 With two candidates of the same kind, the pick is the first by device name,
@@ -225,8 +226,8 @@ These are guarantees, not current behaviour that might drift:
   `link_status` and a stale heartbeat. A connected link, or a degraded one
   still receiving heartbeats, is left alone and gets a suggestion at most.
 - **It never takes another vehicle's radio.** A serial port one of the extra
-  links holds (`corvus/fleet.py`, one link per radio) is never dialled and
-  never offered: the watcher gets those ports from `busy_devices_fn` and
+  links holds (`src/core/src/fleet.rs`, one link per radio) is never dialled and
+  never offered: the watcher gets those ports from its `BusyDevices` callback and
   leaves them out before it picks.
 - **Manual wins the session.** After a manual connect or disconnect, nothing
   auto-dials and nothing is suggested until the process restarts.
@@ -243,12 +244,10 @@ These are guarantees, not current behaviour that might drift:
 
 | File | Covers |
 |---|---|
-| `tests/test_autoconnect.py` | The policy: resolution order, the never-steal matrix, bootloader and phantom exclusion, dedupe and dial latches, the config block, the reason enum, the HTTP surface. |
-| `tests/test_autoconnect_live.py` | The plumbing, on real sockets against a real MAVLink heartbeat source: connect-without-a-click, scanning with nothing present, loss and recovery, a disconnect that stays disconnected, forwarder-sink survival, no leaked threads. |
+| `src/core/src/autoconnect.rs`, `src/core/src/serial_ports.rs` (unit tests) | The policy: resolution order, the never-steal matrix, bootloader and phantom exclusion, dedupe and dial latches, the config block, the reason enum. |
+| `src/core/tests/autoconnect_scenarios.rs` | The decisions the Python program made, frozen in `src/core/tests/data`: which port is picked, the connection string at startup, what is suggested, and the watcher's passes on a scripted bridge and store. |
 
 The serial half (USB and SiK priority against real hardware) needs a flight
 controller on a cable and is covered by the policy tests against the real
-classifier. The PX4-specific behaviour layered on top of the link (version
-triple, parameter schema, stream intervals) is covered by the version,
-parameter and stream-fallback suites; the plan's L1 to L6 Gazebo smoke is still
-the only thing that exercises all of it end to end.
+classifier. Nothing here runs against a simulator any more; a SITL the
+operator starts is the only end to end check.

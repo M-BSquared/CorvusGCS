@@ -1,7 +1,8 @@
 //! The Corvus backend this app talks to.
 //!
 //! By default it is `corvus_core` running in this very process, with its
-//! HTTP server on a free loopback port that the interface's client reads
+//! HTTP server on the configured loopback port (`http_port`, 8000 unless
+//! changed) or the next free one, which the interface's client reads
 //! (the first step of the port; an area that is ported gets called directly
 //! later). An area that is not ported yet answers 501 "Not available in this
 //! build", which the pages show as their error text.
@@ -44,9 +45,10 @@ pub struct Backend {
 }
 
 impl Backend {
-    /// Starts the core in this process, serving on a free loopback port. A
-    /// second Corvus on this computer is refused (`CORVUS_ALLOW_MULTI=1`
-    /// allows it).
+    /// Starts the core in this process, serving on the configured loopback
+    /// port or the next free one, so an AI client's address survives a
+    /// restart. A second Corvus on this computer is refused
+    /// (`CORVUS_ALLOW_MULTI=1` allows it).
     pub fn start_core() -> Result<Backend, String> {
         let options = corvus_core::Options::default();
         let core = corvus_core::CoreBuilder::new(options)
@@ -62,7 +64,7 @@ impl Backend {
             .module(corvus_core::SetupSchemasModule::new())
             .module(corvus_core::MapDataModule::new())
             .module(corvus_core::Http::new(corvus_core::HttpOptions {
-                port: 0,
+                from_config: true,
                 ..corvus_core::HttpOptions::default()
             }))
             .build()?;
@@ -123,7 +125,9 @@ mod tests {
     }
 
     fn lock_file(text: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("corvus-lock-{}-{}", std::process::id(), text.len()));
+        static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!("corvus-lock-{}-{n}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("corvus.lock");
         std::fs::write(&path, text).unwrap();
@@ -157,12 +161,19 @@ mod tests {
     }
 
     fn core_in(dir: &str) -> Result<Backend, String> {
-        let dir = std::env::temp_dir().join(format!("corvus-backend-{dir}-{}", std::process::id()));
-        let core = corvus_core::CoreBuilder::new(corvus_core::Options::in_dir(&dir))
-            .module(corvus_core::Http::new(corvus_core::HttpOptions {
+        core_with(
+            dir,
+            corvus_core::HttpOptions {
                 port: 0,
                 ..corvus_core::HttpOptions::default()
-            }))
+            },
+        )
+    }
+
+    fn core_with(dir: &str, http: corvus_core::HttpOptions) -> Result<Backend, String> {
+        let dir = std::env::temp_dir().join(format!("corvus-backend-{dir}-{}", std::process::id()));
+        let core = corvus_core::CoreBuilder::new(corvus_core::Options::in_dir(&dir))
+            .module(corvus_core::Http::new(http))
             .build()?;
         core.claim_instance()?;
         core.start().map_err(|e| e.to_string())?;
@@ -205,5 +216,51 @@ mod tests {
         let second = core_in("twice").err().expect("refused");
         assert!(second.starts_with("CORVUS GCS is already running"), "{second}");
         drop(first);
+    }
+
+    fn configured_core(dir: &str, port: u16) -> Backend {
+        let state = std::env::temp_dir().join(format!("corvus-backend-{dir}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&state);
+        std::fs::create_dir_all(&state).unwrap();
+        std::fs::write(state.join("config.json"), format!(r#"{{"http_port": {port}}}"#)).unwrap();
+        core_with(
+            dir,
+            corvus_core::HttpOptions {
+                from_config: true,
+                ..corvus_core::HttpOptions::default()
+            },
+        )
+        .unwrap()
+    }
+
+    fn lock_port(dir: &str) -> u64 {
+        let lock = std::env::temp_dir()
+            .join(format!("corvus-backend-{dir}-{}", std::process::id()))
+            .join("corvus.lock");
+        let text = std::fs::read_to_string(lock).unwrap();
+        serde_json::from_str::<serde_json::Value>(text.trim_end_matches('\0').trim()).unwrap()["port"]
+            .as_u64()
+            .unwrap()
+    }
+
+    fn port_of(b: &Backend) -> u16 {
+        b.server().port
+    }
+
+    #[test]
+    fn the_configured_port_is_kept_and_a_busy_one_moves_to_the_next() {
+        let busy = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = busy.local_addr().unwrap().port();
+        let mut b = configured_core("busy", port);
+        let got = port_of(&b);
+        assert!(got > port && got < port.saturating_add(20), "{port} busy, got {got}");
+        assert_eq!(lock_port("busy"), u64::from(got), "the lock holds the real port");
+        b.stop();
+        drop(busy);
+
+        let mut b = configured_core("busy", port);
+        assert_eq!(port_of(&b), port, "the configured port once it is free");
+        assert_eq!(lock_port("busy"), u64::from(port));
+        b.stop();
     }
 }

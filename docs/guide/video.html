@@ -166,13 +166,8 @@
   <dt>RTSP</dt>
   <dd>Also <code>udp://</code>, <code>srt://</code> and <code>http://</code> streams. Decoded by Corvus with <strong>ffmpeg</strong>, which has to be installed on the computer (see below). TCP is the default transport because it survives a lossy link; UDP is there for cameras that only do that.</dd>
   <dt>WebRTC</dt>
-  <dd>The WHEP address of a stream on a media server such as MediaMTX (<code>http://host:8889/&lt;stream&gt;/whep</code>), go2rtc or Janus. The video goes straight from there to the window, with the lowest delay, and needs no ffmpeg.</dd>
+  <dd>The WHEP address of a stream on a media server such as MediaMTX (<code>http://host:8889/&lt;stream&gt;/whep</code>), go2rtc or Janus. Such a camera can be set up and saved, but the native program does not play WebRTC yet: its window says so. Give the camera its RTSP address instead; MediaMTX and go2rtc serve the same stream over RTSP too.</dd>
 </dl>
-<p>
-  The page lists the codecs the window can play over WebRTC, because the
-  desktop app's browser engine may lack H.264. An H.264 camera then comes in
-  over RTSP instead.
-</p>
 <p>
   A user and password written into the address are moved into their own
   fields, and the password is never shown again.
@@ -180,8 +175,7 @@
 
 <h2 id="ffmpeg">Installing ffmpeg</h2>
 <p>
-  A browser cannot play RTSP, so Corvus decodes it with ffmpeg, which is not
-  bundled. Install it with Homebrew (<code>brew install ffmpeg</code>), your
+  Corvus decodes RTSP with ffmpeg, which is not bundled. Install it with Homebrew (<code>brew install ffmpeg</code>), your
   distribution's package manager (<code>sudo apt install ffmpeg</code>), or
   from ffmpeg.org, or give its path on the page. The environment variable
   <code>CORVUS_FFMPEG</code> works as well. ffmpeg runs only while a camera
@@ -224,8 +218,6 @@
   <dd>Each opens as a window of its own, free to go anywhere, including a second screen, and back where you left it the next time it opens. The pin in its title bar keeps it above the Corvus window; other programs can still cover it when they are in front.</dd>
   <dt>Inside the Corvus window</dt>
   <dd>With <strong>Settings, Camera and terminal windows, Open inside the Corvus window</strong> on, windows open inside the app instead. Drag one past the edge by its title bar and it carries on outside; let go of it over the app and it is back in.</dd>
-  <dt>In a browser</dt>
-  <dd>A page cannot make windows of its own, so they always open inside, and the title bar has a button that opens one in a pop-up.</dd>
 </dl>
 
 <h3 id="title-bar">Title bar</h3>
@@ -256,7 +248,7 @@
 <h2 id="passwords">Camera passwords</h2>
 <p>Camera passwords stay on this computer:</p>
 <ul>
-  <li><strong>They never reach the browser.</strong> A WebRTC connection is opened through Corvus, and the window only ever holds a session token.</li>
+  <li><strong>They stay in the backend.</strong> The window only ever holds the picture, never the camera's address with its password.</li>
   <li><strong>They never appear on ffmpeg's command line</strong>, where other accounts on the computer could read them. This needs ffmpeg 5 or later; the page warns when an older one would expose them.</li>
   <li><strong>A camera moved to another host does not take its password along.</strong></li>
 </ul>

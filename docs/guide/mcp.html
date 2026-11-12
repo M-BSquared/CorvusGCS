@@ -189,7 +189,7 @@
 </p>
 <dl>
   <dt>Address</dt>
-  <dd>The port is the one Corvus runs on, 8000 unless it was taken when Corvus started and it had to move on. Only this computer can connect: the server answers nothing that comes from the network, even when Corvus itself is reachable there.</dd>
+  <dd>The port is the one Corvus runs on: 8000, or the HTTP port in its config if you changed it. It stays the same from one start to the next, so the block keeps working after a restart. Only when another program already holds that port does Corvus take the next free one, and then the block shows the new address and needs copying again. No other computer can connect: the server answers nothing that comes from the network, even when Corvus itself is reachable there.</dd>
   <dt>Token</dt>
   <dd>Like a password for the MCP server, shown only on this computer. It is kept in <code>~/.corvus/mcp-token</code>, readable only by you, and never in the config file or a settings export. <strong>New token</strong> (the arrows beside it) makes another one; clients holding the old one are refused from then on.</dd>
 </dl>
@@ -288,7 +288,7 @@
   The settings travel with a settings export under Connections; the token
   never does. The endpoints are listed in
   <a href="reference.html">Files, settings and variables</a> and in the
-  <code>corvus/mcp.py</code> module docstring.
+  <code>src/core/src/mcp</code> module documentation.
 </p>
 <!-- /guide:content -->
 </article>
