@@ -7,6 +7,7 @@
 
 use std::io::{self, Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -100,7 +101,12 @@ impl Port for SerialPort {
 /// One TCP connection; closing it from another thread ends a read.
 pub struct TcpSocket {
     stream: Mutex<Option<Arc<TcpStream>>>,
+    read_timeout: Duration,
+    closed: AtomicBool,
 }
+
+/// How long a read waits before it looks at whether the socket was closed.
+const CLOSE_POLL: Duration = Duration::from_millis(100);
 
 impl TcpSocket {
     /// `socket.create_connection((host, port), timeout)`: every address the
@@ -116,6 +122,8 @@ impl TcpSocket {
                     stream.set_write_timeout(t)?;
                     return Ok(TcpSocket {
                         stream: Mutex::new(Some(Arc::new(stream))),
+                        read_timeout: Duration::from_secs_f64(read_timeout.max(1e-6)),
+                        closed: AtomicBool::new(false),
                     });
                 }
                 Err(e) => last = Some(e),
@@ -135,15 +143,28 @@ impl Socket for TcpSocket {
     fn recv(&self, max: usize) -> io::Result<Vec<u8>> {
         let stream = self.stream()?;
         let mut buf = vec![0u8; max.max(1)];
-        match (&*stream).read(&mut buf) {
-            Ok(n) => {
-                buf.truncate(n);
-                Ok(buf)
+        // Read in short slices: closing the socket from another thread does not
+        // wake a read that is already waiting on every platform (Windows keeps
+        // it until its timeout), so the wait looks at the flag between slices.
+        let deadline = Instant::now() + self.read_timeout;
+        loop {
+            let left = deadline.saturating_duration_since(Instant::now());
+            stream.set_read_timeout(Some(left.min(CLOSE_POLL).max(Duration::from_millis(1))))?;
+            match (&*stream).read(&mut buf) {
+                Ok(n) => {
+                    buf.truncate(n);
+                    return Ok(buf);
+                }
+                Err(e) if matches!(e.kind(), io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut) => {
+                    if self.closed.load(Ordering::SeqCst) {
+                        return Err(io::Error::from_raw_os_error(9));
+                    }
+                    if Instant::now() >= deadline {
+                        return Err(io::Error::new(io::ErrorKind::TimedOut, "timed out"));
+                    }
+                }
+                Err(e) => return Err(e),
             }
-            Err(e) if matches!(e.kind(), io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut) => {
-                Err(io::Error::new(io::ErrorKind::TimedOut, "timed out"))
-            }
-            Err(e) => Err(e),
         }
     }
 
@@ -152,6 +173,7 @@ impl Socket for TcpSocket {
     }
 
     fn close(&self) {
+        self.closed.store(true, Ordering::SeqCst);
         if let Some(s) = lock(&self.stream).take() {
             let _ = s.shutdown(std::net::Shutdown::Both);
         }

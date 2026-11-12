@@ -58,8 +58,8 @@ fn the_registry_lists_the_same_plugins_as_python_from_the_same_folders() {
     let case_blind = zeta.join("A.JS").is_file();
     for pair in want["assets"].as_array().unwrap() {
         let rel_in = pair[0].as_str().unwrap();
-        let got =
-            resolve_asset(&zeta, rel_in).map(|p| p.strip_prefix(&zeta_real).unwrap().to_string_lossy().into_owned());
+        let got = resolve_asset(&zeta, rel_in)
+            .map(|p| p.strip_prefix(&zeta_real).unwrap().to_string_lossy().replace('\\', "/"));
         // A case insensitive disk answers with the name as it is spelled on
         // disk where Python keeps the caller's spelling; both name the file.
         let want_name = match pair[1].as_str() {

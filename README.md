@@ -15,9 +15,9 @@
 
 <div align="center">
   <!-- corvus:version-badge -->
-  <img src="https://img.shields.io/badge/Version-2026.11.73-f7ebe1?style=for-the-badge" height="28" alt="Version 2026.11.73" />
+  <img src="https://img.shields.io/badge/Version-2026.11.74-f7ebe1?style=for-the-badge" height="28" alt="Version 2026.11.74" />
   <img width="8" />
-  <a href="https://www.rust-lang.org/" target="_blank"><img src="https://img.shields.io/badge/Rust-000000?logo=rust&logoColor=white&style=for-the-badge" height="28" alt="Rust" /></a>
+  <a href="https://www.rust-lang.org/" target="_blank"><img src="https://img.shields.io/badge/Language-Rust-CE412B?logo=rust&logoColor=white&style=for-the-badge" height="28" alt="Language: Rust" /></a>
   <img width="8" />
   <!-- <br>-->
   <a href="https://px4.io/" target="_blank"><img src="https://img.shields.io/badge/PX4-v1.16%20%7C%201.17%20%7C%201.18-9f2dfe?logoColor=white&style=for-the-badge" height="28" alt="PX4 v1.16 | 1.17 | 1.18" /></a>

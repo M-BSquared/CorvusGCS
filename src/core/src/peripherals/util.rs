@@ -42,8 +42,29 @@ fn is_executable(p: &std::path::Path) -> bool {
     p.is_file()
 }
 
+/// Windows words a missing file as "The system cannot find the file
+/// specified." where the C library, and so Python's `strerror`, and the
+/// messages written for Unix say "No such file or directory". One wording on
+/// every platform keeps what the operator reads, and what a test pins, the same.
+fn c_library_wording(kind: std::io::ErrorKind) -> Option<&'static str> {
+    use std::io::ErrorKind::*;
+    match kind {
+        NotFound => Some("No such file or directory"),
+        PermissionDenied => Some("Permission denied"),
+        AlreadyExists => Some("File exists"),
+        ConnectionRefused => Some("Connection refused"),
+        ConnectionReset => Some("Connection reset by peer"),
+        _ => None,
+    }
+}
+
 /// `exc.strerror or exc`: the system's wording without Rust's ` (os error N)` tail.
 pub fn os_error_text(e: &std::io::Error) -> String {
+    if cfg!(windows) && e.raw_os_error().is_some() {
+        if let Some(text) = c_library_wording(e.kind()) {
+            return text.to_string();
+        }
+    }
     let text = e.to_string();
     match text.rfind(" (os error ") {
         Some(i) if text.ends_with(')') => text[..i].to_string(),

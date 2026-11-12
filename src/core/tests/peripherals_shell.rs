@@ -58,7 +58,11 @@ fn a_folder_is_read_from_home_and_a_missing_one_is_named() {
     let (_, problem) = local::clean_directory("definitely/not/a/folder");
     assert_eq!(problem, "There is no folder definitely/not/a/folder on this computer.");
     let (path, _) = local::clean_directory("/");
-    assert_eq!(path, "/");
+    if cfg!(unix) {
+        assert_eq!(path, "/");
+    } else {
+        assert!(std::path::Path::new(&path).is_dir(), "{path}");
+    }
 }
 
 #[cfg(unix)]

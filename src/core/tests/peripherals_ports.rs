@@ -55,6 +55,10 @@ fn one_node_is_one_port_and_a_present_port_is_found() {
         assert_eq!(ports::same_port(s(&c["a"]), s(&c["b"])), c["same"], "{c}");
     }
     for c in doc["present"].as_array().unwrap() {
+        // A device node of Unix, which a Windows computer does not have.
+        if cfg!(windows) && s(&c["device"]).starts_with("/dev/") {
+            continue;
+        }
         let list: Vec<&str> = c["enumerated"].as_array().unwrap().iter().map(s).collect();
         assert_eq!(ports::port_present(s(&c["device"]), &list), c["present"], "{c}");
     }

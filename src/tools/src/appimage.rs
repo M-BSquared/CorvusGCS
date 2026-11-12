@@ -180,7 +180,7 @@ pub fn unresolved(appdir: &Path, deps: &dyn Fn(&Path) -> Vec<String>) -> BTreeMa
             .strip_prefix(appdir)
             .unwrap_or(binary)
             .to_string_lossy()
-            .into_owned();
+            .replace('\\', "/");
         for name in deps(binary) {
             if provided.contains(&name) || host_provided(&name) {
                 continue;

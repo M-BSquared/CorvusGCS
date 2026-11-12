@@ -1,0 +1,22 @@
+# One line ending in the repository and in every checkout: the tests compare
+# files and fixtures byte for byte, and a Windows checkout must not turn them
+# into CRLF.
+* text=auto eol=lf
+*.ps1 text eol=lf
+*.bat text eol=crlf
+*.png binary
+*.jpg binary
+*.ico binary
+*.icns binary
+*.ulg binary
+*.tlog binary
+*.mbtiles binary
+*.ttf binary
+*.otf binary
+*.woff binary
+*.woff2 binary
+
+# Deliberately CRLF: a test reads it as it is.
+src/core/tests/data/dem_import/crlf.asc -text
+assets/unibw_logo.svg -text
+docs/assets/images/unibw-logo.svg -text

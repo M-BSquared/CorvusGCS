@@ -67,6 +67,10 @@ fn the_serial_port_classification_answers_like_python() {
         );
     }
     for c in data["present"].as_array().unwrap() {
+        // A device node of Unix, which a Windows computer does not have.
+        if cfg!(windows) && s(&c[0]).starts_with("/dev/") {
+            continue;
+        }
         let list: Vec<String> = c[1].as_array().unwrap().iter().map(s).collect();
         check(
             format!("present {} {}", c[0], c[1]),

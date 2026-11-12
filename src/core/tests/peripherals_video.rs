@@ -186,7 +186,15 @@ fn the_ffmpeg_arguments_are_the_pythons() {
     for row in d["windows_paths"].as_array().unwrap() {
         let env = row["env"].clone();
         let got = ffmpeg::windows_ffmpeg_paths(&|k| env[k].as_str().unwrap_or("").to_string());
-        assert_eq!(json!(got), row["result"], "{row}");
+        // The fixture joins with "/" as Python did on Unix; Windows joins with "\\".
+        let got: Vec<String> = got.iter().map(|p| p.replace('\\', "/")).collect();
+        let want: Vec<String> = row["result"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|p| p.as_str().unwrap().replace('\\', "/"))
+            .collect();
+        assert_eq!(got, want, "{row}");
     }
 }
 
