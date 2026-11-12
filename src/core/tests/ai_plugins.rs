@@ -54,13 +54,19 @@ fn the_registry_lists_the_same_plugins_as_python_from_the_same_folders() {
 
     let zeta = tmp.0.join("bundled/zeta");
     let zeta_real = std::fs::canonicalize(&zeta).unwrap();
+    // The fixture was recorded on a case blind disk, where "A.JS" finds a.js.
+    let case_blind = zeta.join("A.JS").is_file();
     for pair in want["assets"].as_array().unwrap() {
         let rel_in = pair[0].as_str().unwrap();
         let got =
             resolve_asset(&zeta, rel_in).map(|p| p.strip_prefix(&zeta_real).unwrap().to_string_lossy().into_owned());
         // A case insensitive disk answers with the name as it is spelled on
         // disk where Python keeps the caller's spelling; both name the file.
-        let same = match (&got, pair[1].as_str()) {
+        let want_name = match pair[1].as_str() {
+            Some(b) if !case_blind && b.to_ascii_lowercase() != b => None,
+            other => other,
+        };
+        let same = match (&got, want_name) {
             (Some(a), Some(b)) => a.eq_ignore_ascii_case(b),
             (None, None) => true,
             _ => false,

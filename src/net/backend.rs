@@ -104,7 +104,6 @@ impl Drop for Backend {
 mod tests {
     use super::*;
 
-    #[cfg(unix)]
     fn answer_version_once() -> u16 {
         use std::io::{Read, Write};
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
