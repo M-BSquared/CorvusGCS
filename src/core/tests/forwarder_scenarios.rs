@@ -288,10 +288,15 @@ fn the_forwarder_answers_like_python() {
                 "source" => json!(frame_source_system(&hex(step["data"].as_str().unwrap()))),
                 other => panic!("{other}"),
             };
+            let want = &case["expected"]["steps"][i];
+            let want_lines = want["log"].as_array().map_or(0, Vec::len);
+            let deadline = Instant::now() + Duration::from_secs(3);
+            while lines.lock().unwrap().len() < before + want_lines && Instant::now() < deadline {
+                std::thread::sleep(Duration::from_millis(10));
+            }
             std::thread::sleep(Duration::from_millis(20));
             let new_lines: Vec<Json> = lines.lock().unwrap()[before..].to_vec();
             let got = json!({"result": names.normalise(&result), "log": names.normalise(&Json::Array(new_lines))});
-            let want = &case["expected"]["steps"][i];
             if !same(&got, want) {
                 failures.push(format!("{name} step {i} ({op}):\n  got  {got}\n  want {want}"));
                 failed = true;

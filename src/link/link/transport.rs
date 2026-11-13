@@ -169,7 +169,12 @@ impl Udp {
         let mut buf = vec![0u8; UDP_MAX_PACKET_LEN];
         let (n, addr) = match sock.recv_from(&mut buf) {
             Ok(v) => v,
-            Err(e) if matches!(e.kind(), io::ErrorKind::WouldBlock | io::ErrorKind::ConnectionRefused) => {
+            Err(e)
+                if matches!(
+                    e.kind(),
+                    io::ErrorKind::WouldBlock | io::ErrorKind::ConnectionRefused | io::ErrorKind::ConnectionReset
+                ) =>
+            {
                 return Ok(Vec::new())
             }
             Err(e) => return Err(e),
@@ -1117,7 +1122,12 @@ impl Mcast {
         let mut buf = vec![0u8; UDP_MAX_PACKET_LEN];
         let (n, addr) = match rx.recv_from(&mut buf) {
             Ok(v) => v,
-            Err(e) if matches!(e.kind(), io::ErrorKind::WouldBlock | io::ErrorKind::ConnectionRefused) => {
+            Err(e)
+                if matches!(
+                    e.kind(),
+                    io::ErrorKind::WouldBlock | io::ErrorKind::ConnectionRefused | io::ErrorKind::ConnectionReset
+                ) =>
+            {
                 return Ok(Vec::new())
             }
             Err(e) => return Err(e),
