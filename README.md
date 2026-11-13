@@ -15,7 +15,7 @@
 
 <div align="center">
   <!-- corvus:version-badge -->
-  <img src="https://img.shields.io/badge/Version-2026.11.81-f7ebe1?style=for-the-badge" height="28" alt="Version 2026.11.81" />
+  <img src="https://img.shields.io/badge/Version-2026.11.82-f7ebe1?style=for-the-badge" height="28" alt="Version 2026.11.82" />
   <img width="8" />
   <a href="https://www.rust-lang.org/" target="_blank"><img src="https://img.shields.io/badge/%E2%80%8B-Rust-CE412B?logo=rust&logoColor=white&style=for-the-badge" height="28" alt="Rust" /></a>
   <img width="8" />
@@ -23,14 +23,12 @@
   <a href="https://px4.io/" target="_blank"><img src="https://img.shields.io/badge/PX4-v1.16%20%7C%201.17%20%7C%201.18-9f2dfe?logoColor=white&style=for-the-badge" height="28" alt="PX4 v1.16 | 1.17 | 1.18" /></a>
   <img width="8" />
   <a href="https://ardupilot.org/" target="_blank"><img src="https://img.shields.io/badge/ArduPilot-4.3%20to%204.6-e2e518?logoColor=white&style=for-the-badge" height="28" alt="ArduPilot 4.3 to 4.6" /></a>
-  <img width="8" />
-  <a href="https://betaflight.com/" target="_blank"><img src="https://img.shields.io/badge/Betaflight-Beta-ffbb00?logoColor=white&style=for-the-badge" height="28" alt="Betaflight (Beta)" /></a>
   <br>
   <!-- <img src="https://img.shields.io/badge/%F0%9F%A4%96-Vibe%20Coded-5B2C6F?style=for-the-badge" height="28" alt="Vibe Coded" />
   <img width="8" /> -->
-  <img src="https://img.shields.io/badge/Lines%20of%20Code-259k-1F6FEB?style=for-the-badge" height="28" alt="Lines of code: 259k" />
+  <img src="https://img.shields.io/badge/Lines%20of%20Code-176k-1F6FEB?style=for-the-badge" height="28" alt="Lines of code: 176k" />
   <img width="8" />
-  <img src="https://img.shields.io/badge/Tests-98k%20lines%20%C2%B7%20218%20files-18a4de?style=for-the-badge" height="28" alt="Tests: 98k lines across 218 files" />
+  <img src="https://img.shields.io/badge/Tests-44k%20lines%20%C2%B7%20284%20files-18a4de?style=for-the-badge" height="28" alt="Tests: 44k lines across 284 files" />
   <img width="8" />
   <img src="https://img.shields.io/badge/%F0%9F%A4%96-Vibe%20Coded-5B2C6F?style=for-the-badge" height="28" alt="Vibe Coded" />
   <br>
@@ -74,6 +72,7 @@
 
 ## Contents
 
+- [Contents](#contents)
 - [What is Corvus GCS?](#what-is-corvus-gcs)
 - [Features](#features)
 - [Screenshots](#screenshots)
