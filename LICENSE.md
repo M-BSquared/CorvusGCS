@@ -6,9 +6,12 @@ Portions of this software are licensed as follows:
 
 - All third party components incorporated into the Corvus GCS software are
   licensed under the original license provided by the owner of the applicable
-  component. This includes, but is not limited to, pymavlink, paramiko,
-  pyserial, PySide6/Qt, MapLibre GL JS, Plotly and Lucide. Their licenses are
-  reproduced in the distributed artifacts alongside the components themselves.
+  component. This includes, but is not limited to, egui, russh, tokio, rustls,
+  serialport-rs, SQLite, the MAVLink message definitions, Lucide, and the Inter
+  and JetBrains Mono typefaces. The licenses of the components that need their
+  text to travel are reproduced in the distributed artifacts alongside the
+  components themselves, and every component is listed with its license in the
+  application under Settings, About, Credits.
 - Everything else is available under the "Sustainable Use License" as defined
   below.
 

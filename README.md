@@ -15,7 +15,7 @@
 
 <div align="center">
   <!-- corvus:version-badge -->
-  <img src="https://img.shields.io/badge/Version-2026.11.77-f7ebe1?style=for-the-badge" height="28" alt="Version 2026.11.77" />
+  <img src="https://img.shields.io/badge/Version-2026.11.78-f7ebe1?style=for-the-badge" height="28" alt="Version 2026.11.78" />
   <img width="8" />
   <a href="https://www.rust-lang.org/" target="_blank"><img src="https://img.shields.io/badge/%E2%80%8B-Rust-CE412B?logo=rust&logoColor=white&style=for-the-badge" height="28" alt="Rust" /></a>
   <img width="8" />
@@ -348,13 +348,15 @@ In short, and without replacing the terms in [`LICENSE.md`](LICENSE.md):
 - **You may not** sell it, or offer it to third parties as a paid product or
   service.
 
-Third-party components (paramiko, pyserial, egui, the MAVLink message
-definitions and the Rust libraries in the MAVLink module, MapLibre GL JS, Plotly, Lucide, xterm.js, and the Inter and JetBrains Mono typefaces) keep
-the licenses of their own authors. Map, elevation and building data belong to
-their providers (Esri, OpenStreetMap contributors, Copernicus and others) and
-are credited on the map itself. The full list, with each component's license
-and every data source, is in the app under **Settings > About > Credits**. The
-LGPL and GPL texts ship in [`assets/licenses`](assets/licenses).
+Third-party components (egui, russh, rustls, serialport-rs, SQLite, the MAVLink
+message definitions and the other Rust libraries, Lucide, and the Inter and
+JetBrains Mono typefaces) keep the licenses of their own authors. Map,
+elevation and building data belong to their providers (Esri, OpenStreetMap
+contributors, Copernicus and others) and are credited on the map itself. The
+full list, with each component's license and every data source, is in the app
+under **Settings > About > Credits**. The one license that asks for more than a
+notice (serialport-rs, MPL 2.0) is explained in
+[`assets/licenses`](assets/licenses).
 The license file ships inside every app bundle as well as in the repository,
 because the terms have to travel with the software.
 

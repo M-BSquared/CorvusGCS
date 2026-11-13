@@ -1,4 +1,4 @@
-//! The credits dialog behind Settings, About (`python/src/js/credits.js`). The list
+//! The credits dialog behind Settings, About. The list
 //! of what ships is the native interface's own: its crates in place of the
 //! web interface's vendored scripts, the same typefaces and icons, the same
 //! backend, services and references.
@@ -117,22 +117,20 @@ pub const FONTS: [Entry; 2] = [
     },
 ];
 
-pub const RUNTIME: [Entry; 16] = [
-    e("Python", "PSF License", "The backend runs on it; the desktop build bundles its own CPython, including the libraries its standard library is built with, such as OpenSSL, SQLite, XZ Utils and zlib.", "https://www.python.org/"),
-    e("MAVLink message definitions", "MIT", "The common and dialect message sets, compiled into Corvus' MAVLink module.", "https://mavlink.io/"),
-    e("Rust standard library", "MIT / Apache 2.0", "The runtime of corvus_link, the MAVLink module written in Rust.", "https://www.rust-lang.org/"),
-    e("PyO3", "MIT / Apache 2.0", "Connects corvus_link to the Python backend.", "https://pyo3.rs/"),
+pub const RUNTIME: [Entry; 14] = [
+    e("MAVLink message definitions", "MIT", "The common and dialect message sets, compiled into corvus_link at build time.", "https://mavlink.io/"),
+    e("Rust standard library", "MIT / Apache 2.0", "The runtime of the whole program.", "https://www.rust-lang.org/"),
     e("RustCrypto sha2", "MIT / Apache 2.0", "SHA-256 for MAVLink 2 message signing.", "https://github.com/RustCrypto/hashes"),
     e("socket2, libc, windows-sys, indexmap", "MIT / Apache 2.0", "Sockets and system calls under the links, and the ordered parameter cache.", "https://github.com/rust-lang/socket2"),
-    e("serialport-rs", "MPL 2.0", "Serial ports on Windows. Unmodified; source at the link.", "https://github.com/serialport/serialport-rs"),
-    e("paramiko", "LGPL 2.1", "SSH sessions to the companion computer.", "https://www.paramiko.org/"),
-    e("cryptography", "Apache 2.0 or BSD 3-Clause", "Ciphers and key handling under paramiko. Ships its own OpenSSL (Apache 2.0).", "https://cryptography.io/"),
-    e("bcrypt", "Apache 2.0", "Key derivation for encrypted SSH keys, used by paramiko.", "https://github.com/pyca/bcrypt"),
-    e("PyNaCl", "Apache 2.0", "Ed25519 keys for SSH, used by paramiko. Includes libsodium (ISC).", "https://github.com/pyca/pynacl"),
-    e("invoke", "BSD 2-Clause", "Command execution helper required by paramiko.", "https://www.pyinvoke.org/"),
-    e("cffi / pycparser", "MIT or MIT-0 / BSD 3-Clause", "Native bindings under cryptography, bcrypt and PyNaCl.", "https://cffi.readthedocs.io/"),
-    e("pyserial", "BSD 3-Clause", "Serial-port enumeration and the radio link.", "https://github.com/pyserial/pyserial"),
-    e("PyInstaller", "GPL v2 with bootloader exception", "Packs the Windows build. Its bootloader is part of that build only.", "https://pyinstaller.org/"),
+    e("serialport-rs", "MPL 2.0", "Serial port enumeration on every platform and the serial link on Windows. Unmodified; source at the link. Its dependency unescaper is offered under MIT or GPL 3.0 and used here under MIT.", "https://github.com/serialport/serialport-rs"),
+    e("russh", "Apache 2.0", "The SSH client behind the terminal tab, one shot commands and the companion computer power controls. Pure Rust, so no OpenSSL or libssh2 ships.", "https://github.com/Eugeny/russh"),
+    e("tokio", "MIT", "A private single threaded runtime for each SSH session.", "https://tokio.rs/"),
+    e("rustls and ring", "Apache 2.0 or ISC or MIT / ISC and Apache 2.0", "TLS for the map tiles, the place search, the update check and secure WebSocket links, with the system's own certificate store.", "https://github.com/rustls/rustls"),
+    e("ureq and webpki-roots", "MIT or Apache 2.0 / CDLA Permissive 2.0", "The HTTPS client for tiles, place search and the update check, and the Mozilla root certificate list it carries.", "https://github.com/algesten/ureq"),
+    e("tungstenite", "MIT or Apache 2.0", "The WebSocket handshake and framing for WebSocket links and the local server.", "https://github.com/snapview/tungstenite-rs"),
+    e("rusqlite and SQLite", "MIT / Public domain", "The offline tile cache is an MBTiles file. SQLite is compiled into the program.", "https://github.com/rusqlite/rusqlite"),
+    e("lzma-rs", "MIT", "Unpacks the xz compressed PX4 parameter metadata.", "https://github.com/gendx/lzma-rs"),
+    e("gilrs", "MIT or Apache 2.0", "Reads USB and Bluetooth gamepads for manual control.", "https://gitlab.com/gilrs-project/gilrs"),
     e("AppImage runtime", "MIT", "The small starter at the front of the Linux AppImage that mounts and runs it.", "https://appimage.org/"),
 ];
 

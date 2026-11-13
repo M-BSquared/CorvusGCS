@@ -1,38 +1,36 @@
-# Licences of the LGPL libraries in this build
+# Licences of the third party components in this build
 
-Corvus GCS runs its desktop window on Qt 6 through PySide6 (Qt for Python).
-Both are used under the GNU Lesser General Public License, version 3:
+Corvus GCS is one native Rust program. The libraries it links are under the
+MIT, Apache 2.0, ISC, BSD, Zlib and Unicode licences, which ask for the notice
+and nothing else, plus the one licence below that asks for more. No library
+under the GNU General Public License or Lesser General Public License ships in
+this build: Qt, PySide6, paramiko, pyserial and the rest of the Python stack are
+gone.
 
-- Qt 6, including Qt WebEngine: <https://www.qt.io/>
-- PySide6 and Shiboken6: <https://pyside.org>
+The list of every component, with its licence and what it is used for, is in the
+application under Settings, About, Credits.
 
-The LGPL v3 is a set of additional permissions on top of the GNU General
-Public License, version 3, so both texts are here:
+## Mozilla Public License 2.0
 
-- [`LGPL-3.0.txt`](LGPL-3.0.txt)
-- [`GPL-3.0.txt`](GPL-3.0.txt)
+serialport-rs lists the serial ports and drives the serial link on Windows. It
+is under the Mozilla Public License 2.0 and is linked unmodified. The licence
+text is at <https://mozilla.org/MPL/2.0/>, and the source code of the version in
+this build is published by its authors at
+<https://github.com/serialport/serialport-rs>. You can build Corvus GCS against
+a copy of your own.
 
-paramiko, the SSH library, is under the GNU Lesser General Public License,
-version 2.1, and so is the FFmpeg build inside Qt WebEngine. That text is here
-too, as paramiko ships it:
+serialport-rs depends on unescaper, which is offered under the MIT licence or
+the GNU General Public License 3.0. Corvus GCS uses it under the MIT licence.
 
-- [`LGPL-2.1.txt`](LGPL-2.1.txt)
+## Typefaces and icons
 
-They ship as separate shared libraries or Python packages next to the
-application, unmodified, and can be replaced with builds of your own. Their
-source code is published by their authors:
+Inter and JetBrains Mono are under the SIL Open Font License 1.1, with the
+copyright lines shown in Settings, About, Credits. Lucide is under the ISC
+licence.
 
-- Qt: <https://download.qt.io/official_releases/qt/> and <https://code.qt.io/>
-- PySide6 and Shiboken6: <https://code.qt.io/cgit/pyside/pyside-setup.git/>
-- paramiko: <https://github.com/paramiko/paramiko>
+## Firmware and data that are not shipped
 
-MAVLink is corvus_link, Corvus' own module written in Rust (src/link
-in the source). On Windows it links serialport-rs, which is under the Mozilla
-Public License 2.0, unmodified. Its source and licence are at
-<https://github.com/serialport/serialport-rs> and <https://mozilla.org/MPL/2.0/>.
-The other Rust libraries it links are under MIT or Apache 2.0 and are listed
-in Settings > About > Credits.
-
-Qt WebEngine contains Chromium and the third party components Chromium
-uses, each under its own licence. The full list is part of Chromium's own
-credits and is linked from Settings > About > Credits.
+Corvus GCS downloads PX4 and ArduPilot firmware, map tiles, elevation data and
+OpenStreetMap buildings only when you ask it to. None of that is part of the
+program and none of it is bundled, so its licences (BSD 3-Clause, GPL v3, ODbL
+and others) do not apply to the program itself.
