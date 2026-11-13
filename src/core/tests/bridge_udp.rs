@@ -221,6 +221,7 @@ fn the_bridge_flies_a_simulated_vehicle_over_udp() {
             .any(|l| l == "STATUSTEXT: Takeoff detected")
     });
 
+    let tlog = bridge.tlog_path().expect("a tlog is open");
     assert!(bridge.arm(true), "arm is ACK confirmed");
     assert!(vehicle.armed.load(Ordering::SeqCst));
     wait_for("armed in the store", Duration::from_secs(5), || {
@@ -232,7 +233,7 @@ fn the_bridge_flies_a_simulated_vehicle_over_udp() {
         store.get("armed").is_some_and(|v| v == false)
     });
 
-    let tlog = bridge.tlog_path().expect("a tlog is open");
+    assert!(bridge.tlog_path().is_some(), "a disarm rolls the tlog without a gap");
     let started = Instant::now();
     bridge.stop();
     assert!(

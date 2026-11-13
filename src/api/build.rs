@@ -23,6 +23,7 @@ const FONTS: &[&str] = &[
 /// (the Lucide name the web interface uses, the export name in lucide.min.js)
 const ICONS: &[(&str, &str)] = &[
     ("power", "Power"),
+    ("drone", "Drone"),
     ("arrow-up", "ArrowUp"),
     ("arrow-down", "ArrowDown"),
     ("house", "House"),

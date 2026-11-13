@@ -39,6 +39,7 @@ pub struct Effects {
     pub scale: f32,
     pub units: Units,
     pub mission_page: bool,
+    pub betaflight_always: bool,
     pub measure_tool: bool,
     pub regions_button: bool,
     pub console_tab: bool,
@@ -72,6 +73,7 @@ impl Effects {
             scale: model::scale_from_config(cfg),
             units: model::units_in_force(cfg),
             mission_page: model::flag(cfg, "ui", "mission_page", false),
+            betaflight_always: model::flag(cfg, "ui", "betaflight_always", false),
             measure_tool: model::flag(cfg, "ui", "measure_tool", true),
             regions_button: model::flag(cfg, "ui", "regions_button", false),
             console_tab: model::flag(cfg, "ui", "console_tab", true),
@@ -593,16 +595,16 @@ mod tests {
     fn the_window_takes_what_the_config_names() {
         let e = Effects::of(&json!({
             "theme": {"name": "blue"},
-            "ui": {"scale": 1.25, "mission_page": true, "measure_tool": false, "ssh_tab": false,
-                   "units": {"length": "ft"}}
+            "ui": {"scale": 1.25, "mission_page": true, "betaflight_always": true, "measure_tool": false,
+                   "ssh_tab": false, "units": {"length": "ft"}}
         }));
         assert_eq!(e.theme, "blue");
         assert_eq!(e.scale, 1.25);
-        assert!(e.mission_page && !e.measure_tool && e.console_tab && !e.ssh_tab);
+        assert!(e.mission_page && e.betaflight_always && !e.measure_tool && e.console_tab && !e.ssh_tab);
         assert_eq!(e.units.length.id, "ft");
         let d = Effects::of(&json!({}));
         assert_eq!((d.theme, d.scale), ("light", 1.0));
-        assert!(!d.mission_page && d.measure_tool && d.console_tab && d.ssh_tab);
+        assert!(!d.mission_page && !d.betaflight_always && d.measure_tool && d.console_tab && d.ssh_tab);
         assert_eq!(d.language, "en");
         assert_eq!(Effects::of(&json!({"language": "de"})).language, "de");
     }

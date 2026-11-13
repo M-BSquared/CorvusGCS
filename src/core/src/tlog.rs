@@ -355,8 +355,6 @@ impl TlogSession {
         if !host.running() {
             return;
         }
-        // Close any leftover writer from a prior cycle.
-        self.stop_tlog(host.as_ref());
         let dir = host.log_dir();
         let attempt = (|| -> std::io::Result<TlogWriter> {
             std::fs::create_dir_all(&dir)?;
@@ -366,12 +364,17 @@ impl TlogSession {
             writer.set_conn(&host.conn_string());
             Ok(writer)
         })();
-        match attempt {
-            Ok(writer) => self.st().tlog = Some(Arc::new(writer)),
+        // The new file is opened before the old one is closed and swapped in
+        // at once, so a frame or a path lookup during a roll never sees a gap.
+        let previous = match attempt {
+            Ok(writer) => self.st().tlog.replace(Arc::new(writer)),
             Err(e) => {
                 host.log("warning", &format!("tlog disabled: {e}"));
-                self.st().tlog = None;
+                self.st().tlog.take()
             }
+        };
+        if let Some(previous) = previous {
+            previous.stop();
         }
     }
 

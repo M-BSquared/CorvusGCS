@@ -619,11 +619,16 @@ impl Session {
 
     fn workspace(&mut self, ui: &mut egui::Ui, f: &mut Form) -> bool {
         let mut changed = false;
-        let rows: [(&str, &str, bool); 4] = [
+        let rows: [(&str, &str, bool); 5] = [
             (
                 "Mission planner",
                 "Adds MISSION to the left rail: plan takeoff, waypoints and landing on a map, then upload. Leave it off for a station flown by hand.",
                 self.choices.mission_page,
+            ),
+            (
+                "Always show Betaflight",
+                "Adds BTFL to the left rail all the time. Off, it appears only while a Betaflight aircraft is connected. Betaflight support is in beta.",
+                self.choices.betaflight_always,
             ),
             (
                 "MAVLink console tab",
@@ -652,8 +657,9 @@ impl Session {
             ) {
                 match i {
                     0 => self.choices.mission_page = v,
-                    1 => self.choices.console_tab = v,
-                    2 => self.choices.ssh_tab = v,
+                    1 => self.choices.betaflight_always = v,
+                    2 => self.choices.console_tab = v,
+                    3 => self.choices.ssh_tab = v,
                     _ => self.choices.updates = v,
                 }
                 changed = true;

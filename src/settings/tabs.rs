@@ -38,6 +38,13 @@ const MISSION: Sw = ui_sw(
     "Adds MISSION under HOME in the left rail: a planning map with takeoff, waypoints, orbits and landing, and an altitude profile of the whole flight you can drag each point's height on. Missions are drawn, saved and uploaded there. Nothing is sent to the aircraft until you press Upload.",
 );
 
+const BETAFLIGHT: Sw = ui_sw(
+    "betaflight_always",
+    false,
+    "Always show Betaflight",
+    "Adds BTFL under SETUP in the left rail, which opens the Betaflight page. Off by default: it then appears only while a Betaflight aircraft is connected, a serial link whose Flight controller is set to Betaflight. Turn it on to reach the page without one, for example to read a controller over USB.",
+);
+
 const SIDE_PANEL: [Sw; 2] = [
     ui_sw(
         "console_tab",
@@ -273,7 +280,7 @@ impl SettingsPage {
 
     pub(super) fn layout_tab(&mut self, ui: &mut egui::Ui, f: &mut Form) {
         form::section(ui, f, "Navigation", |ui, f| {
-            form::card(ui, f, "Pages", |ui, f| self.switches(ui, f, &[MISSION]));
+            form::card(ui, f, "Pages", |ui, f| self.switches(ui, f, &[MISSION, BETAFLIGHT]));
             form::card(ui, f, "Side panel", |ui, f| self.switches(ui, f, &SIDE_PANEL));
         });
         form::section(ui, f, "Windows and notifications", |ui, f| {
@@ -556,7 +563,15 @@ mod tests {
             .chain(&HUD)
             .chain(&TRACK)
             .chain(&APP_ICON)
-            .chain([&MISSION, &NOTIFICATIONS, &TOP_BAR_DOTS, &COMPASS, &MEASURE, &REGIONS])
+            .chain([
+                &MISSION,
+                &BETAFLIGHT,
+                &NOTIFICATIONS,
+                &TOP_BAR_DOTS,
+                &COMPASS,
+                &MEASURE,
+                &REGIONS,
+            ])
         {
             assert!(!keys.contains(&s.key), "{}", s.key);
             keys.push(s.key);
@@ -567,7 +582,7 @@ mod tests {
             );
         }
         let by = |k: &str| {
-            [&MISSION, &MEASURE, &REGIONS, &COMPASS, &TOP_BAR_DOTS]
+            [&MISSION, &BETAFLIGHT, &MEASURE, &REGIONS, &COMPASS, &TOP_BAR_DOTS]
                 .into_iter()
                 .chain(&SIDE_PANEL)
                 .chain(&HUD)
@@ -578,6 +593,10 @@ mod tests {
                 .default
         };
         assert!(!by("mission_page") && by("measure_tool") && by("console_tab") && by("ssh_tab"));
+        assert!(
+            !by("betaflight_always"),
+            "Betaflight shows only with a Betaflight aircraft by default"
+        );
         assert!(by("flight_hud") && !by("hud_square") && !by("compass_nose_up"));
         assert!(
             by("track_earlier_flights") && !by("track_rainbow") && !by("track_clear_on_restart") && by("track_in_air")

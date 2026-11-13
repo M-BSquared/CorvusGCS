@@ -463,6 +463,7 @@ const UI_BOOLS: &[&str] = &[
     "app_icon_backplate",
     "topbar_status_dots",
     "mission_page",
+    "betaflight_always",
     "notification_marks",
     "flight_bar_shrink",
     "takeoff_land_split",

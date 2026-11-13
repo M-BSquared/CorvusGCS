@@ -167,3 +167,61 @@ fn every_scenario_ends_where_the_python_tlog_session_ends() {
         failures.join("\n\n")
     );
 }
+
+struct Plain {
+    dir: PathBuf,
+}
+
+impl TlogHost for Plain {
+    fn running(&self) -> bool {
+        true
+    }
+    fn conn_string(&self) -> String {
+        "udp:127.0.0.1:14550".into()
+    }
+    fn log_dir(&self) -> PathBuf {
+        self.dir.join("logs")
+    }
+    fn stamp(&self) -> String {
+        "2026-01-01_00-00-00".into()
+    }
+    fn log(&self, _level: &str, _text: &str) {}
+    fn request_version(&self) {}
+}
+
+#[test]
+fn rolling_a_tlog_never_leaves_a_moment_without_one() {
+    let dir = std::env::temp_dir().join(format!("corvus-tlog-roll-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let host: Arc<dyn TlogHost> = Arc::new(Plain { dir: dir.clone() });
+    let session = Arc::new(TlogSession::new());
+    session.start_tlog(&host);
+    let first = session.current_path().expect("the first tlog is open");
+
+    let watcher = {
+        let session = Arc::clone(&session);
+        let done = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let flag = Arc::clone(&done);
+        let thread = std::thread::spawn(move || {
+            let mut gaps = 0u32;
+            while !flag.load(std::sync::atomic::Ordering::SeqCst) {
+                if session.current_path().is_none() {
+                    gaps += 1;
+                }
+            }
+            gaps
+        });
+        (done, thread)
+    };
+    for _ in 0..50 {
+        session.roll_tlog_on_disarm(&host, true);
+        session.roll_tlog_on_disarm(&host, false);
+    }
+    watcher.0.store(true, std::sync::atomic::Ordering::SeqCst);
+    let gaps = watcher.1.join().unwrap();
+    assert_eq!(gaps, 0, "a path lookup during a roll found no tlog");
+    let last = session.current_path().expect("a tlog is open after the rolls");
+    assert_ne!(last, first, "each disarm starts a new file");
+    session.stop_tlog(host.as_ref());
+    let _ = std::fs::remove_dir_all(&dir);
+}

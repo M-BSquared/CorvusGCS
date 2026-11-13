@@ -240,7 +240,7 @@ mod unix {
 
     #[test]
     fn a_background_program_reports_how_it_ended_or_that_it_runs() {
-        let r = LocalRunner::new();
+        let r = LocalRunner::with_early_exit(Duration::from_secs(20));
         assert_eq!(r.run("echo hi", "")["output"], "hi");
         let a = r.run("echo out; echo err 1>&2; exit 3", "");
         assert_eq!(

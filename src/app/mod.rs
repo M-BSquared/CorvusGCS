@@ -78,6 +78,7 @@ struct App {
     analysis: AnalysisPage,
     mission: MissionPage,
     mission_page: bool,
+    betaflight_always: bool,
     panel: Panel,
     rail: MapRail,
     plugins: Registry,
@@ -143,6 +144,7 @@ impl App {
         ctx.set_zoom_factor(e.scale);
         self.units = e.units;
         self.mission_page = e.mission_page;
+        self.betaflight_always = e.betaflight_always;
         self.rail.measure = e.measure_tool;
         self.rail.regions_button = e.regions_button;
         self.panel.console_tab = e.console_tab;
@@ -555,16 +557,30 @@ impl App {
                 } else {
                     nav::placeholder(ui, main, self.page);
                 }
-                if let Some(page) = nav::show(
+                let betaflight = nav::betaflight_slot(
+                    nav::betaflight_connected(&state),
+                    self.betaflight_always,
+                    self.page == Page::Setup && self.setup.shows_betaflight(),
+                );
+                if let Some(click) = nav::show(
                     ui,
                     rail,
                     self.mission_page,
                     self.page,
                     !vw.max1279,
                     self.update.available.as_deref(),
+                    betaflight,
                 ) {
-                    if page == Page::Setup && self.page == Page::Setup {
+                    let to_betaflight = click == nav::Click::Betaflight;
+                    let page = match click {
+                        nav::Click::Page(page) => page,
+                        nav::Click::Betaflight => Page::Setup,
+                    };
+                    if page == Page::Setup && self.page == Page::Setup && !to_betaflight {
                         self.setup.reset();
+                    }
+                    if to_betaflight && !(self.page == Page::Setup && self.setup.shows_betaflight()) {
+                        self.setup.open("betaflight", ui.ctx());
                     }
                     if self.page == Page::Analysis && page != Page::Analysis {
                         self.analysis.reset();
@@ -890,6 +906,7 @@ pub fn run(
     };
     let mission_page =
         ui_flag("mission_page", false) || page.is_some_and(|p| p == "mission" || p.starts_with("mission:"));
+    let betaflight_always = ui_flag("betaflight_always", false);
     let measure = ui_flag("measure_tool", true);
     let regions_button = ui_flag("regions_button", false);
     // The interface size (Settings > Interface), as --ui-scale zooms the page.
@@ -1057,6 +1074,7 @@ pub fn run(
                     m
                 },
                 mission_page,
+                betaflight_always,
                 panel,
                 rail,
                 plugins,

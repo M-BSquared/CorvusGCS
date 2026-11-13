@@ -54,21 +54,70 @@ impl Page {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Slot {
     Item(Page),
+    /// The shortcut to the Betaflight page of Setup, only while a Betaflight
+    /// aircraft is connected.
+    Betaflight,
     Divider,
     Spacer,
 }
 
+/// What a click on the rail asks for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Click {
+    Page(Page),
+    Betaflight,
+}
+
+/// The Betaflight shortcut: not there, there, or the page it opens is showing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Betaflight {
+    Hidden,
+    Shown,
+    Open,
+}
+
+/// The rail caption of the Betaflight shortcut: the code the firmware itself
+/// reports, short enough for the 58 px item. Its tooltip spells the name out.
+const BETAFLIGHT_CAPTION: &str = "BTFL";
+const BETAFLIGHT_ICON: &str = "drone";
+const BETAFLIGHT_KEY: u8 = 100;
+
+/// Whether the connected aircraft runs Betaflight. The link carries the
+/// stack name for as long as it is connected, so a link that is down shows
+/// nothing, whatever it carried before.
+pub fn betaflight_connected(state: &serde_json::Value) -> bool {
+    state.get("connected").and_then(serde_json::Value::as_bool) == Some(true)
+        && state.get("autopilot_stack").and_then(serde_json::Value::as_str) == Some("betaflight")
+}
+
+/// What the shortcut does: it is there while a Betaflight aircraft is connected,
+/// or always when the operator asked for that, and shows as open while its page
+/// is the one on screen. A page left open stays up if the aircraft goes away.
+pub fn betaflight_slot(connected: bool, always: bool, page_open: bool) -> Betaflight {
+    if !(connected || always) {
+        Betaflight::Hidden
+    } else if page_open {
+        Betaflight::Open
+    } else {
+        Betaflight::Shown
+    }
+}
+
 /// The rail's slots: the planner under HOME when it is on, a hairline there
-/// otherwise; SET pushed to the bottom by the spacer.
-pub fn slots(mission: bool) -> Vec<Slot> {
+/// otherwise; the Betaflight shortcut under SETUP while it applies; SET pushed
+/// to the bottom by the spacer.
+pub fn slots(mission: bool, betaflight: Betaflight) -> Vec<Slot> {
     let mut v = vec![Slot::Item(Page::Home)];
     if mission {
         v.extend([Slot::Item(Page::Mission), Slot::Divider]);
     } else {
         v.push(Slot::Divider);
     }
+    v.push(Slot::Item(Page::Setup));
+    if betaflight != Betaflight::Hidden {
+        v.push(Slot::Betaflight);
+    }
     v.extend([
-        Slot::Item(Page::Setup),
         Slot::Item(Page::Analysis),
         Slot::Item(Page::Logs),
         Slot::Spacer,
@@ -96,7 +145,8 @@ fn notice() -> Color32 {
 }
 
 /// `update` is the release waiting, when there is one: SET gets a dot on the
-/// icon's top right corner (`.nav-item.has-update::after`).
+/// icon's top right corner (`.nav-item.has-update::after`). While the
+/// Betaflight page is open it holds the highlight instead of SETUP.
 pub fn show(
     ui: &mut egui::Ui,
     rect: Rect,
@@ -104,7 +154,8 @@ pub fn show(
     active: Page,
     labels: bool,
     update: Option<&str>,
-) -> Option<Page> {
+    betaflight: Betaflight,
+) -> Option<Click> {
     let painter = ui.painter_at(rect);
     painter.rect_filled(rect, 0, style::surface_1());
     painter.vline(
@@ -112,12 +163,12 @@ pub fn show(
         rect.y_range(),
         egui::Stroke::new(1.0, style::border()),
     );
-    let slots = slots(mission);
+    let slots = slots(mission, betaflight);
     // padding: 10px 0; gap: 4px; the spacer takes what is left.
     let fixed: f32 = slots
         .iter()
         .map(|s| match s {
-            Slot::Item(_) => ITEM_H,
+            Slot::Item(_) | Slot::Betaflight => ITEM_H,
             Slot::Divider => 1.0 + 12.0,
             Slot::Spacer => 0.0,
         })
@@ -138,18 +189,31 @@ pub fn show(
                 y += 13.0;
             }
             Slot::Spacer => y += spacer,
-            Slot::Item(page) => {
+            Slot::Item(_) | Slot::Betaflight => {
                 let r = Rect::from_min_size(Pos2::new(cx - ITEM_W / 2.0, y), Vec2::new(ITEM_W, ITEM_H));
-                let title = if page == Page::Settings {
-                    settings_title(update)
-                } else {
-                    String::new()
+                let (key, label, icon, title, is_active) = match slot {
+                    Slot::Item(page) => {
+                        let (label, icon) = page.item();
+                        let title = if page == Page::Settings {
+                            settings_title(update)
+                        } else {
+                            String::new()
+                        };
+                        let taken = page == Page::Setup && betaflight == Betaflight::Open;
+                        (page as u8, label, icon, title, page == active && !taken)
+                    }
+                    _ => (
+                        BETAFLIGHT_KEY,
+                        BETAFLIGHT_CAPTION,
+                        BETAFLIGHT_ICON,
+                        "Betaflight".to_string(),
+                        betaflight == Betaflight::Open,
+                    ),
                 };
-                let mut resp = ui.interact(r, ui.scope_id().with(("nav", page as u8)), egui::Sense::click());
+                let mut resp = ui.interact(r, ui.scope_id().with(("nav", key)), egui::Sense::click());
                 if !title.is_empty() {
                     resp = resp.on_hover_tr(&title);
                 }
-                let is_active = page == active;
                 let (fill, icon_c, label_c) = if is_active {
                     (style::accent_dark(), style::text_1(), style::text_1())
                 } else if resp.hovered() {
@@ -164,7 +228,6 @@ pub fn show(
                         Rect::from_center_size(Pos2::new(r.left() - 10.0 + 1.5, r.center().y), Vec2::new(3.0, 26.0));
                     painter.rect_filled(bar, 2, style::accent());
                 }
-                let (label, icon) = page.item();
                 // under 1280 the labels fold away and the icon is centred
                 if labels {
                     let g = style::galley(ui, label, 9.0, Weight::W600, label_c, 0.7);
@@ -182,7 +245,7 @@ pub fn show(
                 } else {
                     icons::paint(ui, icon, Rect::from_center_size(r.center(), Vec2::splat(16.0)), icon_c);
                 }
-                if page == Page::Settings && update.is_some() {
+                if slot == Slot::Item(Page::Settings) && update.is_some() {
                     crate::ui::kit::dot(
                         &painter,
                         Pos2::new(r.center().x + 6.0 + 3.5, r.top() + 6.0 + 3.5),
@@ -191,7 +254,10 @@ pub fn show(
                     );
                 }
                 if resp.clicked() {
-                    clicked = Some(page);
+                    clicked = Some(match slot {
+                        Slot::Item(page) => Click::Page(page),
+                        _ => Click::Betaflight,
+                    });
                 }
                 y += ITEM_H;
             }
@@ -251,7 +317,7 @@ mod tests {
     fn the_rail_as_sidenav_builds_it() {
         use Page::*;
         assert_eq!(
-            slots(false),
+            slots(false, Betaflight::Hidden),
             vec![
                 Slot::Item(Home),
                 Slot::Divider,
@@ -262,8 +328,70 @@ mod tests {
                 Slot::Item(Settings)
             ]
         );
-        assert_eq!(slots(true)[1..3], [Slot::Item(Mission), Slot::Divider]);
+        assert_eq!(
+            slots(true, Betaflight::Hidden)[1..3],
+            [Slot::Item(Mission), Slot::Divider]
+        );
         assert_eq!(Settings.item(), ("SET", "settings"));
+    }
+
+    #[test]
+    fn the_betaflight_shortcut_sits_under_setup_and_only_while_it_applies() {
+        use Page::{Analysis, Setup};
+        for shown in [Betaflight::Shown, Betaflight::Open] {
+            let v = slots(false, shown);
+            assert_eq!(v[2..4], [Slot::Item(Setup), Slot::Betaflight]);
+            assert_eq!(v.len(), slots(false, Betaflight::Hidden).len() + 1);
+        }
+        assert!(!slots(true, Betaflight::Hidden).contains(&Slot::Betaflight));
+        assert_eq!(
+            slots(true, Betaflight::Shown)[3..5],
+            [Slot::Item(Setup), Slot::Betaflight]
+        );
+        assert!(slots(false, Betaflight::Shown).contains(&Slot::Item(Analysis)));
+    }
+
+    #[test]
+    fn the_shortcut_follows_the_aircraft_unless_the_operator_asked_for_it_always() {
+        use Betaflight::{Hidden, Open, Shown};
+        assert_eq!(
+            betaflight_slot(false, false, false),
+            Hidden,
+            "the default: nothing without one"
+        );
+        assert_eq!(betaflight_slot(true, false, false), Shown);
+        assert_eq!(betaflight_slot(true, false, true), Open);
+        assert_eq!(
+            betaflight_slot(false, true, false),
+            Shown,
+            "always: there with no aircraft"
+        );
+        assert_eq!(betaflight_slot(false, true, true), Open);
+        assert_eq!(
+            betaflight_slot(false, false, true),
+            Hidden,
+            "the aircraft left and nothing keeps it"
+        );
+    }
+
+    #[test]
+    fn a_betaflight_aircraft_is_one_the_link_says_is_connected_and_runs_betaflight() {
+        use serde_json::json;
+        assert!(betaflight_connected(
+            &json!({"connected": true, "autopilot_stack": "betaflight"})
+        ));
+        assert!(
+            !betaflight_connected(&json!({"connected": false, "autopilot_stack": "betaflight"})),
+            "a link that dropped shows nothing, whatever it carried"
+        );
+        for stack in ["px4", "ardupilot", "generic", ""] {
+            assert!(!betaflight_connected(
+                &json!({"connected": true, "autopilot_stack": stack})
+            ));
+        }
+        assert!(!betaflight_connected(&json!({"autopilot_stack": "betaflight"})));
+        assert!(!betaflight_connected(&json!({})));
+        assert!(!betaflight_connected(&serde_json::Value::Null));
     }
 
     #[test]

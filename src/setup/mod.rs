@@ -279,6 +279,11 @@ impl SetupPage {
         self.initial_scroll = Some(px);
     }
 
+    /// Whether the Betaflight page is the one showing.
+    pub fn shows_betaflight(&self) -> bool {
+        matches!(self.view, View::Betaflight(_))
+    }
+
     /// Opens a tile's page, as clicking it does.
     pub fn open(&mut self, id: &str, ctx: &egui::Context) {
         let (id, sensor) = match id.split_once(':') {

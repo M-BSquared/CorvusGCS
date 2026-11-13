@@ -730,15 +730,34 @@ struct Entry {
 /// Programs started on this computer without a window, stopped with Corvus.
 /// Each gets a reader thread that keeps the tail of its output (so its pipe
 /// never fills and blocks it) and ends with it.
-#[derive(Default)]
 pub struct LocalRunner {
     running: Mutex<indexmap::IndexMap<u32, Entry>>,
     closed: AtomicBool,
+    early_exit: Duration,
+}
+
+impl Default for LocalRunner {
+    fn default() -> LocalRunner {
+        LocalRunner {
+            running: Mutex::default(),
+            closed: AtomicBool::new(false),
+            early_exit: Duration::from_secs_f64(EARLY_EXIT_S),
+        }
+    }
 }
 
 impl LocalRunner {
     pub fn new() -> LocalRunner {
         LocalRunner::default()
+    }
+
+    /// A runner that waits `window` instead of [`EARLY_EXIT_S`] to see whether a
+    /// program ends at once, for a slow or loaded machine.
+    pub fn with_early_exit(window: Duration) -> LocalRunner {
+        LocalRunner {
+            early_exit: window,
+            ..LocalRunner::default()
+        }
     }
 
     /// Starts `command` in the login shell and says whether it failed at once:
@@ -847,7 +866,7 @@ impl LocalRunner {
                 reader,
             },
         );
-        let end = Instant::now() + Duration::from_secs_f64(EARLY_EXIT_S);
+        let end = Instant::now() + self.early_exit;
         let code = loop {
             if let Ok(Some(status)) = lock(&child).try_wait() {
                 break Some(status.code().unwrap_or(-1));

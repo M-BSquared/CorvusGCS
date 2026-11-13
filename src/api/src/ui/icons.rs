@@ -35,6 +35,7 @@ mod tests {
     fn every_icon_the_interface_uses_is_there() {
         for name in [
             "power",
+            "drone",
             "house",
             "chevron-right",
             "plug",

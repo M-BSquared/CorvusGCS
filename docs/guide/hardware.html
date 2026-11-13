@@ -212,7 +212,9 @@
   it is doing, on the map and in the instruments, like any other radio. This is
   <strong>Betaflight compatible</strong>: Betaflight sends MAVLink telemetry on
   a serial port, an ExpressLRS receiver passes it down the link, and the
-  transmitter module hands it to Corvus over USB.
+  transmitter module hands it to Corvus over USB. Betaflight support is in
+  <strong>beta</strong>: what is described here works, and it has been tested
+  against scripted aircraft only, not yet against real hardware.
 </p>
 
 <h3 id="elrs-connect">Connecting</h3>
@@ -255,6 +257,22 @@
   sensors it found, the loop time, the PID and rate profiles in use and the
   battery. Reading changes nothing on the controller. To change a setting, use
   the Betaflight Configurator.
+</p>
+
+<h3 id="betaflight-shortcut">The BTFL shortcut</h3>
+<p>
+  While a Betaflight aircraft is connected, a <strong>BTFL</strong> item with a
+  drone icon appears in the left rail under SETUP and opens the Betaflight page
+  directly. Corvus counts an aircraft as Betaflight when the link is up and its
+  <strong>Flight controller</strong> is set to <strong>Betaflight</strong>
+  (see <a href="#elrs-connect">Connecting</a>), because a Betaflight controller
+  does not name itself over MAVLink. The item goes away when the link drops.
+</p>
+<p>
+  To reach the page with no aircraft connected, for example to read a
+  controller over USB, turn on <strong>Always show Betaflight</strong> in
+  <a href="settings.html#layout">Settings, Layout</a>. It can also be chosen in
+  First Setup. It is off by default.
 </p>
 
 <h2 id="rtk">RTK GPS</h2>

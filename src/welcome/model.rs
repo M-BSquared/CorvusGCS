@@ -22,6 +22,7 @@ pub struct Choices {
     pub units: [String; 4],
     pub sensitivity: String,
     pub mission_page: bool,
+    pub betaflight_always: bool,
     pub console_tab: bool,
     pub ssh_tab: bool,
     pub virtual_joystick: bool,
@@ -49,6 +50,7 @@ pub fn choices_from(cfg: &Value) -> Choices {
         units: model::units_of(cfg),
         sensitivity: model::review_of(cfg).to_string(),
         mission_page: model::flag(cfg, "ui", "mission_page", false),
+        betaflight_always: model::flag(cfg, "ui", "betaflight_always", false),
         console_tab: model::flag(cfg, "ui", "console_tab", true),
         ssh_tab: model::flag(cfg, "ui", "ssh_tab", true),
         virtual_joystick: controls(cfg, "virtual_joystick"),
@@ -69,6 +71,7 @@ pub fn config_patch(c: &Choices) -> Value {
         "ui": {
             "units": model::units_value(&c.units),
             "mission_page": c.mission_page,
+            "betaflight_always": c.betaflight_always,
             "console_tab": c.console_tab,
             "ssh_tab": c.ssh_tab,
         },
@@ -84,12 +87,13 @@ pub fn config_patch(c: &Choices) -> Value {
 }
 
 /// The config as the screen should show it while the steps are filled in:
-/// everything but the Mission entry, which appears on Finish.
+/// everything but the Mission and Betaflight entries, which appear on Finish.
 pub fn preview(base: &Value, c: &Choices) -> Value {
     let mut cfg = base.clone();
     let mut patch = config_patch(c);
     if let Some(ui) = patch.get_mut("ui").and_then(Value::as_object_mut) {
         ui.remove("mission_page");
+        ui.remove("betaflight_always");
     }
     model::merge(&mut cfg, &patch);
     cfg
@@ -106,6 +110,10 @@ mod tests {
         assert_eq!(c.theme, "light");
         assert_eq!(c.sensitivity, "normal");
         assert!(!c.mission_page && c.console_tab && c.ssh_tab && c.updates);
+        assert!(
+            !c.betaflight_always,
+            "Betaflight follows the aircraft unless asked otherwise"
+        );
         assert!(!c.virtual_joystick && !c.gamepad && !c.arrow_keys && !c.wasd_keys);
     }
 
@@ -114,14 +122,14 @@ mod tests {
         let c = choices_from(&json!({
             "language": "de",
             "theme": {"name": "blue"},
-            "ui": {"mission_page": true, "console_tab": false, "ssh_tab": false},
+            "ui": {"mission_page": true, "betaflight_always": true, "console_tab": false, "ssh_tab": false},
             "controls": {"virtual_joystick": true, "wasd_keys": true},
             "review": {"sensitivity": "strict"},
             "updates": {"check": false},
         }));
         assert_eq!(c.language, "de");
         assert_eq!(c.theme, "blue");
-        assert!(c.mission_page && !c.console_tab && !c.ssh_tab);
+        assert!(c.mission_page && c.betaflight_always && !c.console_tab && !c.ssh_tab);
         assert!(c.virtual_joystick && c.wasd_keys && !c.gamepad && !c.arrow_keys);
         assert_eq!(c.sensitivity, "strict");
         assert!(!c.updates);
@@ -141,6 +149,7 @@ mod tests {
         c.language = "fr".into();
         c.theme = "pink".into();
         c.mission_page = true;
+        c.betaflight_always = true;
         c.ssh_tab = false;
         c.arrow_keys = true;
         c.updates = false;
@@ -149,6 +158,7 @@ mod tests {
         assert_eq!(p["language"], "fr");
         assert_eq!(p["theme"], json!({"name": "pink"}));
         assert_eq!(p["ui"]["mission_page"], true);
+        assert_eq!(p["ui"]["betaflight_always"], true);
         assert_eq!(p["ui"]["console_tab"], true);
         assert_eq!(p["ui"]["ssh_tab"], false);
         assert_eq!(p["ui"]["units"], model::units_value(&c.units));
@@ -167,13 +177,15 @@ mod tests {
     }
 
     #[test]
-    fn the_preview_leaves_the_mission_entry_for_finish() {
-        let base = json!({"ui": {"scale": 1.25, "mission_page": false}});
+    fn the_preview_leaves_the_mission_and_betaflight_entries_for_finish() {
+        let base = json!({"ui": {"scale": 1.25, "mission_page": false, "betaflight_always": false}});
         let mut c = choices_from(&base);
         c.mission_page = true;
+        c.betaflight_always = true;
         c.theme = "green".into();
         let cfg = preview(&base, &c);
         assert_eq!(cfg["ui"]["mission_page"], false);
+        assert_eq!(cfg["ui"]["betaflight_always"], false);
         assert_eq!(cfg["ui"]["scale"], 1.25);
         assert_eq!(cfg["theme"]["name"], "green");
     }

@@ -15,7 +15,7 @@
 
 <div align="center">
   <!-- corvus:version-badge -->
-  <img src="https://img.shields.io/badge/Version-2026.11.79-f7ebe1?style=for-the-badge" height="28" alt="Version 2026.11.79" />
+  <img src="https://img.shields.io/badge/Version-2026.11.80-f7ebe1?style=for-the-badge" height="28" alt="Version 2026.11.80" />
   <img width="8" />
   <a href="https://www.rust-lang.org/" target="_blank"><img src="https://img.shields.io/badge/%E2%80%8B-Rust-CE412B?logo=rust&logoColor=white&style=for-the-badge" height="28" alt="Rust" /></a>
   <img width="8" />
@@ -23,6 +23,8 @@
   <a href="https://px4.io/" target="_blank"><img src="https://img.shields.io/badge/PX4-v1.16%20%7C%201.17%20%7C%201.18-9f2dfe?logoColor=white&style=for-the-badge" height="28" alt="PX4 v1.16 | 1.17 | 1.18" /></a>
   <img width="8" />
   <a href="https://ardupilot.org/" target="_blank"><img src="https://img.shields.io/badge/ArduPilot-4.3%20to%204.6-e2e518?logoColor=white&style=for-the-badge" height="28" alt="ArduPilot 4.3 to 4.6" /></a>
+  <img width="8" />
+  <a href="https://betaflight.com/" target="_blank"><img src="https://img.shields.io/badge/Betaflight-Beta-ffbb00?logoColor=white&style=for-the-badge" height="28" alt="Betaflight (Beta)" /></a>
   <br>
   <!-- <img src="https://img.shields.io/badge/%F0%9F%A4%96-Vibe%20Coded-5B2C6F?style=for-the-badge" height="28" alt="Vibe Coded" />
   <img width="8" /> -->
@@ -130,6 +132,7 @@ the documentation that explains it.
 | 🧭 **Plan a mission** | Draw it on the map, read it as an altitude profile against the terrain, drag heights on the chart, save, upload, and fly on a second press. [More](https://m-bsquared.github.io/CorvusGCS/guide/mission.html) |
 | 📡 **Connect** | Connects on its own to what is plugged in; serial, UDP and TCP by hand; link quality; automatic reconnect; mirror the link to QGroundControl. [More](https://m-bsquared.github.io/CorvusGCS/guide/connect.html) |
 | 🔧 **Set up** | A first setup that walks a new controller through firmware, aircraft type, calibration and safety, airframe drawn to scale, motor test, output protocol, parameters with their defaults, guided calibration, radio, PID tuning and autotune, firmware for both stacks. [More](https://m-bsquared.github.io/CorvusGCS/guide/airframe.html) |
+| 🏁 **Betaflight (Beta)** | Telemetry from a Betaflight aircraft, for example over an ExpressLRS link, and a read only look at the controller over USB: board, sensors, PIDs and rates. A BTFL shortcut in the left rail opens it while a Betaflight aircraft is connected, or always if you switch that on in Settings. [More](https://m-bsquared.github.io/CorvusGCS/guide/hardware.html#expresslrs) |
 | 🛡️ **Set limits** | Maximum distance and height, return profile, a failsafe for every loss, rangefinders and optical flow with one switch, and the battery page. [More](https://m-bsquared.github.io/CorvusGCS/guide/safety.html) |
 | 🛰️ **RTK and Remote ID** | Plug in a base station and corrections flow; NTRIP too. Program SiK radios. Broadcast Remote ID. [More](https://m-bsquared.github.io/CorvusGCS/guide/hardware.html) |
 | 🎥 **Watch the camera** | RTSP or WebRTC cameras in floating windows you can put on a second screen. A frozen picture is never passed off as live. [More](https://m-bsquared.github.io/CorvusGCS/guide/video.html) |
@@ -248,10 +251,14 @@ Primary target: **PX4 v1.16, v1.17, v1.18.** Secondary target: **ArduPilot
 4.3 to 4.6** for Copter, Plane, Rover/Boat and Sub. Older PX4 (v1.12 to v1.15)
 works on a best-effort basis.
 
-**Betaflight** is supported for telemetry over MAVLink, for example through an
-ExpressLRS link: you see where the aircraft is and how it is doing. Betaflight
-takes no parameters or commands over MAVLink, so the Setup tiles that need
-them are greyed out with the reason. See
+**Betaflight (Beta)** is supported for telemetry over MAVLink, for example
+through an ExpressLRS link: you see where the aircraft is and how it is doing.
+Betaflight takes no parameters or commands over MAVLink, so the Setup tiles that
+need them are greyed out with the reason. The controller itself can be read
+over USB on the Betaflight page of Setup, which the BTFL shortcut in the left
+rail opens. It shows while a Betaflight aircraft is connected, a serial link
+whose Flight controller is set to Betaflight, or always if you turn on Always
+show Betaflight in Settings. See
 [ExpressLRS and Betaflight](https://m-bsquared.github.io/CorvusGCS/guide/hardware.html#expresslrs).
 
 Corvus detects the stack and firmware version on connect, loads the matching
