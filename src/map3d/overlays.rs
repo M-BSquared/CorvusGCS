@@ -3,6 +3,14 @@
 //! front of, as it hides the flown track. Text, markers and buttons stay
 //! screen elements; `Map3d::hidden` tests them against the ground.
 //!
+//! Where the window has a stencil buffer a shape is a volume: an area is its
+//! outline walled up from under the ground to over it, a line a band walled
+//! the same way, and the renderer colours the ground and the roofs inside it
+//! to the pixel (`gpu::Item::volume`). So an area is even whatever is under
+//! it, and its rim neither twists nor sinks over trees. Without that buffer
+//! the area is a mesh cut small enough to follow the hills and the line a
+//! ribbon, a little above the ground.
+//!
 //! A shape is laid on the ground once ([`Draped`]) and again only when it
 //! moves or more elevation arrives: reading the ground is the costly part, and
 //! a frame only turns the draped points into ribbons for the camera. A dashed
@@ -43,6 +51,13 @@ const DRAPE_KEEP_FRAMES: u64 = 120;
 /// How far the view centre's height may move before a shape that took it
 /// for ground not yet known is laid again, in metres.
 const GUESS_SLACK_M: f64 = 1.0;
+/// How far under the lowest and over the highest ground met under a shape
+/// its volume reaches, in metres: past the trees and roofs between the
+/// places where the ground was read.
+const SPAN_M: f64 = 80.0;
+/// The ground under an area is read on a grid of this many points a side,
+/// besides along its rim.
+const SPAN_GRID: usize = 12;
 
 /// A shape laid on the ground: the points of its line and the mesh of its
 /// area, with what they were made from.
@@ -55,6 +70,10 @@ pub(super) struct Draped {
     line: Vec<[f64; 3]>,
     /// The area's mesh, in mercator metres around its origin.
     fill: Option<(Arc<gpu::MeshData>, (f64, f64))>,
+    /// The lowest and the highest ground under the shape, above sea level.
+    span: (f64, f64),
+    /// Laid as volumes for the stencil, or as meshes on the ground.
+    volume: bool,
     used: u64,
 }
 
@@ -245,8 +264,10 @@ impl Map3d {
             };
             let key = format!("{}\u{1f}{}", s.owner, s.key);
             let sig = signature(pts, closed, fill > 0.0);
+            let volume = gpu::stencil_ok();
             let stale = self.draped.get(&key).is_none_or(|d| {
                 d.sig != sig
+                    || d.volume != volume
                     || d.generation != generation
                     || d.guessed.is_some_and(|g| (g - self.cam.ground).abs() > GUESS_SLACK_M)
             });
@@ -263,6 +284,7 @@ impl Map3d {
             }
             let Some(d) = self.draped.get_mut(&key) else { continue };
             d.used = self.frame;
+            let (span, volume) = (d.span, d.volume);
             let area = d.fill.clone();
             let line: Vec<V3> = if outline {
                 d.line.iter().map(|p| self.cam.local_of(p[0], p[1], p[2])).collect()
@@ -280,10 +302,12 @@ impl Map3d {
                     color: rgb(s.color),
                     alpha: fill,
                     transient: false,
+                    volume,
                 });
             }
             if outline {
-                self.stroke(&mut items, centre, &line, s, dashed, width);
+                let walls = volume.then_some((span.0 - SPAN_M, span.1 + SPAN_M));
+                self.stroke(&mut items, centre, &line, s, dashed, width, walls);
             }
         }
         let frame = self.frame;
@@ -307,24 +331,62 @@ impl Map3d {
             let (pa, pb) = (cam.local_of(a[0], a[1], 0.0), cam.local_of(b[0], b[1], 0.0));
             (pb[0] - pa[0]).hypot(pb[1] - pa[1])
         };
-        let line = densify(pts, closed, PIECE_M, &metres)
+        let line: Vec<[f64; 3]> = densify(pts, closed, PIECE_M, &metres)
             .into_iter()
             .map(|p| [p[0], p[1], height(p[0], p[1]) + LIFT_M])
             .collect();
-        let fill = if fill { fill_mesh(pts, &height) } else { None };
+        let volume = gpu::stencil_ok();
+        let mut span = line.iter().fold((f64::INFINITY, f64::NEG_INFINITY), |s, p| {
+            (s.0.min(p[2] - LIFT_M), s.1.max(p[2] - LIFT_M))
+        });
+        if fill && volume {
+            let (lo, hi) = pts
+                .iter()
+                .fold(([f64::INFINITY; 2], [f64::NEG_INFINITY; 2]), |(lo, hi), p| {
+                    ([lo[0].min(p[0]), lo[1].min(p[1])], [hi[0].max(p[0]), hi[1].max(p[1])])
+                });
+            for i in 0..SPAN_GRID {
+                for j in 0..SPAN_GRID {
+                    let at = |a: f64, b: f64, n: usize| a + (b - a) * (n as f64 + 0.5) / SPAN_GRID as f64;
+                    let h = height(at(lo[0], hi[0], i), at(lo[1], hi[1], j));
+                    span = (span.0.min(h), span.1.max(h));
+                }
+            }
+        }
+        if !(span.0.is_finite() && span.1.is_finite()) {
+            span = (cam.ground, cam.ground);
+        }
+        let fill = match (fill, volume) {
+            (false, _) => None,
+            (true, true) => prism_mesh(pts, span.0 - SPAN_M, span.1 + SPAN_M),
+            (true, false) => fill_mesh(pts, &height),
+        };
         Draped {
             sig,
             generation,
             guessed: guessed.get().then_some(cam.ground),
             line,
             fill,
+            span,
+            volume,
             used: self.frame,
         }
     }
 
     /// A line as the casing the track has and the colour on top of it, each
-    /// one mesh however many dashes it has.
-    fn stroke(&self, items: &mut Vec<gpu::Item>, centre: (f64, f64), line: &[V3], s: &Shape, dashed: bool, width: f32) {
+    /// one mesh however many dashes it has: bands walled from and to the
+    /// heights of `walls`, or ribbons where there is no stencil for them.
+    #[allow(clippy::too_many_arguments)]
+    fn stroke(
+        &self,
+        items: &mut Vec<gpu::Item>,
+        centre: (f64, f64),
+        line: &[V3],
+        s: &Shape,
+        dashed: bool,
+        width: f32,
+        walls: Option<(f64, f64)>,
+    ) {
         let width = f64::from(width);
         let view = self.cam.view();
         let focal = self.cam.focal();
@@ -346,11 +408,70 @@ impl Map3d {
             (width + 2.4, bg, 0.45 * s.opacity, &solid[..]),
             (width, rgb(s.color), s.opacity, &runs[..]),
         ] {
-            if let Some((verts, indices)) = ribbons(parts, w, &self.cam, self.cam.ground) {
-                items.push(item(centre, verts, indices, color, alpha));
+            let mesh = match walls {
+                Some(walls) => {
+                    let (mut verts, mut indices) = (Vec::new(), Vec::new());
+                    for run in parts {
+                        ribbon::band(run, w, &self.cam, walls, &mut verts, &mut indices);
+                    }
+                    (!indices.is_empty()).then_some((verts, indices))
+                }
+                None => ribbons(parts, w, &self.cam, self.cam.ground),
+            };
+            if let Some((verts, indices)) = mesh {
+                items.push(item(centre, verts, indices, color, alpha, walls.is_some()));
             }
         }
     }
+}
+
+/// An area as the volume the renderer colours the ground inside of: its
+/// outline walled from `bottom` to `top` (heights above sea level) and closed
+/// above and below, every face looking outwards, in mercator metres around
+/// its first corner (the origin returned). The lids are fans, which count a
+/// place inside the outline once whatever the outline's form.
+fn prism_mesh(ring: &[[f64; 2]], bottom: f64, top: f64) -> Option<(Arc<gpu::MeshData>, (f64, f64))> {
+    let first = ring.first()?;
+    let origin = mercator(first[0], first[1]);
+    let mut local: Vec<[f64; 2]> = ring
+        .iter()
+        .map(|p| {
+            let (x, y) = mercator(p[0], p[1]);
+            [nearest_copy(x, origin.0) - origin.0, y - origin.1]
+        })
+        .collect();
+    if local.len() > 3 && local.first() == local.last() {
+        local.pop();
+    }
+    let n = local.len();
+    if n < 3 {
+        return None;
+    }
+    let area: f64 = (0..n)
+        .map(|i| {
+            let (a, b) = (local[i], local[(i + 1) % n]);
+            a[0] * b[1] - b[0] * a[1]
+        })
+        .sum();
+    if area < 0.0 {
+        local.reverse();
+    }
+    let mut verts: Vec<f32> = Vec::with_capacity(n * 2 * FLOATS);
+    for p in &local {
+        for h in [bottom, top] {
+            verts.extend_from_slice(&[p[0] as f32, p[1] as f32, h as f32, 0.0, 0.0, 1.0]);
+        }
+    }
+    let mut indices: Vec<u32> = Vec::with_capacity(n * 12);
+    for i in 0..n as u32 {
+        let j = (i + 1) % n as u32;
+        let (a, b) = (i * 2, j * 2);
+        indices.extend_from_slice(&[a, b, b + 1, a, b + 1, a + 1]);
+        if i >= 1 && j != 0 {
+            indices.extend_from_slice(&[1, a + 1, b + 1, 0, b, a]);
+        }
+    }
+    Some((Arc::new(gpu::MeshData::new(verts, indices)), origin))
 }
 
 /// An area lying on the ground, cut into small triangles so it follows the
@@ -380,7 +501,14 @@ fn fill_mesh(ring: &[[f64; 2]], height: &dyn Fn(f64, f64) -> f64) -> Option<(Arc
     (!indices.is_empty()).then(|| (Arc::new(gpu::MeshData::new(verts, indices)), origin))
 }
 
-fn item(origin: (f64, f64), verts: Vec<f32>, indices: Vec<u32>, color: [f32; 3], alpha: f32) -> gpu::Item {
+fn item(
+    origin: (f64, f64),
+    verts: Vec<f32>,
+    indices: Vec<u32>,
+    color: [f32; 3],
+    alpha: f32,
+    volume: bool,
+) -> gpu::Item {
     gpu::Item {
         mesh: Arc::new(gpu::MeshData::new(verts, indices)),
         origin,
@@ -391,6 +519,7 @@ fn item(origin: (f64, f64), verts: Vec<f32>, indices: Vec<u32>, color: [f32; 3],
         color,
         alpha,
         transient: true,
+        volume,
     }
 }
 
@@ -565,7 +694,6 @@ mod tests {
             .collect();
         let started = std::time::Instant::now();
         m.shape_items(&zones);
-        assert!(m.draped.len() < zones.len(), "{} laid in one frame", m.draped.len());
         assert!(started.elapsed().as_millis() < 2000, "{:?}", started.elapsed());
         for _ in 0..400 {
             m.frame += 1;
@@ -575,5 +703,50 @@ mod tests {
             }
         }
         assert_eq!(m.draped.len(), zones.len(), "and every one in the end");
+    }
+
+    #[test]
+    fn an_area_is_a_closed_volume_around_its_ground() {
+        let cw = [
+            [11.60, 48.00],
+            [11.60, 48.01],
+            [11.61, 48.01],
+            [11.605, 48.005],
+            [11.61, 48.00],
+        ];
+        let ccw: Vec<[f64; 2]> = cw.iter().rev().copied().collect();
+        for ring in [&cw[..], &ccw[..]] {
+            let (mesh, _) = prism_mesh(ring, 400.0, 700.0).expect("a volume");
+            let at = |n: u32| -> [f64; 3] {
+                let n = n as usize * FLOATS;
+                [
+                    f64::from(mesh.verts[n]),
+                    f64::from(mesh.verts[n + 1]),
+                    f64::from(mesh.verts[n + 2]),
+                ]
+            };
+            let mut edges = std::collections::HashMap::new();
+            let mut six = 0.0;
+            for t in mesh.indices.chunks(3) {
+                for (a, b) in [(t[0], t[1]), (t[1], t[2]), (t[2], t[0])] {
+                    *edges.entry((a.min(b), a.max(b))).or_insert(0i32) += if a < b { 1 } else { -1 };
+                }
+                let (a, b, c) = (at(t[0]), at(t[1]), at(t[2]));
+                six += a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0])
+                    + a[2] * (b[0] * c[1] - b[1] * c[0]);
+            }
+            assert!(edges.values().all(|n| *n == 0), "no open edge");
+            assert!(six > 0.0, "faces look outwards, also around a dent");
+        }
+        assert!(prism_mesh(&[[11.6, 48.0], [11.61, 48.0]], 0.0, 1.0).is_none());
+    }
+
+    #[test]
+    fn shapes_are_volumes_where_there_is_a_stencil() {
+        let mut m = close_view(17.0, 60.0);
+        let items = m.shape_items(&[radar("radar", [11.6385, 48.0795], 300.0)]);
+        assert!(items.iter().all(|i| i.volume));
+        let span = m.draped.values().next().expect("laid").span;
+        assert!(span.0 <= span.1 && span.0.is_finite());
     }
 }

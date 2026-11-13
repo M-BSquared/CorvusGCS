@@ -520,7 +520,7 @@ impl VideoPage {
             |ui, top| {
                 let r = ff::input(ui, ix, top, iw, &mut text, "Found by itself", true, false, "videoffmpeg");
                 changed = r.changed();
-                ff::CONTROL_H
+                ff::control_h()
             },
         ) + 24.0;
         if changed {
@@ -571,7 +571,7 @@ impl VideoPage {
             "What the window's title bar says. Leave it empty to use the address.",
             |ui, top| {
                 ff::input(ui, ix, top, iw, &mut name, "Gimbal camera", false, false, "videoname");
-                ff::CONTROL_H
+                ff::control_h()
             },
         ) + 12.0;
         ed.draft.name = name;
@@ -591,7 +591,7 @@ impl VideoPage {
                     Choice::new("webrtc", "WebRTC (WHEP, played by the window)"),
                 ];
                 next_kind = ff::select(ui, ix, top, iw, &choices, kind.id(), "videokind");
-                ff::CONTROL_H
+                ff::control_h()
             },
         ) + 12.0;
         if let Some(k) = next_kind {
@@ -602,14 +602,14 @@ impl VideoPage {
         let mut url = ed.draft.url.clone();
         cy = ff::field(ui, ix, cy, iw, "Address", kind.address_hint(), |ui, top| {
             ff::input(ui, ix, top, iw, &mut url, kind.placeholder(), true, false, "videourl");
-            ff::CONTROL_H
+            ff::control_h()
         }) + 12.0;
         ed.draft.url = url;
 
         let mut user = ed.draft.username.clone();
         cy = ff::field(ui, ix, cy, iw, "User", "", |ui, top| {
             ff::input(ui, ix, top, iw, &mut user, "optional", false, false, "videouser");
-            ff::CONTROL_H
+            ff::control_h()
         }) + 12.0;
         ed.draft.username = user;
 
@@ -623,7 +623,7 @@ impl VideoPage {
         cy = ff::field(ui, ix, cy, iw, "Password", kind.password_hint(), |ui, top| {
             let r = ff::input(ui, ix, top, iw, &mut pass, placeholder, true, true, "videopass");
             pass_changed = r.changed();
-            ff::CONTROL_H
+            ff::control_h()
         }) + 12.0;
         if pass_changed {
             ed.draft.password = pass;
@@ -646,7 +646,7 @@ impl VideoPage {
                         Choice::new("udp", "UDP (lower delay on a clean link)"),
                     ];
                     next = ff::select(ui, ix, top, iw, &choices, &transport, "videotransport");
-                    ff::CONTROL_H
+                    ff::control_h()
                 },
             ) + 12.0;
             if let Some(t) = next {

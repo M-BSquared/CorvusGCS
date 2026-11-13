@@ -64,6 +64,12 @@ pub struct Capabilities {
     pub stick_modes: Vec<String>,
     pub calibrations: Vec<String>,
     pub ground: bool,
+    /// A stack that only reports (Betaflight): no parameters, commands or
+    /// missions.
+    pub telemetry_only: bool,
+    /// Setup tiles the stack cannot serve, each with the sentence the greyed
+    /// tile carries.
+    pub setup_unavailable: std::collections::BTreeMap<String, String>,
 }
 
 impl Default for Capabilities {
@@ -81,6 +87,8 @@ impl Default for Capabilities {
             stick_modes: Vec::new(),
             calibrations: Vec::new(),
             ground: false,
+            telemetry_only: false,
+            setup_unavailable: Default::default(),
         }
     }
 }
@@ -110,7 +118,22 @@ impl Capabilities {
             stick_modes: list("stick_modes"),
             calibrations: list("calibrations"),
             ground: flag("ground", false),
+            telemetry_only: flag("telemetry_only", false),
+            setup_unavailable: v
+                .get("setup_unavailable")
+                .and_then(Value::as_object)
+                .map(|m| {
+                    m.iter()
+                        .filter_map(|(k, v)| v.as_str().map(|t| (k.clone(), t.to_string())))
+                        .collect()
+                })
+                .unwrap_or_default(),
         }
+    }
+
+    /// Why the setup tile `id` is greyed on this stack, if it is.
+    pub fn tile_blocked(&self, id: &str) -> Option<&str> {
+        self.setup_unavailable.get(id).map(String::as_str)
     }
 
     /// Does this stack offer `name` as a calibration? Unknown (a document
@@ -225,6 +248,20 @@ mod tests {
         assert!(!is_ground(&json!({})));
         assert_eq!(move_verb(&st("GROUND_ROVER", true)), "Drive");
         assert_eq!(move_verb(&st("FIXED_WING", true)), "Fly");
+    }
+
+    #[test]
+    fn a_stack_names_the_setup_tiles_it_cannot_serve() {
+        let c = Capabilities::from_json(&json!({
+            "stack": "betaflight",
+            "telemetry_only": true,
+            "setup_unavailable": {"motors": "Not for Betaflight.", "bad": 3}
+        }));
+        assert!(c.telemetry_only);
+        assert_eq!(c.tile_blocked("motors"), Some("Not for Betaflight."));
+        assert_eq!(c.tile_blocked("bad"), None, "a non text reason is dropped");
+        assert_eq!(c.tile_blocked("video"), None);
+        assert_eq!(Capabilities::default().tile_blocked("motors"), None);
     }
 
     #[test]

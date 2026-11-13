@@ -9,6 +9,7 @@ use crate::ui::icons;
 use crate::ui::kit::{Button, Variant};
 use crate::ui::segmented::{self, Opts, Segment};
 use crate::ui::style::{self, Weight};
+use crate::ui::tip::HoverTr;
 
 /// `.page-view { padding: 32px 40px }`.
 pub const PAD_X: f32 = 40.0;
@@ -71,8 +72,33 @@ pub fn back_button(ui: &mut egui::Ui, at: Pos2, label: &str) -> (f32, bool) {
 
 /// A `.setup-tile`: icon box, title, a two line description and a chevron.
 pub fn tile(ui: &mut egui::Ui, rect: Rect, icon: &'static str, title: &str, desc: &str) -> bool {
-    let resp = ui.interact(rect, ui.scope_id().with(("tile", title)), egui::Sense::click());
-    let (fill, stroke) = if resp.hovered() {
+    tile_with(ui, rect, icon, title, desc, None)
+}
+
+/// A tile that may be greyed: with `blocked` it does not open, is faded, and
+/// carries the reason on hover ("Not available on this autopilot" is an
+/// answer an operator can act on; a missing tile is not).
+pub fn tile_with(
+    ui: &mut egui::Ui,
+    rect: Rect,
+    icon: &'static str,
+    title: &str,
+    desc: &str,
+    blocked: Option<&str>,
+) -> bool {
+    let mut resp = ui.interact(
+        rect,
+        ui.scope_id().with(("tile", title)),
+        if blocked.is_some() {
+            egui::Sense::hover()
+        } else {
+            egui::Sense::click()
+        },
+    );
+    if let Some(reason) = blocked {
+        resp = resp.on_hover_tr(reason);
+    }
+    let (fill, stroke) = if resp.hovered() && blocked.is_none() {
         (style::glass(0.95), style::tint(0.15))
     } else {
         (style::glass(0.82), style::tint(0.09))
@@ -92,7 +118,9 @@ pub fn tile(ui: &mut egui::Ui, rect: Rect, icon: &'static str, title: &str, desc
         style::accent_bright(),
     );
     let chevron = Rect::from_center_size(Pos2::new(inner.right() - 8.0, rect.center().y), Vec2::splat(16.0));
-    icons::paint(ui, "chevron-right", chevron, style::text_3());
+    if blocked.is_none() {
+        icons::paint(ui, "chevron-right", chevron, style::text_3());
+    }
     let tx = box_.right() + 14.0;
     let tw = chevron.left() - 14.0 - tx;
     let t = crate::ui::text::clamped(ui, title, 14.0, Weight::W600, style::text_1(), 0.2, tw, 1, None);
@@ -109,6 +137,11 @@ pub fn tile(ui: &mut egui::Ui, rect: Rect, icon: &'static str, title: &str, desc
         Vec2::new(tw, desc_h),
     ))
     .galley(Pos2::new(tx, top + t.size().y + 3.0), d, style::text_3());
+    if blocked.is_some() {
+        // The whole tile is faded as one: the page colour over it.
+        painter.rect_filled(rect, style::RADIUS, style::surface_1().gamma_multiply(0.55));
+        return false;
+    }
     resp.clicked()
 }
 

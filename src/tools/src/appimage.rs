@@ -44,6 +44,7 @@ pub const HOST_PROVIDED: &[&str] = &[
     "libglapi.so.*",
     "libgbm.so.*",
     "libdrm.so.*",
+    "libudev.so.*",
     "libvulkan.so.*",
     "libX11.so.*",
     "libX11-xcb.so.*",
@@ -306,6 +307,10 @@ mod tests {
         assert!(glob("libnss3.so", "libnss3.so"));
         assert!(!glob("libnss3.so", "libnss3.so.1"));
         assert!(host_provided("libGL.so.1") && !host_provided("libxkbcommon.so.0"));
+        assert!(
+            host_provided("libudev.so.1"),
+            "the gamepad reads through the host's udev"
+        );
     }
 
     #[test]

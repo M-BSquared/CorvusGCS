@@ -20,7 +20,11 @@ pub fn show(
     let row = Rect::from_min_size(Pos2::new(x, y + 4.0), Vec2::new(w, thumb));
     let n = steps.len().max(2) as f32 - 1.0;
     let pos_of = |i: usize| row.left() + thumb / 2.0 + (w - thumb) * i as f32 / n;
-    let resp = ui.interact(row, ui.scope_id().with(("slider", id)), egui::Sense::click_and_drag());
+    let resp = ui.interact(
+        style::finger(row),
+        ui.scope_id().with(("slider", id)),
+        egui::Sense::click_and_drag(),
+    );
     let mut out = None;
     if resp.dragged() || resp.clicked() || resp.drag_stopped() {
         if let Some(p) = resp.interact_pointer_pos() {

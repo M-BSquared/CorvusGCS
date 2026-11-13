@@ -361,7 +361,7 @@ impl RtkPage {
                     Choice::new("ntrip", "NTRIP caster (needs a network)"),
                 ];
                 next_source = ff::select(ui, ix, top, iw, &choices, &source, "rtksource");
-                ff::CONTROL_H
+                ff::control_h()
             },
         ) + 12.0;
         if let Some(s) = next_source {
@@ -384,7 +384,7 @@ impl RtkPage {
                         Choice::new("fixed", "I know where the base is"),
                     ];
                     next_mode = ff::select(ui, ix, top, iw, &choices, &mode, "rtkmode");
-                    ff::CONTROL_H
+                    ff::control_h()
                 },
             ) + 12.0;
             if let Some(m) = next_mode {
@@ -523,7 +523,7 @@ impl RtkPage {
             );
             changed = resp.changed();
             lost = resp.lost_focus();
-            ff::CONTROL_H
+            ff::control_h()
         });
         if changed {
             *self.slot(key) = text;

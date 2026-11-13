@@ -13,7 +13,7 @@
 //! A lost TCP or Unix socket is reported as an error and reopened by the
 //! caller, whose reconnect rule (backoff, the connection cycle) is its own.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::io;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
 use std::sync::Mutex;
@@ -277,6 +277,9 @@ pub struct Connection {
     source_system: u8,
     source_component: u8,
     signing: Mutex<Option<Signing>>,
+    /// The last signature timestamp accepted from each signed stream
+    /// (system, component, link id), against a recorded frame sent again.
+    signed_streams: Mutex<HashMap<(u8, u8, u8), u64>>,
     systems: Mutex<BTreeMap<u8, SystemInfo>>,
     counters: [AtomicU64; 9],
     closed: AtomicBool,
@@ -289,6 +292,8 @@ const BYTES_TX: usize = 3;
 const CRC: usize = 4;
 const UNKNOWN: usize = 5;
 const GARBAGE: usize = 6;
+/// Signed streams remembered at most.
+const SIGNED_STREAMS: usize = 1024;
 const UNSIGNED: usize = 7;
 const BADSIG: usize = 8;
 
@@ -339,6 +344,7 @@ pub fn open(device: &str, opts: &Options) -> Result<Connection, ConnectError> {
         source_system: opts.source_system,
         source_component: opts.source_component,
         signing: Mutex::new(None),
+        signed_streams: Mutex::new(HashMap::new()),
         systems: Mutex::new(BTreeMap::new()),
         counters: Default::default(),
         closed: AtomicBool::new(false),
@@ -370,6 +376,7 @@ impl Connection {
     /// Signs what is sent (MAVLink 2) and, with `require`, drops what arrives
     /// unsigned or with a wrong signature.
     pub fn set_signing(&self, signing: Option<Signing>) {
+        lock(&self.signed_streams).clear();
         *lock(&self.signing) = signing;
     }
 
@@ -508,10 +515,14 @@ impl Connection {
         Ok(out)
     }
 
-    /// With a key set, only a frame it signed is let through.
+    /// With a key set, only a frame it signed is let through, and only once:
+    /// the timestamp of a stream (system, component, link id) has to grow, so
+    /// a frame recorded off the air and sent again is dropped, as the MAVLink
+    /// signing rules ask. A vehicle that restarts with an older clock is
+    /// heard again when the link is opened anew, which its silence leads to.
     fn admit(&self, frame: &Frame) -> bool {
-        let signing = lock(&self.signing);
-        let Some(key) = signing.as_ref() else { return true };
+        let mut signing = lock(&self.signing);
+        let Some(key) = signing.as_mut() else { return true };
         if frame.signature.is_none() {
             self.bump(UNSIGNED, 1);
             return false;
@@ -520,6 +531,23 @@ impl Connection {
             self.bump(BADSIG, 1);
             return false;
         }
+        let (Some(sig), Some(stamp)) = (frame.signature, frame.timestamp()) else {
+            return false;
+        };
+        let mut streams = lock(&self.signed_streams);
+        let stream = (frame.sysid, frame.compid, sig[0]);
+        if streams.get(&stream).is_some_and(|last| stamp <= *last) {
+            self.bump(BADSIG, 1);
+            return false;
+        }
+        // 256 systems of 256 components cannot all be real: start over
+        // rather than grow on what a flood of made up ids leaves behind.
+        if streams.len() >= SIGNED_STREAMS && !streams.contains_key(&stream) {
+            streams.clear();
+        }
+        streams.insert(stream, stamp);
+        // Never sign with a time older than one already seen on the link.
+        key.timestamp = key.timestamp.max(stamp.saturating_add(1));
         true
     }
 
@@ -856,6 +884,32 @@ mod tests {
         let _ = gcs.recv(Duration::from_millis(50));
         let c = gcs.counters();
         assert_eq!((c.unsigned_dropped, c.bad_signatures, c.frames_received), (1, 1, 1));
+    }
+
+    #[test]
+    fn a_signed_frame_sent_again_is_dropped() {
+        let port = free_udp_port();
+        let key = [9u8; 32];
+        let gcs = open(&format!("udpin:127.0.0.1:{port}"), &Options::default()).unwrap();
+        gcs.set_signing(Some(Signing::new(key, 0, 1000)));
+        let raw = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+        let mut vehicle = Signing::new(key, 3, 5000);
+        let one = encode(Proto::V2, 0, 1, 1, &heartbeat(1, 0), Some(&mut vehicle)).unwrap();
+        let two = encode(Proto::V2, 1, 1, 1, &heartbeat(1, 0), Some(&mut vehicle)).unwrap();
+        for frame in [&one, &one, &two, &one, &two] {
+            raw.send_to(frame, ("127.0.0.1", port)).unwrap();
+        }
+        let mut seqs = Vec::new();
+        for _ in 0..20 {
+            for r in gcs.recv(Duration::from_millis(50)).unwrap() {
+                seqs.push(r.frame.seq);
+            }
+        }
+        assert_eq!(seqs, [0, 1], "each frame once, the copies dropped");
+        assert_eq!(gcs.counters().bad_signatures, 3);
+        // What this station signs next is newer than anything it heard.
+        gcs.send(&heartbeat(6, 8)).unwrap();
+        assert!(lock(&gcs.signing).as_ref().is_some_and(|s| s.timestamp > 5001));
     }
 
     #[test]

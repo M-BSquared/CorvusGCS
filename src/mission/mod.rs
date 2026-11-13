@@ -209,6 +209,18 @@ impl MissionPage {
     }
 
     /// Lines for the notification board: (level, text).
+    /// Takes in a telemetry frame wherever the operator is, so the Home map
+    /// knows what the vehicle flies without the Mission page being open.
+    pub fn observe(&mut self, state: &Value) {
+        self.tracker.on_frame(&self.plan, state);
+    }
+
+    /// The mission to draw on the Home map: only a plan the vehicle is known
+    /// to hold, with the leg being flown.
+    pub fn flown_route(&self) -> Option<crate::map::flown::FlownRoute> {
+        progress::flown_route(&self.tracker, &self.plan)
+    }
+
     pub fn take_notices(&mut self) -> Vec<(&'static str, String)> {
         let mut out = std::mem::take(&mut self.notices);
         out.extend(self.plan.notices.drain(..).map(|n| ("warning", n)));

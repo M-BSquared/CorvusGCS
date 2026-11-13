@@ -32,6 +32,11 @@ pub const MAX_EXPORT_PLUGIN_BYTES: usize = 16 * 1024 * 1024;
 /// restart is needed rather than pretending it took effect.
 const IMPORT_RESTART_KEYS: [&str; 4] = ["http_port", "tile_cache_dir", "tlog_dir", "firmware_dir"];
 
+/// What the core keeps beside `config.json` that belongs to the station and
+/// not to a flight: the fence area and the cached update answer. A reset
+/// removes them too; logs, tiles, firmware, keys and the MCP token stay.
+const RESET_FILES: [&str; 2] = [crate::geofence::FILE_NAME, crate::plugins::update_check::UPDATE_FILE];
+
 const PNG_MAGIC: &[u8] = b"\x89PNG\r\n\x1a\n";
 
 pub(super) fn register(reg: &mut Registry) {
@@ -534,6 +539,17 @@ fn api_reset(core: &Core, _req: &Request) -> Response {
             warnings.push("The company logo could not be removed.".into());
         }
         _ => {}
+    }
+    if let Some(dir) = settings.path().parent() {
+        for name in RESET_FILES {
+            match std::fs::remove_file(dir.join(name)) {
+                Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+                    eprintln!("corvus: settings reset: {name} not removed: {e}");
+                    warnings.push(format!("{name} could not be removed."));
+                }
+                _ => {}
+            }
+        }
     }
     let user_dir = registry(core).user_dir().to_path_buf();
     for (id, _) in config::load_all(&user_dir) {

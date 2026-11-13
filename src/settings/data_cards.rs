@@ -693,6 +693,7 @@ impl SettingsPage {
                         .unwrap_or_default(),
                 );
                 lines.insert(0, "Settings are back to their defaults.".into());
+                self.reset_request = true;
                 self.dialog = Some(Dialog::Notice {
                     title: "Reset to factory settings".into(),
                     lines,

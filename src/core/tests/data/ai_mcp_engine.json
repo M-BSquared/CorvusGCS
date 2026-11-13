@@ -569,7 +569,7 @@
     {
       "id": "goto",
       "label": "Fly to a point",
-      "hint": "Fly to one point or through several, at a height above home.",
+      "hint": "Fly to one point or through several, at a height above home. From the ground or with several points this replaces the mission on board, arms the vehicle and takes off.",
       "writes": true,
       "tools": [
         "fly_to"
@@ -5123,7 +5123,7 @@
         {
           "name": "fly_to",
           "title": "Fly to",
-          "description": "Fly to one point, or through several in order. alt is metres above home; a rover or boat ignores it.",
+          "description": "Fly to one point, or through several in order. alt is metres above home; a rover or boat ignores it. One point in the air leaves the mission on board alone. From the ground, or with several points, the points replace the mission on board and it is started, which arms the vehicle; an aircraft on the ground takes off.",
           "inputSchema": {
             "type": "object",
             "properties": {
@@ -5221,7 +5221,7 @@
         {
           "name": "set_velocity",
           "title": "Velocity",
-          "description": "Fly at a velocity for duration_s seconds. vx, vy, vz in m/s: north, east, down, or with frame body forward, right, down. yaw_rate in degrees per second. Without a new call the vehicle holds. Flies in the capabilities' velocity_mode, never on a plane.",
+          "description": "Fly at a velocity for duration_s seconds. vx, vy, vz in m/s: north, east, down, or with frame body forward, right, down. yaw_rate in degrees per second. Without a new call the vehicle holds. It sends setpoints only and never changes the flight mode: start it, then call set_flight_mode with the capabilities' velocity_mode while it runs (PX4 enters OFFBOARD only once setpoints arrive). Never on a plane.",
           "inputSchema": {
             "type": "object",
             "properties": {
@@ -8627,7 +8627,7 @@
         {
           "name": "fly_to",
           "title": "Fly to",
-          "description": "Fly to one point, or through several in order. alt is metres above home; a rover or boat ignores it.",
+          "description": "Fly to one point, or through several in order. alt is metres above home; a rover or boat ignores it. One point in the air leaves the mission on board alone. From the ground, or with several points, the points replace the mission on board and it is started, which arms the vehicle; an aircraft on the ground takes off.",
           "inputSchema": {
             "type": "object",
             "properties": {
@@ -8725,7 +8725,7 @@
         {
           "name": "set_velocity",
           "title": "Velocity",
-          "description": "Fly at a velocity for duration_s seconds. vx, vy, vz in m/s: north, east, down, or with frame body forward, right, down. yaw_rate in degrees per second. Without a new call the vehicle holds. Flies in the capabilities' velocity_mode, never on a plane.",
+          "description": "Fly at a velocity for duration_s seconds. vx, vy, vz in m/s: north, east, down, or with frame body forward, right, down. yaw_rate in degrees per second. Without a new call the vehicle holds. It sends setpoints only and never changes the flight mode: start it, then call set_flight_mode with the capabilities' velocity_mode while it runs (PX4 enters OFFBOARD only once setpoints arrive). Never on a plane.",
           "inputSchema": {
             "type": "object",
             "properties": {
@@ -9778,7 +9778,7 @@
         {
           "name": "fly_to",
           "title": "Fly to",
-          "description": "Fly to one point, or through several in order. alt is metres above home; a rover or boat ignores it.",
+          "description": "Fly to one point, or through several in order. alt is metres above home; a rover or boat ignores it. One point in the air leaves the mission on board alone. From the ground, or with several points, the points replace the mission on board and it is started, which arms the vehicle; an aircraft on the ground takes off.",
           "inputSchema": {
             "type": "object",
             "properties": {
@@ -9876,7 +9876,7 @@
         {
           "name": "set_velocity",
           "title": "Velocity",
-          "description": "Fly at a velocity for duration_s seconds. vx, vy, vz in m/s: north, east, down, or with frame body forward, right, down. yaw_rate in degrees per second. Without a new call the vehicle holds. Flies in the capabilities' velocity_mode, never on a plane.",
+          "description": "Fly at a velocity for duration_s seconds. vx, vy, vz in m/s: north, east, down, or with frame body forward, right, down. yaw_rate in degrees per second. Without a new call the vehicle holds. It sends setpoints only and never changes the flight mode: start it, then call set_flight_mode with the capabilities' velocity_mode while it runs (PX4 enters OFFBOARD only once setpoints arrive). Never on a plane.",
           "inputSchema": {
             "type": "object",
             "properties": {
@@ -10587,7 +10587,7 @@
         {
           "name": "fly_to",
           "title": "Fly to",
-          "description": "Fly to one point, or through several in order. alt is metres above home; a rover or boat ignores it.",
+          "description": "Fly to one point, or through several in order. alt is metres above home; a rover or boat ignores it. One point in the air leaves the mission on board alone. From the ground, or with several points, the points replace the mission on board and it is started, which arms the vehicle; an aircraft on the ground takes off.",
           "inputSchema": {
             "type": "object",
             "properties": {
@@ -10685,7 +10685,7 @@
         {
           "name": "set_velocity",
           "title": "Velocity",
-          "description": "Fly at a velocity for duration_s seconds. vx, vy, vz in m/s: north, east, down, or with frame body forward, right, down. yaw_rate in degrees per second. Without a new call the vehicle holds. Flies in the capabilities' velocity_mode, never on a plane.",
+          "description": "Fly at a velocity for duration_s seconds. vx, vy, vz in m/s: north, east, down, or with frame body forward, right, down. yaw_rate in degrees per second. Without a new call the vehicle holds. It sends setpoints only and never changes the flight mode: start it, then call set_flight_mode with the capabilities' velocity_mode while it runs (PX4 enters OFFBOARD only once setpoints arrive). Never on a plane.",
           "inputSchema": {
             "type": "object",
             "properties": {

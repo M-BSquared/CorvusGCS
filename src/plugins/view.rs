@@ -261,31 +261,31 @@ fn option_field(
                 .map(|(v, l)| Choice::new(v.as_str(), l.as_str()))
                 .collect();
             form::field(ui, f, &spec.label, "", &spec.hint, |ui, x, y, w| {
-                let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, form::CONTROL_H));
+                let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, form::control_h()));
                 if let Some(v) = kit::select(ui, r, &list, &current, "", false, "", ("pluginopt", &key)) {
                     out = Some(json!(v));
                 }
-                form::CONTROL_H
+                form::control_h()
             });
         }
         Kind::Text { placeholder } => {
             let shown = value.and_then(Value::as_str).unwrap_or("").to_string();
             form::field(ui, f, &spec.label, "", &spec.hint, |ui, x, y, w| {
-                let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, form::CONTROL_H));
+                let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, form::control_h()));
                 if let Some(t) = crate::ui::field::committed(ui, r, ("pluginopt", &key), &shown, placeholder, false) {
                     out = Some(json!(t));
                 }
-                form::CONTROL_H
+                form::control_h()
             });
         }
         Kind::Number { .. } => {
             let shown = value.and_then(Value::as_f64).map(number_text).unwrap_or_default();
             form::field(ui, f, &spec.label, "", &spec.hint, |ui, x, y, w| {
-                let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, form::CONTROL_H));
+                let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, form::control_h()));
                 if let Some(t) = crate::ui::field::committed(ui, r, ("pluginopt", &key), &shown, "", true) {
                     out = Some(json!(t));
                 }
-                form::CONTROL_H
+                form::control_h()
             });
         }
     }

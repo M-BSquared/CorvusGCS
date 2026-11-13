@@ -359,6 +359,50 @@ pub fn glass(a: f32) -> Color32 {
     rgba(palette().glass_rgb, a)
 }
 
+static TOUCH: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// `--touch-target`: the least a control is tall in tablet mode.
+pub const TOUCH_TARGET: f32 = 44.0;
+
+/// Tablet mode on or off. The interface sets it; the shared widgets read it.
+pub fn set_touch(on: bool) {
+    TOUCH.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Whether tablet mode is in force.
+pub fn touch() -> bool {
+    TOUCH.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// The area a finger presses for a control drawn in `rect`: at least a
+/// finger's target tall in tablet mode, the same centre, so the drawing
+/// stays as it is.
+pub fn finger(rect: eframe::egui::Rect) -> eframe::egui::Rect {
+    finger_when(touch(), rect)
+}
+
+fn finger_when(on: bool, rect: eframe::egui::Rect) -> eframe::egui::Rect {
+    if on && rect.height() < TOUCH_TARGET {
+        let grow = (TOUCH_TARGET - rect.height()) / 2.0;
+        rect.expand2(eframe::egui::vec2(0.0, grow))
+    } else {
+        rect
+    }
+}
+
+/// A control's height: `h`, or at least a finger's target in tablet mode.
+pub fn target(h: f32) -> f32 {
+    target_when(touch(), h)
+}
+
+fn target_when(on: bool, h: f32) -> f32 {
+    if on {
+        h.max(TOUCH_TARGET)
+    } else {
+        h
+    }
+}
+
 static IN_MODAL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// Set while a dialog draws its body: `.modal` swaps `--panel-fill` for
@@ -555,6 +599,22 @@ pub fn apply(ctx: &egui::Context) {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn tablet_mode_lifts_a_control_to_a_finger_and_leaves_the_rest() {
+        assert_eq!(target_when(false, 32.5), 32.5);
+        assert_eq!(target_when(true, 32.5), TOUCH_TARGET);
+        assert_eq!(target_when(true, 54.0), 54.0, "a tall control is not shrunk");
+        let r = eframe::egui::Rect::from_min_size(eframe::egui::pos2(10.0, 100.0), eframe::egui::vec2(38.0, 22.0));
+        assert_eq!(finger_when(false, r), r);
+        let big = finger_when(true, r);
+        assert_eq!((big.height(), big.width()), (TOUCH_TARGET, 38.0));
+        assert_eq!(
+            big.center(),
+            r.center(),
+            "the drawing stays in the middle of the target"
+        );
+    }
 
     #[test]
     fn the_config_names_the_theme() {

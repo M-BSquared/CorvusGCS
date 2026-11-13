@@ -90,7 +90,7 @@ fn content_width(s: &Segment, label: &egui::Galley, count: &egui::Galley) -> f32
 }
 
 fn height(opts: &Opts) -> f32 {
-    3.0 * 2.0 + 2.0 + opts.pad_y * 2.0 + 11.0 * 1.21
+    style::target(3.0 * 2.0 + 2.0 + opts.pad_y * 2.0 + 11.0 * 1.21)
 }
 
 /// How wide the strip is drawn.

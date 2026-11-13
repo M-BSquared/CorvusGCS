@@ -696,7 +696,7 @@ impl FirmwarePage {
         };
         let field = PathField::new(Mode::File(Some(kinds)), "Firmware file").placeholder("No file selected");
         ff::path(ui, x, y, w.min(520.0), &field, &mut self.file_path, "fwfile");
-        y + ff::CONTROL_H
+        y + ff::control_h()
     }
 
     fn catalog_box(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, x: f32, y: f32, w: f32) -> f32 {
@@ -743,7 +743,7 @@ impl FirmwarePage {
                 };
                 disabled_select(
                     ui,
-                    Rect::from_min_size(Pos2::new(x, top), Vec2::new(sw, ff::CONTROL_H)),
+                    Rect::from_min_size(Pos2::new(x, top), Vec2::new(sw, ff::control_h())),
                     text,
                 );
             } else {
@@ -753,14 +753,14 @@ impl FirmwarePage {
             if b.show(
                 ui,
                 Rect::from_min_size(
-                    Pos2::new(x + w - bw, top + (ff::CONTROL_H - bh) / 2.0),
+                    Pos2::new(x + w - bw, top + (ff::control_h() - bh) / 2.0),
                     Vec2::new(bw, bh),
                 ),
                 "fwrefresh",
             ) {
                 refresh = true;
             }
-            ff::CONTROL_H
+            ff::control_h()
         }) + GAP;
         if let Some(tag) = next_release {
             self.picker.pick_release(&tag);
@@ -805,7 +805,7 @@ impl FirmwarePage {
                                 };
                                 disabled_select(
                                     ui,
-                                    Rect::from_min_size(Pos2::new(x + ox, by), Vec2::new(ow, ff::CONTROL_H)),
+                                    Rect::from_min_size(Pos2::new(x + ox, by), Vec2::new(ow, ff::control_h())),
                                     t,
                                 );
                             } else {
@@ -823,7 +823,7 @@ impl FirmwarePage {
                                 };
                                 disabled_select(
                                     ui,
-                                    Rect::from_min_size(Pos2::new(x + ox, by), Vec2::new(ow, ff::CONTROL_H)),
+                                    Rect::from_min_size(Pos2::new(x + ox, by), Vec2::new(ow, ff::control_h())),
                                     t,
                                 );
                             } else {
@@ -835,7 +835,7 @@ impl FirmwarePage {
                         _ => {
                             let vh = vb.height();
                             let r = Rect::from_min_size(
-                                Pos2::new(x + ox, by + (ff::CONTROL_H - vh) / 2.0),
+                                Pos2::new(x + ox, by + (ff::control_h() - vh) / 2.0),
                                 Vec2::new(vbw, vh),
                             );
                             if toggle_button(ui, r, "Developer builds", None, variants, "fwvariants") {
@@ -844,7 +844,7 @@ impl FirmwarePage {
                         }
                     }
                 }
-                by += ff::CONTROL_H;
+                by += ff::control_h();
             }
             // what the chosen image is
             if let Some(b) = &selected {

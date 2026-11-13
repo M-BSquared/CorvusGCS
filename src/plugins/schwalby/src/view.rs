@@ -994,11 +994,11 @@ fn editor(p: &mut Schwalby, ui: &mut egui::Ui, f: &mut Form, h: &mut Host) {
                 "One of the saved SSH connections, or a new one typed in below. Either way the password is kept by the backend. This plugin only ever names the connection.",
                 "",
                 |ui, x, y, w| {
-                    let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, form::CONTROL_H));
+                    let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, form::control_h()));
                     if let Some(v) = kit::select(ui, r, &choices, &selected, "", false, "", "schw-conn") {
                         e.choice = v;
                     }
-                    form::CONTROL_H
+                    form::control_h()
                 },
             );
             if e.choice == NEW_CONNECTION {
@@ -1427,11 +1427,11 @@ fn companion_dialog(p: &mut Schwalby, ctx: &egui::Context, h: &mut Host) {
                 "Pick a saved SSH connection to ping its host and get an arrow beside the status that opens a terminal on it, or type a new one in. The password stays with the backend.",
                 "",
                 |ui, x, y, w| {
-                    let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, form::CONTROL_H));
+                    let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, form::control_h()));
                     if let Some(v) = kit::select(ui, r, &choices, &selected, "", false, "", "schw-comp-conn") {
                         d.choice = v;
                     }
-                    form::CONTROL_H
+                    form::control_h()
                 },
             );
                 if d.picked_new() {

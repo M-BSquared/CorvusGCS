@@ -432,7 +432,7 @@ pub fn section_h(first: bool) -> f32 {
 /// lead and the text block, the note under the label with 1 px between.
 pub fn row_height(ink: Ink, has_note: bool, has_icon: bool, dot: bool) -> f32 {
     let text = 12.0 * LINE + if has_note { 1.0 + ink.note_px() * LINE } else { 0.0 };
-    7.0 * 2.0 + text.max(ink.lead_h(has_icon, dot))
+    style::target(7.0 * 2.0 + text.max(ink.lead_h(has_icon, dot)))
 }
 
 /// `.map-search-note`: 8 px around the sentence.
@@ -517,6 +517,31 @@ pub fn next_enabled(items: &[Item], from: Option<usize>, step: i32) -> Option<us
         }
     }
     None
+}
+
+/// How long a pause ends a typed word (`ui.js` type-ahead).
+const TYPE_RESET: f64 = 0.8;
+
+/// The row a typed word picks: the first enabled row whose label (as shown)
+/// starts with it, from the cursor on and wrapping. A single letter moves on
+/// to the next match, and one letter repeated cycles through the rows that
+/// start with it, as a native list does.
+pub fn type_ahead(items: &[Item], cursor: Option<usize>, typed: &str) -> Option<usize> {
+    let lower = typed.to_lowercase();
+    let first = lower.chars().next()?;
+    let count = lower.chars().count();
+    let cycling = count > 1 && lower.chars().all(|c| c == first);
+    let (needle, past_current) = if cycling {
+        (first.to_string(), true)
+    } else {
+        (lower.clone(), count == 1)
+    };
+    let n = items.len();
+    let start = cursor.map_or(0, |c| if past_current { c + 1 } else { c });
+    (0..n).map(|k| (start + k) % n).find(|&i| {
+        matches!(&items[i], Item::Row(r)
+            if r.enabled && crate::i18n::tr(&r.label).to_lowercase().starts_with(&needle))
+    })
 }
 
 fn row_galley(ui: &egui::Ui, text: &str, color: Color32, look: &Look) -> Arc<Galley> {
@@ -890,9 +915,41 @@ impl<'a> Menu<'a> {
                     if let Some(to) = moved {
                         cursor = to;
                     }
+                    let typed_id = id.with("typed");
+                    let now_t = ui.input(|i| i.time);
+                    let (mut word, at) = ui
+                        .ctx()
+                        .data(|d| d.get_temp::<(String, f64)>(typed_id))
+                        .unwrap_or_default();
+                    if now_t - at > TYPE_RESET {
+                        word.clear();
+                    }
+                    let mid_word = !word.is_empty();
+                    if look.autofocus {
+                        let typed: String = ui.input(|i| {
+                            i.events
+                                .iter()
+                                .filter_map(|e| match e {
+                                    egui::Event::Text(t) => Some(t.as_str()),
+                                    _ => None,
+                                })
+                                .collect()
+                        });
+                        let typed: String = typed
+                            .chars()
+                            .filter(|c| !c.is_control() && !(word.is_empty() && c.is_whitespace()))
+                            .collect();
+                        if !typed.is_empty() {
+                            word.push_str(&typed);
+                            if let Some(to) = type_ahead(items, cursor, &word) {
+                                cursor = Some(to);
+                            }
+                            ui.ctx().data_mut(|d| d.insert_temp(typed_id, (word, now_t)));
+                        }
+                    }
                     let enter = ui.input_mut(|i| {
                         i.consume_key(egui::Modifiers::NONE, egui::Key::Enter)
-                            || i.consume_key(egui::Modifiers::NONE, egui::Key::Space)
+                            || (!mid_word && i.consume_key(egui::Modifiers::NONE, egui::Key::Space))
                     });
                     if enter {
                         if let Some(Item::Row(r)) = cursor.and_then(|c| items.get(c)) {
@@ -1020,6 +1077,44 @@ mod tests {
 
     fn screen() -> Rect {
         Rect::from_min_size(Pos2::ZERO, Vec2::new(1200.0, 800.0))
+    }
+
+    fn named(labels: &[&str]) -> Vec<Item> {
+        labels.iter().map(|l| Item::Row(Row::new(*l, *l))).collect()
+    }
+
+    #[test]
+    fn typing_picks_the_row_a_word_starts_and_a_letter_moves_on() {
+        let items = named(&["Light", "Light Orange", "Green", "Blue", "Pink", "Orange"]);
+        assert_eq!(type_ahead(&items, None, "g"), Some(2));
+        assert_eq!(type_ahead(&items, None, "l"), Some(0));
+        assert_eq!(
+            type_ahead(&items, Some(0), "l"),
+            Some(1),
+            "one letter again moves to the next match"
+        );
+        assert_eq!(type_ahead(&items, Some(1), "l"), Some(0), "and wraps");
+        assert_eq!(
+            type_ahead(&items, Some(0), "light o"),
+            Some(1),
+            "a word stays on its row"
+        );
+        assert_eq!(type_ahead(&items, Some(2), "BL"), Some(3), "case does not matter");
+        assert_eq!(type_ahead(&items, Some(0), "x"), None);
+        assert_eq!(type_ahead(&[], None, "a"), None);
+        assert_eq!(type_ahead(&items, None, ""), None);
+        let twin = named(&["Alpha", "Apple", "Beta"]);
+        assert_eq!(type_ahead(&twin, Some(0), "aa"), Some(1), "one letter repeated cycles");
+    }
+
+    #[test]
+    fn typing_skips_rows_that_are_off_and_headings() {
+        let mut items = named(&["Green", "Gold", "Grey"]);
+        if let Item::Row(r) = &mut items[0] {
+            r.enabled = false;
+        }
+        items.insert(0, Item::Head("Group".into()));
+        assert_eq!(type_ahead(&items, None, "g"), Some(2));
     }
 
     fn row_h() -> f32 {

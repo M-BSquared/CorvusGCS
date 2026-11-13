@@ -27,7 +27,7 @@ pub fn show(
         let color = if on { style::text_1() } else { style::text_3() };
         let g = style::galley(ui, label, 11.5, Weight::W600, color, 0.0);
         let pw = 2.0 + 11.0 + 14.0 + 7.0 + g.size().x + 13.0;
-        let h = 2.0 + 14.0 + g.size().y.max(14.0);
+        let h = style::target(2.0 + 14.0 + g.size().y.max(14.0));
         if x > left && x + pw > left + w {
             x = left;
             y += line_h + 6.0;

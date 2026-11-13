@@ -6,6 +6,7 @@
 
 pub mod battery;
 pub mod battery_model;
+pub mod betaflight;
 pub mod calib_figure;
 pub mod calib_protocol;
 pub mod calibration;
@@ -49,6 +50,7 @@ use serde_json::Value;
 
 use crate::net::http::Server;
 use crate::setup::battery::BatteryPage;
+use crate::setup::betaflight::BetaflightPage;
 use crate::setup::calibration::CalibrationPage;
 use crate::setup::firmware::FirmwarePage;
 use crate::setup::firstsetup::FirstSetupPage;
@@ -129,6 +131,12 @@ const TILES: &[(&str, &str, &str, &str)] = &[
         "Edit, load and save every parameter.",
     ),
     ("firmware", "cpu", "Firmware", "Flash PX4 or ArduPilot over direct USB."),
+    (
+        "betaflight",
+        "circuit-board",
+        "Betaflight",
+        "Read a Betaflight controller over MSP: board, sensors, PIDs, rates.",
+    ),
     ("video", "video", "Video", "RTSP or WebRTC cameras in floating windows."),
 ];
 
@@ -177,6 +185,7 @@ enum View {
     FirstSetup(Box<FirstSetupPage>),
     Video(Box<VideoPage>),
     Sik(Box<SikPage>),
+    Betaflight(Box<BetaflightPage>),
     RemoteId(Box<RemoteIdPage>),
     Elsewhere(&'static str),
 }
@@ -192,6 +201,8 @@ pub struct SetupPage {
     initial_scroll: Option<f32>,
     /// The camera windows: they stay up over the other pages.
     video_windows: VideoWindows,
+    /// What the connected stack cannot do: greys the tiles it cannot serve.
+    caps: crate::data::capabilities::Cache,
 }
 
 impl SetupPage {
@@ -203,6 +214,7 @@ impl SetupPage {
             view: View::Tiles,
             initial_scroll: None,
             video_windows: VideoWindows::default(),
+            caps: Default::default(),
         }
     }
 
@@ -221,6 +233,7 @@ impl SetupPage {
             View::FirstSetup(p) => p.take_errors(),
             View::Video(p) => p.take_errors(),
             View::Sik(p) => p.take_errors(),
+            View::Betaflight(p) => p.take_errors(),
             View::RemoteId(p) => p.take_errors(),
             _ => Vec::new(),
         }
@@ -296,6 +309,7 @@ impl SetupPage {
             ))),
             "video" => View::Video(Box::new(VideoPage::new(self.server.clone(), ctx))),
             "sik" => View::Sik(Box::new(SikPage::new(self.server.clone(), ctx))),
+            "betaflight" => View::Betaflight(Box::new(BetaflightPage::new(self.server.clone(), ctx))),
             "remoteid" => View::RemoteId(Box::new(RemoteIdPage::new(self.server.clone(), ctx))),
             other => match TILES.iter().find(|t| t.0 == other) {
                 Some(t) => View::Elsewhere(t.2),
@@ -355,7 +369,8 @@ impl SetupPage {
                         Some(state),
                         |_, _, _| 0.0,
                     );
-                    y = grid(ui, x, y, w, &mut self.view, &self.server, &self.env);
+                    let caps = self.caps.get(ui.ctx(), &self.server, state).clone();
+                    y = grid(ui, x, y, w, &mut self.view, &self.server, &self.env, &caps);
                 }
                 View::Parameters(_)
                 | View::Safety(_)
@@ -369,6 +384,7 @@ impl SetupPage {
                 | View::FirstSetup(_)
                 | View::Video(_)
                 | View::Sik(_)
+                | View::Betaflight(_)
                 | View::RemoteId(_)
                 | View::Elsewhere(_) => {
                     let in_sensor = matches!(&self.view, View::Safety(p) if p.in_sensor());
@@ -426,6 +442,8 @@ impl SetupPage {
                         y = p.show(ui, x, y, w, state, now);
                     } else if let View::Sik(p) = &mut self.view {
                         y = p.show(ui, x, y, w, state);
+                    } else if let View::Betaflight(p) = &mut self.view {
+                        y = p.show(ui, x, y, w);
                     } else if let View::Video(p) = &mut self.view {
                         y = p.show(ui, x, y, w, now, &mut self.video_windows);
                     } else if let View::Safety(p) = &mut self.view {
@@ -535,6 +553,7 @@ fn head(
 }
 
 /// The tile grid.
+#[allow(clippy::too_many_arguments)]
 fn grid(
     ui: &mut egui::Ui,
     x: f32,
@@ -543,6 +562,7 @@ fn grid(
     view: &mut View,
     server: &Server,
     env: &crate::setup::geofence::Env,
+    caps: &crate::data::capabilities::Capabilities,
 ) -> f32 {
     let cols = columns(w);
     let tile_w = (w - 14.0 * (cols as f32 - 1.0)) / cols as f32;
@@ -555,7 +575,7 @@ fn grid(
             Vec2::new(tile_w, tile_h),
         );
         bottom = bottom.max(r.bottom());
-        if pagekit::tile(ui, r, icon, title, desc) {
+        if pagekit::tile_with(ui, r, icon, title, desc, caps.tile_blocked(id)) {
             *view = match *id {
                 "parameters" => View::Parameters(Box::new(ParamsPage::new(server.clone(), ui.ctx()))),
                 "safety" => View::Safety(Box::new(SafetyPage::new(server.clone(), ui.ctx(), env.clone()))),
@@ -574,6 +594,7 @@ fn grid(
                 ))),
                 "video" => View::Video(Box::new(VideoPage::new(server.clone(), ui.ctx()))),
                 "sik" => View::Sik(Box::new(SikPage::new(server.clone(), ui.ctx()))),
+                "betaflight" => View::Betaflight(Box::new(BetaflightPage::new(server.clone(), ui.ctx()))),
                 "remoteid" => View::RemoteId(Box::new(RemoteIdPage::new(server.clone(), ui.ctx()))),
                 _ => View::Elsewhere(title),
             };
@@ -603,6 +624,6 @@ mod tests {
         assert_eq!(columns(260.0), 1);
         assert_eq!(columns(534.0), 2);
         assert_eq!(columns(808.0), 3);
-        assert_eq!(TILES.len(), 13);
+        assert_eq!(TILES.len(), 14);
     }
 }

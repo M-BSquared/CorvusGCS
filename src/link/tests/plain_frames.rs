@@ -219,9 +219,39 @@ fn a_mavlink_2_payload_that_lost_its_zeros_reads_back_zero_filled() {
     let msg = codec::unpack_payload(0, corvus_link::plain::defs::Wire::V2, &[1]).unwrap();
     assert_eq!(msg.get("custom_mode"), Some(&Value::Int(1)));
     assert_eq!(msg.get("system_status"), Some(&Value::Int(0)));
-    assert!(codec::unpack_payload(0, corvus_link::plain::defs::Wire::V2, &[0; 10]).is_err());
+    assert!(codec::unpack_payload(0, corvus_link::plain::defs::Wire::V1, &[0; 10]).is_err());
     assert!(codec::unpack_payload(0, corvus_link::plain::defs::Wire::V1, &[1]).is_err());
     assert!(codec::unpack_payload(9999999, corvus_link::plain::defs::Wire::V2, &[]).is_err());
+}
+
+#[test]
+fn a_mavlink_2_payload_with_fields_this_dialect_does_not_know_is_still_read() {
+    // A newer firmware adds extension fields to a message: its checksum is
+    // the same, its payload longer. The fields known here are read.
+    let wire = corvus_link::plain::defs::Wire::V2;
+    let mut hb = Message::named("HEARTBEAT", wire).unwrap();
+    hb.set("custom_mode", Value::Int(0x0403_0201)).unwrap();
+    hb.set("type", Value::Int(2)).unwrap();
+    hb.set("mavlink_version", Value::Int(3)).unwrap();
+    let mut payload = codec::pack_payload(&hb, false).unwrap();
+    payload.extend_from_slice(&[7, 7, 7, 7]);
+    let msg = codec::unpack_payload(0, wire, &payload).unwrap();
+    assert_eq!(msg.get("custom_mode"), Some(&Value::Int(0x0403_0201)));
+    assert_eq!(msg.get("type"), Some(&Value::Int(2)));
+    assert_eq!(msg.get("mavlink_version"), Some(&Value::Int(3)));
+
+    let mut frame = vec![0xFD, payload.len() as u8, 0, 0, 9, 1, 1, 0, 0, 0];
+    frame.extend_from_slice(&payload);
+    let crc = corvus_link::plain::crc::accumulate(
+        corvus_link::plain::crc::accumulate(0xFFFF, &frame[1..]),
+        &[hb.def().crc_extra],
+    );
+    frame.extend_from_slice(&crc.to_le_bytes());
+    let events = Parser::new().feed(&frame);
+    let [Event::Frame(f)] = &events[..] else {
+        panic!("{events:?}")
+    };
+    assert_eq!(f.message().unwrap().get("type"), Some(&Value::Int(2)));
 }
 
 #[test]

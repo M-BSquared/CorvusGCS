@@ -9,9 +9,10 @@
 //! in-flight handler thread may still call one while the core shuts down).
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, MutexGuard};
 
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, Connection, OpenFlags, OptionalExtension};
 use serde_json::{json, Value};
 
 use super::util::{expand_user, iso_utc, json_float, json_int, json_str, normpath, now_secs};
@@ -98,7 +99,15 @@ pub fn default_cache_dir(state: &Path) -> PathBuf {
 pub struct TileCache {
     path: PathBuf,
     conn: Mutex<Option<Connection>>,
+    /// Read only connections for tile fills: the WAL lets them read while the
+    /// writer holds `conn`, so a download writing a region does not make the
+    /// map wait for its tiles. A few are kept; more are opened on demand.
+    readers: Mutex<Vec<Connection>>,
+    closed: AtomicBool,
 }
+
+/// How many idle read connections are kept.
+const MAX_READERS: usize = 4;
 
 impl TileCache {
     pub fn new(path: impl Into<PathBuf>) -> Result<TileCache, String> {
@@ -110,6 +119,8 @@ impl TileCache {
         let cache = TileCache {
             path,
             conn: Mutex::new(Some(conn)),
+            readers: Mutex::new(Vec::new()),
+            closed: AtomicBool::new(false),
         };
         cache.init_schema().map_err(|e| e.to_string())?;
         Ok(cache)
@@ -121,6 +132,31 @@ impl TileCache {
 
     fn lock(&self) -> MutexGuard<'_, Option<Connection>> {
         self.conn.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Runs `f` on a read only connection; None when the cache is closed or
+    /// none could be opened, and the caller falls back to the writer's.
+    fn with_reader<T>(&self, f: impl FnOnce(&Connection) -> T) -> Option<T> {
+        if self.closed.load(Ordering::Acquire) {
+            return None;
+        }
+        let pooled = self.readers.lock().unwrap_or_else(|e| e.into_inner()).pop();
+        let conn = match pooled {
+            Some(c) => c,
+            None => Connection::open_with_flags(
+                &self.path,
+                OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+            )
+            .ok()?,
+        };
+        let out = f(&conn);
+        if !self.closed.load(Ordering::Acquire) {
+            let mut pool = self.readers.lock().unwrap_or_else(|e| e.into_inner());
+            if pool.len() < MAX_READERS {
+                pool.push(conn);
+            }
+        }
+        Some(out)
     }
 
     fn init_schema(&self) -> rusqlite::Result<()> {
@@ -157,16 +193,19 @@ impl TileCache {
     /// The cached blob for XYZ (z, x, y), or `None`. An error is the caller's
     /// to treat as a miss.
     pub fn get_tile(&self, z: i64, x: i64, y: i64) -> Result<Option<Vec<u8>>, String> {
+        const SQL: &str = "SELECT tile_data FROM tiles WHERE zoom_level=?1 AND tile_column=?2 AND tile_row=?3";
+        let read = |c: &Connection| {
+            c.query_row(SQL, params![z, x, xyz_to_tms(z, y)], |r| r.get::<_, Option<Vec<u8>>>(0))
+                .optional()
+                .map(Option::flatten)
+                .map_err(|e| e.to_string())
+        };
+        if let Some(answer) = self.with_reader(read) {
+            return answer;
+        }
         let guard = self.lock();
         let Some(c) = guard.as_ref() else { return Ok(None) };
-        c.query_row(
-            "SELECT tile_data FROM tiles WHERE zoom_level=?1 AND tile_column=?2 AND tile_row=?3",
-            params![z, x, xyz_to_tms(z, y)],
-            |r| r.get::<_, Option<Vec<u8>>>(0),
-        )
-        .optional()
-        .map(Option::flatten)
-        .map_err(|e| e.to_string())
+        read(c)
     }
 
     /// Inserts or replaces one tile; an empty blob is a no op.
@@ -210,17 +249,20 @@ impl TileCache {
     }
 
     pub fn has_tile(&self, z: i64, x: i64, y: i64) -> bool {
+        const SQL: &str = "SELECT 1 FROM tiles WHERE zoom_level=?1 AND tile_column=?2 AND tile_row=?3";
+        let read = |c: &Connection| {
+            c.query_row(SQL, params![z, x, xyz_to_tms(z, y)], |_| Ok(()))
+                .optional()
+                .ok()
+                .flatten()
+                .is_some()
+        };
+        if let Some(found) = self.with_reader(read) {
+            return found;
+        }
         let guard = self.lock();
         let Some(c) = guard.as_ref() else { return false };
-        c.query_row(
-            "SELECT 1 FROM tiles WHERE zoom_level=?1 AND tile_column=?2 AND tile_row=?3",
-            params![z, x, xyz_to_tms(z, y)],
-            |_| Ok(()),
-        )
-        .optional()
-        .ok()
-        .flatten()
-        .is_some()
+        read(c)
     }
 
     /// Inserts or replaces a region record and returns what was stored.
@@ -432,6 +474,8 @@ impl TileCache {
 
     /// Folds the WAL back into the file and closes the connection. Idempotent.
     pub fn close(&self) {
+        self.closed.store(true, Ordering::Release);
+        self.readers.lock().unwrap_or_else(|e| e.into_inner()).clear();
         let mut guard = self.lock();
         if let Some(c) = guard.take() {
             let _ = c.pragma_update_and_check(None, "wal_checkpoint", "TRUNCATE", |_| Ok(()));

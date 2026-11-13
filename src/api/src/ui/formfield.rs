@@ -15,6 +15,12 @@ use crate::ui::style::{self, Weight};
 /// A `.field-input` and `.field-select` are 32.5 px tall: 8 px of padding, a
 /// 14.5 px line and the border.
 pub const CONTROL_H: f32 = 32.5;
+
+/// The height of a field's control: [`CONTROL_H`], or a finger's target in
+/// tablet mode.
+pub fn control_h() -> f32 {
+    style::target(CONTROL_H)
+}
 /// The gap between a field's caption, control and hint.
 pub const GAP: f32 = 5.0;
 
@@ -63,7 +69,7 @@ pub fn input(
     secret: bool,
     id: impl std::hash::Hash + std::fmt::Debug,
 ) -> egui::Response {
-    let rect = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, CONTROL_H));
+    let rect = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, control_h()));
     TextField::new(text)
         .hint(placeholder)
         .mono(mono)
@@ -96,7 +102,7 @@ pub fn select(
     selected: &str,
     id: impl std::hash::Hash + std::fmt::Debug,
 ) -> Option<String> {
-    let rect = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, CONTROL_H));
+    let rect = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, control_h()));
     kit::select(ui, rect, choices, selected, "", false, "", id)
 }
 

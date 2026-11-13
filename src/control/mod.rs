@@ -9,6 +9,7 @@
 //! keyboard starts locked: Shift + W twice opens it, Escape locks it again.
 
 mod draw;
+pub mod gamepad;
 pub mod model;
 
 use crate::ui::tip::HoverTr;
@@ -102,6 +103,8 @@ pub struct Control {
     boost: bool,
     gesture: ArmGesture,
     pad: Option<[f64; 4]>,
+    /// The system's gamepads, open only while the gamepad is switched on.
+    pads: Option<gamepad::Pads>,
     pad_left: Stick,
     pad_right: Stick,
     shown_left: Stick,
@@ -140,6 +143,7 @@ impl Control {
             boost: false,
             gesture: ArmGesture::default(),
             pad: None,
+            pads: None,
             pad_left: Stick::CENTRE,
             pad_right: Stick::CENTRE,
             shown_left: Stick::CENTRE,
@@ -154,6 +158,11 @@ impl Control {
             frame: Frame::NEUTRAL,
             notes: Arc::default(),
         }
+    }
+
+    /// The pad is back at its default place (the file was removed).
+    pub fn forget_place(&mut self) {
+        self.place = Placement::load("joystick.json");
     }
 
     /// The config changed. A fresh switch is a fresh start: the keyboard
@@ -186,9 +195,26 @@ impl Control {
 
     /// Hands a gamepad's four raw axes (left x, left y, right x, right y), or
     /// None when none is plugged in.
-    #[cfg_attr(not(test), allow(dead_code))]
     pub fn feed_gamepad(&mut self, axes: Option<[f64; 4]>) {
         self.pad = axes;
+    }
+
+    /// Reads the system's gamepad into the frame, once a frame, while the
+    /// gamepad is switched on; with it off, the device is let go of. Kept out
+    /// of `update` so the rules there are driven with fed axes.
+    pub fn poll_gamepad(&mut self, ctx: &egui::Context) {
+        if self.cfg.gamepad {
+            if self.pads.is_none() {
+                self.pads = gamepad::Pads::open();
+            }
+            if let Some(pads) = self.pads.as_mut() {
+                let axes = pads.read();
+                self.feed_gamepad(axes);
+            }
+            ctx.request_repaint_after(std::time::Duration::from_millis(gamepad::POLL_MS * 4));
+        } else if self.pads.take().is_some() {
+            self.feed_gamepad(None);
+        }
     }
 
     /// Errors for the board, from the requests the pad makes.
@@ -200,6 +226,7 @@ impl Control {
     }
 
     pub fn shut_down(&mut self) {
+        self.pads = None;
         {
             let (lock, cv) = &*self.link;
             if let Ok(mut g) = lock.lock() {

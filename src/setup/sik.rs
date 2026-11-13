@@ -289,7 +289,7 @@ impl SikPage {
                 ui.add_enabled_ui(!ports.is_empty(), |ui| {
                     picked_port = ff::select(ui, xs[0], top, widths[0], &choices, &port, "sikport");
                 });
-                ff::CONTROL_H
+                ff::control_h()
             },
         );
         // the baud rate
@@ -313,7 +313,7 @@ impl SikPage {
                 ui.add_enabled_ui(read, |ui| {
                     picked_baud = ff::select(ui, xs[1], top, widths[1], &baud_choices, &baud, "sikbaud");
                 });
-                ff::CONTROL_H
+                ff::control_h()
             },
         );
         // the scope
@@ -331,7 +331,7 @@ impl SikPage {
             "sikscope-info",
             |ui, top| {
                 picked_scope = ff::select(ui, xs[2], top, widths[2], &scope_choices, scope, "sikscope");
-                ff::CONTROL_H
+                ff::control_h()
             },
         );
         if let Some(p) = picked_port {
@@ -527,7 +527,7 @@ impl SikPage {
         let mut stage = None;
         let mut edited = None;
         let bottom = ff::field(ui, x, y, w, &f.caption(), &f.hint, |ui, top| {
-            let rect = Rect::from_min_size(Pos2::new(x, top), Vec2::new(w, ff::CONTROL_H));
+            let rect = Rect::from_min_size(Pos2::new(x, top), Vec2::new(w, ff::control_h()));
             if f.read_only {
                 let mut text = crate::data::units::js_number(f.value);
                 ui.add_enabled_ui(false, |ui| {
@@ -589,7 +589,7 @@ impl SikPage {
                 let p = ui.painter();
                 card::paint(p, rect, card::Look::Chosen);
             }
-            ff::CONTROL_H
+            ff::control_h()
         });
         if let Some(t) = edited {
             stage = model::parse_int(&t);

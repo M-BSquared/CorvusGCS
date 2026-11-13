@@ -329,10 +329,21 @@ impl Hud {
         // The whole panel is the drag handle, and takes the pointer so the map
         // under it does not pan. Pinned, it only takes the pointer. The
         // buttons are made after it, so they win where they overlap.
-        if pinned {
+        // A finger cannot unlock the panel first: held still on a pinned one
+        // for a moment, it picks the panel up.
+        let hold = pinned && crate::app::touch::on() && (self.place.is_dragging() || held_in(ui, rect));
+        if pinned && !hold {
             ui.interact(rect, ui.scope_id().with("hud"), egui::Sense::click_and_drag());
         } else if self.place.drag(ui, ui.scope_id().with("hud"), rect, rect, host) {
             ui.ctx().request_repaint();
+        }
+        if hold {
+            painter.rect_stroke(
+                rect,
+                radius,
+                Stroke::new(2.0, style::accent()),
+                egui::StrokeKind::Inside,
+            );
         }
 
         if !look.collapsed {
@@ -522,6 +533,31 @@ impl Hud {
             self.place.set_flag("collapsed", !look.collapsed);
         }
     }
+}
+
+/// Whether a press that began inside `rect` has been held still long enough
+/// to move a pinned panel; asks for a frame while it is waiting.
+fn held_in(ui: &egui::Ui, rect: Rect) -> bool {
+    let (down, start, origin, pos, now) = ui.input(|i| {
+        (
+            i.pointer.primary_down(),
+            i.pointer.press_start_time(),
+            i.pointer.press_origin(),
+            i.pointer.latest_pos(),
+            i.time,
+        )
+    });
+    let (true, Some(start), Some(origin), Some(pos)) = (down, start, origin, pos) else {
+        return false;
+    };
+    if !rect.contains(origin) {
+        return false;
+    }
+    if crate::app::touch::held_to_move(start, origin, pos, now) {
+        return true;
+    }
+    ui.ctx().request_repaint_after(std::time::Duration::from_millis(60));
+    false
 }
 
 fn readout_height(ui: &egui::Ui, look: &Look) -> f32 {

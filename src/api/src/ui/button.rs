@@ -110,7 +110,7 @@ impl<'a> Button<'a> {
     pub fn height(&self) -> f32 {
         let pad = self.pad.map_or(if self.small { 7.0 } else { 10.0 }, |p| p.0);
         let line: f32 = if self.small { 11.0 } else { 12.0 } * 1.21;
-        2.0 + 2.0 * pad + line.max(if self.icon.is_some() { self.icon_size() } else { 0.0 })
+        style::target(2.0 + 2.0 * pad + line.max(if self.icon.is_some() { self.icon_size() } else { 0.0 }))
     }
 
     fn gap(&self) -> f32 {
@@ -227,8 +227,10 @@ pub fn icon_btn(
     active: bool,
     id: impl std::hash::Hash + std::fmt::Debug,
 ) -> bool {
+    // A finger needs more than 28 px; the drawing stays as it is.
+    let hit = if style::touch() { rect.expand(4.0) } else { rect };
     let resp = ui
-        .interact(rect, ui.scope_id().with(id), egui::Sense::click())
+        .interact(hit, ui.scope_id().with(id), egui::Sense::click())
         .on_hover_tr(title);
     let (fill, color) = if active {
         (style::accent_dark(), style::accent_bright())

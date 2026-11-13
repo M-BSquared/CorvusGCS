@@ -23,6 +23,7 @@ pub struct Placement {
     pub extra: serde_json::Map<String, Value>,
     drag: Option<Vec2>,
     last_host: (f32, f32),
+    last_size: (f32, f32),
     path: Option<PathBuf>,
 }
 
@@ -48,9 +49,21 @@ impl Placement {
             if let (Some(x), Some(y)) = (o.get("x").and_then(Value::as_f64), o.get("y").and_then(Value::as_f64)) {
                 st.pos = Some((x as f32, y as f32));
             }
+            // The map the position was measured on, so a window that opens at
+            // another size is carried to the same edge instead of floating.
+            if let (Some(w), Some(h)) = (o.get("hw").and_then(Value::as_f64), o.get("hh").and_then(Value::as_f64)) {
+                if w > 0.0 && h > 0.0 && w < 1.0e5 && h < 1.0e5 {
+                    st.last_host = (w as f32, h as f32);
+                }
+            }
+            if let (Some(w), Some(h)) = (o.get("ww").and_then(Value::as_f64), o.get("wh").and_then(Value::as_f64)) {
+                if w > 0.0 && h > 0.0 && w < 1.0e5 && h < 1.0e5 {
+                    st.last_size = (w as f32, h as f32);
+                }
+            }
             st.extra = o
                 .iter()
-                .filter(|(k, _)| k.as_str() != "x" && k.as_str() != "y")
+                .filter(|(k, _)| !matches!(k.as_str(), "x" | "y" | "hw" | "hh" | "ww" | "wh"))
                 .map(|(k, v)| (k.clone(), v.clone()))
                 .collect();
         }
@@ -76,10 +89,23 @@ impl Placement {
         let mut o = self.extra.clone();
         o.insert("x".into(), json!(self.pos.map(|p| p.0)));
         o.insert("y".into(), json!(self.pos.map(|p| p.1)));
+        if self.last_host.0 > 0.0 && self.last_host.1 > 0.0 {
+            o.insert("hw".into(), json!(self.last_host.0));
+            o.insert("hh".into(), json!(self.last_host.1));
+        }
+        if self.last_size.0 > 0.0 && self.last_size.1 > 0.0 {
+            o.insert("ww".into(), json!(self.last_size.0));
+            o.insert("wh".into(), json!(self.last_size.1));
+        }
         if let Some(dir) = p.parent() {
             let _ = std::fs::create_dir_all(dir);
         }
         let _ = std::fs::write(p, Value::Object(o).to_string());
+    }
+
+    /// A drag of the window is under way.
+    pub fn is_dragging(&self) -> bool {
+        self.drag.is_some()
     }
 
     /// Back to the default corner.
@@ -110,6 +136,32 @@ impl Placement {
         )
     }
 
+    /// The window itself changed size (the readouts were hidden, the panel was
+    /// folded). It keeps the edge it is nearer to, so a window resting on the
+    /// bottom stays on the bottom instead of shrinking away from it. The size
+    /// is remembered with the position, so a window saved at one size and
+    /// opened at another is carried the same way.
+    pub fn follow_size(&mut self, host: Vec2, size: Vec2) {
+        if host.x <= 0.0 || host.y <= 0.0 {
+            return;
+        }
+        let old = self.last_size;
+        self.last_size = (size.x, size.y);
+        let Some((x, y)) = self.pos else { return };
+        if old.0 <= 0.0 || old.1 <= 0.0 || old == self.last_size {
+            return;
+        }
+        let (mut nx, mut ny) = (x, y);
+        if (host.x - (x + old.0)) < x {
+            nx += old.0 - size.x;
+        }
+        if (host.y - (y + old.1)) < y {
+            ny += old.1 - size.y;
+        }
+        self.pos = Some(Placement::contain(nx, ny, host, size));
+        self.save();
+    }
+
     /// `onHostResize`: the map changed size, usually because the right panel
     /// slid. A window nearer the right (or bottom) edge travels with it, then
     /// the whole window is contained. A map with no size says nothing.
@@ -137,6 +189,7 @@ impl Placement {
     /// (from the map's top left) until it was.
     pub fn rect(&mut self, host: Rect, size: Vec2, default: Vec2) -> Rect {
         self.follow_host(host.size(), size);
+        self.follow_size(host.size(), size);
         let (x, y) = match self.pos {
             Some((x, y)) => Placement::clamp_loose(x, y, host.size(), size),
             None => (default.x, default.y),
@@ -180,6 +233,35 @@ impl Placement {
         }
         changed
     }
+}
+
+/// What the interface keeps for this station in `~/.corvus`: window places,
+/// the checklist ticks, the tablet mode and the sensor list. A factory reset
+/// removes them with the settings.
+pub const STATION_FILES: [&str; 6] = [
+    "hud.json",
+    "joystick.json",
+    "checklist-ticks.json",
+    "checklist-window.json",
+    "gui-touch.json",
+    "safety-extra.json",
+];
+
+/// Removes [`STATION_FILES`]; a missing file is already gone. Returns the
+/// names that could not be removed.
+pub fn remove_station_files() -> Vec<&'static str> {
+    let Some(home) = std::env::var_os("HOME") else {
+        return Vec::new();
+    };
+    let dir = PathBuf::from(home).join(".corvus");
+    STATION_FILES
+        .iter()
+        .copied()
+        .filter(|name| match std::fs::remove_file(dir.join(name)) {
+            Ok(()) => false,
+            Err(e) => e.kind() != std::io::ErrorKind::NotFound,
+        })
+        .collect()
 }
 
 /// Where the window rests until moved: `from_right` and `from_bottom` are
@@ -279,6 +361,52 @@ mod tests {
         let q = Placement::from_path(Some(path));
         assert_eq!(q.pos, Some((12.5, 40.0)));
         assert!(q.flag("collapsed") && !q.flag("pinned"));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_window_saved_on_a_tall_map_follows_the_bottom_edge_on_a_short_one() {
+        let dir = std::env::temp_dir().join(format!("corvus-mapwindow-host-{}", std::process::id()));
+        let path = dir.join("hud.json");
+        let mut p = Placement::from_path(Some(path.clone()));
+        p.pos = Some((8.0, 500.0));
+        p.follow_host(Vec2::new(1000.0, 700.0), WIN);
+        p.save();
+        let mut q = Placement::from_path(Some(path));
+        assert_eq!(q.pos, Some((8.0, 500.0)));
+        q.follow_host(Vec2::new(1000.0, 400.0), WIN);
+        assert_eq!(q.pos, Some((8.0, 200.0)));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_window_resting_on_the_bottom_stays_there_when_it_gets_shorter() {
+        let mut p = Placement::from_path(None);
+        p.pos = Some((8.0, 492.0));
+        p.follow_size(HOST, Vec2::new(200.0, 200.0));
+        assert_eq!(p.pos, Some((8.0, 492.0)));
+        p.follow_size(HOST, Vec2::new(200.0, 100.0));
+        assert_eq!(p.pos, Some((8.0, 592.0)), "the bottom edge stays");
+        p.follow_size(HOST, Vec2::new(200.0, 200.0));
+        assert_eq!(p.pos, Some((8.0, 492.0)), "and again when it grows");
+        let mut top = Placement::from_path(None);
+        top.pos = Some((8.0, 20.0));
+        top.follow_size(HOST, Vec2::new(200.0, 200.0));
+        top.follow_size(HOST, Vec2::new(200.0, 100.0));
+        assert_eq!(top.pos, Some((8.0, 20.0)), "a window near the top keeps its top");
+    }
+
+    #[test]
+    fn a_saved_size_carries_the_window_to_the_edge_at_the_next_start() {
+        let dir = std::env::temp_dir().join(format!("corvus-mapwindow-size-{}", std::process::id()));
+        let path = dir.join("hud.json");
+        let mut p = Placement::from_path(Some(path.clone()));
+        p.pos = Some((8.0, 492.0));
+        p.follow_size(HOST, Vec2::new(200.0, 200.0));
+        p.save();
+        let mut q = Placement::from_path(Some(path));
+        q.follow_size(HOST, Vec2::new(200.0, 100.0));
+        assert_eq!(q.pos, Some((8.0, 592.0)));
         let _ = std::fs::remove_dir_all(dir);
     }
 

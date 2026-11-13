@@ -36,7 +36,68 @@ const BAUDS: &[(&str, &str)] = &[
     ("57600", "57600 (SiK Radio v3)"),
     ("115200", "115200"),
     ("230400", "230400"),
+    ("460800", "460800 (ExpressLRS)"),
 ];
+
+/// The `Radio` select: how the bytes on the port are spoken.
+const RADIOS: &[(&str, &str)] = &[("", "MAVLink radio"), ("elrs", "ExpressLRS (MAVLink)")];
+/// A control line the port is opened with: the adapter's own, or forced.
+const LINES: &[(&str, &str)] = &[("", "Default"), ("off", "Off"), ("on", "On")];
+/// What the controller on the port is, when the stack cannot tell.
+const FIRMWARES: &[(&str, &str)] = &[("", "Detect"), ("betaflight", "Betaflight")];
+
+const BETAFLIGHT_HINT: &str = "Betaflight speaks MSP, not MAVLink. Corvus shows its telemetry only. Read the controller on the Betaflight page of Setup.";
+
+/// The options after the serial string: `?link=elrs&dtr=off&rts=off&fc=betaflight`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SerialOpts {
+    pub link: String,
+    pub dtr: String,
+    pub rts: String,
+    pub firmware: String,
+}
+
+impl SerialOpts {
+    /// The `?...` tail, empty when nothing differs from the defaults. The
+    /// order is the core's (`serial_query`).
+    pub fn query(&self) -> String {
+        let mut parts: Vec<String> = Vec::new();
+        for (key, value) in [
+            ("link", &self.link),
+            ("dtr", &self.dtr),
+            ("rts", &self.rts),
+            ("fc", &self.firmware),
+        ] {
+            if !value.is_empty() {
+                parts.push(format!("{key}={value}"));
+            }
+        }
+        if parts.is_empty() {
+            String::new()
+        } else {
+            format!("?{}", parts.join("&"))
+        }
+    }
+
+    /// Whether any option is set (the advanced rows open by themselves).
+    pub fn any(&self) -> bool {
+        !self.dtr.is_empty() || !self.rts.is_empty() || !self.firmware.is_empty()
+    }
+}
+
+/// `serial:<device>:<baud>` with the options after it.
+pub fn build_serial_string(device: &str, baud: &str, opts: &SerialOpts) -> String {
+    let base = build_connection_string(device, baud);
+    if base.is_empty() {
+        base
+    } else {
+        format!("{base}{}", opts.query())
+    }
+}
+
+fn choices(list: &[(&str, &str)]) -> Vec<Choice> {
+    list.iter().map(|(v, l)| Choice::new(*v, *l)).collect()
+}
 
 /// `serial:<device>:<baud>`.
 pub fn build_connection_string(device: &str, baud: &str) -> String {
@@ -202,6 +263,8 @@ pub struct LinkTab {
     port: String,
     port_missing: bool,
     baud: String,
+    opts: SerialOpts,
+    opts_open: bool,
     custom: String,
     new_open: bool,
     share_open: bool,
@@ -224,6 +287,8 @@ impl LinkTab {
             port: String::new(),
             port_missing: false,
             baud: "57600".into(),
+            opts: SerialOpts::default(),
+            opts_open: false,
             custom: String::new(),
             new_open: true,
             share_open: false,
@@ -286,7 +351,7 @@ impl LinkTab {
                 self.error = missing_port_hint(&self.port);
                 return;
             }
-            build_connection_string(&self.port, &self.baud)
+            build_serial_string(&self.port, &self.baud, &self.opts)
         };
         self.error.clear();
         self.last_sent = conn.clone();
@@ -661,7 +726,60 @@ impl LinkTab {
                 if let Some(v) = kit::select(ui, sel, &bauds, &self.baud, "", true, "Baud rate", "baud") {
                     self.baud = v;
                 }
-                cy += field_h;
+                cy += field_h + 10.0;
+                cy = field_label(ui, inner_x, cy, "Radio") + 5.0;
+                let sel = Rect::from_min_size(Pos2::new(inner_x, cy), Vec2::new(iw, field_h));
+                let radios = choices(RADIOS);
+                if let Some(v) = kit::select(ui, sel, &radios, &self.opts.link, "", false, "Radio", "radio") {
+                    if v == "elrs" && self.baud == "57600" {
+                        self.baud = "460800".into();
+                    }
+                    self.opts.link = v;
+                }
+                cy += field_h + 8.0;
+                let open = self.opts_open || self.opts.any();
+                let (th, clicked) = Self::card_title(
+                    ui,
+                    Pos2::new(inner_x, cy),
+                    iw,
+                    "sliders-horizontal",
+                    "Line options",
+                    open,
+                    "optstoggle",
+                );
+                if clicked {
+                    self.opts_open = !open;
+                }
+                cy += th;
+                if open {
+                    for (label, id, lines) in [
+                        ("DTR", "dtr", true),
+                        ("RTS", "rts", true),
+                        ("Flight controller", "fc", false),
+                    ] {
+                        cy = field_label(ui, inner_x, cy + 8.0, label) + 5.0;
+                        let sel = Rect::from_min_size(Pos2::new(inner_x, cy), Vec2::new(iw, field_h));
+                        let list = choices(if lines { LINES } else { FIRMWARES });
+                        let cur = match id {
+                            "dtr" => &self.opts.dtr,
+                            "rts" => &self.opts.rts,
+                            _ => &self.opts.firmware,
+                        };
+                        if let Some(v) = kit::select(ui, sel, &list, cur, "", false, label, id) {
+                            match id {
+                                "dtr" => self.opts.dtr = v,
+                                "rts" => self.opts.rts = v,
+                                _ => self.opts.firmware = v,
+                            }
+                        }
+                        cy += field_h;
+                    }
+                    if self.opts.firmware == "betaflight" {
+                        let g = kit::wrapped(ui, BETAFLIGHT_HINT, 11.0, style::warning(), iw);
+                        painter.galley(Pos2::new(inner_x, cy + 5.0), g.clone(), style::warning());
+                        cy += 5.0 + g.size().y;
+                    }
+                }
             } else {
                 cy = field_label(ui, inner_x, cy, "Connection string") + 5.0;
                 let input = Rect::from_min_size(Pos2::new(inner_x, cy), Vec2::new(iw, field_h));
@@ -905,6 +1023,34 @@ mod tests {
         assert_eq!(status_info("weird"), ("DISCONNECTED", "off"));
         assert_eq!(quality_info("lost"), ("LOST", "critical"));
         assert_eq!(quality_info(""), ("", "off"));
+    }
+
+    #[test]
+    fn the_serial_options_follow_the_baud_in_the_cores_order() {
+        let opts = SerialOpts {
+            link: "elrs".into(),
+            dtr: "off".into(),
+            rts: "off".into(),
+            firmware: "betaflight".into(),
+        };
+        assert_eq!(
+            build_serial_string("/dev/ttyUSB0", "460800", &opts),
+            "serial:/dev/ttyUSB0:460800?link=elrs&dtr=off&rts=off&fc=betaflight"
+        );
+        assert_eq!(
+            build_serial_string("/dev/ttyUSB0", "57600", &SerialOpts::default()),
+            "serial:/dev/ttyUSB0:57600"
+        );
+        assert_eq!(build_serial_string("", "57600", &opts), "");
+        let read = corvus_core::serial_ports::parse_serial_options(&build_serial_string("/dev/x", "460800", &opts));
+        assert_eq!((read.link.as_str(), read.firmware.as_str()), ("elrs", "betaflight"));
+        assert_eq!((read.dtr, read.rts), (Some(false), Some(false)));
+        let only_dtr = SerialOpts {
+            dtr: "on".into(),
+            ..SerialOpts::default()
+        };
+        assert_eq!(only_dtr.query(), "?dtr=on");
+        assert!(only_dtr.any() && !SerialOpts::default().any());
     }
 
     #[test]

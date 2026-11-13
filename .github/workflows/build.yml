@@ -65,7 +65,7 @@ jobs:
           sudo apt-get update -y
           sudo apt-get install -y --no-install-recommends \
             libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
-            libxkbcommon-dev libwayland-dev
+            libxkbcommon-dev libwayland-dev libudev-dev
       - name: rustfmt
         run: cargo fmt --check
       - name: clippy
@@ -110,7 +110,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             wget squashfs-tools dpkg-dev \
             libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
-            libxkbcommon-dev libwayland-dev
+            libxkbcommon-dev libwayland-dev libudev-dev
       # The interface is built here with cargo (the repository root, whose
       # rust-toolchain.toml rustup reads), backend included. Its X11, Wayland
       # and OpenGL libraries are opened at run time from the machine it runs

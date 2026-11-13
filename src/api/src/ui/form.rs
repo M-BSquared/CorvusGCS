@@ -21,7 +21,7 @@ use crate::ui::popover;
 use crate::ui::slider;
 use crate::ui::style::{self, Weight};
 
-pub use crate::ui::formfield::CONTROL_H;
+pub use crate::ui::formfield::control_h;
 const CARD_PAD: f32 = 19.0;
 
 /// Where the next block goes.
@@ -133,7 +133,7 @@ pub fn input(
     let mut out = None;
     field(ui, f, label, info, hint, |ui, x, y, w| {
         out = Some(formfield::input(ui, x, y, w, buf, placeholder, mono, secret, id));
-        CONTROL_H
+        control_h()
     });
     out.unwrap_or_else(|| ui.allocate_response(Vec2::ZERO, egui::Sense::hover()))
 }
@@ -232,7 +232,7 @@ pub fn switch_field(
         f.w - 38.0 - 12.0 - info_w,
         1.21,
     );
-    let row_h = g.size().y.max(22.0);
+    let row_h = style::target(g.size().y.max(22.0));
     let gw = g.size().x;
     ui.painter()
         .galley(Pos2::new(f.x, f.y + (row_h - g.size().y) / 2.0), g, caption_color);

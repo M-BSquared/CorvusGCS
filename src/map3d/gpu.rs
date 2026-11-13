@@ -92,6 +92,10 @@ pub struct Item {
     /// A mesh made for this frame only (a ribbon follows the camera): it is
     /// uploaded, drawn and freed in the same paint, and never kept.
     pub transient: bool,
+    /// A closed volume that colours the ground and the buildings inside it,
+    /// to the pixel, and is itself not seen: an area or a line laid on the
+    /// ground (`overlays.rs`). Needs a stencil buffer.
+    pub volume: bool,
 }
 
 /// Everything one frame of the 3D view draws.
@@ -105,6 +109,9 @@ pub struct Scene {
     pub ground: f64,
     pub ground_items: Vec<Item>,
     pub building_items: Vec<Item>,
+    /// What lies on the ground: areas and outlines, drawn after the ground
+    /// and the buildings they lie on and before the lines above them.
+    pub area_items: Vec<Item>,
     /// The track and other lines: ribbons the depth test hides behind the
     /// ground, blended, a little nearer than the ground they lie on.
     pub line_items: Vec<Item>,
@@ -146,6 +153,15 @@ static STATS: Mutex<Stats> = Mutex::new(Stats {
     submit_ms: 0.0,
 });
 static DEFERRED: AtomicBool = AtomicBool::new(false);
+/// Set once the window is known to have no stencil buffer.
+static NO_STENCIL: AtomicBool = AtomicBool::new(false);
+
+/// Whether volumes can be drawn (`Item::volume`). True until the first paint
+/// finds the window without a stencil buffer; the view then lays its shapes
+/// as plain meshes instead.
+pub fn stencil_ok() -> bool {
+    !NO_STENCIL.load(Ordering::Relaxed)
+}
 
 /// The last finished frame.
 pub fn stats() -> Stats {
@@ -325,6 +341,8 @@ pub struct Caps {
     pub depth_bits: Option<i32>,
     /// Largest texture side; 0 when unknown.
     pub max_texture: i32,
+    /// Bits of the window's stencil buffer; `None` when the driver would not say.
+    pub stencil_bits: Option<i32>,
 }
 
 /// Whether the 3D view can run on a context with these `caps`, and why not.
@@ -361,12 +379,26 @@ unsafe fn read_caps(gl: &glow::Context) -> Caps {
         depth = if gl.get_error() == glow::NO_ERROR { old } else { 0 };
     }
     while gl.get_error() != glow::NO_ERROR {}
+    let mut stencil = gl.get_framebuffer_attachment_parameter_i32(
+        glow::FRAMEBUFFER,
+        glow::STENCIL,
+        glow::FRAMEBUFFER_ATTACHMENT_STENCIL_SIZE,
+    );
+    if gl.get_error() != glow::NO_ERROR {
+        stencil = -1;
+    }
+    if stencil <= 0 {
+        let old = gl.get_parameter_i32(glow::STENCIL_BITS);
+        stencil = if gl.get_error() == glow::NO_ERROR { old } else { stencil };
+    }
+    while gl.get_error() != glow::NO_ERROR {}
     let max_texture = gl.get_parameter_i32(glow::MAX_TEXTURE_SIZE);
     while gl.get_error() != glow::NO_ERROR {}
     Caps {
         new_glsl: version.is_new_shader_interface(),
         depth_bits: (depth >= 0).then_some(depth),
         max_texture,
+        stencil_bits: (stencil >= 0).then_some(stencil),
     }
 }
 
@@ -387,7 +419,10 @@ unsafe fn create(gl: &glow::Context) -> Result<Gpu, String> {
     if let Ok(reason) = std::env::var(FAIL_ENV) {
         return Err(reason);
     }
-    check_caps(&read_caps(gl))?;
+    let caps = read_caps(gl);
+    check_caps(&caps)?;
+    // A driver that will not say is taken at the window's word: it was asked for one.
+    NO_STENCIL.store(caps.stencil_bits == Some(0), Ordering::Relaxed);
     let version = egui_glow::ShaderVersion::get(gl);
     let header = version.version_declaration();
     let vs = compile(gl, glow::VERTEX_SHADER, header, VERTEX)?;
@@ -544,10 +579,37 @@ impl Gpu {
     }
 
     unsafe fn draw(&mut self, gl: &glow::Context, scene: &Scene, item: &Item, b: &mut Budget) {
+        if let Some(count) = self.bind(gl, scene, item, b) {
+            gl.draw_elements(glow::TRIANGLES, count, glow::UNSIGNED_INT, 0);
+        }
+    }
+
+    /// A volume: what the depth buffer holds inside it is counted in the
+    /// stencil (the faces behind it, front against back, so a hill in front
+    /// of the volume counts nothing), then coloured once and the count put
+    /// back to zero. Depth is neither written nor, for the colour, tested.
+    unsafe fn draw_volume(&mut self, gl: &glow::Context, scene: &Scene, item: &Item, b: &mut Budget) {
+        let Some(count) = self.bind(gl, scene, item, b) else {
+            return;
+        };
+        gl.color_mask(false, false, false, false);
+        gl.stencil_func(glow::ALWAYS, 0, 0xFF);
+        gl.stencil_op_separate(glow::FRONT, glow::KEEP, glow::DECR_WRAP, glow::KEEP);
+        gl.stencil_op_separate(glow::BACK, glow::KEEP, glow::INCR_WRAP, glow::KEEP);
+        gl.draw_elements(glow::TRIANGLES, count, glow::UNSIGNED_INT, 0);
+        gl.color_mask(true, true, true, true);
+        gl.disable(glow::DEPTH_TEST);
+        gl.stencil_func(glow::NOTEQUAL, 0, 0xFF);
+        gl.stencil_op(glow::ZERO, glow::ZERO, glow::ZERO);
+        gl.draw_elements(glow::TRIANGLES, count, glow::UNSIGNED_INT, 0);
+        gl.enable(glow::DEPTH_TEST);
+    }
+
+    /// Makes the item's mesh, texture and uniforms current; the number of
+    /// indices to draw, or `None` when it has to wait for another frame.
+    unsafe fn bind(&mut self, gl: &glow::Context, scene: &Scene, item: &Item, b: &mut Budget) -> Option<i32> {
         let (vao, count) = if item.transient {
-            let Some(m) = make_mesh(gl, &item.mesh) else {
-                return;
-            };
+            let m = make_mesh(gl, &item.mesh)?;
             let r = (m.vao, m.count);
             self.scratch.push(m);
             b.transient += 1;
@@ -556,18 +618,14 @@ impl Gpu {
             if !self.meshes.contains(item.mesh.id) {
                 if b.meshes >= MESH_UPLOADS_PER_FRAME {
                     b.deferred = true;
-                    return;
+                    return None;
                 }
-                let Some(m) = make_mesh(gl, &item.mesh) else {
-                    return;
-                };
+                let m = make_mesh(gl, &item.mesh)?;
                 self.meshes.insert(item.mesh.id, m, self.frame);
                 b.meshes += 1;
             }
-            match self.meshes.touch(item.mesh.id, self.frame) {
-                Some(m) => (m.vao, m.count),
-                None => return,
-            }
+            let m = self.meshes.touch(item.mesh.id, self.frame)?;
+            (m.vao, m.count)
         };
         let picked = self.pick_texture(gl, item, b);
         let u = &self.uniforms;
@@ -590,11 +648,11 @@ impl Gpu {
             None => gl.uniform_1_f32(u.use_tex.as_ref(), 0.0),
         }
         gl.bind_vertex_array(Some(vao));
-        gl.draw_elements(glow::TRIANGLES, count, glow::UNSIGNED_INT, 0);
         b.draws += 1;
         if picked.is_some() {
             b.textured += 1;
         }
+        Some(count)
     }
 
     unsafe fn forget_unused(&mut self, gl: &glow::Context) {
@@ -642,7 +700,9 @@ pub unsafe fn paint(gl: &glow::Context, scene: &Scene) {
 
     gl.depth_mask(true);
     gl.clear_depth_f32(1.0);
-    gl.clear(glow::DEPTH_BUFFER_BIT);
+    gl.stencil_mask(0xFF);
+    gl.clear_stencil(0);
+    gl.clear(glow::DEPTH_BUFFER_BIT | glow::STENCIL_BUFFER_BIT);
     gl.enable(glow::DEPTH_TEST);
     gl.depth_func(glow::LEQUAL);
     gl.disable(glow::CULL_FACE);
@@ -669,12 +729,28 @@ pub unsafe fn paint(gl: &glow::Context, scene: &Scene) {
         }
         gl.disable(glow::BLEND);
     }
-    if !scene.line_items.is_empty() {
+    if !(scene.area_items.is_empty() && scene.line_items.is_empty()) {
         gl.enable(glow::BLEND);
         gl.blend_func(glow::SRC_ALPHA, glow::ONE_MINUS_SRC_ALPHA);
+        let stencil = stencil_ok();
+        if stencil && scene.area_items.iter().any(|i| i.volume) {
+            gl.enable(glow::STENCIL_TEST);
+            gl.depth_mask(false);
+            for item in scene.area_items.iter().filter(|i| i.volume) {
+                gpu.draw_volume(gl, scene, item, &mut budget);
+            }
+            gl.depth_mask(true);
+            gl.disable(glow::STENCIL_TEST);
+            gl.stencil_op(glow::KEEP, glow::KEEP, glow::KEEP);
+            gl.stencil_func(glow::ALWAYS, 0, 0xFF);
+        } else if scene.area_items.iter().any(|i| i.volume) {
+            // The view made these before the missing buffer was known: it
+            // lays them again as meshes for the next frame.
+            budget.deferred = true;
+        }
         gl.enable(glow::POLYGON_OFFSET_FILL);
         gl.polygon_offset(-2.0, -2.0);
-        for item in &scene.line_items {
+        for item in scene.area_items.iter().filter(|i| !i.volume).chain(&scene.line_items) {
             gpu.draw(gl, scene, item, &mut budget);
         }
         gl.disable(glow::POLYGON_OFFSET_FILL);
@@ -759,6 +835,7 @@ mod tests {
             new_glsl: true,
             depth_bits: Some(24),
             max_texture: 8192,
+            stencil_bits: Some(8),
         }
     }
 

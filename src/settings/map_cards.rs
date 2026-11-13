@@ -9,7 +9,7 @@ use serde_json::{json, Value};
 use super::tabs::{MEASURE, REGIONS, TRACK};
 use super::{model, refused, Dialog, SettingsPage};
 use crate::ui::chip::Chip;
-use crate::ui::form::{self, Form, CONTROL_H};
+use crate::ui::form::{self, control_h, Form};
 use crate::ui::kit::{self, Button, Choice, Variant};
 use crate::ui::message::Tone;
 use crate::ui::optioncards::Card;
@@ -263,14 +263,14 @@ impl SettingsPage {
                     };
                     let buf = self.texts.entry(key).or_default();
                     form::field(ui, &mut f, &label, &info, "", |ui, x, y, w| {
-                        let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, CONTROL_H));
+                        let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, control_h()));
                         crate::ui::field::TextField::new(buf)
                             .hint(hint)
                             .mono(true)
                             .pad(11.0, 11.0)
                             .password()
                             .show(ui, r, key);
-                        CONTROL_H
+                        control_h()
                     });
                     f.skip(8.0);
                     let state = style::galley(
@@ -474,31 +474,31 @@ impl SettingsPage {
                 "A GeoTIFF names its own. XYZ and ASCII files do not: German state data is usually ETRS89 / UTM zone 32N.",
                 |ui, x, y, w| {
                     let choices: Vec<Choice> = model::DEM_CRS.iter().map(|c| Choice::new(c.0, c.1)).collect();
-                    let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, CONTROL_H));
+                    let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, control_h()));
                     new_crs = kit::select(ui, r, &choices, &crs, "", false, "", "demcrs");
-                    let mut h = CONTROL_H;
+                    let mut h = control_h();
                     if crs == "other" {
-                        let r2 = Rect::from_min_size(Pos2::new(x, y + h + 8.0), Vec2::new(w, CONTROL_H));
+                        let r2 = Rect::from_min_size(Pos2::new(x, y + h + 8.0), Vec2::new(w, control_h()));
                         let buf = self.texts.entry("dem_epsg").or_default();
                         crate::ui::field::TextField::new(buf)
                             .hint("EPSG code, for example 25832")
                             .mono(true)
                             .pad(11.0, 11.0)
                             .show(ui, r2, "demepsg");
-                        h += 8.0 + CONTROL_H;
+                        h += 8.0 + control_h();
                     }
                     h
                 },
             );
             f.skip(14.0);
             form::field(ui, f, "Name", "", "", |ui, x, y, w| {
-                let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, CONTROL_H));
+                let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, control_h()));
                 let buf = self.texts.entry("dem_name").or_default();
                 crate::ui::field::TextField::new(buf)
                     .hint("From the first file name")
                     .pad(11.0, 11.0)
                     .show(ui, r, "demname");
-                CONTROL_H
+                control_h()
             });
             f.skip(14.0);
             let b = Button::new("LOAD ELEVATION FILES\u{2026}", Variant::Secondary)
@@ -754,7 +754,7 @@ impl SettingsPage {
                     |ui, x, y, w| {
                         let mut f = Form::new(x, y, w);
                         form::field(ui, &mut f, "Name", "", "", |ui, x, y, w| {
-                            let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, CONTROL_H));
+                            let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, control_h()));
                             let resp =
                                 crate::ui::field::TextField::new(buf)
                                     .pad(11.0, 11.0)
@@ -762,7 +762,7 @@ impl SettingsPage {
                             if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                                 go = true;
                             }
-                            CONTROL_H
+                            control_h()
                         });
                         if let Some((t, tone)) = &msg {
                             f.skip(10.0);

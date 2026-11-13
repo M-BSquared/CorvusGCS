@@ -5,10 +5,10 @@ interface (`python/src/index.html`, `python/src/js/*.js`, the plugin hooks),
 and where the native interface (`src/`) stands. The web interface stays until
 the user has compared both page by page.
 
-Status: **done** (in `src/`, tested against the web's expected values),
-**partial** (what is left is in the row), **missing** (not built, in the order
-of how much a field operator needs it), **n/a** (cannot or must not exist in a
-native window, with the reason).
+Status: **done** (in `src/`, tested against the web's expected values) or
+**n/a** (cannot or must not exist in a native window, with the reason). This
+file holds only what stands. Whatever is open, not built, not looked at live or
+not tried on real hardware is in `PLAN.md`, the one list of open work.
 
 Paths in the "web file" column are in `python/src/js/` unless they say
 otherwise; "native file" is in `src/`.
@@ -27,10 +27,10 @@ otherwise; "native file" is in `src/`.
 | Responsive width classes (1279, 959, 900, 720, 600) | css/responsive.css | app/responsive.rs | done |
 | Interface scale (Settings, `ui.scale`, steps 0.8 to 1.5) | scale.js | app/mod.rs (`set_zoom_factor`) | done |
 | Theme from the config, six themes | theme.js | ui/style.rs | done |
-| Tablet and touch mode: flight bar and rail targets, no zoom buttons, long press as right click, HUD buttons shown, SSH tab and panel edge gone, kept on this device | touch.js, css/touch.css | app/touch.rs, home/flight.rs, map/rail.rs, home/hud.rs, panel/mod.rs, settings/tabs.rs | partial: the long press and the mode are unit tested, the sizes seen on screen with the mode on; not done: bigger form controls, Settings pills, setup pages, fullscreen entry, hold to move the HUD, double tap |
+| Tablet and touch mode: flight bar and rail targets, no zoom buttons, long press as right click, HUD buttons shown, SSH tab and panel edge gone, kept on this device | touch.js, css/touch.css | app/touch.rs, home/flight.rs, map/rail.rs, home/hud.rs, panel/mod.rs, settings/tabs.rs, ui/style.rs | done: the long press, the hold that picks a pinned HUD up, the mode and the 44 px rules are unit tested; form fields, selects, buttons, Settings pills, menu rows, switch rows and panel tabs grow to 44 px (`style::target`), switches, checkboxes, sliders and icon buttons get a larger hit area (`style::finger`, +4 px for an icon button), seen in Settings and Safety with the mode on. A finger held still 0.4 s on the pinned HUD moves it (an accent outline shows it is picked up). Full screen is a switch in the Tablet card and F11. A double tap is a double click: egui-winit turns a touch into pointer events, so every double click rule (send a window home) holds |
 | Window title from `/api/version` | app.js | app/mod.rs | done |
-| First start page (welcome): look, units and review, workspace, controls, import, skip | welcome.js | welcome/mod.rs, welcome/model.rs | done: start page and four steps drawn and unit tested; the steps after the first were not clicked through against the sandbox |
-| Update check, "newer release" dialog, skip this version, open release page | update.js | update/mod.rs, settings/about.rs | done: unit tested, the dialog was not seen against a real answer (the sandbox is offline) |
+| First start page (welcome): look, units and review, workspace, controls, import, skip | welcome.js | welcome/mod.rs, welcome/model.rs | done: start page and four steps drawn and unit tested |
+| Update check, "newer release" dialog, skip this version, open release page | update.js | update/mod.rs, settings/about.rs | done: unit tested |
 | Update marker (a dot on SET, the version in its tooltip) | update.js | app/nav.rs, update/mod.rs | done (the dot on the About pill is not drawn) |
 | MCP: question dialog (Allow, Refuse), indicator pill with Stop, refusals on the board, window heartbeat | mcp.js | mcp/mod.rs | done: unit tested; the plugin tools of Schwalby were announced by the heartbeat and called by a live MCP client |
 | One shared `/api/events` stream for console, params, firmware, tiles, shell, mcp, fleet | events.js | net/stream.rs (one stream per topic) | done |
@@ -53,7 +53,7 @@ otherwise; "native file" is in `src/`.
 | Offline map dialog | tiles.js | map/tiles_*.rs | done |
 | Downloaded areas outline | map.js | map/regions.rs | done |
 | Track: record, smooth, clear, per-flight colours, keep over restart | map.js | data/track.rs, data/track_store.rs | done |
-| 3D robustness: context checks and the flat map as fallback, budgets per frame, bounded GPU tables, antimeridian and poles, offline notice, debug overlay (F3), close up soak over one place (`CORVUS_GUI_SOAK_AT`); the regression pictures went with the Python simulator | map.js | map3d/gpu.rs, map3d/mod.rs, src/app/soak.rs | done: the 3D map tested live on the Alps and a city; not tried on Linux or Windows, not on a second screen with another pixel density |
+| 3D robustness: context checks and the flat map as fallback, budgets per frame, bounded GPU tables, antimeridian and poles, offline notice, debug overlay (F3), close up soak over one place (`CORVUS_GUI_SOAK_AT`); the regression pictures went with the Python simulator | map.js | map3d/gpu.rs, map3d/mod.rs, src/app/soak.rs | done: the 3D map tested live on the Alps and a city |
 | Geofence outline in 3D | map.js `setPolygonOverlay` | map3d/mod.rs `paint_fence` | done: drawn on the ground in pieces, the ones behind a hill left out; the fill is a flat wash on the screen |
 | Track drawn in 3D with the depth test (a ribbon mesh, constant width on the screen) | map.js `renderTrack3D` | map3d/ribbon.rs, map3d/gpu.rs | done |
 | Vehicle and home hidden behind a hill in 3D | map.js `occludedByGlobe` | map3d/mod.rs `hidden` | done: a terrain ray test on the screen markers (home, vehicle, other vehicles, plugin markers, geofence pieces), not a depth test; the ray test is a function with a test of its own |
@@ -64,7 +64,7 @@ otherwise; "native file" is in `src/`.
 | Fly-to-points plan (PLAN button, click to add, slider AGL, FLY, CLEAR) | map.js, app.js | map/tools.rs, home/flight.rs | done |
 | Home and vehicle markers | map.js | map/mod.rs | done |
 | Other vehicles on the map in their own colour, name under, own track, click opens the dialog | map-fleet.js | map/others.rs, fleet/tracks.rs | done (kept over a restart in ~/.corvus/gui-tracks.json) |
-| Plugin overlays on the map: lines, areas, labels, buttons, markers, icons | map-overlays.js, map-icons.js | corvus_api `plugin/shapes.rs`, plugins/layer.rs, map3d/overlays.rs | done: on the flat map as before; in 3D lines, outlines and areas are terrain draped meshes (a point every 30 m, areas cut into triangles of at most 80 m) drawn with the depth test, so a hill in front hides them as it hides the track (seen with a radar zone and a gate in the Alps); text, markers and buttons stay screen elements tested by the terrain ray |
+| Plugin overlays on the map: lines, areas, labels, buttons, markers, icons | map-overlays.js, map-icons.js | corvus_api `plugin/shapes.rs`, plugins/layer.rs, map3d/overlays.rs | done: on the flat map as before; in 3D lines, outlines and areas are volumes the stencil buffer projects onto the ground and the roofs to the pixel (even over a surface model with trees, and hidden by a hill in front as the track is), with terrain draped meshes as the fallback where the window has no stencil buffer; text, markers and buttons are screen elements tested by the terrain ray, and markers, buttons and `pick_point` answer the pointer in 3D as on the flat map (the place is the ground under the pointer) |
 | Geofence drawn on the map | geofence.js | setup/geofence.rs, map/mod.rs `fence_outline` | done, in 2D and in 3D |
 | Tile credit: a folded glass disc with the info icon at every width, a click opens it, a drag folds it, hover warms it | map.css `.maplibregl-ctrl-attrib`, map.js `ownAttributionToggle` | map/credit.rs | done on the Home map (2D, 3D with the elevation credit joined), the Analysis track map and the geofence map. The web asks for `compact: true`, so there is no 640 px rule to copy |
 
@@ -75,13 +75,12 @@ otherwise; "native file" is in `src/`.
 | Flight bar: ARM/DISARM, TAKEOFF, LAND, RTL, mode picker, phase | app.js | home/flight.rs | done |
 | Takeoff card: altitude slider, entry, confirm | app.js | home/flight.rs | done |
 | PLAN button on the flight bar | app.js | home/flight.rs | done |
-| Flight bar adapts to ground vehicles (Drive, no takeoff) | app.js | home/flight.rs | check |
 | HUD: compass, attitude indicator, six readouts | instruments.js | home/hud.rs | done |
 | HUD window: drag, pin, compact, hide readouts, collapse to a pill, position kept, square corners, switched off | hud-panel.js | home/hud.rs, home/mapwindow.rs | done |
 | Checklist window on the map, arming warning | checklist.js | home/checklist_window.rs | done |
 | Checklist editor | checklist-editor.js | setup/checklist.rs | done |
 | Virtual joystick pad, arrow keys, WASD, lock and unlock, boost, key strength, collapse, drag, position kept, 20 Hz and 5 Hz stream | joystick.js | control/mod.rs, control/model.rs, home/mapwindow.rs | done |
-| USB gamepad: the block, the sticks summed into the frame, the arm gesture and the gate after it | joystick.js | control/model.rs, control/mod.rs | partial: the rules are done and tested with fed axes; reading a device needs a crate (gilrs, which needs libudev on the Linux build host), left for the user to decide |
+| USB gamepad: the block, the sticks summed into the frame, the arm gesture and the gate after it | joystick.js | control/model.rs, control/mod.rs, control/gamepad.rs | done: the rules are tested with fed axes; the device is read through the `gilrs` crate once a frame while the gamepad is switched on (up is turned into the model's down, a broken axis is centred) and let go of when it is off or on exit. On Linux the build host needs `libudev-dev` (added to the CI jobs) and the machine `libudev1` (a `.deb` dependency, host provided in the AppImage) |
 | MCP "AI client connected" pill with Stop | mcp.js | mcp/mod.rs | done |
 
 ## Multi-vehicle
@@ -93,7 +92,7 @@ otherwise; "native file" is in `src/`.
 | Take control confirmation while the flown vehicle is armed | fleet.js | fleet/dialog.rs | done |
 | Remove vehicle confirmation (primary link, armed warning) | fleet.js | fleet/dialog.rs | done |
 | Links panel: rows, plugged-in offer, free serial ports, open link, close link | fleet.js | fleet/dialog.rs | done |
-| Settings Connections: vehicles section | sidenav.js `renderVehiclesSection` | settings/conn_cards.rs | partial |
+| Settings Connections: vehicles section | sidenav.js `renderVehiclesSection` | settings/conn_cards.rs | done: the links card and a Known vehicles card (colour, name, state, link, a button that forgets one; the core refuses an armed one and says so). Renaming and recolouring stay in the Vehicles dialog of the top bar |
 
 ## Pop-out and floating windows
 
@@ -104,7 +103,7 @@ otherwise; "native file" is in `src/`.
 | Camera in a floating window | video-window.js | setup/video_window.rs | done |
 | Window of its own: terminal or camera in a native viewport, back in with a button | popout.js, popout-page.js, popout.html | app/popout.rs, term/window.rs, setup/video_window.rs | done: the frame in the app was seen with its new button; the window out was started without error but a screenshot cannot see a second window |
 | "Open inside the Corvus window" setting | popout.js | app/popout.rs, settings/mod.rs `Effects` | done |
-| Frameless Corvus title bar, pin above the Corvus window, drag past the edge to carry a frame out | popout.js, popout-page.js | n/a | not done: egui draws the window out with the system's title bar, and has no always-on-top above one window only |
+| Frameless Corvus title bar, pin above the Corvus window, drag past the edge to carry a frame out | popout.js, popout-page.js | n/a | deliberate difference: egui draws the window out with the system's title bar, and has no always-on-top above one window only, so the browser's pop out of a frame has no native counterpart; the floating windows stay inside the Corvus window or are real windows (`app/popout.rs`) |
 
 ## Setup
 
@@ -118,13 +117,12 @@ otherwise; "native file" is in `src/`.
 | Safety and sensors, geofence, landing | setup-safety.js, setup-geofence.js | setup/safety.rs, geofence*.rs, landing.rs | done |
 | Battery and power | setup-battery.js | setup/battery*.rs | done |
 | Calibration, figures, protocol | setup-calibration.js, calib-*.js | setup/calib*.rs | done |
-| Radio Control, wizard | setup-control.js | setup/radio*.rs | partial: the wizard opens against the simulator and shows step 1 of 5; Next to Write to vehicle was not driven (the harness cannot scroll to the buttons or move the simulated sticks), the later steps rest on the model tests |
 | Radio table scrolls sideways under 580 px | setup-control.js | setup/radio.rs | done: built, not looked at on screen |
 | RC transmitter drawing, learn, inspector | rc-transmitter.js | setup/rc_*.rs | done |
 | PID tuning; run bar sticks to the top | setup-tuning.js | setup/tuning.rs | done: built, not looked at on screen |
 | Telemetry radio (SiK) | setup-sik.js | setup/sik*.rs | done |
-| Betaflight page: read the controller over MSP (firmware, board, sensors, PIDs, rates, battery) | setup-betaflight.js | not built; the core answers `GET /api/betaflight/status` and `POST /api/betaflight/read` (`peripherals/betaflight.rs`, `corvus_link::plain::msp`) | missing: a port picker, a Read button and summary, PID and rate tables built from `pagekit`, `select` and `card`, as `setup/sik.rs` does; it maps onto the UI base |
-| Setup tiles greyed with the reason when `capabilities.setup_unavailable` names them (Betaflight) | setup.js, capabilities.js | not built; the core reports `telemetry_only` and `setup_unavailable` | missing: `setup/landing.rs` and the capabilities reader |
+| Betaflight page: read the controller over MSP (firmware, board, sensors, PIDs, rates, battery) | setup-betaflight.js | setup/betaflight.rs; the core answers `GET /api/betaflight/status` and `POST /api/betaflight/read` (`peripherals/betaflight.rs`, `corvus_link::plain::msp`) | done: a port picker (the live link's port flagged, never read), a baud picker, Read controller, the controller, battery, PID and rates cards; the row builders are unit tested with a full and an empty read |
+| Setup tiles greyed with the reason when `capabilities.setup_unavailable` names them (Betaflight) | setup.js, capabilities.js | setup/mod.rs, data/capabilities.rs, ui/pagekit.rs `tile_with` | done: the capabilities reader keeps `telemetry_only` and `setup_unavailable`; a named tile is faded, does not open and says why on hover; the parsing is unit tested |
 | RTK GPS | setup-rtk.js | setup/rtk*.rs | done |
 | Video | setup-video.js | setup/video*.rs | done |
 | Remote ID | setup-remoteid.js | setup/remoteid*.rs | done |
@@ -135,13 +133,12 @@ otherwise; "native file" is in `src/`.
 | Feature | Web file | Native file | Status |
 | --- | --- | --- | --- |
 | Planner on the Home map: tools, items, editor, profile, patterns, terrain | mission.js, mission-geometry.js | mission/ | done |
+| The mission the vehicle holds on the Home map: route, numbered points (done, current, ahead) and the leg being flown | mission.js `renderVehicle` | map/flown.rs, mission/progress.rs `flown_route`, `MissionPage::observe` | done: drawn for a plan the vehicle is known to fly (the Mission page's own claim, so an edited plan or another station's upload is never highlighted), on the 2D and the 3D map, with the telemetry read on every page; unit tested |
 | Upload, save, open, read, new, clear confirmations | mission.js | mission/dialogs.rs | done |
 | Fly a mission end to end (upload, start, progress) against the simulator | mission.js | mission/ | done: the simulated PX4 accepts MISSION_START; verified upload, start and "Flying to 2" |
-| Row dragging, profile height dragging, marker dragging | mission.js | mission/side.rs, profile.rs, mapview.rs | partial: unit tested only |
 | Touch FINISH button (tablet mode), offscreen plan notice | mission.js | mission/toolbar.rs, mission/mod.rs | done: both seen in the running app against the simulator (the plan notice after a quiet reopening of a plan in another city; FINISH ending a drawn area with 16 points). Found and fixed: a finished shape still said "Enter or a double click" in tablet mode instead of "Press FINISH ..." |
 | Stacked layout under 960 px: map at 55 percent of the window (not under 320 px), the profile as a band, the sidebar at its natural height with the list capped at 320 px, one column that scrolls | mission.js, css/mission.css | mission/mod.rs `show_stacked`, mission/side.rs, mission/profile.rs | done: seen at 900 px with a drawn plan; scrolling was exercised with a forced offset only |
 | Last plan reopening (the plan last saved or opened, kept in `~/.corvus/gui-mission-last.txt`, opened quietly, forgotten when deleted) | mission.js | mission/mod.rs `last` | done |
-| Shortcuts: Esc cancels row drag, search, pattern, tool; Enter finishes a pattern; Delete removes the point | mission.js | mission/mod.rs | check |
 
 ## Settings, Logs, Analysis
 
@@ -154,7 +151,7 @@ otherwise; "native file" is in `src/`.
 | MCP settings, permissions, connect dialog, token | settings-mcp.js | settings/conn_cards.rs | done |
 | Settings export and import | settings-transfer.js | settings/data_cards.rs | done |
 | Logs page | sidenav.js | logs/ | done |
-| Every path of a file or folder on this computer is chosen with the system file dialog, not typed (a deliberate difference: the web page cannot open one); a backend side path is a text box for a remote `--server` | settings-transfer.js, sidenav.js, analysis.js, setup-parameters.js, setup-firmware.js, panel.js | ui/pathfield.rs, ui/filepicker.rs, settings/, analysis/, setup/, plugins/ssh_setup.rs | done: looked at in screenshots, the native dialog itself not clicked (sandbox) |
+| Every path of a file or folder on this computer is chosen with the system file dialog, not typed (a deliberate difference: the web page cannot open one); a backend side path is a text box for a remote `--server` | settings-transfer.js, sidenav.js, analysis.js, setup-parameters.js, setup-firmware.js, panel.js | ui/pathfield.rs, ui/filepicker.rs, settings/, analysis/, setup/, plugins/ssh_setup.rs | done: looked at in screenshots |
 | Analysis: logs, Flight Review, Telemetry Review, Live Messages | analysis.js | analysis/ | done |
 | Review ground track over satellite imagery: the Chart / Satellite switch, the layer rule, fit with 36 px padding, the key, the zoom buttons, ctrl + scroll to zoom with its hint | analysis.js | analysis/trackmap.rs, analysis/review.rs | done: seen against the simulator's flight log on the Esri layer; the imagery's square corners poke 2 px past the rounded border |
 
@@ -184,11 +181,10 @@ The rows were found by reading the CSS and the scripts, then the native code. On
 
 | Feature | Web file | Native file | Status |
 | --- | --- | --- | --- |
-| Link: status, recent, suggestion, new link (serial, network, presets), auto connect | link.js | panel/link.rs | partial: not built: the Radio selector with ExpressLRS (MAVLink), baud 460800, DTR and RTS choices and the Betaflight hint, which write `?link=elrs&dtr=off&rts=off&fc=betaflight` after the serial string; the core already reads them (`serial_ports::parse_serial_options`) |
+| Link: status, recent, suggestion, new link (serial, network, presets), auto connect | link.js | panel/link.rs | done: the Radio select (MAVLink or ExpressLRS, which also picks 460800 baud), baud 460800, the DTR and RTS choices and the flight controller hint with the Betaflight note write `?link=elrs&dtr=off&rts=off&fc=betaflight` after the serial string, in the core's own order; a unit test reads the string back through `serial_ports::parse_serial_options` |
 | Share link (forward to a second station) | link.js | panel/link.rs | done |
 | Console: filter, pause, copy, save, clear, input with history, jump to latest | panel.js | panel/console.rs | done |
 | SSH tab and saved connections, terminal | panel.js, ssh-term.js | panel/mod.rs, term/ | done |
-| Fullscreen console (Shift+Escape) | panel.js | panel/ | check |
 | PLUGINS tab | plugins.js | plugins/ (registry and view) | done: the cards, the gear dialog and Own tab as before; the plugins are crates (`src/plugins/<id>/`), listed by `build.rs` |
 
 ## Keyboard
@@ -197,9 +193,9 @@ The rows were found by reading the CSS and the scripts, then the native code. On
 | --- | --- | --- | --- |
 | Arrow keys and W A S D fly the aircraft (locked until unlocked), Shift boosts, Escape locks | joystick.js | control/mod.rs | done |
 | Esc closes menus, dialogs, popovers | ui.js | ui/ | done |
-| Arrows, Home, End, Enter in an open list (the first row, or the one in use, has the ring); Tab closes it; the arrows and W A S D close the map's context menu and fly | ui.js `menu`, map.js `isFlightKey` | ui/menu.rs | done, type-ahead not ported |
+| Arrows, Home, End, Enter in an open list (the first row, or the one in use, has the ring); type-ahead; Tab closes it; the arrows and W A S D close the map's context menu and fly | ui.js `menu`, map.js `isFlightKey` | ui/menu.rs | done: typing picks the first row a word starts, a letter again moves on, one letter repeated cycles, a pause of 0.8 s starts a new word and a space inside a word is not Enter; `type_ahead` is unit tested |
 | One dropdown surface and row for every list: select, flight modes, layers (headings per service), cameras, context menu, power menu, search answers (a panel of its own at 0.86, as `.map-search-results`) | components.css `.ui-menu`, `.option-item`, `.layer-group`, `.ui-menu-head` | ui/menu.rs | done |
-| Esc cancels the distance tool, the plan mode | map-measure.js, map.js | map/measure.rs | partial |
+| Esc cancels the distance tool, the plan mode | map-measure.js, map.js | map/measure.rs, map/mod.rs | done: seen in the running app (a line of 2.85 km, the first Esc clears it and the ruler stays, the second leaves the tool; `CORVUS_GUI_CLICK` takes `esc` for it); the plan mode takes the same path in both maps |
 | Enter and Escape in the takeoff entry | app.js | home/flight.rs | done |
 
 ## Not mine, listed for completeness

@@ -156,7 +156,7 @@ Nothing open: every setup route answers, and the frozen fixtures (`src/core/test
   smoke tested); CI is their first run. Check that the Windows folder and the
   AppImage start without Python on a clean machine.
 
-### 0.8 The interface (`src/PARITY.md` is the source of truth)
+### 0.8 The interface (what stands is in `src/PARITY.md`, what is open is here)
 
 * P1 Compare each bundled plugin with its web original side by side with
   screenshots (Vibration Monitor, SSH Launcher, Map Entities, Schwalby); the
@@ -165,14 +165,34 @@ Nothing open: every setup route answers, and the frozen fixtures (`src/core/test
   offline notice; re-measure the memory (target below 1 GB while open).
 * P2 Not seen live: the crash notice screen, the console jump chip, the native
   file dialogs (the sandbox cannot click them).
-* P2 Remaining parity rows, in order: mission flown against the simulator
-  (against a PX4 and an ArduPilot SITL the operator runs, `MISSION_START` for both dialects; the simulated aircraft is gone), setup (Radio
-  Control wizard steps 2 to 5, radio table under 580 px, motor dialog border,
-  PID run bar), settings (vehicles section, effects of the HUD, track and top
-  bar switches, update dialog against a stub, welcome steps), home (ground
-  vehicle flight bar, Esc for distance and plan mode, fullscreen console),
-  tablet and touch mode, USB gamepad.
-* P2 Decide on the `gilrs` crate (needs libudev on the Linux build host).
+* P2 Open parity items, taken out of `src/PARITY.md` (which holds only what
+  stands). Not built or not checked at all:
+  * Home: the flight bar for a ground vehicle (Drive, no takeoff), the
+    fullscreen console (Shift+Escape).
+  * Mission: the keyboard shortcuts (Esc cancels a row drag, the search, a
+    pattern or the tool; Enter finishes a pattern; Delete removes the point),
+    and row, profile height and marker dragging, which are unit tested only.
+  * Setup: the Radio Control wizard from Next to Write to vehicle (steps 2 to
+    5 rest on the model tests; the harness cannot scroll to the buttons or move
+    the simulated sticks), the radio table under 580 px, the motor dialog
+    border, the PID run bar.
+  Built and unit tested, not seen against the real thing:
+  * A mission flown against a PX4 and an ArduPilot SITL the operator runs
+    (`MISSION_START` for both dialects; the simulated aircraft is gone), with
+    the mission and the leg being flown on the Home map, and the plan mode's
+    Esc with a vehicle (the PLAN button is greyed without one).
+  * The greyed Setup tiles on a Betaflight link, and a read of a real
+    controller on the Betaflight page.
+  * Tablet mode, the hold that picks the HUD up and Full screen on a real
+    touch screen; the USB gamepad with a real pad.
+  * The welcome steps after the first, the update dialog against a real answer
+    (the sandbox is offline), the effects of the HUD, track and top bar
+    switches.
+  * 3D on Linux, Windows and a second screen with another pixel density
+    (listed above as well).
+* P2 `gilrs` is in (`control/gamepad.rs`): the Linux build host needs
+  `libudev-dev` (the CI jobs install it), the machine `libudev1`. Check the
+  first CI run of the AppImage and the `.deb`, and a real pad on each system.
 * P2 Run `build-appimage.sh` and `build-windows.ps1` for the first time (CI is
   the first run). The language files and the core are compiled into the one
   executable; check that plugin `lang` folders are too.
@@ -329,13 +349,6 @@ neither PX4 SITL nor QGroundControl. From a source checkout, `./run.sh`.
 
 ## 2. MAVLink and PX4 (audit 2026-09-22)
 
-### 2.1 Missions
-
-- [ ] **P3** The Home map does not draw the mission on the vehicle or its
-      progress; only the Mission page does. Draw the known mission and the
-      leg being flown on the Home map too, from the same store fields
-      (`mission_item`, `mission_revision`).
-
 ### 2.2 Telemetry and messages
 
 - [ ] **P3** PX4's events protocol itself (`EVENT`, `CURRENT_EVENT_SEQUENCE`,
@@ -343,20 +356,23 @@ neither PX4 SITL nor QGroundControl. From a source checkout, `./run.sh`.
       reasons for NOT READY now come from the "Preflight Fail:" text PX4 sends
       beside each arming-check event, which covers the arming checks; decoding
       the events would add the ones PX4 sends only as events (navigation mode
-      availability, health warnings without a text twin).
+      availability, health warnings without a text twin). Not started, and not
+      a small step: `src/link/message_definitions` has none of `EVENT` (410),
+      `CURRENT_EVENT_SEQUENCE` (411), `REQUEST_EVENT` (412),
+      `RESPONSE_EVENT_ERROR` (413) or `COMPONENT_METADATA` (397), and adding
+      them to the generated dialect has to leave pymavlink's frozen tables
+      standing; then the metadata discovery, the FTP download of the events
+      `.json.xz` (the FTP client and an xz reader exist, from the parameter
+      defaults), the libevents argument decoding and the lost event requests.
+      It cannot be checked without a PX4 that sends events (a SITL the operator
+      runs), so it waits for one.
 
 ---
 
 ## 3. Deferred (do when the trigger occurs)
 
-- [ ] **PERF-4** Per-thread read connections for the tile cache. Trigger:
-      profiling shows map tile fill waiting on `TileCache._lock`. Then give
-      each HTTP thread its own read connection (`threading.local()`) and keep
-      the lock for writes; WAL already allows concurrent readers.
-- [ ] **ARCH-3** Split `CorvusHandler` by domain. `corvus/server.py` is about
-      7,000 lines with every route in one class. Trigger: the next time two
-      changes collide in that file, or the next large feature adds a route
-      family. Move route methods into mixin modules (`corvus/routes/mavlink.py`,
-      `routes/tiles.py`, ...); the `@route` registry collects them regardless
-      of module. Do not start it while other work on `server.py` is
-      uncommitted.
+Nothing waits on a trigger now. PERF-4 (the tile cache's single connection) was
+done: tile fills read through a few read only connections, so a download
+writing a region does not hold the map's tiles back (`mapdata/tile_cache.rs`,
+tests in `mapdata_cases.rs`). ARCH-3 (splitting `CorvusHandler`) went with the
+Python program; the Rust router registers each route from its own module.

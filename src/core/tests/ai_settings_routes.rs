@@ -97,9 +97,18 @@ fn an_export_is_imported_back_and_a_reset_forgets_it() {
         "a file without secrets keeps the stored one"
     );
 
+    std::fs::write(tmp.0.join("geofence.json"), r#"{"polygon": [[1, 2], [3, 4], [5, 6]]}"#).unwrap();
+    std::fs::write(tmp.0.join("update.json"), "{}").unwrap();
+    std::fs::write(tmp.0.join("mcp-token"), "keep").unwrap();
     let (status, got) = post(&core, "/api/settings/reset", json!({}));
     assert_eq!((status, got["ok"].clone()), (200, json!(true)));
     assert!(!tmp.0.join("config.json").exists());
+    assert!(
+        !tmp.0.join("geofence.json").exists(),
+        "the fence area is part of the reset"
+    );
+    assert!(!tmp.0.join("update.json").exists());
+    assert!(tmp.0.join("mcp-token").exists(), "a key is not a setting");
     assert!(core.settings().first_start_pending());
     assert!(core.settings().get().block("theme").is_none());
 }

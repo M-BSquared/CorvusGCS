@@ -418,11 +418,11 @@ fn editor(p: &mut SshLauncher, ui: &mut egui::Ui, f: &mut Form, h: &mut Host) {
             "One of the saved SSH connections, or a new one typed in below. Either way the password is kept by the backend. This plugin only ever names the connection.",
             "",
             |ui, x, y, w| {
-                let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, form::CONTROL_H));
+                let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, form::control_h()));
                 if let Some(v) = kit::select(ui, r, &choices, &selected, "", false, "", "sshl-conn") {
                     e.choice = v;
                 }
-                form::CONTROL_H
+                form::control_h()
             },
         );
         if e.choice == NEW_CONNECTION {

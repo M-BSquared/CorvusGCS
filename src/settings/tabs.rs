@@ -7,7 +7,7 @@ use serde_json::{json, Value};
 
 use super::model;
 use super::SettingsPage;
-use crate::ui::form::{self, Form, CONTROL_H};
+use crate::ui::form::{self, control_h, Form};
 use crate::ui::kit::{self, Button, Choice, Variant};
 use crate::ui::message::Tone;
 use crate::ui::optioncards::Card;
@@ -218,6 +218,8 @@ const CONTROLS: [(&str, &str, &str, &str); 4] = [
 
 const KEY_STRENGTH_HINT: &str = "How far a held arrow or W/A/S/D key pushes the stick, as a share of full travel. Hold Shift for twice that while it is down. Keys only. The sticks always reach their own stops. 50% is the default.";
 
+const FULLSCREEN_HINT: &str =
+    "The window fills the whole screen, without the title bar or the dock. F11 does the same from the keyboard.";
 const TOUCH_HINT: &str = "Larger buttons for a finger, a long press where a mouse would right click, and none of the parts that need a mouse or a keyboard, such as the SSH terminal tab. Saved on this device only, so a tablet and the computer it connects to each keep their own.";
 
 const LANGUAGE_INFO: &str = "More languages can be added: copy a language file into the languages folder of your Corvus folder (~/.corvus/languages), then press Reload languages. One file per language, named after its code, for example es.json. A text a file does not list stays English.\nA file there with the code of a language that ships with Corvus replaces it.";
@@ -244,9 +246,9 @@ impl SettingsPage {
     ) -> Option<String> {
         let mut picked = None;
         form::field(ui, f, label, "", hint, |ui, x, y, w| {
-            let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, CONTROL_H));
+            let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, control_h()));
             picked = kit::select(ui, r, choices, selected, "", false, "", id);
-            CONTROL_H
+            control_h()
         });
         picked
     }
@@ -396,13 +398,13 @@ impl SettingsPage {
         let mut reload = false;
         form::card(ui, f, "Language", |ui, f| {
             form::field(ui, f, "Interface language", LANGUAGE_INFO, "", |ui, x, y, w| {
-                let sel = Rect::from_min_size(Pos2::new(x, y), Vec2::new(240.0f32.min(w), CONTROL_H));
+                let sel = Rect::from_min_size(Pos2::new(x, y), Vec2::new(240.0f32.min(w), control_h()));
                 picked = kit::select(ui, sel, &choices, &current, "", false, "", "language");
                 let b = Button::new("Reload languages", Variant::Secondary).icon("refresh-cw");
                 let bw = b.width(ui);
-                let at = Rect::from_min_size(Pos2::new(sel.right() + 8.0, y), Vec2::new(bw, CONTROL_H));
+                let at = Rect::from_min_size(Pos2::new(sel.right() + 8.0, y), Vec2::new(bw, control_h()));
                 reload = b.enabled(true).show(ui, at, "reloadlang");
-                CONTROL_H
+                control_h()
             });
             if let Some((t, tone)) = self.msgs.get("language").cloned() {
                 f.skip(8.0);
@@ -482,6 +484,10 @@ impl SettingsPage {
                 crate::app::touch::on(),
             ) {
                 self.touch_request = Some(v);
+            }
+            let full = ui.ctx().input(|i| i.viewport().fullscreen.unwrap_or(false));
+            if let Some(v) = form::switch(ui, f, "fullscreen", "Full screen", FULLSCREEN_HINT, full) {
+                self.fullscreen_request = Some(v);
             }
         });
     }

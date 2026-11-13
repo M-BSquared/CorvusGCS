@@ -495,9 +495,9 @@ impl Session {
             let langs = self.languages.clone();
             let mut picked = None;
             form::field(ui, f, "Language", "", "", |ui, x, y, w| {
-                let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(240.0f32.min(w), form::CONTROL_H));
+                let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(240.0f32.min(w), form::control_h()));
                 picked = kit::select(ui, r, &langs, &current, "", false, "", "welcomelang");
-                form::CONTROL_H
+                form::control_h()
             });
             f.skip(14.0);
             if let Some(code) = picked {
@@ -561,7 +561,7 @@ impl Session {
         for (i, (q, label, _)) in smodel::UNIT_ROWS.iter().enumerate() {
             let (cx, cy) = (
                 f.x + (i % 2) as f32 * (col + 14.0),
-                top + (i / 2) as f32 * (form::CONTROL_H + 24.0 + 12.0),
+                top + (i / 2) as f32 * (form::control_h() + 24.0 + 12.0),
             );
             let mut sub = Form::new(cx, cy, col);
             let choices: Vec<Choice> = smodel::unit_choices(q)
@@ -571,9 +571,9 @@ impl Session {
             let current = self.choices.units[i].clone();
             let mut picked = None;
             form::field(ui, &mut sub, label, "", "", |ui, x, y, w| {
-                let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, form::CONTROL_H));
+                let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, form::control_h()));
                 picked = kit::select(ui, r, &choices, &current, "", false, "", ("welcomeunit", *q));
-                form::CONTROL_H
+                form::control_h()
             });
             if let Some(v) = picked {
                 self.choices.units[i] = v;

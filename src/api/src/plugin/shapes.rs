@@ -3,8 +3,8 @@
 //! `python/src/js/map-overlays.js` and `.map-overlay-*` of `map.css`).
 //!
 //! The shapes are kept as data in longitude and latitude and painted through a
-//! projection, so the flat map and the tilted 3D map draw the same set. Only
-//! the flat map answers the pointer for markers and buttons.
+//! projection, so the flat map and the tilted 3D map draw the same set and
+//! both answer the pointer for markers and buttons.
 
 use eframe::egui::{self, Color32, Pos2, Rect, Shape as Paint, Stroke, StrokeKind, Vec2};
 

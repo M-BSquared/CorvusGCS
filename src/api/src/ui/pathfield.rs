@@ -16,7 +16,7 @@ use eframe::egui::{self, Pos2, Rect, Vec2};
 use crate::ui::button::{Button, Variant};
 use crate::ui::card::{self, Look};
 use crate::ui::filepicker::{self, Filter};
-use crate::ui::formfield::CONTROL_H;
+use crate::ui::formfield::control_h;
 use crate::ui::style;
 
 /// The narrowest a box is left before the buttons move under it.
@@ -126,7 +126,7 @@ impl<'a> PathField<'a> {
             optional: false,
             backend: false,
             opens_in: "",
-            height: CONTROL_H,
+            height: control_h(),
         }
     }
 

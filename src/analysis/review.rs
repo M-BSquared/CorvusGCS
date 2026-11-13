@@ -315,7 +315,7 @@ impl AnalysisPage {
             let bw = b.width(ui);
             let sel = Rect::from_min_size(
                 Pos2::new(inner.x, inner.y),
-                Vec2::new(inner.w - bw - 8.0, form::CONTROL_H),
+                Vec2::new(inner.w - bw - 8.0, form::control_h()),
             );
             let current = if saved
                 .iter()
@@ -347,14 +347,14 @@ impl AnalysisPage {
             if b.show(
                 ui,
                 Rect::from_min_size(
-                    Pos2::new(sel.right() + 8.0, inner.y + (form::CONTROL_H - bh) / 2.0),
+                    Pos2::new(sel.right() + 8.0, inner.y + (form::control_h() - bh) / 2.0),
                     Vec2::new(bw, bh),
                 ),
                 "reviewgo",
             ) {
                 go = Some(self.review.pick.clone());
             }
-            inner.y += form::CONTROL_H + 6.0;
+            inner.y += form::control_h() + 6.0;
             let browse = Button::new("Open a .ulg from this computer", Variant::Ghost)
                 .icon("folder-open")
                 .small()
@@ -914,8 +914,8 @@ fn messages_card(ui: &mut egui::Ui, f: &mut Form, messages: &[Value], filter: &s
         Choice::new("error", "Errors only"),
     ];
     let sel = Rect::from_min_size(
-        Pos2::new(inner.x + inner.w - 190.0, inner.y + (th - form::CONTROL_H) / 2.0),
-        Vec2::new(190.0, form::CONTROL_H),
+        Pos2::new(inner.x + inner.w - 190.0, inner.y + (th - form::control_h()) / 2.0),
+        Vec2::new(190.0, form::control_h()),
     );
     *new_filter = kit::select(
         ui,
@@ -927,7 +927,7 @@ fn messages_card(ui: &mut egui::Ui, f: &mut Form, messages: &[Value], filter: &s
         "Minimum message severity",
         "msgfilter",
     );
-    inner.y += th.max(form::CONTROL_H) + 10.0;
+    inner.y += th.max(form::control_h()) + 10.0;
     let limit = model::message_limit(filter);
     let shown: Vec<&Value> = messages
         .iter()

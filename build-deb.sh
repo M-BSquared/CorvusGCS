@@ -69,7 +69,7 @@ Priority: optional
 Architecture: amd64
 Installed-Size: $SIZE_KB
 Maintainer: Maximilian Böck <maximilian.boeck.1999@web.de>
-Depends: libc6 (>= 2.35), libgl1, libxkbcommon0, libx11-6 | libwayland-client0
+Depends: libc6 (>= 2.35), libgl1, libudev1, libxkbcommon0, libx11-6 | libwayland-client0
 Homepage: https://github.com/M-BSquared/CorvusGCS
 Description: Ground Control Station for PX4 and ArduPilot aircraft
  Corvus GCS runs offline on a laptop and talks to the autopilot over serial,

@@ -234,7 +234,7 @@ fn build() -> Vec<Tool> {
             Run::Post("/api/mavlink/sethome", Some(|a| obj(json!({"lat": get(a, "lat"), "lon": get(a, "lon")})))),
             |a| Some(format!("set home to {}, {}", fmt(a.get("lat")), fmt(a.get("lon")))), true, false),
         tool("fly_to", "goto", "Fly to",
-            "Fly to one point, or through several in order. alt is metres above home; a rover or boat ignores it.",
+            "Fly to one point, or through several in order. alt is metres above home; a rover or boat ignores it. One point in the air leaves the mission on board alone. From the ground, or with several points, the points replace the mission on board and it is started, which arms the vehicle; an aircraft on the ground takes off.",
             {
                 let mut props = latlon();
                 props.insert("alt".into(), json!({"type": "number", "description": "Metres above home"}));
@@ -260,7 +260,7 @@ fn build() -> Vec<Tool> {
                 "duration_s": duration.clone(),
             })), &[], Run::Manual, |_| Some("stick input".into()), true, false),
         tool("set_velocity", "control", "Velocity",
-            "Fly at a velocity for duration_s seconds. vx, vy, vz in m/s: north, east, down, or with frame body forward, right, down. yaw_rate in degrees per second. Without a new call the vehicle holds. Flies in the capabilities' velocity_mode, never on a plane.",
+            "Fly at a velocity for duration_s seconds. vx, vy, vz in m/s: north, east, down, or with frame body forward, right, down. yaw_rate in degrees per second. Without a new call the vehicle holds. It sends setpoints only and never changes the flight mode: start it, then call set_flight_mode with the capabilities' velocity_mode while it runs (PX4 enters OFFBOARD only once setpoints arrive). Never on a plane.",
             obj(json!({
                 "vx": {"type": "number"}, "vy": {"type": "number"}, "vz": {"type": "number"},
                 "yaw_rate": {"type": "number"},

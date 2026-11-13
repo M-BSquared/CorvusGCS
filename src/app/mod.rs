@@ -216,9 +216,41 @@ impl App {
         });
     }
 
+    /// After a factory reset: the files this station kept are removed and
+    /// every window that read one starts from its defaults, so nothing writes
+    /// the old place or ticks back.
+    fn forget_station(&mut self, ctx: &egui::Context) {
+        for name in crate::home::mapwindow::remove_station_files() {
+            self.board.add_local(
+                "warning",
+                &format!("{name} could not be removed."),
+                ctx.input(|i| i.time) * 1000.0,
+            );
+        }
+        let (visible, square, nose_up) = (self.hud.visible, self.hud.square, self.hud.nose_up);
+        self.hud = Hud::new();
+        self.hud.visible = visible;
+        self.hud.square = square;
+        self.hud.nose_up = nose_up;
+        self.control.forget_place();
+        self.checklist.forget_window();
+        self.touch = touch::Touch::load();
+    }
+
     fn apply_settings(&mut self, ctx: &egui::Context) {
         if let Some(on) = self.settings.take_touch() {
             self.touch.set_enabled(on);
+        }
+        let full = ctx.input(|i| i.viewport().fullscreen.unwrap_or(false));
+        let wanted = self
+            .settings
+            .take_fullscreen()
+            .or_else(|| ctx.input(|i| i.key_pressed(egui::Key::F11)).then_some(!full));
+        if let Some(on) = wanted.filter(|on| *on != full) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(on));
+        }
+        if self.settings.take_reset() {
+            self.forget_station(ctx);
         }
         if let Some(e) = self.settings.take_effects() {
             self.apply_effects(ctx, e);
@@ -334,6 +366,7 @@ impl App {
         let now = now_ms();
         self.map.update(&state);
         let caps = self.caps.get(ui.ctx(), &self.server, &state).clone();
+        self.control.poll_gamepad(ui.ctx());
         self.control
             .update(ui.ctx(), &state, &caps, self.page == Page::Home, now);
         for e in self.control.take_notes() {
@@ -457,6 +490,8 @@ impl App {
                     let mut map_ui = ui.new_child(egui::UiBuilder::new().max_rect(main));
                     map_ui.set_clip_rect(main);
                     self.map.measure.units = self.units;
+                    self.mission.observe(&state);
+                    self.map.flown = self.mission.flown_route();
                     self.map.show(&mut map_ui, &state);
                     self.hud.show(
                         &mut map_ui,
@@ -691,7 +726,7 @@ impl eframe::App for App {
         if self.touch.waiting() {
             ctx.request_repaint_after(std::time::Duration::from_millis(100));
         }
-        // CORVUS_GUI_CLICK="x,y;rx,y;enter" presses at each point in turn (a leading r
+        // CORVUS_GUI_CLICK="x,y;rx,y;enter;esc" presses at each point in turn (a leading r
         // is a right click), the
         // first at 6 s and one more every half second, for a menu or a drawn
         // shape to look at; `enter` presses the Enter key.
@@ -719,6 +754,11 @@ impl eframe::App for App {
                 if let Some(p) = point {
                     raw_input.events.push(egui::Event::PointerMoved(p));
                 }
+                let key = if step.eq_ignore_ascii_case("esc") {
+                    egui::Key::Escape
+                } else {
+                    egui::Key::Enter
+                };
                 let due = t > 6.0 + 0.5 * k as f64;
                 if self.click_stage.is_multiple_of(2) && due {
                     self.click_stage += 1;
@@ -730,8 +770,8 @@ impl eframe::App for App {
                             modifiers: Default::default(),
                         }),
                         None => raw_input.events.push(egui::Event::Key {
-                            key: egui::Key::Enter,
-                            physical_key: Some(egui::Key::Enter),
+                            key,
+                            physical_key: Some(key),
                             pressed: true,
                             repeat: false,
                             modifiers: Default::default(),
@@ -747,8 +787,8 @@ impl eframe::App for App {
                             modifiers: Default::default(),
                         }),
                         None => raw_input.events.push(egui::Event::Key {
-                            key: egui::Key::Enter,
-                            physical_key: Some(egui::Key::Enter),
+                            key,
+                            physical_key: Some(key),
                             pressed: false,
                             repeat: false,
                             modifiers: Default::default(),
@@ -873,6 +913,7 @@ pub fn run(
         renderer: eframe::Renderer::Glow,
         // The 3D map's depth test.
         depth_buffer: 24,
+        stencil_buffer: 8,
         viewport: egui::ViewportBuilder::default()
             .with_title(title(&server))
             .with_app_id(app_id())

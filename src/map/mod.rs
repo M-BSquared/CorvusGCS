@@ -8,6 +8,7 @@
 
 pub mod cameras;
 pub mod credit;
+pub mod flown;
 pub mod measure;
 pub mod others;
 pub mod rail;
@@ -145,6 +146,8 @@ const ZOOM_EASE_S: f64 = 0.09;
 /// The map and what it remembers between frames.
 pub struct Map {
     server: Server,
+    /// The mission the vehicle flies, set by the app each frame for Home.
+    pub flown: Option<crate::map::flown::FlownRoute>,
     env: crate::setup::geofence::Env,
     sources: Value,
     /// The base layer shown, a source id of `/api/tiles/sources`.
@@ -222,6 +225,7 @@ impl Map {
         memory.center_at(walkers::lon_lat(DEFAULT_CENTER.0, DEFAULT_CENTER.1));
         let mut map = Map {
             server: server.clone(),
+            flown: None,
             env,
             sources: sources.clone(),
             source: String::new(),
@@ -469,7 +473,12 @@ impl Map {
             let at = |p: [f64; 2]| t.place_on_screen(rect_c, p);
             let painter = ui.painter_at(rect);
             self.others.paint(&painter, &at, false);
-            let mut marker_hit = false;
+            // Markers, buttons and the place a plugin waits for answer the
+            // pointer here as on the flat map; the place is the ground under it.
+            let pick = |q: Pos2| t.pick(rect_c, q);
+            let mut marker_hit = self
+                .plugins
+                .marks_with(ui, rect_c, &at, &pick, input.press, input.secondary);
             if let Some(q) = input.press {
                 if let Some(id) = self.others.hit(&at, q) {
                     self.others.click = Some(id);
@@ -501,6 +510,9 @@ impl Map {
                 }
                 if self.tools.plan.active && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
                     self.tools.plan.set_active(false);
+                }
+                if let Some(f) = self.flown.as_ref() {
+                    crate::map::flown::paint(&painter, &at, f);
                 }
                 self.tools.paint(&painter, &at, vehicle);
             }
@@ -792,6 +804,7 @@ impl Map {
             overlay,
             pin: &mut self.pin,
             tools: (!self.planner).then_some(&mut self.tools),
+            flown: self.flown.as_ref().filter(|_| !self.planner),
             others: &mut self.others,
             look: self.look,
             measure: &mut self.measure,
@@ -957,6 +970,7 @@ struct Layers<'a, 'o> {
     overlay: Option<&'a mut (dyn Overlay + 'o)>,
     pin: &'a mut Option<[f64; 2]>,
     tools: Option<&'a mut crate::map::tools::Tools>,
+    flown: Option<&'a crate::map::flown::FlownRoute>,
     others: &'a mut crate::map::others::Others,
     measure: &'a mut crate::map::measure::Measure,
     regions: Vec<crate::map::regions::Merged>,
@@ -1219,7 +1233,7 @@ impl Plugin for Layers<'_, '_> {
             );
             self.others.paint_flown_label(&painter, c);
         }
-        self.plugins.marks(ui, response, projector, rect);
+        let plugin_hit = self.plugins.marks(ui, response, projector, rect);
         let mut pin_hit = false;
         if let Some(p) = *self.pin {
             let c = screen(
@@ -1262,8 +1276,15 @@ impl Plugin for Layers<'_, '_> {
             if response.clicked() || secondary {
                 if let Some(q) = response.interact_pointer_pos() {
                     let g = projector.unproject(q.to_vec2());
-                    tools.click([g.x(), g.y()], secondary, self.measure.active || pin_hit || marker_hit);
+                    tools.click(
+                        [g.x(), g.y()],
+                        secondary,
+                        self.measure.active || pin_hit || marker_hit || plugin_hit,
+                    );
                 }
+            }
+            if let Some(f) = self.flown {
+                crate::map::flown::paint(&painter, &at, f);
             }
             tools.paint(&painter, &at, self.vehicle);
         }
@@ -1504,6 +1525,7 @@ mod tests {
 
     fn test_map() -> Map {
         Map {
+            flown: None,
             server: Server::local(1),
             env: crate::setup::geofence::Env::new(Value::Null),
             sources: Value::Null,

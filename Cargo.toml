@@ -33,6 +33,9 @@ rfd = "0.17"
 libc = "0.2"
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 ctrlc = { version = "3", features = ["termination"] }
+# USB and Bluetooth gamepads for manual control (control/gamepad.rs). On Linux it
+# reads them through libudev, so the build host needs the libudev headers.
+gilrs = "0.11"
 
 [[bin]]
 name = "corvus-gcs"
@@ -69,6 +72,8 @@ regex = { workspace = true }
 # The system file dialog (Cocoa, Windows, and the desktop portal on Linux, so
 # no GTK or Qt is linked): a person picks a file instead of typing its path.
 rfd = { workspace = true }
+# A gamepad for manual control: the sticks and the arm gesture.
+gilrs = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # Finds the window of a terminal to blur what is behind it (app/vibrancy.rs).

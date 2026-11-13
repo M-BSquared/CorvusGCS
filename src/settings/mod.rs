@@ -155,6 +155,10 @@ pub struct SettingsPage {
     server: Server,
     /// The tablet mode switch was pressed: the window keeps the choice.
     touch_request: Option<bool>,
+    /// A factory reset went through: the window forgets what it remembered.
+    reset_request: bool,
+    /// The full screen switch was pressed.
+    fullscreen_request: Option<bool>,
     cfg: Value,
     tab: usize,
     calls: Vec<Call>,
@@ -189,6 +193,8 @@ impl SettingsPage {
         SettingsPage {
             server,
             touch_request: None,
+            reset_request: false,
+            fullscreen_request: None,
             cfg: config.clone(),
             tab: 0,
             calls: Vec::new(),
@@ -255,6 +261,16 @@ impl SettingsPage {
     /// Notices for the notification board.
     pub fn take_notes(&mut self) -> Vec<String> {
         std::mem::take(&mut self.notes)
+    }
+
+    /// The full screen switch, once, when it was pressed.
+    pub fn take_fullscreen(&mut self) -> Option<bool> {
+        self.fullscreen_request.take()
+    }
+
+    /// True once after a factory reset.
+    pub fn take_reset(&mut self) -> bool {
+        std::mem::take(&mut self.reset_request)
     }
 
     /// The tablet mode switch, once, when it was pressed.
@@ -526,7 +542,7 @@ impl SettingsPage {
             "dem_import" | "dem_rename" | "dem_remove" => self.dem_done(ctx, name, arg, answer),
             "logo" | "logo_remove" => self.logo_done(ctx, name, answer),
             "ssh_connect" | "ssh_remove" => self.ssh_done(ctx, name, arg, answer),
-            "fleet_add" | "fleet_remove" => self.fleet_done(ctx, name, answer),
+            "fleet_add" | "fleet_remove" | "vehicle_remove" => self.fleet_done(ctx, name, answer),
             "mcp_save" | "mcp_token" => self.mcp_done(ctx, name, answer),
             "cache_clear" => self.cache_done(ctx, answer),
             "update_check" => self.update_done(ctx, answer),

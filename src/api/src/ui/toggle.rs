@@ -34,7 +34,7 @@ pub fn checkbox(
     let g = style::galley(ui, label, 12.0, Weight::W400, style::text_1(), 0.0);
     let h = g.size().y.max(14.0);
     let rect = Rect::from_min_size(at, Vec2::new(width, h));
-    let resp = ui.interact(rect, ui.scope_id().with(id), egui::Sense::click());
+    let resp = ui.interact(style::finger(rect), ui.scope_id().with(id), egui::Sense::click());
     let painter = ui.painter();
     let bx = Rect::from_min_size(Pos2::new(at.x, at.y + (h - 14.0) / 2.0), Vec2::splat(14.0));
     let accent = if warn { style::warning() } else { style::accent() };
@@ -62,7 +62,7 @@ pub fn switch(
 ) -> bool {
     let rect = Rect::from_min_size(at, Vec2::new(38.0, 22.0));
     let resp = ui.interact(
-        rect,
+        style::finger(rect),
         ui.scope_id().with(id),
         if enabled {
             egui::Sense::click()

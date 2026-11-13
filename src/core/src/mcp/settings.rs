@@ -78,7 +78,7 @@ pub const PERMISSIONS: [Permission; 10] = [
     Permission {
         id: "goto",
         label: "Fly to a point",
-        hint: "Fly to one point or through several, at a height above home.",
+        hint: "Fly to one point or through several, at a height above home. From the ground or with several points this replaces the mission on board, arms the vehicle and takes off.",
         writes: true,
         default_on: false,
         default_confirm: false,

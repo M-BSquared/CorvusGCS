@@ -224,6 +224,11 @@ impl Checklist {
         std::mem::take(&mut self.errors)
     }
 
+    /// The window's place and ticks are read again (the files were removed).
+    pub fn forget_window(&mut self) {
+        self.win = crate::home::checklist_window::WindowState::load_default();
+    }
+
     /// `lists`: the lists in force, the operator's or the standard one.
     pub fn lists(&self) -> Vec<List> {
         self.block.lists.clone().unwrap_or_else(|| vec![standard()])

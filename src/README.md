@@ -238,7 +238,7 @@ deleted (`src/core/tests/data`).
 | `src/plugins/mod.rs`, `src/plugins/ssh_setup.rs` | the `Registry` (starts the plugins once `GET /api/plugins` has answered, ticks them every frame, keeps their options and what they ask of the window; `python/corvus/plugin_registry.py`) and `sshSetup`, the login dialog for a saved SSH connection this computer lacks (`askSSHConnection` of `python/src/js/panel.js`) |
 | `build.rs` | makes `plugin_list.rs`, the list the registry is built from, out of the folders of `src/plugins`; a folder without its dependency line in `Cargo.toml` fails the build |
 | `src/api/src/plugin/options.rs` | the options a plugin declares (toggle, select, text, number), cleaned, coerced and saved under `_options` as the web does |
-| `src/api/src/plugin/shapes.rs`, `src/plugins/layer.rs`, `src/map3d/overlays.rs` | `api.map`: lines, areas, circles, text, buttons and icon markers in longitude and latitude, painted on the flat map (with the pointer on markers and buttons, and `pick_point`); on the 3D map lines, outlines and areas are meshes draped on the terrain and depth tested, text, markers and buttons screen elements hidden by a terrain ray (`map-overlays.js`, `map-icons.js`, `.map-overlay-*` of `map.css`) |
+| `src/api/src/plugin/shapes.rs`, `src/plugins/layer.rs`, `src/map3d/overlays.rs` | `api.map`: lines, areas, circles, text, buttons and icon markers in longitude and latitude, painted on the flat map (with the pointer on markers and buttons, and `pick_point`); on the 3D map lines, outlines and areas are volumes projected onto the ground through the stencil buffer (draped meshes where the window has none), text, markers and buttons screen elements hidden by a terrain ray, with the same pointer handling through `Layer::marks_with` (`map-overlays.js`, `map-icons.js`, `.map-overlay-*` of `map.css`) |
 | `src/api/src/plugin/ssh.rs` | what both SSH plugins share: `Mode`, the new connection form, `ssh_needs`, `reply_of` |
 | `src/plugins/view.rs` | the cards under PLUGINS, the opened plugin, a plugin's own tab and the options dialog of its gear in Settings (`.plugin-*` of `panel.css`) |
 | `src/plugins/vibration/` (crate `corvus_plugin_vibration`) | Vibration Monitor: PX4's vibration metrics on a live chart, the 10 Hz stream while it is open, the one-shot warning (`python/plugins/vibration`) |
@@ -388,8 +388,8 @@ thread of their own and picked up by polling the returned `Reply`, `h.notify`
 UI is built from `src/api/src/ui/` like any page: `form::Form` is a cursor and
 `form::field`, `form::switch_field`, `kit::select`, `kit::Button` and
 `field::committed` paint one block each. A plugin does not paint a box or a list
-of its own. Shapes are painted on both maps; only the flat map answers the
-pointer for markers and buttons.
+of its own. Shapes are painted on both maps, and both answer the pointer
+for markers, buttons and `pick_point`.
 
 Rules go in a `model.rs` beside the plugin, with no `egui` in it, and their
 tests quote what the web helper answered (run the plugin's `.js` under `node`
@@ -439,8 +439,12 @@ share one config. Differences that follow from a native window:
   language file changes the web interface and is stored for the native one.
   Making native strings translatable is a later step, taken once every page is
   native.
-- **Tablet mode** is the web page's own, kept in the browser, and has no
-  native counterpart.
+- **Tablet mode** (`app/touch.rs`, the switch in Settings, Interface) is kept
+  on this device in `~/.corvus/gui-touch.json`, never in the config. With it
+  on, `ui::style::target` lifts fields, buttons, pills, menu rows and tabs to
+  44 px and `style::finger` widens the hit area of switches, checkboxes,
+  sliders and icon buttons; a finger held on a window picks a pinned HUD up,
+  and Full screen (the same card, or F11) fills the screen.
 - **Switches** that the native pages do not read yet (HUD, track, top bar
   blocks, compass, flight bar) are stored in the config and take effect in the
   web interface; the native pages follow as their consumers learn the keys.

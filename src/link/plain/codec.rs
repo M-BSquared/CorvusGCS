@@ -14,7 +14,7 @@ pub enum CodecError {
     OutOfRange(&'static str),
     /// A value of the wrong kind for the field.
     WrongType(&'static str),
-    /// A payload longer than the message can have, or of the wrong length in MAVLink 1.
+    /// A MAVLink 1 payload that is not as long as the message's base fields.
     Length {
         expected: usize,
         got: usize,
@@ -139,18 +139,21 @@ fn read_scalar(ty: Ty, b: &[u8]) -> Value {
 
 /// The message with id `id` from `payload`. A MAVLink 2 payload may be
 /// shorter than the message (trailing zeros were cut) and is read zero
-/// filled; one longer than the message is refused. A MAVLink 1 payload must
-/// be exactly as long as the base fields.
+/// filled. One longer than the message comes from a sender whose dialect has
+/// extension fields this one does not know yet (a newer firmware): the fields
+/// known are read and the rest is left, as the MAVLink 2 rules ask, so a
+/// firmware update does not silence a message. A MAVLink 1 payload must be
+/// exactly as long as the base fields.
 pub fn unpack_payload(id: u32, wire: Wire, payload: &[u8]) -> Result<Message, CodecError> {
     let def = message_by_id(id, wire).ok_or(CodecError::UnknownMessage(id))?;
     let full = def.payload_len(wire);
-    if payload.len() > full || (wire == Wire::V1 && payload.len() != full) {
+    if wire == Wire::V1 && payload.len() != full {
         return Err(CodecError::Length {
             expected: full,
             got: payload.len(),
         });
     }
-    let mut buf = payload.to_vec();
+    let mut buf = payload[..payload.len().min(full)].to_vec();
     buf.resize(full, 0);
     let mut msg = Message::new(def, wire);
     let mut pos = 0;

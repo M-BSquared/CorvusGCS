@@ -8,12 +8,13 @@ use serde_json::{json, Value};
 
 use super::{model, refused, Dialog, SettingsPage};
 use crate::ui::card::{self, Look};
-use crate::ui::form::{self, Form, CONTROL_H};
+use crate::ui::form::{self, control_h, Form};
 use crate::ui::kit::{self, Button, Variant};
 use crate::ui::message::Tone;
 use crate::ui::pathfield::{Mode, PathField};
 use crate::ui::style::{self, Weight};
 
+const VEHICLES_HINT: &str = "Forgetting a vehicle takes it off the list and the map until it is heard again. An armed vehicle cannot be forgotten. Rename or recolour one in the Vehicles dialog of the top bar.";
 const FLEET_HINT: &str = "One link is one vehicle. A second vehicle needs a radio of its own and a link of its own. Another autopilot heard on a link is ignored.";
 
 const MCP_SERVER_HINT: &str = "Lets an AI client such as OpenCode read the vehicle and, as far as you allow it, fly it. Only this computer can connect, and only with its token.";
@@ -41,7 +42,10 @@ pub(super) fn link_level(status: &str) -> &'static str {
 
 impl SettingsPage {
     pub(super) fn connections_tab(&mut self, ui: &mut egui::Ui, f: &mut Form) {
-        form::section(ui, f, "Vehicles", |ui, f| self.links_card(ui, f));
+        form::section(ui, f, "Vehicles", |ui, f| {
+            self.links_card(ui, f);
+            self.vehicles_card(ui, f);
+        });
         form::section(ui, f, "SSH Connections", |ui, f| self.ssh_card(ui, f));
         form::section(ui, f, "Connection", |ui, f| {
             form::card(ui, f, "", |ui, f| {
@@ -160,7 +164,7 @@ impl SettingsPage {
                 b.width(ui)
             };
             let y = f.y;
-            let r = Rect::from_min_size(Pos2::new(f.x, y), Vec2::new(f.w - bw - 8.0, CONTROL_H));
+            let r = Rect::from_min_size(Pos2::new(f.x, y), Vec2::new(f.w - bw - 8.0, control_h()));
             let buf = self.texts.entry("fleet_conn").or_default();
             let resp = crate::ui::field::TextField::new(buf)
                 .hint("serial:/dev/ttyUSB1:57600 or udpin:0.0.0.0:14560")
@@ -175,13 +179,13 @@ impl SettingsPage {
             let go = b.show(
                 ui,
                 Rect::from_min_size(
-                    Pos2::new(r.right() + 8.0, y + (CONTROL_H - bh) / 2.0),
+                    Pos2::new(r.right() + 8.0, y + (control_h() - bh) / 2.0),
                     Vec2::new(bw, bh),
                 ),
                 "openlink",
             );
             open = go || (resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)));
-            f.y = y + CONTROL_H;
+            f.y = y + control_h();
             if let Some((t, tone)) = &msg {
                 f.skip(8.0);
                 form::message(ui, f, t, *tone);
@@ -212,9 +216,94 @@ impl SettingsPage {
         }
     }
 
+    /// The vehicles the station has heard, one row each: its colour, name,
+    /// state and link, and a button to forget it. The Vehicles dialog of the
+    /// top bar renames and recolours; this is where one is taken off the list.
+    fn vehicles_card(&mut self, ui: &mut egui::Ui, f: &mut Form) {
+        let fleet = self.live(ui.ctx(), "fleet", "/api/fleet", 2.0);
+        let vehicles = list(fleet.as_ref(), "vehicles");
+        let msg = self.msgs.get("vehicles").cloned();
+        let mut forget: Option<String> = None;
+        form::card(ui, f, "Known vehicles", |ui, f| {
+            if vehicles.is_empty() {
+                form::desc(ui, f, "No vehicle has been heard yet.");
+            }
+            for (i, v) in vehicles.iter().enumerate() {
+                if i > 0 {
+                    f.skip(8.0);
+                }
+                let r = f.rect(35.0);
+                let active = v.get("active").and_then(Value::as_bool).unwrap_or(false);
+                let stale = v.get("stale").and_then(Value::as_bool).unwrap_or(false);
+                let armed = v.get("armed").and_then(Value::as_bool).unwrap_or(false);
+                card::paint(
+                    ui.painter(),
+                    r,
+                    Look::custom(
+                        style::glass(0.82),
+                        if active { style::accent() } else { style::tint(0.09) },
+                        style::RADIUS,
+                    ),
+                );
+                let swatch = crate::fleet::parse_hex(s(v, "color")).unwrap_or_else(style::vehicle);
+                ui.painter()
+                    .circle_filled(Pos2::new(r.left() + 12.0 + 6.0, r.center().y), 6.0, swatch);
+                let name = style::galley(ui, s(v, "name"), 12.0, Weight::W600, style::text_1(), 0.0);
+                let lx = r.left() + 12.0 + 12.0 + 8.0;
+                ui.painter().galley(
+                    Pos2::new(lx, r.center().y - name.size().y / 2.0),
+                    name.clone(),
+                    style::text_1(),
+                );
+                let state = if stale {
+                    "Lost"
+                } else if armed {
+                    "Armed"
+                } else {
+                    "Disarmed"
+                };
+                let detail = format!("{} \u{b7} {}", crate::i18n::tr(state), s(v, "link_label"));
+                let d = style::galley(ui, &detail, 11.0, Weight::W400, style::text_3(), 0.0);
+                let right = r.right() - 12.0 - 20.0 - 8.0;
+                ui.painter().galley(
+                    Pos2::new(right - d.size().x, r.center().y - d.size().y / 2.0),
+                    d,
+                    style::text_3(),
+                );
+                if kit::icon_btn(
+                    ui,
+                    Rect::from_center_size(Pos2::new(r.right() - 12.0 - 10.0, r.center().y), Vec2::splat(20.0)),
+                    "x",
+                    "Forget this vehicle",
+                    false,
+                    ("forgetvehicle", s(v, "id")),
+                ) {
+                    forget = Some(s(v, "id").to_string());
+                }
+                f.y = r.bottom();
+            }
+            f.skip(8.0);
+            form::note(ui, f, VEHICLES_HINT);
+            if let Some((t, tone)) = &msg {
+                f.skip(8.0);
+                form::message(ui, f, t, *tone);
+            }
+        });
+        if let Some(id) = forget {
+            self.hush("vehicles");
+            self.act(
+                ui.ctx(),
+                "vehicle_remove",
+                &id,
+                "/api/fleet/vehicle/remove",
+                json!({"id": id}),
+            );
+        }
+    }
+
     pub(super) fn fleet_done(&mut self, ctx: &egui::Context, name: &'static str, answer: Result<Value, String>) {
         match refused(&answer, "The link could not be opened.") {
-            Some(e) => self.fail("links", &e),
+            Some(e) => self.fail(if name == "vehicle_remove" { "vehicles" } else { "links" }, &e),
             None => {
                 if name == "fleet_add" {
                     self.texts.remove("fleet_conn");
@@ -796,12 +885,12 @@ impl SettingsPage {
                         "",
                         "The port is the one Corvus runs on. If Corvus has to move to another port, the address changes with it.",
                         |ui, x, y, w| {
-                            let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w - 36.0, CONTROL_H));
+                            let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w - 36.0, control_h()));
                             crate::ui::field::TextField::new(&mut url_buf).mono(true).pad(11.0, 11.0).show(ui, r, "mcpurl");
                             if kit::icon_btn(ui, Rect::from_min_size(Pos2::new(x + w - 28.0, y + 2.0), Vec2::splat(28.0)), "copy", "Copy the address", false, "mcpcopyurl") {
                                 copy = Some(url.clone());
                             }
-                            CONTROL_H
+                            control_h()
                         },
                     );
                         f.skip(10.0);
@@ -814,7 +903,7 @@ impl SettingsPage {
                             "",
                             "Like a password for the MCP server. It is kept in its own file, never in a settings export.",
                             |ui, x, y, w| {
-                                let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w - 3.0 * 34.0, CONTROL_H));
+                                let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w - 3.0 * 34.0, control_h()));
                                 crate::ui::field::TextField::new(&mut tok).mono(true).pad(11.0, 11.0).show(ui, r, "mcptoken");
                                 let mut bx = r.right() + 6.0;
                                 for (icon, title, which) in [
@@ -831,7 +920,7 @@ impl SettingsPage {
                                     }
                                     bx += 34.0;
                                 }
-                                CONTROL_H
+                                control_h()
                             },
                         );
                         } else {

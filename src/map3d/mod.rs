@@ -106,6 +106,8 @@ pub struct Input {
     pub click: Option<([f64; 2], bool)>,
     /// Where a left press-and-release landed on the screen.
     pub press: Option<Pos2>,
+    /// A right press-and-release, wherever it landed.
+    pub secondary: bool,
     /// Where the pointer is, and whether it is over this map.
     pub hover: Option<Pos2>,
     pub over: bool,
@@ -768,6 +770,7 @@ impl Map3d {
                 ],
                 alpha: 1.0,
                 transient: false,
+                volume: false,
             });
         }
         if self.tex_ids.len() > TEXTURES {
@@ -877,6 +880,7 @@ impl Map3d {
         for t in self.terrain.iter().chain(self.fallback.iter()) {
             t.trim();
         }
+        let area_items = self.shape_items(layers.shapes);
         let line_items = self.line_items(layers);
         gpu::note_plan(leaves.len(), built, planning.elapsed().as_secs_f32() * 1000.0);
         if built > 0 || gpu::deferred() {
@@ -889,6 +893,7 @@ impl Map3d {
             ground: self.cam.ground,
             ground_items,
             building_items,
+            area_items,
             line_items,
         };
         painter.add(egui::PaintCallback {
@@ -910,7 +915,7 @@ impl Map3d {
                 crate::ui::style::text_2(),
             );
         }
-        self.paint_layers(ui, &painter, rect.min, layers);
+        self.paint_layers(&painter, rect.min, layers);
         if self.debug {
             self.paint_debug(ui, &painter, rect);
         }
@@ -925,6 +930,7 @@ impl Map3d {
             dragged,
             click,
             press,
+            secondary,
             hover: resp.hover_pos(),
             over: resp.hovered(),
         }
@@ -1131,6 +1137,7 @@ impl Map3d {
                     color: buildings::color(),
                     alpha: buildings::opacity(),
                     transient: false,
+                    volume: false,
                 });
             }
         }
@@ -1196,9 +1203,8 @@ impl Map3d {
         line_blocked(&self.cam, target, &|lng, lat| self.ground_at(lng, lat))
     }
 
-    /// What lies on or above the ground as geometry the depth test can hide
-    /// behind a hill: what plugins draw, then the flown track as ribbons, a
-    /// dark casing and the colour on top, earlier flights quieter.
+    /// The flown track as geometry the depth test can hide behind a hill:
+    /// ribbons, a dark casing and the colour on top, earlier flights quieter.
     fn line_items(&mut self, layers: &Layers3d<'_>) -> Vec<gpu::Item> {
         let rgb = |c: Color32| {
             [
@@ -1208,7 +1214,7 @@ impl Map3d {
             ]
         };
         let centre = crate::map3d::camera::mercator(self.cam.lng, self.cam.lat);
-        let mut items = self.shape_items(layers.shapes);
+        let mut items = Vec::new();
         let generation = self.terrain_generation();
         let until = std::time::Instant::now() + std::time::Duration::from_millis(TRAIL_MS);
         let flights = layers
@@ -1257,6 +1263,7 @@ impl Map3d {
                             color,
                             alpha,
                             transient: true,
+                            volume: false,
                         });
                     }
                 }
@@ -1268,7 +1275,7 @@ impl Map3d {
         items
     }
 
-    fn paint_layers(&self, ui: &egui::Ui, painter: &egui::Painter, origin: Pos2, layers: &Layers3d<'_>) {
+    fn paint_layers(&self, painter: &egui::Painter, origin: Pos2, layers: &Layers3d<'_>) {
         let cam = &self.cam;
         if let Some((lng, lat)) = layers.home {
             let at = cam.local_of(lng, lat, self.ground_at(lng, lat));
@@ -1298,15 +1305,6 @@ impl Map3d {
                 );
             }
         }
-        let project_mark = |p: [f64; 2]| {
-            let at = cam.local_of(p[0], p[1], self.ground_at(p[0], p[1]));
-            if self.hidden(at) {
-                None
-            } else {
-                self.screen_of(origin, at)
-            }
-        };
-        crate::plugins::shapes::paint_marks(ui, painter, &project_mark, layers.shapes, None);
     }
 }
 

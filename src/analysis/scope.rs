@@ -146,14 +146,14 @@ impl AnalysisPage {
         inner.skip(10.0);
         let r = Rect::from_min_size(
             Pos2::new(inner.x, inner.y),
-            Vec2::new(inner.w.min(360.0), form::CONTROL_H),
+            Vec2::new(inner.w.min(360.0), form::control_h()),
         );
         crate::ui::field::TextField::new(&mut self.scope.filter)
             .hint("Filter by name, for example ATTITUDE")
             .mono(true)
             .pad(11.0, 11.0)
             .show(ui, r, "scopefilter");
-        inner.y += form::CONTROL_H + 10.0;
+        inner.y += form::control_h() + 10.0;
         let g = style::galley(ui, &summary(&self.scope.data), 11.5, Weight::W400, style::text_2(), 0.0);
         let gh = g.size().y.max(16.0);
         ui.painter().galley(Pos2::new(inner.x, inner.y), g, style::text_2());

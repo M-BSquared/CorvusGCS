@@ -297,7 +297,7 @@ impl Panel {
         if !shown.contains(&self.active) {
             self.active = Tab::Link;
         }
-        let tab_h = 9.0 * 2.0 + 11.0 * 1.21 + 2.0;
+        let tab_h = style::target(9.0 * 2.0 + 11.0 * 1.21 + 2.0);
         let strip = Rect::from_min_size(body.min, Vec2::new(body.width(), 8.0 + tab_h + 1.0));
         painter.hline(strip.x_range(), strip.bottom() - 0.5, Stroke::new(1.0, style::border()));
         let galleys: Vec<_> = shown

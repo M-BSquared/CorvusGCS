@@ -1,6 +1,6 @@
-//! The plugins' shapes on the flat map: painted in two passes (areas under
-//! the track, marks over everything) and answering the pointer for markers,
-//! buttons and `pick_point`.
+//! The plugins' shapes on the map: painted in two passes (areas under the
+//! track, marks over everything) and answering the pointer for markers,
+//! buttons and `pick_point`, on the flat map and on the tilted one alike.
 
 use eframe::egui::{self, Pos2, Rect};
 use walkers::Projector;
@@ -38,39 +38,49 @@ impl Layer {
     }
 
     /// Text, markers and buttons over the aircraft, and the pointer on them.
-    pub fn marks(&mut self, ui: &mut egui::Ui, response: &egui::Response, projector: &Projector, rect: Rect) {
+    /// True when a press on the map was meant for a plugin.
+    pub fn marks(&mut self, ui: &mut egui::Ui, response: &egui::Response, projector: &Projector, rect: Rect) -> bool {
         let project = |p: [f64; 2]| Some(to_screen(projector, rect, p));
+        let unproject = |p: Pos2| {
+            let c = projector.unproject(p.to_vec2());
+            Some([c.x(), c.y()])
+        };
+        let clicked = response.clicked().then(|| response.interact_pointer_pos()).flatten();
+        self.marks_with(ui, rect, &project, &unproject, clicked, response.secondary_clicked())
+    }
+
+    /// The same on any map: `project` gives where a place is on the screen
+    /// (`None` where it is not seen, behind a hill or the camera) and
+    /// `unproject` the place under a screen point (`None` for the sky).
+    /// `clicked` is where a press-and-release landed on the map itself.
+    pub fn marks_with(
+        &mut self,
+        ui: &mut egui::Ui,
+        rect: Rect,
+        project: shapes::Project<'_>,
+        unproject: &dyn Fn(Pos2) -> Option<[f64; 2]>,
+        clicked: Option<Pos2>,
+        secondary_clicked: bool,
+    ) -> bool {
         let mut hot: Option<String> = None;
         let mut taken = false;
         for s in self.shapes.iter().filter(|s| s.visible) {
-            let (at, area, draggable, clickable) = match &s.kind {
+            let (at, draggable, clickable) = match &s.kind {
                 Kind::Marker {
                     at,
-                    size,
                     draggable,
                     clickable,
                     ..
-                } => (
-                    *at,
-                    shapes::marker_rect(to_screen(projector, rect, *at), *size),
-                    *draggable,
-                    *clickable,
-                ),
-                Kind::Button {
-                    at,
-                    text,
-                    size,
-                    disabled,
-                    ..
-                } if !disabled => (
-                    *at,
-                    shapes::button_rect(ui, to_screen(projector, rect, *at), text, *size),
-                    false,
-                    true,
-                ),
+                } => (*at, *draggable, *clickable),
+                Kind::Button { at, disabled, .. } if !disabled => (*at, false, true),
                 _ => continue,
             };
-            let _ = at;
+            let Some(on_screen) = project(at) else { continue };
+            let area = match &s.kind {
+                Kind::Marker { size, .. } => shapes::marker_rect(on_screen, *size),
+                Kind::Button { text, size, .. } => shapes::button_rect(ui, on_screen, text, *size),
+                _ => continue,
+            };
             if !(draggable || clickable) || !rect.intersects(area) {
                 continue;
             }
@@ -89,44 +99,43 @@ impl Layer {
                 });
             }
             if h.dragged() {
-                if let Some(p) = h.interact_pointer_pos() {
-                    let c = projector.unproject(p.to_vec2());
-                    self.events
-                        .push((s.owner, MapEvent::Drag(s.key.clone(), [c.x(), c.y()])));
+                if let Some(c) = h.interact_pointer_pos().and_then(unproject) {
+                    self.events.push((s.owner, MapEvent::Drag(s.key.clone(), c)));
                 }
                 ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
                 taken = true;
             }
             if h.drag_stopped() {
-                if let Some(p) = h
+                // Let go over the sky: the marker stays where the last drag put it.
+                let end = h
                     .interact_pointer_pos()
                     .or_else(|| ui.input(|i| i.pointer.latest_pos()))
-                {
-                    let c = projector.unproject(p.to_vec2());
-                    self.events
-                        .push((s.owner, MapEvent::DragEnd(s.key.clone(), [c.x(), c.y()])));
-                }
+                    .and_then(unproject)
+                    .unwrap_or(at);
+                self.events.push((s.owner, MapEvent::DragEnd(s.key.clone(), end)));
                 taken = true;
             } else if h.clicked() {
                 self.events.push((s.owner, MapEvent::Click(s.key.clone())));
                 taken = true;
             }
         }
-        shapes::paint_marks(ui, &ui.painter_at(rect), &project, &self.shapes, hot.as_deref());
+        shapes::paint_marks(ui, &ui.painter_at(rect), project, &self.shapes, hot.as_deref());
         if let Some(owner) = self.pick {
-            ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair);
+            if ui.rect_contains_pointer(rect) {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair);
+            }
             let escape = ui.input(|i| i.key_pressed(egui::Key::Escape));
-            if response.secondary_clicked() || escape {
+            if secondary_clicked || escape {
                 self.pick = None;
                 self.events.push((owner, MapEvent::PickCancelled));
-            } else if response.clicked() && !taken {
-                if let Some(p) = response.interact_pointer_pos() {
-                    let c = projector.unproject(p.to_vec2());
-                    self.pick = None;
-                    self.events.push((owner, MapEvent::Picked([c.x(), c.y()])));
-                }
+                taken = true;
+            } else if let (false, Some(c)) = (taken, clicked.and_then(unproject)) {
+                self.pick = None;
+                self.events.push((owner, MapEvent::Picked(c)));
+                taken = true;
             }
         }
+        taken
     }
 }
 

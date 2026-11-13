@@ -192,6 +192,43 @@ pub fn current_leg(t: &Tracker, plan: &Plan) -> Option<([f64; 2], [f64; 2])> {
     Some((from, to))
 }
 
+/// The plan as the Home map draws it, when the vehicle is known to fly it.
+pub fn flown_route(t: &Tracker, plan: &Plan) -> Option<crate::map::flown::FlownRoute> {
+    use crate::map::flown::{FlownRoute, Mark, Stage};
+    t.progress.as_ref()?;
+    let route: Vec<[f64; 2]> = crate::mission::geometry::stations(&plan.items, plan.home.as_ref())
+        .iter()
+        .map(|s| [s.lon, s.lat])
+        .collect();
+    if route.len() < 2 {
+        return None;
+    }
+    let current = t.current_index();
+    let done = t.done_before(plan.items.len());
+    let marks = plan
+        .items
+        .iter()
+        .enumerate()
+        .filter(|(_, i)| i.kind.position())
+        .map(|(index, item)| Mark {
+            at: [item.lon, item.lat],
+            number: plan.position_number(index),
+            stage: if current == Some(index) {
+                Stage::Current
+            } else if index < done {
+                Stage::Done
+            } else {
+                Stage::Ahead
+            },
+        })
+        .collect();
+    Some(FlownRoute {
+        route,
+        marks,
+        leg: current_leg(t, plan),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -207,6 +244,31 @@ mod tests {
     fn frame(revision: i64, item: i64, state: &str) -> Value {
         json!({"connected": true, "mission_state": state, "mission_total": 2, "mission_known": true,
                "mission_revision": revision, "vehicle_id": "v1", "mission_item": item, "mission_reached_item": 0})
+    }
+
+    #[test]
+    fn the_home_map_draws_only_a_plan_the_vehicle_flies_and_marks_the_leg() {
+        use crate::map::flown::Stage;
+        let mut p = plan();
+        p.add_item(Kind::Waypoint, Some((11.002, 48.0)), None);
+        let mut t = Tracker::default();
+        assert_eq!(
+            flown_route(&t, &p),
+            None,
+            "nothing is drawn before the plan is on the vehicle"
+        );
+        t.on_frame(&p, &frame(5, 1, "running"));
+        assert_eq!(flown_route(&t, &p), None, "a plan nobody uploaded is not the vehicle's");
+        t.sync_with(&p, Some(5), "v1");
+        let f = flown_route(&t, &p).expect("the vehicle flies this plan");
+        assert!(f.route.len() >= 3, "the start and its points");
+        let stages: Vec<Stage> = f.marks.iter().map(|m| m.stage).collect();
+        assert_eq!(stages, [Stage::Done, Stage::Current, Stage::Ahead]);
+        assert_eq!(f.marks[1].number, 2);
+        assert!(f.leg.is_some());
+        p.add_item(Kind::Waypoint, Some((11.003, 48.0)), None);
+        t.apply(&p);
+        assert_eq!(flown_route(&t, &p), None, "an edit ends the claim");
     }
 
     #[test]

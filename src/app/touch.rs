@@ -21,11 +21,19 @@ use eframe::egui::{self, Pos2};
 use serde_json::{json, Value};
 
 /// `--touch-target`.
-pub const TARGET: f32 = 44.0;
+pub const TARGET: f32 = crate::ui::style::TOUCH_TARGET;
 /// Just after the map's own 500 ms, as the web has it.
 pub const LONG_PRESS_S: f64 = 0.55;
 /// How far a finger may drift and still be a press.
 pub const MOVE_TOLERANCE: f32 = 10.0;
+/// A finger held this long on a pinned window picks it up to move it.
+pub const HOLD_TO_MOVE_S: f64 = 0.4;
+
+/// Whether a press that began at `origin` at `start` has been held still long
+/// enough at `pos` to pick a window up.
+pub fn held_to_move(start: f64, origin: Pos2, pos: Pos2, now: f64) -> bool {
+    now - start >= HOLD_TO_MOVE_S && origin.distance(pos) <= MOVE_TOLERANCE
+}
 
 static ON: AtomicBool = AtomicBool::new(false);
 
@@ -131,6 +139,7 @@ impl Touch {
 
     fn publish(&self) {
         ON.store(self.enabled(), Ordering::Relaxed);
+        crate::ui::style::set_touch(self.enabled());
     }
 
     /// The Settings switch.
@@ -207,6 +216,17 @@ mod tests {
 
     fn p(x: f32, y: f32) -> Pos2 {
         Pos2::new(x, y)
+    }
+
+    #[test]
+    fn a_finger_held_still_picks_a_window_up_and_one_that_drifts_does_not() {
+        let o = p(10.0, 10.0);
+        assert!(!held_to_move(1.0, o, o, 1.2), "too soon");
+        assert!(held_to_move(1.0, o, p(14.0, 10.0), 1.5));
+        assert!(
+            !held_to_move(1.0, o, p(40.0, 10.0), 1.5),
+            "it moved: a drag, not a hold"
+        );
     }
 
     #[test]

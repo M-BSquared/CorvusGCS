@@ -421,6 +421,60 @@ mod cache {
     }
 
     #[test]
+    fn tile_fills_read_in_parallel_while_a_writer_keeps_writing() {
+        let dir = tempdir("readers");
+        let cache = std::sync::Arc::new(TileCache::new(dir.join("satellite.mbtiles")).unwrap());
+        for x in 0..32 {
+            cache.put_tile(5, x, 7, &[x as u8, 1, 2, 3]).unwrap();
+        }
+        let writer = {
+            let cache = cache.clone();
+            std::thread::spawn(move || {
+                for x in 100..300 {
+                    cache.put_tile(6, x, 9, &[1, 2, 3]).unwrap();
+                }
+            })
+        };
+        let readers: Vec<_> = (0..8)
+            .map(|t| {
+                let cache = cache.clone();
+                std::thread::spawn(move || {
+                    for round in 0..50 {
+                        let x = (t * 7 + round) % 32;
+                        assert_eq!(cache.get_tile(5, x, 7).unwrap(), Some(vec![x as u8, 1, 2, 3]));
+                        assert!(cache.has_tile(5, x, 7));
+                        assert!(!cache.has_tile(5, 40, 7));
+                    }
+                })
+            })
+            .collect();
+        for r in readers {
+            r.join().unwrap();
+        }
+        writer.join().unwrap();
+        assert!(cache.has_tile(6, 299, 9), "what the writer stored is read back");
+    }
+
+    #[test]
+    fn a_closed_cache_answers_nothing_and_a_reopened_one_has_everything() {
+        let dir = tempdir("closed");
+        let path = dir.join("satellite.mbtiles");
+        let cache = TileCache::new(&path).unwrap();
+        cache.put_tile(3, 1, 1, &[9, 9]).unwrap();
+        assert_eq!(cache.get_tile(3, 1, 1).unwrap(), Some(vec![9, 9]));
+        cache.close();
+        assert_eq!(
+            cache.get_tile(3, 1, 1).unwrap(),
+            None,
+            "closed means a miss, not an error"
+        );
+        assert!(!cache.has_tile(3, 1, 1));
+        cache.close();
+        let again = TileCache::new(&path).unwrap();
+        assert_eq!(again.get_tile(3, 1, 1).unwrap(), Some(vec![9, 9]));
+    }
+
+    #[test]
     fn a_file_python_wrote_is_read_and_one_rust_wrote_is_a_valid_mbtiles() {
         let c = cases("tile_cache");
         let dir = tempdir("pyfile");
