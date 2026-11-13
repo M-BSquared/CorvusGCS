@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 
 <title>Corvus GCS: Ground Control Station for PX4 and ArduPilot</title>
-<meta name="description" content="Corvus GCS is an offline-first ground control station for PX4 and ArduPilot aircraft: live map and flight HUD, mission planning against real terrain, 3D view, vehicle setup and built-in flight-log review. macOS, Linux and Windows.">
+<meta name="description" content="Corvus GCS is an offline-first ground control station for PX4 and ArduPilot: live map, mission planning against real terrain, 3D view, vehicle setup and flight log review. macOS, Linux and Windows.">
 <link rel="canonical" href="https://m-bsquared.github.io/CorvusGCS/">
 
 <meta name="theme-color" content="#0B0E12" media="(prefers-color-scheme: dark)">
@@ -27,6 +27,21 @@
 <meta name="twitter:description" content="Plan, monitor and control autonomous flight from one modern interface. Offline-first, ready to fly in seconds.">
 <meta name="twitter:image" content="https://m-bsquared.github.io/CorvusGCS/assets/images/social-preview.jpg">
 
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Corvus GCS",
+  "applicationCategory": "UtilitiesApplication",
+  "operatingSystem": "macOS, Linux, Windows",
+  "description": "An offline-first ground control station for PX4 and ArduPilot aircraft.",
+  "url": "https://m-bsquared.github.io/CorvusGCS/",
+  "downloadUrl": "https://github.com/M-BSquared/CorvusGCS/releases/latest",
+  "license": "https://github.com/M-BSquared/CorvusGCS/blob/master/LICENSE.md",
+  "author": { "@type": "Person", "name": "Maximilian Böck" },
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "EUR" }
+}
+</script>
 <link rel="icon" type="image/png" sizes="32x32" href="assets/icons/favicon-32.png">
 <link rel="apple-touch-icon" href="assets/icons/apple-touch-icon.png">
 
@@ -36,8 +51,7 @@
 <!-- The stored theme is applied before the first paint, so a visitor who chose
      light does not see the dark page flash first. Everything else is deferred. -->
 <script>
-  /* Marks the page as scripted, so the fade-in on scroll only ever hides
-     content that something is going to reveal again. */
+  /* Marks the page as scripted, so scripted-only states can be styled. */
   document.documentElement.classList.add('js');
   try {
     var t = localStorage.getItem('corvus-theme');
@@ -90,11 +104,12 @@
     <g id="i-scale"><path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M7 21h10"/><path d="M12 3v18"/><path d="M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2"/></g>
     <g id="i-expand"><path d="m15 15 6 6"/><path d="m15 9 6-6"/><path d="M21 16v5h-5"/><path d="M21 8V3h-5"/><path d="M3 16v5h5"/><path d="m3 21 6-6"/><path d="M3 8V3h5"/><path d="M9 9 3 3"/></g>
     <g id="i-check"><path d="M20 6 9 17l-5-5"/></g>
+    <g id="i-pause"><rect x="14" y="3" width="5" height="18" rx="1"/><rect x="5" y="3" width="5" height="18" rx="1"/></g>
+    <g id="i-play"><path d="M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z"/></g>
     <!-- The one mark Lucide does not ship: Lucide dropped brand icons in v0.429. -->
     <g id="i-github" fill="currentColor" stroke="none" transform="scale(1.5)"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></g>
   </defs>
 </svg>
-
 <header class="site-header" id="site-header">
   <div class="wrap header-inner">
     <a class="brand" href="#top" aria-label="Corvus GCS, back to top">
@@ -111,7 +126,7 @@
         <li><a href="#features">Features</a></li>
         <li><a href="#screenshots">Screenshots</a></li>
         <li><a href="#technical">Technical</a></li>
-        <li><a href="#why">Why</a></li>
+        <li><a href="#why">Background</a></li>
         <li><a href="guide/index.html">Documentation</a></li>
         <li><a class="nav-github" href="https://github.com/M-BSquared/CorvusGCS" target="_blank" rel="noopener">
           <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-github"></use></svg>GitHub</a></li>
@@ -139,18 +154,8 @@
 <main id="main">
   <span id="top"></span>
 
-  <!-- ===================== HERO =====================
-       The hero is a map sheet of the Neubiberg test site, where every
-       screenshot on this page is taken: contour lines, a planned route with
-       numbered waypoints, and an aircraft trailing its flown track along it.
-       script.js moves it and stops it as soon as the hero is off screen or
-       reduced motion is set. -->
   <section class="hero" id="hero">
     <div class="backdrop" aria-hidden="true">
-      <span class="backdrop-grid"></span>
-      <span class="backdrop-topo"></span>
-      <span class="backdrop-glow"></span>
-      <span class="backdrop-spot"></span>
       <svg class="hero-route" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice" focusable="false">
         <path class="route-plan" id="route-path"
               d="M120 700 C260 560 420 790 600 690 S820 470 980 520 S1180 830 1380 730 S1570 380 1400 230 S1000 50 760 130 S380 300 220 270 S10 540 120 700 Z"/>
@@ -169,23 +174,13 @@
         </g>
       </svg>
     </div>
-      <div class="sheet" aria-hidden="true">
-        <span class="sheet-edge sheet-edge-top"></span>
-        <span class="sheet-edge sheet-edge-bottom"></span>
-        <span class="sheet-coord sheet-lat mono">48°04′46″ N</span>
-        <span class="sheet-coord sheet-lon mono">11°38′19″ E</span>
-        <span class="sheet-scale mono"><span class="sheet-scale-bar"></span>0<span>100 m</span></span>
-        <span class="sheet-north mono"><svg viewBox="0 0 16 22" focusable="false"><path d="M8 1 L14 20 L8 15 L2 20 Z"/></svg>N</span>
-      </div>
-
     <div class="wrap hero-inner">
       <div class="hero-copy">
         <a class="hero-release" id="hero-release" href="https://github.com/M-BSquared/CorvusGCS/releases/latest" target="_blank" rel="noopener" hidden>
-          <span class="hero-release-dot" aria-hidden="true"></span>
           <span>Latest release <span class="tag" id="hero-release-tag"></span></span>
-          <span class="hero-release-more">What is new</span>
+          <span class="hero-release-more">Release notes</span>
         </a>
-        <p class="eyebrow"><span class="eyebrow-mark" aria-hidden="true"></span>Offline-first ground control station</p>
+        <p class="eyebrow">Ground control station for PX4 and ArduPilot</p>
         <h1 class="hero-title">
           <span class="visually-hidden">Built for research, ready for the field.</span>
           <!-- Shown one at a time by script.js; without it only the first. -->
@@ -199,81 +194,39 @@
             <span class="rotator-line"><span class="rotator-part">PX4 and ArduPilot,</span> <span class="rotator-part h1-accent">one ground station.</span></span>
           </span>
         </h1>
-        <p class="lead">
-          Plan, monitor and control autonomous flight from one modern interface.
-          Built for the field: a laptop, a telemetry radio, and no internet.
-        </p>
+        <p class="lead">Plan, fly and review autonomous flight in one program. It runs on a laptop with a telemetry radio and needs no internet connection.</p>
 
         <div class="hero-actions">
-          <a class="btn btn-primary btn-sheen" href="https://github.com/M-BSquared/CorvusGCS/releases/latest" target="_blank" rel="noopener">
+          <a class="btn btn-primary" href="https://github.com/M-BSquared/CorvusGCS/releases/latest" target="_blank" rel="noopener">
             <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-download"></use></svg>
-            Download Corvus GCS
+            Download
           </a>
-          <a class="btn btn-ghost" href="https://github.com/M-BSquared/CorvusGCS" target="_blank" rel="noopener">
-            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-github"></use></svg>
-            View on GitHub
+          <a class="btn btn-ghost" href="guide/index.html">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-book"></use></svg>
+            Documentation
           </a>
         </div>
-
-        <p class="platform-line">
-          macOS <span aria-hidden="true">·</span> Linux <span aria-hidden="true">·</span> Windows
-          <span aria-hidden="true">·</span> <span class="mono">PX4 &amp; ArduPilot</span>
-        </p>
       </div>
 
-      <div class="hero-stage" id="hero-stage">
-        <div class="hero-tilt" id="hero-tilt">
-          <figure class="app-window" id="hero-window">
-            <div class="app-window-bar" aria-hidden="true">
-              <span class="dot"></span><span class="dot"></span><span class="dot"></span>
-              <span class="app-window-title mono">Corvus GCS</span>
-            </div>
-            <img id="hero-image" src="assets/images/flight-dark-800.jpg"
-                 srcset="assets/images/flight-dark-800.jpg 800w, assets/images/flight-dark.jpg 1600w"
-                 sizes="(max-width: 1080px) calc(100vw - 48px), 760px"
-                 data-dark="assets/images/flight-dark" data-light="assets/images/flight-light" data-shown="dark"
-                 width="1600" height="1000" fetchpriority="high" decoding="async"
-                 alt="The Corvus GCS window: a satellite map with the home point, the flown track and the aircraft, the flight bar with arm, take-off, land and return-to-launch, the instrument panel showing heading and attitude, and the connection panel on the right.">
-          </figure>
-
-        </div>
-      </div>
+      <figure class="hero-shot mac-window">
+        <div class="mac-bar" aria-hidden="true"><span class="mac-dots"><i></i><i></i><i></i></span><span class="mac-title">Corvus GCS</span></div>
+        <img id="hero-image" src="assets/images/flight-dark-800.jpg"
+             srcset="assets/images/flight-dark-800.jpg 800w, assets/images/flight-dark.jpg 1600w"
+             sizes="(max-width: 1080px) calc(100vw - 40px), 700px"
+             data-dark="assets/images/flight-dark" data-light="assets/images/flight-light" data-shown="dark"
+             width="1600" height="1000" fetchpriority="high" decoding="async"
+             alt="The Corvus GCS window: a satellite map with the home point, the flown track and the aircraft, the flight bar with arm, take-off, land and return-to-launch, the instrument panel showing heading and attitude, and the connection panel on the right.">
+      </figure>
     </div>
 
-    <!-- ===================== READOUTS ===================== -->
     <div class="wrap">
-      <ul class="readouts reveal" aria-label="Corvus GCS in numbers">
-        <li class="readout">
-          <span class="readout-value mono" data-count="2">2</span>
-          <span class="readout-label">Flight stacks</span>
-          <span class="readout-meta mono">PX4 · ArduPilot</span>
-        </li>
-        <li class="readout">
-          <span class="readout-value mono" data-count="3">3</span>
-          <span class="readout-label">Desktop platforms</span>
-          <span class="readout-meta mono">macOS · Linux · Windows</span>
-        </li>
-        <li class="readout">
-          <span class="readout-value mono" data-count="20">20</span>
-          <span class="readout-label">Map layers</span>
-          <span class="readout-meta mono">6 map services</span>
-        </li>
-        <li class="readout">
-          <span class="readout-value mono" data-count="6">6</span>
-          <span class="readout-label">Plugins</span>
-          <span class="readout-meta mono">4 built in · 2 extra</span>
-        </li>
-        <li class="readout">
-          <span class="readout-value mono" data-count="3">3</span>
-          <span class="readout-label">Languages</span>
-          <span class="readout-meta mono">EN · DE · FR</span>
-        </li>
-        <li class="readout readout-zero">
-          <span class="readout-value mono" data-count="0" data-from="100">0</span>
-          <span class="readout-label">Internet needed</span>
-          <span class="readout-meta mono">in the field</span>
-        </li>
-      </ul>
+      <dl class="facts" aria-label="Corvus GCS at a glance">
+        <div class="reveal"><dt>Flight stacks</dt><dd>PX4 and ArduPilot</dd></div>
+        <div class="reveal"><dt>Platforms</dt><dd>macOS, Linux, Windows</dd></div>
+        <div class="reveal"><dt>Languages</dt><dd>English, German, French</dd></div>
+        <div class="reveal"><dt>Plugins</dt><dd>4 built in</dd></div>
+        <div class="reveal"><dt>Network</dt><dd>Not needed in the field</dd></div>
+      </dl>
     </div>
   </section>
 
@@ -283,38 +236,34 @@
   <section class="section workflow" id="workflow" aria-labelledby="workflow-title">
     <div class="wrap">
       <header class="section-head reveal">
-        <p class="eyebrow"><span class="eyebrow-index">01</span>Workflow</p>
-        <h2 id="workflow-title">One window, from the bench to the debrief.</h2>
-        <p class="section-sub">Set up the aircraft, plan the flight, fly it and read the log, without switching tools.</p>
+        <h2 id="workflow-title">From setup to review in one program</h2>
+        <p class="section-sub">Set up, plan, fly and review without switching tools.</p>
       </header>
 
       <div class="flow" id="flow">
         <div class="flow-stage">
-          <div class="flow-frame">
-            <div class="app-window-bar" aria-hidden="true">
-              <span class="dot"></span><span class="dot"></span><span class="dot"></span>
-              <span class="app-window-title mono" id="flow-title">Set up · First Setup</span>
-            </div>
+          <div class="flow-frame mac-window">
+            <div class="mac-bar" aria-hidden="true"><span class="mac-dots"><i></i><i></i><i></i></span><span class="mac-title" id="flow-title">Set up, First Setup</span></div>
             <div class="flow-shots">
-              <img class="flow-shot is-active" data-step="0" data-title="Set up · First Setup"
+              <img class="flow-shot is-active" data-step="0" data-title="Set up, First Setup"
                    src="assets/images/first-setup-800.jpg"
                    srcset="assets/images/first-setup-800.jpg 800w, assets/images/first-setup.jpg 1600w"
                    sizes="(max-width: 900px) calc(100vw - 40px), 760px"
                    width="1600" height="1000" loading="lazy" decoding="async"
                    alt="First Setup on the Setup page: the eight steps from Firmware to Finish across the top, Firmware, Aircraft and Calibration ticked as done, and the aircraft type step open with Quadcopter X selected among the multirotor, plane, VTOL and rover presets.">
-              <img class="flow-shot" data-step="1" data-title="Plan · Mission"
+              <img class="flow-shot" data-step="1" data-title="Plan, Mission"
                    src="assets/images/mission-800.jpg"
                    srcset="assets/images/mission-800.jpg 800w, assets/images/mission.jpg 1600w"
                    sizes="(max-width: 900px) calc(100vw - 40px), 760px"
                    width="1600" height="1000" loading="lazy" decoding="async"
                    alt="The mission planner: a route of named waypoints and an orbit drawn over the satellite map, the item list on the right and the altitude profile underneath.">
-              <img class="flow-shot" data-step="2" data-title="Fly · 3D map"
+              <img class="flow-shot" data-step="2" data-title="Fly, 3D map"
                    src="assets/images/map-3d-dom-800.jpg"
                    srcset="assets/images/map-3d-dom-800.jpg 800w, assets/images/map-3d-dom.jpg 1600w"
                    sizes="(max-width: 900px) calc(100vw - 40px), 760px"
                    width="1600" height="1000" loading="lazy" decoding="async"
                    alt="The map tilted into 3D over a 20 cm surface model: the field with its rows of trees in relief, the buildings around it with their real roofs, the flown track, and the aircraft drawn above the ground at its altitude.">
-              <img class="flow-shot" data-step="3" data-title="Review · Flight Review"
+              <img class="flow-shot" data-step="3" data-title="Review, Flight Review"
                    src="assets/images/flight-review-800.jpg"
                    srcset="assets/images/flight-review-800.jpg 800w, assets/images/flight-review.jpg 1600w"
                    sizes="(max-width: 900px) calc(100vw - 40px), 760px"
@@ -330,7 +279,7 @@
             <div class="flow-text">
               <p class="flow-kicker mono">Set up</p>
               <h3>Set up the aircraft</h3>
-              <p>First Setup takes a new controller through it in order: firmware, aircraft type, frame and motors, calibration, radio, safety and battery. Each step opens the real setup page, the ones already done are ticked, and you can take them in any order.</p>
+              <p>First Setup walks a new controller through firmware, frame, calibration, radio, safety and battery, in any order.</p>
               <a class="flow-link" href="guide/airframe.html#first-setup">First Setup<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-next"></use></svg></a>
             </div>
           </li>
@@ -339,7 +288,7 @@
             <div class="flow-text">
               <p class="flow-kicker mono">Plan</p>
               <h3>Plan precisely</h3>
-              <p>Draw a take-off, waypoints, orbits and a landing on their own map, then read the whole flight as an altitude profile against the terrain under it. Save to disk, upload to the aircraft, fly on a second press.</p>
+              <p>Draw the route, read it as an altitude profile against the terrain, upload it and fly.</p>
               <a class="flow-link" href="guide/mission.html">Mission planner<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-next"></use></svg></a>
             </div>
           </li>
@@ -348,7 +297,7 @@
             <div class="flow-text">
               <p class="flow-kicker mono">Fly</p>
               <h3>See it in 3D</h3>
-              <p>A spinnable globe when you zoom out; ground with its real shape and extruded OpenStreetMap buildings when you zoom in. The aircraft is drawn at the altitude it is actually flying.</p>
+              <p>Real terrain, OpenStreetMap buildings and the aircraft at its true altitude.</p>
               <a class="flow-link" href="guide/flying.html">Map, HUD and flight controls<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-next"></use></svg></a>
             </div>
           </li>
@@ -357,7 +306,7 @@
             <div class="flow-text">
               <p class="flow-kicker mono">Review</p>
               <h3>Review every flight</h3>
-              <p>Download the vehicle's ULog files over MAVLink and read them in the built-in Flight Review, on your own machine. Telemetry that Corvus recorded itself reviews the same way, radio link included.</p>
+              <p>Download the ULog over MAVLink and read it in the built-in Flight Review. Nothing leaves your machine.</p>
               <a class="flow-link" href="guide/analysis.html">Logs and Flight Review<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-next"></use></svg></a>
             </div>
           </li>
@@ -366,94 +315,49 @@
     </div>
   </section>
 
-  <!-- ===================== FEATURES ===================== -->
   <section class="section section-alt" id="features" aria-labelledby="features-title">
     <div class="wrap">
       <header class="section-head reveal">
-        <p class="eyebrow"><span class="eyebrow-index">02</span>Features</p>
-        <h2 id="features-title">Everything you need for autonomous flight.</h2>
-        <p class="section-sub">Every one of these is built and working today.</p>
+        <h2 id="features-title">What it does</h2>
+        <p class="section-sub">Everything listed here is implemented.</p>
       </header>
 
-      <div class="bento">
-        <article class="card card-wide spot reveal">
-          <div class="card-body">
-            <span class="card-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-zap"></use></svg></span>
-            <h3>Ready in seconds</h3>
-            <p>On connect Corvus streams only what flying needs: position, attitude, GPS, battery and link health. The full parameter set is loaded when you open the Parameters page.</p>
-          </div>
-          <ul class="card-visual stream" aria-hidden="true">
-            <li><span class="stream-dot"></span>Position<span class="stream-state">live</span></li>
-            <li><span class="stream-dot"></span>Attitude<span class="stream-state">live</span></li>
-            <li><span class="stream-dot"></span>GPS<span class="stream-state">live</span></li>
-            <li><span class="stream-dot"></span>Battery<span class="stream-state">live</span></li>
-            <li><span class="stream-dot"></span>Link health<span class="stream-state">live</span></li>
-            <li class="is-idle"><span class="stream-dot"></span>Parameters<span class="stream-state">on demand</span></li>
-          </ul>
+      <div class="features">
+        <article class="feature reveal">
+          <h3>Fast connect</h3>
+          <p>On connect only what flying needs streams in. Parameters load when you open them.</p>
         </article>
-
-        <article class="card spot reveal">
-          <span class="card-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-network"></use></svg></span>
-          <h3>Fly several vehicles</h3>
-          <p>Give every vehicle a radio and a link of its own. Corvus draws each one on the map in its own colour, with its name and its track, flies the one you pick, and reports the warnings of the others. Take control switches in one press.</p>
+        <article class="feature reveal">
+          <h3>Several vehicles</h3>
+          <p>Every vehicle gets its own link, colour and track on one map. Take control in one press.</p>
         </article>
-
-        <article class="card spot reveal">
-          <span class="card-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-radar"></use></svg></span>
-          <h3>See every message</h3>
-          <p>Live Messages lists every MAVLink message on the link with its rate, its age and its count. Pick one and its fields update live beside the list. Every parameter carries an explanation, even where the firmware ships none.</p>
+        <article class="feature reveal">
+          <h3>Message inspector</h3>
+          <p>Live Messages lists every MAVLink message with its rate and live fields. Every parameter is explained.</p>
         </article>
-
-        <article class="card card-wide spot reveal">
-          <div class="card-body">
-            <span class="card-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-offline"></use></svg></span>
-            <h3>Work offline</h3>
-            <p>The interface loads nothing from the internet, and map tiles go into a local store as you use them. Download named regions ahead of time, elevation included, and the whole app keeps working with no connection.</p>
-          </div>
-          <div class="card-visual tiles" aria-hidden="true">
-            <div class="tiles-grid"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
-            <p class="tiles-label mono"><span class="tiles-dot"></span>Offline store <span class="tiles-ok">ready</span></p>
-          </div>
+        <article class="feature reveal">
+          <h3>Offline operation</h3>
+          <p>Nothing loads from the internet. Download regions with their elevation ahead of time and fly without a connection.</p>
         </article>
-
-        <article class="card spot reveal">
-          <span class="card-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-truck"></use></svg></span>
-          <h3>Drones, planes and rovers</h3>
-          <p>Multicopters, planes, rovers and boats, on PX4 and on ArduPilot. A rover or a boat loses take-off and land, offers Drive to this point and lists its own modes, and every setup page shows the parameters that firmware really has.</p>
+        <article class="feature reveal">
+          <h3>Vehicle types</h3>
+          <p>Multicopters, planes, rovers and boats on PX4 and ArduPilot. Every page shows what that firmware really has.</p>
         </article>
-
-        <article class="card spot reveal">
-          <span class="card-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-puzzle"></use></svg></span>
-          <h3>Extend it with plugins</h3>
-          <p>A plugin is a folder: a script, a stylesheet, its own settings and its own translations. Four ship with Corvus and two more are a download away. An AI client such as OpenCode can join in over the MCP server, as far as you allow it.</p>
+        <article class="feature reveal">
+          <h3>Plugins and AI clients</h3>
+          <p>Four plugins ship with Corvus, written in Rust against its plugin API. An AI client can join over MCP, as far as you allow it.</p>
         </article>
-
-
-        <article class="card spot reveal">
-          <span class="card-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-languages"></use></svg></span>
-          <h3>Speak your language</h3>
-          <p>English, German and French, switched in Settings with no restart. A language is one file, so a new one needs no code, and a plugin brings its own words along.</p>
+        <article class="feature reveal">
+          <h3>Languages</h3>
+          <p>English, German and French, switched with no restart. A language is one file.</p>
         </article>
-
-        <article class="card spot reveal">
-          <span class="card-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-mountain"></use></svg></span>
-          <h3>Bring your own elevation</h3>
-          <p>Load your own GeoTIFF, XYZ or ESRI ASCII grids, such as a survey office's 20 cm surface model (DOM) or terrain model (DGM), as one file or a folder of tiles. Corvus converts them once and serves them itself, so every tree and roof stands in the 3D map with no connection.</p>
+        <article class="feature reveal">
+          <h3>Own elevation data</h3>
+          <p>Load your own GeoTIFF, XYZ or ESRI ASCII grids, such as a 20 cm survey surface model. Every tree and roof stands in the 3D map.</p>
         </article>
-
-        <article class="card card-wide card-safety spot reveal">
-          <div class="card-body">
-            <span class="card-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-shield"></use></svg></span>
-            <h3>Safety is built in</h3>
-            <p>Parameter writes, motor tests, firmware flashing and ESC calibration are all refused while the aircraft is armed, and the on-screen controls never arm, change mode, or override a failsafe. A refused write is never shown as applied.</p>
-          </div>
-          <ul class="card-visual guard" aria-hidden="true">
-            <li class="guard-state mono"><span class="guard-dot"></span>Armed</li>
-            <li><span>Parameter write</span><span class="guard-no mono">refused</span></li>
-            <li><span>Motor test</span><span class="guard-no mono">refused</span></li>
-            <li><span>Firmware flash</span><span class="guard-no mono">refused</span></li>
-            <li><span>ESC calibration</span><span class="guard-no mono">refused</span></li>
-          </ul>
+        <article class="feature reveal">
+          <h3>Safety guards</h3>
+          <p>Parameter writes, motor tests, flashing and ESC calibration are refused while armed. A refused write is never shown as applied.</p>
         </article>
       </div>
     </div>
@@ -468,35 +372,49 @@
   <section class="section" id="screenshots" aria-labelledby="screenshots-title">
     <div class="wrap">
       <header class="section-head reveal">
-        <p class="eyebrow"><span class="eyebrow-index">03</span>Screenshots</p>
-        <h2 id="screenshots-title">The real interface, driven by real MAVLink.</h2>
-        <p class="section-sub">31 screenshots of flying, setting up the aircraft, reviewing the flight and the plugins. Pick one from the list to see it large.</p>
+        <h2 id="screenshots-title">The interface</h2>
+        <p class="section-sub">29 screenshots from simulated flights. They play through on their own: pick one, use the arrows or press pause to stop.</p>
       </header>
 
       <div class="gallery-tabs reveal" role="tablist" aria-label="Screenshot groups" id="gallery-tabs">
-        <button class="gallery-tab" type="button" role="tab" id="tab-fly" aria-controls="shots-fly" aria-selected="true"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-route"></use></svg>Fly<span class="mono">11</span></button>
-        <button class="gallery-tab" type="button" role="tab" id="tab-setup" aria-controls="shots-setup" aria-selected="false" tabindex="-1"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-sliders"></use></svg>Set up<span class="mono">11</span></button>
-        <button class="gallery-tab" type="button" role="tab" id="tab-review" aria-controls="shots-review" aria-selected="false" tabindex="-1"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-chart"></use></svg>Review<span class="mono">3</span></button>
-        <button class="gallery-tab" type="button" role="tab" id="tab-plugins" aria-controls="shots-plugins" aria-selected="false" tabindex="-1"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-puzzle"></use></svg>Plugins<span class="mono">6</span></button>
+        <button class="gallery-tab" type="button" role="tab" id="tab-fly" aria-controls="shots-fly" aria-selected="true">Fly<span class="mono">11</span></button>
+        <button class="gallery-tab" type="button" role="tab" id="tab-setup" aria-controls="shots-setup" aria-selected="false" tabindex="-1">Set up<span class="mono">11</span></button>
+        <button class="gallery-tab" type="button" role="tab" id="tab-review" aria-controls="shots-review" aria-selected="false" tabindex="-1">Review<span class="mono">3</span></button>
+        <button class="gallery-tab" type="button" role="tab" id="tab-plugins" aria-controls="shots-plugins" aria-selected="false" tabindex="-1">Plugins<span class="mono">4</span></button>
       </div>
 
       <div class="viewer reveal" id="viewer">
         <div class="viewer-stage">
-          <button class="viewer-open" type="button" id="viewer-open" aria-label="View this screenshot full size">
-            <img id="viewer-image" alt="" width="1600" height="1000" decoding="async"
-                 src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==">
-            <span class="viewer-zoom" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24" focusable="false"><use href="#i-expand"></use></svg>Full size</span>
-          </button>
+          <div class="viewer-frame mac-window">
+            <div class="mac-bar" aria-hidden="true"><span class="mac-dots"><i></i><i></i><i></i></span><span class="mac-title" id="viewer-title">Corvus GCS</span></div>
+            <button class="viewer-open" type="button" id="viewer-open" aria-label="View this screenshot full size">
+              <img id="viewer-image" alt="" width="1600" height="1000" decoding="async"
+                   src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==">
+              <span class="viewer-zoom" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24" focusable="false"><use href="#i-expand"></use></svg>Full size</span>
+            </button>
+            <button class="viewer-nav viewer-prev" type="button" id="viewer-prev" aria-label="Previous screenshot">
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-prev"></use></svg>
+            </button>
+            <button class="viewer-nav viewer-next" type="button" id="viewer-next" aria-label="Next screenshot">
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-next"></use></svg>
+            </button>
+          </div>
+          <div class="viewer-dots" id="viewer-dots" role="group" aria-label="Screenshots in this group"></div>
           <div class="viewer-meta">
-            <p class="viewer-caption" id="viewer-caption" aria-live="polite"></p>
+            <p class="viewer-caption" id="viewer-caption"></p>
             <span class="viewer-count mono" id="viewer-count"></span>
+            <button class="viewer-play" type="button" id="viewer-play" aria-pressed="false">
+              <svg class="icon icon-pause" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-pause"></use></svg>
+              <svg class="icon icon-play" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-play"></use></svg>
+              <span class="viewer-play-label">Pause</span>
+            </button>
           </div>
         </div>
 
         <div class="viewer-list">
           <section class="gallery-group" id="shots-fly" data-group="Fly" role="tabpanel" aria-labelledby="tab-fly">
             <h3 class="gallery-heading">Fly</h3>
-            <p class="gallery-intro">The live map, the mission planner, the geofence in flight, and the workspace beside the map.</p>
+            <p class="gallery-intro">Map, mission, geofence and workspace.</p>
             <div class="gallery">
               <figure class="shot">
                 <button class="shot-btn" type="button" data-full="assets/images/map.jpg">
@@ -506,7 +424,7 @@
                        width="1600" height="1000" loading="lazy" decoding="async"
                        alt="The map filling the whole Corvus GCS window with the side panel collapsed, showing the vehicle, its heading, the home point, the flown track and the floating instrument panel.">
                 </button>
-                <figcaption><strong>The map is the interface.</strong> Collapse the side panel and the whole window becomes the operational picture, with the instrument panel wherever you put it.</figcaption>
+                <figcaption><strong>The map is the interface.</strong> Collapse the side panel and the map fills the window.</figcaption>
               </figure>
               <figure class="shot">
                 <button class="shot-btn" type="button" data-full="assets/images/fleet.jpg">
@@ -516,7 +434,7 @@
                        width="1600" height="1000" loading="lazy" decoding="async"
                        alt="The Home map with three vehicles at once: a quadrotor called Bumble in the theme red flying a curved track, a second quadrotor called Zippy in blue on a gentle curve along the north of the field, and a rover called Rollo in green driving snaking lines across the meadow, each with its name under the marker.">
                 </button>
-                <figcaption><strong>Drones and a rover, one map.</strong> Each vehicle has a radio and a link of its own, its own colour, its name under the marker and a track behind it.</figcaption>
+                <figcaption><strong>Drones and a rover, one map.</strong> Each vehicle has its own link, colour and track.</figcaption>
               </figure>
               <figure class="shot">
                 <button class="shot-btn" type="button" data-full="assets/images/fleet-vehicles.jpg">
@@ -526,7 +444,7 @@
                        width="1600" height="1000" loading="lazy" decoding="async"
                        alt="The Vehicles dialog in the blue theme listing Bumble in control, and Zippy and Rollo each with a Take control button, with their mode, battery and height, and the three links below with a field to open another one.">
                 </button>
-                <figcaption><strong>Take control in one press.</strong> Every vehicle the station hears is listed with its mode, battery and link, and the HUD, the flight bar and every page follow the one you pick.</figcaption>
+                <figcaption><strong>Take control in one press.</strong> Every vehicle is listed with its mode, battery and link.</figcaption>
               </figure>
               <figure class="shot">
                 <button class="shot-btn" type="button" data-full="assets/images/map-3d-dom.jpg">
@@ -536,7 +454,7 @@
                        width="1600" height="1000" loading="lazy" decoding="async"
                        alt="The map tilted into 3D in the blue theme over a 20 cm surface model made of three DOM tiles: the field with its rows of trees in relief, the buildings around it with their real roofs, the flown track, and the aircraft drawn above the ground at its altitude.">
                 </button>
-                <figcaption><strong>See it in 3D.</strong> Three 20 cm DOM tiles from the survey office as the ground: every tree, every roof, and the aircraft at the altitude it is flying.</figcaption>
+                <figcaption><strong>See it in 3D.</strong> Real trees, roofs and the aircraft at its altitude.</figcaption>
               </figure>
               <figure class="shot">
                 <button class="shot-btn" type="button" data-full="assets/images/geofence-dom.jpg">
@@ -546,7 +464,7 @@
                        width="1600" height="1000" loading="lazy" decoding="async"
                        alt="The map tilted into 3D over the operator's own 20 cm surface model: the field with its trees and the roofs around it in relief, the geofence as a dashed outline along the field's edge, the flown track and the aircraft at its altitude.">
                 </button>
-                <figcaption><strong>The geofence in 3D.</strong> The same surface model, with the geofence along the edge of the field and the flown track inside it.</figcaption>
+                <figcaption><strong>The geofence in 3D.</strong> The fence along the field, the track inside it.</figcaption>
               </figure>
               <figure class="shot">
                 <button class="shot-btn" type="button" data-full="assets/images/mission.jpg">
@@ -556,7 +474,7 @@
                        width="1600" height="1000" loading="lazy" decoding="async"
                        alt="The mission planner: a route of named waypoints and an orbit drawn over the satellite map, the item list on the right and the altitude profile underneath.">
                 </button>
-                <figcaption><strong>Plan the flight.</strong> A start point, waypoints, an orbit and the return, with the altitude profile underneath.</figcaption>
+                <figcaption><strong>Plan the flight.</strong> Waypoints, an orbit and the altitude profile.</figcaption>
               </figure>
               <figure class="shot">
                 <button class="shot-btn" type="button" data-full="assets/images/geofence-map.jpg">
@@ -566,7 +484,7 @@
                        width="1600" height="1000" loading="lazy" decoding="async"
                        alt="The Home map during a flight with the side panel collapsed: the geofence drawn as a dashed amber outline around the field, the flown track inside it and the instrument panel.">
                 </button>
-                <figcaption><strong>The fence in sight.</strong> The geofence as a dashed outline under the flown track, so the edge is on the map while you fly.</figcaption>
+                <figcaption><strong>The fence in sight.</strong> A dashed outline under the flown track.</figcaption>
               </figure>
               <figure class="shot">
                 <button class="shot-btn" type="button" data-full="assets/images/console.jpg">
@@ -576,7 +494,7 @@
                        width="1600" height="1000" loading="lazy" decoding="async"
                        alt="The MAVLink console open in the right-hand workspace next to the live map, listing timestamped messages with a command field underneath.">
                 </button>
-                <figcaption><strong>The side workspace.</strong> A MAVLink console, an SSH terminal for a companion computer, and a plugin slot, right next to the map.</figcaption>
+                <figcaption><strong>The side workspace.</strong> Console, SSH and a plugin beside the map.</figcaption>
               </figure>
               <figure class="shot">
                 <button class="shot-btn" type="button" data-full="assets/images/ssh.jpg">
@@ -586,7 +504,7 @@
                        width="1600" height="1000" loading="lazy" decoding="async"
                        alt="Two SSH sessions during a flight: one to the companion computer in the side panel and one to the payload computer in a floating window over the map.">
                 </button>
-                <figcaption><strong>On the companion computer.</strong> A real SSH terminal in the side panel, and a second one in a window of its own over the map.</figcaption>
+                <figcaption><strong>On the companion computer.</strong> A real SSH terminal, also in its own window.</figcaption>
               </figure>
               <figure class="shot">
                 <button class="shot-btn" type="button" data-full="assets/images/flight-german.jpg">
@@ -596,7 +514,7 @@
                        width="1600" height="1000" loading="lazy" decoding="async"
                        alt="Corvus GCS in German during a flight: the top bar, the flight bar, the instrument panel and the connection panel all labelled in German, beside the map with the flown track.">
                 </button>
-                <figcaption><strong>In your language.</strong> English, German and French, one file each. Every page follows the language you pick.</figcaption>
+                <figcaption><strong>In your language.</strong> English, German and French.</figcaption>
               </figure>
               <figure class="shot">
                 <button class="shot-btn" type="button" data-full="assets/images/flight-dark.jpg">
@@ -606,13 +524,13 @@
                        width="1600" height="1000" loading="lazy" decoding="async"
                        alt="Corvus GCS in flight in the dark green theme: the satellite map with the flown track, the instrument panel and the connection panel.">
                 </button>
-                <figcaption><strong>Six themes.</strong> Two light and four dark. Switching is instant, and the map, the plots and the instruments all follow.</figcaption>
+                <figcaption><strong>Six themes.</strong> Two light and four dark.</figcaption>
               </figure>
             </div>
           </section>
           <section class="gallery-group" id="shots-setup" data-group="Set up" role="tabpanel" aria-labelledby="tab-setup">
             <h3 class="gallery-heading">Set up</h3>
-            <p class="gallery-intro">Calibration, radio, the geofence, tuning, motors, battery, safety and every parameter.</p>
+            <p class="gallery-intro">Calibration, radio, tuning, motors, safety and parameters.</p>
             <div class="gallery">
               <figure class="shot">
                 <button class="shot-btn" type="button" data-full="assets/images/setup.jpg">
@@ -622,7 +540,7 @@
                        width="1600" height="1000" loading="lazy" decoding="async"
                        alt="The Setup page: the vehicle info card and one tile for each configuration page, from Calibration to Video.">
                 </button>
-                <figcaption><strong>One page per job.</strong> Calibration, radio, tuning, motors, safety, battery, telemetry radio, RTK, Remote ID, parameters, firmware and video.</figcaption>
+                <figcaption><strong>One page per job.</strong> Calibration, radio, tuning, motors, safety and more.</figcaption>
               </figure>
               <figure class="shot">
                 <button class="shot-btn" type="button" data-full="assets/images/motors.jpg">
@@ -632,7 +550,7 @@
                        width="1600" height="1000" loading="lazy" decoding="async"
                        alt="The Motors setup page: a quadrotor airframe drawn to scale with numbered motors, their MAIN output pins and spin-direction arrows.">
                 </button>
-                <figcaption><strong>Your airframe, drawn.</strong> Every motor at its real distance from the centre of gravity, with its output pin and spin direction.</figcaption>
+                <figcaption><strong>Your airframe, drawn.</strong> Every motor with its pin and spin direction.</figcaption>
               </figure>
               <figure class="shot">
                 <button class="shot-btn" type="button" data-full="assets/images/rc.jpg">
@@ -642,7 +560,7 @@
                        width="1600" height="1000" loading="lazy" decoding="async"
                        alt="The Radio Control page: a handset drawn with its sticks, switches and knobs, each labelled with its channel and position, and a live bar for all sixteen channels beside it.">
                 </button>
-                <figcaption><strong>The transmitter, drawn.</strong> Sticks, six switches and two knobs, each one live against the channel bound to it.</figcaption>
+                <figcaption><strong>The transmitter, drawn.</strong> Sticks and switches live against their channels.</figcaption>
               </figure>
               <figure class="shot">
                 <button class="shot-btn" type="button" data-full="assets/images/geofence.jpg">
@@ -652,7 +570,7 @@
                        width="1600" height="1000" loading="lazy" decoding="async"
                        alt="The Geofence card on the Safety and Sensors page: an eight-corner area along the edge of the field on a satellite map, its size, the action when leaving it, and the line saying the vehicle has this area.">
                 </button>
-                <figcaption><strong>Draw the geofence.</strong> The area the aircraft may fly in, on a map of its own, uploaded as an inclusion fence with the action when it is left.</figcaption>
+                <figcaption><strong>Draw the geofence.</strong> On a map of its own, uploaded as an inclusion fence.</figcaption>
               </figure>
               <figure class="shot">
                 <button class="shot-btn" type="button" data-full="assets/images/geofence-edit.jpg">
@@ -662,7 +580,7 @@
                        width="1600" height="1000" loading="lazy" decoding="async"
                        alt="The geofence on the large map in the blue theme: the eight corners of the area along the field as handles, a handle in the middle of every edge, and the Redraw, Delete area and Done buttons above.">
                 </button>
-                <figcaption><strong>Edit it on the large map.</strong> Drag a corner, add one in the middle of an edge, or draw the area again, on a map that fills the window.</figcaption>
+                <figcaption><strong>Edit it on the large map.</strong> Drag a corner or add one on the edge.</figcaption>
               </figure>
               <figure class="shot">
                 <button class="shot-btn" type="button" data-full="assets/images/calibration.jpg">
@@ -672,7 +590,7 @@
                        width="1600" height="1000" loading="lazy" decoding="async"
                        alt="The accelerometer calibration page, with the aircraft drawn in each of the six orientations PX4 asks for and the completed ones ticked off.">
                 </button>
-                <figcaption><strong>Guided calibration.</strong> Each position is shown as a drawing. Hold the aircraft the way the bird is held.</figcaption>
+                <figcaption><strong>Guided calibration.</strong> Each position is shown as a drawing.</figcaption>
               </figure>
               <figure class="shot">
                 <button class="shot-btn" type="button" data-full="assets/images/tuning.jpg">
@@ -682,7 +600,7 @@
                        width="1600" height="1000" loading="lazy" decoding="async"
                        alt="The PID Tuning page during a flight: live roll, pitch and yaw rate plots above the rate controller gains, which are read only while armed.">
                 </button>
-                <figcaption><strong>Tune in flight.</strong> Rate, attitude, velocity and position gains by hand, with the live response drawn above them, plus the in-flight autotune.</figcaption>
+                <figcaption><strong>Tune in flight.</strong> Gains by hand with the live response above.</figcaption>
               </figure>
               <figure class="shot">
                 <button class="shot-btn" type="button" data-full="assets/images/battery.jpg">
@@ -692,7 +610,7 @@
                        width="1600" height="1000" loading="lazy" decoding="async"
                        alt="The Battery and Power page: the pack drawn with its warning thresholds and per-cell voltages, its live readings, and the settings for how Corvus reads it.">
                 </button>
-                <figcaption><strong>Know the pack.</strong> Cells, capacity, the power module, and which charge reading the rest of the interface flies by.</figcaption>
+                <figcaption><strong>Know the pack.</strong> Cells, capacity and the power module.</figcaption>
               </figure>
               <figure class="shot">
                 <button class="shot-btn" type="button" data-full="assets/images/safety.jpg">
@@ -702,7 +620,7 @@
                        width="1600" height="1000" loading="lazy" decoding="async"
                        alt="The Safety and Sensors page: the maximum distance and height, the action at the limit, and the return-to-launch type and heights.">
                 </button>
-                <figcaption><strong>Limits and failsafes.</strong> Maximum distance and height, the return profile, and an action for every loss PX4 can detect.</figcaption>
+                <figcaption><strong>Limits and failsafes.</strong> Distance, height, return and an action for every loss.</figcaption>
               </figure>
               <figure class="shot">
                 <button class="shot-btn" type="button" data-full="assets/images/parameters.jpg">
@@ -712,7 +630,7 @@
                        width="1600" height="1000" loading="lazy" decoding="async"
                        alt="The parameter editor in the pink theme, filtered to the modified parameters: battery and sensor calibration values, each next to its PX4 default and a reset button.">
                 </button>
-                <figcaption><strong>Every parameter.</strong> Only the values this aircraft changed, each beside its PX4 default with a button to restore it. Here in the pink theme.</figcaption>
+                <figcaption><strong>Every parameter.</strong> Changed values beside their default.</figcaption>
               </figure>
               <figure class="shot">
                 <button class="shot-btn" type="button" data-full="assets/images/parameter-help.jpg">
@@ -722,13 +640,13 @@
                        width="1600" height="1000" loading="lazy" decoding="async"
                        alt="The parameter editor in the blue theme with the information popover of the battery failsafe open: what the parameter does, its default and the values it takes.">
                 </button>
-                <figcaption><strong>Every parameter explained.</strong> The circled i beside a name says what it does, its default, its range and its values.</figcaption>
+                <figcaption><strong>Every parameter explained.</strong> What it does, its default and its range.</figcaption>
               </figure>
             </div>
           </section>
           <section class="gallery-group" id="shots-review" data-group="Review" role="tabpanel" aria-labelledby="tab-review">
             <h3 class="gallery-heading">Review</h3>
-            <p class="gallery-intro">Logs downloaded from the aircraft and read on this computer, and every message on the live link. Nothing is uploaded anywhere.</p>
+            <p class="gallery-intro">Logs read on this computer and every message on the link.</p>
             <div class="gallery">
               <figure class="shot">
                 <button class="shot-btn" type="button" data-full="assets/images/flight-review.jpg">
@@ -738,7 +656,7 @@
                        width="1600" height="1000" loading="lazy" decoding="async"
                        alt="Flight Review of a downloaded ULog: the flight modes as a coloured timeline, the log summary, and the ground track over satellite imagery.">
                 </button>
-                <figcaption><strong>Review the flight.</strong> A downloaded ULog reduced to the plots that decide whether a flight was healthy.</figcaption>
+                <figcaption><strong>Review the flight.</strong> A downloaded ULog reduced to the plots that matter.</figcaption>
               </figure>
               <figure class="shot">
                 <button class="shot-btn" type="button" data-full="assets/images/flight-review-charts.jpg">
@@ -748,7 +666,7 @@
                        width="1600" height="1000" loading="lazy" decoding="async"
                        alt="Flight Review plots of pitch angle and pitch rate, estimate against setpoint, with the takeoff, mission, loiter and return phases shaded behind the traces.">
                 </button>
-                <figcaption><strong>Estimate against setpoint.</strong> Every plot carries the flight modes behind it, from the takeoff through the mission to the return.</figcaption>
+                <figcaption><strong>Estimate against setpoint.</strong> Flight modes sit behind every plot.</figcaption>
               </figure>
               <figure class="shot">
                 <button class="shot-btn" type="button" data-full="assets/images/live-messages.jpg">
@@ -758,13 +676,13 @@
                        width="1600" height="1000" loading="lazy" decoding="async"
                        alt="The Live Messages view of the Analysis page: every MAVLink message type on the link with its rate, age and count, and the fields of ATTITUDE listed beside the table.">
                 </button>
-                <figcaption><strong>See every message.</strong> Every MAVLink message type on the link with its rate, its age and its count, and the live fields of the one you pick.</figcaption>
+                <figcaption><strong>See every message.</strong> Every MAVLink message with its rate and live fields.</figcaption>
               </figure>
             </div>
           </section>
           <section class="gallery-group" id="shots-plugins" data-group="Plugins" role="tabpanel" aria-labelledby="tab-plugins">
             <h3 class="gallery-heading">Plugins</h3>
-            <p class="gallery-intro">Four ship with Corvus, two more install from their own repositories. Each one runs beside the map.</p>
+            <p class="gallery-intro">Four ship with Corvus and run beside the map.</p>
             <div class="gallery">
               <figure class="shot">
                 <button class="shot-btn" type="button" data-full="assets/images/plugin-map-entities.jpg">
@@ -774,7 +692,7 @@
                        width="1600" height="1000" loading="lazy" decoding="async"
                        alt="The Map Entities plugin beside the map: a gate across the flown track, two trees beside it, a radar sector and the people at the start, with the gate selected in the plugin's list and editor.">
                 </button>
-                <figcaption><strong>Map Entities.</strong> Gates, trees and devices with a range, placed on the map. The aircraft's pass through the gate is checked as it flies.</figcaption>
+                <figcaption><strong>Map Entities.</strong> Gates, trees and devices placed on the map.</figcaption>
               </figure>
               <figure class="shot">
                 <button class="shot-btn" type="button" data-full="assets/images/plugins.jpg">
@@ -784,7 +702,7 @@
                        width="1600" height="1000" loading="lazy" decoding="async"
                        alt="The map with a curved flown track across a field, the instrument panel, and the Vibration Monitor plugin in the side workspace charting gyro and accelerometer vibration live.">
                 </button>
-                <figcaption><strong>Vibration Monitor.</strong> Gyro and accelerometer vibration charted live, with the clipping counters beside it.</figcaption>
+                <figcaption><strong>Vibration Monitor.</strong> Gyro and accelerometer vibration, live.</figcaption>
               </figure>
               <figure class="shot">
                 <button class="shot-btn" type="button" data-full="assets/images/plugin-ssh-launcher.jpg">
@@ -794,7 +712,7 @@
                        width="1600" height="1000" loading="lazy" decoding="async"
                        alt="The SSH Launcher plugin with four buttons, two of them running on the companion computer, and the mission script's terminal open in a window over the map.">
                 </button>
-                <figcaption><strong>SSH Launcher.</strong> The mission script, the recorder and the gimbal on the companion computer, one press each, each in a terminal of its own.</figcaption>
+                <figcaption><strong>SSH Launcher.</strong> Companion computer scripts, one press each.</figcaption>
               </figure>
               <figure class="shot">
                 <button class="shot-btn" type="button" data-full="assets/images/plugin-schwalby.jpg">
@@ -804,38 +722,14 @@
                        width="1600" height="1000" loading="lazy" decoding="async"
                        alt="The Schwalby plugin in the dark green theme: the companion computer's status above a shelf of buttons that run on this laptop or over SSH, two of them running.">
                 </button>
-                <figcaption><strong>Schwalby.</strong> Buttons that start a program on this laptop or on the companion computer, with the companion's status above them.</figcaption>
-              </figure>
-              <figure class="shot">
-                <button class="shot-btn" type="button" data-full="assets/images/plugin-nuttx-console.jpg">
-                  <img src="assets/images/plugin-nuttx-console-800.jpg"
-                       srcset="assets/images/plugin-nuttx-console-800.jpg 800w, assets/images/plugin-nuttx-console.jpg 1600w"
-                       sizes="(max-width: 900px) 220px, 144px"
-                       width="1600" height="1000" loading="lazy" decoding="async"
-                       alt="The NuttX Console plugin in the orange theme: the PX4 shell over MAVLink showing the output of ver all, param show and listener sensor_combined beside the map.">
-                </button>
-                <figcaption><strong>NuttX Console.</strong> NSH on the flight controller over the telemetry link: ver, free, listener and every other builtin, with no cable.</figcaption>
-              </figure>
-              <figure class="shot">
-                <button class="shot-btn" type="button" data-full="assets/images/plugin-trajectory-viewer.jpg">
-                  <img src="assets/images/plugin-trajectory-viewer-800.jpg"
-                       srcset="assets/images/plugin-trajectory-viewer-800.jpg 800w, assets/images/plugin-trajectory-viewer.jpg 1600w"
-                       sizes="(max-width: 900px) 220px, 144px"
-                       width="1600" height="1000" loading="lazy" decoding="async"
-                       alt="The Trajectory Viewer plugin: a planned route read from a file drawn in pink under the flown track, with the file, its coordinate frame and colour in the side panel.">
-                </button>
-                <figcaption><strong>Trajectory Viewer.</strong> A route from a file, drawn under the flown track, so you see at a glance where the aircraft leaves it.</figcaption>
+                <figcaption><strong>Schwalby.</strong> Buttons that start a program here or over SSH.</figcaption>
               </figure>
             </div>
           </section>
         </div>
       </div>
 
-      <p class="fineprint reveal">
-        Every screenshot is the real interface driven by real MAVLink: telemetry, parameters and the flown
-        track all arrive over the wire. The aircraft producing them is simulated, not airborne, and the
-        imagery is the Neubiberg test site. The pictures on this page use all six themes that ship.
-      </p>
+      <p class="fineprint">Real interface, real MAVLink, simulated aircraft, Neubiberg test site. All six themes appear.</p>
     </div>
   </section>
 
@@ -843,9 +737,8 @@
   <section class="section section-alt" id="technical" aria-labelledby="technical-title">
     <div class="wrap">
       <header class="section-head reveal">
-        <p class="eyebrow"><span class="eyebrow-index">04</span>Technical</p>
-        <h2 id="technical-title">What it talks to, and what it runs on.</h2>
-        <p class="section-sub">One native program, written in Rust, with its backend inside. No server to deploy, no browser tab to manage.</p>
+        <h2 id="technical-title">Technical details</h2>
+        <p class="section-sub">One native Rust program, backend inside. No server, no browser.</p>
       </header>
 
       <div class="spec-wrap reveal">
@@ -853,50 +746,50 @@
           <caption class="visually-hidden">Corvus GCS technical specifications</caption>
           <tbody>
             <tr>
-              <th scope="row"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-cpu"></use></svg>Autopilots</th>
-              <td>PX4 <span class="mono">v1.16 · v1.17 · v1.18</span> as the primary target; ArduPilot <span class="mono">4.3 to 4.6</span> for Copter, Plane, Rover/Boat and Sub. Several vehicles connect at once, one link each: you fly one and see the others on the map. A rover or a boat gets its own controls.</td>
+              <th scope="row">Autopilots</th>
+              <td>PX4 <span class="mono">v1.16 to v1.18</span>, ArduPilot <span class="mono">4.3 to 4.6</span> (Copter, Plane, Rover, Boat, Sub). Several vehicles at once.</td>
             </tr>
             <tr>
-              <th scope="row"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-link"></use></svg>Links</th>
-              <td>MAVLink over a serial telemetry radio, UDP or TCP. A USB flight controller, a SiK radio or the ground-station UDP port is found and taken automatically at launch, with link-quality display and automatic reconnect.</td>
+              <th scope="row">Links</th>
+              <td>MAVLink over serial, UDP, TCP or WebSocket. What is plugged in is found automatically, with link quality and reconnect.</td>
             </tr>
             <tr>
-              <th scope="row"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-satellite"></use></svg>RTK GPS</th>
-              <td>A base station plugged into the same computer is detected and surveyed in, and RTCM 3 corrections stream to the aircraft. An NTRIP caster works the same way over the network.</td>
+              <th scope="row">RTK GPS</th>
+              <td>A plugged in base station is surveyed in and RTCM 3 corrections stream to the aircraft. NTRIP works too.</td>
             </tr>
             <tr>
-              <th scope="row"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-video"></use></svg>Video</th>
-              <td>The aircraft's camera over RTSP (decoded with ffmpeg) or WebRTC from a media server such as MediaMTX, in floating windows you can move to a second screen. A frozen picture is greyed out, never passed off as live.</td>
+              <th scope="row">Video</th>
+              <td>RTSP cameras (decoded with ffmpeg) in floating windows for a second screen. A frozen picture is never passed off as live.</td>
             </tr>
             <tr>
-              <th scope="row"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-layers"></use></svg>Maps &amp; 3D</th>
-              <td>MapLibre GL JS with 6 map services with 20 layers (two of them on your own API key), terrain relief and extruded OpenStreetMap buildings. Tiles are cached to a local offline store, and named regions can be downloaded in advance with their elevation. Your own GeoTIFF, XYZ or ESRI ASCII surface models load as the ground.</td>
+              <th scope="row">Maps &amp; 3D</th>
+              <td>6 map services with 20 layers, a 3D map with terrain and OpenStreetMap buildings, and an offline tile store. Your own surface models load as the ground.</td>
             </tr>
             <tr>
-              <th scope="row"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-chart"></use></svg>Flight logs</th>
-              <td>ULog <span class="mono">.ulg</span> download and review in the built-in Flight Review; ArduPilot DataFlash <span class="mono">.bin</span> downloads but is not parsed. Corvus's own telemetry recording reviews on both stacks.</td>
+              <th scope="row">Flight logs</th>
+              <td>ULog <span class="mono">.ulg</span> review in Flight Review. ArduPilot <span class="mono">.bin</span> downloads but is not parsed. Corvus's own recording reviews on both stacks.</td>
             </tr>
             <tr>
-              <th scope="row"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-gamepad"></use></svg>Tools</th>
-              <td>MAVLink console, SSH terminal to a companion computer, and a plugin folder. The Vibration Monitor, the SSH Launcher, Schwalby (buttons that run on this computer or over SSH) and Map Entities (trees, gates and devices with a range, placed on the map) are included. The <a href="https://github.com/M-BSquared/corvus-nuttx-console">NuttX Console</a> (the PX4 shell over MAVLink, as a console or in a terminal window) and the <a href="https://github.com/M-BSquared/corvus-trajectory-viewer">Trajectory Viewer</a> (a reference route from a file, drawn under the flown track) install from their own repositories.</td>
+              <th scope="row">Tools</th>
+              <td>MAVLink console, SSH terminal, an MCP server for AI clients, and four plugins: Vibration Monitor, SSH Launcher, Schwalby and Map Entities.</td>
             </tr>
             <tr>
-              <th scope="row"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-monitor"></use></svg>Platforms</th>
-              <td>macOS 12 or later on Apple Silicon <span class="mono">.dmg</span>, Linux x86_64 <span class="mono">.AppImage</span>, Windows x64 <span class="mono">.zip</span>. Nothing else to install: everything it needs is inside.</td>
+              <th scope="row">Platforms</th>
+              <td>macOS 12 or later <span class="mono">.dmg</span>, Linux x86_64 <span class="mono">.AppImage</span>, Windows x64 <span class="mono">.zip</span>. Nothing else to install.</td>
             </tr>
             <tr>
-              <th scope="row"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-terminal"></use></svg>From source</th>
-              <td>A Rust toolchain and one command, <span class="mono">./run.sh</span>. The interface is egui on OpenGL, the backend runs in the same process.</td>
+              <th scope="row">From source</th>
+              <td>A Rust toolchain and <span class="mono">./run.sh</span>. egui on OpenGL.</td>
             </tr>
             <tr>
-              <th scope="row"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-scale"></use></svg>License</th>
-              <td>Sustainable Use License 1.0 (<em>fair-code</em>). The source is open to read, modify and build on, for internal, personal and non-commercial use, but not to resell.</td>
+              <th scope="row">License</th>
+              <td>Sustainable Use License 1.0 (<em>fair-code</em>). Open to read and modify, not to resell.</td>
             </tr>
           </tbody>
         </table>
       </div>
 
-      <div class="section-cta reveal">
+      <div class="section-cta">
         <a class="btn btn-primary" href="guide/index.html">
           <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-book"></use></svg>
           Read the documentation
@@ -913,19 +806,15 @@
   <section class="section" id="why" aria-labelledby="why-title">
     <div class="wrap story-grid">
       <div class="story reveal">
-        <p class="eyebrow"><span class="eyebrow-index">05</span>Why I built this</p>
-        <h2 id="why-title">The ground stations I used did not quite fit.</h2>
+        <h2 id="why-title">Why it exists</h2>
         <p>
-          They did the job, but they got in the way. They load every parameter before you can
-          do anything, feel slow on a field laptop, and leave log review to separate tools. I
-          wanted a station that is ready in seconds, fetches parameters only when I open them,
-          has a flight reviewer built in, and gets the small details right, in simulation as
-          much as on a real aircraft. And because no station covers every setup, you can write
-          your own plugins and extend it yourself.
+          The ground stations I used loaded every parameter first, felt slow on a field laptop and
+          left log review to other tools. I wanted one that is ready in seconds, reviews flights
+          itself and can be extended with plugins.
         </p>
         <p class="story-note">
           In my day-to-day work as a PhD researcher there is very little room for
-          AI-assisted, &ldquo;vibe-coded&rdquo; development, because the setting simply does not
+          AI-assisted, "vibe-coded" development, because the setting simply does not
           allow for it. That method is nonetheless becoming a real part of how software
           gets built, and the only honest way to find out where it works, where it
           breaks, and how to direct it well is to use it seriously on something
@@ -933,11 +822,8 @@
         </p>
       </div>
       <figure class="story-shot reveal">
-        <div class="app-window">
-          <div class="app-window-bar" aria-hidden="true">
-            <span class="dot"></span><span class="dot"></span><span class="dot"></span>
-            <span class="app-window-title mono">Plugin · Vibration Monitor</span>
-          </div>
+        <div class="mac-window">
+          <div class="mac-bar" aria-hidden="true"><span class="mac-dots"><i></i><i></i><i></i></span><span class="mac-title">Corvus GCS</span></div>
           <img src="assets/images/plugins-800.jpg"
                srcset="assets/images/plugins-800.jpg 800w, assets/images/plugins.jpg 1600w"
                sizes="(max-width: 900px) calc(100vw - 40px), 640px"
@@ -951,47 +837,41 @@
 
   <!-- ===================== DOWNLOAD ===================== -->
   <section class="section download" id="download" aria-labelledby="download-title">
-    <div class="backdrop" aria-hidden="true">
-      <span class="backdrop-grid"></span>
-      <span class="backdrop-topo"></span>
-      <span class="backdrop-glow"></span>
-    </div>
     <div class="wrap">
       <div class="download-panel reveal">
-        <p class="eyebrow"><span class="eyebrow-index">06</span>Download</p>
-        <h2 id="download-title">Ready for your next mission?</h2>
-        <p class="lead">Download the latest Corvus GCS release or explore the source code on GitHub.</p>
+        <h2 id="download-title">Download</h2>
+        <p class="lead">Download the latest release or read the source.</p>
 
         <p class="release-line" id="release-line" data-fallback="Releases are published on GitHub.">
           Releases are published on GitHub.
         </p>
 
         <div class="hero-actions">
-          <a class="btn btn-primary btn-sheen" href="https://github.com/M-BSquared/CorvusGCS/releases/latest" target="_blank" rel="noopener">
+          <a class="btn btn-primary" href="https://github.com/M-BSquared/CorvusGCS/releases/latest" target="_blank" rel="noopener">
             <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-download"></use></svg>
-            Download latest release
+            Download the latest release
           </a>
           <a class="btn btn-ghost" href="https://github.com/M-BSquared/CorvusGCS" target="_blank" rel="noopener">
             <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-github"></use></svg>
-            Browse source code
+            Source code on GitHub
           </a>
         </div>
 
         <ul class="platforms">
-          <li data-os="mac">
+          <li class="reveal" data-os="mac">
             <span class="platform-name">macOS</span>
-            <span class="platform-meta mono">Apple Silicon · macOS 15+ · .dmg</span>
-            <span class="platform-note">Not notarized. Allow it once under System Settings → Privacy &amp; Security → Open Anyway.</span>
+            <span class="platform-meta mono">Apple Silicon · macOS 12+ · .dmg</span>
+            <span class="platform-note">Not notarized. Allow it once under Privacy &amp; Security.</span>
           </li>
-          <li data-os="linux">
+          <li class="reveal" data-os="linux">
             <span class="platform-name">Linux</span>
             <span class="platform-meta mono">x86_64 · .AppImage</span>
-            <span class="platform-note">Mark it executable and run it. Nothing else needed.</span>
+            <span class="platform-note">Mark it executable and run it.</span>
           </li>
-          <li data-os="windows">
+          <li class="reveal" data-os="windows">
             <span class="platform-name">Windows</span>
             <span class="platform-meta mono">x64 · .zip</span>
-            <span class="platform-note">Unzip anywhere and run it. Unsigned, so SmartScreen asks once.</span>
+            <span class="platform-note">Unzip and run it. SmartScreen asks once.</span>
           </li>
         </ul>
       </div>
@@ -1009,7 +889,7 @@
           <span class="brand-sub">Ground Control</span>
         </span>
       </a>
-      <p>An offline-first ground control station for PX4 and ArduPilot autonomous aircraft. Built for the field: a laptop, a telemetry radio, and no internet.</p>
+      <p>An offline-first ground control station for PX4 and ArduPilot.</p>
     </div>
 
     <nav class="footer-links" aria-label="Project">
@@ -1044,13 +924,9 @@
         Corvus GCS is designed, built and maintained by <strong>Maximilian Böck</strong>.
         It is developed <strong>with the Universität der Bundeswehr München</strong>
         (University of the German Federal Armed Forces, Munich), in the context of the
-        work at <strong>Chair LRT 1.1 of Prof. Dr. Matthias Gerdts</strong>.
+        work at <a href="https://www.unibw.de/ingmathe" target="_blank" rel="noopener"><strong>Chair LRT 1.1 of Prof. Dr. Matthias Gerdts</strong></a>.
       </p>
-      <p>
-        It is built with AI assistance, under my direction and review, and backed by a large
-        test suite. It is meant for real field use.
-        <a href="#why">Why I built it</a>
-      </p>
+      <p>Built with AI assistance under my direction and review, with a large test suite. <a href="#why">Why I built it</a></p>
     </div>
     <div class="footer-credit-mark">
       <img class="orgmark" src="assets/images/unibw-logo.svg" width="441" height="85"
@@ -1061,10 +937,7 @@
 
   <div class="wrap footer-base">
     <p class="copyright">&copy; <span id="year">2026</span> Maximilian Böck</p>
-    <p class="footer-meta">
-      Source available under the Sustainable Use License 1.0 (<em>fair-code</em>):
-      open to read, modify and build on, but not to resell.
-    </p>
+    <p class="footer-meta">Sustainable Use License 1.0 (<em>fair-code</em>)</p>
   </div>
 </footer>
 

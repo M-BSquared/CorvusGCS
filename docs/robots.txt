@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://m-bsquared.github.io/CorvusGCS/sitemap.xml

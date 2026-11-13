@@ -2,13 +2,11 @@
   Corvus GCS project website, and the frame of the manual in docs/guide.
 
   Everything here is an enhancement, nothing the page depends on to be
-  readable: the theme switch, the header's scrolled state and reading
-  progress, the mobile menu, the section the menu marks as current, a
-  fade-in on first sight, the flight drawn on the hero's map sheet,
-  the workflow that changes picture as you read, the screenshot viewer and
-  its lightbox, and one optional call to the GitHub releases API. If that
-  call fails the download section keeps the static text it shipped with, so
-  the page is complete with no network beyond itself.
+  readable: the theme switch, the mobile menu, the section the menu marks as
+  current, the workflow that changes picture as you read, the screenshot
+  viewer and its lightbox, and one optional call to the GitHub releases API.
+  If that call fails the download section keeps the static text it shipped
+  with, so the page is complete with no network beyond itself.
 
   Every part checks for its own elements first, because the manual's pages
   load this file too and have none of the landing page's sections.
@@ -17,15 +15,13 @@
   'use strict';
 
   var REPO = 'M-BSquared/CorvusGCS';
-  var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
-  var finePointer = window.matchMedia('(hover: hover) and (pointer: fine)');
   var root = document.documentElement;
+  var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 
   function $(id) { return document.getElementById(id); }
   function all(selector, scope) {
     return Array.prototype.slice.call((scope || document).querySelectorAll(selector));
   }
-  function clamp(v, lo, hi) { return Math.min(hi, Math.max(lo, v)); }
 
   /* ---------------------------------------------------------------
      Theme. The stored choice wins; otherwise dark, as the page ships.
@@ -74,8 +70,7 @@
   }
 
   /* ---------------------------------------------------------------
-     Scroll: one frame callback for everything that follows the page's
-     position, so a scroll event never does layout work twice.
+     Scroll: one frame callback for what follows the page's position.
      --------------------------------------------------------------- */
   var header = $('site-header');
   var scrollers = [];
@@ -90,12 +85,12 @@
     });
   }
 
+  /* The hairline under the header shows how far down the page the reader is. */
   if (header) {
     scrollers.push(function () {
-      var y = window.scrollY;
       var max = document.documentElement.scrollHeight - window.innerHeight;
-      header.classList.toggle('is-scrolled', y > 8);
-      header.style.setProperty('--progress', max > 0 ? clamp(y / max, 0, 1).toFixed(4) : '0');
+      var p = max > 0 ? Math.min(1, Math.max(0, window.scrollY / max)) : 0;
+      header.style.setProperty('--progress', p.toFixed(4));
     });
   }
 
@@ -158,16 +153,16 @@
   }
 
   /* ---------------------------------------------------------------
-     Reveal on scroll. Siblings arrive one after another rather than
-     all at once. Without IntersectionObserver, or with reduced motion
-     asked for, everything is simply shown.
+     Reveal on scroll: content rises a little as it comes into view,
+     siblings one after another. Without IntersectionObserver, or with
+     reduced motion asked for, everything is simply shown.
      --------------------------------------------------------------- */
   var revealables = all('.reveal');
 
   revealables.forEach(function (el) {
     var siblings = el.parentElement ? all(':scope > .reveal', el.parentElement) : [];
-    if (siblings.length > 2) {
-      el.style.setProperty('--reveal-delay', ((siblings.indexOf(el) % 3) * 0.08).toFixed(2) + 's');
+    if (siblings.length > 1) {
+      el.style.setProperty('--reveal-delay', ((siblings.indexOf(el) % 3) * 0.07).toFixed(2) + 's');
     }
   });
 
@@ -178,35 +173,21 @@
   if (reduceMotion.matches || !('IntersectionObserver' in window)) {
     showAll();
   } else {
-    var observer = new IntersectionObserver(function (entries) {
+    var revealObserver = new IntersectionObserver(function (entries) {
       entries.forEach(function (entry) {
         if (entry.isIntersecting) {
           entry.target.classList.add('is-visible');
-          observer.unobserve(entry.target);
+          revealObserver.unobserve(entry.target);
         }
       });
-    }, { rootMargin: '0px 0px -8% 0px', threshold: 0.08 });
-
-    revealables.forEach(function (el) { observer.observe(el); });
+    }, { rootMargin: '0px 0px -6% 0px', threshold: 0.05 });
+    revealables.forEach(function (el) { revealObserver.observe(el); });
   }
 
   reduceMotion.addEventListener('change', function (event) {
     if (event.matches) showAll();
   });
-
-  /* ---------------------------------------------------------------
-     Pointer light on cards: the card learns where the pointer is and
-     its stylesheet draws the glow there.
-     --------------------------------------------------------------- */
-  if (finePointer.matches) {
-    all('.spot, .doc-cards a').forEach(function (el) {
-      el.addEventListener('pointermove', function (event) {
-        var rect = el.getBoundingClientRect();
-        el.style.setProperty('--mx', (event.clientX - rect.left).toFixed(0) + 'px');
-        el.style.setProperty('--my', (event.clientY - rect.top).toFixed(0) + 'px');
-      });
-    });
-  }
+  window.addEventListener('beforeprint', showAll);
 
   /* ---------------------------------------------------------------
      The hero: an aircraft flies the route drawn on the map sheet, the
@@ -276,43 +257,66 @@
     document.addEventListener('visibilitychange', function () { setRunning(true); });
     reduceMotion.addEventListener('change', function () { setRunning(true); });
     setRunning(true);
-
-    /* The screenshot leans toward the pointer and flattens as the page
-       scrolls on. */
-    var tilt = $('hero-tilt');
-    var stage = $('hero-stage');
-    var nx = 0, ny = 0;
-
-    function applyTilt() {
-      if (!tilt || reduceMotion.matches || window.innerWidth <= 1080) {
-        if (tilt) tilt.removeAttribute('style');
-        return;
-      }
-      var flat = 1 - clamp(window.scrollY / 700, 0, 1);
-      tilt.style.setProperty('--rx', ((4 - ny * 3) * flat).toFixed(2) + 'deg');
-      tilt.style.setProperty('--ry', ((-6 + nx * 4) * flat).toFixed(2) + 'deg');
-    }
-
-    if (finePointer.matches) {
-      hero.addEventListener('pointermove', function (event) {
-        var rect = hero.getBoundingClientRect();
-        hero.style.setProperty('--mx', (event.clientX - rect.left).toFixed(0) + 'px');
-        hero.style.setProperty('--my', (event.clientY - rect.top).toFixed(0) + 'px');
-        if (stage) {
-          var s = stage.getBoundingClientRect();
-          nx = clamp((event.clientX - (s.left + s.width / 2)) / (s.width / 2), -1, 1);
-          ny = clamp((event.clientY - (s.top + s.height / 2)) / (s.height / 2), -1, 1);
-          window.requestAnimationFrame(applyTilt);
-        }
-      });
-      hero.addEventListener('pointerleave', function () {
-        nx = 0; ny = 0;
-        window.requestAnimationFrame(applyTilt);
-      });
-    }
-    scrollers.push(applyTilt);
-    applyTilt();
   }
+
+
+  /* ---------------------------------------------------------------
+     Pictures lean a little toward the pointer. Each one has a resting
+     angle (the hero and the story picture) or none, follows the pointer
+     over its zone within a few degrees, and settles back when the
+     pointer leaves. The hero flattens as the page scrolls. Only with a
+     mouse, on a wide screen and without reduced motion.
+     --------------------------------------------------------------- */
+  var finePointer = window.matchMedia('(hover: hover) and (pointer: fine)');
+
+  var tilts = [
+    { el: '.hero-shot', zone: '#hero', rest: [4, -7], range: [6, 8], flatten: true },
+    { el: '.flow-frame', zone: '.flow-frame', rest: [0, 0], range: [5, 7] },
+    { el: '.viewer-frame', zone: '.viewer-stage', rest: [0, 0], range: [4, 6] },
+    { el: '.story-shot .mac-window', zone: '.story-shot', rest: [3, -6], range: [5, 7] }
+  ].map(function (t) {
+    t.node = document.querySelector(t.el);
+    t.area = document.querySelector(t.zone);
+    t.nx = 0; t.ny = 0; t.inside = false;
+    return t;
+  }).filter(function (t) { return t.node && t.area; });
+
+  function tiltOn() {
+    return finePointer.matches && !reduceMotion.matches && window.innerWidth > 1024;
+  }
+
+  function applyTilt(t) {
+    if (!tiltOn()) { t.node.style.transform = ''; return; }
+    var flat = t.flatten ? 1 - Math.min(1, Math.max(0, window.scrollY / 700)) : 1;
+    var rx = (t.rest[0] - t.ny * t.range[0]) * flat;
+    var ry = (t.rest[1] + t.nx * t.range[1]) * flat;
+    t.node.style.transform = 'rotateX(' + rx.toFixed(2) + 'deg) rotateY(' + ry.toFixed(2) + 'deg)';
+  }
+
+  tilts.forEach(function (t) {
+    t.node.classList.add('tilt');
+    if (t.node.parentElement) t.node.parentElement.style.perspective = '1800px';
+    var pending = false;
+
+    t.area.addEventListener('pointermove', function (event) {
+      if (event.pointerType !== 'mouse' || !tiltOn()) return;
+      var r = t.node.getBoundingClientRect();
+      t.nx = Math.min(1, Math.max(-1, (event.clientX - (r.left + r.width / 2)) / (r.width / 2)));
+      t.ny = Math.min(1, Math.max(-1, (event.clientY - (r.top + r.height / 2)) / (r.height / 2)));
+      if (pending) return;
+      pending = true;
+      window.requestAnimationFrame(function () { pending = false; applyTilt(t); });
+    });
+    t.area.addEventListener('pointerleave', function () {
+      t.nx = 0; t.ny = 0;
+      applyTilt(t);
+    });
+    if (t.flatten) scrollers.push(function () { applyTilt(t); });
+    applyTilt(t);
+  });
+
+  window.addEventListener('resize', function () { tilts.forEach(applyTilt); });
+  reduceMotion.addEventListener('change', function () { tilts.forEach(applyTilt); });
 
   /* ---------------------------------------------------------------
      The headline cycles through what Corvus is for, with a row of
@@ -381,42 +385,8 @@
   }
 
   /* ---------------------------------------------------------------
-     Readouts count up to their value when they come into view; the
-     zero counts down to it.
-     --------------------------------------------------------------- */
-  var counters = all('[data-count]');
-
-  function runCounter(el) {
-    var to = parseFloat(el.getAttribute('data-count'));
-    var from = parseFloat(el.getAttribute('data-from') || '0');
-    var start = performance.now();
-    var DURATION = 1400;
-    (function step(now) {
-      var k = clamp((now - start) / DURATION, 0, 1);
-      var eased = 1 - Math.pow(1 - k, 3);
-      el.textContent = String(Math.round(from + (to - from) * eased));
-      if (k < 1) window.requestAnimationFrame(step);
-    })(start);
-  }
-
-  if (counters.length && !reduceMotion.matches && 'IntersectionObserver' in window) {
-    var countObserver = new IntersectionObserver(function (entries) {
-      entries.forEach(function (entry) {
-        if (!entry.isIntersecting) return;
-        countObserver.unobserve(entry.target);
-        runCounter(entry.target);
-      });
-    }, { threshold: 0.6 });
-    counters.forEach(function (el) {
-      el.textContent = el.getAttribute('data-from') || '0';
-      countObserver.observe(el);
-    });
-  }
-
-  /* ---------------------------------------------------------------
      Workflow: the step in the middle of the screen is the current
-     one; its picture shows, earlier waypoints count as flown, and the
-     line between them fills as the reader moves down.
+     one and its picture shows.
      --------------------------------------------------------------- */
   var flow = $('flow');
 
@@ -453,7 +423,8 @@
     scrollers.push(function () {
       var mid = window.innerHeight * 0.5;
       var rect = flowList.getBoundingClientRect();
-      flowList.style.setProperty('--flow-progress', clamp((mid - rect.top) / rect.height, 0, 1).toFixed(4));
+      var done = rect.height > 0 ? (mid - rect.top) / rect.height : 0;
+      flowList.style.setProperty('--flow-progress', Math.min(1, Math.max(0, done)).toFixed(4));
       var index = 0;
       steps.forEach(function (step, i) {
         if (step.getBoundingClientRect().top < mid) index = i;
@@ -542,9 +513,14 @@
       next.src = stageImage.src;
     }
     copyCaption(btn, stageCaption);
+    var heading = btn.closest('figure').querySelector('figcaption strong');
+    var stageTitle = $('viewer-title');
+    if (stageTitle && heading) stageTitle.textContent = heading.textContent.replace(/\.$/, '');
     stageCount.textContent = groups[activeGroup].getAttribute('data-group') + ' · ' +
       (index + 1) + ' / ' + shots.length;
     if (follow) keepInView(btn.closest('figure'));
+    markDots(index);
+    restartDwell();
   }
 
   function moveIndicator() {
@@ -566,6 +542,7 @@
     });
     if (focus) tabs[index].focus();
     moveIndicator();
+    buildDots(index);
     pickShot(picked[index], false);
     if (groups[index]) groups[index].scrollTop = 0;
   }
@@ -602,6 +579,150 @@
     window.addEventListener('resize', moveIndicator);
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(moveIndicator);
     selectTab(0, false);
+  }
+
+  /* ---------------------------------------------------------------
+     The viewer plays through on its own: each picture stays for a few
+     seconds, then the next one follows, and after the last of a group
+     the next group starts. It plays only while the viewer is on screen,
+     not under keyboard focus, not in a background tab and not with the
+     lightbox open. Hovering does not stop it. Pause stops it for good, and with
+     reduced motion asked for it never starts by itself.
+     --------------------------------------------------------------- */
+  var viewer = $('viewer');
+  var dotsBox = $('viewer-dots');
+  var playBtn = $('viewer-play');
+  var prevBtn = $('viewer-prev');
+  var nextBtn = $('viewer-next');
+  var DWELL_MS = 3400;
+  var dwell = 0;
+  var lastFrame = 0;
+  var frameId = 0;
+  var userPaused = reduceMotion.matches;
+  var onScreen = false;
+
+  function currentDot() {
+    return dotsBox ? dotsBox.querySelector('.viewer-dot.is-current') : null;
+  }
+
+  function buildDots(group) {
+    if (!dotsBox) return;
+    dotsBox.textContent = '';
+    groupShots(group).forEach(function (btn, i) {
+      var dot = document.createElement('button');
+      dot.type = 'button';
+      dot.className = 'viewer-dot';
+      dot.setAttribute('aria-label', 'Screenshot ' + (i + 1));
+      dot.addEventListener('click', function () { pickShot(i, true); });
+      dotsBox.appendChild(dot);
+    });
+  }
+
+  function markDots(index) {
+    if (!dotsBox) return;
+    all('.viewer-dot', dotsBox).forEach(function (dot, i) {
+      dot.classList.toggle('is-current', i === index);
+      dot.classList.toggle('is-seen', i < index);
+      if (i === index) dot.setAttribute('aria-current', 'true');
+      else dot.removeAttribute('aria-current');
+    });
+  }
+
+  function setProgress(p) {
+    var dot = currentDot();
+    if (dot) dot.style.setProperty('--dot-progress', p.toFixed(3));
+    var row = groups[activeGroup] ? groups[activeGroup].querySelector('.shot.is-current') : null;
+    if (row) row.style.setProperty('--row-progress', p.toFixed(3));
+  }
+
+  /* Next or previous picture, crossing into the next group at the end. */
+  function step(direction) {
+    var count = groupShots(activeGroup).length;
+    var to = picked[activeGroup] + direction;
+    if (to >= count) {
+      selectTab((activeGroup + 1) % tabs.length, false);
+      pickShot(0, true);
+    } else if (to < 0) {
+      var before = (activeGroup - 1 + tabs.length) % tabs.length;
+      selectTab(before, false);
+      pickShot(groupShots(before).length - 1, true);
+    } else {
+      pickShot(to, true);
+    }
+  }
+
+  function playing() {
+    return !userPaused && onScreen && !document.hidden &&
+      (!lightbox || lightbox.hidden) && !(viewer && viewer.contains(document.activeElement) &&
+      document.activeElement.matches(':focus-visible'));
+  }
+
+  function tick(now) {
+    frameId = 0;
+    if (!playing()) { lastFrame = 0; return; }
+    if (lastFrame) dwell += now - lastFrame;
+    lastFrame = now;
+    if (dwell >= DWELL_MS) {
+      step(1);
+      return syncPlayback();
+    }
+    setProgress(dwell / DWELL_MS);
+    frameId = window.requestAnimationFrame(tick);
+  }
+
+  function syncPlayback() {
+    if (playing()) {
+      if (!frameId) { lastFrame = 0; frameId = window.requestAnimationFrame(tick); }
+    } else if (frameId) {
+      window.cancelAnimationFrame(frameId);
+      frameId = 0;
+      lastFrame = 0;
+    }
+    if (!playing()) setProgress(dwell ? dwell / DWELL_MS : 1);
+  }
+
+  function restartDwell() {
+    dwell = 0;
+    lastFrame = 0;
+    setProgress(playing() ? 0 : 1);
+    syncPlayback();
+  }
+
+  function setPaused(paused) {
+    userPaused = paused;
+    if (playBtn) {
+      playBtn.setAttribute('aria-pressed', String(paused));
+      var label = playBtn.querySelector('.viewer-play-label');
+      if (label) label.textContent = paused ? 'Play' : 'Pause';
+    }
+    if (paused) setProgress(1);
+    else dwell = 0;
+    syncPlayback();
+  }
+
+  if (viewer && tabs.length && stageImage) {
+    if (prevBtn) prevBtn.addEventListener('click', function () { step(-1); });
+    if (nextBtn) nextBtn.addEventListener('click', function () { step(1); });
+    if (playBtn) playBtn.addEventListener('click', function () { setPaused(!userPaused); });
+
+    viewer.addEventListener('focusin', syncPlayback);
+    viewer.addEventListener('focusout', function () { window.setTimeout(syncPlayback, 0); });
+    viewer.addEventListener('keydown', function (event) {
+      if (event.key === 'ArrowRight' && event.target.closest('.viewer-stage')) { event.preventDefault(); step(1); }
+      if (event.key === 'ArrowLeft' && event.target.closest('.viewer-stage')) { event.preventDefault(); step(-1); }
+    });
+    document.addEventListener('visibilitychange', syncPlayback);
+
+    if ('IntersectionObserver' in window) {
+      new IntersectionObserver(function (entries) {
+        onScreen = entries[0].isIntersecting;
+        syncPlayback();
+      }, { threshold: 0.35 }).observe(viewer);
+    }
+    buildDots(activeGroup);
+    markDots(picked[activeGroup]);
+    setPaused(userPaused);
+    restartDwell();
   }
 
   /* ---------------------------------------------------------------
@@ -697,7 +818,7 @@
   }
 
   /* ---------------------------------------------------------------
-     The download card for the visitor's own system is marked. A
+     The download entry for the visitor's own system is marked. A
      tablet that reports itself as a Mac is left alone.
      --------------------------------------------------------------- */
   var platformCards = all('.platforms [data-os]');
@@ -717,7 +838,7 @@
       card.classList.add('is-yours');
       var badge = document.createElement('span');
       badge.className = 'platform-yours';
-      badge.innerHTML = '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-check"></use></svg>This computer';
+      badge.innerHTML = 'This computer';
       card.appendChild(badge);
     });
   }

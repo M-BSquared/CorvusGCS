@@ -9,7 +9,7 @@
 :root {
   --warn: #F5B43C;
   --warn-dim: rgba(245, 180, 60, 0.12);
-  --info-dim: rgba(59, 158, 255, 0.10);
+  --info-dim: rgba(111, 168, 232, 0.10);
   --code-bg: #0E1318;
   --sidebar-w: 248px;
   --toc-w: 216px;
@@ -18,7 +18,7 @@
 :root[data-theme="light"] {
   --warn: #9A5B00;
   --warn-dim: rgba(214, 140, 0, 0.12);
-  --info-dim: rgba(206, 94, 0, 0.08);
+  --info-dim: rgba(29, 92, 166, 0.08);
   --code-bg: #F1F3F6;
 }
 
@@ -31,31 +31,9 @@
 }
 .guide .nav-list a[aria-current="page"] { color: var(--text-1); background: rgb(var(--tint-rgb) / 0.06); }
 
-/* The website's grid, contours and glow behind the top of every page,
-   fading out before the text gets long. */
 .guide { position: relative; }
-.guide::before {
-  content: "";
-  position: absolute; inset: 0 0 auto 0;
-  height: 560px;
-  z-index: -1;
-  pointer-events: none;
-  background:
-    radial-gradient(40% 70% at 70% 0%, var(--glow), transparent 70%),
-    linear-gradient(to right, var(--grid-line) 1px, transparent 1px) 0 0 / 64px 64px,
-    linear-gradient(to bottom, var(--grid-line) 1px, transparent 1px) 0 0 / 64px 64px;
-  -webkit-mask-image: linear-gradient(180deg, #000 30%, transparent);
-          mask-image: linear-gradient(180deg, #000 30%, transparent);
-}
 .guide-layout { position: relative; }
 
-/* The group name above the title gets the website's survey marker. */
-.doc > .eyebrow::before {
-  content: "";
-  width: 7px; height: 7px;
-  rotate: 45deg;
-  background: var(--mark);
-}
 
 /* ===================================================================
    Layout: sidebar, text, contents.
@@ -300,17 +278,7 @@
   text-decoration: none;
   transition: border-color 0.2s ease, translate 0.25s var(--ease-out), box-shadow 0.25s ease;
 }
-.doc-cards a:hover { border-color: var(--border-strong); translate: 0 -2px; box-shadow: var(--shadow); }
-/* The same pointer light as the website's feature cards; script.js places it. */
-.doc-cards a::before {
-  content: "";
-  position: absolute; inset: 0; z-index: -1;
-  border-radius: inherit;
-  background: radial-gradient(300px circle at var(--mx, 50%) var(--my, 0%), var(--spot), transparent 60%);
-  opacity: 0;
-  transition: opacity 0.3s ease;
-}
-.doc-cards a:hover::before { opacity: 1; }
+.doc-cards a:hover { border-color: var(--border-strong); }
 .doc-cards strong::after {
   content: " \2192";
   color: var(--mark);
