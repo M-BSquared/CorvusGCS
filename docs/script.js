@@ -385,6 +385,51 @@
   }
 
   /* ---------------------------------------------------------------
+     A soft light follows the pointer across the page, and a pool of
+     orange light sits under it on the cards that ask for it. Only with
+     a mouse and without reduced motion.
+     --------------------------------------------------------------- */
+  if (finePointer.matches && !reduceMotion.matches) {
+    var light = document.createElement('div');
+    light.className = 'pointer-light';
+    light.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(light);
+
+    var lx = window.innerWidth / 2, ly = window.innerHeight / 2;
+    var tx = lx, ty = ly;
+    var lightFrame = 0;
+
+    var moveLight = function () {
+      lx += (tx - lx) * 0.2;
+      ly += (ty - ly) * 0.2;
+      light.style.setProperty('--px', lx.toFixed(1) + 'px');
+      light.style.setProperty('--py', ly.toFixed(1) + 'px');
+      if (Math.abs(tx - lx) > 0.5 || Math.abs(ty - ly) > 0.5) {
+        lightFrame = window.requestAnimationFrame(moveLight);
+      } else {
+        lightFrame = 0;
+      }
+    };
+
+    document.addEventListener('pointermove', function (event) {
+      if (event.pointerType !== 'mouse') return;
+      tx = event.clientX;
+      ty = event.clientY;
+      light.classList.add('is-on');
+      if (!lightFrame) lightFrame = window.requestAnimationFrame(moveLight);
+
+      var card = event.target.closest ? event.target.closest('.glow') : null;
+      if (card) {
+        var r = card.getBoundingClientRect();
+        card.style.setProperty('--mx', (event.clientX - r.left).toFixed(0) + 'px');
+        card.style.setProperty('--my', (event.clientY - r.top).toFixed(0) + 'px');
+      }
+    });
+    document.documentElement.addEventListener('pointerleave', function () { light.classList.remove('is-on'); });
+    document.addEventListener('visibilitychange', function () { if (document.hidden) light.classList.remove('is-on'); });
+  }
+
+  /* ---------------------------------------------------------------
      Workflow: the step in the middle of the screen is the current
      one and its picture shows.
      --------------------------------------------------------------- */
@@ -847,6 +892,50 @@
      Latest release. Shown only when GitHub answers with a real tag;
      otherwise the line keeps the text it was served with.
      --------------------------------------------------------------- */
+  /* The download entries link straight to the files of the newest release and show their size.
+     Without an answer from GitHub they keep pointing at the releases page. */
+  function sizeText(bytes) {
+    if (typeof bytes !== 'number' || !(bytes > 0)) return '';
+    return bytes >= 1048576 ? (bytes / 1048576).toFixed(bytes >= 104857600 ? 0 : 1) + ' MB' : Math.max(1, Math.round(bytes / 1024)) + ' KB';
+  }
+
+  function applyAssets(release) {
+    var assets = Array.isArray(release.assets) ? release.assets : [];
+    function pick(re) {
+      return assets.filter(function (a) {
+        return typeof a.name === 'string' && re.test(a.name) &&
+          typeof a.browser_download_url === 'string' && /^https:\/\/github\.com\//.test(a.browser_download_url);
+      })[0];
+    }
+    var found = {
+      mac: pick(/macOS.*\.dmg$/i),
+      linux: pick(/\.AppImage$/i),
+      windows: pick(/windows.*\.zip$/i)
+    };
+    var names = { mac: 'macOS', linux: 'Linux', windows: 'Windows' };
+
+    platformCards.forEach(function (card) {
+      var key = card.getAttribute('data-os');
+      var asset = found[key];
+      var link = card.querySelector('.platform-link');
+      if (!asset || !link) return;
+      link.href = asset.browser_download_url;
+      var size = link.querySelector('.platform-size');
+      if (size) size.textContent = sizeText(asset.size);
+    });
+
+    var deb = pick(/\.deb$/i);
+    var altDeb = $('alt-deb');
+    if (deb && altDeb) altDeb.href = deb.browser_download_url;
+
+    var main = $('download-main');
+    if (main && os && found[os]) {
+      main.href = found[os].browser_download_url;
+      var label = main.querySelector('.btn-label');
+      if (label) label.textContent = 'Download for ' + names[os];
+    }
+  }
+
   var releaseLine = $('release-line');
   var heroRelease = $('hero-release');
   var heroTag = $('hero-release-tag');
@@ -870,6 +959,7 @@
           if (/^https:\/\/github\.com\//.test(notes)) heroRelease.href = notes;
           heroRelease.hidden = false;
         }
+        applyAssets(release);
         if (!releaseLine) return;
 
         var text = 'Latest release ';
