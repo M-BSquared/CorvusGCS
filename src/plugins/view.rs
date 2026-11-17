@@ -142,7 +142,17 @@ impl Registry {
                     Pos2::new(body.left() + CARD_PAD, top),
                     Vec2::new(body.width() - 2.0 * CARD_PAD - 8.0, 0.0),
                 );
-                let h = self.with(i, &ctx, state, |p, h| p.show(ui, area, h));
+                let h = self
+                    .with(i, &ctx, state, |p, h| p.show(ui, area, h))
+                    .unwrap_or_else(|| {
+                        // the plugin was stopped: say so where its view was
+                        let text = corvus_api::i18n::tr(super::STOPPED);
+                        let g =
+                            kit::wrapped_weight(ui, &text, 12.0, Weight::W400, style::critical(), area.width(), 1.4);
+                        let h = g.size().y;
+                        ui.painter().galley(area.min, g, style::critical());
+                        h
+                    });
                 ui.allocate_space(Vec2::new(area.width(), pad_top + h + CARD_PAD));
             });
     }

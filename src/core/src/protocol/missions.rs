@@ -471,6 +471,7 @@ struct DownloadInner {
 
 /// One download in flight: what the receive thread fills in, and the wake up.
 struct Download {
+    mission_type: i64,
     event: Event,
     inner: Mutex<DownloadInner>,
 }
@@ -486,6 +487,7 @@ struct State {
     items: Option<Vec<MissionItem>>,
     upload_type: i64,
     vehicle_fence: Option<Vec<(f64, f64)>>,
+    vehicle_fence_foreign: bool,
     pending_ack: Option<Arc<PendingAck>>,
     last_request: f64,
     download: Option<Arc<Download>>,
@@ -559,16 +561,24 @@ impl MissionEngine {
         self.st().vehicle_mission_confirmed
     }
 
-    /// The area last put on the vehicle over this link (`[]` after a clear),
-    /// None when this link has not transferred one.
+    /// The area the vehicle holds as far as this link knows: the one last put
+    /// on it or read from it (`[]` for none), None while unknown.
     pub fn vehicle_fence(&self) -> Option<Vec<(f64, f64)>> {
         self.st().vehicle_fence.clone()
+    }
+
+    /// True when the fence read from the vehicle holds more than one inclusion
+    /// area (an exclusion zone, a circle, a return point, a second area), so it
+    /// is not one this station drew.
+    pub fn vehicle_fence_foreign(&self) -> bool {
+        self.st().vehicle_fence_foreign
     }
 
     /// Start of a new link: nothing is known of what the vehicle holds.
     pub fn forget_link(&self) {
         let mut st = self.st();
         st.vehicle_fence = None;
+        st.vehicle_fence_foreign = false;
         st.vehicle_mission_index = None;
         st.vehicle_mission_id = None;
         st.vehicle_mission_id_pending = false;
@@ -646,11 +656,14 @@ impl MissionEngine {
 
     /// The vehicle's answer to MISSION_REQUEST_LIST: how many items.
     pub fn handle_mission_count(&self, host: &dyn MissionHost, msg: &Message) {
-        if !host.ack_is_for_us(msg) || int_attr(msg, "mission_type", 0) != 0 {
+        if !host.ack_is_for_us(msg) {
             return;
         }
         let download = self.st().download.clone();
         let Some(download) = download else { return };
+        if int_attr(msg, "mission_type", 0) != download.mission_type {
+            return;
+        }
         let mut inner = download.inner();
         if inner.count.is_some() {
             return;
@@ -663,7 +676,12 @@ impl MissionEngine {
 
     /// One item of a download, kept only if it is the one asked for.
     pub fn handle_mission_item(&self, host: &dyn MissionHost, msg: &Message, as_int: bool) {
-        if !host.ack_is_for_us(msg) || int_attr(msg, "mission_type", 0) != 0 {
+        if !host.ack_is_for_us(msg) {
+            return;
+        }
+        let download = self.st().download.clone();
+        let Some(download) = download else { return };
+        if int_attr(msg, "mission_type", 0) != download.mission_type {
             return;
         }
         let (Some(seq), Some(command), Some(frame)) = (
@@ -696,8 +714,6 @@ impl MissionEngine {
             params: [1, 2, 3, 4].map(|n| finite_or_none(float_field(msg, &format!("param{n}")))),
             autocontinue: int_attr(msg, "autocontinue", 1),
         };
-        let download = self.st().download.clone();
-        let Some(download) = download else { return };
         let mut inner = download.inner();
         if seq != inner.waiting_for {
             return;
@@ -719,8 +735,19 @@ impl MissionEngine {
             "error"
         };
         host.console("GOTOPOINTS", &format!("MISSION_ACK: type={ack_type}"), level);
-        let pending = self.st().pending_ack.clone();
+        let (pending, upload_type) = {
+            let st = self.st();
+            (st.pending_ack.clone(), st.upload_type)
+        };
         if let Some(pending) = pending {
+            // An ACCEPTED for the other kind of transfer (the late end of a
+            // mission upload while a fence goes up, or the reverse) confirms
+            // nothing about this one. A refusal still ends the wait: PX4
+            // answers a transfer it is too busy for under the type it is busy with.
+            if level == "success" && int_attr(msg, "mission_type", 0) != upload_type {
+                host.log("info", "ignoring a MISSION_ACK for another mission type");
+                return;
+            }
             let mut result = pending.result.lock().unwrap_or_else(|e| e.into_inner());
             if result.is_none() {
                 *result = Some(ack_type);
@@ -880,8 +907,8 @@ impl MissionEngine {
         }
     }
 
-    fn cancel_mission_download(&self, host: &dyn MissionHost) {
-        self.send_mission_ack(host, MAV_MISSION_OPERATION_CANCELLED, 0);
+    fn cancel_mission_download(&self, host: &dyn MissionHost, download: &Download) {
+        self.send_mission_ack(host, MAV_MISSION_OPERATION_CANCELLED, download.mission_type);
     }
 
     // ------------------------------------------------------------ download
@@ -898,7 +925,35 @@ impl MissionEngine {
             host.command_failure("Mission download", -2);
             return None;
         }
+        let items = self.read_items(host, 0)?;
+        let home = Self::home_lat_lon(host);
+        let converted = host.items_to_plan(&items, home, host.home_alt_amsl());
+        let plan_index: Vec<Option<i64>> = converted
+            .get("plan_index")
+            .and_then(Value::as_array)
+            .map(|a| a.iter().map(Value::as_i64).collect())
+            .unwrap_or_default();
+        self.note_vehicle_mission(host, Some(&plan_index));
+        host.console(
+            "MISSION",
+            &format!("Read {} mission item(s) from the vehicle", items.len()),
+            "success",
+        );
+        let mut out = converted.as_object().cloned().unwrap_or_default();
+        out.insert(
+            "items".into(),
+            Value::Array(items.iter().map(DownloadedItem::to_json).collect()),
+        );
+        out.insert("count".into(), json!(items.len()));
+        out.insert("revision".into(), json!(self.mission_revision()));
+        Some(Value::Object(out))
+    }
+
+    /// One transfer from the vehicle, mission or fence: the items it holds, or
+    /// None with the reason as the last error.
+    fn read_items(&self, host: &dyn MissionHost, mission_type: i64) -> Option<Vec<DownloadedItem>> {
         let download = Arc::new(Download {
+            mission_type,
             event: Event::new(),
             inner: Mutex::new(DownloadInner {
                 waiting_for: -1,
@@ -921,28 +976,7 @@ impl MissionEngine {
             }
         }
         host.remove_console_sub(sub_id);
-        let items = items?;
-        let home = Self::home_lat_lon(host);
-        let converted = host.items_to_plan(&items, home, host.home_alt_amsl());
-        let plan_index: Vec<Option<i64>> = converted
-            .get("plan_index")
-            .and_then(Value::as_array)
-            .map(|a| a.iter().map(Value::as_i64).collect())
-            .unwrap_or_default();
-        self.note_vehicle_mission(host, Some(&plan_index));
-        host.console(
-            "MISSION",
-            &format!("Read {} mission item(s) from the vehicle", items.len()),
-            "success",
-        );
-        let mut out = converted.as_object().cloned().unwrap_or_default();
-        out.insert(
-            "items".into(),
-            Value::Array(items.iter().map(DownloadedItem::to_json).collect()),
-        );
-        out.insert("count".into(), json!(items.len()));
-        out.insert("revision".into(), json!(self.mission_revision()));
-        Some(Value::Object(out))
+        items
     }
 
     fn mission_wait_s(host: &dyn MissionHost) -> f64 {
@@ -997,32 +1031,42 @@ impl MissionEngine {
 
     fn run_mission_download(&self, host: &dyn MissionHost, download: &Arc<Download>) -> Option<Vec<DownloadedItem>> {
         let target = host.target();
+        let kind = download.mission_type;
+        let (what, lead_what) = if kind == MAV_MISSION_TYPE_FENCE {
+            ("geofence", "Geofence")
+        } else {
+            ("mission", "Mission")
+        };
         let ask_list = |this: &MissionEngine| -> Option<bool> {
             download.inner().count = None;
             this.ask(
                 host,
                 download,
-                &|| put(targeted("MISSION_REQUEST_LIST", target), &[("mission_type", 0)]),
+                &|| put(targeted("MISSION_REQUEST_LIST", target), &[("mission_type", kind)]),
                 &|| download.inner().count.is_some(),
                 MISSION_DOWNLOAD_TRIES,
             )
         };
         let got = ask_list(self);
         if got.is_none() {
-            self.cancel_mission_download(host);
-            host.set_error("mission download interrupted");
+            self.cancel_mission_download(host, download);
+            host.set_error(&format!("{what} download interrupted"));
             return None;
         }
         if got != Some(true) {
-            host.set_error("the vehicle did not answer the mission request");
+            host.set_error(&format!("the vehicle did not answer the {what} request"));
             return None;
         }
         let total = download.inner().count.unwrap_or(0);
-        let offset = if total != 0 { Self::mission_offset(host) } else { 0 };
+        let offset = if total != 0 && kind == 0 {
+            Self::mission_offset(host)
+        } else {
+            0
+        };
         if total - offset > MISSION_MAX_ITEMS {
-            self.cancel_mission_download(host);
+            self.cancel_mission_download(host, download);
             host.set_error(&format!(
-                "the vehicle's mission has {} items, more than the {MISSION_MAX_ITEMS} the planner holds",
+                "the vehicle's {what} has {} items, more than the {MISSION_MAX_ITEMS} the planner holds",
                 total - offset
             ));
             return None;
@@ -1037,7 +1081,7 @@ impl MissionEngine {
                     &|| {
                         put(
                             targeted("MISSION_REQUEST_INT", target),
-                            &[("seq", seq), ("mission_type", 0)],
+                            &[("seq", seq), ("mission_type", kind)],
                         )
                     },
                     &|| download.inner().items.contains_key(&seq),
@@ -1047,53 +1091,53 @@ impl MissionEngine {
                     break;
                 }
                 if got.is_none() {
-                    self.cancel_mission_download(host);
-                    host.set_error("mission download interrupted");
+                    self.cancel_mission_download(host, download);
+                    host.set_error(&format!("{what} download interrupted"));
                     return None;
                 }
                 let drops = download.inner().drops;
                 if restarts >= MISSION_DOWNLOAD_RESTARTS {
-                    self.cancel_mission_download(host);
+                    self.cancel_mission_download(host, download);
                     let reason = if drops != 0 {
-                        ". The vehicle keeps reporting the request as unexpected, so another station (a companion computer or a second ground station) is probably reading the mission at the same time"
+                        format!(". The vehicle keeps reporting the request as unexpected, so another station (a companion computer or a second ground station) is probably reading the {what} at the same time")
                     } else {
-                        ""
+                        String::new()
                     };
-                    host.set_error(&format!("mission item {} of {total} never arrived{reason}", seq + 1));
+                    host.set_error(&format!("{what} item {} of {total} never arrived{reason}", seq + 1));
                     return None;
                 }
                 restarts += 1;
                 let lead = if drops != 0 {
                     "The vehicle ended the transfer and reported the request as unexpected. ".to_string()
                 } else {
-                    format!("Mission item {} did not arrive. ", seq + 1)
+                    format!("{lead_what} item {} did not arrive. ", seq + 1)
                 };
                 host.console(
                     "MISSION",
-                    &format!("{lead}Reading the mission again from the start"),
+                    &format!("{lead}Reading the {what} again from the start"),
                     "info",
                 );
                 download.inner().waiting_for = -1;
                 let got = ask_list(self);
                 if got != Some(true) {
-                    self.cancel_mission_download(host);
-                    host.set_error(if got.is_none() {
-                        "mission download interrupted"
+                    self.cancel_mission_download(host, download);
+                    host.set_error(&if got.is_none() {
+                        format!("{what} download interrupted")
                     } else {
-                        "the vehicle did not answer the mission request"
+                        format!("the vehicle did not answer the {what} request")
                     });
                     return None;
                 }
                 if download.inner().count.unwrap_or(0) != total {
-                    self.cancel_mission_download(host);
-                    host.set_error("the mission on the vehicle changed while it was being read");
+                    self.cancel_mission_download(host, download);
+                    host.set_error(&format!("the {what} on the vehicle changed while it was being read"));
                     return None;
                 }
                 download.inner().waiting_for = seq;
             }
         }
         if total != 0 {
-            self.send_mission_ack(host, constant_or("MAV_MISSION_ACCEPTED", 0), 0);
+            self.send_mission_ack(host, constant_or("MAV_MISSION_ACCEPTED", 0), kind);
         }
         let inner = download.inner();
         Some(
@@ -1488,9 +1532,56 @@ impl MissionEngine {
             let result = if ack < 0 { ack } else { mission_ack_to_result(ack) };
             return host.command_failure("Geofence upload", result);
         }
-        self.st().vehicle_fence = Some(polygon.to_vec());
+        {
+            let mut st = self.st();
+            st.vehicle_fence = Some(polygon.to_vec());
+            st.vehicle_fence_foreign = false;
+        }
         host.console("GEOFENCE", "Geofence accepted by the vehicle", "success");
         true
+    }
+
+    /// Reads the fence the vehicle holds, so the station knows it after a
+    /// reconnect or when another station put it there. The corners of its
+    /// inclusion area (`[]` for none), or None with the reason as the last error.
+    pub fn download_fence(&self, host: &dyn MissionHost) -> Option<Vec<(f64, f64)>> {
+        let _gate = host.lock().lock();
+        host.set_error("");
+        if !host.connection_ready() {
+            host.command_failure("Geofence download", -2);
+            return None;
+        }
+        let items = self.read_items(host, MAV_MISSION_TYPE_FENCE)?;
+        let corners: Vec<(f64, f64)> = items
+            .iter()
+            .filter(|i| i.command == MAV_CMD_NAV_FENCE_POLYGON_VERTEX_INCLUSION)
+            .map(|i| (i.lon, i.lat))
+            .collect();
+        let one_area = items.iter().all(|i| {
+            i.command == MAV_CMD_NAV_FENCE_POLYGON_VERTEX_INCLUSION
+                && i.params[0].is_some_and(|n| n.round() == corners.len() as f64)
+        });
+        {
+            let mut st = self.st();
+            st.vehicle_fence = Some(if one_area {
+                corners.clone()
+            } else {
+                items.iter().map(|i| (i.lon, i.lat)).collect()
+            });
+            st.vehicle_fence_foreign = !one_area;
+        }
+        let said = if items.is_empty() {
+            "The vehicle holds no geofence".to_string()
+        } else if one_area {
+            format!("Read a geofence with {} corners from the vehicle", corners.len())
+        } else {
+            format!(
+                "The vehicle holds a geofence of {} items that was not drawn here",
+                items.len()
+            )
+        };
+        host.console("GEOFENCE", &said, "success");
+        Some(corners)
     }
 
     /// Removes every fence the vehicle holds: a zero item FENCE transfer.
@@ -1505,7 +1596,11 @@ impl MissionEngine {
             let result = if ack < 0 { ack } else { mission_ack_to_result(ack) };
             return host.command_failure("Geofence clear", result);
         }
-        self.st().vehicle_fence = Some(Vec::new());
+        {
+            let mut st = self.st();
+            st.vehicle_fence = Some(Vec::new());
+            st.vehicle_fence_foreign = false;
+        }
         host.console("GEOFENCE", "Geofence removed from the vehicle", "success");
         true
     }

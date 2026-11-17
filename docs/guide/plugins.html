@@ -329,18 +329,15 @@
   in the same place.
 </p>
 
-<h2 id="more">Plugins to install</h2>
-<div class="callout callout-warn">
-  <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-alert"></use></svg>
-  <div><p>These two are JavaScript plugins of the old web interface, and the native program does not run them yet. Dropped into the plugin folder they are listed under Settings, Plugins as <strong>not loaded</strong>. They come back once each is a Rust crate, as described in <a href="#your-own">Adding your own</a>.</p></div>
-</div>
+<h2 id="more">Plugins with a repository of their own</h2>
 <p>
-  Two more plugins are not included with Corvus. Each has a repository of its
-  own:
+  Two more plugins are developed in repositories of their own and compiled
+  into Corvus like the others. The Corvus repository carries them as
+  submodules under <code>plugins/</code>:
 </p>
 <div class="table-wrap">
 <table>
-  <thead><tr><th>Plugin</th><th>Repository</th><th>Folder</th></tr></thead>
+  <thead><tr><th>Plugin</th><th>Repository</th><th>Folder under <code>plugins/</code></th></tr></thead>
   <tbody>
     <tr><td><a href="#nuttx-console">NuttX Console</a></td><td><a href="https://github.com/M-BSquared/corvus-nuttx-console">corvus-nuttx-console</a></td><td><code>nuttx-console</code></td></tr>
     <tr><td><a href="#trajectory-viewer">Trajectory Viewer</a></td><td><a href="https://github.com/M-BSquared/corvus-trajectory-viewer">corvus-trajectory-viewer</a></td><td><code>trajectory-viewer</code></td></tr>
@@ -351,7 +348,7 @@
 <h2 id="nuttx-console">NuttX Console</h2>
 <div class="callout">
   <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-info"></use></svg>
-  <div><p>Not included with Corvus, and not run by the native program yet. Its repository is <a href="https://github.com/M-BSquared/corvus-nuttx-console">corvus-nuttx-console</a>, see <a href="#more">Plugins to install</a>.</p></div>
+  <div><p>Compiled into Corvus from a repository of its own, <a href="https://github.com/M-BSquared/corvus-nuttx-console">corvus-nuttx-console</a>, which the Corvus repository carries as a submodule.</p></div>
 </div>
 <p>
   PX4's own shell: NSH, the NuttShell of NuttX, the operating system PX4 runs
@@ -381,33 +378,21 @@
   <li>A program that redraws its screen, like <code>top</code>, replaces its lines instead of adding a screen every second.</li>
 </ul>
 
-<h3 id="nuttx-terminal">The terminal window</h3>
+<h3 id="nuttx-terminal">The terminal</h3>
 <p>
-  The terminal button at the start of the toolbar opens the same shell in a
-  terminal window, the way the SSH terminals open: in the desktop app a
-  <a href="video.html#windows">window of its own</a>, free to go to another
-  screen, with the pin that keeps it above Corvus; inside the Corvus window
-  when Settings asks for that. There the prompt is NSH's own
+  <strong>Terminal</strong>, beside <strong>Console</strong> at the top of the
+  plugin, shows the same shell as a terminal. There the prompt is NSH's own
   and <code>top</code> redraws in place.
-</p>
-<p>
-  Its title bar follows <a href="video.html#title-bar">Corvus title bar</a>
-  in Settings, unless <strong>Title bar of the terminal window</strong> in
-  the plugin's settings (<a href="settings.html#plugins">Settings,
-  Plugins</a>, its gear) says otherwise: <strong>System title bar</strong> or
-  <strong>Corvus title bar</strong> for this window alone. An open window
-  changes as soon as the setting does.
 </p>
 <ul>
   <li>The line is edited here and sent whole when you press Enter, as PX4's own <code>mavlink_shell.py</code> and QGroundControl do it, so a slow radio link does not make typing lag. Arrow keys, Home, End and Delete move and edit in the line; Up and Down bring back earlier commands.</li>
   <li><kbd>Ctrl</kbd>+<kbd>C</kbd> on an empty line stops a running program; on a line you are typing, it drops the line. With text selected, <kbd>Cmd</kbd>+<kbd>C</kbd> (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd> on Windows and Linux) copies it. <kbd>Ctrl</kbd>+<kbd>L</kbd> clears the screen.</li>
-  <li>The circular arrow in the bar ends the shell, and whatever runs in it, and opens a new one.</li>
+  <li>The circular arrow at the top ends the shell, and whatever runs in it, and opens a new one.</li>
 </ul>
 <p>
-  The console and the window show one shell: what you type in either reaches
+  The console and the terminal show one shell: what you type in either reaches
   it, and what it prints appears in both. It opens when a PX4 autopilot
-  connects and is closed when the last of the two is closed (a window of its
-  own included), so a
+  connects and is closed when the plugin is closed, so a
   <code>top</code> left running does not keep the telemetry link busy for
   nobody. With nothing connected both say so and the shell opens as soon as
   an autopilot is there. On ArduPilot they say <em>Not available on this
@@ -425,7 +410,7 @@
 <h2 id="trajectory-viewer">Trajectory Viewer</h2>
 <div class="callout">
   <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-info"></use></svg>
-  <div><p>Not included with Corvus, and not run by the native program yet. Its repository is <a href="https://github.com/M-BSquared/corvus-trajectory-viewer">corvus-trajectory-viewer</a>, see <a href="#more">Plugins to install</a>.</p></div>
+  <div><p>Compiled into Corvus from a repository of its own, <a href="https://github.com/M-BSquared/corvus-trajectory-viewer">corvus-trajectory-viewer</a>, which the Corvus repository carries as a submodule.</p></div>
 </div>
 <p>
   Draws a trajectory from a file on the Home map: a route someone planned
@@ -475,10 +460,10 @@
 </p>
 <h3 id="trajectory-line">On the map</h3>
 <ul>
-  <li><strong>Colour</strong>: cyan, lime, magenta, blue or white. None of them is the red of the flown track or the amber of a planned route.</li>
+  <li><strong>Colour</strong>: blue, cyan, pink, green or orange. None of them is the red of the flown track.</li>
   <li><strong>Show on the Home map</strong> draws or removes the line. It stays on the map when you close the plugin and comes back after a restart, without opening the plugin, until you switch it off.</li>
   <li><strong>Show me</strong> brings the Home map forward and frames the whole trajectory.</li>
-  <li><strong>Compare in 3D</strong> opens a window with the trajectory and the track the aircraft flew, as two lines in one 3D plot you can turn and zoom, with the largest and the average distance between them. Before anything has been flown it shows the trajectory on its own. The flown track is recorded while the aircraft is armed and kept until Corvus closes; <strong>Clear flown track</strong> in the window empties it. Heights are measured above each track's own start, because a file does not say what its z is measured from.</li>
+  <li><strong>Compare in 3D</strong> opens a dialog with the trajectory and the track the aircraft flew, as two lines in one 3D view you turn by dragging and zoom with the wheel, with the largest and the average distance between them. Where the heights are small beside the length of the route they are drawn taller, and the view says by how much. Before anything has been flown it shows the trajectory on its own. The flown track is recorded while the aircraft is armed and kept until Corvus closes; <strong>Clear flown track</strong> in the dialog empties it. Heights are measured above each track's own start, because a file does not say what its z is measured from.</li>
   <li><strong>Clear</strong> takes the line off the map and forgets the file.</li>
 </ul>
 <p>
@@ -731,7 +716,7 @@ fn options_changed(&amp;mut self, h: &amp;mut Host) {
     <li><a href="#ssh-launcher">SSH Launcher</a></li>
     <li><a href="#schwalby">Schwalby</a></li>
     <li><a href="#map-entities">Map Entities</a></li>
-    <li><a href="#more">Plugins to install</a></li>
+    <li><a href="#more">Plugins with a repository of their own</a></li>
     <li><a href="#nuttx-console">NuttX Console</a></li>
     <li><a href="#trajectory-viewer">Trajectory Viewer</a></li>
     <li><a href="#your-own">Adding your own</a></li>

@@ -534,7 +534,9 @@ pub fn plugin_origin(p: &Value) -> String {
     let version = p.get("version").and_then(Value::as_str).filter(|v| !v.is_empty());
     let flag = |k: &str| p.get(k).and_then(Value::as_bool).unwrap_or(false);
     let tab = if flag("in_tab") { " \u{b7} own tab" } else { "" };
-    let failed = if p.get("loaded").and_then(Value::as_bool) == Some(false) {
+    let failed = if flag("stopped") {
+        " \u{b7} stopped after an error"
+    } else if p.get("loaded").and_then(Value::as_bool) == Some(false) {
         " \u{b7} not loaded"
     } else {
         ""
@@ -561,6 +563,7 @@ pub fn plugin_rows(listed: &[Value], registry: &crate::plugins::Registry) -> Vec
             o.insert("loaded".into(), serde_json::json!(known.is_some()));
             if let Some(i) = known {
                 o.insert("in_tab".into(), serde_json::json!(registry.in_tab(i)));
+                o.insert("stopped".into(), serde_json::json!(registry.failure(i).is_some()));
                 o.insert("gear".into(), serde_json::json!(registry.has_options(i)));
             }
         }
@@ -580,6 +583,7 @@ pub fn plugin_rows(listed: &[Value], registry: &crate::plugins::Registry) -> Vec
             "id": info.id, "name": info.name, "description": info.description,
             "version": info.version, "source": "bundled", "loaded": true,
             "in_tab": registry.in_tab(i), "gear": registry.has_options(i),
+            "stopped": registry.failure(i).is_some(),
         }));
     }
     rows

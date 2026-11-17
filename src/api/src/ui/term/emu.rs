@@ -559,7 +559,6 @@ impl Screen {
     }
 
     /// The text of one line, without trailing blanks.
-    #[cfg(test)]
     pub fn line_text(line: &Line) -> String {
         let s: String = line.iter().map(|c| c.ch).collect();
         s.trim_end().to_string()

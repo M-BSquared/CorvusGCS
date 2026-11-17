@@ -16,6 +16,7 @@ use serde_json::{json, Map, Value};
 
 use crate::net::bg::Pending;
 use crate::net::http::{self, Server};
+use crate::net::stream::Stream;
 use options::{OptionSpec, OPTIONS_KEY};
 use shapes::ShapeSet;
 
@@ -251,6 +252,21 @@ impl Host<'_> {
         Pending::spawn(self.ctx, move || http::post_json_any(&server, &path, &body))
     }
 
+    /// `Corvus.events.subscribe`: follows push topics of the backend (comma
+    /// separated, for example "shell" or "console,params") on a thread of its
+    /// own until the returned stream is dropped. `on_event` gets the topic and
+    /// its data; a dropped connection arrives as the topic "error" and is
+    /// opened again by itself. The interface is repainted after every event.
+    pub fn events(&self, topics: &str, mut on_event: impl FnMut(&str, &Value) + Send + 'static) -> Stream {
+        let ctx = self.ctx.clone();
+        let path = format!("/api/events?topics={}", http::encode_component(topics));
+        Stream::start(self.server.clone(), path, move |ev| {
+            let data = serde_json::from_str(&ev.data).unwrap_or(Value::Null);
+            on_event(&ev.name, &data);
+            ctx.request_repaint();
+        })
+    }
+
     /// `notification`: a toast and a line on the board, both marked with the
     /// plugin's name. `level` is "info", "warning" or "critical".
     pub fn notify(&mut self, level: &str, text: &str) {
@@ -273,9 +289,6 @@ impl Host<'_> {
         self.out.console.push((level.into(), text.to_string()));
     }
 
-    /// `terminal`: show the live terminal of an SSH session this plugin
-    /// opened, in a window of its own. `session` is `{name, title, host,
-    /// port, username}`.
     /// `terminal`: show the live terminal of an SSH session this plugin
     /// opened, in a window of its own; `session` is `{name, title, host, port,
     /// username}`. `reattach` right after (re)connecting,

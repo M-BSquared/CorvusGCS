@@ -26,6 +26,7 @@ pub mod segmented;
 pub mod select;
 pub mod slider;
 pub mod style;
+pub mod term;
 pub mod text;
 pub mod tip;
 pub mod toggle;

@@ -135,7 +135,7 @@ CI has no Python job left (`rust-gui`, `rust-windows`, the three bundle jobs,
 ### 0.4 Peripherals (`src/core/src/peripherals/`)
 
 * P3 The Windows branches of the shell and runner are compile gated but untested. The dormant CRSF reader ELRS stays in `corvus_link` (no route in Python). ExpressLRS over MAVLink and Betaflight are ported: the serial options `?link=elrs&dtr=off&rts=off&fc=betaflight` (`serial_ports.rs`, held lines in `corvus_link` `Serial::open_held`), the generic heartbeat hint and the `betaflight` dialect (`dialect.rs`), the MSP reader (`corvus_link::plain::msp`) and its two routes (`peripherals/betaflight.rs`), all held to the Python by fixtures. Not done: a test with real hardware (an ELRS module resetting on connect, a Betaflight board over USB), none was available. SSH: the agent (`SSH_AUTH_SOCK`) is not asked for keys, only `~/.ssh/id_*` files without a passphrase; a key with a passphrase is refused as Python refused it.
-* P2 The native interface lacks the pieces of master's ExpressLRS and Betaflight work: the Betaflight setup page, the greyed Setup tiles for a telemetry only stack, and the Link panel's Radio selector (rows in `src/PARITY.md`). The backend is ready for all three.
+* P2 ExpressLRS: the Link panel's Telemetry select (`tlm=low|high` after the serial string, `LinkBudget` in `protocol/requests.rs`) sets what is asked of the aircraft by the radio's packet rate. Not seen on real hardware: whether the three budgets hold the link at 50, 250 and 333 Hz with a PX4 behind it, and the TX Backpack's WiFi path, where the budget does not apply.
 
 ### 0.5 AI and plugins (`src/core/src/plugins/`, `mcp/`)
 

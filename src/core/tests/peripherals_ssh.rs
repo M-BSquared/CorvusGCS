@@ -294,6 +294,7 @@ fn login(password: &str) -> Login {
         password: Some(password.into()),
         key_path: None,
         ssh_dir: Some(std::env::temp_dir().join("corvus-ssh-test-no-keys")),
+        keepalive: None,
     }
 }
 
@@ -418,6 +419,7 @@ fn a_refused_login_says_so_and_is_marked_as_one_more_typing_can_fix() {
         password: None,
         key_path: None,
         ssh_dir: Some(d.join("no-keys")),
+        keepalive: None,
     };
     assert!(!open(&terminals, "nav", server.port, none, &files(&d, false)));
     assert!(terminals.connect_auth_failed("nav"));
@@ -443,6 +445,7 @@ fn a_key_file_logs_in_and_a_missing_one_is_an_error_not_a_hang() {
         password: Some("ignored".into()),
         key_path: Some(key),
         ssh_dir: None,
+        keepalive: None,
     };
     assert!(open(&terminals, "nav", server.port, by_key, &files(&d, false)));
     assert_eq!(server.log.lock().unwrap().key_logins, vec!["pilot".to_string()]);
@@ -455,6 +458,7 @@ fn a_key_file_logs_in_and_a_missing_one_is_an_error_not_a_hang() {
         password: None,
         key_path: Some("/no/such/key".into()),
         ssh_dir: None,
+        keepalive: None,
     };
     assert!(!open(&terminals, "gone", server.port, missing, &files(&d, false)));
     assert!(!terminals.connect_error("gone").is_empty());
@@ -965,4 +969,149 @@ mod routes {
         let _ = std::fs::remove_dir_all(d);
         let _ = (AtomicUsize::new(0), HashMap::<u8, u8>::new());
     }
+}
+
+#[test]
+fn a_key_file_with_a_passphrase_is_opened_by_the_password_beside_it() {
+    let d = dir("locked-key");
+    let server = Server::start(HOST1);
+    let key = format!("{}/tests/ssh_keys/client_locked", env!("CARGO_MANIFEST_DIR"));
+    let terminals = Terminals::new();
+    let with = |password: Option<&str>| Login {
+        username: "pilot".into(),
+        password: password.map(str::to_string),
+        key_path: Some(key.clone()),
+        ssh_dir: None,
+        keepalive: None,
+    };
+    assert!(!open(&terminals, "nav", server.port, with(None), &files(&d, false)));
+    assert!(
+        terminals.connect_error("nav").contains("passphrase"),
+        "{}",
+        terminals.connect_error("nav")
+    );
+    assert!(
+        terminals.connect_auth_failed("nav"),
+        "typing the passphrase is what fixes it"
+    );
+    assert!(!open(
+        &terminals,
+        "nav",
+        server.port,
+        with(Some("wrong")),
+        &files(&d, false)
+    ));
+    assert!(open(
+        &terminals,
+        "nav",
+        server.port,
+        with(Some("open sesame")),
+        &files(&d, false)
+    ));
+    assert_eq!(server.log.lock().unwrap().key_logins, vec!["pilot".to_string()]);
+    assert!(
+        server.log.lock().unwrap().password_attempts.is_empty(),
+        "the passphrase never goes to the host"
+    );
+    terminals.shutdown();
+    let _ = std::fs::remove_dir_all(d);
+}
+
+/// A TCP relay in front of the test server that can stop carrying bytes while
+/// both sockets stay open: a radio link that went out of range.
+struct Relay {
+    port: u16,
+    frozen: Arc<AtomicBool>,
+    stop: Arc<AtomicBool>,
+    thread: Option<std::thread::JoinHandle<()>>,
+}
+
+impl Relay {
+    fn start(upstream: u16) -> Relay {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let frozen = Arc::new(AtomicBool::new(false));
+        let stop = Arc::new(AtomicBool::new(false));
+        let (f, s) = (Arc::clone(&frozen), Arc::clone(&stop));
+        let thread = std::thread::spawn(move || {
+            let Ok((near, _)) = listener.accept() else { return };
+            let far = std::net::TcpStream::connect(("127.0.0.1", upstream)).unwrap();
+            let pump = |mut from: std::net::TcpStream, mut to: std::net::TcpStream| {
+                let (f, s) = (Arc::clone(&f), Arc::clone(&s));
+                std::thread::spawn(move || {
+                    from.set_read_timeout(Some(Duration::from_millis(20))).unwrap();
+                    let mut buf = [0u8; 4096];
+                    while !s.load(Ordering::SeqCst) {
+                        if f.load(Ordering::SeqCst) {
+                            std::thread::sleep(Duration::from_millis(20));
+                            continue;
+                        }
+                        match from.read(&mut buf) {
+                            Ok(0) => return,
+                            Ok(n) => {
+                                if to.write_all(&buf[..n]).is_err() {
+                                    return;
+                                }
+                            }
+                            Err(e)
+                                if matches!(
+                                    e.kind(),
+                                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                                ) => {}
+                            Err(_) => return,
+                        }
+                    }
+                })
+            };
+            let up = pump(near.try_clone().unwrap(), far.try_clone().unwrap());
+            let down = pump(far, near);
+            let _ = up.join();
+            let _ = down.join();
+        });
+        Relay {
+            port,
+            frozen,
+            stop,
+            thread: Some(thread),
+        }
+    }
+}
+
+impl Drop for Relay {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::SeqCst);
+        if let Some(t) = self.thread.take() {
+            let _ = t.join();
+        }
+    }
+}
+
+#[test]
+fn a_session_whose_link_went_silent_ends_instead_of_staying_connected() {
+    let d = dir("silent");
+    let server = Server::start(HOST1);
+    let relay = Relay::start(server.port);
+    let terminals = Terminals::new();
+    let quick = Login {
+        keepalive: Some(Duration::from_millis(200)),
+        ..login("hunter2")
+    };
+    assert!(open(&terminals, "nav", relay.port, quick, &files(&d, false)));
+    let session = terminals.get("nav").unwrap();
+    let seen = collect(&session);
+    until("the greeting", || seen.lock().unwrap().contains("welcome"));
+    // Idle but alive: the keepalives are answered and the session stays.
+    std::thread::sleep(Duration::from_millis(1500));
+    assert!(session.connected(), "an idle session on a working link stays open");
+    assert!(terminals.send("nav", "ls\r"));
+    until("the echo", || seen.lock().unwrap().contains("echo:ls\r"));
+
+    relay.frozen.store(true, Ordering::SeqCst);
+    until("the silent session to end", || !session.connected());
+    until("the closing line", || {
+        seen.lock().unwrap().ends_with("\r\n[Connection closed]\r\n")
+    });
+    terminals.shutdown();
+    let _ = std::fs::remove_dir_all(d);
 }

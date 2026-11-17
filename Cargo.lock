@@ -977,6 +977,7 @@ dependencies = [
  "regex",
  "rfd",
  "serde_json",
+ "vte",
  "wuff",
 ]
 
@@ -1012,8 +1013,10 @@ dependencies = [
  "corvus_api",
  "corvus_core",
  "corvus_plugin_map_entities",
+ "corvus_plugin_nuttx_console",
  "corvus_plugin_schwalby",
  "corvus_plugin_ssh_launcher",
+ "corvus_plugin_trajectory_viewer",
  "corvus_plugin_vibration",
  "ctrlc",
  "eframe",
@@ -1060,6 +1063,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "corvus_plugin_nuttx_console"
+version = "0.0.0"
+dependencies = [
+ "corvus_api",
+ "eframe",
+ "serde_json",
+]
+
+[[package]]
 name = "corvus_plugin_schwalby"
 version = "0.0.0"
 dependencies = [
@@ -1070,6 +1082,15 @@ dependencies = [
 
 [[package]]
 name = "corvus_plugin_ssh_launcher"
+version = "0.0.0"
+dependencies = [
+ "corvus_api",
+ "eframe",
+ "serde_json",
+]
+
+[[package]]
+name = "corvus_plugin_trajectory_viewer"
 version = "0.0.0"
 dependencies = [
  "corvus_api",

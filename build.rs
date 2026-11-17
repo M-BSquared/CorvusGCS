@@ -1,4 +1,5 @@
-//! Lists the plugins. Every folder of `src/plugins` that holds a `Cargo.toml`
+//! Lists the plugins. Every folder of `src/plugins` (the bundled ones) and of
+//! `plugins` (the ones that are repositories of their own) that holds a `Cargo.toml`
 //! is a plugin crate named `corvus_plugin_<folder>` (dashes as underscores)
 //! with a `plugin()` that makes one and a `LANG` with its language files;
 //! the list the registry is built from is made here, so adding a plugin is
@@ -10,8 +11,11 @@ use std::path::{Path, PathBuf};
 
 fn main() {
     let root = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
-    let plugins = root.join("src/plugins");
-    println!("cargo:rerun-if-changed={}", plugins.display());
+    // The bundled plugins, and the ones that are repositories of their own.
+    let roots = ["src/plugins", "plugins"];
+    for r in roots {
+        println!("cargo:rerun-if-changed={}", root.join(r).display());
+    }
     println!("cargo:rerun-if-changed={}", root.join("Cargo.toml").display());
     let manifest: toml::Table = std::fs::read_to_string(root.join("Cargo.toml"))
         .expect("read Cargo.toml")
@@ -23,21 +27,27 @@ fn main() {
         .cloned()
         .unwrap_or_default();
 
-    let mut folders: Vec<String> = std::fs::read_dir(&plugins)
-        .expect("read src/plugins")
-        .flatten()
-        .filter(|e| e.path().join("Cargo.toml").is_file())
-        .filter_map(|e| e.file_name().into_string().ok())
+    let mut folders: Vec<(String, &str)> = roots
+        .iter()
+        .flat_map(|r| {
+            std::fs::read_dir(root.join(r))
+                .into_iter()
+                .flatten()
+                .flatten()
+                .filter(|e| e.path().join("Cargo.toml").is_file())
+                .filter_map(|e| e.file_name().into_string().ok())
+                .map(move |name| (name, *r))
+        })
         .collect();
     folders.sort();
     let mut code = String::from(
         "/// The compiled-in plugins, in the order of their `order`.\npub fn builtin() -> Vec<Box<dyn Plugin>> {\n    let mut all: Vec<Box<dyn Plugin>> = Vec::new();\n",
     );
-    for f in &folders {
+    for (f, at) in &folders {
         let krate = format!("corvus_plugin_{}", f.replace('-', "_"));
         assert!(
             deps.contains_key(&krate),
-            "src/plugins/{f} is a plugin crate: add `{krate} = {{ path = \"src/plugins/{f}\" }}` to [dependencies] in Cargo.toml"
+            "{at}/{f} is a plugin crate: add `{krate} = {{ path = \"{at}/{f}\" }}` to [dependencies] in Cargo.toml"
         );
         writeln!(
             code,

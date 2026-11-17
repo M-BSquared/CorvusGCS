@@ -6,7 +6,9 @@
 //! the [`TileCache`] holds (so an interrupted job resumes where it stopped) and
 //! fetches the rest with a small pool of threads. Fetched tiles are written in
 //! batches of 256 in one transaction, and a tile counts as done only once it
-//! is in the file.
+//! is in the file. A tile lost to the network (a timeout, a busy server) is
+//! asked for again once the rest is in, so a short outage does not leave holes
+//! in the map; a tile the server does not have is not.
 //!
 //! Every job runs on threads of its own: one orchestrator and `max_workers`
 //! fetchers. `shutdown` cancels every job, drops the queued tiles and waits for
@@ -38,6 +40,12 @@ const RETRY_STATUSES: [u16; 7] = [408, 425, 429, 500, 502, 503, 504];
 const THROTTLE_STATUSES: [u16; 2] = [429, 503];
 const DEFAULT_BACKOFF_S: f64 = 2.0;
 const MAX_BACKOFF_S: f64 = 30.0;
+/// How often the tiles the network lost are asked for again, and the pause
+/// before each round.
+const RETRY_ROUNDS: usize = 2;
+const RETRY_PAUSE_S: f64 = 3.0;
+/// Ended jobs kept for `list_jobs`; older ones are forgotten.
+const KEPT_JOBS: usize = 64;
 /// How long `shutdown` waits for the orchestrators.
 const SHUTDOWN_JOIN_S: f64 = 2.0;
 
@@ -143,11 +151,15 @@ struct Counters {
     pending: Vec<(i64, i64, i64, Vec<u8>)>,
     pending_since: f64,
     backoff_until: f64,
+    /// Tiles the network lost, for the next round.
+    lost: Vec<(i64, i64, i64)>,
 }
 
 #[derive(Default)]
 struct Queue {
     tiles: VecDeque<(i64, i64, i64)>,
+    /// Tiles a worker has taken and not finished.
+    busy: usize,
     closed: bool,
 }
 
@@ -190,6 +202,7 @@ pub struct Timing {
     pub submit_pause: f64,
     pub fetch_timeout: f64,
     pub batch_seconds: f64,
+    pub retry_pause: f64,
 }
 
 impl Default for Timing {
@@ -198,6 +211,7 @@ impl Default for Timing {
             submit_pause: SUBMIT_PAUSE_S,
             fetch_timeout: FETCH_TIMEOUT_S,
             batch_seconds: WRITE_BATCH_SECONDS,
+            retry_pause: RETRY_PAUSE_S,
         }
     }
 }
@@ -306,7 +320,7 @@ impl TileDownloader {
             .spawn(move || me.run(&j2));
         match spawned {
             Ok(handle) => {
-                lock(&self.jobs).push((job_id.clone(), job));
+                self.keep(&job_id, job);
                 let mut threads = lock(&self.threads);
                 threads.retain(|t| !t.is_finished());
                 threads.push(handle);
@@ -408,7 +422,22 @@ impl TileDownloader {
             finished_cv: Condvar::new(),
             has_thread: false,
         });
-        lock(&self.jobs).push((job_id.to_string(), job));
+        self.keep(job_id, job);
+    }
+
+    /// Adds a job to the list and forgets the oldest ended ones beyond
+    /// `KEPT_JOBS`, so a long session does not collect them without end.
+    fn keep(&self, job_id: &str, job: Arc<Job>) {
+        let mut jobs = lock(&self.jobs);
+        jobs.push((job_id.to_string(), job));
+        let mut ended = jobs.iter().filter(|(_, j)| *lock(&j.finished)).count();
+        jobs.retain(|(_, j)| {
+            let drop = ended > KEPT_JOBS && *lock(&j.finished);
+            if drop {
+                ended -= 1;
+            }
+            !drop
+        });
     }
 }
 
@@ -444,12 +473,16 @@ impl Engine {
             max_body: MAX_TILE_BYTES,
         };
         let mut blob: Option<Vec<u8>> = None;
+        // Whether another try later could succeed: the network or a busy server
+        // lost the tile, as opposed to a server that does not have it.
+        let mut lost = false;
         for attempt in 0..2 {
             if !self.wait_backoff(job) {
                 break;
             }
             match self.net.send(&req) {
                 Ok(resp) if resp.status < 400 => {
+                    lost = false;
                     if !resp.body.is_empty() && ts::looks_like_image(&resp.body) {
                         blob = Some(resp.body);
                     }
@@ -461,19 +494,28 @@ impl Engine {
                         let mut c = lock(&job.counters);
                         c.backoff_until = c.backoff_until.max(until);
                     }
-                    if !RETRY_STATUSES.contains(&resp.status) {
+                    lost = RETRY_STATUSES.contains(&resp.status);
+                    if !lost {
                         break;
                     }
                 }
-                Err(e) if e.is_too_large() => break,
-                Err(_) => {}
+                Err(e) if e.is_too_large() => {
+                    lost = false;
+                    break;
+                }
+                Err(_) => lost = true,
             }
             if attempt == 1 || self.stopped(job) {
                 break;
             }
         }
         let Some(blob) = blob else {
-            lock(&job.counters).failed += 1;
+            let mut c = lock(&job.counters);
+            c.failed += 1;
+            if lost && !self.stopped(job) {
+                c.lost.push((z, x, y));
+            }
+            drop(c);
             job.fire();
             return;
         };
@@ -502,11 +544,21 @@ impl Engine {
         if batch.is_empty() {
             return 0;
         }
-        let written = self.cache.put_tiles(&batch).unwrap_or(0);
+        let outcome = self.cache.put_tiles(&batch);
+        let written = *outcome.as_ref().unwrap_or(&0);
         {
             let mut c = lock(&job.counters);
             c.done += written as i64;
             c.failed += (batch.len() - written) as i64;
+            if let Err(e) = &outcome {
+                // Every later batch would fail the same way (a full disk, a
+                // file that went away): end the job and say why.
+                if c.state == "running" {
+                    c.state = "failed".into();
+                    c.error = Some(format!("the offline map file could not be written: {e}"));
+                }
+                job.cancel.set();
+            }
         }
         job.fire();
         written
@@ -518,6 +570,7 @@ impl Engine {
                 let mut q = lock(&job.queue);
                 loop {
                     if let Some(t) = q.tiles.pop_front() {
+                        q.busy += 1;
                         break Some(t);
                     }
                     if q.closed {
@@ -528,7 +581,58 @@ impl Engine {
             };
             let Some((z, x, y)) = tile else { return };
             self.download_one(job, z, x, y);
+            lock(&job.queue).busy -= 1;
+            job.queue_cv.notify_all();
         }
+    }
+
+    /// Waits until the workers have nothing queued and nothing in hand. False
+    /// if the job was stopped first.
+    fn wait_idle(&self, job: &Job) -> bool {
+        let mut q = lock(&job.queue);
+        loop {
+            if self.stopped(job) {
+                return false;
+            }
+            if q.tiles.is_empty() && q.busy == 0 {
+                return true;
+            }
+            q = job
+                .queue_cv
+                .wait_timeout(q, Duration::from_millis(100))
+                .unwrap_or_else(|e| e.into_inner())
+                .0;
+        }
+    }
+
+    /// Asks again for the tiles the network lost, after a pause, for as many
+    /// rounds as there are. They leave the failed count while they are tried.
+    fn retry_lost(&self, job: &Job) {
+        for _round in 0..RETRY_ROUNDS {
+            if !self.wait_idle(job) {
+                return;
+            }
+            let lost = {
+                let mut c = lock(&job.counters);
+                let lost = std::mem::take(&mut c.lost);
+                c.failed -= lost.len() as i64;
+                lost
+            };
+            if lost.is_empty() {
+                return;
+            }
+            job.fire();
+            let paused = job.cancel.wait(Duration::from_secs_f64(self.timing.retry_pause));
+            let mut q = lock(&job.queue);
+            if paused || self.stopped(job) || q.closed {
+                drop(q);
+                lock(&job.counters).failed += lost.len() as i64;
+                return;
+            }
+            q.tiles.extend(lost);
+            job.queue_cv.notify_all();
+        }
+        self.wait_idle(job);
     }
 
     fn run(self: &Arc<Self>, job: &Arc<Job>) {
@@ -567,6 +671,7 @@ impl Engine {
                 }
             }
         }
+        self.retry_lost(job);
         let stopped = self.stopped(job);
         {
             let mut q = lock(&job.queue);

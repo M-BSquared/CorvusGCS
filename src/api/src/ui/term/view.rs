@@ -1,11 +1,12 @@
-//! The terminal as a widget: the screen of an `SshSession` drawn in a
+//! The terminal as a widget: the screen of a [`Shell`] drawn in a
 //! rectangle, with the keyboard, the mouse wheel, selection and paste
 //! (`.ssh-term`, xterm.js in `python/src/js/ssh-term.js`).
 
 use eframe::egui::{self, Color32, Pos2, Rect, Stroke, Vec2};
 
-use crate::term::emu::{Cell, Colour, Screen};
-use crate::term::session::{key_bytes, SshSession};
+use super::emu::{Cell, Colour, Screen};
+use super::keys::key_bytes;
+use super::Shell;
 use crate::ui::card::{self, Look};
 use crate::ui::style;
 
@@ -115,7 +116,7 @@ fn selected_text(screen: &Screen, a: (usize, usize), b: (usize, usize)) -> Strin
 
 /// Draws the terminal in `rect` (the box with its padding) and handles its
 /// input. `frame` fills and strokes the box when true.
-pub fn show(ui: &mut egui::Ui, rect: Rect, session: &mut SshSession, st: &mut TermState, id: &str, frame: bool) {
+pub fn show(ui: &mut egui::Ui, rect: Rect, session: &mut dyn Shell, st: &mut TermState, id: &str, frame: bool) {
     let painter = ui.painter().clone();
     let bg_default = background();
     if frame {
@@ -155,7 +156,7 @@ pub fn show(ui: &mut egui::Ui, rect: Rect, session: &mut SshSession, st: &mut Te
         });
     }
 
-    let handle = session.emu.clone();
+    let handle = session.emulator();
     let guard = match handle.lock() {
         Ok(g) => g,
         Err(_) => return,

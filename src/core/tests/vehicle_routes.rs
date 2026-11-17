@@ -101,6 +101,18 @@ impl Vehicle {
                             };
                             let _ = conn.send(&reply);
                         }
+                        "SERIAL_CONTROL" => {
+                            // NSH: whatever is written gets a prompt back.
+                            let mut data: Vec<Value> = b"nsh> ".iter().map(|b| int(i64::from(*b))).collect();
+                            data.resize(70, int(0));
+                            let reply = Message::named("SERIAL_CONTROL", Wire::V2)
+                                .unwrap()
+                                .with("device", int(10))
+                                .with("flags", int(1))
+                                .with("count", int(5))
+                                .with("data", Value::Array(data));
+                            let _ = conn.send(&reply);
+                        }
                         "COMMAND_LONG" => {
                             let command = msg.get("command").and_then(Value::as_i64).unwrap();
                             let ack = Message::named("COMMAND_ACK", Wire::V2)
@@ -231,6 +243,35 @@ fn the_vehicle_routes_fly_a_simulated_vehicle() {
         "{modes}"
     );
     assert_eq!(modes["labels"]["POSCTL"], "POSITION");
+    // The shell: what it printed so far comes first, marked as a replay, then
+    // its output as it arrives.
+    let mut shell = core.topic_stream(&[("shell", "shell")], None, &[]);
+    let first = shell.open();
+    assert_eq!(first.len(), 1);
+    assert_eq!(
+        serde_json::from_slice::<Json>(&first[0].data).unwrap(),
+        json!({"text": "", "replay": true})
+    );
+    let (status, answer) = call("POST", "/api/mavlink/shell/send", json!({"data": "\n"}));
+    assert_eq!(status, 200, "{answer}");
+    let said = corvus_core::events::collect(shell.as_mut(), Duration::from_secs(5), 1);
+    assert_eq!(said.len(), 1, "the prompt reached the stream");
+    assert_eq!(
+        serde_json::from_slice::<Json>(&said[0].data).unwrap(),
+        json!({"text": "nsh> "})
+    );
+    // A reader that comes late gets the session so far.
+    let mut late = core.topic_stream(&[("shell", "shell")], None, &[]);
+    let replay = late.open();
+    assert_eq!(
+        serde_json::from_slice::<Json>(&replay[0].data).unwrap(),
+        json!({"text": "nsh> ", "replay": true})
+    );
+    shell.close();
+    late.close();
+    let (status, _) = call("POST", "/api/mavlink/shell/close", json!({}));
+    assert_eq!(status, 200);
+
     let (status, answer) = call("POST", "/api/mavlink/arm", json!({"arm": true}));
     assert_eq!((status, &answer["ok"]), (200, &json!(true)), "{answer}");
     let (status, answer) = call("POST", "/api/mavlink/manual", json!({"x": 0.5, "z": 0.5}));

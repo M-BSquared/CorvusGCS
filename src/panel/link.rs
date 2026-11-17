@@ -41,6 +41,15 @@ const BAUDS: &[(&str, &str)] = &[
 
 /// The `Radio` select: how the bytes on the port are spoken.
 const RADIOS: &[(&str, &str)] = &[("", "MAVLink radio"), ("elrs", "ExpressLRS (MAVLink)")];
+/// The `Telemetry` select of an ExpressLRS link: the packet rate the radio
+/// runs at decides how much telemetry it carries, and Corvus asks the aircraft
+/// for that much. The value is the `tlm` option of the serial string.
+const BUDGETS: &[(&str, &str)] = &[
+    ("", "Standard (250 Hz, D250)"),
+    ("low", "Long range (50 to 150 Hz)"),
+    ("high", "Fast (333 Hz Full and faster)"),
+];
+const BUDGET_HINT: &str = "Match the packet rate set in the ExpressLRS Lua script. Corvus then asks the aircraft for as much telemetry as that rate carries, so the map and the instruments stay current instead of lagging behind a full link.";
 /// A control line the port is opened with: the adapter's own, or forced.
 const LINES: &[(&str, &str)] = &[("", "Default"), ("off", "Off"), ("on", "On")];
 /// What the controller on the port is, when the stack cannot tell.
@@ -48,13 +57,16 @@ const FIRMWARES: &[(&str, &str)] = &[("", "Detect"), ("betaflight", "Betaflight"
 
 const BETAFLIGHT_HINT: &str = "Betaflight speaks MSP, not MAVLink. Corvus shows its telemetry only. Read the controller on the Betaflight page of Setup.";
 
-/// The options after the serial string: `?link=elrs&dtr=off&rts=off&fc=betaflight`.
+/// The options after the serial string:
+/// `?link=elrs&dtr=off&rts=off&fc=betaflight&tlm=low`.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SerialOpts {
     pub link: String,
     pub dtr: String,
     pub rts: String,
     pub firmware: String,
+    /// The telemetry budget of an ExpressLRS link: empty, `low` or `high`.
+    pub telemetry: String,
 }
 
 impl SerialOpts {
@@ -67,6 +79,7 @@ impl SerialOpts {
             ("dtr", &self.dtr),
             ("rts", &self.rts),
             ("fc", &self.firmware),
+            ("tlm", &self.telemetry),
         ] {
             if !value.is_empty() {
                 parts.push(format!("{key}={value}"));
@@ -734,9 +747,27 @@ impl LinkTab {
                     if v == "elrs" && self.baud == "57600" {
                         self.baud = "460800".into();
                     }
+                    if v != "elrs" {
+                        // the budget is an ExpressLRS setting
+                        self.opts.telemetry.clear();
+                    }
                     self.opts.link = v;
                 }
-                cy += field_h + 8.0;
+                cy += field_h;
+                if self.opts.link == "elrs" {
+                    cy = field_label(ui, inner_x, cy + 10.0, "Telemetry") + 5.0;
+                    let sel = Rect::from_min_size(Pos2::new(inner_x, cy), Vec2::new(iw, field_h));
+                    let budgets = choices(BUDGETS);
+                    if let Some(v) = kit::select(ui, sel, &budgets, &self.opts.telemetry, "", false, "Telemetry", "tlm")
+                    {
+                        self.opts.telemetry = v;
+                    }
+                    cy += field_h;
+                    let g = kit::wrapped(ui, BUDGET_HINT, 11.0, style::text_3(), iw);
+                    painter.galley(Pos2::new(inner_x, cy + 5.0), g.clone(), style::text_3());
+                    cy += 5.0 + g.size().y;
+                }
+                cy += 8.0;
                 let open = self.opts_open || self.opts.any();
                 let (th, clicked) = Self::card_title(
                     ui,
@@ -1032,7 +1063,21 @@ mod tests {
             dtr: "off".into(),
             rts: "off".into(),
             firmware: "betaflight".into(),
+            telemetry: String::new(),
         };
+        // the telemetry budget of an ExpressLRS link comes last, and the core reads it
+        let long_range = SerialOpts {
+            link: "elrs".into(),
+            telemetry: "low".into(),
+            ..SerialOpts::default()
+        };
+        let conn = build_serial_string("/dev/ttyUSB0", "460800", &long_range);
+        assert_eq!(conn, "serial:/dev/ttyUSB0:460800?link=elrs&tlm=low");
+        assert_eq!(corvus_core::serial_ports::parse_serial_options(&conn).telemetry, "low");
+        assert!(corvus_core::serial_ports::validate_serial_options(&conn).is_ok());
+        for (value, _) in BUDGETS {
+            assert!(value.is_empty() || corvus_core::serial_ports::SERIAL_BUDGETS.contains(value));
+        }
         assert_eq!(
             build_serial_string("/dev/ttyUSB0", "460800", &opts),
             "serial:/dev/ttyUSB0:460800?link=elrs&dtr=off&rts=off&fc=betaflight"

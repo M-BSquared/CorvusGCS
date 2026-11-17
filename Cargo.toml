@@ -12,10 +12,11 @@ build = "build.rs"
 # made of (the API plugins build on and the plugins themselves), src/link (the
 # MAVLink crate) and src/tools (corvus-build, the repository's own tools, which
 # the build scripts run through cargo and no bundle carries).
-members = ["src/link", "src/core", "src/api", "src/tools", "src/plugins/vibration", "src/plugins/ssh-launcher", "src/plugins/map-entities", "src/plugins/schwalby"]
-default-members = [".", "src/core", "src/api", "src/plugins/vibration", "src/plugins/ssh-launcher", "src/plugins/map-entities", "src/plugins/schwalby"]
+members = ["src/link", "src/core", "src/api", "src/tools", "src/plugins/vibration", "src/plugins/ssh-launcher", "src/plugins/map-entities", "src/plugins/schwalby", "plugins/nuttx-console", "plugins/trajectory-viewer"]
+default-members = [".", "src/core", "src/api", "src/plugins/vibration", "src/plugins/ssh-launcher", "src/plugins/map-entities", "src/plugins/schwalby", "plugins/nuttx-console", "plugins/trajectory-viewer"]
 
 [workspace.dependencies]
+vte = "0.15.0"
 # One place for the versions and features the crates share, so a feature added
 # in one crate cannot quietly widen what the others compile.
 #
@@ -50,6 +51,9 @@ corvus_plugin_vibration = { path = "src/plugins/vibration" }
 corvus_plugin_ssh_launcher = { path = "src/plugins/ssh-launcher" }
 corvus_plugin_map_entities = { path = "src/plugins/map-entities" }
 corvus_plugin_schwalby = { path = "src/plugins/schwalby" }
+# The plugins that are repositories of their own, checked out under plugins/.
+corvus_plugin_nuttx_console = { path = "plugins/nuttx-console" }
+corvus_plugin_trajectory_viewer = { path = "plugins/trajectory-viewer" }
 # glow: the OpenGL renderer, whose paint callbacks can read what is already
 # drawn, which the frosted glass (frost.rs) needs; wgpu draws a frame in one
 # pass and cannot.
@@ -65,7 +69,7 @@ flate2 = { workspace = true }
 # SIGINT/SIGTERM (and Ctrl+C on Windows) end the app through the same path
 # as closing the window, so the backend child is always taken down.
 ctrlc = { workspace = true }
-vte = "0.15.0"
+vte = { workspace = true }
 # The calibration wizard reads the autopilot's own STATUSTEXT wording with the
 # same patterns the web page uses (calib-protocol.js).
 regex = { workspace = true }

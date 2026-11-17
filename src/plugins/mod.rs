@@ -8,6 +8,10 @@
 //! from `GET /api/plugins`, calls `tick` on every frame whether or not the
 //! plugin is open (what a telemetry subscription is in the browser), and gives
 //! the app what the plugins asked for through the [`Outbox`].
+//!
+//! A plugin is somebody else's code running inside a ground station. A panic
+//! in one is caught here: that plugin is stopped for the session, its shapes
+//! leave the map and the operator is told, and everything else carries on.
 
 pub mod layer;
 mod ssh_setup;
@@ -24,6 +28,9 @@ use crate::net::bg::Pending;
 use crate::net::http::{self, Server};
 
 include!(concat!(env!("OUT_DIR"), "/plugin_list.rs"));
+
+/// What the operator reads when a plugin was stopped.
+pub const STOPPED: &str = "The plugin stopped after an internal error. The rest of Corvus is not affected. Restart Corvus to use the plugin again.";
 
 /// A save of one option still on its way: what to put back if it fails.
 struct Saving {
@@ -42,6 +49,8 @@ struct Entry {
     started: bool,
     /// Whether `open` has run and `close` has not.
     live: bool,
+    /// Why the plugin was stopped: it panicked, and is not called again.
+    failed: Option<String>,
 }
 
 /// The registry.
@@ -68,7 +77,17 @@ pub struct Registry {
 
 impl Registry {
     pub fn new(server: Server, ctx: &egui::Context, config: &Value) -> Registry {
-        let entries = builtin()
+        Registry::with_plugins(server, ctx, config, builtin())
+    }
+
+    /// A registry of `plugins`, which need not be the compiled in ones.
+    pub fn with_plugins(
+        server: Server,
+        ctx: &egui::Context,
+        config: &Value,
+        plugins: Vec<Box<dyn Plugin>>,
+    ) -> Registry {
+        let entries = plugins
             .into_iter()
             .map(|plugin| {
                 let info = plugin.info();
@@ -78,6 +97,7 @@ impl Registry {
                     saved: json!({}),
                     started: false,
                     live: false,
+                    failed: None,
                     info,
                     plugin,
                 }
@@ -147,8 +167,44 @@ impl Registry {
         self.entries.iter().position(|e| e.info.id == id)
     }
 
-    /// Runs `f` with plugin `i` and a host for it.
+    /// Why plugin `i` was stopped, if it was.
+    pub fn failure(&self, i: usize) -> Option<&str> {
+        self.entries[i].failed.as_deref()
+    }
+
+    /// Runs `f` with plugin `i` and a host for it. None for a plugin that was
+    /// stopped, and for one that panics in `f`, which stops it.
     fn with<R>(
+        &mut self,
+        i: usize,
+        ctx: &egui::Context,
+        state: &Value,
+        f: impl FnOnce(&mut dyn Plugin, &mut Host) -> R,
+    ) -> Option<R> {
+        if self.entries[i].failed.is_some() {
+            return None;
+        }
+        match crate::crash::guarded(|| self.call(i, ctx, state, f)) {
+            Ok(r) => Some(r),
+            Err(why) => {
+                let e = &mut self.entries[i];
+                e.failed = Some(why);
+                e.live = false;
+                e.shapes = ShapeSet::new(e.info.id);
+                self.shapes_dirty = true;
+                if self.out.pick == Some(e.info.id) {
+                    self.out.pick = None;
+                    self.out.cancel_pick = true;
+                }
+                self.out
+                    .notices
+                    .push((e.info.name.to_string(), "critical", STOPPED.to_string()));
+                None
+            }
+        }
+    }
+
+    fn call<R>(
         &mut self,
         i: usize,
         ctx: &egui::Context,
@@ -206,7 +262,7 @@ impl Registry {
         }
         for i in 0..self.entries.len() {
             let info = self.entries[i].info;
-            for t in self.with(i, ctx, state, |p, h| p.mcp_tools(h)) {
+            for t in self.with(i, ctx, state, |p, h| p.mcp_tools(h)).unwrap_or_default() {
                 out.push(json!({
                     "plugin": info.id, "plugin_name": info.name, "name": t.name, "title": t.title,
                     "description": t.description, "input_schema": t.input_schema,
@@ -250,8 +306,9 @@ impl Registry {
         let mut keep = Vec::new();
         for (token, i, id) in waiting {
             match self.with(i, ctx, state, |p, _| p.mcp_take(token)) {
-                Some(r) => out.push((id, r)),
-                None => keep.push((token, i, id)),
+                Some(Some(r)) => out.push((id, r)),
+                Some(None) => keep.push((token, i, id)),
+                None => out.push((id, Err(STOPPED.to_string()))),
             }
         }
         self.mcp_waiting = keep;
@@ -472,10 +529,111 @@ impl Registry {
 mod tests {
     use super::*;
 
+    /// A plugin that panics where it is told to.
+    struct Faulty {
+        id: &'static str,
+        panic_in_tick: bool,
+        ticks: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    }
+
+    impl Plugin for Faulty {
+        fn info(&self) -> Info {
+            Info {
+                id: self.id,
+                name: "Faulty",
+                icon: "puzzle",
+                description: "",
+                version: "1.0.0",
+                order: 1,
+                can_tab: false,
+            }
+        }
+        fn start(&mut self, h: &mut Host) {
+            h.map().line(
+                "mark",
+                &[[11.0, 48.0], [11.1, 48.1]],
+                shapes::Style::color(egui::Color32::RED),
+                None,
+                false,
+            );
+        }
+        fn tick(&mut self, _h: &mut Host) {
+            self.ticks.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            assert!(!self.panic_in_tick, "a plugin bug");
+        }
+        fn show(&mut self, _ui: &mut egui::Ui, _area: egui::Rect, _h: &mut Host) -> f32 {
+            0.0
+        }
+        fn mcp_take(&mut self, _token: u64) -> Option<Result<Value, String>> {
+            None
+        }
+    }
+
+    #[test]
+    fn a_plugin_that_panics_is_stopped_and_the_others_carry_on() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let (bad, good) = (
+            std::sync::Arc::new(AtomicUsize::new(0)),
+            std::sync::Arc::new(AtomicUsize::new(0)),
+        );
+        let plugins: Vec<Box<dyn Plugin>> = vec![
+            Box::new(Faulty {
+                id: "bad",
+                panic_in_tick: true,
+                ticks: bad.clone(),
+            }),
+            Box::new(Faulty {
+                id: "good",
+                panic_in_tick: false,
+                ticks: good.clone(),
+            }),
+        ];
+        let ctx = egui::Context::default();
+        let mut r = Registry::with_plugins(Server::local(1), &ctx, &json!({}), plugins);
+        r.load = None;
+        r.loaded = true;
+        let state = json!({});
+        for _ in 0..3 {
+            r.update(&ctx, &state);
+        }
+        assert_eq!(bad.load(Ordering::SeqCst), 1, "a stopped plugin is not called again");
+        assert_eq!(good.load(Ordering::SeqCst), 3);
+        assert!(r.failure(0).is_some_and(|why| why.contains("a plugin bug")));
+        assert_eq!(r.failure(1), None);
+        let out = r.take_out();
+        assert_eq!(out.notices.len(), 1, "the operator is told once");
+        assert_eq!((out.notices[0].0.as_str(), out.notices[0].1), ("Faulty", "critical"));
+        let shapes = r.take_shapes().expect("the shapes changed");
+        assert_eq!(
+            shapes.len(),
+            1,
+            "the stopped plugin's line left the map, the other one's stays"
+        );
+        // An AI client waiting on the stopped plugin gets an answer, not silence.
+        r.mcp_call("c1", "bad", "anything", &json!({}), &ctx, &state);
+        r.mcp_call("c2", "good", "anything", &json!({}), &ctx, &state);
+        let answers = r.mcp_answers(&ctx, &state);
+        assert_eq!(answers.len(), 1);
+        assert_eq!(
+            (answers[0].0.as_str(), answers[0].1.clone()),
+            ("c1", Err(STOPPED.to_string()))
+        );
+    }
+
     #[test]
     fn the_bundled_plugins_are_listed_in_the_order_of_their_manifests() {
         let ids: Vec<_> = builtin().iter().map(|p| p.info().id).collect();
-        assert_eq!(ids, ["vibration", "ssh-launcher", "schwalby", "map-entities"]);
+        assert_eq!(
+            ids,
+            [
+                "vibration",
+                "nuttx-console",
+                "ssh-launcher",
+                "schwalby",
+                "map-entities",
+                "trajectory-viewer"
+            ]
+        );
     }
 
     #[test]

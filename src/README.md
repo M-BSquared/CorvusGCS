@@ -313,6 +313,19 @@ is built for, Android included. Third party JavaScript plugins that the web
 interface loads from `~/.corvus/plugins` do not run here; Settings lists them
 as "installed, not loaded".
 
+A plugin may also be a repository of its own, checked out as a submodule under
+`plugins/<id>/` (NuttX Console and the Trajectory Viewer: `plugins/nuttx-console`,
+`plugins/trajectory-viewer`). It is the
+same kind of crate, a member of this workspace with its dependency line in
+`Cargo.toml`, and `build.rs` lists it with the bundled ones. A checkout needs
+its submodules (`git clone --recurse-submodules`, or `git submodule update
+--init`), or the build stops at the missing crate.
+
+What a plugin gets beyond its own view: `Host::events` follows push topics of
+the backend, `corvus_api::ui::term` is a terminal (screen, widget, keys) over
+a `Shell` the plugin supplies, and a plugin that panics is stopped for the
+session by the registry while the rest of the program carries on.
+
 What the operator sees is what the web interface shows:
 
 - **PLUGINS tab.** One card per plugin (icon, name, description), a click opens

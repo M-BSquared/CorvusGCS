@@ -137,6 +137,23 @@ impl Module for VehicleModule {
                 initial: Some(svc.fleet.snapshot()),
             }
         }));
+        // The MAVLink shell's output as it arrives: first what it printed so
+        // far, marked `replay`, so a reader that connects late (or again)
+        // draws the session once.
+        reg.topic(Topic::new("shell", SHELL_SSE_CAPACITY, |core, sink, _job| {
+            let Some(svc) = core.service::<VehicleService>() else {
+                return crate::Binding::none();
+            };
+            let bridge = svc.active().bridge;
+            let (id, backlog) = bridge
+                .engines()
+                .shell
+                .add_sub(move |text: &str| sink.put_fifo(json!({"text": text})));
+            crate::Binding {
+                unbind: Box::new(move || bridge.engines().shell.remove_sub(id)),
+                initial: Some(json!({"text": backlog, "replay": true})),
+            }
+        }));
         reg.config_block("battery", crate::battery::coerce_settings);
         reg.config_block("remote_id", |v| {
             v.as_object()?;
@@ -191,6 +208,7 @@ impl Module for VehicleModule {
         reg.post("/api/geofence/save", api_geofence_save);
         reg.post("/api/geofence/upload", api_geofence_upload);
         reg.post("/api/geofence/clear", api_geofence_clear);
+        reg.post("/api/geofence/read", api_geofence_read);
         reg.post("/api/mission/upload", api_mission_upload);
         reg.post("/api/mission/start", api_mission_start);
         reg.post("/api/mission/clear", api_mission_clear);
@@ -345,6 +363,9 @@ impl Module for VehicleModule {
 }
 
 // ---------------------------------------------------------------- helpers
+
+/// Shell output chunks buffered for a slow reader of the `shell` topic.
+const SHELL_SSE_CAPACITY: usize = 512;
 
 fn service(core: &Core) -> Option<Arc<VehicleService>> {
     core.service::<VehicleService>()
@@ -520,26 +541,62 @@ fn geofence_file(core: &Core) -> std::path::PathBuf {
     directory.join(geofence::FILE_NAME)
 }
 
-fn geofence_payload(svc: Option<&Arc<VehicleService>>, stored: &Value) -> Value {
-    let polygon = stored["polygon"].clone();
-    let on_vehicle = svc.and_then(|s| s.active().bridge.vehicle_fence());
-    let list = |p: &[(f64, f64)]| Value::Array(p.iter().map(|(lon, lat)| json!([lon, lat])).collect());
+/// The link a geofence request acts on: the vehicle it names, else the one
+/// being flown. None without a vehicle service; the refusal for a bad name.
+fn fence_target(core: &Core, req: &Request) -> Result<Option<Handles>, Response> {
+    match service(core) {
+        Some(svc) => target_of(&svc, req).map(Some),
+        None => Ok(None),
+    }
+}
+
+/// A corner as the vehicle stores it: degrees in steps of 1e-7.
+fn on_the_wire(polygon: &[(f64, f64)]) -> Vec<(i64, i64)> {
+    polygon
+        .iter()
+        .map(|(lon, lat)| ((lon * 1e7).round() as i64, (lat * 1e7).round() as i64))
+        .collect()
+}
+
+fn stored_polygon(stored: &Value) -> Vec<(f64, f64)> {
+    stored["polygon"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .map(|p| (p[0].as_f64().unwrap_or(0.0), p[1].as_f64().unwrap_or(0.0)))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn geofence_payload(target: Option<&Handles>, stored: &Value) -> Value {
+    let on_vehicle = target.and_then(|t| t.bridge.vehicle_fence());
+    let foreign = target.is_some_and(|t| t.bridge.vehicle_fence_foreign());
+    let same = |p: &Vec<(f64, f64)>| !foreign && on_the_wire(p) == on_the_wire(&stored_polygon(stored));
     json!({
         "ok": true,
-        "polygon": polygon,
+        "polygon": stored["polygon"],
         "show_on_map": stored["show_on_map"],
-        "on_vehicle": on_vehicle.as_ref().map_or(Value::Null, |p| json!(list(p) == polygon)),
+        "on_vehicle": on_vehicle.as_ref().map_or(Value::Null, |p| json!(same(p))),
         "vehicle_has_fence": on_vehicle.as_ref().map_or(Value::Null, |p| json!(!p.is_empty())),
         "max_vertices": geofence::MAX_VERTICES,
     })
 }
 
-fn api_geofence(core: &Core, _req: &Request) -> Response {
+fn api_geofence(core: &Core, req: &Request) -> Response {
+    let target = match fence_target(core, req) {
+        Ok(t) => t,
+        Err(r) => return r,
+    };
     let stored = geofence::load(&geofence_file(core));
-    Response::json(geofence_payload(service(core).as_ref(), &stored))
+    Response::json(geofence_payload(target.as_ref(), &stored))
 }
 
 fn api_geofence_save(core: &Core, req: &Request) -> Response {
+    let target = match fence_target(core, req) {
+        Ok(t) => t,
+        Err(r) => return r,
+    };
     let payload = req.payload();
     let path = geofence_file(core);
     let mut stored = geofence::load(&path);
@@ -560,7 +617,7 @@ fn api_geofence_save(core: &Core, req: &Request) -> Response {
     if let Err(e) = geofence::save(&stored, &path) {
         return Response::not_ok(500, &format!("could not save: {e}"));
     }
-    Response::json(geofence_payload(service(core).as_ref(), &stored))
+    Response::json(geofence_payload(target.as_ref(), &stored))
 }
 
 /// Why the bridge refused, with the status that says whose fault: 503 for a
@@ -572,38 +629,53 @@ fn mission_failure(bridge: &Bridge, fallback: &str) -> Response {
     Response::not_ok(status, &error)
 }
 
-fn api_geofence_upload(core: &Core, _req: &Request) -> Response {
+fn api_geofence_upload(core: &Core, req: &Request) -> Response {
     let stored = geofence::load(&geofence_file(core));
-    let polygon: Vec<(f64, f64)> = stored["polygon"]
-        .as_array()
-        .map(|a| {
-            a.iter()
-                .map(|p| (p[0].as_f64().unwrap_or(0.0), p[1].as_f64().unwrap_or(0.0)))
-                .collect()
-        })
-        .unwrap_or_default();
+    let polygon = stored_polygon(&stored);
     if polygon.is_empty() {
         return Response::not_ok(400, "no area has been drawn");
     }
-    let Some(svc) = service(core) else {
-        return unavailable("not connected");
+    let target = match fence_target(core, req) {
+        Ok(Some(t)) => t,
+        Ok(None) => return unavailable("not connected"),
+        Err(r) => return r,
     };
-    let bridge = svc.active().bridge;
-    if !bridge.upload_fence(&polygon) {
-        return mission_failure(&bridge, "geofence upload failed");
+    if !target.bridge.upload_fence(&polygon) {
+        return mission_failure(&target.bridge, "geofence upload failed");
     }
-    Response::json(geofence_payload(Some(&svc), &stored))
+    Response::json(geofence_payload(Some(&target), &stored))
 }
 
-fn api_geofence_clear(core: &Core, _req: &Request) -> Response {
-    let Some(svc) = service(core) else {
-        return unavailable("not connected");
+fn api_geofence_clear(core: &Core, req: &Request) -> Response {
+    let target = match fence_target(core, req) {
+        Ok(Some(t)) => t,
+        Ok(None) => return unavailable("not connected"),
+        Err(r) => return r,
     };
-    let bridge = svc.active().bridge;
-    if !bridge.clear_fence() {
-        return mission_failure(&bridge, "geofence clear failed");
+    if !target.bridge.clear_fence() {
+        return mission_failure(&target.bridge, "geofence clear failed");
     }
-    Response::json(geofence_payload(Some(&svc), &geofence::load(&geofence_file(core))))
+    Response::json(geofence_payload(Some(&target), &geofence::load(&geofence_file(core))))
+}
+
+/// Asks the vehicle which fence it holds: after a reconnect, or when another
+/// station put one there, this station does not know.
+fn api_geofence_read(core: &Core, req: &Request) -> Response {
+    let target = match fence_target(core, req) {
+        Ok(Some(t)) => t,
+        Ok(None) => return unavailable("not connected"),
+        Err(r) => return r,
+    };
+    let Some(corners) = target.bridge.download_fence() else {
+        return mission_failure(&target.bridge, "geofence download failed");
+    };
+    let mut out = geofence_payload(Some(&target), &geofence::load(&geofence_file(core)));
+    out["vehicle_polygon"] = if target.bridge.vehicle_fence_foreign() {
+        Value::Null
+    } else {
+        Value::Array(corners.iter().map(|(lon, lat)| json!([lon, lat])).collect())
+    };
+    Response::json(out)
 }
 
 // -------------------------------------------------------------- missions
@@ -691,11 +763,14 @@ fn api_mission_clear(core: &Core, req: &Request) -> Response {
     Response::json(json!({"ok": true}))
 }
 
-fn api_mission_download(core: &Core, _req: &Request) -> Response {
+fn api_mission_download(core: &Core, req: &Request) -> Response {
     let Some(svc) = service(core) else {
         return unavailable("not connected");
     };
-    let bridge = svc.active().bridge;
+    let bridge = match target_of(&svc, req) {
+        Ok(t) => t.bridge,
+        Err(r) => return r,
+    };
     let Some(result) = bridge.download_mission() else {
         return mission_failure(&bridge, "mission download failed");
     };

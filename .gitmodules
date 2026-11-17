@@ -1,0 +1,6 @@
+[submodule "plugins/nuttx-console"]
+	path = plugins/nuttx-console
+	url = https://github.com/M-BSquared/corvus-nuttx-console.git
+[submodule "plugins/trajectory-viewer"]
+	path = plugins/trajectory-viewer
+	url = https://github.com/M-BSquared/corvus-trajectory-viewer.git

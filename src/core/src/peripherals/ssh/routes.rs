@@ -191,6 +191,7 @@ fn api_connect(core: &Core, req: &Request) -> Response {
         password: password.filter(|p| !p.is_empty()),
         key_path: key_path.filter(|p| !p.is_empty()),
         ssh_dir: None,
+        keepalive: None,
     };
     let files = host_key_files(core);
     let (n, h) = (name.clone(), host.clone());
@@ -407,6 +408,7 @@ fn api_run(core: &Core, req: &Request) -> Response {
             password,
             key_path,
             ssh_dir: None,
+            keepalive: None,
         },
         timeout: 20.0,
         stdin_data: None,
@@ -466,6 +468,7 @@ fn api_power(core: &Core, req: &Request) -> Response {
             password,
             key_path,
             ssh_dir: None,
+            keepalive: None,
         },
         timeout: 20.0,
         stdin_data: sudo_password.map(|p| format!("{p}\n")),

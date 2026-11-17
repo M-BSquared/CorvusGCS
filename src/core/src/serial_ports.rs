@@ -157,6 +157,9 @@ pub fn classify_serial_device(device: &str, hwid: &str, description: &str) -> &'
 pub const SERIAL_LINES: [&str; 3] = ["on", "off", "default"];
 pub const SERIAL_FIRMWARE_HINTS: [&str; 1] = ["betaflight"];
 pub const SERIAL_LINKS: [&str; 1] = ["elrs"];
+/// How much telemetry an ExpressLRS link carries, when it is not the usual:
+/// `low` for the long range packet rates, `high` for the fast ones.
+pub const SERIAL_BUDGETS: [&str; 2] = ["low", "high"];
 
 /// What a `serial:` string says beyond the device and the baud.
 ///
@@ -171,6 +174,9 @@ pub struct SerialOptions {
     pub rts: Option<bool>,
     pub firmware: String,
     pub link: String,
+    /// `tlm`: the telemetry budget of the link, one of `SERIAL_BUDGETS` or
+    /// empty for the radio's usual.
+    pub telemetry: String,
 }
 
 impl SerialOptions {
@@ -225,6 +231,7 @@ pub fn parse_serial_options(conn: &str) -> SerialOptions {
     let pairs = parse_query(conn);
     let firmware = pair(&pairs, "fc").unwrap_or("");
     let link = pair(&pairs, "link").unwrap_or("");
+    let telemetry = pair(&pairs, "tlm").unwrap_or("");
     SerialOptions {
         dtr: line_state(pair(&pairs, "dtr")),
         rts: line_state(pair(&pairs, "rts")),
@@ -235,6 +242,11 @@ pub fn parse_serial_options(conn: &str) -> SerialOptions {
         },
         link: if SERIAL_LINKS.contains(&link) {
             link.to_string()
+        } else {
+            String::new()
+        },
+        telemetry: if SERIAL_BUDGETS.contains(&telemetry) {
+            telemetry.to_string()
         } else {
             String::new()
         },
@@ -259,6 +271,10 @@ pub fn validate_serial_options(conn: &str) -> Result<(), String> {
     if !link.is_empty() && !SERIAL_LINKS.contains(&link) {
         return Err(format!("link must be one of: {}", SERIAL_LINKS.join(", ")));
     }
+    let tlm = pair(&pairs, "tlm").unwrap_or("");
+    if !tlm.is_empty() && !SERIAL_BUDGETS.contains(&tlm) {
+        return Err(format!("tlm must be one of: {}", SERIAL_BUDGETS.join(", ")));
+    }
     Ok(())
 }
 
@@ -275,6 +291,9 @@ pub fn serial_query(options: &SerialOptions) -> String {
     }
     if !options.firmware.is_empty() {
         parts.push(format!("fc={}", options.firmware));
+    }
+    if !options.telemetry.is_empty() {
+        parts.push(format!("tlm={}", options.telemetry));
     }
     if parts.is_empty() {
         String::new()
@@ -446,6 +465,25 @@ pub fn same_port(a: &str, b: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_telemetry_budget_is_read_checked_and_written_last() {
+        let conn = "serial:/dev/ttyUSB0:460800?link=elrs&dtr=off&rts=off&tlm=low";
+        let o = parse_serial_options(conn);
+        assert_eq!((o.link.as_str(), o.telemetry.as_str()), ("elrs", "low"));
+        assert_eq!(serial_query(&o), "?link=elrs&dtr=off&rts=off&tlm=low");
+        assert!(validate_serial_options(conn).is_ok());
+        assert_eq!(parse_serial_options("serial:x:1?tlm=nonsense").telemetry, "");
+        assert_eq!(
+            validate_serial_options("serial:x:1?tlm=nonsense").unwrap_err(),
+            "tlm must be one of: low, high"
+        );
+        assert_eq!(
+            serial_query(&parse_serial_options("serial:x:1?link=elrs")),
+            "?link=elrs",
+            "nothing is added by itself"
+        );
+    }
 
     #[test]
     fn names_of_one_node_are_one_port() {

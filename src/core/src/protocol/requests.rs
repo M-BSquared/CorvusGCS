@@ -29,9 +29,33 @@ const MSG_ID_AUTOPILOT_VERSION: i64 = 148;
 /// from 4.5) and silently drops everything else.
 pub const GCS_AUTHORITY_PARAMS: [&str; 2] = ["SYSID_MYGCS", "MAV_GCS_SYSID"];
 
+/// How much telemetry a link carries, which decides what is asked of the
+/// vehicle: asking for more than the link takes fills its buffers with stale
+/// attitude while the battery warning waits behind it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LinkBudget {
+    /// USB, UDP, TCP: no practical limit.
+    Wide,
+    /// A serial telemetry radio: a 57 kbps SiK link, or an ExpressLRS link at
+    /// its fast packet rates (333 Hz Full and up, about 1200 B/s and more).
+    Radio,
+    /// ExpressLRS at its usual rates (250 Hz, D250: about 600 B/s down).
+    Narrow,
+    /// ExpressLRS at its long range rates (50 to 150 Hz: about 100 to 450 B/s).
+    Thin,
+}
+
 /// What the requests ask of the bridge they run on.
 pub trait RequestsHost: Send + Sync {
     fn is_slow_link(&self) -> bool;
+    /// The link's telemetry budget; a serial link is a radio unless it says more.
+    fn link_budget(&self) -> LinkBudget {
+        if self.is_slow_link() {
+            LinkBudget::Radio
+        } else {
+            LinkBudget::Wide
+        }
+    }
     fn has_connection(&self) -> bool;
     /// Sends one message under the link's send lock. `Ok(false)` is "the link
     /// is no longer this bridge's".
@@ -78,6 +102,25 @@ fn msg_id(name: &str) -> i64 {
 /// ArduPilot; without it a stack that needs this fallback had no battery, no
 /// GPS fix and no mission progress at all.
 pub fn stream_rates(slow: bool) -> Vec<(i64, i64)> {
+    stream_rates_for(if slow { LinkBudget::Radio } else { LinkBudget::Wide })
+}
+
+/// `stream_rates` for a link budget: the narrow ones ask for a fraction of a
+/// radio's rates, never less than 1 Hz for a stream that is asked for at all.
+pub fn stream_rates_for(budget: LinkBudget) -> Vec<(i64, i64)> {
+    let slow = budget != LinkBudget::Wide;
+    let divisor = match budget {
+        LinkBudget::Wide | LinkBudget::Radio => 1,
+        LinkBudget::Narrow => 2,
+        LinkBudget::Thin => 5,
+    };
+    stream_rates_table(slow)
+        .into_iter()
+        .map(|(stream, rate)| (stream, if rate == 0 { 0 } else { (rate / divisor).max(1) }))
+        .collect()
+}
+
+fn stream_rates_table(slow: bool) -> Vec<(i64, i64)> {
     let s = |name: &str, fallback: i64, rate: i64| (data_stream(name, fallback), rate);
     if slow {
         vec![
@@ -107,7 +150,48 @@ pub fn stream_rates(slow: bool) -> Vec<(i64, i64)> {
 /// demand only. HEARTBEAT is absent on purpose: it is 1 Hz on every stack by
 /// definition, and PX4 answers an interval request for it with FAILED.
 pub fn message_intervals(slow: bool) -> Vec<(i64, i64)> {
+    message_intervals_for(if slow { LinkBudget::Radio } else { LinkBudget::Wide })
+}
+
+/// `message_intervals` for a link budget. The two ExpressLRS budgets ask for
+/// about 520 and 230 bytes a second with the heartbeat, which fit the link's
+/// 250 Hz and 100 to 150 Hz packet rates with room for a STATUSTEXT. What is
+/// kept at every budget is what a pilot flies by: attitude, position, speed
+/// and climb, the battery, the fix, and home.
+pub fn message_intervals_for(budget: LinkBudget) -> Vec<(i64, i64)> {
     let m = |name: &str, us: i64| (msg_id(name), us);
+    match budget {
+        LinkBudget::Narrow => {
+            return vec![
+                m("ATTITUDE", 250_000),
+                m("GLOBAL_POSITION_INT", 500_000),
+                m("VFR_HUD", 500_000),
+                m("SYS_STATUS", 1_000_000),
+                m("GPS_RAW_INT", 1_000_000),
+                m("HOME_POSITION", 5_000_000),
+                m("EXTENDED_SYS_STATE", 1_000_000),
+                m("BATTERY_STATUS", 2_000_000),
+                m("MISSION_CURRENT", 1_000_000),
+                m("SYSTEM_TIME", 2_000_000),
+            ]
+        }
+        LinkBudget::Thin => {
+            return vec![
+                m("ATTITUDE", 500_000),
+                m("GLOBAL_POSITION_INT", 1_000_000),
+                m("VFR_HUD", 1_000_000),
+                m("SYS_STATUS", 2_000_000),
+                m("GPS_RAW_INT", 2_000_000),
+                m("HOME_POSITION", 10_000_000),
+                m("EXTENDED_SYS_STATE", 2_000_000),
+                m("BATTERY_STATUS", 5_000_000),
+                m("MISSION_CURRENT", 2_000_000),
+                m("SYSTEM_TIME", 5_000_000),
+            ]
+        }
+        LinkBudget::Wide | LinkBudget::Radio => {}
+    }
+    let slow = budget == LinkBudget::Radio;
     if slow {
         vec![
             m("ATTITUDE", 100_000),
@@ -213,7 +297,7 @@ impl RequestsEngine {
         if host.request_sent() || !host.has_connection() {
             return;
         }
-        for (stream, rate) in stream_rates(host.is_slow_link()) {
+        for (stream, rate) in stream_rates_for(host.link_budget()) {
             if rate == 0 {
                 continue;
             }
@@ -279,7 +363,7 @@ impl RequestsEngine {
     /// here is an answer the loop acts on, not a failure the operator caused.
     pub fn request_message_intervals(&self, host: &dyn RequestsHost) {
         let mut silent = 0;
-        for (msg_id, interval_us) in message_intervals(host.is_slow_link()) {
+        for (msg_id, interval_us) in message_intervals_for(host.link_budget()) {
             let (_ok, result) = self.set_message_interval(host, msg_id, interval_us, true);
             if result == -2 {
                 // Link torn down under us; the next connect starts over.
@@ -413,4 +497,87 @@ fn link_error(message: &str) -> Map<String, Value> {
     let mut m = Map::new();
     m.insert("link_error".into(), json!(message));
     m
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Bytes a second a budget asks for: every message at its interval with
+    /// the 12 bytes a MAVLink 2 frame adds, and the 1 Hz heartbeat.
+    fn bytes_per_second(budget: LinkBudget) -> f64 {
+        let frame = |name: &str| message_by_name(name, Wire::V2).map_or(0, |m| m.wire_len + 12) as f64;
+        let by_id = |id: i64| {
+            [
+                "ATTITUDE",
+                "GLOBAL_POSITION_INT",
+                "VFR_HUD",
+                "SYS_STATUS",
+                "GPS_RAW_INT",
+                "HOME_POSITION",
+                "EXTENDED_SYS_STATE",
+                "BATTERY_STATUS",
+                "MISSION_CURRENT",
+                "SYSTEM_TIME",
+                "RC_CHANNELS",
+            ]
+            .into_iter()
+            .find(|n| msg_id(n) == id)
+            .map_or(0.0, frame)
+        };
+        frame("HEARTBEAT")
+            + message_intervals_for(budget)
+                .into_iter()
+                .map(|(id, us)| by_id(id) * 1e6 / us as f64)
+                .sum::<f64>()
+    }
+
+    #[test]
+    fn each_budget_fits_the_link_it_is_for() {
+        // ExpressLRS gives about 590 B/s down at 250 Hz and about 350 to 435
+        // at 100 Hz Full and 150 Hz; a radio at its fast rates about 1200 and up.
+        let (radio, narrow, thin) = (
+            bytes_per_second(LinkBudget::Radio),
+            bytes_per_second(LinkBudget::Narrow),
+            bytes_per_second(LinkBudget::Thin),
+        );
+        assert!(radio > 590.0 && radio < 1200.0, "{radio}");
+        assert!(narrow < 560.0 && narrow > 300.0, "{narrow}");
+        assert!(thin < 300.0 && thin > 100.0, "{thin}");
+        assert!(bytes_per_second(LinkBudget::Wide) > radio);
+    }
+
+    #[test]
+    fn a_narrow_link_still_gets_what_a_pilot_flies_by() {
+        let ids = |b: LinkBudget| -> Vec<i64> { message_intervals_for(b).into_iter().map(|(id, _)| id).collect() };
+        for name in [
+            "ATTITUDE",
+            "GLOBAL_POSITION_INT",
+            "VFR_HUD",
+            "SYS_STATUS",
+            "GPS_RAW_INT",
+            "HOME_POSITION",
+            "BATTERY_STATUS",
+        ] {
+            for budget in [LinkBudget::Narrow, LinkBudget::Thin] {
+                assert!(ids(budget).contains(&msg_id(name)), "{name} at {budget:?}");
+            }
+        }
+        // The tables of old are what they were.
+        assert_eq!(message_intervals(true), message_intervals_for(LinkBudget::Radio));
+        assert_eq!(message_intervals(false), message_intervals_for(LinkBudget::Wide));
+        assert_eq!(stream_rates(true), stream_rates_for(LinkBudget::Radio));
+        // The legacy streams shrink with the budget and never to nothing.
+        let rate = |b: LinkBudget, i: usize| stream_rates_for(b)[i].1;
+        assert_eq!(
+            (
+                rate(LinkBudget::Radio, 2),
+                rate(LinkBudget::Narrow, 2),
+                rate(LinkBudget::Thin, 2)
+            ),
+            (10, 5, 2)
+        );
+        assert_eq!(rate(LinkBudget::Thin, 0), 1);
+        assert_eq!(rate(LinkBudget::Thin, 5), 0, "a stream that is off stays off");
+    }
 }

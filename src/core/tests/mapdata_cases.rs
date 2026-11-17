@@ -1009,6 +1009,7 @@ mod downloads {
             submit_pause: 0.0,
             fetch_timeout: 3.0,
             batch_seconds: 0.2,
+            retry_pause: 0.05,
         }
     }
 
@@ -1142,6 +1143,61 @@ mod downloads {
     }
 
     #[test]
+    fn a_tile_the_network_lost_is_asked_for_again_once_the_rest_is_in() {
+        // The server is busy for the first two requests of every tile, which
+        // is all a tile gets in the first pass; the round after gets it.
+        let asked: Arc<Mutex<std::collections::HashMap<String, usize>>> = Arc::default();
+        let a2 = asked.clone();
+        let stub = Stub::start(move |req| {
+            let mut asked = a2.lock().unwrap();
+            let n = asked.entry(req.target.clone()).or_insert(0);
+            *n += 1;
+            if *n <= 2 {
+                Reply::new(502, "text/plain", "busy")
+            } else {
+                Reply::new(200, "image/png", PNG)
+            }
+        });
+        let (cache, dl, tpl) = make("lost", &stub);
+        let st = finish(&dl, &dl.start("osm", &tpl, BOX, 9, 10, None, ""));
+        let total = st["total"].as_i64().unwrap();
+        assert_eq!(
+            (st["state"].as_str(), st["done"].as_i64(), st["failed"].as_i64()),
+            (Some("done"), Some(total), Some(0)),
+            "{st}"
+        );
+        assert_eq!(cache.stats()["count"].as_i64(), Some(total));
+        assert!(asked.lock().unwrap().values().all(|n| *n == 3));
+        dl.shutdown();
+
+        // A server that stays down: the rounds end, and every tile is counted once.
+        let stub = Stub::start(|_| Reply::new(503, "text/plain", "down"));
+        let (_cache, dl, tpl) = make("down", &stub);
+        let st = finish(&dl, &dl.start("osm", &tpl, BOX, 9, 9, None, ""));
+        assert_eq!(st["state"], "failed", "{st}");
+        assert_eq!(st["failed"], st["total"]);
+        assert_eq!(
+            stub.count() as i64,
+            st["total"].as_i64().unwrap() * 6,
+            "two tries in the first pass and in each of the two rounds"
+        );
+        dl.shutdown();
+    }
+
+    #[test]
+    fn ended_jobs_are_forgotten_beyond_a_bound() {
+        let stub = Stub::start(|_| Reply::new(200, "image/png", PNG));
+        let (_cache, dl, tpl) = make("bound", &stub);
+        let first = dl.start("osm", &tpl, BOX, 12, 9, None, "");
+        for _ in 0..80 {
+            dl.start("osm", &tpl, BOX, 12, 9, None, "");
+        }
+        assert_eq!(dl.list_jobs().len(), 64);
+        assert!(dl.status(&first).is_none(), "the oldest went first");
+        dl.shutdown();
+    }
+
+    #[test]
     fn failures_are_counted_and_all_failed_is_failed_not_done() {
         let stub = Stub::start(|_| Reply::new(404, "text/plain", "no"));
         let (_cache, dl, tpl) = make("fail", &stub);
@@ -1229,7 +1285,7 @@ mod downloads {
         let (_cache, dl, tpl) = make("err500", &stub);
         let st = finish(&dl, &dl.start("osm", &tpl, (8.5, 47.3, 8.5, 47.3), 9, 9, None, ""));
         assert_eq!(st["state"], "failed");
-        assert_eq!(stub.count(), 2, "one retry, no more");
+        assert_eq!(stub.count(), 6, "one retry in a pass, and two rounds after the first");
         dl.shutdown();
     }
 

@@ -142,6 +142,7 @@ const ICONS: &[(&str, &str)] = &[
     ("file-clock", "FileClock"),
     ("arrow-right", "ArrowRight"),
     ("chart-spline", "ChartSpline"),
+    ("spline", "Spline"),
     ("plane-takeoff", "PlaneTakeoff"),
     ("plane-landing", "PlaneLanding"),
     ("timer", "Timer"),

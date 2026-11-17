@@ -14,6 +14,10 @@ use super::hostkeys::{self, Decision, HostKeyFiles};
 
 /// The connect, banner and login limit of paramiko's calls here (`timeout=8`).
 pub const TIMEOUT_S: u64 = 8;
+/// A keepalive goes out after this long without a byte from the host, and the
+/// session ends once this many in a row went unanswered.
+pub const KEEPALIVE_S: u64 = 15;
+pub const KEEPALIVE_MISSES: usize = 3;
 
 /// What a failed connect is, for the operator's wording and for `auth_failed`.
 #[derive(Debug, Clone)]
@@ -52,8 +56,8 @@ impl ConnectError {
     }
 }
 
-/// How to log in: a key file, a password, or neither (then the agent and the
-/// default key files are tried, as paramiko does).
+/// How to log in: a key file (the password is then its passphrase), a password,
+/// or neither (then the default key files are tried).
 #[derive(Debug, Clone, Default)]
 pub struct Login {
     pub username: String,
@@ -62,6 +66,9 @@ pub struct Login {
     /// Where the default keys are looked for when there is no password and no
     /// key file; `None` is `~/.ssh`.
     pub ssh_dir: Option<std::path::PathBuf>,
+    /// How long the host may stay silent before a keepalive is sent; `None`
+    /// is `KEEPALIVE_S`.
+    pub keepalive: Option<Duration>,
 }
 
 /// The host key decision, shared between the handler and the connect call.
@@ -132,7 +139,10 @@ async fn open_tcp(host: &str, port: u16) -> Result<TcpStream, ConnectError> {
     let mut timed_out = false;
     for addr in addrs {
         match tokio::time::timeout(Duration::from_secs(TIMEOUT_S), TcpStream::connect(addr)).await {
-            Ok(Ok(s)) => return Ok(s),
+            Ok(Ok(s)) => {
+                let _ = s.set_nodelay(true);
+                return Ok(s);
+            }
             Ok(Err(e)) => errors.push((addr, e)),
             Err(_) => timed_out = true,
         }
@@ -209,8 +219,14 @@ pub async fn connect(
         files: files.clone(),
         verdict: Arc::clone(&verdict),
     };
+    // A companion computer is reached over the aircraft's radio or Wi-Fi: when
+    // that drops, TCP alone keeps a silent session "connected" for many minutes.
+    // The keepalive ends it after about a minute without an answer. No delay on
+    // the socket, as paramiko sets it, so a keystroke is not held back.
     let config = Arc::new(client::Config {
         inactivity_timeout: None,
+        keepalive_interval: Some(login.keepalive.unwrap_or(Duration::from_secs(KEEPALIVE_S))),
+        keepalive_max: KEEPALIVE_MISSES,
         ..client::Config::default()
     });
     let opened = tokio::time::timeout(
@@ -233,8 +249,17 @@ pub async fn connect(
     let user = login.username.clone();
     let auth = async {
         if let Some(key_path) = &login.key_path {
-            let key = russh::keys::load_secret_key(expand_user(key_path), None)
-                .map_err(|e| ConnectError::new(e.to_string()))?;
+            // A key file with a passphrase: the password beside it opens the
+            // key, as paramiko reads the pair. It is never sent to the host.
+            let path = expand_user(key_path);
+            let passphrase = login.password.as_deref().filter(|p| !p.is_empty());
+            let key = match russh::keys::load_secret_key(&path, None) {
+                Ok(key) => key,
+                Err(plain) => match passphrase {
+                    Some(p) => russh::keys::load_secret_key(&path, Some(p)).map_err(|e| key_file_error(&e))?,
+                    None => return Err(key_file_error(&plain)),
+                },
+            };
             let hash = session.best_supported_rsa_hash().await.ok().flatten().flatten();
             let r = session
                 .authenticate_publickey(user.clone(), PrivateKeyWithHashAlg::new(Arc::new(key), hash))
@@ -324,5 +349,17 @@ fn key_failure(
             russh::Error::Disconnect | russh::Error::HUP => ConnectError::new("Error reading SSH protocol banner"),
             other => ConnectError::new(other.to_string()),
         },
+    }
+}
+
+/// Why a key file could not be used, in the operator's words where the cause
+/// is one they can fix.
+fn key_file_error(e: &russh::keys::Error) -> ConnectError {
+    match e {
+        russh::keys::Error::KeyIsEncrypted => ConnectError::auth(
+            "The key file is protected by a passphrase. Enter it as the password of this connection.",
+        ),
+        russh::keys::Error::IO(io) => ConnectError::new(format!("The key file could not be read: {io}")),
+        other => ConnectError::new(format!("The key file could not be used: {other}")),
     }
 }

@@ -57,6 +57,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          submodules: true
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: . -> target
@@ -86,6 +88,8 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          submodules: true
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: . -> target
@@ -101,6 +105,8 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v5
+        with:
+          submodules: true
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: . -> target
@@ -159,6 +165,8 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v5
+        with:
+          submodules: true
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: . -> target
@@ -209,6 +217,8 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          submodules: true
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: . -> target
@@ -234,6 +244,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          submodules: true
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -259,6 +271,8 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v5
+        with:
+          submodules: true
       - uses: actions/download-artifact@v7
         with:
           path: artifacts

@@ -15,7 +15,7 @@
 
 <div align="center">
   <!-- corvus:version-badge -->
-  <img src="https://img.shields.io/badge/Version-2026.11.82-f7ebe1?style=for-the-badge" height="28" alt="Version 2026.11.82" />
+  <img src="https://img.shields.io/badge/Version-2026.11.83-f7ebe1?style=for-the-badge" height="28" alt="Version 2026.11.83" />
   <img width="8" />
   <a href="https://www.rust-lang.org/" target="_blank"><img src="https://img.shields.io/badge/%E2%80%8B-Rust-CE412B?logo=rust&logoColor=white&style=for-the-badge" height="28" alt="Rust" /></a>
   <img width="8" />
@@ -259,6 +259,13 @@ rail opens. It shows while a Betaflight aircraft is connected, a serial link
 whose Flight controller is set to Betaflight, or always if you turn on Always
 show Betaflight in Settings. See
 [ExpressLRS and Betaflight](https://m-bsquared.github.io/CorvusGCS/guide/hardware.html#expresslrs).
+
+**ExpressLRS** carries MAVLink for PX4 and ArduPilot as well, in both
+directions. Choose ExpressLRS under Radio in the Link panel and set Telemetry
+to the packet rate of the radio: Corvus then asks the aircraft for as much
+telemetry as the link carries, so the map and the instruments stay current.
+The radio and PX4 settings are in
+[ExpressLRS with PX4](https://m-bsquared.github.io/CorvusGCS/guide/hardware.html#elrs-px4).
 
 Corvus detects the stack and firmware version on connect, loads the matching
 parameter set, and refuses to send a command or write a parameter the

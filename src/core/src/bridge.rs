@@ -35,7 +35,7 @@ use crate::protocol::missions::{
     with_mission_home_slot, MissionItem,
 };
 use crate::protocol::receive::{is_vehicle_heartbeat, Frame, Payload, ReceiveHost, ReceivePath, StoreFlags};
-use crate::protocol::requests::{RequestsEngine, RequestsHost};
+use crate::protocol::requests::{LinkBudget, RequestsEngine, RequestsHost};
 use crate::protocol::rtcm::{RtcmHost, RtcmInjector};
 use crate::protocol::status::{StatusEngine, StatusHost, StatusText};
 use crate::protocol::targeted;
@@ -98,6 +98,22 @@ const VALID_PREFIXES: [&str; 7] = ["udp:", "udpin:", "udpout:", "udpbcast:", "tc
 
 /// Why `connection` is not a usable connection string, or Ok. Checked before a
 /// working link is torn down for it.
+/// How much telemetry the link behind `connection` carries. A serial link is a
+/// radio; an ExpressLRS one is narrower unless its `tlm` option says its
+/// packet rate is a fast one (`high`) or a long range one (`low`).
+pub fn link_budget_of(connection: &str) -> LinkBudget {
+    if !connection.starts_with("serial:") {
+        return LinkBudget::Wide;
+    }
+    let options = crate::serial_ports::parse_serial_options(connection);
+    match (options.link.as_str(), options.telemetry.as_str()) {
+        ("elrs", "low") => LinkBudget::Thin,
+        ("elrs", "high") => LinkBudget::Radio,
+        ("elrs", _) => LinkBudget::Narrow,
+        _ => LinkBudget::Radio,
+    }
+}
+
 pub fn validate_connection(connection: &str) -> Result<(), String> {
     if connection.is_empty() {
         return Err("connection must be a non-empty string".into());
@@ -1202,7 +1218,7 @@ impl TelemetryHost for Shared {
         self.requests.set_message_interval(self, msg_id, interval_us, false).0
     }
     fn message_interval(&self, msg_id: i64) -> i64 {
-        crate::protocol::requests::message_intervals(RequestsHost::is_slow_link(self))
+        crate::protocol::requests::message_intervals_for(RequestsHost::link_budget(self))
             .into_iter()
             .find(|(id, _)| *id == msg_id)
             .map_or(0, |(_, us)| us)
@@ -1265,6 +1281,9 @@ impl RequestsHost for Shared {
         // A serial link is a radio until proven otherwise: guessing fast on a
         // 57 kbps SiK link saturates it.
         self.is_serial()
+    }
+    fn link_budget(&self) -> LinkBudget {
+        link_budget_of(&self.connection())
     }
     fn has_connection(&self) -> bool {
         self.conn().is_some()
@@ -2624,8 +2643,8 @@ impl Bridge {
             .lower_mission_plan(self.shared.as_ref(), items)
     }
 
-    /// The area last put on the vehicle over this link, `Some(empty)` after a
-    /// clear, None when this link has not transferred one.
+    /// The area the vehicle holds as far as this link knows: the one last put
+    /// on it or read from it, `Some(empty)` for none, None while unknown.
     pub fn vehicle_fence(&self) -> Option<Vec<(f64, f64)>> {
         self.shared.engines.missions.vehicle_fence()
     }
@@ -2664,6 +2683,16 @@ impl Bridge {
 
     pub fn clear_fence(&self) -> bool {
         self.shared.engines.missions.clear_fence(self.shared.as_ref())
+    }
+
+    /// Reads the fence the vehicle holds; None with the reason as the last error.
+    pub fn download_fence(&self) -> Option<Vec<(f64, f64)>> {
+        self.shared.engines.missions.download_fence(self.shared.as_ref())
+    }
+
+    /// True when the fence read from the vehicle is not one area drawn here.
+    pub fn vehicle_fence_foreign(&self) -> bool {
+        self.shared.engines.missions.vehicle_fence_foreign()
     }
 
     /// Installs the battery estimator settings and returns them resolved.
@@ -2731,6 +2760,28 @@ mod tests {
         let elrs = "serial:/dev/ttyUSB0:460800?link=elrs&dtr=off&rts=off&fc=betaflight";
         assert!(validate_connection(elrs).is_ok());
         assert_eq!(split_serial_connection(elrs), ("/dev/ttyUSB0".to_string(), 460_800));
+        // What is asked of the vehicle follows what the link carries.
+        assert_eq!(link_budget_of("udp:0.0.0.0:14550"), LinkBudget::Wide);
+        assert_eq!(link_budget_of("serial:/dev/ttyUSB0:57600"), LinkBudget::Radio);
+        assert_eq!(link_budget_of(elrs), LinkBudget::Narrow);
+        assert_eq!(
+            link_budget_of("serial:/dev/ttyUSB0:460800?link=elrs&tlm=low"),
+            LinkBudget::Thin
+        );
+        assert_eq!(
+            link_budget_of("serial:/dev/ttyUSB0:460800?link=elrs&tlm=high"),
+            LinkBudget::Radio
+        );
+        assert_eq!(
+            link_budget_of("serial:/dev/ttyUSB0:57600?tlm=low"),
+            LinkBudget::Radio,
+            "the budget is an ExpressLRS setting"
+        );
+        assert!(validate_connection("serial:/dev/ttyUSB0:460800?link=elrs&tlm=low").is_ok());
+        assert_eq!(
+            validate_connection("serial:/dev/ttyUSB0:460800?link=elrs&tlm=fast").unwrap_err(),
+            "tlm must be one of: low, high"
+        );
         assert_eq!(
             validate_connection("serial:/dev/ttyUSB0:460800?rts=sometimes"),
             Err("rts must be one of: on, off, default".into())

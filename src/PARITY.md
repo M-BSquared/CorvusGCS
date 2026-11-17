@@ -182,7 +182,7 @@ The rows were found by reading the CSS and the scripts, then the native code. On
 
 | Feature | Web file | Native file | Status |
 | --- | --- | --- | --- |
-| Link: status, recent, suggestion, new link (serial, network, presets), auto connect | link.js | panel/link.rs | done: the Radio select (MAVLink or ExpressLRS, which also picks 460800 baud), baud 460800, the DTR and RTS choices and the flight controller hint with the Betaflight note write `?link=elrs&dtr=off&rts=off&fc=betaflight` after the serial string, in the core's own order; a unit test reads the string back through `serial_ports::parse_serial_options` |
+| Link: status, recent, suggestion, new link (serial, network, presets), auto connect | link.js | panel/link.rs | done: the Radio select (MAVLink or ExpressLRS, which also picks 460800 baud), baud 460800, the DTR and RTS choices and the flight controller hint with the Betaflight note write `?link=elrs&dtr=off&rts=off&fc=betaflight&tlm=low` after the serial string, in the core's own order; the Telemetry select of an ExpressLRS link (`tlm`) is native only and sets the stream rates asked of the aircraft; a unit test reads the string back through `serial_ports::parse_serial_options` |
 | Share link (forward to a second station) | link.js | panel/link.rs | done |
 | Console: filter, pause, copy, save, clear, input with history, jump to latest | panel.js | panel/console.rs | done |
 | SSH tab and saved connections, terminal | panel.js, ssh-term.js | panel/mod.rs, term/ | done |

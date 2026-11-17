@@ -206,22 +206,92 @@
   not supported.
 </p>
 
-<h2 id="expresslrs">ExpressLRS and Betaflight</h2>
+<h2 id="expresslrs">ExpressLRS: PX4, ArduPilot and Betaflight</h2>
 <p>
   An ExpressLRS link that carries MAVLink shows where the aircraft is and how
-  it is doing, on the map and in the instruments, like any other radio. This is
-  <strong>Betaflight compatible</strong>: Betaflight sends MAVLink telemetry on
-  a serial port, an ExpressLRS receiver passes it down the link, and the
-  transmitter module hands it to Corvus over USB. Betaflight support is in
-  <strong>beta</strong>: what is described here works, and it has been tested
-  against scripted aircraft only, not yet against real hardware.
+  it is doing, on the map and in the instruments, like any other radio. The
+  receiver on the aircraft sits on a serial port of the flight controller, the
+  link carries MAVLink beside the stick commands, and the transmitter module
+  hands it to Corvus over USB or over WiFi. With <strong>PX4</strong> and
+  <strong>ArduPilot</strong> the link works in both directions: telemetry
+  down, and commands, parameters and missions up. <strong>Betaflight</strong>
+  sends telemetry only. All of this has been tested against scripted aircraft
+  only, not yet against real hardware, and Betaflight support is in
+  <strong>beta</strong>.
 </p>
 
-<h3 id="elrs-connect">Connecting</h3>
+<h3 id="elrs-px4">ExpressLRS with PX4</h3>
+<p>
+  Three things have to agree: the radio, the autopilot and Corvus. The radio
+  and autopilot settings below are the ones the
+  <a href="https://www.expresslrs.org/software/mavlink/">ExpressLRS MAVLink guide</a>
+  gives.
+</p>
 <ol>
-  <li>Plug the transmitter module in over USB and set it to pass MAVLink telemetry through.</li>
-  <li>In the Link panel, pick the port and choose <strong>ExpressLRS (MAVLink)</strong> under <strong>Radio</strong>. The baud rate becomes 460800, the usual MAVLink rate of ExpressLRS. Change it if you set another one in the module.</li>
-  <li>Leave <strong>Flight controller</strong> on <strong>Betaflight</strong> for a Betaflight aircraft. A PX4 or ArduPilot aircraft behind the same link names itself and is detected as that.</li>
+  <li><strong>The radio.</strong> MAVLink needs ExpressLRS 3.5.0 or newer on transmitter and receiver, both ESP based (the STM32 ones cannot do it). With the receiver switched off, set <strong>Link Mode</strong> to <strong>MAVLink</strong> in the ExpressLRS Lua script. On ExpressLRS 3 also set the receiver's <strong>serial protocol</strong> to <strong>MAVLink</strong> under <strong>Other Devices</strong>; ExpressLRS 4 does that by itself. MAVLink mode fixes the telemetry ratio at 1:2.</li>
+  <li><strong>The wiring.</strong> Connect the receiver to a free telemetry port of the flight controller, TELEM2 for instance: receiver TX to port RX, receiver RX to port TX.</li>
+  <li><strong>PX4.</strong> Connect the flight controller over USB once and set, on the <a href="parameters.html">Parameters</a> page of Setup:
+    <ul>
+      <li><code>MAV_0_CONFIG</code> to the port the receiver is on (<strong>TELEM 2</strong>), or use <code>MAV_1_CONFIG</code> when TELEM1 already carries another radio,</li>
+      <li><code>SER_TEL2_BAUD</code> (the baud rate of that port) to <strong>460800 8N1</strong>,</li>
+      <li><code>MAV_0_RATE</code> (or <code>MAV_1_RATE</code>, matching the instance above) to <strong>9600</strong> B/s.</li>
+    </ul>
+    Then reboot the flight controller: PX4 reads these at start.</li>
+  <li><strong>Corvus.</strong> Plug the transmitter module in over USB. In the Link panel pick its port, choose <strong>ExpressLRS (MAVLink)</strong> under <strong>Radio</strong> and set <strong>Telemetry</strong> to match the packet rate of the radio (see below). The baud rate becomes 460800, the fixed MAVLink rate of ExpressLRS. Press <strong>Connect</strong>. PX4 names itself in its heartbeat, so <strong>Flight controller</strong> under <strong>Line options</strong> stays on <strong>Detect</strong>.</li>
+</ol>
+<p>
+  A transmitter module with a TX Backpack (firmware 1.5.0 or newer) can also
+  hand the telemetry over WiFi: set <strong>Backpack</strong>,
+  <strong>Telemetry</strong> to <strong>WiFi</strong> in the Lua script, join
+  the <em>ExpressLRS TX Backpack</em> network with the laptop, and Corvus finds
+  the aircraft on the usual ground station port, <code>udp:0.0.0.0:14550</code>,
+  the first of the common endpoints under <strong>UDP / TCP</strong>. No
+  setting in Corvus is needed for that, and the Telemetry choice below does
+  not apply: over WiFi Corvus cannot tell the radio behind it, so it asks for
+  its full rates and the autopilot's <code>MAV_0_RATE</code> is what keeps the
+  link from filling up.
+</p>
+
+<h3 id="elrs-telemetry">The Telemetry setting</h3>
+<p>
+  An ExpressLRS link carries far less than a telemetry radio, and how much
+  depends on its packet rate: about 110 B/s down at 50 Hz, 590 B/s at 250 Hz,
+  1470 B/s at 333 Hz Full and 2375 B/s at F1000 on 2.4 GHz (the figures of the
+  ExpressLRS guide). A ground station that asks for more than that gets
+  telemetry that arrives late: the buffers fill, and the attitude on screen is
+  seconds old. <strong>Telemetry</strong> in the Link panel tells Corvus what
+  the link carries, and Corvus asks the aircraft for that much:
+</p>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Telemetry</th><th>For packet rates</th><th>Attitude</th><th>Position, speed, climb</th><th>Battery, GPS fix</th></tr></thead>
+  <tbody>
+    <tr><td>Long range</td><td>50 to 150 Hz, 100 Hz Full</td><td>2 Hz</td><td>1 Hz</td><td>every 2 s</td></tr>
+    <tr><td>Standard</td><td>250 Hz, D250, 200 Hz Full</td><td>4 Hz</td><td>2 Hz</td><td>1 Hz</td></tr>
+    <tr><td>Fast</td><td>333 Hz Full, 500 Hz, F1000, K1000</td><td>10 Hz</td><td>5 Hz</td><td>1 Hz</td></tr>
+  </tbody>
+</table>
+</div>
+<p>
+  Standard asks for about 520 B/s and Long range for about 230 B/s. At 50 Hz
+  even Long range is more than the link carries, so expect the instruments to
+  update about once a second there. The choice is part of the connection, so a
+  reconnect, and the automatic connect at the next start, keep it. Warnings and
+  messages from the autopilot are not rate limited and always come through.
+</p>
+<p>
+  Reading all parameters and uploading a mission are the heavy jobs on such a
+  link. The ExpressLRS guide recommends doing the first parameter download and
+  mission uploads at F1000 or 333 Hz Full (K1000 on dual band hardware), then
+  flying at 333 Hz Full or 250 Hz for range. Corvus keeps the parameters it
+  read, so the long download happens once per firmware.
+</p>
+
+<h3 id="elrs-connect">Connecting, with any flight controller</h3>
+<ol>
+  <li>Plug the transmitter module in over USB and set it to pass MAVLink telemetry through (<strong>Link Mode</strong>, <strong>MAVLink</strong>, as for <a href="#elrs-px4">PX4</a>).</li>
+  <li>In the Link panel, pick the port and choose <strong>ExpressLRS (MAVLink)</strong> under <strong>Radio</strong>. The baud rate becomes 460800, the usual MAVLink rate of ExpressLRS. Change it if you set another one in the module. Set <strong>Telemetry</strong> to the packet rate of the radio, see <a href="#elrs-telemetry">The Telemetry setting</a>.</li>
+  <li>Set <strong>Flight controller</strong> under <strong>Line options</strong> to <strong>Betaflight</strong> for a Betaflight aircraft. A PX4 or ArduPilot aircraft behind the same link names itself and is detected as that. For ArduPilot the ExpressLRS guide sets <code>SERIALx_PROTOCOL</code> to 2 and <code>SERIALx_BAUD</code> to 460 on the receiver's port.</li>
   <li>Press <strong>Connect</strong>.</li>
 </ol>
 
@@ -394,7 +464,7 @@
   <p class="guide-toc-title" id="toc-title">On this page</p>
   <ul>
     <li><a href="#sik-radio">Telemetry radio</a></li>
-    <li><a href="#expresslrs">ExpressLRS and Betaflight</a></li>
+    <li><a href="#expresslrs">ExpressLRS: PX4, ArduPilot and Betaflight</a></li>
     <li><a href="#rtk">RTK GPS</a></li>
     <li><a href="#remote-id">Remote ID</a></li>
   </ul>

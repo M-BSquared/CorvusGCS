@@ -67,10 +67,11 @@ pub fn files(dir: &Path) -> Vec<PathBuf> {
 /// Every plugin's `lang` folder with its files.
 pub fn plugin_files(root: &Path) -> Vec<(PathBuf, Vec<PathBuf>)> {
     let mut out = Vec::new();
-    let Ok(rd) = std::fs::read_dir(root.join("src").join("plugins")) else {
-        return out;
-    };
-    let mut folders: Vec<PathBuf> = rd
+    // The bundled plugins, and the ones that are repositories of their own.
+    let mut folders: Vec<PathBuf> = [root.join("src").join("plugins"), root.join("plugins")]
+        .iter()
+        .filter_map(|dir| std::fs::read_dir(dir).ok())
+        .flatten()
         .filter_map(|e| e.ok().map(|e| e.path().join("lang")))
         .filter(|p| p.is_dir())
         .collect();

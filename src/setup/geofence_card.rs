@@ -46,6 +46,8 @@ enum Kind {
     Upload(Vec<(String, f64)>),
     Clear,
     Enable,
+    /// Asking the vehicle which fence it holds.
+    Read,
 }
 
 struct Op {
@@ -248,6 +250,32 @@ pub struct GeofenceCard {
     notes: Vec<String>,
     reload: bool,
     want_fit: bool,
+    /// The vehicle has been asked for its fence on this link.
+    asked: bool,
+    was_connected: bool,
+    last_pass: u64,
+}
+
+#[derive(Debug, PartialEq)]
+enum Question {
+    None,
+    /// What the backend knows of the vehicle's fence, without asking the vehicle.
+    Stored,
+    /// The fence itself, from the vehicle.
+    Vehicle,
+}
+
+/// What to ask about the vehicle's fence this frame. `fresh` is the first
+/// frame of a link or of the card being looked at again: what the card
+/// believed may be from an earlier link, so the backend is asked first.
+fn next_question(fresh: bool, loaded: bool, known: bool, asked: bool) -> Question {
+    if fresh && known {
+        Question::Stored
+    } else if loaded && !known && (fresh || !asked) {
+        Question::Vehicle
+    } else {
+        Question::None
+    }
 }
 
 impl GeofenceCard {
@@ -273,6 +301,9 @@ impl GeofenceCard {
             notes: Vec::new(),
             reload: false,
             want_fit: true,
+            asked: false,
+            was_connected: false,
+            last_pass: 0,
         }
     }
 
@@ -429,6 +460,9 @@ impl GeofenceCard {
                         },
                     );
                 }
+                (Kind::Read, Ok(v)) => self.took_reading(ctx, &v),
+                // A vehicle that does not answer leaves the fence unknown, as it was.
+                (Kind::Read, Err(_)) => {}
             }
         }
         let fence = self.env.get();
@@ -437,6 +471,54 @@ impl GeofenceCard {
                 self.poly = fence.polygon.clone();
             }
             self.seen = fence;
+        }
+    }
+
+    /// The vehicle said which fence it holds. With nothing drawn here, its
+    /// area becomes the drawing, so a fence another station made can be seen.
+    fn took_reading(&mut self, ctx: &egui::Context, v: &Value) {
+        self.env.adopt(v);
+        let fence = self.env.get();
+        let held: Option<Vec<Corner>> = v.get("vehicle_polygon").and_then(Value::as_array).map(|a| {
+            a.iter()
+                .filter_map(|p| Some([p.get(0)?.as_f64()?, p.get(1)?.as_f64()?]))
+                .collect()
+        });
+        if self.busy || self.drawing || self.dragging || fence.vehicle_has_fence != Some(true) {
+            return;
+        }
+        match held {
+            None => self.say("", "The vehicle holds a fence that was not drawn here."),
+            Some(corners) if fence.polygon.is_empty() && corners.len() >= 3 => {
+                self.poly = corners.clone();
+                self.want_fit = true;
+                self.keep(ctx, corners, Some("Took the area the vehicle holds.".into()));
+            }
+            Some(_) => {}
+        }
+    }
+
+    /// Asks the vehicle for its fence once per link: after a reconnect, or
+    /// when another station changed it, this station does not know it.
+    fn watch_vehicle(&mut self, ctx: &egui::Context, connected: bool) {
+        let pass = ctx.cumulative_pass_nr();
+        let fresh = !self.was_connected || pass > self.last_pass + 2;
+        self.was_connected = connected;
+        self.last_pass = pass;
+        if !connected {
+            return;
+        }
+        let fence = self.env.get();
+        match next_question(fresh, fence.loaded, fence.on_vehicle.is_some(), self.asked) {
+            Question::None => {}
+            Question::Stored => {
+                self.asked = false;
+                self.env.load(ctx, &self.server);
+            }
+            Question::Vehicle => {
+                self.asked = true;
+                self.start(Kind::Read, ctx, "/api/geofence/read", json!({}));
+            }
         }
     }
 
@@ -859,6 +941,7 @@ impl GeofenceCard {
         w: f32,
     ) -> f32 {
         self.poll(ctx);
+        self.watch_vehicle(ctx, p.connected);
         let painter = ui.painter().clone();
         let mut cy = y;
         let hint = if p.hint.is_empty() {
@@ -1187,6 +1270,20 @@ mod tests {
     }
 
     const SQUARE: [Corner; 4] = [[11.60, 48.10], [11.61, 48.10], [11.61, 48.11], [11.60, 48.11]];
+
+    #[test]
+    fn the_vehicle_is_asked_for_its_fence_once_per_link() {
+        // nothing is asked before the stored area is in
+        assert_eq!(next_question(true, false, false, false), Question::None);
+        // a new link, nothing known: the vehicle is asked, and only once
+        assert_eq!(next_question(true, true, false, false), Question::Vehicle);
+        assert_eq!(next_question(false, true, false, true), Question::None);
+        // what the card believed may be from the link before: the backend first
+        assert_eq!(next_question(true, true, true, true), Question::Stored);
+        // which forgot it, so the vehicle is asked again
+        assert_eq!(next_question(false, true, false, false), Question::Vehicle);
+        assert_eq!(next_question(false, true, true, true), Question::None);
+    }
 
     #[test]
     fn the_summary_says_what_the_web_card_says() {
