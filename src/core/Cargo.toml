@@ -14,6 +14,9 @@ path = "src/bin/corvus-core.rs"
 # The MAVLink crate without its Python layer: the dialect tables, the transports
 # and the plain codec and framing.
 corvus_link = { path = "../link", default-features = false }
+# The Remote ID enum spans, ODID epoch and sentinels, from the maintained ASTM
+# F3411 and ASD-STAN model rather than a hand copy (protocol/remote_id.rs).
+remoteid = { workspace = true }
 # preserve_order: a settings file keeps the order its keys were written in,
 # as Python's dict does, so the Rust and the Python program can share a folder.
 serde_json = { version = "1", features = ["preserve_order", "float_roundtrip"] }

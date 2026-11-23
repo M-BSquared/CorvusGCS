@@ -12,10 +12,10 @@
 //! The filing checks and option lists the Remote ID page shows are the
 //! page's, not the broadcast's.
 
-use std::ops::RangeInclusive;
 use std::sync::Mutex;
 
 use corvus_link::plain::{Message, Value as Wv};
+use remoteid::{CategoryEu, ClassEu, ClassificationType, DescriptionType, IdType, OperatorLocationType, UaType};
 use serde_json::{json, Map, Value};
 
 use super::common::{py_float_of, py_int_of, py_round, py_str, py_truthy};
@@ -29,8 +29,9 @@ pub const DESCRIPTION_MAX: usize = 23;
 pub const ARM_ERROR_MAX: usize = 50;
 /// The ODID "unknown" sentinel for altitudes and the operational volume.
 pub const ALTITUDE_UNKNOWN: f64 = -1000.0;
-/// OPEN_DRONE_ID_SYSTEM.timestamp counts seconds from 2019-01-01 UTC.
-const ODID_EPOCH_UNIX: f64 = 1_546_300_800.0;
+/// OPEN_DRONE_ID_SYSTEM.timestamp counts seconds from 2019-01-01 UTC, the ODID
+/// epoch `remoteid` keeps against the standard.
+const ODID_EPOCH_UNIX: f64 = remoteid::EPOCH_2019_UNIX as f64;
 
 pub const ARM_STATUS_GOOD: i64 = 0;
 pub const ARM_STATUS_FAIL: i64 = 1;
@@ -43,18 +44,53 @@ const REGIONS: [&str; 2] = ["faa", "eu"];
 /// How recent a send must be for the broadcast to count as running.
 pub const BROADCAST_FRESH_S: f64 = 5.0;
 
-const ID_TYPES: RangeInclusive<i64> = 0..=4;
-const UA_TYPES: RangeInclusive<i64> = 0..=15;
-const OPERATOR_ID_TYPES: RangeInclusive<i64> = 0..=0;
-const DESCRIPTION_TYPES: RangeInclusive<i64> = 0..=2;
-const LOCATION_TYPES: RangeInclusive<i64> = 0..=2;
-const CLASSIFICATION_TYPES: RangeInclusive<i64> = 0..=1;
-const CATEGORIES_EU: RangeInclusive<i64> = 0..=3;
-const CLASSES_EU: RangeInclusive<i64> = 0..=7;
+/// A broadcast enum code is valid iff `remoteid`, the maintained ASTM F3411 and
+/// ASD-STAN model, names it: the crate maps an unknown code to `Other`, so the
+/// source of truth for the enum spans is the standard, not a frozen copy. An
+/// unnamed code is coerced to the field's default, as before.
+fn id_type_known(v: i64) -> bool {
+    u8::try_from(v)
+        .map(|b| !matches!(IdType::from(b), IdType::Other(_)))
+        .unwrap_or(false)
+}
+fn ua_type_known(v: i64) -> bool {
+    u8::try_from(v)
+        .map(|b| !matches!(UaType::from(b), UaType::Other(_)))
+        .unwrap_or(false)
+}
+fn description_type_known(v: i64) -> bool {
+    u8::try_from(v)
+        .map(|b| !matches!(DescriptionType::from(b), DescriptionType::Other(_)))
+        .unwrap_or(false)
+}
+fn location_type_known(v: i64) -> bool {
+    u8::try_from(v)
+        .map(|b| !matches!(OperatorLocationType::from(b), OperatorLocationType::Other(_)))
+        .unwrap_or(false)
+}
+fn classification_type_known(v: i64) -> bool {
+    u8::try_from(v)
+        .map(|b| !matches!(ClassificationType::from(b), ClassificationType::Other(_)))
+        .unwrap_or(false)
+}
+fn category_eu_known(v: i64) -> bool {
+    u8::try_from(v)
+        .map(|b| !matches!(CategoryEu::from(b), CategoryEu::Other(_)))
+        .unwrap_or(false)
+}
+fn class_eu_known(v: i64) -> bool {
+    u8::try_from(v)
+        .map(|b| !matches!(ClassEu::from(b), ClassEu::Other(_)))
+        .unwrap_or(false)
+}
+/// The Operator ID message has no sub type field: 0 is its only valid code.
+fn operator_id_type_known(v: i64) -> bool {
+    v == 0
+}
 
-fn enum_value(raw: Option<&Value>, options: RangeInclusive<i64>, default: i64) -> i64 {
+fn enum_value(raw: Option<&Value>, known: impl Fn(i64) -> bool, default: i64) -> i64 {
     match raw.and_then(py_int_of) {
-        Some(v) if options.contains(&v) => v,
+        Some(v) if known(v) => v,
         _ => default,
     }
 }
@@ -206,24 +242,28 @@ pub fn settings(raw: Option<&Value>) -> RemoteId {
         } else {
             "eu".into()
         },
-        id_type: enum_value(basic.get("id_type"), ID_TYPES, ID_TYPE_SERIAL),
-        ua_type: enum_value(basic.get("ua_type"), UA_TYPES, 0),
+        id_type: enum_value(basic.get("id_type"), id_type_known, ID_TYPE_SERIAL),
+        ua_type: enum_value(basic.get("ua_type"), ua_type_known, 0),
         uas_id: text(basic.get("uas_id"), UAS_ID_MAX),
-        operator_id_type: enum_value(operator.get("operator_id_type"), OPERATOR_ID_TYPES, 0),
+        operator_id_type: enum_value(operator.get("operator_id_type"), operator_id_type_known, 0),
         operator_id: text(operator.get("operator_id"), OPERATOR_ID_MAX),
-        description_type: enum_value(self_id.get("description_type"), DESCRIPTION_TYPES, 0),
+        description_type: enum_value(self_id.get("description_type"), description_type_known, 0),
         description: text(self_id.get("description"), DESCRIPTION_MAX),
-        operator_location_type: enum_value(system.get("operator_location_type"), LOCATION_TYPES, LOCATION_TAKEOFF),
+        operator_location_type: enum_value(
+            system.get("operator_location_type"),
+            location_type_known,
+            LOCATION_TAKEOFF,
+        ),
         operator_latitude: number(system.get("operator_latitude"), 0.0, -90.0, 90.0),
         operator_longitude: number(system.get("operator_longitude"), 0.0, -180.0, 180.0),
         operator_altitude_geo: area("operator_altitude_geo"),
         classification_type: enum_value(
             system.get("classification_type"),
-            CLASSIFICATION_TYPES,
+            classification_type_known,
             CLASSIFICATION_UNDECLARED,
         ),
-        category_eu: enum_value(system.get("category_eu"), CATEGORIES_EU, 0),
-        class_eu: enum_value(system.get("class_eu"), CLASSES_EU, 0),
+        category_eu: enum_value(system.get("category_eu"), category_eu_known, 0),
+        class_eu: enum_value(system.get("class_eu"), class_eu_known, 0),
         area_count: count(system.get("area_count"), 1, 1, 65535),
         area_radius: count(system.get("area_radius"), 0, 0, 65535),
         area_ceiling: area("area_ceiling"),
@@ -487,5 +527,31 @@ impl RemoteIdEngine {
             "error": error,
             "arm_status": arm.map(|a| a.to_json()),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn broadcast_enums_track_the_remoteid_model() {
+        // Every code the standard model names is accepted, and the first code
+        // past each named span is coerced away. If remoteid gains a code, an
+        // ASD-STAN class for instance, this GCS accepts it with no second edit.
+        assert!((0..=4).all(id_type_known) && !id_type_known(5));
+        assert!((0..=15).all(ua_type_known) && !ua_type_known(16));
+        assert!((0..=2).all(description_type_known) && !description_type_known(3));
+        assert!((0..=2).all(location_type_known) && !location_type_known(3));
+        assert!((0..=1).all(classification_type_known) && !classification_type_known(2));
+        assert!((0..=3).all(category_eu_known) && !category_eu_known(4));
+        assert!((0..=7).all(class_eu_known) && !class_eu_known(8));
+        assert!(!id_type_known(-1));
+    }
+
+    #[test]
+    fn system_timestamp_counts_from_the_odid_epoch() {
+        assert_eq!(system_timestamp(remoteid::EPOCH_2019_UNIX as f64), 0);
+        assert_eq!(system_timestamp(remoteid::EPOCH_2019_UNIX as f64 + 10.0), 10);
     }
 }

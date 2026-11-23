@@ -17,6 +17,10 @@ default-members = [".", "src/core", "src/api", "src/plugins/vibration", "src/plu
 
 [workspace.dependencies]
 vte = "0.15.0"
+# The ASTM F3411-22a and ASD-STAN Remote ID message model: the enum spans, the
+# ODID epoch and the sentinels the broadcast is built from, kept against the
+# standard in one place instead of a frozen copy (src/core/src/protocol/remote_id.rs).
+remoteid = "0.3.3"
 # One place for the versions and features the crates share, so a feature added
 # in one crate cannot quietly widen what the others compile.
 #
