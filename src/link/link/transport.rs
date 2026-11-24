@@ -578,24 +578,42 @@ impl Serial {
     /// otherwise keep the old rate), then the real rate.
     #[cfg(unix)]
     pub fn open(device: &str, baud: u32) -> Result<Serial, SerialOpenError> {
-        Self::open_with(device, baud, true, (true, true))
+        Self::open_with(device, baud, true, (true, true), false)
+    }
+
+    /// `open_held` that also takes an exclusive lock on the port, refusing it
+    /// when another process holds it. A vehicle link uses this; a service that
+    /// talks to a device it was told to share does not.
+    pub fn open_exclusive(
+        device: &str,
+        baud: u32,
+        dtr: Option<bool>,
+        rts: Option<bool>,
+    ) -> Result<Serial, SerialOpenError> {
+        Self::open_with(device, baud, true, (dtr.unwrap_or(true), rts.unwrap_or(true)), true)
     }
 
     /// `open` with DTR and RTS set to the given states (None leaves the usual
     /// asserted state). A transmitter module or ESP32 board wires them to its
     /// reset and boot pins, so they are set at once and never pulsed.
     pub fn open_held(device: &str, baud: u32, dtr: Option<bool>, rts: Option<bool>) -> Result<Serial, SerialOpenError> {
-        Self::open_with(device, baud, true, (dtr.unwrap_or(true), rts.unwrap_or(true)))
+        Self::open_with(device, baud, true, (dtr.unwrap_or(true), rts.unwrap_or(true)), false)
     }
 
     /// pyserial's own open, straight at *baud*: for a device that is not a
     /// flight controller, where the 1200 baud touch means nothing or worse.
     pub fn open_direct(device: &str, baud: u32) -> Result<Serial, SerialOpenError> {
-        Self::open_with(device, baud, false, (true, true))
+        Self::open_with(device, baud, false, (true, true), false)
     }
 
     #[cfg(unix)]
-    fn open_with(device: &str, baud: u32, touch: bool, lines: (bool, bool)) -> Result<Serial, SerialOpenError> {
+    fn open_with(
+        device: &str,
+        baud: u32,
+        touch: bool,
+        lines: (bool, bool),
+        exclusive: bool,
+    ) -> Result<Serial, SerialOpenError> {
         use crate::link::serial_posix as ps;
         let fd = ps::open(device).map_err(|e| {
             let code = e.raw_os_error().unwrap_or(libc::EIO);
@@ -607,6 +625,15 @@ impl Serial {
                 ),
             }
         })?;
+        // Before anything is written to the port's settings, so a port that
+        // somebody else is using is left exactly as they have it.
+        if exclusive && !ps::lock_exclusive(fd).unwrap_or(true) {
+            unsafe { libc::close(fd) };
+            return Err(SerialOpenError {
+                errno: Some(libc::EWOULDBLOCK),
+                message: format!("{device} is in use by another program. Close the other ground station and reconnect"),
+            });
+        }
         let setup = (|| -> io::Result<()> {
             ps::configure(fd, if touch { 1200 } else { baud }, false)?;
             if lines == (true, true) {
@@ -635,11 +662,28 @@ impl Serial {
 
     #[cfg(windows)]
     pub fn open(device: &str, baud: u32) -> Result<Serial, SerialOpenError> {
-        Self::open_with(device, baud, true, (true, true))
+        Self::open_with(device, baud, true, (true, true), false)
+    }
+
+    /// Windows opens a COM port exclusively already.
+    #[cfg(windows)]
+    pub fn open_exclusive(
+        device: &str,
+        baud: u32,
+        dtr: Option<bool>,
+        rts: Option<bool>,
+    ) -> Result<Serial, SerialOpenError> {
+        Self::open_held(device, baud, dtr, rts)
     }
 
     #[cfg(windows)]
-    fn open_with(device: &str, baud: u32, touch: bool, lines: (bool, bool)) -> Result<Serial, SerialOpenError> {
+    fn open_with(
+        device: &str,
+        baud: u32,
+        touch: bool,
+        lines: (bool, bool),
+        _exclusive: bool,
+    ) -> Result<Serial, SerialOpenError> {
         use serialport::SerialPort;
         let mut port = serialport::new(device, if touch { 1200 } else { baud })
             .timeout(Duration::from_secs(3600))

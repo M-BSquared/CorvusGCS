@@ -13,6 +13,13 @@
 //!
 //! `needs_setup` is the fact ("this looks fresh"); `prompt` adds the policy (offer
 //! the wizard unprompted). A simulator over UDP or TCP is never prompted.
+//!
+//! [`assess`] is the frozen first answer. [`judge`] tightens `prompt` on top of
+//! it, because the dialog interrupts the operator and a wrong "new controller"
+//! on a board that was set up long ago costs more than a missed one: a board
+//! that has flown is never new, a calibration found in any sensor slot counts,
+//! PX4 is only prompted when it has no airframe, and nothing is decided until
+//! every parameter the decision rests on has been answered.
 
 use serde_json::{json, Value};
 
@@ -46,6 +53,41 @@ const ARDUPILOT_PARAMS: [&str; 10] = [
     "COMPASS_OFS_Z",
     "COMPASS_DEV_ID",
     "COMPASS_USE",
+];
+
+/// Read on top of [`PX4_PARAMS`]: the other calibration slots (a replaced or
+/// re-ordered sensor leaves slot 0 empty) and the flight counter.
+const PX4_EXTRA_PARAMS: [&str; 7] = [
+    "CAL_ACC1_ID",
+    "CAL_ACC2_ID",
+    "CAL_GYRO1_ID",
+    "CAL_GYRO2_ID",
+    "CAL_MAG1_ID",
+    "CAL_MAG2_ID",
+    "COM_FLIGHT_UUID",
+];
+/// Read on top of [`ARDUPILOT_PARAMS`]: the scale a six position accelerometer
+/// calibration writes and the time the board has spent flying.
+const ARDUPILOT_EXTRA_PARAMS: [&str; 4] = ["INS_ACCSCAL_X", "INS_ACCSCAL_Y", "INS_ACCSCAL_Z", "STAT_FLTTIME"];
+/// Without these there is no verdict yet.
+const PX4_REQUIRED: [&str; 9] = [
+    "SYS_AUTOSTART",
+    "CAL_ACC0_ID",
+    "CAL_GYRO0_ID",
+    "CAL_MAG0_ID",
+    "CAL_ACC1_ID",
+    "CAL_GYRO1_ID",
+    "CAL_MAG1_ID",
+    "COM_FLIGHT_UUID",
+    "SYS_HAS_MAG",
+];
+const ARDUPILOT_REQUIRED: [&str; 6] = [
+    "FRAME_CLASS",
+    "INS_ACCOFFS_X",
+    "INS_ACCOFFS_Y",
+    "INS_ACCOFFS_Z",
+    "INS_ACCSCAL_X",
+    "STAT_FLTTIME",
 ];
 
 /// SYS_AUTOSTART presets, the generic airframes of PX4's airframe reference. Ids
@@ -105,6 +147,18 @@ pub fn param_names(stack: &str) -> Vec<String> {
     names.iter().map(|s| s.to_string()).collect()
 }
 
+/// Every parameter [`judge`] reads on `stack`: the assessment's and the extras.
+pub fn read_names(stack: &str) -> Vec<String> {
+    let extra: &[&str] = if stack == STACK_ARDUPILOT {
+        &ARDUPILOT_EXTRA_PARAMS
+    } else {
+        &PX4_EXTRA_PARAMS
+    };
+    let mut names = param_names(stack);
+    names.extend(extra.iter().map(|s| s.to_string()));
+    names
+}
+
 /// The airframes offered for the connected `stack` and `vehicle` (the firmware
 /// family, see [`vehicle_for_mav_type`]). PX4 offers the same list whatever it
 /// reports, because a fresh board's heartbeat says nothing true about the airframe
@@ -150,11 +204,16 @@ pub fn writes_for(stack: &str, vehicle: &str, preset_id: i64) -> Option<Vec<(Str
     })
 }
 
-fn calibrated_by_id(values: &Values, name: &str) -> &'static str {
-    match values.get(name) {
-        None => UNKNOWN,
-        Some(v) if round_int(*v) != 0 => DONE,
-        Some(_) => TODO,
+/// A PX4 sensor is calibrated when any of its slots holds a device id: the
+/// first slot is empty after a sensor was replaced or came up in another order.
+fn calibrated_by_id(values: &Values, names: &[&str]) -> &'static str {
+    let seen: Vec<f64> = names.iter().filter_map(|n| values.get(*n).copied()).collect();
+    if seen.is_empty() {
+        UNKNOWN
+    } else if seen.iter().any(|v| round_int(*v) != 0) {
+        DONE
+    } else {
+        TODO
     }
 }
 
@@ -172,7 +231,14 @@ fn calibrated_by_offsets(values: &Values, names: &[&str]) -> &'static str {
 /// The four facts the wizard's steps are marked from.
 pub fn facts(stack: &str, values: &Values) -> Value {
     if stack == STACK_ARDUPILOT {
-        let accel = calibrated_by_offsets(values, &["INS_ACCOFFS_X", "INS_ACCOFFS_Y", "INS_ACCOFFS_Z"]);
+        let mut accel = calibrated_by_offsets(values, &["INS_ACCOFFS_X", "INS_ACCOFFS_Y", "INS_ACCOFFS_Z"]);
+        let scaled = ["INS_ACCSCAL_X", "INS_ACCSCAL_Y", "INS_ACCSCAL_Z"]
+            .iter()
+            .filter_map(|n| values.get(*n))
+            .any(|v| (v - 1.0).abs() > 1e-6);
+        if accel == TODO && scaled {
+            accel = DONE;
+        }
         let has_compass = values.get("COMPASS_DEV_ID").is_some_and(|v| round_int(*v) != 0)
             && values.get("COMPASS_USE").map_or(1, |v| round_int(*v)) != 0;
         let mag = if has_compass {
@@ -194,14 +260,14 @@ pub fn facts(stack: &str, values: &Values) -> Value {
         Some(a) if round_int(*a) != 0 => DONE,
         Some(_) => TODO,
     };
-    let mut mag = calibrated_by_id(values, "CAL_MAG0_ID");
+    let mut mag = calibrated_by_id(values, &["CAL_MAG0_ID", "CAL_MAG1_ID", "CAL_MAG2_ID"]);
     if values.get("SYS_HAS_MAG").is_some_and(|v| round_int(*v) == 0) {
         mag = NOT_REQUIRED;
     }
     json!({
         "airframe": airframe,
-        "accel": calibrated_by_id(values, "CAL_ACC0_ID"),
-        "gyro": calibrated_by_id(values, "CAL_GYRO0_ID"),
+        "accel": calibrated_by_id(values, &["CAL_ACC0_ID", "CAL_ACC1_ID", "CAL_ACC2_ID"]),
+        "gyro": calibrated_by_id(values, &["CAL_GYRO0_ID", "CAL_GYRO1_ID", "CAL_GYRO2_ID"]),
         "mag": mag,
     })
 }
@@ -237,6 +303,42 @@ pub fn assess(stack: &str, vehicle: &str, transport: &str, values: &Values) -> V
         "presets": presets(stack, vehicle),
         "preset_current": current_preset(stack, values),
     })
+}
+
+/// Has this board flown? A board with flight time behind it was set up by
+/// somebody, whatever the calibration parameters say.
+fn has_flown(stack: &str, values: &Values) -> bool {
+    let counter = if stack == STACK_ARDUPILOT {
+        "STAT_FLTTIME"
+    } else {
+        "COM_FLIGHT_UUID"
+    };
+    values.get(counter).is_some_and(|v| *v > 0.0)
+}
+
+/// Whether every parameter the verdict rests on has been answered. A read that
+/// timed out is not an empty parameter, so the question is asked again later.
+pub fn settled(stack: &str, values: &Values) -> bool {
+    let required: &[&str] = if stack == STACK_ARDUPILOT {
+        &ARDUPILOT_REQUIRED
+    } else {
+        &PX4_REQUIRED
+    };
+    required.iter().all(|n| values.contains_key(*n))
+}
+
+/// Tightens the `prompt` of an [`assess`] answer: the wizard is offered
+/// unasked only for a board that is certainly new. Adds `settled` and `flown`.
+pub fn judge(mut payload: Value, stack: &str, values: &Values) -> Value {
+    let settled = settled(stack, values);
+    let flown = has_flown(stack, values);
+    let unset_airframe = payload["facts"]["airframe"] == TODO;
+    let asked = payload["prompt"].as_bool() == Some(true);
+    let certain = stack == STACK_ARDUPILOT || unset_airframe;
+    payload["settled"] = json!(settled);
+    payload["flown"] = json!(flown);
+    payload["prompt"] = json!(asked && settled && !flown && certain);
+    payload
 }
 
 /// The preset id the vehicle holds now, or `null` when it matches none.

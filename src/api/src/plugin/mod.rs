@@ -7,6 +7,8 @@
 //! to the backend. A plugin is a crate of its own that depends on this one and
 //! on nothing inside the program; how to write one is in `src/README.md`.
 
+pub mod bus;
+pub mod dynamic;
 pub mod options;
 pub mod shapes;
 pub mod ssh;
@@ -17,6 +19,7 @@ use serde_json::{json, Map, Value};
 use crate::net::bg::Pending;
 use crate::net::http::{self, Server};
 use crate::net::stream::Stream;
+use bus::Bus;
 use options::{OptionSpec, OPTIONS_KEY};
 use shapes::ShapeSet;
 
@@ -86,7 +89,8 @@ pub trait Plugin {
     /// The view is about to be shown (`init`).
     fn open(&mut self, _h: &mut Host) {}
 
-    /// Draws the view into `area`, from its top, and returns the height used.
+    /// Draws the view into `area`, from its top, and returns the height used. `area` is as tall as
+    /// what can be seen at once: a view that uses more scrolls, one that uses just that stays put.
     fn show(&mut self, ui: &mut egui::Ui, area: egui::Rect, h: &mut Host) -> f32;
 
     /// The view is gone (`destroy`): leave nothing behind.
@@ -97,6 +101,10 @@ pub trait Plugin {
 
     /// The pointer did something to one of this plugin's shapes.
     fn map_event(&mut self, _e: MapEvent, _h: &mut Host) {}
+
+    /// Another plugin sent this one a message with `Host::send`. Plugins are not
+    /// obliged to understand every message: an unknown one is ignored.
+    fn message(&mut self, _from: &str, _msg: &Value, _h: &mut Host) {}
 
     /// The operator answered the login dialog this plugin asked for with
     /// `ssh_setup`: `saved` is whether a login was saved under that name.
@@ -152,6 +160,7 @@ pub struct Host<'a> {
     saved: &'a mut Value,
     opts: &'a Map<String, Value>,
     out: &'a mut Outbox,
+    bus: &'a mut Bus,
 }
 
 impl<'a> Host<'a> {
@@ -167,6 +176,7 @@ impl<'a> Host<'a> {
         saved: &'a mut Value,
         opts: &'a Map<String, Value>,
         out: &'a mut Outbox,
+        bus: &'a mut Bus,
     ) -> Host<'a> {
         Host {
             ctx,
@@ -179,6 +189,7 @@ impl<'a> Host<'a> {
             saved,
             opts,
             out,
+            bus,
         }
     }
 }
@@ -304,6 +315,44 @@ impl Host<'_> {
     /// the same `tag`.
     pub fn ssh_setup(&mut self, need: ssh::SshNeed, tag: u64) {
         self.out.ssh_setups.push((self.id, tag, need));
+    }
+
+    /// Puts `value` where other plugins can read it, under `<this plugin>/<name>`.
+    /// It stays until it is published again or retracted, and vanishes with the
+    /// plugin. False when it is too large (1 MiB).
+    pub fn publish(&mut self, name: &str, value: Value) -> bool {
+        self.bus.publish(self.id, name, value)
+    }
+
+    /// Takes back what `publish` put under `name`.
+    pub fn retract(&mut self, name: &str) {
+        self.bus.retract(self.id, name);
+    }
+
+    /// What plugin `<id>/<name>` published, `None` when it published nothing or
+    /// is not running.
+    pub fn read(&self, topic: &str) -> Option<&Value> {
+        self.bus.read(topic)
+    }
+
+    /// A number that changes whenever `topic` does (0 while it cannot be read).
+    pub fn revision(&self, topic: &str) -> u64 {
+        self.bus.rev(topic)
+    }
+
+    /// Whether plugin `id` is installed and running.
+    pub fn present(&self, id: &str) -> bool {
+        self.bus.is_live(id)
+    }
+
+    /// Drops `msg` into the mailbox of plugin `to`, which gets it in
+    /// `Plugin::message` on the next frame. False when it is not running.
+    pub fn send(&mut self, to: &str, msg: Value) -> bool {
+        let sent = self.bus.send(self.id, to, msg);
+        if sent {
+            self.ctx.request_repaint();
+        }
+        sent
     }
 
     /// `fit`: bring the Home page forward and frame these points.

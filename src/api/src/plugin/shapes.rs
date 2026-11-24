@@ -432,6 +432,7 @@ pub const ICONS: &[(&str, &str, &[&str])] = &[
     ("medical", "Medical", &["M10 3h4v7h7v4h-7v7h-4v-7H3v-4h7z"]),
     ("power", "Power", &["M13 2L4 14h7l-1 8 9-12h-7z"]),
     ("water", "Water", &["M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z"]),
+    ("plane", "Plane", &["M17.8 19.2L16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"]),
 ];
 
 /// The path strings of a named symbol.
@@ -869,7 +870,7 @@ mod tests {
 
     #[test]
     fn every_symbol_has_paths_and_a_name_the_web_uses() {
-        assert_eq!(ICONS.len(), 21);
+        assert_eq!(ICONS.len(), 22);
         assert!(icon_paths("tree").is_some());
         assert!(icon_paths("nope").is_none());
         assert_eq!(hex("#7BD389"), Some(Color32::from_rgb(0x7B, 0xD3, 0x89)));

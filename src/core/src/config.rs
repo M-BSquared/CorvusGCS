@@ -56,6 +56,7 @@ pub const FIELD_ORDER: &[&str] = &[
     "checklists",
     "fleet",
     "mcp",
+    "tak",
 ];
 
 const STRING_FIELDS: &[&str] = &[
@@ -799,7 +800,7 @@ const KNOWN: &[&str] = &[
     "review",
     "checklists",
 ];
-const OWNED_ELSEWHERE: &[&str] = &["forwarding", "map_tokens", "plugins", "fleet", "mcp"];
+const OWNED_ELSEWHERE: &[&str] = &["forwarding", "map_tokens", "plugins", "fleet", "mcp", "tak"];
 /// Blocks a partial update merges key by key into the stored one.
 const MERGED_BLOCKS: &[&str] = &[
     "map",
@@ -995,7 +996,9 @@ mod tests {
             .iter()
             .filter_map(Value::as_str)
             .collect();
-        assert_eq!(order, FIELD_ORDER);
+        // The fixture holds the Python program's fields; blocks added since follow them.
+        assert_eq!(order, FIELD_ORDER[..order.len()]);
+        assert_eq!(&FIELD_ORDER[order.len()..], ["tak"]);
         assert_eq!(c["max_bytes"].as_u64().unwrap(), MAX_CONFIG_FILE_BYTES);
         std::fs::remove_dir_all(&dir).unwrap();
     }

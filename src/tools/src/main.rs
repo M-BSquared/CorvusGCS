@@ -16,6 +16,9 @@
 //! | `guide [--check]` | rewrite (or check) the frame of every manual page |
 //! | `i18n check\|fmt\|new CODE NAME NATIVE [--force]` | the language files |
 //! | `soak [options]` | a soak run of the interface with memory samples |
+//! | `plugin-pack [--build] [--only ID] [--target DIR] [--out DIR]` | the built plugin libraries of this platform (signed ad hoc on macOS, as the system asks), with their entries |
+//! | `plugin-unpack OUT DIR` | install what `plugin-pack` left in OUT into DIR, for `corvus-gcs --check-plugins DIR` |
+//! | `plugin-index [--out DIR]` | merge the platforms in DIR into `plugins-index.json` |
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -26,7 +29,8 @@ fn usage() -> ExitCode {
     eprintln!(
         "usage: corvus-build appimage-libs bundle|check APPDIR | icon IN OUT SIZE | png-size FILE | \
          squashfs APPIMAGE OUT | elf-static FILE | bundle-check BUNDLE [--require REL ...] | \
-         guide [--check] | i18n check|fmt|new CODE NAME NATIVE [--force] | soak [--binary B] [--minutes M] \
+         guide [--check] | i18n check|fmt|new CODE NAME NATIVE [--force] | \
+         plugin-pack [--build] [--only ID] [--target DIR] [--out DIR] | plugin-unpack OUT DIR | plugin-index [--out DIR] | soak [--binary B] [--minutes M] \
          [--every S] [--step S] [--mode 1|3d] [--at LNG,LAT] [--home DIR] [--csv FILE] [--max-mb MB]"
     );
     ExitCode::from(2)
@@ -161,6 +165,62 @@ fn main() -> ExitCode {
                     eprintln!("{e}");
                     ExitCode::from(2)
                 }
+            }
+        }
+        ["plugin-pack", rest @ ..] => {
+            let (mut target, mut out) = (repo_root().join("target/release"), repo_root().join("dist/plugins"));
+            let mut only = None;
+            let build = rest.contains(&"--build");
+            let rest: Vec<&&str> = rest.iter().filter(|f| **f != "--build").collect();
+            let mut it = rest.iter();
+            while let Some(flag) = it.next() {
+                let Some(value) = it.next() else { return usage() };
+                match **flag {
+                    "--target" => target = PathBuf::from(value),
+                    "--out" => out = PathBuf::from(value),
+                    "--only" => only = Some(**value),
+                    _ => return usage(),
+                }
+            }
+            if build {
+                if let Err(e) = corvus_tools::plugins::build(&repo_root()) {
+                    return fail(e);
+                }
+            }
+            match corvus_tools::plugins::pack(&repo_root(), &target, &out, only) {
+                Ok(files) => {
+                    for f in files {
+                        println!("    {f}");
+                    }
+                    ExitCode::SUCCESS
+                }
+                Err(e) => fail(e),
+            }
+        }
+        ["plugin-unpack", out, to] => match corvus_tools::plugins::unpack(Path::new(out), Path::new(to)) {
+            Ok(n) => {
+                println!("    {n} plugins in {to}");
+                ExitCode::SUCCESS
+            }
+            Err(e) => fail(e),
+        },
+        ["plugin-index", rest @ ..] => {
+            let mut out = repo_root().join("dist/plugins");
+            match rest {
+                [] => {}
+                ["--out", dir] => out = PathBuf::from(dir),
+                _ => return usage(),
+            }
+            match corvus_tools::plugins::publish_index(&out) {
+                Ok(index) => {
+                    println!(
+                        "    {} plugins listed in {}",
+                        index.plugins.len(),
+                        corvus_package::INDEX_FILE
+                    );
+                    ExitCode::SUCCESS
+                }
+                Err(e) => fail(e),
             }
         }
         ["soak", rest @ ..] => {

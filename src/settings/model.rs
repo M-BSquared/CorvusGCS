@@ -559,8 +559,18 @@ pub fn plugin_rows(listed: &[Value], registry: &crate::plugins::Registry) -> Vec
         };
         let mut row = p.clone();
         let known = registry.index_of(id);
+        // The backend lists the plugins of this program, including the ones that are
+        // installed from the store and not here yet: they are the store's to offer.
+        // So is the folder the web version of such a plugin left behind.
+        let stores = registry.store.offered().iter().any(|o| o.id == id);
+        if known.is_none() && (stores || p.get("source").and_then(Value::as_str) == Some("bundled")) {
+            continue;
+        }
         if let Some(o) = row.as_object_mut() {
             o.insert("loaded".into(), serde_json::json!(known.is_some()));
+            if registry.package_of(id).is_some() {
+                o.insert("source".into(), serde_json::json!("installed"));
+            }
             if let Some(i) = known {
                 o.insert("in_tab".into(), serde_json::json!(registry.in_tab(i)));
                 o.insert("stopped".into(), serde_json::json!(registry.failure(i).is_some()));
@@ -581,9 +591,22 @@ pub fn plugin_rows(listed: &[Value], registry: &crate::plugins::Registry) -> Vec
         let info = registry.info(i);
         rows.push(serde_json::json!({
             "id": info.id, "name": info.name, "description": info.description,
-            "version": info.version, "source": "bundled", "loaded": true,
+            "version": info.version, "loaded": true,
+            "source": if registry.package_of(info.id).is_some() { "installed" } else { "bundled" },
             "in_tab": registry.in_tab(i), "gear": registry.has_options(i),
             "stopped": registry.failure(i).is_some(),
+        }));
+    }
+    let offered = registry.store.offered();
+    // The store says it of its own.
+    for r in registry
+        .refused
+        .iter()
+        .filter(|r| !offered.iter().any(|o| o.id == r.id))
+    {
+        rows.push(serde_json::json!({
+            "id": r.id, "name": r.id, "description": format!("Not loaded: {}.", r.why),
+            "version": "", "source": "installed", "loaded": false,
         }));
     }
     rows

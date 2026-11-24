@@ -252,11 +252,18 @@ mod tests {
         let state = json!({"connected": false, "link_bootloader": {"device": "/dev/ttyACM0"}});
         frame(&mut p, &ctx, &server, &state, 0.0);
         frame(&mut p, &ctx, &server, &state, 4500.0);
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        frame(&mut p, &ctx, &server, &state, 4700.0);
+        assert!(
+            !p.open(),
+            "a bootloader that has only just appeared may still start the firmware"
+        );
+        frame(&mut p, &ctx, &server, &state, 15500.0);
         let t = std::time::Instant::now();
         while !p.open() {
             assert!(t.elapsed() < std::time::Duration::from_secs(5), "no offer");
             std::thread::sleep(std::time::Duration::from_millis(10));
-            frame(&mut p, &ctx, &server, &state, 4600.0);
+            frame(&mut p, &ctx, &server, &state, 15600.0);
         }
         let o = p.offer.clone().unwrap();
         assert_eq!((o.title, o.step), ("Controller without firmware", "firmware"));

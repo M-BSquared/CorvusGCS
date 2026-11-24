@@ -163,9 +163,59 @@ const ICONS: &[(&str, &str)] = &[
     ("chevrons-up-down", "ChevronsUpDown"),
     ("skip-forward", "SkipForward"),
     ("layout-grid", "LayoutGrid"),
+    ("bot", "Bot"),
+    ("wrench", "Wrench"),
 ];
 
+/// What a plugin library must carry to be loaded: the compiler, the target, and a hash of
+/// everything that decides how the types that cross the boundary are laid out and what they do.
+/// Not the program's version: a library stays good for as long as none of this changes.
+fn abi_stamp() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    println!("cargo:rerun-if-env-changed=RUSTC");
+    let mut files = vec![root.join("Cargo.lock"), root.join("rust-toolchain.toml")];
+    for dir in ["src/api/src", "src/vendor"] {
+        println!("cargo:rerun-if-changed={}", root.join(dir).display());
+        source_files(&root.join(dir), &mut files);
+    }
+    let mut hash = 0xcbf2_9ce4_8422_2325_u64;
+    for f in &files {
+        println!("cargo:rerun-if-changed={}", f.display());
+        // A checkout on Windows may end its lines differently; the stamp must not.
+        for b in std::fs::read(f).unwrap_or_default().into_iter().filter(|b| *b != b'\r') {
+            hash = (hash ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3);
+        }
+    }
+    let rustc = std::env::var("RUSTC").unwrap_or_else(|_| "rustc".into());
+    let compiler = std::process::Command::new(rustc)
+        .arg("-V")
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .unwrap_or_default();
+    println!("cargo:rustc-env=CORVUS_ABI=1|{}|{hash:016x}", compiler.trim());
+}
+
+/// The `.rs` and `.toml` files under `dir`, in an order that does not depend on the system.
+fn source_files(dir: &Path, out: &mut Vec<PathBuf>) {
+    let mut all: Vec<PathBuf> = std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|e| e.path())
+        .collect();
+    all.sort();
+    for p in all {
+        if p.is_dir() {
+            source_files(&p, out);
+        } else if p.extension().is_some_and(|x| x == "rs" || x == "toml") {
+            out.push(p);
+        }
+    }
+}
+
 fn main() {
+    abi_stamp();
     let web = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
     let out = PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR"));
     for name in FONTS {

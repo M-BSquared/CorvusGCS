@@ -46,6 +46,35 @@ use crate::tlog::{TlogHost, TlogSession};
 
 pub const GCS_SYSTEM_ID: u8 = 254;
 pub const GCS_COMPONENT_ID: u8 = 190;
+/// What the operator can do about a serial port that would not open: a bare
+/// "would not open" is true of every failure and helps with none of them.
+fn serial_open_message(device: &str, e: &corvus_link::plain::connection::ConnectError) -> String {
+    use corvus_link::plain::connection::ConnectError;
+    let (errno, text) = match e {
+        ConnectError::Serial { errno, message } => (*errno, message.clone()),
+        other => (None, other.to_string()),
+    };
+    if text.contains("is in use by another program") {
+        return text;
+    }
+    let windows = crate::serial_ports::is_windows_com_port(device);
+    let denied = errno == Some(13) || text.contains("PermissionError") || text.contains("Access is denied");
+    if denied && windows {
+        return format!("{device} is in use by another program. Close the other ground station and reconnect");
+    }
+    if denied {
+        return format!(
+            "No permission to open {device}. On Linux, add your user to the dialout group (sudo usermod -aG dialout $USER), then log out and back in"
+        );
+    }
+    if errno == Some(16) {
+        return format!(
+            "{device} is busy: another program has it open (on Linux often ModemManager probing a new device)"
+        );
+    }
+    format!("{device} would not open: {text}")
+}
+
 pub const HEARTBEAT_WAIT_S: f64 = 10.0;
 pub const RECONNECT_BASE_S: f64 = 0.5;
 pub const RECONNECT_CAP_S: f64 = 8.0;
@@ -774,6 +803,7 @@ impl Shared {
             let held = crate::serial_ports::parse_serial_options(&conn_str);
             opts.dtr = held.dtr;
             opts.rts = held.rts;
+            opts.exclusive = true;
             device
         } else {
             conn_str.clone()
@@ -782,7 +812,7 @@ impl Shared {
             Ok(c) => c,
             Err(e) => {
                 let message = if self.is_serial() {
-                    format!("{device} would not open: {e}")
+                    serial_open_message(&device, &e)
                 } else if matches!(&e, corvus_link::plain::connection::ConnectError::Io(io) if io.kind() == std::io::ErrorKind::AddrInUse)
                 {
                     format!(

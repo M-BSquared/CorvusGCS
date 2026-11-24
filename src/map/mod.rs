@@ -31,8 +31,8 @@ use crate::ui::card::{self, Look};
 use crate::ui::style;
 
 /// The web map's start: where it opens before any aircraft is heard.
-const DEFAULT_CENTER: (f64, f64) = (11.640969, 48.080217);
-const DEFAULT_ZOOM: f64 = 13.0;
+const DEFAULT_CENTER: (f64, f64) = (11.643194, 48.076221);
+const DEFAULT_ZOOM: f64 = 17.0;
 /// The zoom the map goes to on the first fix.
 const FIRST_FIX_ZOOM: f64 = 16.0;
 /// The follow dead zone, as a share of the map: the aircraft moves freely

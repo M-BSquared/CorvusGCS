@@ -204,6 +204,9 @@ pub fn get(url: &str, user_agent: &str, accept: &str, timeout: Duration, cap: us
         let parsed = parse_url(&current)?;
         let (reply, location) = once(&parsed, user_agent, accept, timeout, cap)?;
         match (reply.status, location) {
+            (301 | 302 | 303 | 307 | 308, Some(next)) if parsed.https && next.starts_with("http:") => {
+                return Err("the server redirected from https to plain http".into())
+            }
             (301 | 302 | 303 | 307 | 308, Some(next)) if next.starts_with("http") => current = next,
             _ => return Ok(reply),
         }

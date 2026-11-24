@@ -16,7 +16,7 @@ src/home/ map/ map3d/  the Home page: flight bar, HUD, top bar, the 2D and the 3
 src/mission/ setup/    the Mission planner and the Setup pages
 src/lang/              the interface language files (the translation layer is in src/api/src/i18n)
 src/settings/ logs/ analysis/ notify/ panel/ term/
-src/plugins/           the registry and one crate per bundled plugin (src/plugins/<id>/)
+src/plugins/           the registry, the loader and the store of the plugins (plugins/<id>/, submodules)
 src/link/              the MAVLink crate (corvus_link), held to pymavlink's frozen answers
 src/tools/             corvus-build: the build, manual, language and soak tools (never shipped)
 ```
@@ -236,15 +236,17 @@ deleted (`src/core/tests/data`).
 | `src/api/src/ui/form.rs` | the form vocabulary of a page that is a column of cards: the `Form` cursor over `formfield`, `message`, `optioncards`, `slider` and `pills`, with section, card, switch field, rows, actions |
 | `src/api/src/plugin/mod.rs` | the `Plugin` trait, the `Host` a plugin talks through, `Info`, `MapEvent`, `McpTool` and the `Outbox`: the stable surface a plugin crate may use (`python/src/js/plugins.js`) |
 | `src/plugins/mod.rs`, `src/plugins/ssh_setup.rs` | the `Registry` (starts the plugins once `GET /api/plugins` has answered, ticks them every frame, keeps their options and what they ask of the window; `python/corvus/plugin_registry.py`) and `sshSetup`, the login dialog for a saved SSH connection this computer lacks (`askSSHConnection` of `python/src/js/panel.js`) |
-| `build.rs` | makes `plugin_list.rs`, the list the registry is built from, out of the folders of `src/plugins`; a folder without its dependency line in `Cargo.toml` fails the build |
+| `build.rs` | makes `plugin_list.rs` out of the folders of `plugins`: the list of what there is to install (`OFFERED`), and the compiled in ones, of which there are none |
 | `src/api/src/plugin/options.rs` | the options a plugin declares (toggle, select, text, number), cleaned, coerced and saved under `_options` as the web does |
 | `src/api/src/plugin/shapes.rs`, `src/plugins/layer.rs`, `src/map3d/overlays.rs` | `api.map`: lines, areas, circles, text, buttons and icon markers in longitude and latitude, painted on the flat map (with the pointer on markers and buttons, and `pick_point`); on the 3D map lines, outlines and areas are volumes projected onto the ground through the stencil buffer (draped meshes where the window has none), text, markers and buttons screen elements hidden by a terrain ray, with the same pointer handling through `Layer::marks_with` (`map-overlays.js`, `map-icons.js`, `.map-overlay-*` of `map.css`) |
 | `src/api/src/plugin/ssh.rs` | what both SSH plugins share: `Mode`, the new connection form, `ssh_needs`, `reply_of` |
 | `src/plugins/view.rs` | the cards under PLUGINS, the opened plugin, a plugin's own tab and the options dialog of its gear in Settings (`.plugin-*` of `panel.css`) |
-| `src/plugins/vibration/` (crate `corvus_plugin_vibration`) | Vibration Monitor: PX4's vibration metrics on a live chart, the 10 Hz stream while it is open, the one-shot warning (`python/plugins/vibration`) |
-| `src/plugins/ssh-launcher/` | SSH Launcher: the shelf, the editor, terminal and background runs, restart, stop, the live dot (`python/plugins/ssh-launcher`); `model.rs` holds its rules, held to `model_cases.json` |
-| `src/plugins/schwalby/` | Schwalby: the shelf of one-press buttons that run here (`/api/local/*`) or over SSH, with edit mode and drag reordering, colours, the companion computer's ping strip with its popup and power menu, and the AI client's half over MCP (`python/plugins/schwalby`); `model.rs` holds the rules, held to `model_cases.json`, what the web functions answered; `companion.rs` the ping loop, the popup's state and the power calls; `mcp.rs` the tools; `view.rs` everything drawn; its language files are in `lang/` |
-| `src/plugins/map-entities/` | Map Entities: gates, trees and symbols with an area on the Home map, and the watch over the aircraft's track (`python/plugins/map-entities`); `model.rs` holds the geometry and the rules, held to `model_cases.json`, what the web functions answered (`src/plugins/dump_cases.js` writes it for this, SSH Launcher and Vibration Monitor; `--check` fails when it is stale) |
+| `plugins/vibration/` (crate `corvus_plugin_vibration`) | Vibration Monitor: PX4's vibration metrics on a live chart, the 10 Hz stream while it is open, the one-shot warning (`python/plugins/vibration`) |
+| `plugins/ssh-launcher/` | SSH Launcher: the shelf, the editor, terminal and background runs, restart, stop, the live dot (`python/plugins/ssh-launcher`); `model.rs` holds its rules, held to `model_cases.json` |
+| `plugins/schwalby/` | Schwalby: the shelf of one-press buttons that run here (`/api/local/*`) or over SSH, with edit mode and drag reordering, colours, the companion computer's ping strip with its popup and power menu, and the AI client's half over MCP (`python/plugins/schwalby`); `model.rs` holds the rules, held to `model_cases.json`, what the web functions answered; `companion.rs` the ping loop, the popup's state and the power calls; `mcp.rs` the tools; `view.rs` everything drawn; its language files are in `lang/` |
+| `plugins/map-entities/` | Map Entities: gates, trees and symbols with an area on the Home map, and the watch over the aircraft's track (`python/plugins/map-entities`); `model.rs` holds the geometry and the rules, held to `model_cases.json`, what the web functions answered (`src/plugins/dump_cases.js` writes it for this, SSH Launcher and Vibration Monitor; `--check` fails when it is stale) |
+| `plugins/tak/` | TAK: the contacts and markers of ATAK, CivTAK and WinTAK drawn on the Home map, the connections, the callsign and the sharing switch, a marker to place, chat, and the tools that steer the layer over MCP (`mcp.rs`, offered only with its gear switch on); `model.rs` holds the mirror of the core's `tak` topic and the filter, with tests; the network side is the core's `tak` module |
+| `src/core/src/tak/` (`TakModule`, `TakService`) | Cursor on Target for ATAK, CivTAK, WinTAK, iTAK and a TAK Server: `xml.rs` a bounded reader and writer (no document type declarations), `cot.rs` the event, its classification, the events Corvus builds (position as `a-f-A-M-F-Q`, marker, GeoChat, forced delete) and the stream framer, `config.rs` the `tak` block (nothing on by default, position sharing off), `service.rs` one thread per switched on connection (UDP multicast and unicast, TCP, TLS through `tls.rs`) and the publisher thread, `mod.rs` the routes under `/api/tak` and the `tak` topic. The `tak_read`, `tak_send` and `tak_setup` permissions and the ten `tak_*` tools are in `mcp/`; `tests/tak_scenarios.rs` runs a scripted TAK server on loopback. |
 | `src/notify/mod.rs` | the notification board, its read and dismiss rules, the command dedupe and the toasts (`python/src/js/topbar.js`) |
 | `src/notify/overlay.rs` | the NOTIFICATIONS pill, the board and the toast stack |
 | `src/api/src/i18n/mod.rs`, `src/api/src/i18n/table.rs`, `src/api/src/i18n/files.rs` | the interface language (see "Languages" below): `tr`, `tr_fmt`, the table with `{name}` patterns, the language files compiled in and the operator's folder |
@@ -302,24 +304,100 @@ file.
 
 ## Plugins
 
-A plugin is a crate of its own (`src/plugins/<id>/`, the folder named as the
+A plugin is a crate of its own (`plugins/<id>/`, the folder named as the
 web plugin's) with a Rust type behind the `Plugin` trait of `corvus_api`. It
 depends on `corvus_api` and on nothing inside the program, so it cannot reach
 into `app`, `map` or `panel`; what it may use is the API: the widgets of
 `corvus_api::ui`, `i18n`, `net`, `data` and `plugin` (the trait, `Host`,
-options, shapes). The crates are compiled into the program and listed by
-`build.rs`. There is no loader and no JavaScript: a plugin works the same on every platform the program
-is built for, Android included. Third party JavaScript plugins that the web
-interface loads from `~/.corvus/plugins` do not run here; Settings lists them
-as "installed, not loaded".
+options, shapes). Each plugin is a repository of its own, `corvus-<id>` on GitHub, checked out
+as a submodule under `plugins/<id>/`, a member of this workspace and no dependency of the
+program: it is built as a shared library, published from its repository and installed from
+Settings, Plugins (below). There is no JavaScript. Third party JavaScript plugins that the web
+interface loads from `~/.corvus/plugins` do not run here; Settings lists them as "installed,
+not loaded". A folder under `plugins/` without `loadable = true` would be compiled in
+(`build.rs`); none is.
 
-A plugin may also be a repository of its own, checked out as a submodule under
-`plugins/<id>/` (NuttX Console and the Trajectory Viewer: `plugins/nuttx-console`,
-`plugins/trajectory-viewer`). It is the
-same kind of crate, a member of this workspace with its dependency line in
-`Cargo.toml`, and `build.rs` lists it with the bundled ones. A checkout needs
-its submodules (`git clone --recurse-submodules`, or `git submodule update
---init`), or the build stops at the missing crate.
+A checkout needs its submodules (`git clone --recurse-submodules`, or `git submodule update
+--init`; `./run.sh` does it): the workspace lists them as members, so cargo stops at a missing
+folder.
+
+### Plugins as libraries
+
+A plugin crate has `crate-type = ["cdylib", "rlib"]`, ends with
+`corvus_api::export_plugin!(plugin, LANG);` and carries `name`, `description`, `icon` and
+`version` under `[package.metadata.corvus]` (a test in the crate holds them to its `Info`).
+It is a dev-dependency of the program, so the tests can load its library, and no part of it.
+TAK's network side is the core's and stays there.
+
+The platform build scripts build the program and the libraries in **one cargo call**
+(`--bin corvus-gcs --lib`). Apart from each other cargo compiles the crates they share
+differently (features, link time optimisation), and the program refuses a library whose
+types are not its own. `.github/scripts/plugins.sh PROGRAM` packs the libraries
+(`corvus-build plugin-pack`) and loads every one in the finished program
+(`corvus-gcs --check-plugins DIR`, no window); the job fails when one is refused. Nothing is
+published there.
+
+**Publishing.** A plugin is published by pushing to `main` of its repository. Its workflow
+(`.github/workflows/build.yml` there, a few lines) calls `.github/workflows/plugin.yml` of this
+repository: it checks out the newest published Corvus GCS, puts the plugin's commit at
+`plugins/<id>`, makes the same cargo call on Linux, macOS and Windows
+(`.github/scripts/plugin-package.sh`), lets the **published** program load the result, and
+attaches the libraries and `plugins-index.json` to the release `corvus-<version>` of the plugin's
+repository. A library built apart from the program fits it, because the identity of a type
+follows from source, lock file, features and profile and not from the folder or the computer;
+the check says so each time. A new Corvus GCS needs every plugin again: the schedule of each
+plugin does that within hours, `gh workflow run build.yml --repo M-BSquared/corvus-<id>` at once. `--locked`: a plugin uses what
+`Cargo.lock` holds. A dependency that is not there, and a new plugin, need a release of Corvus
+GCS first.
+
+Which plugins there are the program knows from its own source (`OFFERED`, made by `build.rs`
+from the crates with `loadable = true`), so Settings, Plugins lists all of them without a
+network. A library comes from (`src/plugins/store.rs`):
+
+* **beside the program**: the folder it is in (where cargo leaves the libraries, so `./run.sh`
+  offers what it built), and `corvus-plugins` in it, beside it, beside the `.app` and beside the
+  AppImage. The build scripts leave `dist/corvus-plugins`. Taken first; with all of them there no
+  release is asked. A plugin installed from there is brought up to date at the next start when
+  the file changed (`follow_beside`), so a rebuilt program goes on with rebuilt plugins.
+* **the plugin's repository**: the release `corvus-<version>` there, its `plugins-index.json` over
+  HTTPS (a redirect to plain http is refused) when the page is opened; size and SHA-256 of a
+  library are checked against it. All repositories are asked at once and each answers for itself.
+  There is no signing key: what is trusted is the plugin's repository on GitHub.
+* **a file** the operator picks. The plugin it is stands in it (`CORVUS_PLUGIN_CRATE`).
+
+Only a library with this program's stamp is taken, wherever it is from. It goes to
+`~/.corvus/plugin-packages/<id>/` on the computer the window runs on, stored under its checksum,
+and the manifest is replaced in one rename. An update is another checksum, not another version:
+a plugin is built again for a new program. A plugin just installed is loaded at once, an update
+or a removal of one that runs waits for the next start. `cargo run` builds the program alone:
+use `./run.sh`, or `cargo build --bin corvus-gcs --lib`.
+
+What holds it together (`src/api/src/plugin/dynamic.rs`, `src/plugins/loader.rs`):
+
+* **The stamp.** The compiler and a hash of `src/api/src`, `src/vendor` and `Cargo.lock`
+  (`src/api/build.rs`) are in the file of a library and compared before it is loaded; the
+  identity (`TypeId`) and size of the types that cross are compared after. Not the program's
+  version: a library stays good while none of this changes.
+* **Two copies of every `static`.** A library carries its own. The theme, tablet mode and the
+  language are handed over before each call (`Link`); a test fails when a new `static` of
+  `corvus_api` is not accounted for. In the crates of others two mattered and are changed in
+  `src/vendor`: the waiting queue of `parking_lot` (a thread waiting for egui's lock through
+  one copy was never woken by the other: the window froze) and epaint's font counter (a font
+  first used by a plugin replaced one of the program's). **Look again when egui or
+  parking_lot is updated**: `grep` the sources of the dependencies for `static` and
+  `thread_local!` and ask which reach an object both sides hold.
+* **Panics.** One cannot leave a library. `Guarded` catches it there, the loader raises it
+  again in the program, and the registry stops the plugin as it does a compiled in one.
+* **Crashes.** A library that takes the program down cannot be caught. A marker file is there
+  while one is loaded and started; left over at the next start, the package is left out until
+  it is installed again. `--no-plugins` starts without any.
+* **Never unloaded.** A plugin may still own a thread whose code is in the library.
+
+`src/api/probe` is a plugin for the tests: it panics, locks and draws on its own side of the
+boundary as it is told. The tests that load it and the published ones run in the normal
+`cargo test`, on Linux and Windows too. A debug build reads the releases from another place with
+`CORVUS_PLUGIN_STORE=<base url>` (a folder per plugin there, http allowed) and loads packages from
+`CORVUS_PLUGIN_PACKAGES=<dir>`.
 
 What a plugin gets beyond its own view: `Host::events` follows push topics of
 the backend, `corvus_api::ui::term` is a terminal (screen, widget, keys) over
@@ -363,14 +441,15 @@ impl Plugin for Hello {
 }
 ```
 
-That type goes in `src/plugins/hello/src/lib.rs` of a crate whose
-`Cargo.toml` depends on `corvus_api` (copy one of the four), with a
+That type goes in `plugins/hello/src/lib.rs` of a crate whose
+`Cargo.toml` depends on `corvus_api` (copy one that is there), with a
 `pub fn plugin() -> Box<dyn Plugin>` that makes one and a `pub const LANG:
 &[(&str, &str)]` of its `lang/<code>.json` files (`include_str!`). Add the crate
 to `members` and `default-members` of the root `Cargo.toml` and one dependency
-line `corvus_plugin_hello = { path = "src/plugins/hello" }` to its
-`[dependencies]`: `build.rs` finds the folder, checks the line, and the
-registry registers the language files and makes the plugin. The id is the
+line `corvus_plugin_hello = { path = "plugins/hello" }` to its
+`[dev-dependencies]`, its repository to `.gitmodules`, and copy the workflow of another:
+`build.rs` finds the folder and puts it on the list, and a test of `src/tools` names what is
+missing. The id is the
 folder name of the plugin's settings, so it must be a safe name
 (`[A-Za-z0-9][A-Za-z0-9_.-]*`); `order` places the card (lower is earlier, ties
 by name). Test its `Info` against `python/plugins/<id>/plugin.json` as the four
@@ -386,7 +465,10 @@ do. What the trait offers, all optional but
 | `show(ui, area, h)` | draws the view; the registry gives it a scrolling area 14 px from the sides |
 | `options_changed(h)` | the operator changed an option; every value is in `h.options()` |
 | `map_event(event, h)` | the pointer did something to one of its shapes: `Click`, `Drag`, `DragEnd`, or the `Picked` point of `h.pick_point()` (`PickCancelled` on Escape or a right click) |
+| `message(from, msg, h)` | another plugin dropped a message in this plugin's mailbox with `h.send(to, msg)`; one it does not understand is ignored |
 | `ssh_setup_done(tag, saved, h)` | the login dialog asked for with `h.ssh_setup(need, tag)` was answered |
+
+Plugins never link against each other. To cooperate they use the bus of `corvus_api::plugin::bus`: `h.publish(name, value)` and `h.retract(name)` offer a value as `<own id>/<name>` (at most 1 MiB, gone when the plugin stops), `h.read(topic)` and `h.revision(topic)` read what another plugin offers, `h.present(id)` says whether a plugin runs and `h.send(id, msg)` leaves it a message (`Plugin::message`). Every one is a quiet no-op when the other side is missing, so a plugin guards the feature behind an option and works the same without the other (Map Entities publishes `map-entities/shared`, TAK sends it as markers and hands contacts back with `{"op": "add"}`).
 
 The `Host` is the browser's `api`: `h.map()` (`drawLine`, `drawPolygon`,
 `drawCircle`, `drawText`, `drawButton`, `drawMarker`, `remove`, with the 21

@@ -190,6 +190,26 @@ pub fn set_modem_lines(fd: RawFd, dtr: bool, rts: bool) -> io::Result<()> {
     Ok(())
 }
 
+/// Takes an exclusive advisory lock on the port, so a second ground station
+/// (or a second Corvus) on the same USB link is refused instead of each one
+/// reading an arbitrary half of the stream. `Ok(false)` means another process
+/// holds it. A device that cannot be locked (a pty, an odd driver) is used
+/// anyway, so that is `Ok(true)`: refusing to connect over a missing lock would
+/// be the worse failure. The lock lives on the descriptor, so closing the port
+/// or losing the process releases it.
+pub fn lock_exclusive(fd: RawFd) -> io::Result<bool> {
+    // SAFETY: flock takes a descriptor this module opened and a flag.
+    let rc = unsafe { libc::flock(fd, libc::LOCK_EX | libc::LOCK_NB) };
+    if rc == 0 {
+        return Ok(true);
+    }
+    let e = io::Error::last_os_error();
+    match e.raw_os_error() {
+        Some(code) if code == libc::EWOULDBLOCK || code == libc::EAGAIN => Ok(false),
+        _ => Ok(true),
+    }
+}
+
 pub fn flush_input(fd: RawFd) {
     unsafe {
         libc::tcflush(fd, libc::TCIFLUSH);

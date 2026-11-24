@@ -6,7 +6,7 @@ use std::collections::HashSet;
 
 pub const DEFAULT_SERIAL_BAUD: u32 = 57600;
 
-const BYID_TOKENS: [&str; 11] = [
+const BYID_TOKENS: [&str; 23] = [
     "px4",
     "pixhawk",
     "fmu",
@@ -18,6 +18,18 @@ const BYID_TOKENS: [&str; 11] = [
     "hex ",
     "usb vid:pid=26ac",
     "usb vid:pid=0483",
+    "usb vid:pid=2dae",
+    "usb vid:pid=3162",
+    "usb vid:pid=3185",
+    "usb vid:pid=1209:5740",
+    "cubepilot",
+    "cubeorange",
+    "cubeblack",
+    "cubeyellow",
+    "cubepurple",
+    "holybro",
+    "cuav",
+    "chibios",
 ];
 const USB_SERIAL_BRIDGE_TOKENS: [&str; 4] = ["vid:pid=0403", "vid:pid=10c4", "vid:pid=1a86", "vid:pid=067b"];
 const RTK_TOKENS: [&str; 7] = [
@@ -138,7 +150,7 @@ pub fn classify_serial_device(device: &str, hwid: &str, description: &str) -> &'
     if name.strip_prefix("/dev/ttyACM").is_some_and(digits_to_end) {
         return "usb";
     }
-    if name.starts_with("/dev/serial/by-id/") && has_any(name, &BYID_TOKENS) {
+    if name.starts_with("/dev/serial/by-id/") && (has_any(name, &BYID_TOKENS) || has_any(name, &["ardupilot"])) {
         return "usb";
     }
     if name.strip_prefix("/dev/ttyUSB").is_some_and(digits_to_end) {
@@ -482,6 +494,32 @@ mod tests {
             serial_query(&parse_serial_options("serial:x:1?link=elrs")),
             "?link=elrs",
             "nothing is added by itself"
+        );
+    }
+
+    #[test]
+    fn boards_of_the_common_flight_controller_makers_are_flight_controllers() {
+        for (hwid, product) in [
+            ("USB VID:PID=2DAE:1016 SER=0001", "CubeOrange"),
+            ("USB VID:PID=3162:0047 SER=0001", "Pixhawk 6X"),
+            ("USB VID:PID=3185:0035", "Auterion FMU"),
+            ("USB VID:PID=1209:5740 SER=00330", "MatekH743"),
+            ("USB VID:PID=26AC:0011", "PX4 FMU v5.x"),
+        ] {
+            assert_eq!(
+                classify_serial_device("/dev/cu.usbmodem1101", hwid, product),
+                "usb",
+                "{hwid}"
+            );
+            assert!(!is_bootloader_port("/dev/cu.usbmodem1101", hwid, product), "{hwid}");
+        }
+        assert_eq!(
+            classify_serial_device("/dev/cu.usbmodem1101", "USB VID:PID=05AC:8600", "Keyboard"),
+            "unknown"
+        );
+        assert_eq!(
+            classify_serial_device("/dev/cu.usbserial-0001", "USB VID:PID=0403:6001", "FT232R"),
+            "sik"
         );
     }
 

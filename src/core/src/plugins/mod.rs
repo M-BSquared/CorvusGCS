@@ -9,7 +9,7 @@ pub mod checklists;
 pub mod config;
 pub mod file_manager;
 pub mod files;
-mod http_client;
+pub mod http_client;
 pub mod registry;
 mod routes;
 pub mod settings_routes;

@@ -144,6 +144,48 @@ CI has no Python job left (`rust-gui`, `rust-windows`, the three bundle jobs,
   vehicle, not only a fake clock.
 * P3 Give the plugin crates a `plugin.json` and replace the table in
   `registry.rs` by `include_str!`.
+* P1 Plugin repositories (src/README.md, "Plugins as libraries"): see one through. No plugin has
+  been published yet: the first release of Corvus GCS with the loader has to come first, then
+  each plugin builds for it. `plugin.yml` has not run, and a library has not been loaded on Linux
+  or Windows (the tests that do are in `cargo test`, so the first push says). Verified on macOS
+  arm64: libraries built in another folder load in a program built here.
+* P1 The plugins that were built in (Vibration Monitor, SSH Launcher, Schwalby, Map Entities, and
+  since the last release NuttX Console and Trajectory Viewer) are gone after an update until they
+  are installed from Settings, Plugins. Tell the operator: release notes, manual, and perhaps a
+  notice where a saved config of one is found.
+* P2 An update or a removal of a plugin that runs waits for the next start; a banner that says a
+  restart is due is open.
+* P3 `bundled::ENTRIES` in `src/core/src/plugins/registry.rs` still lists Vibration Monitor as bundled for the backend list (Settings hides it unless it is installed); move it to the store once the web plugin list is retired.
+
+### 0.5a TAK (`src/core/src/tak/`, `plugins/tak/`)
+
+Cursor on Target over UDP multicast, UDP, TCP and TLS, the contacts on the Home
+map, the aircraft as a friendly drone, markers, chat, and the `tak_*` MCP tools
+with their three permissions. Held by `tak_scenarios.rs` (a scripted TAK server
+on loopback) and the unit tests of the codec. Not seen against a real ATAK,
+CivTAK, WinTAK or TAK Server: the XML is what their documentation and traces
+show, nothing more.
+
+* P2 Verify with ATAK or WinTAK on the same Wi-Fi (multicast 239.2.3.1:6969) and
+  with a TAK Server or FreeTAKServer over TCP and TLS: that the aircraft shows as
+  a drone, that a marker and a chat line sent from Corvus arrive and that the
+  delete order removes a marker there.
+* P2 TLS is tested only against a peer that is not TLS (it must fail with a
+  reason and retry); a handshake with a server certificate and a client
+  certificate needs a test certificate authority, which no crate here makes.
+* P2 TLS takes PEM files. A TAK data package carries a `.p12`; reading it needs a
+  PKCS#12 reader (a crate, to be justified) or a documented `openssl` step.
+* P3 The TAK protocol version 1 (the protobuf framing a server may negotiate) is
+  not spoken; a server that insists on it sends bytes that are counted as
+  rejected. Streaming CoT XML is what every TAK Server still accepts.
+* P3 Drawings and routes are listed and drawn as one marker at their first
+  point; their shapes (`u-d-*` links, `b-m-r`) are not drawn. Corvus' own mission
+  and geofence are not shared as a route or a shape.
+* P3 The aircraft's height is sent as the altitude above sea level in the height
+  above ellipsoid field (the geoid offset, up to about 100 m, is not applied).
+* P3 A connect that is waiting on an unreachable host (3 s) or a DNS answer holds
+  the stop of the core for that long.
+* P2 Verify Map Entities with TAK on a phone: that a gate, a tree and a radar arrive as markers with their notes, that a delete and switching the option off remove them, that a phone joining later gets them within one resend, and that "Add to Map Entities" looks right in the contact card. `src/plugins/together.rs` holds the real plugins through the real registry, HTTP and SSE, the core and a scripted TAK server on loopback (send, change, take back, each plugin alone, hand a contact over); no ATAK or WinTAK was available to run.
 
 ### 0.6 Setup schemas (`src/core/src/setup_schemas/`)
 

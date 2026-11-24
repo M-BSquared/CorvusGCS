@@ -5,6 +5,7 @@ use eframe::egui::{self, Pos2, Rect, Stroke, Vec2};
 use serde_json::{json, Value};
 
 use super::{credits, model, Dialog, SettingsPage};
+use crate::plugins::store::From;
 use crate::plugins::Registry;
 use crate::ui::form::{self, Form};
 use crate::ui::kit::{Button, Variant};
@@ -32,6 +33,7 @@ impl SettingsPage {
     }
 
     pub(super) fn plugins_tab(&mut self, ui: &mut egui::Ui, f: &mut Form, registry: &mut Registry) {
+        registry.store.want(ui.ctx());
         let data = self.want(ui.ctx(), "plugins", "/api/plugins");
         let failed = data.is_none() && self.failed("plugins");
         let plugins: Vec<Value> = model::plugin_rows(
@@ -112,6 +114,7 @@ impl SettingsPage {
                 }
             });
         });
+        self.store_section(ui, f, registry);
         if gear.is_some() {
             self.plugin_dialog = gear;
         }
@@ -382,6 +385,229 @@ fn plugin_row(ui: &mut egui::Ui, f: &mut Form, p: &Value, first: bool) -> bool {
     let mut y = top + head_h;
     if let Some(d) = p.get("description").and_then(Value::as_str).filter(|d| !d.is_empty()) {
         let g = crate::ui::kit::wrapped_weight(ui, d, 12.0, Weight::W400, style::text_3(), f.w, 1.5);
+        let h = g.size().y;
+        ui.painter().galley(Pos2::new(f.x, y + 4.0), g, style::text_3());
+        y += 4.0 + h;
+    }
+    y += 14.0;
+    ui.painter().hline(
+        egui::Rangef::new(f.x, f.x + f.w),
+        y + 0.5,
+        Stroke::new(1.0, style::border_soft()),
+    );
+    f.y = y + 1.0;
+    pressed
+}
+
+const STORE_INFO: &str = "Install what you need. A plugin comes from its own repository on GitHub over HTTPS, from the plugin folder beside the program, or from a file, and is checked before it is installed. A new plugin starts at once; an update or a removal takes effect the next time Corvus GCS starts. Corvus GCS never needs the network to fly.";
+
+const PLUGIN_FILE: &str = "Install a plugin from a file";
+
+impl SettingsPage {
+    /// The plugins on offer, each with its Install, Update or Remove button.
+    fn store_section(&mut self, ui: &mut egui::Ui, f: &mut Form, registry: &mut Registry) {
+        let rows = registry.store.rows();
+        let running: Vec<Option<String>> = rows
+            .iter()
+            .map(|r| registry.package_of(&r.id).map(str::to_string))
+            .collect();
+        let working: Vec<bool> = rows.iter().map(|r| registry.store.working_on(&r.id)).collect();
+        let refused: Vec<Option<String>> = rows
+            .iter()
+            .map(|r| registry.refused.iter().find(|x| x.id == r.id).map(|x| x.why.clone()))
+            .collect();
+        let missing = rows.iter().any(|r| r.offer.is_none() && r.installed.is_none());
+        let updates: Vec<String> = rows
+            .iter()
+            .filter(|r| r.update_available())
+            .map(|r| r.id.clone())
+            .collect();
+        let busy = registry.store.busy();
+        let problem = registry.store.problem().map(str::to_string);
+        let loading = registry.store.loading();
+        let message = registry.store.message.clone();
+        let mut act: Option<(bool, String)> = None;
+        let (mut refresh, mut update_all, mut file) = (false, false, false);
+        form::section(ui, f, "Available plugins", |ui, f| {
+            form::card(ui, f, "", |ui, f| {
+                form::desc(ui, f, STORE_INFO);
+                f.skip(10.0);
+                if let (Some(why), true) = (&problem, missing) {
+                    form::message(
+                        ui,
+                        f,
+                        &format!("Some plugins cannot be downloaded now: {why}."),
+                        Tone::Warn,
+                    );
+                    f.skip(10.0);
+                }
+                for (i, row) in rows.iter().enumerate() {
+                    let now = Now {
+                        running: running[i].as_deref(),
+                        refused: refused[i].as_deref(),
+                        working: working[i],
+                        looking: loading,
+                        busy,
+                    };
+                    if let Some(install) = store_row(ui, f, row, &now, i == 0) {
+                        act = Some((install, row.id.clone()));
+                    }
+                }
+                f.skip(12.0);
+                let mut x = f.x;
+                let mut tall = 0.0_f32;
+                let mut buttons = vec![(
+                    "storerefresh",
+                    Button::new("Refresh list", Variant::Secondary)
+                        .icon("refresh-cw")
+                        .enabled(!busy),
+                )];
+                buttons.push((
+                    "storefile",
+                    Button::new("Install from file", Variant::Secondary)
+                        .icon("folder-open")
+                        .enabled(!busy),
+                ));
+                if updates.len() > 1 {
+                    buttons.push((
+                        "storeupdate",
+                        Button::new("Update all", Variant::Primary)
+                            .icon("download")
+                            .enabled(!busy),
+                    ));
+                }
+                for (id, b) in buttons {
+                    let (w, h) = (b.width(ui), b.height());
+                    if b.show(ui, Rect::from_min_size(Pos2::new(x, f.y), Vec2::new(w, h)), id) {
+                        refresh |= id == "storerefresh";
+                        update_all |= id == "storeupdate";
+                        file |= id == "storefile";
+                    }
+                    x += w + 8.0;
+                    tall = tall.max(h);
+                }
+                f.skip(tall + 2.0);
+                if let Some((t, ok)) = &message {
+                    f.skip(12.0);
+                    form::message(ui, f, t, if *ok { Tone::Ok } else { Tone::Warn });
+                }
+            });
+        });
+        let ctx = ui.ctx().clone();
+        if refresh {
+            registry.store.refresh(&ctx);
+        }
+        if file {
+            let filter = crate::ui::filepicker::Filter {
+                name: "Corvus plugin",
+                extensions: &[corvus_package::library_extension()],
+            };
+            if let Some(path) = crate::ui::filepicker::pick_file(PLUGIN_FILE, Some(filter), None) {
+                registry.store.install_file(path);
+            }
+        }
+        match act {
+            Some((true, id)) => registry.store.install(&id),
+            Some((false, id)) => registry.store.remove(&id),
+            None => {}
+        }
+        if update_all {
+            for id in updates {
+                registry.store.install(&id);
+            }
+        }
+    }
+}
+
+/// What is going on with a plugin of the store.
+struct Now<'a> {
+    /// The checksum of the library it runs from.
+    running: Option<&'a str>,
+    /// Why the installed one did not load.
+    refused: Option<&'a str>,
+    working: bool,
+    /// Where it can be had is still being looked up.
+    looking: bool,
+    busy: bool,
+}
+
+/// One plugin of the store. `Some(true)` when Install or Update was pressed, `Some(false)` for Remove.
+fn store_row(
+    ui: &mut egui::Ui,
+    f: &mut Form,
+    row: &crate::plugins::store::Row,
+    now: &Now,
+    first: bool,
+) -> Option<bool> {
+    let top = f.y + if first { 2.0 } else { 14.0 };
+    let n = style::galley(ui, &row.name, 13.0, Weight::W500, style::text_1(), 0.0);
+    let busy = now.busy;
+    let state = match (&row.installed, now.running) {
+        _ if now.working => "working\u{2026}".to_string(),
+        (None, Some(_)) => "removed, runs until the next start".to_string(),
+        (None, None) => match row.offer {
+            Some((From::Beside, _)) => format!("{} \u{b7} on this computer", row.version),
+            Some((From::Release, _)) => row.version.clone(),
+            None if now.looking => "looking\u{2026}".to_string(),
+            None => "not available".to_string(),
+        },
+        (Some(m), _) if row.update_available() && m.version != row.version => {
+            format!("{} \u{b7} {} available", m.version, row.version)
+        }
+        (Some(m), _) if row.update_available() => format!("{} \u{b7} needs an update", m.version),
+        (Some(m), Some(sha)) if sha != m.sha256 => format!("{} \u{b7} runs after the next start", m.version),
+        (Some(m), Some(_)) => format!("{} \u{b7} installed", m.version),
+        (Some(m), None) => format!("{} \u{b7} not loaded", m.version),
+    };
+    let o = style::galley_mono(ui, &crate::i18n::tr_joined(&state), 12.0, style::text_3());
+    let primary = match &row.installed {
+        None => Some("Install"),
+        Some(_) if row.update_available() => Some("Update"),
+        Some(_) => None,
+    };
+    let mut buttons = Vec::new();
+    if let Some(label) = primary {
+        buttons.push((
+            true,
+            Button::new(label, Variant::Primary).enabled(!busy && row.offer.is_some()),
+        ));
+    }
+    if row.installed.is_some() {
+        buttons.push((false, Button::new("Remove", Variant::Secondary).enabled(!busy)));
+    }
+    let head_h = buttons.first().map_or(28.0, |(_, b)| b.height()).max(28.0);
+    let bw: f32 = buttons.iter().map(|(_, b)| b.width(ui) + 8.0).sum();
+    ui.painter()
+        .galley(Pos2::new(f.x, top + (head_h - n.size().y) / 2.0), n, style::text_1());
+    ui.painter().galley(
+        Pos2::new(f.x + f.w - bw - o.size().x - 8.0, top + (head_h - o.size().y) / 2.0),
+        o,
+        style::text_3(),
+    );
+    let mut pressed = None;
+    let mut x = f.x + f.w - bw + 8.0;
+    for (install, b) in buttons {
+        let (w, h) = (b.width(ui), b.height());
+        if b.show(
+            ui,
+            Rect::from_min_size(Pos2::new(x, top + (head_h - h) / 2.0), Vec2::new(w, h)),
+            ("storebtn", &row.id, install),
+        ) {
+            pressed = Some(install);
+        }
+        x += w + 8.0;
+    }
+    let mut y = top + head_h;
+    let why = row
+        .installed
+        .as_ref()
+        .and(now.refused)
+        .map(|w| format!("Not loaded: {w}."));
+    for text in [Some(row.description.as_str()).filter(|d| !d.is_empty()), why.as_deref()]
+        .into_iter()
+        .flatten()
+    {
+        let g = crate::ui::kit::wrapped_weight(ui, text, 12.0, Weight::W400, style::text_3(), f.w, 1.5);
         let h = g.size().y;
         ui.painter().galley(Pos2::new(f.x, y + 4.0), g, style::text_3());
         y += 4.0 + h;

@@ -58,6 +58,20 @@ static ACTIVE: RwLock<Option<Arc<Active>>> = RwLock::new(None);
 static ON: AtomicBool = AtomicBool::new(false);
 static MISSED: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());
 
+type Remote = fn(&str) -> Option<String>;
+
+/// Set in a plugin library: the program's `tr`, which knows the language in force.
+static REMOTE: RwLock<Option<Remote>> = RwLock::new(None);
+static HAS_REMOTE: AtomicBool = AtomicBool::new(false);
+
+/// Makes this copy of the crate translate through the program's own.
+pub fn set_remote(f: Option<Remote>) {
+    if let Ok(mut r) = REMOTE.write() {
+        *r = f;
+        HAS_REMOTE.store(f.is_some(), Ordering::Relaxed);
+    }
+}
+
 #[cfg(test)]
 thread_local! {
     static LOCAL: std::cell::RefCell<Option<Arc<Active>>> = const { std::cell::RefCell::new(None) };
@@ -147,6 +161,11 @@ impl Active {
 /// The text for `english` in the language in force. English, a text without a
 /// letter and a text the language does not list come back as given.
 pub fn tr(english: &str) -> Cow<'_, str> {
+    if HAS_REMOTE.load(Ordering::Relaxed) {
+        if let Some(f) = REMOTE.read().ok().and_then(|r| *r) {
+            return f(english).map_or(Cow::Borrowed(english), Cow::Owned);
+        }
+    }
     let Some(active) = current() else {
         return Cow::Borrowed(english);
     };

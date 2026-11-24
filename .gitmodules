@@ -1,6 +1,24 @@
+[submodule "plugins/ai-chat"]
+	path = plugins/ai-chat
+	url = https://github.com/M-BSquared/corvus-ai-chat.git
+[submodule "plugins/map-entities"]
+	path = plugins/map-entities
+	url = https://github.com/M-BSquared/corvus-map-entities.git
 [submodule "plugins/nuttx-console"]
 	path = plugins/nuttx-console
 	url = https://github.com/M-BSquared/corvus-nuttx-console.git
+[submodule "plugins/schwalby"]
+	path = plugins/schwalby
+	url = https://github.com/M-BSquared/corvus-schwalby.git
+[submodule "plugins/ssh-launcher"]
+	path = plugins/ssh-launcher
+	url = https://github.com/M-BSquared/corvus-ssh-launcher.git
+[submodule "plugins/tak"]
+	path = plugins/tak
+	url = https://github.com/M-BSquared/corvus-tak.git
 [submodule "plugins/trajectory-viewer"]
 	path = plugins/trajectory-viewer
 	url = https://github.com/M-BSquared/corvus-trajectory-viewer.git
+[submodule "plugins/vibration"]
+	path = plugins/vibration
+	url = https://github.com/M-BSquared/corvus-vibration.git

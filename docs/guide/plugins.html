@@ -154,8 +154,34 @@
 <p class="doc-lead">
   The <strong>PLUGINS</strong> tab in the side workspace is an extension point.
   A plugin adds its own view there without a fork and without touching the
-  rest of the app, settings of its own, and, when you allow it, a tab of its own. Four ship with
-  Corvus, and your own is a Rust crate built in beside them.
+  rest of the app, settings of its own, and, when you allow it, a tab of its own. Corvus
+  comes without plugins: you install the ones you want, each from its own repository.
+</p>
+
+<h2 id="install">Install a plugin</h2>
+<p>
+  Open <strong>Settings</strong>, <strong>Plugins</strong>. Under
+  <strong>Available plugins</strong> stand all plugins of your version of Corvus.
+  <strong>Install</strong> fetches the plugin from its own repository on GitHub, checks it and starts it at once. An update
+  or a removal takes effect the next time Corvus starts. The download needs the internet
+  once, so install what you need before you go into the field; after that nothing does.
+  Settings of a plugin stay when you remove it.
+</p>
+<p>
+  For a computer without internet, download the plugin on another one, from the release
+  <code>corvus-</code> with your version in the <a href="#more">plugin's repository</a>
+  (the file for your system), and choose <strong>Install from file</strong>. Or put a folder named <code>corvus-plugins</code> with
+  the files beside the program: they are then offered with the note
+  <em>on this computer</em>, and no download is tried for them. A plugin that was installed
+  from there follows what lies there the next time Corvus starts. A build from source offers
+  the plugins that were built with it in the same way.
+</p>
+<p>
+  A plugin belongs to the version of Corvus it was built for. After an update of Corvus one
+  that no longer fits is not loaded, Corvus says so, and <strong>Update</strong> in the same
+  place brings the right one. A plugin that made Corvus close while it was starting is left
+  out the next time, until you install it again. <code>--no-plugins</code> on the command
+  line starts Corvus without any installed plugin.
 </p>
 
 <figure class="doc-shot">
@@ -329,18 +355,124 @@
   in the same place.
 </p>
 
-<h2 id="more">Plugins with a repository of their own</h2>
+<h2 id="tak">TAK</h2>
 <p>
-  Two more plugins are developed in repositories of their own and compiled
-  into Corvus like the others. The Corvus repository carries them as
+  Puts the people, vehicles and markers of a Team Awareness Kit network on the
+  Home map, and the aircraft on theirs. It speaks Cursor on Target, the
+  language of ATAK, CivTAK, WinTAK and iTAK, so it works with a phone running
+  ATAK on the same Wi-Fi as well as with a TAK Server or FreeTAKServer.
+  Nothing is opened until you switch a connection on, and the aircraft is not
+  shared until you say so.
+</p>
+<h3 id="tak-connections">Connections</h3>
+<p>
+  Press <strong>+</strong> under <strong>Connections</strong> and pick a kind.
+  <strong>Local network</strong> joins the group ATAK and WinTAK use to see each
+  other (239.2.3.1, port 6969), so no server is needed. <strong>UDP</strong>
+  talks to one address. <strong>TAK Server (TCP)</strong> connects to a server,
+  usually on port 8087. <strong>TAK Server (TLS)</strong> does the same
+  encrypted, usually on port 8089: the server is always checked against the
+  certificates of your system plus the CA file you name, and a server that
+  wants a client certificate gets the PEM certificate and key files you name
+  (a <code>.p12</code> from a data package has to be turned into PEM first).
+  <strong>Send to this connection</strong> off makes it listen only. The switch
+  on a row turns it on or off; one that cannot connect says why under the row
+  and tries again with growing pauses. A connection that is on is closed when
+  you switch it off and when Corvus closes.
+</p>
+<h3 id="tak-map">On the map</h3>
+<p>
+  A contact is a marker in the TAK colours: blue for friend, red for hostile,
+  green for neutral and yellow for unknown, with a symbol for a person, a
+  vehicle, an aircraft, a boat or a drone, and a spot marker keeps its own
+  colour. A contact that stopped reporting is dimmed, hidden unless you switch
+  on <strong>Show contacts that stopped reporting</strong> in the plugin's
+  gear, and dropped five minutes after it went stale. Under <strong>On the
+  map</strong> you choose which affiliations and kinds are drawn. The list
+  shows the nearest to the aircraft first with distance and age; a click frames
+  one and opens its type, position, height, movement, team and remarks. At most
+  1000 contacts are kept.
+</p>
+<h3 id="tak-share">What Corvus says</h3>
+<p>
+  <strong>Corvus on TAK</strong> sets the callsign, team colour and role.
+  <strong>Share the aircraft's position</strong> sends the aircraft as a
+  friendly unmanned aircraft (course, speed, battery and height with it) every
+  two seconds to everybody on the connections that are on and allowed to send;
+  ATAK draws it as a drone. <strong>Place a marker</strong> sends a spot marker
+  or a friendly, hostile, neutral or unknown ground marker where you click the
+  map, with a name and remarks. <strong>Delete for everyone</strong> orders
+  every client to drop a contact. <strong>Chat</strong> reads and writes the
+  all-chat line. The height sent is the aircraft's altitude above sea level.
+</p>
+<h3 id="tak-entities">Together with Map Entities</h3>
+<p>
+  TAK and Map Entities work alone and need neither of the other. If you use
+  both, they can help each other, and every step is a switch you choose.
+</p>
+<ul>
+  <li>Switch on <strong>Share with other plugins</strong> in the gear of Map
+    Entities and <strong>Send Map Entities to TAK</strong> in the gear of TAK.
+    Every gate, tree and symbol you place is then sent to ATAK and WinTAK as a
+    marker with its name, kind, size and note, a person as a friendly unit and a
+    vehicle as a friendly vehicle, and a gate at the middle of its two posts. A
+    change you make is sent at once, a deletion takes the marker back, and
+    everything is sent again every 20 minutes and whenever a connection comes
+    up, so a phone that joins later sees it too. Switching either option off
+    takes the markers back. Without a connection that may send, Corvus tries
+    again every 15 seconds. On the Home map you see the entity once, not twice.</li>
+  <li>Open a contact in TAK and press <strong>Add to Map Entities</strong> to
+    place it there as a point: a hostile contact as a target, a friendly unit as
+    a person or a vehicle, and a marker as a flag. It is a copy that does not
+    follow the contact. The button only appears while Map Entities is running.</li>
+</ul>
+<p>
+  With one of the two missing, off or stopped after an error, nothing changes
+  for the other: it shows no button and sends nothing.
+</p>
+<h3 id="tak-mcp">For an AI client</h3>
+<p>
+  The network side is in the core, so an AI client reaches it without this
+  window, with three switches of its own (see
+  <a href="mcp.html#permissions">What the AI client may do</a>): reading
+  contacts and chat, sending markers and chat and deleting a contact, and
+  setting up connections and sharing. Reading is off until you allow it,
+  because it shows where other people are, and the other two ask you first.
+  With <strong>Let an AI client steer the map layer</strong> on in the plugin's
+  gear, and Plugin tools on, it can also frame a contact and choose what the
+  map shows.
+</p>
+
+<h2 id="ai-chat">AI Chat</h2>
+<p>
+  A chat with a language model of your choice: one on this computer or the local network
+  (Ollama, LM Studio, llama.cpp, vLLM), or a hosted one. Enter the address, the model and,
+  where one is needed, the key under the gear of AI Chat in <strong>Settings</strong>,
+  <strong>Plugins</strong>. The model can use the station through the
+  <a href="mcp.html">MCP server</a>, so it gets the tools your switches there allow, with the
+  same question before anything that changes the aircraft. <strong>Stop</strong> ends an
+  answer at once. With a model on this computer it works without internet.
+</p>
+
+<h2 id="more">Each plugin is a repository of its own</h2>
+<p>
+  A plugin is developed, committed and published in its own repository, apart from Corvus.
+  Its releases are named after the version of Corvus they are for, and that is where Corvus
+  looks when you press <strong>Install</strong>. The Corvus repository carries them as
   submodules under <code>plugins/</code>:
 </p>
 <div class="table-wrap">
 <table>
   <thead><tr><th>Plugin</th><th>Repository</th><th>Folder under <code>plugins/</code></th></tr></thead>
   <tbody>
+    <tr><td><a href="#ai-chat">AI Chat</a></td><td><a href="https://github.com/M-BSquared/corvus-ai-chat">corvus-ai-chat</a></td><td><code>ai-chat</code></td></tr>
+    <tr><td><a href="#map-entities">Map Entities</a></td><td><a href="https://github.com/M-BSquared/corvus-map-entities">corvus-map-entities</a></td><td><code>map-entities</code></td></tr>
     <tr><td><a href="#nuttx-console">NuttX Console</a></td><td><a href="https://github.com/M-BSquared/corvus-nuttx-console">corvus-nuttx-console</a></td><td><code>nuttx-console</code></td></tr>
+    <tr><td><a href="#schwalby">Schwalby</a></td><td><a href="https://github.com/M-BSquared/corvus-schwalby">corvus-schwalby</a></td><td><code>schwalby</code></td></tr>
+    <tr><td><a href="#ssh-launcher">SSH Launcher</a></td><td><a href="https://github.com/M-BSquared/corvus-ssh-launcher">corvus-ssh-launcher</a></td><td><code>ssh-launcher</code></td></tr>
+    <tr><td><a href="#tak">TAK</a></td><td><a href="https://github.com/M-BSquared/corvus-tak">corvus-tak</a></td><td><code>tak</code></td></tr>
     <tr><td><a href="#trajectory-viewer">Trajectory Viewer</a></td><td><a href="https://github.com/M-BSquared/corvus-trajectory-viewer">corvus-trajectory-viewer</a></td><td><code>trajectory-viewer</code></td></tr>
+    <tr><td><a href="#vibration">Vibration Monitor</a></td><td><a href="https://github.com/M-BSquared/corvus-vibration">corvus-vibration</a></td><td><code>vibration</code></td></tr>
   </tbody>
 </table>
 </div>
@@ -348,7 +480,7 @@
 <h2 id="nuttx-console">NuttX Console</h2>
 <div class="callout">
   <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-info"></use></svg>
-  <div><p>Compiled into Corvus from a repository of its own, <a href="https://github.com/M-BSquared/corvus-nuttx-console">corvus-nuttx-console</a>, which the Corvus repository carries as a submodule.</p></div>
+  <div><p><a href="#install">Installed</a> from its own repository, <a href="https://github.com/M-BSquared/corvus-nuttx-console">corvus-nuttx-console</a>.</p></div>
 </div>
 <p>
   PX4's own shell: NSH, the NuttShell of NuttX, the operating system PX4 runs
@@ -410,7 +542,7 @@
 <h2 id="trajectory-viewer">Trajectory Viewer</h2>
 <div class="callout">
   <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-info"></use></svg>
-  <div><p>Compiled into Corvus from a repository of its own, <a href="https://github.com/M-BSquared/corvus-trajectory-viewer">corvus-trajectory-viewer</a>, which the Corvus repository carries as a submodule.</p></div>
+  <div><p><a href="#install">Installed</a> from its own repository, <a href="https://github.com/M-BSquared/corvus-trajectory-viewer">corvus-trajectory-viewer</a>.</p></div>
 </div>
 <p>
   Draws a trajectory from a file on the Home map: a route someone planned
@@ -488,7 +620,7 @@
 </p>
 
 <h3 id="layout">Folder layout</h3>
-<pre><code>src/plugins/
+<pre><code>plugins/
   my-plugin/
     Cargo.toml
     src/lib.rs
@@ -499,19 +631,20 @@
   <code>.</code> and <code>-</code>). The crate is called
   <code>corvus_plugin_&lt;id&gt;</code>, with dashes as underscores, and
   depends on <code>corvus_api</code> and on nothing inside the program: copy
-  the <code>Cargo.toml</code> of one of the four that ship.
+  the <code>Cargo.toml</code> of one that is there, with
+  <code>loadable = true</code> and the address of its repository.
 </p>
 <p>Then add it to the root <code>Cargo.toml</code> in two places:</p>
 <pre><code>[workspace]
-members = [..., "src/plugins/my-plugin"]
-default-members = [..., "src/plugins/my-plugin"]
+members = [..., "plugins/my-plugin"]
+default-members = [..., "plugins/my-plugin"]
 
-[dependencies]
-corvus_plugin_my_plugin = { path = "src/plugins/my-plugin" }</code></pre>
+[dev-dependencies]
+corvus_plugin_my_plugin = { path = "plugins/my-plugin" }</code></pre>
 <p>
-  The build finds every folder in <code>src/plugins</code> with a
-  <code>Cargo.toml</code> and fails, naming the missing line, when one is not
-  in <code>[dependencies]</code>, so a plugin never goes missing silently.
+  The build finds every folder in <code>plugins</code> with a
+  <code>Cargo.toml</code> and lists it under Settings, Plugins. A test names the
+  line that is missing, so a plugin never goes missing silently.
 </p>
 
 <h3 id="script">The plugin</h3>
@@ -675,25 +808,24 @@ fn options_changed(&amp;mut self, h: &amp;mut Host) {
 <p>
   A plugin's settings are kept in its own file,
   <code>~/.corvus/plugins/&lt;id&gt;/config.json</code>, not in the main
-  config. The shipped plugins are complete worked examples. Copy one and start
+  config. The plugins that are there are complete worked examples. Copy one and start
   from there:
 </p>
 <ul>
-  <li><code>src/plugins/ssh-launcher</code>: a form, saved settings and a backend call.</li>
-  <li><code>src/plugins/schwalby</code>: the same, with a control and tools for an AI client.</li>
-  <li><code>src/plugins/vibration</code>: a live chart on the telemetry stream.</li>
-  <li><code>src/plugins/map-entities</code>: placing things on the map by clicking, markers that can be dragged, and watching the aircraft's track against them.</li>
+  <li><code>plugins/ssh-launcher</code>: a form, saved settings and a backend call.</li>
+  <li><code>plugins/schwalby</code>: the same, with a control and tools for an AI client.</li>
+  <li><code>plugins/vibration</code>: a live chart on the telemetry stream.</li>
+  <li><code>plugins/map-entities</code>: placing things on the map by clicking, markers that can be dragged, and watching the aircraft's track against them.</li>
 </ul>
 
 <div class="callout callout-warn">
   <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-alert"></use></svg>
-  <div><p>A plugin is code compiled into the program, and the launchers run whatever command you give them as the account you point them at. Read a plugin before you build it in, exactly as you would a script you were about to run yourself.</p></div>
+  <div><p>A plugin is code that runs inside the program, and the launchers run whatever command you give them as the account you point them at. Read a plugin before you install it, exactly as you would a script you were about to run yourself.</p></div>
 </div>
 
 <h2 id="moving">Taking a plugin to another station</h2>
 <p>
-  A plugin's code is part of Corvus, so the other station has it when it runs
-  the same build. Its settings travel with
+  Install the plugin on the other station too, from Settings or from its file. Its settings travel with
   <strong>Settings, Export and import, Export settings</strong>.
 </p>
 <!-- /guide:content -->
@@ -712,11 +844,14 @@ fn options_changed(&amp;mut self, h: &amp;mut Host) {
 <aside class="guide-toc" aria-labelledby="toc-title">
   <p class="guide-toc-title" id="toc-title">On this page</p>
   <ul>
+    <li><a href="#install">Install a plugin</a></li>
     <li><a href="#vibration">Vibration Monitor</a></li>
     <li><a href="#ssh-launcher">SSH Launcher</a></li>
     <li><a href="#schwalby">Schwalby</a></li>
     <li><a href="#map-entities">Map Entities</a></li>
-    <li><a href="#more">Plugins with a repository of their own</a></li>
+    <li><a href="#tak">TAK</a></li>
+    <li><a href="#ai-chat">AI Chat</a></li>
+    <li><a href="#more">Each plugin is a repository of its own</a></li>
     <li><a href="#nuttx-console">NuttX Console</a></li>
     <li><a href="#trajectory-viewer">Trajectory Viewer</a></li>
     <li><a href="#your-own">Adding your own</a></li>

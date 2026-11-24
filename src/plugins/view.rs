@@ -140,7 +140,10 @@ impl Registry {
                 let top = ui.max_rect().top() + pad_top;
                 let area = Rect::from_min_size(
                     Pos2::new(body.left() + CARD_PAD, top),
-                    Vec2::new(body.width() - 2.0 * CARD_PAD - 8.0, 0.0),
+                    Vec2::new(
+                        body.width() - 2.0 * CARD_PAD - 8.0,
+                        (body.height() - pad_top - CARD_PAD).max(0.0),
+                    ),
                 );
                 let h = self
                     .with(i, &ctx, state, |p, h| p.show(ui, area, h))
@@ -282,7 +285,15 @@ fn option_field(
             let shown = value.and_then(Value::as_str).unwrap_or("").to_string();
             form::field(ui, f, &spec.label, "", &spec.hint, |ui, x, y, w| {
                 let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, form::control_h()));
-                if let Some(t) = crate::ui::field::committed(ui, r, ("pluginopt", &key), &shown, placeholder, false) {
+                if let Some(t) = crate::ui::field::committed_secret(
+                    ui,
+                    r,
+                    ("pluginopt", &key),
+                    &shown,
+                    placeholder,
+                    false,
+                    spec.secret,
+                ) {
                     out = Some(json!(t));
                 }
                 form::control_h()

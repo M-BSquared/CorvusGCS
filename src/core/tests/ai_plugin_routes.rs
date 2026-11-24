@@ -62,7 +62,10 @@ fn the_list_carries_the_plugins_the_roots_and_every_plugins_settings() {
         .iter()
         .map(|p| p["id"].as_str().unwrap())
         .collect();
-    assert_eq!(ids, ["mine", "vibration", "ssh-launcher", "schwalby", "map-entities"]);
+    assert_eq!(
+        ids,
+        ["mine", "vibration", "ssh-launcher", "schwalby", "map-entities", "tak"]
+    );
     assert_eq!(list["user_dir"], json!(r.tmp.0.join("plugins").to_string_lossy()));
     assert_eq!(list["settings"], json!({"old": {"a": 1}, "both": {"y": 2}}));
 }

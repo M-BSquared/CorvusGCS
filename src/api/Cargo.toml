@@ -9,9 +9,13 @@ build = "build.rs"
 
 [dependencies]
 eframe = { workspace = true }
+# One waiting queue for the locks the program and a plugin library share (plugin::dynamic).
+parking_lot_core = "0.9.12"
 egui_extras = { workspace = true }
 image = { workspace = true }
-serde_json = { workspace = true }
+# With the features the core turns on for the program: a `Value` crosses the boundary to a plugin
+# library, and its layout depends on them.
+serde_json = { version = "1", features = ["preserve_order", "float_roundtrip"] }
 vte = { workspace = true }
 regex = { workspace = true }
 rfd = { workspace = true }

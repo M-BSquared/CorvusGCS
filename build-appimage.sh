@@ -125,8 +125,10 @@ GUI_LOG="$BUILD_DIR/cargo-gui-linux.log"
 mkdir -p "$BUILD_DIR"
 : > "$GUI_LOG"
 TARGET="${CARGO_TARGET_DIR:-$REPO_DIR/target}"
+# --lib builds the plugin libraries in the same cargo call: only then do they share their types
+# with the program (corvus-build plugin-pack publishes them, the bundle does not hold them).
 if ! ( cd "$REPO_DIR" \
-        && CARGO_TARGET_DIR="$TARGET" cargo build --profile "$PROFILE" --locked --bin corvus-gcs ) >>"$GUI_LOG" 2>&1; then
+        && CARGO_TARGET_DIR="$TARGET" cargo build --profile "$PROFILE" --locked --bin corvus-gcs --lib ) >>"$GUI_LOG" 2>&1; then
     echo "ERROR: the interface did not build; log: $GUI_LOG" >&2
     tail -n 30 "$GUI_LOG" >&2 || true
     exit 1
@@ -330,5 +332,10 @@ fi
 
 SUCCESS=1
 echo ""
+# The plugins of this build, beside the AppImage and not in it: Settings, Plugins offers them from here.
+rm -rf "$REPO_DIR/dist/corvus-plugins"
+mkdir -p "$REPO_DIR/dist/corvus-plugins"
+cp "$TARGET/$PROFILE"/libcorvus_plugin_*.so "$REPO_DIR/dist/corvus-plugins/"
+
 echo ">>> Built: $OUTPUT"
 echo "    (appimagetool log: $AIM_LOG)"

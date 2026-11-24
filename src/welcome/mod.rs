@@ -627,7 +627,7 @@ impl Session {
             ),
             (
                 "Always show Betaflight",
-                "Adds BTFL to the left rail all the time. Off, it appears only while a Betaflight aircraft is connected. Betaflight support is in beta.",
+                "Shows the Betaflight card on the Setup overview all the time. Off, it appears only while a Betaflight aircraft is connected. Betaflight support is in beta.",
                 self.choices.betaflight_always,
             ),
             (

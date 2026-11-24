@@ -31,7 +31,10 @@ const SCRIPTS: &[&str] = &[
     "run.sh",
     "release.sh",
     ".github/workflows/build.yml",
+    ".github/workflows/plugin.yml",
     ".github/scripts/check-bundle.sh",
+    ".github/scripts/plugins.sh",
+    ".github/scripts/plugin-package.sh",
 ];
 
 /// The lines of a script that run something: comments left out.
@@ -118,6 +121,50 @@ fn the_pipeline_checks_the_rust_side_and_is_the_only_one() {
         assert!(ci.contains(needle), "{needle}");
     }
     assert!(!root().join(".gitlab-ci.yml").exists(), "GitHub is the only CI");
+}
+
+/// What Corvus asks for, what a plugin's workflow publishes and what git checks out agree.
+#[test]
+fn every_plugin_is_a_repository_that_publishes_itself() {
+    let modules = text(".gitmodules");
+    let workspace = text("Cargo.toml");
+    let called = text(".github/workflows/plugin.yml");
+    assert!(called.contains("workflow_call:") && called.contains("release=\"corvus-${TAG#v}\""));
+    let mut n = 0;
+    for e in std::fs::read_dir(root().join("plugins")).unwrap().flatten() {
+        if !e.path().join("Cargo.toml").is_file() {
+            continue;
+        }
+        n += 1;
+        let id = e.file_name().into_string().unwrap();
+        let url = format!("https://github.com/M-BSquared/corvus-{id}");
+        assert!(
+            modules.contains(&format!(
+                "[submodule \"plugins/{id}\"]\n\tpath = plugins/{id}\n\turl = {url}.git\n"
+            )),
+            "{id}: .gitmodules"
+        );
+        assert!(
+            workspace.contains(&format!("\"plugins/{id}\"")),
+            "{id}: workspace member"
+        );
+        let manifest = text(&format!("plugins/{id}/Cargo.toml"));
+        assert!(
+            manifest.contains(&format!("\nrepository = \"{url}\"\n")),
+            "{id}: repository"
+        );
+        assert!(manifest.contains("\nloadable = true\n"), "{id}: loadable");
+        let own = text(&format!("plugins/{id}/.github/workflows/build.yml"));
+        assert!(
+            own.contains("uses: M-BSquared/CorvusGCS/.github/workflows/plugin.yml@master")
+                && own.contains(&format!("\n      id: {id}\n")),
+            "{id}: its workflow"
+        );
+        for file in ["LICENSE.md", "README.md", ".gitignore"] {
+            assert!(root().join("plugins").join(&id).join(file).is_file(), "{id}: {file}");
+        }
+    }
+    assert_eq!(modules.matches("[submodule ").count(), n);
 }
 
 #[test]

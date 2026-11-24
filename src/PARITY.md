@@ -23,7 +23,7 @@ otherwise; "native file" is in `src/`.
 | Notification board, toasts, command dedupe, clear all | topbar.js, notification_dedupe.js | notify/ | done |
 | Notifications from vehicles that are not flown (fleet events) | fleet.js `announce` | fleet/mod.rs `new_events` | done |
 | Left rail: HOME, MISSION (when enabled), SETUP, ANALYSIS, LOGS, SET | sidenav.js | app/nav.rs | done |
-| BTFL in the left rail (a drone icon under SETUP, opens the Betaflight page): while a Betaflight aircraft is connected, or always with Settings, Layout, Always show Betaflight (also a First Setup switch under Mission planner) | new in the native interface | app/nav.rs, settings/tabs.rs, welcome/mod.rs | done: the rule (connected and `autopilot_stack` is betaflight, or the switch) and the config key are unit tested; seen in the window |
+| Betaflight card on the Setup overview (a drone icon, opens the Betaflight page): while a Betaflight aircraft is connected, or always with Settings, Layout, Always show Betaflight (also a First Setup switch under Mission planner) | new in the native interface | setup/mod.rs, settings/tabs.rs, welcome/mod.rs | done: the rule (connected and `autopilot_stack` is betaflight, or the switch) and the config key are unit tested; seen in the window |
 | Right panel with LINK, CONSOLE, SSH, PLUGINS tabs, resize grip, collapse handle, scroll arrows | panel.js | panel/mod.rs | done |
 | Responsive width classes (1279, 959, 900, 720, 600) | css/responsive.css | app/responsive.rs | done |
 | Interface scale (Settings, `ui.scale`, steps 0.8 to 1.5) | scale.js | app/mod.rs (`set_zoom_factor`) | done |
@@ -186,7 +186,7 @@ The rows were found by reading the CSS and the scripts, then the native code. On
 | Share link (forward to a second station) | link.js | panel/link.rs | done |
 | Console: filter, pause, copy, save, clear, input with history, jump to latest | panel.js | panel/console.rs | done |
 | SSH tab and saved connections, terminal | panel.js, ssh-term.js | panel/mod.rs, term/ | done |
-| PLUGINS tab | plugins.js | plugins/ (registry and view) | done: the cards, the gear dialog and Own tab as before; the plugins are crates (`src/plugins/<id>/`), listed by `build.rs` |
+| PLUGINS tab | plugins.js | plugins/ (registry and view) | done: the cards, the gear dialog and Own tab as before; the plugins are crates (`plugins/<id>/`), listed by `build.rs` |
 
 ## Keyboard
 

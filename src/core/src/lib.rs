@@ -105,6 +105,7 @@ pub mod scope;
 pub mod serial_ports;
 pub mod setup_schemas;
 pub mod store;
+pub mod tak;
 pub mod tlog;
 pub mod vehicle;
 pub mod version;
@@ -137,6 +138,7 @@ pub use crate::response::{Response, SseEvent, SseNext, SseStream, UNAVAILABLE};
 pub use crate::router::{Body, Handler, Pattern, Route, RouteOptions, Router, MAX_JSON_BODY, MAX_SETTINGS_BODY};
 pub use crate::settings::{ConfigListener, Settings};
 pub use crate::setup_schemas::SetupSchemasModule;
+pub use crate::tak::{TakModule, TakService};
 pub use crate::vehicle::{VehicleModule, VehicleOptions, VehicleService};
 
 #[cfg(test)]

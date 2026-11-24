@@ -1,5 +1,6 @@
 # =============================================================================
-# Corvus GCS — GitHub Actions pipeline (the project's only CI)
+# Corvus GCS — GitHub Actions pipeline (the project's only CI; plugin.yml is what the
+# plugins' own repositories call to publish themselves)
 # -----------------------------------------------------------------------------
 # Jobs:
 #   rust-gui    — rustfmt, clippy and the tests of the whole workspace (the
@@ -136,6 +137,11 @@ jobs:
           "$GITHUB_WORKSPACE"/dist/Corvus_GCS-*-x86_64.AppImage --appimage-extract >/dev/null
           "$GITHUB_WORKSPACE/.github/scripts/check-bundle.sh" squashfs-root \
             usr/bin/corvus-gcs-ui VERSION LICENSE.md
+      # The plugins (the submodules under plugins/) from the cargo call that made the
+      # program above. The program must load every one, or the job fails. They are
+      # published by their own repositories (plugin.yml), not here.
+      - name: Pack the plugins and load them in the finished program
+        run: .github/scripts/plugins.sh "$RUNNER_TEMP/squashfs-root/usr/bin/corvus-gcs-ui"
       - name: Read version
         id: ver
         run: echo "version=$(cat VERSION)" >> "$GITHUB_OUTPUT"
@@ -184,6 +190,11 @@ jobs:
           "$app/Contents/MacOS/corvus-gcs" --help | head -n 5
           codesign --verify --deep --strict "$app"
           CORVUS_APP_BUNDLE="$PWD/$app" cargo test --locked -p corvus_tools --test bundle_smoke
+      # The plugins (the submodules under plugins/) from the cargo call that made the
+      # program above. The program must load every one, or the job fails. They are
+      # published by their own repositories (plugin.yml), not here.
+      - name: Pack the plugins and load them in the finished program
+        run: .github/scripts/plugins.sh "dist/Corvus GCS.app/Contents/MacOS/corvus-gcs"
       - name: Keep the build logs of a failed build
         # cargo, codesign and hdiutil write their reasons to build/*.log, not to
         # the job log, so without these a failed build names no cause.
@@ -225,6 +236,12 @@ jobs:
       - name: Build the Windows app
         shell: pwsh
         run: .\build-windows.ps1 -Zip
+      # The plugins (the submodules under plugins/) from the cargo call that made the
+      # program above. The program must load every one, or the job fails. They are
+      # published by their own repositories (plugin.yml), not here.
+      - name: Pack the plugins and load them in the finished program
+        shell: bash
+        run: .github/scripts/plugins.sh "dist/Corvus GCS/Corvus GCS.exe"
       - name: Read version
         id: ver
         shell: bash

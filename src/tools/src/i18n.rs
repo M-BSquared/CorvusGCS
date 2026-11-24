@@ -6,7 +6,7 @@
 //! corvus-build i18n fmt                    rewrite the files sorted and indented
 //! ```
 //!
-//! A plugin keeps its own translations in `src/plugins/<id>/lang/<code>.json`,
+//! A plugin keeps its own translations in `plugins/<id>/lang/<code>.json`,
 //! in the same format (meta is optional there). `check` and `fmt` cover those
 //! files too; a plugin file is compared with the other languages of the same
 //! plugin only.
@@ -45,6 +45,13 @@ pub fn has_dash(text: &str) -> bool {
     text.contains('\u{2014}') || text.contains('\u{2013}') || text.contains(" - ")
 }
 
+/// UTF-8 that was read as Latin-1 and written again: an umlaut as two letters.
+pub fn is_garbled(text: &str) -> bool {
+    let c: Vec<char> = text.chars().collect();
+    c.windows(2)
+        .any(|w| matches!(w[0], '\u{c2}' | '\u{c3}' | '\u{e2}') && ('\u{80}'..='\u{bf}').contains(&w[1]))
+}
+
 /// The interface's language files.
 pub fn lang_dir(root: &Path) -> PathBuf {
     root.join("src").join("lang")
@@ -67,10 +74,8 @@ pub fn files(dir: &Path) -> Vec<PathBuf> {
 /// Every plugin's `lang` folder with its files.
 pub fn plugin_files(root: &Path) -> Vec<(PathBuf, Vec<PathBuf>)> {
     let mut out = Vec::new();
-    // The bundled plugins, and the ones that are repositories of their own.
-    let mut folders: Vec<PathBuf> = [root.join("src").join("plugins"), root.join("plugins")]
-        .iter()
-        .filter_map(|dir| std::fs::read_dir(dir).ok())
+    let mut folders: Vec<PathBuf> = std::fs::read_dir(root.join("plugins"))
+        .into_iter()
         .flatten()
         .filter_map(|e| e.ok().map(|e| e.path().join("lang")))
         .filter(|p| p.is_dir())
@@ -143,6 +148,9 @@ pub fn problems(path: &Path, union: &BTreeSet<String>, need_meta: bool) -> Vec<S
                 holes(key),
                 holes(value)
             ));
+        }
+        if is_garbled(value) {
+            out.push(format!("{key:?}: the translation is garbled"));
         }
         if has_dash(value) && !has_dash(key) {
             out.push(format!("{key:?}: the translation uses a dash"));
@@ -316,6 +324,7 @@ mod tests {
             assert!(!is_valid_code(bad), "{bad}");
         }
         assert_eq!(holes("{a} of {b} and {a}").into_iter().collect::<Vec<_>>(), ["a", "b"]);
+        assert!(is_garbled("f\u{c3}\u{bc}r") && !is_garbled("für, à côté, \u{e2}ge"));
         assert!(has_dash("one \u{2014} two") && has_dash("one - two") && !has_dash("one-two"));
     }
 

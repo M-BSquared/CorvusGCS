@@ -86,7 +86,9 @@ Push-Location $RepoDir
 try {
     $Target = if ($env:CARGO_TARGET_DIR) { $env:CARGO_TARGET_DIR } else { Join-Path $RepoDir "target" }
     $env:CARGO_TARGET_DIR = $Target
-    & cargo build --profile $Profile --locked --bin corvus-gcs *> $GuiLog
+    # --lib builds the plugin libraries in the same cargo call: only then do they share their types
+    # with the program (corvus-build plugin-pack publishes them, the bundle does not hold them).
+    & cargo build --profile $Profile --locked --bin corvus-gcs --lib *> $GuiLog
     if ($LASTEXITCODE -ne 0) {
         Get-Content $GuiLog -Tail 30
         throw "the interface did not build; log: $GuiLog"
@@ -134,6 +136,12 @@ if ($Zip) {
     if (Test-Path $Zipfile) { Remove-Item -Force $Zipfile }
     Compress-Archive -Path $AppDir -DestinationPath $Zipfile -CompressionLevel Optimal
 }
+
+# The plugins of this build, beside the folder and not in it: Settings, Plugins offers them from here.
+$PluginDir = Join-Path $DistDir "corvus-plugins"
+if (Test-Path $PluginDir) { Remove-Item -Recurse -Force $PluginDir }
+New-Item -ItemType Directory -Force $PluginDir | Out-Null
+Copy-Item (Join-Path $Target "$Profile\corvus_plugin_*.dll") $PluginDir
 
 Write-Host ""
 Write-Host "=== done ==="

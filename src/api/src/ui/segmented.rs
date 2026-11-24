@@ -9,6 +9,9 @@ use crate::ui::card::{self, Look};
 use crate::ui::icons;
 use crate::ui::style::{self, Weight};
 
+/// Seconds the raised pill takes to slide to a newly chosen segment.
+const PILL_SLIDE: f32 = 0.16;
+
 /// One segment.
 #[derive(Debug, Clone)]
 pub struct Segment {
@@ -138,6 +141,23 @@ pub fn show(
     );
     let mut x = rect.left() + 4.0;
     let mut clicked = None;
+    let mut slots = Vec::with_capacity(segs.len());
+    {
+        let mut sx = x;
+        for w in &widths {
+            slots.push((sx, *w));
+            sx += w + 3.0;
+        }
+    }
+    let (pill_x, pill_w) = slots.get(selected).copied().unwrap_or((x, 0.0));
+    let ctx = ui.ctx().clone();
+    let key = ui.scope_id().with((id, "pill"));
+    let pill_x = ctx.animate_value_with_time(key.with("x"), pill_x, PILL_SLIDE);
+    let pill_w = ctx.animate_value_with_time(key.with("w"), pill_w, PILL_SLIDE);
+    if pill_w > 0.0 {
+        let pill = Rect::from_min_size(Pos2::new(pill_x, rect.top() + 4.0), Vec2::new(pill_w, h - 8.0));
+        painter.rect_filled(pill, style::RADIUS_BTN - 2, style::surface_1());
+    }
     for (i, (s, (lg, cg))) in segs.iter().zip(g).enumerate() {
         let r = Rect::from_min_size(Pos2::new(x, rect.top() + 4.0), Vec2::new(widths[i], h - 8.0));
         let sense = if s.enabled {
@@ -147,9 +167,6 @@ pub fn show(
         };
         let resp = ui.interact(r, ui.scope_id().with((id, i)), sense);
         let sel = i == selected;
-        if sel {
-            painter.rect_filled(r, style::RADIUS_BTN - 2, style::surface_1());
-        }
         let color = if sel || (resp.hovered() && s.enabled) {
             style::text_1()
         } else {

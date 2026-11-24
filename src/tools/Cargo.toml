@@ -20,3 +20,7 @@ image = { workspace = true }
 regex = { workspace = true }
 # Language files keep `meta` before `strings` and their texts sorted as written.
 serde_json = { version = "1", features = ["preserve_order"] }
+# The plugin packages: the manifests that say which crates are shipped as libraries, and the
+# signed list.
+toml = "0.8"
+corvus_package = { path = "../package" }

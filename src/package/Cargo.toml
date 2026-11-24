@@ -1,0 +1,11 @@
+[package]
+name = "corvus_package"
+version = "0.0.0"
+edition = "2021"
+rust-version = "1.99"
+publish = false
+description = "The plugin package format of Corvus GCS: the index and hashes, shared by the program and corvus-build"
+
+[dependencies]
+serde_json = { workspace = true }
+sha2 = "0.10"

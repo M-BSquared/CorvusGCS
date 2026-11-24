@@ -1,0 +1,171 @@
+# =============================================================================
+# Corvus GCS — publishing a plugin
+# -----------------------------------------------------------------------------
+# Called by the workflow of a plugin's own repository (plugins/<id> here, a
+# submodule), never by this one. A plugin has to be built from the very source
+# of the program that loads it, so this checks out the newest published version
+# of Corvus GCS, puts the plugin's commit at plugins/<id>, builds both on every
+# system, and lets the published program load the result. Only then are the
+# libraries and their list attached to the release `corvus-<version>` of the
+# plugin's repository, which is where Corvus GCS of that version looks for them.
+#
+# A push to the plugin publishes it for the newest Corvus GCS. A new Corvus GCS
+# needs every plugin again: the plugin's schedule does that within hours, and
+# `gh workflow run build.yml --repo M-BSquared/corvus-<id>` at once.
+# =============================================================================
+name: plugin
+
+on:
+  workflow_call:
+    inputs:
+      id:
+        description: The plugin, the name of its folder under plugins/
+        required: true
+        type: string
+      corvus:
+        description: The tag of Corvus GCS to build for (the newest release when empty)
+        required: false
+        type: string
+        default: ''
+
+jobs:
+  which:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.which.outputs.tag }}
+      build: ${{ steps.which.outputs.build }}
+    steps:
+      - id: which
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ID: ${{ inputs.id }}
+          WANTED: ${{ inputs.corvus }}
+        run: |
+          set -euo pipefail
+          tag="$WANTED"
+          [ -n "$tag" ] || tag="$(gh api repos/M-BSquared/CorvusGCS/releases/latest --jq .tag_name)"
+          case "$tag" in v[0-9]*) ;; *) echo "not a tag of Corvus GCS: $tag" >&2; exit 1 ;; esac
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          build=true
+          # Versions from before the plugins were repositories of their own cannot load one.
+          if ! gh api "repos/M-BSquared/CorvusGCS/contents/.github/scripts/plugin-package.sh?ref=$tag" >/dev/null 2>&1 \
+              || ! gh api "repos/M-BSquared/CorvusGCS/contents/plugins/$ID?ref=$tag" >/dev/null 2>&1; then
+            echo "::notice::Corvus GCS $tag does not load $ID as a plugin; the next release will."
+            build=false
+          fi
+          # The schedule only fills in what is missing.
+          if [ "$build" = true ] && [ "$GITHUB_EVENT_NAME" = schedule ]; then
+            notes="$(gh release view "corvus-${tag#v}" --repo "$GITHUB_REPOSITORY" --json body --jq .body 2>/dev/null || true)"
+            case "$notes" in *"$GITHUB_SHA"*) build=false ;; esac
+          fi
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: which
+    if: needs.which.outputs.build == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        # The systems and runners of build.yml: an older glibc on purpose.
+        os: [ubuntu-22.04, macos-15, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          repository: M-BSquared/CorvusGCS
+          ref: ${{ needs.which.outputs.tag }}
+          submodules: true
+      - name: Make room for the plugin
+        env:
+          ID: ${{ inputs.id }}
+        run: rm -rf "plugins/$ID"
+      - uses: actions/checkout@v5
+        with:
+          path: plugins/${{ inputs.id }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: . -> target
+      - name: Install build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends \
+            libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
+            libxkbcommon-dev libwayland-dev libudev-dev
+      - name: Test the plugin
+        if: runner.os == 'Linux'
+        env:
+          ID: ${{ inputs.id }}
+        run: |
+          crate="corvus_plugin_${ID//-/_}"
+          cargo clippy --locked -p "$crate" --all-targets -- -D warnings
+          cargo test --locked -p "$crate"
+      - name: Build it and load it in the published program
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ID: ${{ inputs.id }}
+          TAG: ${{ needs.which.outputs.tag }}
+        run: .github/scripts/plugin-package.sh "$ID" "$TAG"
+      - uses: actions/upload-artifact@v6
+        with:
+          name: plugin-${{ matrix.os }}
+          path: dist/plugins/*
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: [which, build]
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    # One at a time, so two pushes do not write one release at once.
+    concurrency:
+      group: publish-${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          repository: M-BSquared/CorvusGCS
+          ref: ${{ needs.which.outputs.tag }}
+          submodules: true
+      - uses: actions/download-artifact@v7
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Write the list
+        run: |
+          set -euo pipefail
+          cargo run -q --release --locked -p corvus_tools --bin corvus-build -- plugin-index --out artifacts
+          rm -f artifacts/*.entry.json
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.which.outputs.tag }}
+        run: |
+          set -euo pipefail
+          release="corvus-${TAG#v}"
+          notes="For Corvus GCS ${TAG#v}, built from $GITHUB_SHA. Install it in Corvus GCS under Settings, Plugins."
+          gh release view "$release" >/dev/null 2>&1 \
+            || gh release create "$release" --target "$GITHUB_SHA" --title "For Corvus GCS ${TAG#v}" --notes "$notes"
+          upload() {
+            for attempt in 1 2 3 4 5; do
+              gh release upload "$release" "$1" --clobber && return 0
+              sleep $((attempt * 10))
+            done
+            return 1
+          }
+          # The libraries have their checksum in their name, so nothing is replaced before the
+          # list that names the new ones is there.
+          for f in artifacts/*; do
+            [ "$(basename "$f")" = plugins-index.json ] || upload "$f"
+          done
+          upload artifacts/plugins-index.json
+          gh release edit "$release" --notes "$notes"
+          # What the list no longer names.
+          gh release view "$release" --json assets --jq '.assets[].name' | while read -r name; do
+            [ -f "artifacts/$name" ] || gh release delete-asset "$release" "$name" --yes
+          done

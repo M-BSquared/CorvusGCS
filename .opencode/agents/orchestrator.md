@@ -53,7 +53,7 @@ The repository is one cargo workspace: the interface crate (`Cargo.toml` and
 `src/` at the root), `src/core` (`corvus_core`, the backend, run inside the
 interface's process), `src/link` (`corvus_link`, MAVLink), `src/api`
 (`corvus_api`, what plugins build on), one crate per bundled plugin under
-`src/plugins/<id>/`, and `src/tools` (`corvus-build`, never shipped). There is
+`plugins/<id>/`, and `src/tools` (`corvus-build`, never shipped). There is
 no Python and no web page any more; behaviour the Python program defined is
 held by the frozen fixtures in `src/core/tests/data` and `src/link/tests/data`.
 

@@ -149,6 +149,9 @@ pub struct Payload {
     pub facts: Facts,
     pub reasons: Vec<String>,
     pub prompt: bool,
+    /// Every parameter the verdict rests on was answered. An old backend does
+    /// not say, and then the answer stands as it is.
+    pub settled: bool,
     pub presets: Vec<Preset>,
     pub preset_current: Option<i64>,
     pub fingerprint: String,
@@ -172,6 +175,7 @@ impl Payload {
                 .map(|a| a.iter().filter_map(Value::as_str).map(String::from).collect())
                 .unwrap_or_default(),
             prompt: v.get("prompt") == Some(&Value::Bool(true)),
+            settled: v.get("settled") != Some(&Value::Bool(false)),
             presets: v
                 .get("presets")
                 .and_then(Value::as_array)
@@ -506,9 +510,15 @@ pub fn finish_hint(open: usize) -> String {
 /// A fresh board's parameters are still arriving for a moment after the
 /// heartbeat.
 pub const CONNECT_SETTLE_MS: f64 = 3500.0;
-/// A flash briefly shows the bootloader port too.
-pub const BOOTLOADER_SETTLE_MS: f64 = 4000.0;
+/// A board that is plugged in sits in its bootloader before it starts the
+/// firmware: PX4 and ArduPilot wait several seconds for a flasher, longer on
+/// some boards. A board with no firmware stays there for good, so waiting costs
+/// nothing, while an offer made too early tells the owner of a working aircraft
+/// that it has no firmware.
+pub const BOOTLOADER_SETTLE_MS: f64 = 15000.0;
 pub const RETRY_MS: f64 = 4000.0;
+/// How often a controller whose parameters had not all arrived is asked again.
+pub const UNSETTLED_TRIES: u8 = 4;
 pub const MODAL_RETRY_MS: f64 = 5000.0;
 
 /// `shouldPrompt`: whether a payload earns an unprompted dialog.
@@ -647,6 +657,7 @@ pub struct Watcher {
     last_connected: bool,
     last_bootloader: String,
     connect_due: Option<(f64, bool)>,
+    unsettled: u8,
     boot_due: Option<(f64, String)>,
     shown_for: String,
     shown_bootloader: String,
@@ -668,6 +679,7 @@ impl Watcher {
         self.armed = state.get("armed") == Some(&Value::Bool(true));
         let waiting = bootloader_device(state);
         if connected && !self.last_connected {
+            self.unsettled = 0;
             self.connect_due = Some((now + CONNECT_SETTLE_MS, true));
         } else if !connected && self.last_connected {
             self.connect_due = None;
@@ -731,6 +743,14 @@ impl Watcher {
             }
             return None;
         };
+        if !p.settled {
+            // some parameters did not answer yet: no verdict from half an answer
+            if self.unsettled < UNSETTLED_TRIES {
+                self.unsettled += 1;
+                self.connect_due = Some((now + RETRY_MS, false));
+            }
+            return None;
+        }
         if !p.fingerprint.is_empty() && p.fingerprint == self.shown_for {
             return None;
         }
@@ -1152,12 +1172,46 @@ mod tests {
     }
 
     #[test]
+    fn a_controller_whose_parameters_have_not_all_arrived_is_asked_again_and_never_judged() {
+        let unsettled = |prompt: bool| {
+            Payload::from_json(&json!({
+                "connected": true, "stack": "px4", "prompt": prompt, "settled": false,
+                "reasons": ["No airframe is selected."], "fingerprint": "px4|1|2|abc",
+            }))
+        };
+        let mut w = Watcher::new(Quiet::default());
+        w.on_state(&tel(true, false, ""), 0.0);
+        assert_eq!(w.due(3600.0, false, false), Some(Job::Fresh { may_retry: true }));
+        let mut at = 3600.0;
+        for _ in 0..UNSETTLED_TRIES {
+            assert_eq!(w.fresh_answer(Some(&unsettled(true)), true, at), None);
+            at += RETRY_MS;
+            assert_eq!(
+                w.due(at, false, false),
+                Some(Job::Fresh { may_retry: false }),
+                "asked again"
+            );
+        }
+        assert_eq!(w.fresh_answer(Some(&unsettled(true)), false, at), None);
+        assert_eq!(w.due(at + 60_000.0, false, false), None, "then it gives up quietly");
+        assert!(
+            w.fresh_answer(Some(&fresh_payload()), false, at).is_some(),
+            "a settled answer is trusted"
+        );
+    }
+
+    #[test]
     fn a_board_waiting_in_its_bootloader_is_offered_the_firmware_step() {
         let mut w = Watcher::new(Quiet::default());
         w.on_state(&tel(false, false, "/dev/ttyACM0"), 0.0);
-        assert_eq!(w.due(3000.0, false, false), None);
         assert_eq!(
             w.due(4000.0, false, false),
+            None,
+            "a board still waiting for its flasher"
+        );
+        assert_eq!(w.due(14000.0, false, false), None);
+        assert_eq!(
+            w.due(15000.0, false, false),
             Some(Job::Bootloader("/dev/ttyACM0".into()))
         );
         let offer = w.bootloader_answer("/dev/ttyACM0", "idle").unwrap();
@@ -1177,7 +1231,7 @@ mod tests {
     fn a_flash_in_progress_is_not_a_new_controller() {
         let mut w = Watcher::new(Quiet::default());
         w.on_state(&tel(false, false, "/dev/ttyACM0"), 0.0);
-        w.due(4000.0, false, false);
+        w.due(15000.0, false, false);
         assert_eq!(w.bootloader_answer("/dev/ttyACM0", "flashing"), None);
         assert_eq!(w.bootloader_answer("/dev/ttyACM0", "downloading"), None);
     }
@@ -1188,13 +1242,13 @@ mod tests {
         w.on_state(&tel(false, false, "/dev/ttyACM0"), 0.0);
         w.on_state(&tel(true, false, "/dev/ttyACM0"), 1000.0);
         assert_ne!(
-            w.due(4000.0, false, false),
+            w.due(15000.0, false, false),
             Some(Job::Bootloader("/dev/ttyACM0".into()))
         );
         let mut w = Watcher::new(Quiet::default());
         w.on_state(&tel(false, false, "/dev/ttyACM0"), 0.0);
         w.on_state(&tel(false, false, ""), 1000.0);
-        assert_eq!(w.due(5000.0, false, false), None);
+        assert_eq!(w.due(16000.0, false, false), None);
         assert_eq!(w.bootloader_answer("/dev/ttyACM0", "idle"), None);
     }
 }

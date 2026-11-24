@@ -43,7 +43,7 @@ pub(super) fn api_first_setup(core: &Core, _req: &Request) -> Response {
         return Response::json(json!({"connected": false, "needs_setup": false, "prompt": false}));
     };
     let (stack, vehicle, transport) = context(&h);
-    let values = fetch(&h, &first_setup::param_names(&stack), false);
+    let values = fetch(&h, &first_setup::read_names(&stack), false);
     if values.is_empty() {
         return Response::json(json!({
             "connected": false, "stack": stack, "vehicle": vehicle, "transport": transport,
@@ -52,7 +52,11 @@ pub(super) fn api_first_setup(core: &Core, _req: &Request) -> Response {
             "fingerprint": "",
         }));
     }
-    let mut payload = first_setup::assess(&stack, vehicle, &transport, &values);
+    let mut payload = first_setup::judge(
+        first_setup::assess(&stack, vehicle, &transport, &values),
+        &stack,
+        &values,
+    );
     payload["connected"] = json!(true);
     payload["fingerprint"] = json!(fingerprint(&h, &stack));
     Response::json(payload)

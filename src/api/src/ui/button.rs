@@ -8,6 +8,9 @@ use eframe::egui::{self, Color32, Galley, Pos2, Rect, Stroke, Vec2};
 use crate::ui::icons;
 use crate::ui::style::{self, Weight};
 
+/// Seconds a button takes to blend between resting and hovered colours.
+const HOVER_FADE: f32 = 0.12;
+
 /// `.btn[data-variant]`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Variant {
@@ -139,7 +142,10 @@ impl<'a> Button<'a> {
             resp = resp.on_hover_tr(self.title);
         }
         let hover = resp.hovered() && self.enabled;
-        let (fill, text, stroke) = match self.variant {
+        let glow = ui
+            .ctx()
+            .animate_bool_with_time(resp.id.with("hover"), hover, HOVER_FADE);
+        let colors = |hover: bool| match self.variant {
             Variant::Primary => (
                 if hover { style::accent_hover() } else { style::accent() },
                 style::text_inverted(),
@@ -167,6 +173,10 @@ impl<'a> Button<'a> {
                 Stroke::new(1.0, style::critical().gamma_multiply(0.30)),
             ),
         };
+        let (rest_fill, rest_text, stroke) = colors(false);
+        let (hover_fill, hover_text, _) = colors(true);
+        let fill = rest_fill.lerp_to_gamma(hover_fill, glow);
+        let text = rest_text.lerp_to_gamma(hover_text, glow);
         // `.btn:disabled { opacity: .45 }` fades the whole button as one
         // group: the label is the label blended into the page, not a label
         // drawn thinly over the faded fill
@@ -232,12 +242,16 @@ pub fn icon_btn(
     let resp = ui
         .interact(hit, ui.scope_id().with(id), egui::Sense::click())
         .on_hover_tr(title);
+    let glow = ui
+        .ctx()
+        .animate_bool_with_time(resp.id.with("hover"), resp.hovered(), HOVER_FADE);
     let (fill, color) = if active {
         (style::accent_dark(), style::accent_bright())
-    } else if resp.hovered() {
-        (style::surface_hover(), style::text_1())
     } else {
-        (Color32::TRANSPARENT, style::text_3())
+        (
+            Color32::TRANSPARENT.lerp_to_gamma(style::surface_hover(), glow),
+            style::text_3().lerp_to_gamma(style::text_1(), glow),
+        )
     };
     ui.painter().rect_filled(rect, style::RADIUS_BTN, fill);
     let s = if rect.width() < 24.0 { 13.0 } else { 15.0 };

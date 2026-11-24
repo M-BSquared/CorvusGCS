@@ -974,6 +974,7 @@ dependencies = [
  "egui_extras",
  "image",
  "libc",
+ "parking_lot_core",
  "regex",
  "rfd",
  "serde_json",
@@ -994,6 +995,7 @@ dependencies = [
  "libc",
  "lzma-rs",
  "memmap2 0.9.12",
+ "remoteid",
  "rusqlite",
  "russh",
  "rustls",
@@ -1012,10 +1014,14 @@ version = "0.0.0"
 dependencies = [
  "corvus_api",
  "corvus_core",
+ "corvus_package",
+ "corvus_plugin_ai_chat",
  "corvus_plugin_map_entities",
  "corvus_plugin_nuttx_console",
+ "corvus_plugin_probe",
  "corvus_plugin_schwalby",
  "corvus_plugin_ssh_launcher",
+ "corvus_plugin_tak",
  "corvus_plugin_trajectory_viewer",
  "corvus_plugin_vibration",
  "ctrlc",
@@ -1025,6 +1031,7 @@ dependencies = [
  "gilrs",
  "image",
  "libc",
+ "libloading",
  "objc2 0.6.5",
  "objc2-app-kit 0.3.2",
  "objc2-foundation 0.3.2",
@@ -1054,6 +1061,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "corvus_package"
+version = "0.0.0"
+dependencies = [
+ "serde_json",
+ "sha2 0.10.9",
+]
+
+[[package]]
+name = "corvus_plugin_ai_chat"
+version = "0.0.0"
+dependencies = [
+ "corvus_api",
+ "eframe",
+ "rustls",
+ "rustls-native-certs",
+ "serde_json",
+]
+
+[[package]]
 name = "corvus_plugin_map_entities"
 version = "0.0.0"
 dependencies = [
@@ -1072,6 +1098,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "corvus_plugin_probe"
+version = "0.0.0"
+dependencies = [
+ "corvus_api",
+ "eframe",
+ "serde_json",
+]
+
+[[package]]
 name = "corvus_plugin_schwalby"
 version = "0.0.0"
 dependencies = [
@@ -1082,6 +1117,15 @@ dependencies = [
 
 [[package]]
 name = "corvus_plugin_ssh_launcher"
+version = "0.0.0"
+dependencies = [
+ "corvus_api",
+ "eframe",
+ "serde_json",
+]
+
+[[package]]
+name = "corvus_plugin_tak"
 version = "0.0.0"
 dependencies = [
  "corvus_api",
@@ -1111,9 +1155,11 @@ dependencies = [
 name = "corvus_tools"
 version = "0.0.0"
 dependencies = [
+ "corvus_package",
  "image",
  "regex",
  "serde_json",
+ "toml",
 ]
 
 [[package]]
@@ -1733,8 +1779,6 @@ dependencies = [
 [[package]]
 name = "epaint"
 version = "0.37.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "97bac86ae3dde93fc3951e790951caea739ff39a6c89d909cdaf1d9278dbb1bd"
 dependencies = [
  "ahash",
  "bytemuck",
@@ -3838,8 +3882,6 @@ dependencies = [
 [[package]]
 name = "parking_lot_core"
 version = "0.9.12"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2621685985a2ebf1c516881c026032ac7deafcda1a2c9b7850dc81e3dfcb64c1"
 dependencies = [
  "cfg-if",
  "libc",
@@ -4508,6 +4550,12 @@ name = "regex-syntax"
 version = "0.8.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
+
+[[package]]
+name = "remoteid"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ace3b39cb3084118745a149b6e3ccdf15ab920da4f80ebf3cc459880fe76342b"
 
 [[package]]
 name = "renderdoc-sys"

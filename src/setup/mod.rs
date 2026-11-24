@@ -133,12 +133,26 @@ const TILES: &[(&str, &str, &str, &str)] = &[
     ("firmware", "cpu", "Firmware", "Flash PX4 or ArduPilot over direct USB."),
     (
         "betaflight",
-        "circuit-board",
+        "drone",
         "Betaflight",
         "Read a Betaflight controller over MSP: board, sensors, PIDs, rates.",
     ),
     ("video", "video", "Video", "RTSP or WebRTC cameras in floating windows."),
 ];
+
+/// Whether the connected aircraft runs Betaflight. The link carries the stack
+/// name for as long as it is connected, so a link that is down shows nothing,
+/// whatever it carried before.
+pub fn betaflight_connected(state: &Value) -> bool {
+    state.get("connected").and_then(Value::as_bool) == Some(true)
+        && state.get("autopilot_stack").and_then(Value::as_str) == Some("betaflight")
+}
+
+/// Whether the Betaflight tile is on the overview: while a Betaflight aircraft
+/// is connected, or always when the operator asked for that.
+pub fn betaflight_tile_shown(connected: bool, always: bool) -> bool {
+    connected || always
+}
 
 /// Whether the First Setup wizard is up, so the detector leaves it alone.
 pub fn first_setup_open() -> bool {
@@ -203,6 +217,9 @@ pub struct SetupPage {
     video_windows: VideoWindows,
     /// What the connected stack cannot do: greys the tiles it cannot serve.
     caps: crate::data::capabilities::Cache,
+    /// Settings, Layout, Always show Betaflight: the Betaflight tile stays on
+    /// the overview without a Betaflight aircraft.
+    pub betaflight_always: bool,
 }
 
 impl SetupPage {
@@ -215,6 +232,7 @@ impl SetupPage {
             initial_scroll: None,
             video_windows: VideoWindows::default(),
             caps: Default::default(),
+            betaflight_always: false,
         }
     }
 
@@ -277,11 +295,6 @@ impl SetupPage {
     /// Opens the page scrolled by `px`.
     pub fn scroll_to(&mut self, px: f32) {
         self.initial_scroll = Some(px);
-    }
-
-    /// Whether the Betaflight page is the one showing.
-    pub fn shows_betaflight(&self) -> bool {
-        matches!(self.view, View::Betaflight(_))
     }
 
     /// Opens a tile's page, as clicking it does.
@@ -375,7 +388,8 @@ impl SetupPage {
                         |_, _, _| 0.0,
                     );
                     let caps = self.caps.get(ui.ctx(), &self.server, state).clone();
-                    y = grid(ui, x, y, w, &mut self.view, &self.server, &self.env, &caps);
+                    let betaflight = betaflight_tile_shown(betaflight_connected(state), self.betaflight_always);
+                    y = grid(ui, x, y, w, &mut self.view, &self.server, &self.env, &caps, betaflight);
                 }
                 View::Parameters(_)
                 | View::Safety(_)
@@ -568,12 +582,14 @@ fn grid(
     server: &Server,
     env: &crate::setup::geofence::Env,
     caps: &crate::data::capabilities::Capabilities,
+    betaflight: bool,
 ) -> f32 {
     let cols = columns(w);
     let tile_w = (w - 14.0 * (cols as f32 - 1.0)) / cols as f32;
     let tile_h = 18.0 * 2.0 + (14.0 * 1.21f32 + 3.0 + 2.0 * 11.5 * 1.45).max(40.0);
     let mut bottom = y;
-    for (i, (id, icon, title, desc)) in TILES.iter().enumerate() {
+    let shown = TILES.iter().filter(|t| betaflight || t.0 != "betaflight");
+    for (i, (id, icon, title, desc)) in shown.enumerate() {
         let (col, row) = ((i % cols) as f32, (i / cols) as f32);
         let r = Rect::from_min_size(
             Pos2::new(x + col * (tile_w + 14.0), y + row * (tile_h + 14.0)),
@@ -612,6 +628,40 @@ fn grid(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn the_betaflight_tile_follows_the_aircraft_unless_the_operator_asked_for_it_always() {
+        assert!(!betaflight_tile_shown(false, false), "the default: nothing without one");
+        assert!(betaflight_tile_shown(true, false));
+        assert!(betaflight_tile_shown(false, true), "always: there with no aircraft");
+        assert!(betaflight_tile_shown(true, true));
+    }
+
+    #[test]
+    fn a_betaflight_aircraft_is_one_the_link_says_is_connected_and_runs_betaflight() {
+        assert!(betaflight_connected(
+            &json!({"connected": true, "autopilot_stack": "betaflight"})
+        ));
+        assert!(
+            !betaflight_connected(&json!({"connected": false, "autopilot_stack": "betaflight"})),
+            "a link that dropped shows nothing, whatever it carried"
+        );
+        for stack in ["px4", "ardupilot", "generic", ""] {
+            assert!(!betaflight_connected(
+                &json!({"connected": true, "autopilot_stack": stack})
+            ));
+        }
+        assert!(!betaflight_connected(&json!({"autopilot_stack": "betaflight"})));
+        assert!(!betaflight_connected(&json!({})));
+        assert!(!betaflight_connected(&Value::Null));
+    }
+
+    #[test]
+    fn every_tile_icon_is_one_the_interface_ships() {
+        for (id, icon, _, _) in TILES {
+            assert!(crate::ui::icons::exists(icon), "{id} uses the missing icon {icon}");
+        }
+    }
 
     #[test]
     fn the_firmware_line() {

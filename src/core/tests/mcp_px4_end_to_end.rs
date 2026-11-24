@@ -569,8 +569,11 @@ fn an_mcp_client_flies_a_px4_over_http() {
     assert_eq!(status, 200, "{body}");
     assert_eq!(
         listed(&mut ai).len(),
-        corvus_core::mcp::tools::builtin().len(),
-        "every built in tool is listed"
+        corvus_core::mcp::tools::builtin()
+            .iter()
+            .filter(|t| !corvus_core::mcp::settings::EXTENSIONS.contains(&t.permission))
+            .count(),
+        "every built in tool the switches above open is listed"
     );
 
     // ---- parameters: write --------------------------------------------------

@@ -81,6 +81,10 @@ pub struct Panel {
     /// The width the operator dragged it to, when they did; else `--panel-w`.
     pub width: Option<f32>,
     pub collapsed: bool,
+    /// How open the panel looks this frame, 0 (the handle alone) to 1.
+    open_t: f32,
+    /// The width it has when fully open, in this frame.
+    full_w: f32,
     /// The handle was pressed: the window width no longer folds it.
     pub user_toggled: bool,
     active: Tab,
@@ -128,6 +132,8 @@ impl Panel {
             server,
             width: None,
             collapsed: false,
+            open_t: 1.0,
+            full_w: MIN_WIDTH,
             user_toggled: false,
             active: Tab::Link,
             tab_target: 0.0,
@@ -167,14 +173,20 @@ impl Panel {
         }
     }
 
-    /// The width the panel takes from the window now.
-    pub fn current_width(&self, vw: &crate::app::responsive::Vw) -> f32 {
-        if self.collapsed {
-            HANDLE
-        } else {
-            self.width
-                .map_or_else(|| vw.panel_width(), |w| w.clamp(MIN_WIDTH, ceiling(vw.width)))
-        }
+    /// The width the panel takes from the window now: it slides between the
+    /// handle alone and its full width when folded or opened.
+    pub fn current_width(&mut self, ctx: &egui::Context, vw: &crate::app::responsive::Vw) -> f32 {
+        let full = self
+            .width
+            .map_or_else(|| vw.panel_width(), |w| w.clamp(MIN_WIDTH, ceiling(vw.width)));
+        self.full_w = full;
+        self.open_t = ctx.animate_bool_with_time_and_easing(
+            egui::Id::NULL.with("panel-open"),
+            !self.collapsed,
+            0.1,
+            egui::emath::easing::cubic_out,
+        );
+        HANDLE + (full - HANDLE) * self.open_t
     }
 
     /// `app.js`: under 960 the panel folds, from 1280 it opens again, unless
@@ -207,7 +219,7 @@ impl Panel {
         self.windows.clear();
     }
 
-    /// Draws the panel into `rect` (its full current width).
+    /// Draws the panel into `rect`, the width `current_width` returned.
     pub fn show(&mut self, ui: &mut egui::Ui, rect: Rect, state: &Value, plugins: &mut Registry) {
         let painter = ui.painter_at(rect);
         // .panel-handle
@@ -253,9 +265,12 @@ impl Panel {
             self.collapsed = !self.collapsed;
             self.user_toggled = true;
         }
-        if self.collapsed {
+        if self.open_t <= 0.0 {
             return;
         }
+        // While it slides the body keeps its full size and is cut off by
+        // `painter` and the child clip, so it moves as one piece with the handle.
+        let rect = Rect::from_min_size(rect.min, Vec2::new(self.full_w, rect.height()));
         let body = Rect::from_min_max(Pos2::new(handle.right(), rect.top()), rect.max);
         painter.rect_filled(body, 0, style::surface_1());
 
@@ -427,7 +442,7 @@ impl Panel {
 
         let content = Rect::from_min_max(Pos2::new(body.left(), strip.bottom()), body.max);
         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(content));
-        child.set_clip_rect(content);
+        child.set_clip_rect(content.intersect(ui.clip_rect()));
         match self.active {
             Tab::Link => self.link.show(&mut child, content, state),
             Tab::Console => self.console.show(&mut child, content),

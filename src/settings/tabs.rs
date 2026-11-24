@@ -42,7 +42,7 @@ const BETAFLIGHT: Sw = ui_sw(
     "betaflight_always",
     false,
     "Always show Betaflight",
-    "Adds BTFL under SETUP in the left rail, which opens the Betaflight page. Off by default: it then appears only while a Betaflight aircraft is connected, a serial link whose Flight controller is set to Betaflight. Turn it on to reach the page without one, for example to read a controller over USB.",
+    "Shows the Betaflight card on the Setup overview. Off by default: it then appears only while a Betaflight aircraft is connected, a serial link whose Flight controller is set to Betaflight. Turn it on to reach the page without one, for example to read a controller over USB.",
 );
 
 const SIDE_PANEL: [Sw; 2] = [

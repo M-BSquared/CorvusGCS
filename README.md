@@ -15,7 +15,7 @@
 
 <div align="center">
   <!-- corvus:version-badge -->
-  <img src="https://img.shields.io/badge/Version-2026.11.83-f7ebe1?style=for-the-badge" height="28" alt="Version 2026.11.83" />
+  <img src="https://img.shields.io/badge/Version-2026.11.84-f7ebe1?style=for-the-badge" height="28" alt="Version 2026.11.84" />
   <img width="8" />
   <a href="https://www.rust-lang.org/" target="_blank"><img src="https://img.shields.io/badge/%E2%80%8B-Rust-CE412B?logo=rust&logoColor=white&style=for-the-badge" height="28" alt="Rust" /></a>
   <img width="8" />
@@ -136,8 +136,8 @@ the documentation that explains it.
 | 🛰️ **RTK and Remote ID** | Plug in a base station and corrections flow; NTRIP too. Program SiK radios. Broadcast Remote ID. [More](https://m-bsquared.github.io/CorvusGCS/guide/hardware.html) |
 | 🎥 **Watch the camera** | RTSP or WebRTC cameras in floating windows you can put on a second screen. A frozen picture is never passed off as live. [More](https://m-bsquared.github.io/CorvusGCS/guide/video.html) |
 | 📊 **Review flights** | Flight Review for a ULog, Telemetry Review for the recording that always exists, radio link included. [More](https://m-bsquared.github.io/CorvusGCS/guide/analysis.html) |
-| 🖥️ **Tools** | MAVLink console, SSH terminal to a companion computer, and plugins: the Vibration Monitor, the SSH Launcher, Schwalby and Map Entities (trees, gates and devices with a range, placed on the map) ship with it. Two more install from their own repositories: the [NuttX Console](https://github.com/M-BSquared/corvus-nuttx-console) (the PX4 shell over MAVLink, as a console or in a terminal window) and the [Trajectory Viewer](https://github.com/M-BSquared/corvus-trajectory-viewer) (a reference route from a file, drawn under the flown track). A plugin can have a tab of its own, and the console and SSH tabs can be switched off. [More](https://m-bsquared.github.io/CorvusGCS/guide/plugins.html) |
-| 🤖 **AI clients** | Switch on the MCP server and an AI client such as OpenCode can read the vehicle and, as far as you allow it, change parameters, fly missions and points, or steer it directly. One switch per kind of act, each can ask you first, and a Stop on the map takes it all back. Plugins can add tools, and Schwalby lets the client add launch buttons you then allow. [More](https://m-bsquared.github.io/CorvusGCS/guide/mcp.html) |
+| 🖥️ **Tools** | MAVLink console, SSH terminal to a companion computer, and plugins you install from Settings when you need them, each from its own repository: the [SSH Launcher](https://github.com/M-BSquared/corvus-ssh-launcher), [Schwalby](https://github.com/M-BSquared/corvus-schwalby), [Map Entities](https://github.com/M-BSquared/corvus-map-entities) (trees, gates and devices with a range, placed on the map), the [Vibration Monitor](https://github.com/M-BSquared/corvus-vibration), [TAK](https://github.com/M-BSquared/corvus-tak) (the contacts and markers of ATAK, CivTAK and WinTAK on the map, and the aircraft on theirs), [AI Chat](https://github.com/M-BSquared/corvus-ai-chat) (a language model of your choice, local or hosted, that can use the station), the [NuttX Console](https://github.com/M-BSquared/corvus-nuttx-console) (the PX4 shell over MAVLink, as a console or in a terminal window) and the [Trajectory Viewer](https://github.com/M-BSquared/corvus-trajectory-viewer) (a reference route from a file, drawn under the flown track). A plugin can have a tab of its own, and the console and SSH tabs can be switched off. [More](https://m-bsquared.github.io/CorvusGCS/guide/plugins.html) |
+| 🤖 **AI clients** | Switch on the MCP server and an AI client such as OpenCode can read the vehicle and, as far as you allow it, change parameters, fly missions and points, or steer it directly. One switch per kind of act, each can ask you first, and a Stop on the map takes it all back. It can also read the contacts on a TAK network and, if you allow it, send markers and chat to ATAK, CivTAK and WinTAK. Plugins can add tools, and Schwalby lets the client add launch buttons you then allow. [More](https://m-bsquared.github.io/CorvusGCS/guide/mcp.html) |
 | 🎨 **Personalise** | Six colour themes, interface scale from 80 % to 150 %, units, your own logo, and English, German or French. A language is one file, so more can be added. [More](https://m-bsquared.github.io/CorvusGCS/guide/settings.html) |
 | 💻 **Just run it** | One standalone app for macOS, Linux and Windows. No install, no server, no browser, clean shutdown every time. [More](https://m-bsquared.github.io/CorvusGCS/guide/install.html) |
 
@@ -254,8 +254,8 @@ works on a best-effort basis.
 through an ExpressLRS link: you see where the aircraft is and how it is doing.
 Betaflight takes no parameters or commands over MAVLink, so the Setup tiles that
 need them are greyed out with the reason. The controller itself can be read
-over USB on the Betaflight page of Setup, which the BTFL shortcut in the left
-rail opens. It shows while a Betaflight aircraft is connected, a serial link
+over USB on the Betaflight page of Setup, which its card on the Setup
+overview opens. The card shows while a Betaflight aircraft is connected, a serial link
 whose Flight controller is set to Betaflight, or always if you turn on Always
 show Betaflight in Settings. See
 [ExpressLRS and Betaflight](https://m-bsquared.github.io/CorvusGCS/guide/hardware.html#expresslrs).

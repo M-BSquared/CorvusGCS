@@ -45,6 +45,8 @@ pub const REASON_NEW_DEVICE: &str = "new-device-while-connected";
 pub const UDP_FALLBACK_CONNECTION: &str = "udp:0.0.0.0:14550";
 pub const STALE_AFTER_S: f64 = 8.0;
 pub const DEFAULT_POLL_S: f64 = 2.5;
+/// A port that was dialled and still gave no heartbeat is dialled again after this.
+pub const REDIAL_AFTER: Duration = Duration::from_secs(20);
 
 /// One enumerated port, classified.
 #[derive(Debug, Clone, PartialEq)]
@@ -104,6 +106,7 @@ struct SessionInner {
     manual_override: bool,
     last_suggestion_key: Option<String>,
     last_dial_key: Option<String>,
+    last_dial_at: Option<std::time::Instant>,
     reason: String,
     winner: String,
 }
@@ -134,6 +137,7 @@ impl SessionState {
                 manual_override: false,
                 last_suggestion_key: None,
                 last_dial_key: None,
+                last_dial_at: None,
                 reason: String::new(),
                 winner: String::new(),
             }),
@@ -193,7 +197,17 @@ impl SessionState {
     }
 
     pub fn set_last_dial_key(&self, key: Option<String>) {
-        lock(&self.inner).last_dial_key = key;
+        let mut s = lock(&self.inner);
+        s.last_dial_at = key.as_ref().map(|_| std::time::Instant::now());
+        s.last_dial_key = key;
+    }
+
+    /// Was `key` dialled less than `within` ago? A dial that produced no
+    /// heartbeat is tried again after that, not never: a board that was still
+    /// starting, a port another program held for a moment.
+    pub fn dialled_recently(&self, key: &str, within: Duration) -> bool {
+        let s = lock(&self.inner);
+        s.last_dial_key.as_deref() == Some(key) && s.last_dial_at.is_some_and(|at| at.elapsed() < within)
     }
 
     /// The shape published in the store as `link_auto`.
@@ -630,7 +644,7 @@ impl AutoConnectWatcher {
         let (device, _, kind) = pick;
         let link = self.bridge.connection_string();
         let conn = serial_connection_string(device, baud_for(device, &[&link]));
-        if self.session.last_dial_key().as_deref() == Some(conn.as_str()) {
+        if self.session.dialled_recently(&conn, REDIAL_AFTER) {
             return "noop: already-dialled".into();
         }
         if self.bridge.validate_connection(&conn).is_err() {
@@ -755,5 +769,26 @@ impl Drop for AutoConnectWatcher {
         self.stopped.store(true, Ordering::SeqCst);
         *lock(&self.wake.stop) = true;
         self.wake.cond.notify_all();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_dial_that_gave_no_heartbeat_is_tried_again_after_a_while() {
+        let s = SessionState::new();
+        let key = "serial:/dev/cu.usbmodem1101:57600";
+        assert!(!s.dialled_recently(key, REDIAL_AFTER));
+        s.set_last_dial_key(Some(key.into()));
+        assert!(s.dialled_recently(key, REDIAL_AFTER), "not twice in a row");
+        assert!(!s.dialled_recently("serial:/dev/cu.usbmodem2201:57600", REDIAL_AFTER));
+        assert!(
+            !s.dialled_recently(key, Duration::ZERO),
+            "and again once the wait is over"
+        );
+        s.set_last_dial_key(None);
+        assert!(!s.dialled_recently(key, REDIAL_AFTER));
     }
 }

@@ -24,8 +24,8 @@ android/  .github/  .githooks/  .cargo/           the Android shell, the one CI 
 One cargo workspace, one `Cargo.lock`, one `target/`, the toolchain pinned by
 `rust-toolchain.toml`. Members: the interface crate (`corvus_gui`, the root),
 `src/core` (`corvus_core`, the backend), `src/link` (`corvus_link`, MAVLink),
-`src/api` (`corvus_api`, what plugins build on), one crate per bundled plugin
-in `src/plugins/<id>/`, and `src/tools` (`corvus_tools`, binary `corvus-build`).
+`src/api` (`corvus_api`, what plugins build on), one crate per plugin
+in `plugins/<id>/` (each a repository of its own, a submodule), and `src/tools` (`corvus_tools`, binary `corvus-build`).
 
 Where to look first: `src/README.md` (how the interface, the core, the plugin
 API and the 3D map work, and the `CORVUS_GUI_*` switches), `src/PARITY.md`
@@ -66,7 +66,7 @@ machine readable ownership map.
   of `corvus_api::ui`. Applies the `apple-design` skill.
 - `map`: the 2D and 3D map, mission geometry, and the backend's map data
   (offline tile cache, DEM, buildings, geocoding).
-- `plugins`: the plugin crates in `src/plugins/`, the registry, the plugin API
+- `plugins`: the plugin crates in `plugins/`, the registry, the plugin API
   of `corvus_api`, and the MCP server.
 - `i18n`: the language files, the translation layer and `corvus-build i18n`.
 - `perf`: frame rate, latency, start time, build time, leak hunting; measures
@@ -98,7 +98,7 @@ sockets, child processes or file handles on exit.
 
 `corvus-gcs` (the interface, glow renderer, one window) starts `corvus_core`
 in its own process. The core registers modules (vehicle, mission, setup pages,
-map data, logs, firmware, peripherals, plugins, MCP) with a router; the
+map data, logs, firmware, peripherals, plugins, MCP, TAK) with a router; the
 MAVLink bridge, running on `corvus_link`'s transports and the core's own
 threads, writes the thread safe **state store**; the interface reads the store
 and the push topics and calls routes through `Core::internal_call`, the same
@@ -137,11 +137,14 @@ reachable over MCP until a tool and its permission are added there on purpose.
 - **Maps:** the 2D map draws the core's tile proxy (`/api/tiles/...`, MBTiles
   in SQLite, offline cache); the 3D map has its own terrain, buildings and GPU
   tile cache. The interface never talks to a tile server.
-- **Plugins:** crates against `corvus_api`, compiled in. Plugins written for the
-  web interface do not run; Settings lists them as "installed, not loaded".
+- **Plugins:** crates against `corvus_api`, each a repository of its own (a submodule under
+  `plugins/<id>`), built as a shared library that its repository publishes and Settings installs
+  from there (`src/README.md`, "Plugins as libraries"; read it before touching the plugin layer or updating egui, since
+  a library has its own copy of every `static`). Plugins written for the web interface do not run; Settings lists
+  them as "installed, not loaded".
 - **Tools:** `corvus-build` (`src/tools`): `appimage-libs`, `bundle-check`,
-  `icon`, `png-size`, `squashfs`, `elf-static`, `guide`, `i18n`, `soak`. It
-  never enters an artifact.
+  `icon`, `png-size`, `squashfs`, `elf-static`, `guide`, `i18n`, `soak`,
+  `plugin-pack`, `plugin-unpack`, `plugin-index`. It never enters an artifact.
 
 ## Platforms & packaging
 
@@ -169,7 +172,9 @@ interface or the server serves one (`PLAN.md`). Its `versionName` reads
 CI is GitHub Actions only: `.github/workflows/build.yml` (`rust-gui`,
 `rust-windows`, `appimage`, `macos-app`, `windows-app`, `android-app`,
 `release`) calls the same `./build.sh` a developer runs locally. There is no
-second pipeline and no Python job; do not add either. The AppImage job builds
+second pipeline and no Python job; do not add either. The one other workflow,
+`.github/workflows/plugin.yml`, builds nothing here: the plugins' own repositories call it to
+publish themselves. Nothing in this repository publishes a plugin. The AppImage job builds
 on `ubuntu-22.04` on purpose: an AppImage links the glibc of its build host, so
 a newer Ubuntu silently narrows the machines it runs on.
 
@@ -363,7 +368,7 @@ time: no zombies, no leaked sockets, no unflushed logs.
     check and return an error. A parser never panics on a damaged frame.
   - `unsafe` stays in the files that need it (serial and sockets in `src/link`,
     the pty in `src/core/src/peripherals/shell`, GPU and window glue, the clock
-    and local time) and carries a `// SAFETY:` note. Do not spread it.
+    and local time, and the plugin loader `src/plugins/loader.rs`) and carries a `// SAFETY:` note. Do not spread it.
   - Nothing blocks the frame loop and no page polls: live data is pushed, the
     interface requests a repaint when data arrives.
   - Nothing that grows with flight time is unbounded: histories, buffers,
@@ -470,6 +475,6 @@ cargo run -q -p corvus_tools --bin corvus-build -- soak --mode 3d --at 11.6385,4
 ./build-macos-app.sh [--dmg] [--fast]    # macOS artifact  (arm64 / x86_64)
 .\build-windows.ps1 [-Zip] [-Fast]       # Windows artifact (PowerShell)
 cargo run -q -p corvus_tools --bin corvus-build -- guide [--check]   # after editing docs/guide/*.html: rewrite each page's frame (--check: verify only)
-cargo run -q -p corvus_tools --bin corvus-build -- i18n check   # the language files in src/lang and src/plugins/*/lang (fmt, new CODE NAME NATIVE)
+cargo run -q -p corvus_tools --bin corvus-build -- i18n check   # the language files in src/lang and plugins/*/lang (fmt, new CODE NAME NATIVE)
 git config core.hooksPath .githooks   # one time, enables the VERSION auto bump
 ```

@@ -21,6 +21,19 @@ pub fn committed(
     hint: &str,
     mono: bool,
 ) -> Option<String> {
+    committed_secret(ui, rect, id, shown, hint, mono, false)
+}
+
+/// [`committed`] with the text drawn as dots when `secret` is set.
+pub fn committed_secret(
+    ui: &mut egui::Ui,
+    rect: Rect,
+    id: impl std::hash::Hash + std::fmt::Debug,
+    shown: &str,
+    hint: &str,
+    mono: bool,
+    secret: bool,
+) -> Option<String> {
     let key = ui.scope_id().with(id);
     let buf_id = key.with("buffer");
     let focused = ui.memory(|m| m.has_focus(key));
@@ -35,6 +48,7 @@ pub fn committed(
     let resp = TextField::new(&mut text)
         .hint(hint)
         .mono(mono)
+        .secret(secret)
         .pad(8.0, 8.0)
         .show_with_id(ui, rect, key);
     let edited = ui

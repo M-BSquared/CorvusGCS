@@ -109,6 +109,14 @@ fn get(a: &Map, key: &str) -> Value {
     a.get(key).cloned().unwrap_or(Value::Null)
 }
 
+/// The listed arguments, as they are, and nothing else: a tool passes on only
+/// what its schema names.
+fn pick(a: &Map, keys: &[&str]) -> Map {
+    keys.iter()
+        .filter_map(|k| a.get(*k).map(|v| ((*k).to_string(), v.clone())))
+        .collect()
+}
+
 #[allow(clippy::too_many_arguments)]
 fn tool(
     name: &'static str,
@@ -283,6 +291,107 @@ fn build() -> Vec<Tool> {
                 "lat": {"type": "number"}, "lon": {"type": "number"},
                 "alt": {"type": "number"}, "frame": {"type": "string"},
             })), &["command"], Run::Command, |a| Some(format!("command {}", fmt(a.get("command")))), true, false),
+    ]
+    .into_iter()
+    .chain(tak_tools())
+    .collect()
+}
+
+/// The TAK tools: ATAK, CivTAK, WinTAK and a TAK server on one side, the map
+/// and the AI client on the other. They call the routes of `crate::tak`.
+fn tak_tools() -> Vec<Tool> {
+    let none = Map::new;
+    let kinds = json!(["multicast", "udp", "tcp", "tls"]);
+    vec![
+        tool("tak_status", "tak_read", "TAK status",
+            "How Corvus stands on the TAK network: its callsign and team, whether it shares the aircraft's position, each connection (kind, host, port, on or off, connected or not, counts) and how many contacts it knows.",
+            none(), &[], Run::Get("/api/tak", None), |_| Some("read the TAK status".into()), false, true),
+        tool("tak_list_contacts", "tak_read", "TAK contacts",
+            "The contacts and markers heard on the TAK network: people, vehicles, aircraft, spot markers and drawings, with callsign, type, affiliation (friend, hostile, neutral, unknown), position, course, speed, battery, remarks and the distance from the aircraft, nearest first. Narrow it with query (callsign, uid or remarks), class, affiliation or within_m.",
+            obj(json!({
+                "query": {"type": "string", "description": "Part of a callsign, uid or remark"},
+                "class": {"type": "string", "enum": ["unit", "point", "route", "drawing", "alert"]},
+                "affiliation": {"type": "string", "enum": ["friend", "hostile", "neutral", "unknown"]},
+                "within_m": {"type": "number", "minimum": 0, "description": "Only contacts this close to the aircraft (or to near_lat, near_lon), metres"},
+                "near_lat": {"type": "number", "minimum": -90, "maximum": 90},
+                "near_lon": {"type": "number", "minimum": -180, "maximum": 180},
+                "stale": {"type": "boolean", "default": true, "description": "false leaves out contacts that stopped reporting"},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 1000, "default": 200},
+            })), &[],
+            Run::Post("/api/tak/tracks", Some(|a| pick(a, &["query", "class", "affiliation", "within_m", "near_lat", "near_lon", "stale", "limit"]))),
+            |a| Some(match a.get("query") {
+                Some(Value::String(q)) if !q.is_empty() => format!("list TAK contacts matching {}", q.chars().take(60).collect::<String>()),
+                _ => "list TAK contacts".into(),
+            }), false, true),
+        tool("tak_get_chat", "tak_read", "TAK chat",
+            "The latest chat lines heard on the TAK network (GeoChat): who wrote, to which room, and when.",
+            none(), &[], Run::Get("/api/tak/chat", Some("messages")), |_| Some("read the TAK chat".into()), false, true),
+        tool("tak_send_marker", "tak_send", "Send a TAK marker",
+            "Put a marker on every TAK client that hears a switched on connection that may send: a spot point (type b-m-p-s-p-i) by default, or a CoT atom such as a-h-G (hostile ground) or a-f-G-U-C (friendly ground unit). It stays for stale_s seconds (an hour by default). Returns its uid; send again with the same uid to move it.",
+            {
+                let mut p = latlon();
+                p.insert("callsign".into(), json!({"type": "string", "description": "The label ATAK shows"}));
+                p.insert("type".into(), json!({"type": "string", "default": "b-m-p-s-p-i"}));
+                p.insert("remarks".into(), json!({"type": "string"}));
+                p.insert("hae".into(), json!({"type": "number", "description": "Height above the ellipsoid, metres"}));
+                p.insert("stale_s".into(), json!({"type": "number", "minimum": 10, "maximum": 604800, "default": 3600}));
+                p.insert("uid".into(), json!({"type": "string", "description": "An uid you sent before, to move that marker"}));
+                p
+            },
+            &["lat", "lon"],
+            Run::Post("/api/tak/marker", Some(|a| pick(a, &["lat", "lon", "callsign", "type", "remarks", "hae", "stale_s", "uid"]))),
+            |a| Some(format!("send a TAK marker at {}, {}", fmt(a.get("lat")), fmt(a.get("lon")))), false, false),
+        tool("tak_send_chat", "tak_send", "Send TAK chat",
+            "Write one chat line to everybody on the TAK network (room All Chat Rooms) or to a named room. At most 500 characters.",
+            obj(json!({"text": {"type": "string", "maxLength": 500}, "room": {"type": "string"}})), &["text"],
+            Run::Post("/api/tak/chat", Some(|a| pick(a, &["text", "room"]))),
+            |a| Some(format!("send TAK chat: {}", fmt(a.get("text")).chars().take(80).collect::<String>())), false, false),
+        tool("tak_delete_contact", "tak_send", "Delete a TAK contact",
+            "Order every TAK client to delete the contact or marker with this uid, and forget it here. Use it for markers Corvus sent; deleting somebody else's contact removes it from all their maps.",
+            obj(json!({"uid": {"type": "string"}})), &["uid"],
+            Run::Post("/api/tak/delete", Some(|a| pick(a, &["uid"]))),
+            |a| Some(format!("delete the TAK contact {}", fmt(a.get("uid")))), false, false),
+        tool("tak_set_connection", "tak_setup", "Switch a TAK connection",
+            "Switch a connection from tak_status on or off, or allow or forbid it to send (a connection that does not send only listens).",
+            obj(json!({"id": {"type": "string"}, "enabled": {"type": "boolean"}, "send": {"type": "boolean"}})), &["id"],
+            Run::Post("/api/tak/connection", Some(|a| pick(a, &["id", "enabled", "send"]))),
+            |a| Some(match a.get("enabled") {
+                Some(Value::Bool(true)) => format!("switch on the TAK connection {}", fmt(a.get("id"))),
+                Some(Value::Bool(false)) => format!("switch off the TAK connection {}", fmt(a.get("id"))),
+                _ => format!("change the TAK connection {}", fmt(a.get("id"))),
+            }), false, false),
+        tool("tak_add_connection", "tak_setup", "Add a TAK connection",
+            "Add a connection, switched off unless enabled is true. multicast joins a group on the local network (239.2.3.1 port 6969 is what ATAK and WinTAK use to see each other), udp talks to one address, tcp to a TAK server or FreeTAKServer (usually port 8087). tls to a server that needs encryption (usually 8089) works with the system's certificates only; a server with its own CA or a client certificate is set up in the TAK plugin.",
+            obj(json!({
+                "name": {"type": "string"},
+                "kind": {"type": "string", "enum": kinds},
+                "host": {"type": "string", "description": "A group address for multicast, otherwise a host name or address"},
+                "port": {"type": "integer", "minimum": 1, "maximum": 65535},
+                "enabled": {"type": "boolean", "default": false},
+                "send": {"type": "boolean", "default": true},
+            })), &["kind", "host", "port"],
+            Run::Post("/api/tak/connection", Some(|a| pick(a, &["name", "kind", "host", "port", "enabled", "send"]))),
+            |a| Some(format!("add a TAK connection to {}:{}", fmt(a.get("host")), fmt(a.get("port")))), false, false),
+        tool("tak_remove_connection", "tak_setup", "Remove a TAK connection",
+            "Remove a connection from tak_status.",
+            obj(json!({"id": {"type": "string"}})), &["id"],
+            Run::Post("/api/tak/connection/remove", Some(|a| pick(a, &["id"]))),
+            |a| Some(format!("remove the TAK connection {}", fmt(a.get("id")))), false, false),
+        tool("tak_configure", "tak_setup", "Configure TAK",
+            "Set who Corvus is on the TAK network: callsign, team colour and role, and whether the aircraft's position is shared (share_position) and how often (share_interval_s, 1 to 60). Sharing sends the aircraft's live position to everybody on the switched on connections that may send.",
+            obj(json!({
+                "callsign": {"type": "string", "maxLength": 32},
+                "team": {"type": "string", "enum": ["White", "Yellow", "Orange", "Magenta", "Red", "Maroon", "Purple", "Dark Blue", "Blue", "Cyan", "Teal", "Green", "Dark Green", "Brown"]},
+                "role": {"type": "string", "enum": ["Team Member", "Team Lead", "HQ", "Sniper", "Medic", "Forward Observer", "RTO", "K9"]},
+                "share_position": {"type": "boolean"},
+                "share_interval_s": {"type": "number", "minimum": 1, "maximum": 60},
+            })), &[],
+            Run::Post("/api/tak/settings", Some(|a| pick(a, &["callsign", "team", "role", "share_position", "share_interval_s"]))),
+            |a| Some(match a.get("share_position") {
+                Some(Value::Bool(true)) => "share the aircraft's position on TAK".into(),
+                Some(Value::Bool(false)) => "stop sharing the aircraft's position on TAK".into(),
+                _ => "change the TAK identity".into(),
+            }), false, false),
     ]
 }
 

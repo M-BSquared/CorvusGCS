@@ -45,6 +45,9 @@ pub struct Options {
     /// the moment the port opens, None leaves it asserted as usual.
     pub dtr: Option<bool>,
     pub rts: Option<bool>,
+    /// Refuse a serial port another process holds, instead of sharing it and
+    /// reading half of each other's stream.
+    pub exclusive: bool,
 }
 
 impl Default for Options {
@@ -60,6 +63,7 @@ impl Default for Options {
             proto: Proto::V2,
             dtr: None,
             rts: None,
+            exclusive: false,
         }
     }
 }
@@ -328,12 +332,17 @@ pub fn open(device: &str, opts: &Options) -> Result<Connection, ConnectError> {
             ))
         }
         Target::Mcast { group, port } => Link::Mcast(Mcast::open(group, *port)?),
-        Target::Serial { device, baud } => Link::Serial(Serial::open_held(device, *baud, opts.dtr, opts.rts).map_err(
-            |e| ConnectError::Serial {
+        Target::Serial { device, baud } => Link::Serial(
+            if opts.exclusive {
+                Serial::open_exclusive(device, *baud, opts.dtr, opts.rts)
+            } else {
+                Serial::open_held(device, *baud, opts.dtr, opts.rts)
+            }
+            .map_err(|e| ConnectError::Serial {
                 errno: e.errno,
                 message: e.message,
-            },
-        )?),
+            })?,
+        ),
     };
     Ok(Connection {
         link,

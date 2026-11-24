@@ -48,6 +48,7 @@ struct Args {
     server: Option<String>,
     page: Option<String>,
     scroll: Option<f32>,
+    check_plugins: Option<String>,
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -58,10 +59,12 @@ fn parse_args() -> Result<Args, String> {
         match a.as_str() {
             "--server" => args.server = Some(value("--server")?),
             "--core" => {}
+            "--no-plugins" => plugins::loader::switch_off(),
+            "--check-plugins" => args.check_plugins = Some(value("--check-plugins")?),
             "--page" => args.page = Some(value("--page")?),
             "--scroll" => args.scroll = value("--scroll")?.parse().ok(),
             "-h" | "--help" => {
-                println!("usage: corvus-gcs [--server http://host:port] [--page setup|TILE|safety:SENSOR|mission|mission:NAME|settings|logs|analysis] [--scroll PX]");
+                println!("usage: corvus-gcs [--server http://host:port] [--page setup|TILE|safety:SENSOR|mission|mission:NAME|settings|logs|analysis] [--scroll PX] [--no-plugins] [--check-plugins DIR]");
                 std::process::exit(0);
             }
             other => return Err(format!("unknown argument {other}")),
@@ -96,6 +99,18 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     };
+    if let Some(dir) = &args.check_plugins {
+        return match plugins::loader::check(std::path::Path::new(dir)) {
+            Ok(text) => {
+                println!("{text}");
+                ExitCode::SUCCESS
+            }
+            Err(e) => {
+                eprintln!("corvus-gcs: {e}");
+                ExitCode::FAILURE
+            }
+        };
+    }
     crash::install();
     install_signal_handler();
 

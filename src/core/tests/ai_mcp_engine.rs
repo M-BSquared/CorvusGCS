@@ -19,6 +19,39 @@ fn fixture() -> Value {
     serde_json::from_str(include_str!("data/ai_mcp_engine.json")).unwrap()
 }
 
+/// The settings as the Python program knew them: the permissions added since
+/// (`EXTENSIONS`) are left out, because the fixture was frozen without them.
+fn python_part(mut settings: Map<String, Value>) -> Value {
+    for key in ["permissions", "confirm"] {
+        if let Some(Value::Object(block)) = settings.get_mut(key) {
+            block.retain(|k, _| !EXTENSIONS.contains(&k.as_str()));
+        }
+    }
+    Value::Object(settings)
+}
+
+/// `value` with the permissions added since the freeze taken out wherever a
+/// permission map appears.
+fn without_extensions(value: &Value) -> Value {
+    match value {
+        Value::Object(o) => Value::Object(
+            o.iter()
+                .map(|(k, v)| {
+                    let mut v = without_extensions(v);
+                    if k == "permissions" || k == "confirm" {
+                        if let Value::Object(block) = &mut v {
+                            block.retain(|id, _| !EXTENSIONS.contains(&id.as_str()));
+                        }
+                    }
+                    (k.clone(), v)
+                })
+                .collect(),
+        ),
+        Value::Array(a) => Value::Array(a.iter().map(without_extensions).collect()),
+        other => other.clone(),
+    }
+}
+
 #[test]
 fn the_settings_are_coerced_made_effective_and_compacted_as_python_does() {
     let f = fixture();
@@ -26,7 +59,7 @@ fn the_settings_are_coerced_made_effective_and_compacted_as_python_does() {
         let input = &case["in"];
         assert_eq!(json!(coerce_settings(input)), case["coerce"], "coerce {input}");
         let eff = effective_settings(Some(input));
-        assert_eq!(Value::Object(eff.clone()), case["effective"], "effective {input}");
+        assert_eq!(python_part(eff.clone()), case["effective"], "effective {input}");
         assert_eq!(json!(compact_settings(&eff)), case["compact"], "compact {input}");
     }
     for pair in f["levels"].as_array().unwrap() {
@@ -40,12 +73,26 @@ fn the_settings_are_coerced_made_effective_and_compacted_as_python_does() {
             t[2]
         );
     }
-    assert_eq!(tool_catalog(), f["catalog"]);
+    let catalog: Vec<Value> = tool_catalog()
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|p| !EXTENSIONS.contains(&p["id"].as_str().unwrap()))
+        .cloned()
+        .collect();
+    assert_eq!(Value::Array(catalog), f["catalog"]);
     let built: Vec<Value> = tools::builtin()
         .iter()
+        .filter(|t| !EXTENSIONS.contains(&t.permission))
         .map(|t| json!([t.name, t.permission, t.vehicle, t.read_only]))
         .collect();
     assert_eq!(Value::Array(built), f["builtin"]);
+    for name in EXTENSIONS {
+        assert!(
+            tools::builtin().iter().any(|t| t.permission == name),
+            "{name} opens at least one tool"
+        );
+    }
     assert_eq!(f["constants"], json!([CONFIRM_TIMEOUT_S, CONTROL_MAX_S, WHERE]));
 }
 
@@ -241,7 +288,7 @@ fn every_step_ends_where_the_python_service_ends() {
             "saved": normalize(&saved, &sids),
         });
         for key in ["result", "calls", "events", "saved"] {
-            assert_eq!(got[key], entry[key], "step {i} {key}: {step}");
+            assert_eq!(without_extensions(&got[key]), entry[key], "step {i} {key}: {step}");
         }
     }
     r.svc.shutdown();

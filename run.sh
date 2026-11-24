@@ -74,13 +74,24 @@ command -v cargo >/dev/null 2>&1 || {
     echo "ERROR: cargo not found; install Rust from https://rustup.rs" >&2
     exit 1
 }
+# The plugins are repositories of their own and members of the workspace: cargo needs
+# the source of each.
+for d in "$REPO_DIR"/plugins/*/; do
+    [ -f "$d/Cargo.toml" ] || { git -C "$REPO_DIR" submodule update --init; break; }
+done
 # cargo is a no-op when nothing changed. Its own output goes to the terminal:
 # the first build compiles for a few minutes, a rebuild after an edit for
 # seconds. Profiles are in Cargo.toml: dev (the default) keeps the program
 # lightly optimised and rebuilds fast, `fast` is release code without LTO,
 # release is exactly what a bundle ships.
 if [ "$PROFILE" = "dev" ]; then PROFILE_ARGS=(); DIR=debug; else PROFILE_ARGS=(--profile "$PROFILE"); DIR="$PROFILE"; fi
-( cd "$REPO_DIR" && cargo build ${PROFILE_ARGS[@]+"${PROFILE_ARGS[@]}"} --bin corvus-gcs --quiet )
+# --lib builds the plugin libraries in the same call, the only way they fit the program: Settings,
+# Plugins offers them from where cargo leaves them. One that does not build stops nothing.
+build() { ( cd "$REPO_DIR" && cargo build ${PROFILE_ARGS[@]+"${PROFILE_ARGS[@]}"} --bin corvus-gcs "$@" --quiet ); }
+if ! build --lib; then
+    echo ">>> Not everything built, so only the program is built now; a plugin may be missing or old." >&2
+    build
+fi
 TARGET="${CARGO_TARGET_DIR:-$REPO_DIR/target}"
 BIN="$TARGET/$DIR/corvus-gcs"
 [ -x "$BIN" ] || BIN="$BIN.exe"

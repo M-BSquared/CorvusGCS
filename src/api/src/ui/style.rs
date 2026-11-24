@@ -269,6 +269,13 @@ pub fn set_theme(id: &str) {
     }
 }
 
+/// Takes over a palette another copy of this crate is showing (a plugin library).
+pub fn set_palette(p: Palette) {
+    if let Ok(mut cur) = PALETTE.write() {
+        *cur = p;
+    }
+}
+
 /// The palette in force.
 pub fn palette() -> Palette {
     PALETTE.read().map_or(LIGHT, |p| *p)

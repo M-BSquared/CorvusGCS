@@ -26,7 +26,11 @@ pub struct Permission {
 /// The longest one direct control call may last, in seconds.
 pub const CONTROL_MAX_S: f64 = 5.0;
 
-pub const PERMISSIONS: [Permission; 10] = [
+/// The permissions added after the Python program's catalog was frozen. The
+/// fixtures hold the first ten and nothing else, so tests compare those.
+pub const EXTENSIONS: [&str; 3] = ["tak_read", "tak_send", "tak_setup"];
+
+pub const PERMISSIONS: [Permission; 13] = [
     Permission {
         id: "telemetry",
         label: "Read telemetry and status",
@@ -106,6 +110,30 @@ pub const PERMISSIONS: [Permission; 10] = [
         writes: true,
         default_on: false,
         default_confirm: false,
+    },
+    Permission {
+        id: "tak_read",
+        label: "Read TAK contacts and chat",
+        hint: "The people, vehicles and markers heard on the TAK network (ATAK, CivTAK, WinTAK), their chat, and the state of the connections. Other people's positions: off until you allow it.",
+        writes: false,
+        default_on: false,
+        default_confirm: false,
+    },
+    Permission {
+        id: "tak_send",
+        label: "Send to TAK",
+        hint: "Put markers and chat lines on the TAK network and delete a contact for everybody on it. Whoever is on a switched on connection sees it.",
+        writes: true,
+        default_on: false,
+        default_confirm: true,
+    },
+    Permission {
+        id: "tak_setup",
+        label: "Set up TAK",
+        hint: "Add, switch on and remove connections to TAK networks and servers, and decide whether the aircraft's position is shared on them.",
+        writes: true,
+        default_on: false,
+        default_confirm: true,
     },
 ];
 

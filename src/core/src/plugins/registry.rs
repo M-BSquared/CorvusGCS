@@ -6,7 +6,7 @@
 //! survives updates. A user plugin whose id collides with a bundled one wins:
 //! that is how an operator patches a shipped plugin.
 //!
-//! The bundled plugins of this program are Rust crates in `src/plugins/<id>`,
+//! The bundled plugins of this program are Rust crates in `plugins/<id>`,
 //! so their manifests come from [`bundled::manifests`] and not from files; the
 //! user folder is scanned with the rules Python uses, because that folder is
 //! shared with the Python program. Nothing here runs plugin code. A scan never
@@ -299,8 +299,8 @@ impl PluginRegistry {
     }
 }
 
-/// The plugins that ship with this program: one Rust crate each in
-/// `src/plugins/<id>`. The values are the `plugin.json` of the web plugin the
+/// The plugins of this program that its web version shipped with, one Rust crate each in
+/// `plugins/<id>`. The operator installs them from the interface. The values are the `plugin.json` of the web plugin the
 /// crate replaces, so both programs list the same plugins with the same fields
 /// (held by `tests/ai_plugins.rs` against the Python registry).
 pub mod bundled {
@@ -319,7 +319,7 @@ pub mod bundled {
 
     const AUTHOR: &str = "Maximilian Böck";
 
-    const ENTRIES: [Entry; 4] = [
+    const ENTRIES: [Entry; 5] = [
         Entry {
             id: "vibration",
             name: "Vibration Monitor",
@@ -359,6 +359,16 @@ pub mod bundled {
             order: 35,
             script: "map-entities.js",
             style: "map-entities.css",
+        },
+        Entry {
+            id: "tak",
+            name: "TAK",
+            icon: "radio-tower",
+            description: "ATAK, CivTAK and WinTAK contacts and markers on the Home map, and the aircraft on theirs",
+            version: "1.0.0",
+            order: 36,
+            script: "tak.js",
+            style: "tak.css",
         },
     ];
 

@@ -19,6 +19,12 @@ pub fn paint(ui: &egui::Ui, name: &str, rect: Rect, color: Color32) {
     }
 }
 
+/// Whether the interface ships the icon `name`, so a page can hold its own
+/// icon names to what `paint` can draw.
+pub fn exists(name: &str) -> bool {
+    generated::svg(name).is_some()
+}
+
 /// `paint` turned by `angle` radians about the icon's centre.
 pub fn paint_rotated(ui: &egui::Ui, name: &str, rect: Rect, color: Color32, angle: f32) {
     if let Some(bytes) = generated::svg(name) {

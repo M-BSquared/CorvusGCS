@@ -9,6 +9,7 @@ pub mod guide;
 pub mod html;
 pub mod i18n;
 pub mod icon;
+pub mod plugins;
 pub mod soak;
 
 use std::path::PathBuf;

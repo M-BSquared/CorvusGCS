@@ -13,7 +13,7 @@ permission:
     "rustfmt.toml": "allow"
     ".cargo/config.toml": "allow"
     "src/*/Cargo.toml": "allow"
-    "src/plugins/*/Cargo.toml": "allow"
+    "plugins/*/Cargo.toml": "allow"
     "build.sh": "allow"
     "build-appimage.sh": "allow"
     "build-deb.sh": "allow"

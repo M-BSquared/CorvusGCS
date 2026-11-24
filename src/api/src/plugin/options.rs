@@ -36,6 +36,8 @@ pub struct OptionSpec {
     pub hint: String,
     pub kind: Kind,
     pub default: Value,
+    /// A text shown as dots, for a key or a password.
+    pub secret: bool,
 }
 
 #[allow(dead_code)] // a constructor for every type of option
@@ -76,6 +78,12 @@ impl OptionSpec {
         self
     }
 
+    /// Shows the text as dots while it is not edited.
+    pub fn secret(mut self) -> OptionSpec {
+        self.secret = true;
+        self
+    }
+
     fn raw(key: &str, label: &str, kind: Kind, default: Value) -> OptionSpec {
         OptionSpec {
             key: key.to_string(),
@@ -83,6 +91,7 @@ impl OptionSpec {
             hint: String::new(),
             kind,
             default,
+            secret: false,
         }
     }
 }
