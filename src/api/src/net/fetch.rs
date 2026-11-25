@@ -428,6 +428,7 @@ mod native {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::net::http::Server;
     use std::io::{Read, Write};
     use std::net::TcpListener;
     use std::time::Instant;
@@ -479,7 +480,10 @@ mod tests {
     #[test]
     fn an_address_is_taken_apart() {
         let u = Url::parse("https://api.example.com/v1/chat?x=1").unwrap();
-        assert_eq!((u.tls, u.host.as_str(), u.port, u.path.as_str()), (true, "api.example.com", 443, "/v1/chat?x=1"));
+        assert_eq!(
+            (u.tls, u.host.as_str(), u.port, u.path.as_str()),
+            (true, "api.example.com", 443, "/v1/chat?x=1")
+        );
         let u = Url::parse("http://[::1]:9").unwrap();
         assert_eq!((u.host.as_str(), u.port, u.path.as_str()), ("::1", 9, "/"));
         assert_eq!(u.label(), "::1:9");

@@ -177,24 +177,48 @@
 </p>
 <div class="callout callout-warn">
   <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-alert"></use></svg>
-  <div><p>A plugin is code that runs inside Corvus with your rights: it can run programs, read files and steer the aircraft, and it may use third party libraries. Its download is checked against its repository, but not every plugin has been reviewed. Install only what you trust. You do so at your own risk. Corvus itself is complete without any.</p></div>
+  <div><p>A plugin runs in a sandbox: it reaches only what its permissions name. Permissions that run commands or control other computers give it wide reach, and not every plugin has been reviewed. Install only what you trust. You do so at your own risk. Corvus itself is complete without any.</p></div>
 </div>
+<h2 id="permissions">What a plugin may do</h2>
 <p>
-  For a computer without internet, download the plugin on another one, from the newest release
-  in the <a href="#more">plugin's repository</a>
-  (the file for your system), and choose <strong>Install from file</strong>. Or put a folder named <code>corvus-plugins</code> with
+  Under each plugin, in the setup and in Settings, stands what it may do before you install it:
+  for example <em>Run programs on this computer</em>, <em>Run commands on the autopilot over the
+  MAVLink shell</em> or <em>Connect to other servers on the network and the internet</em>. Corvus
+  refuses everything else. Beyond what is listed a plugin can draw in its own view and on the map,
+  read the telemetry, keep its own settings and show notifications. It has no access to the disk
+  of its own: it reads only a file you pick for it. An update that wants more says what is new
+  before you press <strong>Update</strong>, and a download never gets more than was shown.
+</p>
+<p>
+  A plugin that crashes, hangs or uses too much memory is stopped for the session, and Corvus
+  carries on.
+</p>
+<p>
+  For a computer without internet, download the plugin on another one: the <code>.wasm</code> file
+  from the release <em>plugin</em> in the <a href="#more">plugin's repository</a>, the same one
+  for every system. Then choose <strong>Install from file</strong>. Or put a folder named <code>corvus-plugins</code> with
   the files beside the program: they are then offered with the note
   <em>on this computer</em>, and no download is tried for them. A plugin that was installed
   from there follows what lies there the next time Corvus starts. A build from source offers
   the plugins that were built with it in the same way.
 </p>
+<h2 id="updates">Updates</h2>
 <p>
-  After an update of Corvus your plugins go on working as long as what they build on has not
-  changed. When it has, a plugin that no longer fits is not loaded, Corvus says so, and
-  <strong>Update</strong> in the same place brings the right one. Its settings are kept. Right
-  after a new version of Corvus the new plugins can take a few hours to be published. A plugin that made Corvus close while it was starting is left
-  out the next time, until you install it again. <code>--no-plugins</code> on the command
-  line starts Corvus without any installed plugin.
+  Every plugin names the oldest version of Corvus it runs in, and every later version takes it.
+  An update of Corvus leaves your installed plugins as they are: nothing has to be downloaded
+  again. A newer plugin that needs a newer Corvus is not offered to an older one, which goes on
+  getting the last version that fits it. <code>--no-plugins</code> on the command line starts
+  Corvus without any installed plugin.
+</p>
+<p>
+  <strong>Coming from 2026.11.81, 83, 92 or 93:</strong> the plugins work differently now, so
+  each one is downloaded once more. The first start asks, with the plugins you used already
+  switched on: from 92 and 93 the ones you had installed, from 81 and 83 every plugin that was
+  built in then. Their settings are kept. Without internet, press <strong>Download</strong> all
+  the same: Corvus remembers them and fetches them at the next start that has a connection.
+  Under Settings, Plugins they stand as <em>waiting for a download</em>, where
+  <strong>Cancel</strong> takes one off the list. If you go back to 2026.11.93, the plugins you
+  had there are still in place.
 </p>
 
 <figure class="doc-shot">
@@ -831,6 +855,8 @@ fn options_changed(&amp;mut self, h: &amp;mut Host) {
   <p class="guide-toc-title" id="toc-title">On this page</p>
   <ul>
     <li><a href="#install">Install a plugin</a></li>
+    <li><a href="#permissions">What a plugin may do</a></li>
+    <li><a href="#updates">Updates</a></li>
     <li><a href="#vibration">Vibration Monitor</a></li>
     <li><a href="#schwalby">Schwalby</a></li>
     <li><a href="#map-entities">Map Entities</a></li>

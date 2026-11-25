@@ -521,21 +521,6 @@ impl SettingsPage {
     }
 }
 
-/// What the version on offer may do, in words, and what of that an update adds.
-fn permissions_line(row: &crate::plugins::store::Row) -> Option<String> {
-    use crate::plugins::wasm::permissions::says;
-    let new = row.new_permissions();
-    let (head, names): (&str, Vec<&str>) = if row.update_available() && !new.is_empty() {
-        ("New with this update:", new)
-    } else if row.permissions.is_empty() {
-        return None;
-    } else {
-        ("May:", row.permissions.iter().map(String::as_str).collect())
-    };
-    let list: Vec<String> = names.into_iter().map(says).collect();
-    Some(format!("{} {}", crate::i18n::tr(head), list.join(" \u{b7} ")))
-}
-
 /// What is going on with a plugin of the store.
 struct Now<'a> {
     /// The checksum of the module it runs from.
@@ -631,7 +616,7 @@ fn store_row(
         (None, _, Some(w)) => Some(format!("Not available: {w}.")),
         _ => None,
     };
-    let may = permissions_line(row);
+    let may = crate::plugins::wasm::permissions::line(row);
     let description = Some(row.description.as_str()).filter(|d| !d.is_empty());
     // What it may do is never cut short.
     for (i, (text, lines)) in [(description, 2), (may.as_deref(), 12), (why.as_deref(), 3)]

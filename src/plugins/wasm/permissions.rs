@@ -8,6 +8,8 @@
 //! A permission may gain routes in a later version and never loses one: a
 //! published plugin has to go on working in every later Corvus GCS.
 
+use serde_json::Value;
+
 /// A permission and what the operator reads about it.
 pub struct Permission {
     pub name: &'static str,
@@ -23,6 +25,8 @@ pub const FETCH: &str = "network";
 pub const FILES: &str = "files";
 pub const AI_TOOLS: &str = "ai.tools";
 pub const ASSISTANT: &str = "assistant";
+const MCP: &str = "/api/mcp";
+const MCP_SETTINGS: &str = "/api/mcp/settings";
 pub const SSH: &str = "ssh";
 
 pub const ALL: &[Permission] = &[
@@ -70,7 +74,7 @@ pub const ALL: &[Permission] = &[
     },
     Permission {
         name: ASSISTANT,
-        says: "Use the AI tools of Corvus GCS, within what Settings allows them, and change what that is",
+        says: "Use the AI tools of Corvus GCS, within what Settings allows them, and switch on its own access to them",
         routes: &[("GET", "/api/mcp"), ("POST", "/api/mcp/settings")],
         topics: &[],
     },
@@ -107,9 +111,35 @@ pub fn says(name: &str) -> String {
     }
 }
 
+/// What the version of `row` on offer may do, in one line of words; for an update that adds
+/// something, what it adds. `None` when it may do nothing of the kind.
+pub fn line(row: &crate::plugins::store::Row) -> Option<String> {
+    let new = row.new_permissions();
+    let (head, names): (&str, Vec<&str>) = if row.update_available() && !new.is_empty() {
+        ("New with this update:", new)
+    } else if row.permissions.is_empty() {
+        return None;
+    } else {
+        ("May:", row.permissions.iter().map(String::as_str).collect())
+    };
+    let list: Vec<String> = names.into_iter().map(says).collect();
+    Some(format!("{} {}", corvus_api::i18n::tr(head), list.join(" \u{b7} ")))
+}
+
 /// What a plugin was granted: the permissions its manifest names.
 #[derive(Debug, Clone, Default)]
 pub struct Granted(Vec<String>);
+
+/// What of an answer a plugin gets. `GET /api/mcp` also holds the token of the server for
+/// other programs, which is not for plugins: the assistant signs in with its own.
+pub fn answer(path: &str, mut body: Value) -> Value {
+    if path.split('?').next() == Some(MCP) {
+        if let Some(o) = body.as_object_mut() {
+            o.remove("token");
+        }
+    }
+    body
+}
 
 /// Whether `path` is one this program's router reads the way it looks: no
 /// escapes, no `..`, nothing that could end the request line.
@@ -121,9 +151,7 @@ fn is_plain_request(path: &str) -> bool {
     route.starts_with("/api/")
         && !route.contains("..")
         && !route.contains("//")
-        && route
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b"/_.-".contains(&b))
+        && route.bytes().all(|b| b.is_ascii_alphanumeric() || b"/_.-".contains(&b))
 }
 
 fn covers(pattern: &str, route: &str) -> bool {
@@ -161,11 +189,24 @@ impl Granted {
         allowed.then_some(()).ok_or_else(refused)
     }
 
+    /// Whether `body` may go with a call that [`route`](Self::route) let through. Of the AI
+    /// settings a plugin may switch the assistant's access and nothing else: with the rest it
+    /// could allow an AI client anything, up to flying the aircraft.
+    pub fn body(&self, path: &str, body: Option<&Value>) -> Result<(), String> {
+        if path.split('?').next() != Some(MCP_SETTINGS) {
+            return Ok(());
+        }
+        let only_assistant = body
+            .and_then(Value::as_object)
+            .is_some_and(|o| o.len() == 1 && o.get("assistant").is_some_and(Value::is_boolean));
+        only_assistant
+            .then_some(())
+            .ok_or_else(|| "This plugin may only switch the assistant's access on or off".into())
+    }
+
     /// Whether the plugin may follow every one of `topics`, comma separated.
     pub fn topics(&self, topics: &str) -> Result<(), String> {
-        let all = topics
-            .split(',')
-            .all(|t| self.mine().any(|p| p.topics.contains(&t)));
+        let all = topics.split(',').all(|t| self.mine().any(|p| p.topics.contains(&t)));
         all.then_some(())
             .ok_or_else(|| format!("This plugin is not allowed to follow {topics}"))
     }
@@ -174,6 +215,7 @@ impl Granted {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     fn granted(names: &[&str]) -> Granted {
         Granted::new(&names.iter().map(|n| n.to_string()).collect::<Vec<_>>())
@@ -187,7 +229,9 @@ mod tests {
             assert!(none.route("POST", path).is_err(), "{path}");
         }
         assert!(none.topics("shell").is_err());
-        assert!(granted(&["unknown", "everything", "*"]).route("GET", "/api/config").is_err());
+        assert!(granted(&["unknown", "everything", "*"])
+            .route("GET", "/api/config")
+            .is_err());
     }
 
     #[test]
@@ -241,6 +285,33 @@ mod tests {
             assert!(g.route("POST", path).is_err(), "{path}");
         }
         assert!(g.route("POST", "/api/config").is_err(), "settings are read only");
+    }
+
+    #[test]
+    fn the_assistant_cannot_allow_an_ai_client_more_or_take_the_others_token() {
+        let g = granted(&[ASSISTANT]);
+        let ok = |body: Value| g.body("/api/mcp/settings", Some(&body)).is_ok();
+        assert!(ok(json!({"assistant": true})) && ok(json!({"assistant": false})));
+        for body in [
+            json!({"enabled": true}),
+            json!({"assistant": true, "enabled": true}),
+            json!({"assistant_ask": false}),
+            json!({"flight": "on"}),
+            json!({"assistant": "yes"}),
+            json!({}),
+            json!(null),
+        ] {
+            assert!(!ok(body.clone()), "{body}");
+        }
+        assert!(g
+            .body("/api/mcp/settings?x=1", Some(&json!({"enabled": true})))
+            .is_err());
+        assert!(g.body("/api/mcp/settings", None).is_err());
+        let got = answer(
+            "/api/mcp",
+            json!({"token": "theirs", "settings": {}, "assistant": {"on": true, "token": "mine"}}),
+        );
+        assert_eq!(got, json!({"settings": {}, "assistant": {"on": true, "token": "mine"}}));
     }
 
     #[test]

@@ -12,12 +12,7 @@ fn pick(mode: &str, title: &str, name: &str, filter: Option<Filter<'_>>, start: 
         mode: mode.into(),
         title: title.into(),
         name: name.into(),
-        filter: filter.map(|f| {
-            (
-                f.name.to_string(),
-                f.extensions.iter().map(|e| e.to_string()).collect(),
-            )
-        }),
+        filter: filter.map(|f| (f.name.to_string(), f.extensions.iter().map(|e| e.to_string()).collect())),
         start: start.map(|p| p.to_string_lossy().into_owned()),
     }));
     told.path.map(PathBuf::from)

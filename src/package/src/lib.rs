@@ -114,7 +114,9 @@ impl Manifest {
         }
         let min_corvus = text("min_corvus", 32);
         if corvus_version(&min_corvus).is_none() {
-            return Err(format!("{id}: min_corvus must be a version of Corvus GCS like 2026.11.94"));
+            return Err(format!(
+                "{id}: min_corvus must be a version of Corvus GCS like 2026.11.94"
+            ));
         }
         let mut permissions = Vec::new();
         match v.get("permissions") {

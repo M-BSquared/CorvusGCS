@@ -85,14 +85,22 @@ done
 # lightly optimised and rebuilds fast, `fast` is release code without LTO,
 # release is exactly what a bundle ships.
 if [ "$PROFILE" = "dev" ]; then PROFILE_ARGS=(); DIR=debug; else PROFILE_ARGS=(--profile "$PROFILE"); DIR="$PROFILE"; fi
-# --lib builds the plugin libraries in the same call, the only way they fit the program: Settings,
-# Plugins offers them from where cargo leaves them. One that does not build stops nothing.
-build() { ( cd "$REPO_DIR" && cargo build ${PROFILE_ARGS[@]+"${PROFILE_ARGS[@]}"} --bin corvus-gcs "$@" --quiet ); }
-if ! build --lib; then
-    echo ">>> Not everything built, so only the program is built now; a plugin may be missing or old." >&2
-    build
-fi
+( cd "$REPO_DIR" && cargo build ${PROFILE_ARGS[@]+"${PROFILE_ARGS[@]}"} --bin corvus-gcs --quiet )
 TARGET="${CARGO_TARGET_DIR:-$REPO_DIR/target}"
+# The plugins, as WebAssembly modules in a folder beside the program, where Settings, Plugins
+# offers them. One that does not build stops nothing.
+PACKAGES=()
+for d in "$REPO_DIR"/plugins/*/; do
+    id="$(basename "$d")"
+    [ -f "$d/plugin.json" ] && PACKAGES+=(-p "corvus_plugin_${id//-/_}")
+done
+if ( cd "$REPO_DIR" && cargo build --target wasm32-wasip1 --profile plugin "${PACKAGES[@]}" --quiet ); then
+    mkdir -p "$TARGET/$DIR/corvus-plugins"
+    cp "$TARGET/wasm32-wasip1/plugin"/corvus_plugin_*.wasm "$TARGET/$DIR/corvus-plugins/"
+    rm -f "$TARGET/$DIR/corvus-plugins/corvus_plugin_probe.wasm"
+else
+    echo ">>> The plugins did not all build; one may be missing or old." >&2
+fi
 BIN="$TARGET/$DIR/corvus-gcs"
 [ -x "$BIN" ] || BIN="$BIN.exe"
 # exec, so SIGINT/SIGTERM reach the interface's own handlers directly, which

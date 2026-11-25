@@ -75,6 +75,11 @@ struct Session {
     height: f32,
 }
 
+/// What stands under the plugin list: the gap, the buttons and the dialog's edge.
+const BELOW_LIST: f32 = 100.0;
+/// The list is never lower than this, however low the window.
+const LIST_MIN: f32 = 120.0;
+
 /// What the backend says is due, and the config it holds.
 struct Due {
     config: Value,
@@ -106,7 +111,10 @@ fn ask(server: &Server) -> Option<Due> {
         .map(|a| model::used_before(&a))
         .unwrap_or_default();
     if !new {
-        let asked = config.get("ui").and_then(|u| u.get("plugin_setup")).and_then(Value::as_i64);
+        let asked = config
+            .get("ui")
+            .and_then(|u| u.get("plugin_setup"))
+            .and_then(Value::as_i64);
         let native = crate::plugins::loader::native_dir()
             .filter(|d| d.is_dir())
             .map(|d| crate::plugins::loader::before(&d));
@@ -620,7 +628,9 @@ impl Session {
             .filter(|r| offered.contains(&r.id.as_str()) && self.picked.contains(&r.id))
             .filter(|r| {
                 let missing = r.installed.is_none();
-                loading || (r.offer.is_some() && (missing || r.update_available())) || (missing && self.used.contains(&r.id))
+                loading
+                    || (r.offer.is_some() && (missing || r.update_available()))
+                    || (missing && self.used.contains(&r.id))
             })
             .map(|r| r.id)
             .collect()
@@ -663,10 +673,7 @@ impl Session {
             self.picked
                 .extend(rows.iter().filter(|r| r.update_available()).map(|r| r.id.clone()));
         }
-        if rows
-            .iter()
-            .any(|r| r.installed.is_none() && self.used.contains(&r.id))
-        {
+        if rows.iter().any(|r| r.installed.is_none() && self.used.contains(&r.id)) {
             form::desc(
                 ui,
                 f,
@@ -674,6 +681,27 @@ impl Session {
             );
             f.skip(10.0);
         }
+        // The list scrolls where the window is too low for all of it, so the buttons under it
+        // stay in reach.
+        let room_below = ui.ctx().content_rect().bottom() - f.y - BELOW_LIST;
+        let view = Rect::from_min_size(Pos2::new(f.x, f.y), Vec2::new(f.w, room_below.max(LIST_MIN)));
+        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(view));
+        child.set_clip_rect(view);
+        let shown = egui::ScrollArea::vertical()
+            .id_salt("welcomepluginlist")
+            .max_height(view.height())
+            .auto_shrink([false, true])
+            .show(&mut child, |ui| {
+                let top = ui.max_rect().top();
+                let mut list = Form::new(view.left(), top, view.width() - 10.0);
+                self.plugin_rows(ui, &mut list, &rows, loading);
+                ui.allocate_space(Vec2::new(list.w, list.y - top));
+                list.y - top
+            });
+        f.y += shown.content_size.y.min(view.height());
+    }
+
+    fn plugin_rows(&mut self, ui: &mut egui::Ui, f: &mut Form, rows: &[crate::plugins::store::Row], loading: bool) {
         for (i, row) in rows.iter().enumerate() {
             let installed = row.installed.is_some() && !row.update_available();
             let remembered = self.used.contains(&row.id);
@@ -708,9 +736,22 @@ impl Session {
                 );
                 f.y += 9.0;
             }
-            let h = (name.size().y + 2.0 + desc.size().y).max(24.0);
+            // What it will be allowed to do stands there before it is downloaded, never cut.
+            let may = (on && !installed)
+                .then(|| crate::plugins::wasm::permissions::line(row))
+                .flatten()
+                .map(|text| {
+                    crate::ui::text::clamped(ui, &text, 11.0, Weight::W500, style::text_2(), 0.0, room, 12, None)
+                });
+            let may_h = may.as_ref().map_or(0.0, |g| g.size().y + 4.0);
+            let h = (name.size().y + 2.0 + desc.size().y + may_h).max(24.0);
             painter.galley(Pos2::new(f.x, f.y), name.clone(), style::text_1());
-            painter.galley(Pos2::new(f.x, f.y + name.size().y + 2.0), desc, style::text_3());
+            let below = f.y + name.size().y + 2.0;
+            let desc_h = desc.size().y;
+            painter.galley(Pos2::new(f.x, below), desc, style::text_3());
+            if let Some(may) = may {
+                painter.galley(Pos2::new(f.x, below + desc_h + 4.0), may, style::text_2());
+            }
             let at = Pos2::new(f.x + f.w - 38.0, f.y + (h - 22.0) / 2.0);
             let pressed = kit::switch(ui, at, on, available, ("welcomeplugin", &row.id));
             if !available {

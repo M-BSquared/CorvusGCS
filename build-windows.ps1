@@ -76,8 +76,8 @@ New-Item -ItemType Directory -Force -Path $DistDir | Out-Null
 # ---- 1. the interface and the backend in it ------------------------------------
 # rust-toolchain.toml at the repository root pins the Rust it needs, so cargo
 # runs from there and rustup fetches it on first use. The fonts and icons are
-# cut out of src\vendor by its build.rs, and the languages, the version and the
-# bundled plugins are compiled in, so the executable carries them. The target
+# cut out of assets\ by its build.rs, and the languages, the
+# version are compiled in, so the executable carries them. The target
 # folder is the repository's own, so a second build only recompiles what changed.
 $Profile = if ($Fast) { "fast" } else { "release" }
 Write-Host ">>> Building the interface ($Profile profile, locked) ..."
@@ -86,9 +86,7 @@ Push-Location $RepoDir
 try {
     $Target = if ($env:CARGO_TARGET_DIR) { $env:CARGO_TARGET_DIR } else { Join-Path $RepoDir "target" }
     $env:CARGO_TARGET_DIR = $Target
-    # --lib builds the plugin libraries in the same cargo call: only then do they share their types
-    # with the program (corvus-build plugin-pack publishes them, the bundle does not hold them).
-    & cargo build --profile $Profile --locked --bin corvus-gcs --lib *> $GuiLog
+    & cargo build --profile $Profile --locked --bin corvus-gcs *> $GuiLog
     if ($LASTEXITCODE -ne 0) {
         Get-Content $GuiLog -Tail 30
         throw "the interface did not build; log: $GuiLog"
@@ -140,8 +138,13 @@ if ($Zip) {
 # The plugins of this build, beside the folder and not in it: Settings, Plugins offers them from here.
 $PluginDir = Join-Path $DistDir "corvus-plugins"
 if (Test-Path $PluginDir) { Remove-Item -Recurse -Force $PluginDir }
-New-Item -ItemType Directory -Force $PluginDir | Out-Null
-Copy-Item (Join-Path $Target "$Profile\corvus_plugin_*.dll") $PluginDir
+Push-Location $RepoDir
+try {
+    & cargo run -q --release --locked -p corvus_tools --bin corvus-build -- plugin-pack --build --out $PluginDir
+    if ($LASTEXITCODE -ne 0) { throw "the plugins did not build" }
+} finally {
+    Pop-Location
+}
 
 Write-Host ""
 Write-Host "=== done ==="

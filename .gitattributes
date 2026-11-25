@@ -15,6 +15,7 @@
 *.otf binary
 *.woff binary
 *.woff2 binary
+*.gz binary
 
 # Deliberately CRLF: a test reads it as it is.
 src/core/tests/data/dem_import/crlf.asc -text

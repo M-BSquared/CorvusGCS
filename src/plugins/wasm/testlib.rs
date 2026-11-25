@@ -33,7 +33,16 @@ pub fn module(package: &str) -> Arc<Vec<u8>> {
     }
     let target = target_dir().join("plugin-tests");
     let status = std::process::Command::new(env!("CARGO"))
-        .args(["build", "--locked", "--target", "wasm32-wasip1", "--profile", "plugin", "-p", package])
+        .args([
+            "build",
+            "--locked",
+            "--target",
+            "wasm32-wasip1",
+            "--profile",
+            "plugin",
+            "-p",
+            package,
+        ])
         .arg("--target-dir")
         .arg(&target)
         .current_dir(env!("CARGO_MANIFEST_DIR"))

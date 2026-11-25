@@ -185,6 +185,12 @@ impl WasmPlugin {
         })
     }
 
+    /// Where the view's popups are.
+    #[cfg(test)]
+    pub fn popups(&self) -> Vec<egui::Rect> {
+        self.inner.borrow().view.overlays().to_vec()
+    }
+
     #[cfg(test)]
     pub fn set_picker(&mut self, picker: runtime::Picker) {
         self.inner.get_mut().instance.set_picker(picker);
@@ -352,7 +358,11 @@ impl Inner {
     }
 
     fn request(&mut self, ask: wire::Request, h: &Host) {
-        if let Err(why) = self.granted.route(&ask.method, &ask.path) {
+        let allowed = self
+            .granted
+            .route(&ask.method, &ask.path)
+            .and_then(|()| self.granted.body(&ask.path, ask.body.as_ref()));
+        if let Err(why) = allowed {
             eprintln!("{why}");
             push(&self.inbox, failed(ask.id, why));
             h.ctx.request_repaint();
@@ -537,8 +547,15 @@ fn perform(server: &Server, ask: &wire::Request) -> Delivery {
     let wait = Duration::from_secs(if ask.method == "GET" { 30 } else { 60 });
     let body = ask.body.as_ref().map(Value::to_string);
     let done = (|| -> Result<(u16, Value), String> {
-        let r = http::request(server, &ask.method, &ask.path, body.as_deref(), "application/json", wait)
-            .map_err(|e| format!("{}{}: {e}", server.url(), ask.path))?;
+        let r = http::request(
+            server,
+            &ask.method,
+            &ask.path,
+            body.as_deref(),
+            "application/json",
+            wait,
+        )
+        .map_err(|e| format!("{}{}: {e}", server.url(), ask.path))?;
         let status = r.status;
         let mut text = Vec::new();
         r.body
@@ -555,7 +572,7 @@ fn perform(server: &Server, ask: &wire::Request) -> Delivery {
         Ok((status, body)) => Delivery::Answer(wire::Answer {
             id: ask.id,
             status,
-            body,
+            body: permissions::answer(&ask.path, body),
             error: None,
         }),
         Err(e) => failed(ask.id, e),

@@ -48,13 +48,22 @@ impl<T: Send + 'static> Pending<T> {
     }
 }
 
-/// For a [`Task`](crate::task::Task), which polls again after every delivery, so nobody is
-/// woken.
-impl<T: Send + 'static> std::future::Future for Pending<T> {
+/// The wait for a [`Pending`] in a [`Task`](crate::task::Task), which polls again after every
+/// delivery, so nobody is woken. A type of its own: an answer nobody waits for is dropped like
+/// any other value.
+pub struct Wait<T>(Pending<T>);
+
+impl<T: Send + 'static> Pending<T> {
+    pub fn wait(self) -> Wait<T> {
+        Wait(self)
+    }
+}
+
+impl<T: Send + 'static> std::future::Future for Wait<T> {
     type Output = T;
 
     fn poll(self: std::pin::Pin<&mut Self>, _cx: &mut std::task::Context<'_>) -> std::task::Poll<T> {
-        match self.take() {
+        match self.0.take() {
             Some(v) => std::task::Poll::Ready(v),
             None => std::task::Poll::Pending,
         }

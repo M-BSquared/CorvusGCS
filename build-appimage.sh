@@ -117,7 +117,7 @@ rm -f "$OUTPUT"
 # the Rust it needs, so cargo runs from there and rustup fetches it on first
 # use. The fonts and icons are cut out of assets/ by its build.rs and the
 # logos are read from assets/, so the binary carries them, and so are the
-# languages, the version and the bundled plugins. It links the C
+# languages and the version. It links the C
 # library and the OpenGL, X11 and Wayland libraries are opened at run time from
 # the host, which every desktop that can show a window has.
 echo ">>> Building the interface (Cargo.toml and src/, $PROFILE profile) ..."
@@ -125,10 +125,8 @@ GUI_LOG="$BUILD_DIR/cargo-gui-linux.log"
 mkdir -p "$BUILD_DIR"
 : > "$GUI_LOG"
 TARGET="${CARGO_TARGET_DIR:-$REPO_DIR/target}"
-# --lib builds the plugin libraries in the same cargo call: only then do they share their types
-# with the program (corvus-build plugin-pack publishes them, the bundle does not hold them).
 if ! ( cd "$REPO_DIR" \
-        && CARGO_TARGET_DIR="$TARGET" cargo build --profile "$PROFILE" --locked --bin corvus-gcs --lib ) >>"$GUI_LOG" 2>&1; then
+        && CARGO_TARGET_DIR="$TARGET" cargo build --profile "$PROFILE" --locked --bin corvus-gcs ) >>"$GUI_LOG" 2>&1; then
     echo "ERROR: the interface did not build; log: $GUI_LOG" >&2
     tail -n 30 "$GUI_LOG" >&2 || true
     exit 1
@@ -334,8 +332,8 @@ SUCCESS=1
 echo ""
 # The plugins of this build, beside the AppImage and not in it: Settings, Plugins offers them from here.
 rm -rf "$REPO_DIR/dist/corvus-plugins"
-mkdir -p "$REPO_DIR/dist/corvus-plugins"
-cp "$TARGET/$PROFILE"/libcorvus_plugin_*.so "$REPO_DIR/dist/corvus-plugins/"
+( cd "$REPO_DIR" && CARGO_TARGET_DIR="$TARGET" cargo run -q --release --locked -p corvus_tools --bin corvus-build -- \
+    plugin-pack --build --out "$REPO_DIR/dist/corvus-plugins" )
 
 echo ">>> Built: $OUTPUT"
 echo "    (appimagetool log: $AIM_LOG)"

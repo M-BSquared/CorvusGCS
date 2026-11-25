@@ -75,14 +75,7 @@ fn json_of(a: wire::Answer) -> Result<Value, String> {
 
 fn request_effect(method: &str, path: &str, body: Option<Value>) -> impl FnOnce(u64) -> Effect {
     let (method, path) = (method.to_string(), path.to_string());
-    move |id| {
-        Effect::Request(wire::Request {
-            id,
-            method,
-            path,
-            body,
-        })
-    }
+    move |id| Effect::Request(wire::Request { id, method, path, body })
 }
 
 pub fn request(method: &str, path: &str, body: Option<Value>) -> Pending<Result<Value, String>> {

@@ -36,12 +36,7 @@ pub fn alloc(len: u32) -> u32 {
 /// `ptr` and `len` are those of one [`alloc`] that has not been taken back.
 unsafe fn take_buffer(ptr: u32, len: u32) -> Box<[u8]> {
     // SAFETY: as the function's contract says, this is the boxed slice `alloc` leaked.
-    unsafe {
-        Box::from_raw(std::ptr::slice_from_raw_parts_mut(
-            ptr as *mut u8,
-            len as usize,
-        ))
-    }
+    unsafe { Box::from_raw(std::ptr::slice_from_raw_parts_mut(ptr as *mut u8, len as usize)) }
 }
 
 /// Where a slice lies, as one number: its address above, its length below.
@@ -51,12 +46,7 @@ fn pack(bytes: &[u8]) -> u64 {
 
 /// One call of the program: `ptr` and `len` are the [`wire::Call`] it wrote
 /// into a buffer of [`alloc`]. Answers where the [`wire::Reply`] lies.
-pub fn call(
-    ptr: u32,
-    len: u32,
-    make: fn() -> Box<dyn Plugin>,
-    lang: &'static [(&'static str, &'static str)],
-) -> u64 {
+pub fn call(ptr: u32, len: u32, make: fn() -> Box<dyn Plugin>, lang: &'static [(&'static str, &'static str)]) -> u64 {
     host::install_panic_hook();
     // SAFETY: the program got `ptr` from `corvus_alloc(len)` and passes it here once.
     let bytes = unsafe { take_buffer(ptr, len) };

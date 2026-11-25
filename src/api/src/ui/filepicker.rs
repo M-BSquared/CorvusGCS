@@ -5,7 +5,6 @@
 
 use std::path::{Path, PathBuf};
 
-
 /// What [`read`] answers for a file larger than asked for.
 pub const TOO_LARGE: &str = "the file is too large";
 

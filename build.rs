@@ -42,7 +42,8 @@ fn main() {
         let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
         let manifest = corvus_package::Manifest::parse(&bytes).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
         assert_eq!(
-            manifest.id, *id,
+            manifest.id,
+            *id,
             "{}: the id must be the name of the folder",
             path.display()
         );

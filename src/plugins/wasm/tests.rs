@@ -69,10 +69,19 @@ fn a_dropdown_of_a_plugin_opens_over_the_window_and_can_be_picked_from() {
     let mut rig = probe();
     rig.frames(2);
     rig.click(dropdown());
-    // The list lies under the box; its second row is picked.
-    let at = pos2(AREA.min.x + 60.0, AREA.min.y + 70.0 + 4.0 + 45.0);
-    rig.click(at);
+    rig.frames(20);
+    // The list lies under the box, over the window. Its second row is its lower half, whatever
+    // height a row has (another test may switch tablet mode on meanwhile).
+    let list = rig
+        .plugin
+        .popups()
+        .into_iter()
+        .find(|r| r.top() > dropdown().y)
+        .expect("the list is open");
+    rig.click(pos2(list.center().x, list.top() + list.height() * 0.72));
     assert_eq!(rig.published("picked"), Some(json!("b")));
+    rig.frames(20);
+    assert!(rig.plugin.popups().iter().all(|r| r.top() <= dropdown().y), "it closed");
 }
 
 #[test]
@@ -80,7 +89,12 @@ fn only_what_a_permission_covers_reaches_the_backend() {
     let mut rig = probe();
     rig.tell("get", "/api/config");
     assert_eq!(rig.await_published("get"), json!({"ok": {"ok": true}}));
-    for path in ["/api/local/run", "/api/plugins/settings", "/api/config", "/api/ssh/../local/run"] {
+    for path in [
+        "/api/local/run",
+        "/api/plugins/settings",
+        "/api/config",
+        "/api/ssh/../local/run",
+    ] {
         rig.bus.retract_all("probe");
         rig.tell("post", path);
         let got = rig.await_published("post");
@@ -169,7 +183,10 @@ fn a_panic_ends_the_plugin_with_its_words() {
     let why = stopped(&mut rig, "panic");
     assert!(why.contains("the probe was told to"), "{why}");
     let again = stopped(&mut rig, "look");
-    assert!(again.contains("stopped"), "a stopped module is not called again: {again}");
+    assert!(
+        again.contains("stopped"),
+        "a stopped module is not called again: {again}"
+    );
 }
 
 #[test]
@@ -189,4 +206,43 @@ fn a_plugin_that_eats_memory_or_stack_is_stopped_and_the_program_goes_on() {
         assert!(why.starts_with("the plugin"), "{what}: {why}");
     }
     probe().frames(1);
+}
+
+/// The test plugin as built with the first version of the protocol (`fixtures/README.md`).
+/// It is what an old, published plugin is to a later program.
+#[test]
+fn a_plugin_built_with_the_first_protocol_still_works() {
+    use std::io::Read;
+    let mut bytes = Vec::new();
+    flate2::read::GzDecoder::new(&include_bytes!("fixtures/protocol-1.wasm.gz")[..])
+        .read_to_end(&mut bytes)
+        .expect("the fixture unpacks");
+    let manifest = corvus_package::Manifest::of_module(&bytes).expect("its manifest");
+    assert!(manifest.fits(corvus_core::version::version()));
+    let plugin = super::WasmPlugin::load(&super::testlib::sandbox(), &manifest, &bytes, None).expect("it loads");
+    let mut rig = Rig::new(plugin);
+    rig.with(|p, h| p.start(h));
+    rig.state = json!({"armed": true});
+    rig.saved = json!({"kept": 1});
+    rig.tell("look", "");
+    let look = rig.await_published("look");
+    assert_eq!(
+        (look["state"].clone(), look["settings"].clone()),
+        (rig.state.clone(), rig.saved.clone())
+    );
+    assert_eq!(look["bg"], json!(crate::ui::style::palette().bg));
+    rig.frames(2);
+    assert!(rig.height > 0.0);
+    rig.click(field());
+    assert!(rig.wants_keyboard);
+    rig.frame(vec![egui::Event::Text("old".into())]);
+    rig.frames(2);
+    assert_eq!(rig.published("typed"), Some(json!("old")));
+    rig.tell("get", "/api/config");
+    assert_eq!(rig.await_published("get"), json!({"ok": {"ok": true}}));
+    rig.tell("post", "/api/local/run");
+    assert!(rig.await_published("post")["err"].as_str().is_some());
+    rig.tell("draw", "");
+    assert_eq!(rig.shapes.shapes().len(), 2);
+    assert_eq!(rig.with(|p, h| p.mcp_tools(h)).len(), 1);
 }

@@ -768,7 +768,11 @@ impl Store {
                         self.done.push_back(done);
                     }
                     (Err(e), Act::Install(id, _)) if self.wanted.contains_key(id) => {
-                        let name = self.offered().iter().find(|o| o.id == id).map_or(id.as_str(), |o| o.name);
+                        let name = self
+                            .offered()
+                            .iter()
+                            .find(|o| o.id == id)
+                            .map_or(id.as_str(), |o| o.name);
                         let text = format!("{name} is not downloaded yet: {e}. It is tried again at the next start.");
                         self.say(text, false)
                     }
@@ -1054,7 +1058,6 @@ impl Default for Store {
         Store::new(None)
     }
 }
-
 
 #[cfg(test)]
 mod tests {

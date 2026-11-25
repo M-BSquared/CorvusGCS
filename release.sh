@@ -119,7 +119,6 @@ if [[ -n "$FAILED" ]]; then
 fi
 
 echo "=== $TAG pushed to every remote. CI will build and release it. ==="
-echo "A release with a new plugin interface (see plugin-abi.txt on it) has no plugins until"
-echo "the plugins' repositories build them, which their schedule does within hours. To build"
-echo "them at once, when the release is published:"
-echo '  for p in plugins/*/release.sh; do "$p" --no-verify; done'
+echo "Plugins need nothing: every one that runs in an earlier version runs in this one. One"
+echo "whose min_corvus is this version is published by ./release.sh in its folder, once the"
+echo "release is out."

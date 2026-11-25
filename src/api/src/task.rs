@@ -42,9 +42,9 @@ mod tests {
         let sum = Rc::new(Cell::new(0));
         let out = sum.clone();
         let mut task = Task::new(async move {
-            let a = first.await;
+            let a = first.wait().await;
             out.set(a);
-            out.set(a + second.await);
+            out.set(a + second.wait().await);
         });
         assert!(!task.poll() && sum.get() == 0);
         fill_first.fill(2);

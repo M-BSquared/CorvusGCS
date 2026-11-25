@@ -133,15 +133,12 @@ fn every_plugin_is_a_repository_that_publishes_itself() {
     let modules = text(".gitmodules");
     let workspace = text("Cargo.toml");
     let called = text(".github/workflows/plugin.yml");
-    assert!(called.contains("workflow_call:") && called.contains("release=\"$RELEASE\""));
-    // The name the program asks under travels with its release: build.yml writes it there, and
-    // the plugins' repositories publish under it.
-    assert!(called.contains("--pattern plugin-abi.txt"));
-    let build = text(".github/workflows/build.yml");
-    assert!(
-        build.contains("plugin-tag dist/plugins > dist/plugin-abi.txt")
-            && build.contains("\n            dist/plugin-abi.txt\n")
-    );
+    assert!(called.contains("workflow_call:"));
+    // The program asks for the release by this name, and the workflow publishes under it.
+    assert!(called.contains(&format!("release={}\n", corvus_package::RELEASE_TAG)));
+    // The oldest version a plugin names is the one it is built and tried with.
+    assert!(called.contains(".min_corvus plugin.json") && called.contains("plugin-index --out dist/plugins"));
+    assert!(text(".github/scripts/plugin-package.sh").contains("--check-plugins"));
     let mut n = 0;
     for e in std::fs::read_dir(root().join("plugins")).unwrap().flatten() {
         if !e.path().join("Cargo.toml").is_file() {
@@ -165,7 +162,17 @@ fn every_plugin_is_a_repository_that_publishes_itself() {
             manifest.contains(&format!("\nrepository = \"{url}\"\n")),
             "{id}: repository"
         );
-        assert!(manifest.contains("\nloadable = true\n"), "{id}: loadable");
+        let said = text(&format!("plugins/{id}/plugin.json"));
+        let said = corvus_package::Manifest::parse(said.as_bytes()).unwrap_or_else(|e| panic!("{id}: {e}"));
+        assert_eq!(said.id, id, "{id}: plugin.json");
+        assert!(
+            manifest.contains("crate-type = [\"cdylib\", \"rlib\"]"),
+            "{id}: a module"
+        );
+        assert!(
+            !manifest.contains("eframe"),
+            "{id}: egui comes from corvus_api, a plugin has no window"
+        );
         let own = text(&format!("plugins/{id}/.github/workflows/build.yml"));
         assert!(
             own.contains("uses: M-BSquared/CorvusGCS/.github/workflows/plugin.yml@master")
@@ -178,7 +185,7 @@ fn every_plugin_is_a_repository_that_publishes_itself() {
             text("plugins/vibration/release.sh"),
             "{id}: release.sh"
         );
-        for file in ["LICENSE.md", "README.md", ".gitignore"] {
+        for file in ["LICENSE.md", "README.md", ".gitignore", "plugin.json", "release.sh"] {
             assert!(root().join("plugins").join(&id).join(file).is_file(), "{id}: {file}");
         }
     }

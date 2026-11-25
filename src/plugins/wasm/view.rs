@@ -60,6 +60,12 @@ impl View {
         Id::unique(("plugin-view", self.plugin))
     }
 
+    /// Where the module's popups are.
+    #[cfg(test)]
+    pub fn overlays(&self) -> &[Rect] {
+        &self.overlays
+    }
+
     /// The view is gone. The textures stay: the module's egui goes on with them.
     pub fn closed(&mut self) {
         self.overlays.clear();
@@ -82,7 +88,10 @@ impl View {
                 .fixed_pos(rect.min)
                 .constrain(false)
                 .show(&ctx, |ui| {
-                    over |= ui.allocate_exact_size(rect.size(), Sense::click_and_drag()).1.contains_pointer();
+                    over |= ui
+                        .allocate_exact_size(rect.size(), Sense::click_and_drag())
+                        .1
+                        .contains_pointer();
                 });
         }
         self.over = over;

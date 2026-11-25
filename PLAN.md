@@ -81,18 +81,27 @@ be seen live, see 1.2):
 
 ---
 
-## Plugins as WebAssembly (branch `wasm-plugins`, started 2026-11-25)
+## Plugins as WebAssembly (branch `wasm-plugins`, since 2026-11-25)
 
-Replaces the native plugin libraries. Done when every box is ticked; then this section goes.
+Built: the runtime, protocol, permissions, store, all eight plugins and the upgrade from 2026.11.81,
+83 and 93 (`src/README.md`, "Plugins"). Seen in the real window on macOS: setup after an upgrade,
+PLUGINS cards, Vibration Monitor, typing into AI Chat. Open before the release:
 
-- [ ] `corvus_api` builds natively and for `wasm32-wasip1`
-- [ ] Prototype: Vibration Monitor as wasm, measured (target under 2 ms per frame, text input and popups as before)
-- [ ] Protocol, host runtime and plugin SDK, with permissions enforced in the host
-- [ ] All eight plugins ported, AI Chat last
-- [ ] Upgrade from 2026.11.81, 2026.11.83 and 2026.11.93: used plugins preselected, downloads kept pending until they succeed
-- [ ] Store: `min_corvus` instead of the ABI stamp, `plugin.yml` for one build (not on `master` of origin before the release; the `abi-*` releases stay)
-- [ ] Build scripts, CI, docs, languages; native loader, `lock_closure.rs` and the vendored patches removed
-- [ ] A frozen `.wasm` fixture of the first protocol version loads in every later build
+- [ ] Run CI on Linux and Windows. Nothing of this has run there yet.
+- [ ] Check a bundle (`./build.sh`): the signed macOS app with the Cranelift JIT, and its size.
+- [ ] Look at the other plugins in the window against a vehicle or SITL (NuttX shell and terminal,
+      TAK, Schwalby with SSH, Map Entities on both maps, file dialogs), and at AI Chat with a model.
+- [ ] Frame time with several visible plugins on a slow field laptop (measured: one, Apple Silicon).
+- [ ] Merge the plugin repositories' `wasm-plugins` branches, push `plugin.yml` to `master` only
+      with the release, then run `./release.sh` in each plugin once the release is out. Keep the
+      `abi-*` releases for 2026.11.93.
+- [ ] Make `protocol-1.wasm.gz` again if the protocol changed since, then never again.
+- [ ] Compile in the background at start. After an update that changes the runtime, the kept compiled
+      modules are stale and the first start compiles them on the window's thread: 7.6 s for all eight
+      on an Apple Silicon Mac (0.6 s with them kept), longer on a field laptop. The release program
+      grew by 9.3 MB (40.5 to 49.8 MB, macOS arm64).
+- [ ] A module is about 6.5 MB (2.2 MB compressed). Look at what in it can go.
+- [ ] The manual's picture of Settings, Plugins shows no permission lines yet.
 
 ## 0. Rust port (state of 2026-11-11)
 

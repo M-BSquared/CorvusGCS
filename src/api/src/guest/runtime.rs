@@ -141,11 +141,7 @@ impl Runtime {
                         .into_iter()
                         .map(bridge::option_to)
                         .collect(),
-                    lang: self
-                        .lang
-                        .iter()
-                        .map(|(c, b)| (c.to_string(), b.to_string()))
-                        .collect(),
+                    lang: self.lang.iter().map(|(c, b)| (c.to_string(), b.to_string())).collect(),
                 });
             }
             Op::Start(_) => plugin.start(&mut s.host()),
@@ -265,8 +261,10 @@ impl Runtime {
             .entry(raw.viewport_id)
             .or_default()
             .native_pixels_per_point = Some(ppp);
-        raw.events
-            .insert(0, egui::Event::ModifiersChanged(bridge::modifiers_from(input.modifiers)));
+        raw.events.insert(
+            0,
+            egui::Event::ModifiersChanged(bridge::modifiers_from(input.modifiers)),
+        );
 
         let ctx = self.s.ctx.clone();
         let (mut height, mut base, mut used_wheel) = (0.0f32, 0usize, false);
@@ -365,7 +363,9 @@ fn primitive(into: &mut Vec<Maybe<wire::Primitive>>, clipped: egui::ClippedPrimi
                 return;
             };
             if !mesh.indices.is_empty() {
-                into.push(Maybe::Known(wire::Primitive::Mesh(bridge::mesh_to(&mesh, clip, texture))));
+                into.push(Maybe::Known(wire::Primitive::Mesh(bridge::mesh_to(
+                    &mesh, clip, texture,
+                ))));
             }
         }
         egui::epaint::Primitive::Callback(callback) => {

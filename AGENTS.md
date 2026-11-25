@@ -143,10 +143,13 @@ reachable over MCP until a tool and its permission are added there on purpose.
   in SQLite, offline cache); the 3D map has its own terrain, buildings and GPU
   tile cache. The interface never talks to a tile server.
 - **Plugins:** crates against `corvus_api`, each a repository of its own (a submodule under
-  `plugins/<id>`), built as a shared library that its repository publishes and Settings installs
-  from there (`src/README.md`, "Plugins as libraries"; read it before touching the plugin layer or updating egui, since
-  a library has its own copy of every `static`). Plugins written for the web interface do not run; Settings lists
-  them as "installed, not loaded".
+  `plugins/<id>`), built into one WebAssembly module for every system that its repository publishes and
+  Settings installs from there. Each runs in a wasmtime sandbox and reaches only what its permissions
+  name. A plugin names the oldest Corvus GCS it runs in (`min_corvus` in `plugin.json`) and every later
+  one takes it, so **the protocol in `src/api/src/wire.rs` only grows**, a permission never loses a route,
+  and a route plugins call keeps its old callers working. `src/plugins/wasm/fixtures` is never rebuilt
+  to get green. Read `src/README.md`, "Plugins", before touching the plugin layer. Plugins written for
+  the web interface do not run; Settings lists them as "installed, not loaded".
 - **Tools:** `corvus-build` (`src/tools`): `appimage-libs`, `bundle-check`,
   `icon`, `png-size`, `squashfs`, `elf-static`, `guide`, `i18n`, `soak`,
   `plugin-pack`, `plugin-unpack`, `plugin-index`. It never enters an artifact.
@@ -194,8 +197,8 @@ Shared packaging invariants. A violation of any of these is a build bug:
   machine it runs on, as every desktop program does.
 - **The interface is built by cargo, locked.** `cargo build --release --locked`
   from the repository root into a target folder under `build/`. Fonts and icons
-  are cut out of `assets/` by `src/api/build.rs`; the languages, the version
-  and the bundled plugins are compiled in. The executable is the macOS bundle's
+  are cut out of `assets/` by `src/api/build.rs`; the languages and the version
+  are compiled in. No plugin is in a bundle. The executable is the macOS bundle's
   `Contents/MacOS/corvus-gcs`, the AppImage's `usr/bin/corvus-gcs-ui` (started
   by `AppRun`, which `exec`s it so signals reach it) and `Corvus GCS.exe`.
 - **Build host.** A Rust toolchain and the platform's own tools, nothing else:
@@ -373,7 +376,8 @@ time: no zombies, no leaked sockets, no unflushed logs.
     check and return an error. A parser never panics on a damaged frame.
   - `unsafe` stays in the files that need it (serial and sockets in `src/link`,
     the pty in `src/core/src/peripherals/shell`, GPU and window glue, the clock
-    and local time, and the plugin loader `src/plugins/loader.rs`) and carries a `// SAFETY:` note. Do not spread it.
+    and local time, the plugin runtime `src/plugins/wasm/runtime.rs` and the plugin side of its boundary
+    `src/api/src/guest/`) and carries a `// SAFETY:` note. Do not spread it.
   - Nothing blocks the frame loop and no page polls: live data is pushed, the
     interface requests a repaint when data arrives.
   - Nothing that grows with flight time is unbounded: histories, buffers,
@@ -471,6 +475,7 @@ cargo run                       # the same as ./run.sh, from a clean checkout (r
 cargo run -p corvus_core --bin corvus-core -- --port 8080 --state-dir DIR   # the backend without a window
 cargo fmt --check && cargo clippy --workspace --all-targets --locked -- -D warnings && cargo test --locked --workspace   # the Rust gates, src/link included
 cargo clippy -p corvus_link --all-targets --features tls --locked -- -D warnings   # the tls feature, linted on its own in CI
+cargo clippy --locked --target wasm32-wasip1 -p corvus_api -p corvus_plugin_<id> -- -D warnings   # what runs inside a plugin (CI lints all of them)
 cargo test -p corvus_core --test <file>   # one integration test file while iterating
 cargo build --timings           # where a build spends its time (target/cargo-timings/)
 HOME=$(mktemp -d) CORVUS_GUI_SHOT=out.png target/debug/corvus-gcs --page motors   # the window's own pixels in a sandbox home

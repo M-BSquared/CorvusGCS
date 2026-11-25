@@ -121,17 +121,14 @@ RES="$APP/Contents/Resources"
 # ---- 2. the interface and the backend in it ---------------------------------
 # rust-toolchain.toml at the repository root pins the Rust, so cargo runs from
 # there and rustup fetches it on first use. The fonts and icons are cut out of
-# src/vendor by build.rs and the logos are read from assets/, so the binary
-# carries them; the languages, the version and the bundled plugins are
-# compiled in as well. Nothing here links PyO3 or a Python.
+# assets/ by build.rs and the logos are read from there, so the binary
+# carries them; the languages and the version are compiled in as well. Nothing here links PyO3 or a Python.
 echo ">>> Building the interface ($PROFILE profile, locked) ..."
 GUI_LOG="$BUILD_DIR/cargo-gui-macos.log"
 : > "$GUI_LOG"
 TARGET="${CARGO_TARGET_DIR:-$REPO_DIR/target}"
-# --lib builds the plugin libraries in the same cargo call: only then do they share their types
-# with the program (corvus-build plugin-pack publishes them, the bundle does not hold them).
 if ! ( cd "$REPO_DIR" && CARGO_TARGET_DIR="$TARGET" \
-           cargo build --profile "$PROFILE" --locked --bin corvus-gcs --lib ) >>"$GUI_LOG" 2>&1; then
+           cargo build --profile "$PROFILE" --locked --bin corvus-gcs ) >>"$GUI_LOG" 2>&1; then
     echo "ERROR: the interface did not build; log: $GUI_LOG" >&2
     tail -n 30 "$GUI_LOG" >&2 || true
     exit 1
@@ -337,8 +334,8 @@ if [ "$MAKE_DMG" -eq 1 ]; then
 fi
 # The plugins of this build, beside the app and not in it: Settings, Plugins offers them from here.
 rm -rf "$DIST_DIR/corvus-plugins"
-mkdir -p "$DIST_DIR/corvus-plugins"
-cp "$TARGET/$PROFILE"/libcorvus_plugin_*.dylib "$DIST_DIR/corvus-plugins/"
+( cd "$REPO_DIR" && CARGO_TARGET_DIR="$TARGET" cargo run -q --release --locked -p corvus_tools --bin corvus-build -- \
+    plugin-pack --build --out "$DIST_DIR/corvus-plugins" )
 
 # ---- done -------------------------------------------------------------------
 echo ""

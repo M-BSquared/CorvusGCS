@@ -42,7 +42,8 @@ include!(concat!(env!("OUT_DIR"), "/plugin_list.rs"));
 pub const STOPPED: &str = "The plugin stopped after an internal error. The rest of Corvus is not affected. Restart Corvus to use the plugin again.";
 
 /// What the operator reads when installed plugins were left out for needing a newer program.
-pub const NEEDS_NEWER: &str = "Some installed plugins need a newer version of Corvus GCS and are not loaded. Settings, Plugins says which.";
+pub const NEEDS_NEWER: &str =
+    "Some installed plugins need a newer version of Corvus GCS and are not loaded. Settings, Plugins says which.";
 
 /// A save of one option still on its way: what to put back if it fails.
 struct Saving {
@@ -118,9 +119,7 @@ pub const PARTS: [&str; 1] = [crate::panel::launcher::ID];
 
 impl Registry {
     pub fn new(server: Server, ctx: &egui::Context, config: &Value) -> Registry {
-        let sandbox = wasm::Sandbox::new()
-            .inspect_err(|e| eprintln!("plugins: {e}"))
-            .ok();
+        let sandbox = wasm::Sandbox::new().inspect_err(|e| eprintln!("plugins: {e}")).ok();
         if let Some(src) = store::Source::real(sandbox.clone()) {
             store::follow_beside(&src);
         }
@@ -232,7 +231,8 @@ impl Registry {
                 continue;
             }
             let Some(sandbox) = self.sandbox.clone() else {
-                self.store.say(format!("{id}: plugins cannot run on this computer."), false);
+                self.store
+                    .say(format!("{id}: plugins cannot run on this computer."), false);
                 continue;
             };
             match loader::load_package(&sandbox, &dir, &id) {

@@ -321,7 +321,9 @@ pub fn mesh_from(m: &wire::Mesh, texture: egui::TextureId) -> Option<epaint::Mes
     };
     let vertices: Vec<epaint::Vertex> = m
         .vertices
-        .chunks_exact(wire::VERTEX_BYTES)
+        .as_chunks::<{ wire::VERTEX_BYTES }>()
+        .0
+        .iter()
         .map(|c| epaint::Vertex {
             pos: Pos2::new(float(&c[0..4]), float(&c[4..8])),
             uv: Pos2::new(float(&c[8..12]), float(&c[12..16])),
@@ -330,8 +332,10 @@ pub fn mesh_from(m: &wire::Mesh, texture: egui::TextureId) -> Option<epaint::Mes
         .collect();
     let indices: Vec<u32> = m
         .indices
-        .chunks_exact(4)
-        .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|c| u32::from_le_bytes(*c))
         .collect();
     if indices.iter().any(|&i| i as usize >= vertices.len()) {
         return None;
@@ -370,7 +374,9 @@ pub fn texture_from(t: &wire::Texture, max_side: u32) -> Option<(egui::ColorImag
     }
     let pixels = t
         .rgba
-        .chunks_exact(4)
+        .as_chunks::<4>()
+        .0
+        .iter()
         .map(|c| Color32::from_rgba_premultiplied(c[0], c[1], c[2], c[3]))
         .collect();
     let filter = |linear| {
@@ -655,7 +661,10 @@ mod tests {
         assert_eq!(back.indices, mesh.indices);
         let mut far = sent.clone();
         far.indices = ByteBuf::from([3u32, 0, 1].iter().flat_map(|i| i.to_le_bytes()).collect::<Vec<_>>());
-        assert!(mesh_from(&far, egui::TextureId::Managed(0)).is_none(), "an index past the end");
+        assert!(
+            mesh_from(&far, egui::TextureId::Managed(0)).is_none(),
+            "an index past the end"
+        );
         let mut cut = sent;
         cut.vertices.pop();
         assert!(mesh_from(&cut, egui::TextureId::Managed(0)).is_none());

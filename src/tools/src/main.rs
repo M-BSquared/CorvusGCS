@@ -16,10 +16,9 @@
 //! | `guide [--check]` | rewrite (or check) the frame of every manual page |
 //! | `i18n check\|fmt\|new CODE NAME NATIVE [--force]` | the language files |
 //! | `soak [options]` | a soak run of the interface with memory samples |
-//! | `plugin-pack [--build] [--only ID] [--target DIR] [--out DIR]` | the built plugin libraries of this platform (signed ad hoc on macOS, as the system asks), with their entries |
+//! | `plugin-pack [--build] [--only ID] [--target DIR] [--out DIR]` | the built plugin modules under their published names, with their entries |
 //! | `plugin-unpack OUT DIR` | install what `plugin-pack` left in OUT into DIR, for `corvus-gcs --check-plugins DIR` |
-//! | `plugin-index [--out DIR]` | merge the platforms in DIR into `plugins-index.json` |
-//! | `plugin-tag DIR` | print the release the libraries packed in DIR are published under |
+//! | `plugin-index [--out DIR] [--keep INDEX]` | write `plugins-index.json` for what is packed in DIR, keeping from INDEX what older versions need |
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -31,7 +30,7 @@ fn usage() -> ExitCode {
         "usage: corvus-build appimage-libs bundle|check APPDIR | icon IN OUT SIZE | png-size FILE | \
          squashfs APPIMAGE OUT | elf-static FILE | bundle-check BUNDLE [--require REL ...] | \
          guide [--check] | i18n check|fmt|new CODE NAME NATIVE [--force] | \
-         plugin-pack [--build] [--only ID] [--target DIR] [--out DIR] | plugin-unpack OUT DIR | plugin-index [--out DIR] | plugin-tag DIR | soak [--binary B] [--minutes M] \
+         plugin-pack [--build] [--only ID] [--target DIR] [--out DIR] | plugin-unpack OUT DIR | plugin-index [--out DIR] [--keep INDEX] | soak [--binary B] [--minutes M] \
          [--every S] [--step S] [--mode 1|3d] [--at LNG,LAT] [--home DIR] [--csv FILE] [--max-mb MB]"
     );
     ExitCode::from(2)
@@ -169,7 +168,10 @@ fn main() -> ExitCode {
             }
         }
         ["plugin-pack", rest @ ..] => {
-            let (mut target, mut out) = (repo_root().join("target/release"), repo_root().join("dist/plugins"));
+            let (mut target, mut out) = (repo_root().join("target"), repo_root().join("dist/plugins"));
+            if let Some(dir) = std::env::var_os("CARGO_TARGET_DIR") {
+                target = PathBuf::from(dir);
+            }
             let mut only = None;
             let build = rest.contains(&"--build");
             let rest: Vec<&&str> = rest.iter().filter(|f| **f != "--build").collect();
@@ -184,7 +186,7 @@ fn main() -> ExitCode {
                 }
             }
             if build {
-                if let Err(e) = corvus_tools::plugins::build(&repo_root()) {
+                if let Err(e) = corvus_tools::plugins::build(&repo_root(), &target, only) {
                     return fail(e);
                 }
             }
@@ -207,12 +209,17 @@ fn main() -> ExitCode {
         },
         ["plugin-index", rest @ ..] => {
             let mut out = repo_root().join("dist/plugins");
-            match rest {
-                [] => {}
-                ["--out", dir] => out = PathBuf::from(dir),
-                _ => return usage(),
+            let mut before = None;
+            let mut it = rest.iter();
+            while let Some(flag) = it.next() {
+                let Some(value) = it.next() else { return usage() };
+                match *flag {
+                    "--out" => out = PathBuf::from(value),
+                    "--keep" => before = Some(PathBuf::from(value)),
+                    _ => return usage(),
+                }
             }
-            match corvus_tools::plugins::publish_index(&out) {
+            match corvus_tools::plugins::publish_index(&out, before.as_deref()) {
                 Ok(index) => {
                     println!(
                         "    {} plugins listed in {}",
@@ -224,13 +231,6 @@ fn main() -> ExitCode {
                 Err(e) => fail(e),
             }
         }
-        ["plugin-tag", dir] => match corvus_tools::plugins::merge(Path::new(dir)) {
-            Ok(index) => {
-                println!("{}", corvus_package::release_tag(&index.abi));
-                ExitCode::SUCCESS
-            }
-            Err(e) => fail(e),
-        },
         ["soak", rest @ ..] => {
             let mut o = soak::Options {
                 binary: repo_root().join("target/release/corvus-gcs"),

@@ -58,10 +58,7 @@ impl Sandbox {
                 let (lock, woken) = &*flag;
                 let mut stopped = lock.lock().unwrap_or_else(|p| p.into_inner());
                 while !*stopped {
-                    stopped = woken
-                        .wait_timeout(stopped, TICK)
-                        .unwrap_or_else(|p| p.into_inner())
-                        .0;
+                    stopped = woken.wait_timeout(stopped, TICK).unwrap_or_else(|p| p.into_inner()).0;
                     ticking.increment_epoch();
                 }
             })
@@ -313,10 +310,14 @@ fn linker(engine: &Engine, module: &Module) -> Result<Linker<State>, String> {
             continue;
         }
         let ExternType::Func(kind) = import.ty() else {
-            return Err(format!("it wants {space}.{name} from the program, which has no such thing"));
+            return Err(format!(
+                "it wants {space}.{name} from the program, which has no such thing"
+            ));
         };
         if space != WASI {
-            return Err(format!("it wants {space}.{name} from the program, which has no such thing"));
+            return Err(format!(
+                "it wants {space}.{name} from the program, which has no such thing"
+            ));
         }
         let results: Vec<ValType> = kind.results().collect();
         let call = name.clone();

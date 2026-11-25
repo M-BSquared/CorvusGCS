@@ -133,7 +133,11 @@ pub const BUILT_IN_ONCE: [&str; 5] = [
 /// * `native` are the plugins installed as native libraries (2026.11.92 and 93), `None` where
 ///   there never was a folder for them.
 /// * `used` are those with saved settings or a folder of their own ([`used_before`]).
-pub fn to_offer_again(asked: Option<i64>, native: Option<BTreeSet<String>>, used: BTreeSet<String>) -> BTreeSet<String> {
+pub fn to_offer_again(
+    asked: Option<i64>,
+    native: Option<BTreeSet<String>>,
+    used: BTreeSet<String>,
+) -> BTreeSet<String> {
     match (asked, native) {
         // 2026.11.93: what was installed then, and nothing that was removed or never wanted.
         (Some(round), native) if round >= 2 => native.unwrap_or_default(),
@@ -223,7 +227,11 @@ mod tests {
         let mut want = set(&BUILT_IN_ONCE);
         want.insert("own-one".into());
         assert_eq!(got, want);
-        assert_eq!(to_offer_again(None, None, set(&[])), set(&BUILT_IN_ONCE), "also with no trace");
+        assert_eq!(
+            to_offer_again(None, None, set(&[])),
+            set(&BUILT_IN_ONCE),
+            "also with no trace"
+        );
     }
 
     #[test]

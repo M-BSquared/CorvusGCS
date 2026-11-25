@@ -16,7 +16,7 @@ src/home/ map/ map3d/  the Home page: flight bar, HUD, top bar, the 2D and the 3
 src/mission/ setup/    the Mission planner and the Setup pages
 src/lang/              the interface language files (the translation layer is in src/api/src/i18n)
 src/settings/ logs/ analysis/ notify/ panel/ term/
-src/plugins/           the registry, the loader and the store of the plugins (plugins/<id>/, submodules)
+src/plugins/           the registry, the store and the WebAssembly runtime of the plugins (plugins/<id>/, submodules)
 src/link/              the MAVLink crate (corvus_link), held to pymavlink's frozen answers
 src/tools/             corvus-build: the build, manual, language and soak tools (never shipped)
 ```
@@ -240,7 +240,10 @@ deleted (`src/core/tests/data`).
 | `src/api/src/ui/form.rs` | the form vocabulary of a page that is a column of cards: the `Form` cursor over `formfield`, `message`, `optioncards`, `slider` and `pills`, with section, card, switch field, rows, actions |
 | `src/api/src/plugin/mod.rs` | the `Plugin` trait, the `Host` a plugin talks through, `Info`, `MapEvent`, `McpTool` and the `Outbox`: the stable surface a plugin crate may use (`python/src/js/plugins.js`) |
 | `src/plugins/mod.rs`, `src/plugins/ssh_setup.rs` | the `Registry` (starts the plugins once `GET /api/plugins` has answered, ticks them every frame, keeps their options and what they ask of the window; `python/corvus/plugin_registry.py`) and `sshSetup`, the login dialog for a saved SSH connection this computer lacks (`askSSHConnection` of `python/src/js/panel.js`) |
-| `build.rs` | makes `plugin_list.rs` out of the folders of `plugins`: the list of what there is to install (`OFFERED`), and the compiled in ones, of which there are none |
+| `build.rs` | makes `plugin_list.rs` out of each `plugins/<id>/plugin.json`: the list of what there is to install (`OFFERED`) |
+| `src/plugins/wasm/` | the plugin runtime: `runtime.rs` the sandbox, `mod.rs` the `Plugin` a module is to the registry, `view.rs` its input and painting, `permissions.rs` what it may do |
+| `src/plugins/loader.rs`, `src/plugins/store.rs` | the installed packages, and installing, updating and removing them |
+| `src/api/src/wire.rs`, `src/api/src/bridge.rs`, `src/api/src/guest/` | the protocol between program and plugin, the conversions both sides use, and the side inside the module |
 | `src/api/src/plugin/options.rs` | the options a plugin declares (toggle, select, text, number), cleaned, coerced and saved under `_options` as the web does |
 | `src/api/src/plugin/shapes.rs`, `src/plugins/layer.rs`, `src/map3d/overlays.rs` | `api.map`: lines, areas, circles, text, buttons and icon markers in longitude and latitude, painted on the flat map (with the pointer on markers and buttons, and `pick_point`); on the 3D map lines, outlines and areas are volumes projected onto the ground through the stencil buffer (draped meshes where the window has none), text, markers and buttons screen elements hidden by a terrain ray, with the same pointer handling through `Layer::marks_with` (`map-overlays.js`, `map-icons.js`, `.map-overlay-*` of `map.css`) |
 | `src/api/src/plugin/ssh.rs` | what both SSH plugins share: `Mode`, the new connection form, `ssh_needs`, `reply_of` |
@@ -309,132 +312,145 @@ file.
 
 ## Plugins
 
-A plugin is a crate of its own (`plugins/<id>/`, the folder named as the
-web plugin's) with a Rust type behind the `Plugin` trait of `corvus_api`. It
-depends on `corvus_api` and on nothing inside the program, so it cannot reach
-into `app`, `map` or `panel`; what it may use is the API: the widgets of
-`corvus_api::ui`, `i18n`, `net`, `data` and `plugin` (the trait, `Host`,
-options, shapes). Each plugin is a repository of its own, `corvus-<id>` on GitHub, checked out
-as a submodule under `plugins/<id>/`, a member of this workspace and no dependency of the
-program: it is built as a shared library, published from its repository and installed from
-Settings, Plugins (below). There is no JavaScript. Third party JavaScript plugins that the web
-interface loads from `~/.corvus/plugins` do not run here; Settings lists them as "installed,
-not loaded". A folder under `plugins/` without `loadable = true` would be compiled in
-(`build.rs`); none is.
+A plugin is a crate of its own (`plugins/<id>/`) with a Rust type behind the `Plugin` trait of
+`corvus_api`, built into **one WebAssembly module that every system runs**. It depends on
+`corvus_api` and on nothing inside the program, and takes egui from there (`corvus_api::egui`).
+Each plugin is a repository of its own, `corvus-<id>` on GitHub, checked out as a submodule under
+`plugins/<id>/` and a member of this workspace, so its tests run with everything else. None is part
+of the program: the operator installs it from Settings, Plugins. There is no JavaScript. Third
+party JavaScript plugins that the web interface loads from `~/.corvus/plugins` do not run here;
+Settings lists them as "installed, not loaded".
 
 A checkout needs its submodules (`git clone --recurse-submodules`, or `git submodule update
 --init`; `./run.sh` does it): the workspace lists them as members, so cargo stops at a missing
 folder.
 
-### Plugins as libraries
+### plugin.json and the minimum version
 
-A plugin crate has `crate-type = ["cdylib", "rlib"]`, ends with
-`corvus_api::export_plugin!(plugin, LANG);` and carries `name`, `description`, `icon` and
-`version` under `[package.metadata.corvus]` (a test in the crate holds them to its `Info`).
-It is a dev-dependency of the program, so the tests can load its library, and no part of it.
-TAK's network side is the core's and stays there.
+```json
+{
+  "id": "vibration",
+  "name": "Vibration Monitor",
+  "description": "Live PX4 vibration metrics and accelerometer clipping",
+  "icon": "activity",
+  "version": "2.0.0",
+  "order": 10,
+  "can_tab": false,
+  "min_corvus": "2026.11.94",
+  "permissions": ["telemetry.rates"]
+}
+```
 
-The platform build scripts build the program and the libraries in **one cargo call**
-(`--bin corvus-gcs --lib`). Apart from each other cargo compiles the crates they share
-differently (features, link time optimisation), and the program refuses a library whose
-types are not its own. `.github/scripts/plugins.sh PROGRAM` packs the libraries
-(`corvus-build plugin-pack`) and loads every one in the finished program
-(`corvus-gcs --check-plugins DIR`, no window); the job fails when one is refused. Nothing is
-published there.
+`export_plugin!` puts this file into a custom section of the module, so the program reads it
+without running any of the module. `build.rs` makes the store's list from the same files, and a
+test in each crate holds it to the plugin's `Info`.
 
-**Publishing.** Each plugin is published on its own, from its repository: `./release.sh` in its
-folder (the same file in every one) tests it and pushes `main`, or starts the build when there is
-nothing to push. Its workflow
-(`.github/workflows/build.yml` there, a few lines) calls `.github/workflows/plugin.yml` of this
-repository: it checks out the newest published Corvus GCS, puts the plugin's commit at
-`plugins/<id>`, makes the same cargo call on Linux, macOS and Windows
-(`.github/scripts/plugin-package.sh`), lets the **published** program load the result, and
-attaches the libraries and `plugins-index.json` to a release of the plugin's repository named
-`abi-<sum>` (`corvus_package::release_tag`, a checksum of the stamp). The release job of
-`build.yml` puts that name on every release of Corvus GCS as `plugin-abi.txt`, which is where
-`plugin.yml` reads it. Versions from before that file asked for `corvus-<version>`, and the
-workflow still publishes under that name for them. A library built apart from the program fits
-it, because the identity of a type follows from source, lock file, features and profile and not
-from the folder or the computer; the check says so each time. A new Corvus GCS with the same
-stamp loads the published and the installed plugins as they are. One with a new stamp needs every
-plugin again: the schedule of each plugin does that within hours, and
-`gh workflow run build.yml --repo M-BSquared/corvus-<id>` at once.
+`min_corvus` is the oldest Corvus GCS the plugin runs in. **Every version from there on takes it,
+and nothing else about the program is compared**: no stamp, no compiler, no lock file. Raise it
+when a plugin starts to need something newer; the list of its repository keeps the older module
+for older stations.
 
-**What keeps old plugins good.** The stamp covers the compiler, `rust-toolchain.toml`, the
-sources of `src/api/src` and `src/vendor`, and the part of `Cargo.lock` that `corvus_api` is
-built from (`src/api/lock_closure.rs`). A release that changes only the core, the pages or
-their dependencies leaves it alone. Rust has no stable binary interface, so a change inside
-that set cannot be bridged: the older library is refused with a reason, none of its code runs,
-and **Update** fetches the new one. What a plugin saved is not tied to any of this
-(`~/.corvus/plugins/<id>/config.json`), so a plugin must go on reading what its earlier
-versions wrote. A change to a route of the core that plugins call has to keep the old callers
-working, because a published plugin may be older or newer than the program.
+That rule is a promise the program has to keep:
 
-`--locked`: a plugin uses what
-`Cargo.lock` holds. A dependency that is not there, and a new plugin, need a release of Corvus
-GCS first.
+* `src/api/src/wire.rs`, the protocol, **only grows**. New fields have a default, new operations,
+  effects and events are new variants that an older side skips (`wire::Maybe`). Nothing there is
+  an egui type: input and triangles have a format of their own, so an egui update changes nothing
+  for published plugins.
+* A permission may gain routes and never loses one.
+* A backend route that plugins call keeps its old callers working, because a published plugin may
+  be older than the program.
+* `src/plugins/wasm/fixtures/protocol-1.wasm.gz` is the test plugin as built with the first
+  protocol. It is loaded and driven by every test run and never built again after the first
+  release.
 
-Which plugins there are the program knows from its own source (`OFFERED`, made by `build.rs`
-from the crates with `loadable = true`), so Settings, Plugins lists all of them without a
-network. A library comes from (`src/plugins/store.rs`):
+### How a plugin runs
 
-* **beside the program**: the folder it is in (where cargo leaves the libraries, so `./run.sh`
-  offers what it built), and `corvus-plugins` in it, beside it, beside the `.app` and beside the
-  AppImage. The build scripts leave `dist/corvus-plugins`. Taken first; with all of them there no
-  release is asked. A plugin installed from there is brought up to date at the next start when
-  the file changed (`follow_beside`), so a rebuilt program goes on with rebuilt plugins.
-* **the plugin's repository**: the release `abi-<sum>` there, its `plugins-index.json` over
-  HTTPS (a redirect to plain http is refused) when the page is opened; size and SHA-256 of a
-  library are checked against it. All repositories are asked at once and each answers for itself.
-  There is no signing key: what is trusted is the plugin's repository on GitHub. `Meter` carries
-  how much has arrived to the window (a bar on the plugin's line, and on a card at the head of
-  the toasts while that page is not open); a broken download is tried once more, a server that
-  is silent for 30 s is given up, and a plugin that fails holds up no other.
-* **a file** the operator picks. The plugin it is stands in it (`CORVUS_PLUGIN_CRATE`).
+`src/plugins/wasm` implements the same `Plugin` trait the registry knows, so the registry does not
+care that a plugin is a module. Each call becomes one call into the module: what changed around it
+(telemetry, settings, options, theme, language, the bus) and what arrived for it (answers, events)
+go in as MessagePack, effects come out.
 
-Only a library with this program's stamp is taken, wherever it is from. It goes to
-`~/.corvus/plugin-packages/<id>/` on the computer the window runs on, stored under its checksum,
-and the manifest is replaced in one rename. An update is another checksum, not another version:
-a plugin is built again for a new program. A plugin just installed is loaded at once, an update
-or a removal of one that runs waits for the next start. `cargo run` builds the program alone:
-use `./run.sh`, or `cargo build --bin corvus-gcs --lib`.
+* **The view.** The module runs an egui of its own (`corvus_api::guest`). The program hands it the
+  pointer and keys that are its business and gets back triangles and textures, which it paints.
+  Popups, menus and dialogs come back apart from the view and are painted over the window. While a
+  text field of a plugin has the keyboard, a stand-in widget holds the program's focus, so the keys
+  that fly the vehicle stay quiet. The frosted glass is a marker in the paint list that the program
+  draws with its own shader. A visible plugin takes about a fifth of a millisecond a frame on an
+  Apple Silicon laptop (measured on the Vibration Monitor).
+* **The sandbox** (`wasm/runtime.rs`, wasmtime with Cranelift). No file system, no sockets, no
+  environment: of WASI a module gets a clock, random numbers and a line to the log, everything else
+  answers "not allowed". Memory is capped at 512 MB and a call that runs longer than a few seconds
+  is cut off. A trap, a panic or a loop stops that plugin; the program carries on.
+* **Compiling** takes a good part of a second a module. It happens while a plugin is installed, and
+  the result is kept beside it (`*.cwasm`, with its checksum), named after the module and the
+  runtime. After an update of the runtime the first start compiles once more.
 
-What holds it together (`src/api/src/plugin/dynamic.rs`, `src/plugins/loader.rs`):
+### Permissions
 
-* **The stamp.** The compiler and a hash of `src/api/src`, `src/vendor` and `Cargo.lock`
-  (`src/api/build.rs`) are in the file of a library and compared before it is loaded; the
-  identity (`TypeId`) and size of the types that cross are compared after. Not the program's
-  version: a library stays good while none of this changes.
-* **Two copies of every `static`.** A library carries its own. The theme, tablet mode and the
-  language are handed over before each call (`Link`); a test fails when a new `static` of
-  `corvus_api` is not accounted for. In the crates of others two mattered and are changed in
-  `src/vendor`: the waiting queue of `parking_lot` (a thread waiting for egui's lock through
-  one copy was never woken by the other: the window froze) and epaint's font counter (a font
-  first used by a plugin replaced one of the program's). **Look again when egui or
-  parking_lot is updated**: `grep` the sources of the dependencies for `static` and
-  `thread_local!` and ask which reach an object both sides hold.
-* **Panics.** One cannot leave a library. `Guarded` catches it there, the loader raises it
-  again in the program, and the registry stops the plugin as it does a compiled in one.
-* **Crashes.** A library that takes the program down cannot be caught. A marker file is there
-  while one is loaded and started; left over at the next start, the package is left out until
-  it is installed again. `--no-plugins` starts without any.
-* **Never unloaded.** A plugin may still own a thread whose code is in the library.
+What a plugin may do beyond drawing, reading telemetry and keeping its own settings is named in
+`plugin.json`, shown before it is installed (the setup and Settings) and **enforced by the program**
+(`src/plugins/wasm/permissions.rs`). Everything not covered is refused. An install never gets more
+than was shown: a download that asks for more is not installed.
 
-`src/api/probe` is a plugin for the tests: it panics, locks and draws on its own side of the
-boundary as it is told. The tests that load it and the published ones run in the normal
-`cargo test`, on Linux and Windows too. A debug build reads the releases from another place with
-`CORVUS_PLUGIN_STORE=<base url>` (a folder per plugin there, http allowed) and loads packages from
-`CORVUS_PLUGIN_PACKAGES=<dir>`.
+| Permission | What it opens |
+| --- | --- |
+| `vehicle.info` | `GET /api/mavlink/capabilities`, `GET /api/remoteid` |
+| `telemetry.rates` | `POST /api/vibration/stream` |
+| `settings.read` | `GET /api/config` (secrets taken out) |
+| `shell` | the MAVLink shell, `POST /api/console/save`, the `shell` events |
+| `ssh` | `/api/ssh/…`, the `ssh` events, terminal windows and the login dialog |
+| `local` | `/api/local/…` |
+| `tak` | `/api/tak…`, the `tak` events |
+| `assistant` | `GET /api/mcp` without the other programs' token, `POST /api/mcp/settings` for the assistant's own switch only, and `/mcp` |
+| `network` | connections to other servers, never to this station's backend |
+| `files` | the file dialog, and reading the files picked in it |
+| `ai.tools` | offering MCP tools |
+
+A plugin that needs a route no permission covers gets a new permission or a new route in an
+existing one, in a release of Corvus GCS, and names that release as its `min_corvus`.
+
+### Installing and publishing
+
+Packages live in `~/.corvus/plugins-wasm/<id>/` on the computer the window runs on
+(`manifest.json`, the module under its checksum, the compiled form). The manifest is replaced in
+one rename. A module comes from (`src/plugins/store.rs`):
+
+* **beside the program**: the folder it is in and `corvus-plugins` in it, beside it, beside the
+  `.app` and beside the AppImage. `./run.sh` and the build scripts fill it. Taken first, and a
+  rebuilt module is followed at the next start.
+* **the plugin's repository**: the release `plugin` there, whose `plugins-index.json` names the
+  modules, several versions if need be. The newest one this program is new enough for is taken.
+  Size and SHA-256 are checked against the list. There is no signing key: what is trusted is the
+  plugin's repository on GitHub.
+* **a file** the operator picks.
+
+**What an earlier version had.** Up to 2026.11.83 the plugins were part of the program; 92 and 93
+installed native libraries under `~/.corvus/plugin-packages`, which is left as it is so that going
+back works. The setup asks every station once (`PLUGIN_SETUP_REVISION`) and switches on what was
+used (`welcome::model::to_offer_again`): from 93 exactly what was installed, from 81 and 83 every
+plugin that was built in. What it asks for and cannot download is kept in
+`plugins-wasm/wanted.json` with the permissions that were shown, and tried again at each start.
+What a plugin saved (`~/.corvus/plugins/<id>/config.json`) is untouched by all of this, so a plugin
+must go on reading what its earlier versions wrote.
+
+**Publishing.** `./release.sh` in the plugin's folder (the same file in every one) tests it and
+pushes `main`. Its workflow calls `.github/workflows/plugin.yml` of this repository, which checks
+out the oldest published Corvus GCS from `min_corvus` on, puts the plugin's commit at
+`plugins/<id>`, builds the module once (`corvus-build plugin-pack`), lets the **published** program
+load it (`corvus-gcs --check-plugins DIR`) and attaches it to the release `plugin`. A new Corvus
+GCS needs nothing from the plugins. `--locked`: a plugin uses what `Cargo.lock` of that version
+holds. A new plugin needs a release of Corvus GCS first, which lists it. The `abi-…` releases that
+2026.11.93 reads stay as they are.
 
 An AI client reaches a plugin through `mcp_tools`, `mcp_call` and `mcp_take`. A plugin that offers
-tools puts them behind switches of its own in its gear, off at first (Map Entities, NuttX Console,
-Schwalby, TAK). The question to the operator shows what the tool is called with
-(`with_arguments` in `src/core/src/mcp/engine.rs`), since the engine cannot know what it means.
+tools puts them behind switches of its own in its gear, off at first. The question to the operator
+shows what the tool is called with (`with_arguments` in `src/core/src/mcp/engine.rs`).
 
-What a plugin gets beyond its own view: `Host::events` follows push topics of
-the backend, `corvus_api::ui::term` is a terminal (screen, widget, keys) over
-a `Shell` the plugin supplies, and a plugin that panics is stopped for the
-session by the registry while the rest of the program carries on.
+What a plugin gets beyond its own view: `Host::events` follows push topics of the backend,
+`corvus_api::ui::term` is a terminal over a `Shell` the plugin supplies,
+`corvus_api::ui::filepicker` is the system's dialog, and `corvus_api::net::fetch` with
+`corvus_api::task::Task` is a request to another server written as `async`. A plugin has no
+threads: what takes time is asked of the program and picked up on a later tick.
 
 What the operator sees is what the web interface shows:
 
@@ -444,13 +460,12 @@ What the operator sees is what the web interface shows:
   option is the only per plugin switch the web has, so there is no separate
   enable switch here either; `ui.plugin_tabs` is its default.
 - **Settings, Plugins.** The rows of `GET /api/plugins` marked with what the
-  registry knows ("built in 1.0.0 · own tab", "not loaded"), and a gear for a
-  plugin with options. The gear opens a dialog in which every change is in
-  force at once and saved through `POST /api/plugins/settings` (`_options`
+  registry knows, and a gear for a plugin with options. The gear opens a dialog in which every
+  change is in force at once and saved through `POST /api/plugins/settings` (`_options`
   of the plugin's own `config.json`); a refused save puts the control back.
 - **Saved state.** `Host::save_settings(patch, replace)` writes the plugin's own
-  `config.json` through the same endpoint, merging unless `replace` is set. The
-  options are the operator's: a plugin neither writes nor clears them.
+  `config.json`, merging unless `replace` is set. The program puts in whose settings they are.
+  The options are the operator's: a plugin neither writes nor clears them.
 
 ### Writing one
 
@@ -471,21 +486,21 @@ impl Plugin for Hello {
         g.size().y
     }
 }
+
+pub const LANG: &[(&str, &str)] = &[("de", include_str!("../lang/de.json"))];
+
+pub fn plugin() -> Box<dyn Plugin> { Box::new(Hello { opened: 0.0 }) }
+
+corvus_api::export_plugin!(plugin, LANG);
 ```
 
-That type goes in `plugins/hello/src/lib.rs` of a crate whose
-`Cargo.toml` depends on `corvus_api` (copy one that is there), with a
-`pub fn plugin() -> Box<dyn Plugin>` that makes one and a `pub const LANG:
-&[(&str, &str)]` of its `lang/<code>.json` files (`include_str!`). Add the crate
-to `members` and `default-members` of the root `Cargo.toml` and one dependency
-line `corvus_plugin_hello = { path = "plugins/hello" }` to its
-`[dev-dependencies]`, its repository to `.gitmodules`, and copy the workflow of another:
-`build.rs` finds the folder and puts it on the list, and a test of `src/tools` names what is
-missing. The id is the
-folder name of the plugin's settings, so it must be a safe name
-(`[A-Za-z0-9][A-Za-z0-9_.-]*`); `order` places the card (lower is earlier, ties
-by name). Test its `Info` against `python/plugins/<id>/plugin.json` as the four
-do. What the trait offers, all optional but
+That goes in `plugins/hello/src/lib.rs` of a crate with a `plugin.json`, whose `Cargo.toml`
+depends on `corvus_api`, has `crate-type = ["cdylib", "rlib"]` and names its repository (copy one
+that is there). Add the crate to `members` and `default-members` of the root `Cargo.toml`, its
+repository to `.gitmodules`, and copy the workflow and `release.sh` of another: `build.rs` finds
+the folder and puts it on the list, and a test of `src/tools` names what is missing. The id is the
+folder name of the plugin's settings, so it must be a safe name (`[A-Za-z0-9][A-Za-z0-9_.-]*`);
+`order` places the card (lower is earlier, ties by name). What the trait offers, all optional but
 `info` and `show`:
 
 | | |
@@ -533,8 +548,7 @@ with a stub `window.Corvus` and print the result, as the existing tests did).
   offers any, behind its two switches.
 - **Flight bar buttons.** The web `Corvus.plugins` has none; `drawButton` on the
   map is the closest thing and is in `shapes.rs`.
-- **Reload plugins** re-reads the list of installed folders, as it always did;
-  a compiled-in plugin has nothing to reload.
+- **Reload plugins** re-reads the list of installed folders, as it always did.
 - Markers and buttons answer the pointer on the flat map only. On the 3D map
   they are drawn, not clickable.
 
@@ -543,7 +557,8 @@ with a stub `window.Corvus` and print the result, as the existing tests did).
 The page writes what the web page writes, key for key, so the two interfaces
 share one config. Differences that follow from a native window:
 
-- **Plugins.** The Plugins pill lists the compiled-in plugins with a gear for their options (see Plugins below).
+- **Plugins.** The Plugins pill lists the installed plugins with a gear for their options, and what
+  there is to install (see Plugins above).
 - **Files.** Nobody types a path. Every file or folder on this computer is
   chosen with the system file dialog (`rfd`: Cocoa, Windows, and the desktop
   portal on Linux, so no GTK is linked); `src/api/src/ui/filepicker.rs` wraps it and

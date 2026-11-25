@@ -277,9 +277,7 @@ pub fn load_package(sandbox: &Arc<Sandbox>, dir: &Path, id: &str) -> Result<Pack
         });
     }
     // No more than the operator saw when it was installed, whatever the module asks for.
-    manifest
-        .permissions
-        .retain(|p| installed.permissions.contains(p));
+    manifest.permissions.retain(|p| installed.permissions.contains(p));
     let plugin = WasmPlugin::load(sandbox, &manifest, &bytes, Some(&folder))
         .map_err(|e| refuse(format!("it could not be started: {e}")))?;
     Ok(Package {
