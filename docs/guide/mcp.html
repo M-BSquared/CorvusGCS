@@ -154,11 +154,26 @@
 <p class="doc-lead">
   Corvus can hand an AI client such as OpenCode a set of tools: read the
   vehicle, its parameters and its mission, and, as far as you allow it, change
-  parameters, fly missions and points, or steer the vehicle directly. It does
-  this through the Model Context Protocol (MCP), which most coding and chat
-  agents speak. Nothing of it is on until you switch it on, and you decide each
-  kind of act on its own.
+  parameters, fly missions and points, steer the vehicle directly, or draw on
+  your map. It does this through the Model Context Protocol (MCP), which most
+  coding and chat agents speak. The server for other programs is off until you
+  switch it on, and you decide each kind of act on its own.
 </p>
+
+<h2 id="ai-chat">AI Chat needs no setting up</h2>
+<p>
+  The <a href="plugins.html#ai-chat">AI Chat</a> plugin signs in by itself, with
+  a token Corvus makes anew at every start and keeps off the disk. It does so
+  while the server below is off, so nothing has to be switched on for it. The
+  permissions hold for it too, with one difference: what is off is offered to it
+  all the same, and Corvus asks you each time before anything happens.
+</p>
+<dl>
+  <dt>AI Chat (under the server switch)</dt>
+  <dd>Off, the plugin gets no tools.</dd>
+  <dt>Ask me for what AI Chat may not do (in the Permissions dialog)</dt>
+  <dd>Off, AI Chat gets only what you switched on there. <strong>Stop</strong> on the map switches it off.</dd>
+</dl>
 
 <h2 id="setup">Setting it up</h2>
 <ol>
@@ -203,13 +218,16 @@
 <table>
   <thead><tr><th>Switch</th><th>Tools</th></tr></thead>
   <tbody>
-    <tr><td>Read telemetry and status</td><td><code>get_vehicle_state</code>, <code>list_vehicles</code>, <code>get_capabilities</code>, <code>list_flight_modes</code>, <code>download_mission</code></td></tr>
+    <tr><td>Read telemetry and status</td><td><code>get_vehicle_state</code>, <code>list_vehicles</code>, <code>get_capabilities</code>, <code>list_flight_modes</code>, <code>download_mission</code>, <code>get_geofence</code>, <code>list_saved_missions</code>, <code>get_saved_mission</code>, <code>wait_for</code> (until it is airborne, has arrived, has landed and so on, at most 30 seconds per call), <code>resolve_place</code>, <code>measure</code>, <code>plan_pattern</code> (a preview on the map, nothing is sent)</td></tr>
     <tr><td>Read parameters</td><td><code>list_parameters</code>, <code>get_parameters</code>, <code>download_parameters</code></td></tr>
     <tr><td>Change parameters</td><td><code>set_parameter</code>, only for names the connected firmware reported</td></tr>
-    <tr><td>Missions</td><td><code>upload_mission</code>, <code>start_mission</code>, <code>clear_mission</code>. Starting a mission arms the vehicle.</td></tr>
+    <tr><td>Missions</td><td><code>upload_mission</code>, <code>start_mission</code>, <code>clear_mission</code>, <code>resume_mission</code>, <code>set_mission_item</code>, <code>save_mission</code>, <code>fly_pattern</code> (grid, spiral, circle or line). Starting a mission arms the vehicle.</td></tr>
     <tr><td>Arm and disarm</td><td><code>arm</code>, <code>disarm</code></td></tr>
-    <tr><td>Takeoff, land, return, hold and flight mode</td><td><code>takeoff</code>, <code>land</code>, <code>return_to_launch</code>, <code>hold</code>, <code>set_flight_mode</code>, <code>set_home</code></td></tr>
-    <tr><td>Fly to a point</td><td><code>fly_to</code>, one point or several, at a height above home</td></tr>
+    <tr><td>Takeoff, land, return, hold and flight mode</td><td><code>takeoff</code>, <code>land</code>, <code>return_to_launch</code>, <code>hold</code>, <code>set_flight_mode</code>, <code>set_home</code>, <code>set_speed</code>, <code>set_heading</code>, <code>face_place</code></td></tr>
+    <tr><td>Fly to a point</td><td><code>fly_to</code>, one point or several, at a height above home; <code>move_by</code>, <code>change_altitude</code> and <code>orbit</code> in the air only; <code>fly_drawing</code>, along a drawing</td></tr>
+    <tr><td>Draw on the map</td><td><code>draw_on_map</code>, <code>list_drawings</code>, <code>remove_drawings</code>, <code>show_on_map</code>, <code>search_place</code>, <code>notify_operator</code>. On from the start: nothing of it reaches the vehicle. The place search sends the searched name to OpenStreetMap.</td></tr>
+    <tr><td>Change the geofence</td><td><code>set_geofence</code>, <code>clear_geofence</code></td></tr>
+    <tr><td>Camera and gimbal</td><td><code>look_at</code>, <code>stop_looking</code>, <code>point_gimbal</code>, <code>take_photo</code>, <code>set_photo_distance</code>. What the autopilot does not know is refused with the reason.</td></tr>
     <tr><td>Direct control</td><td><code>manual_control</code>, <code>set_velocity</code>, <code>stop_control</code></td></tr>
     <tr><td>Other MAVLink commands</td><td><code>send_command</code>, from the list <code>get_capabilities</code> names</td></tr>
     <tr><td>Read TAK contacts and chat</td><td><code>tak_status</code>, <code>tak_list_contacts</code>, <code>tak_get_chat</code>. Off until you allow it: it shows where other people are.</td></tr>
@@ -235,7 +253,7 @@
 <p>
   Every switch that changes something has <strong>Ask me first</strong> below
   it. It starts on for parameters, missions, arming, flight commands, direct
-  control and other commands. With it on, a call from the client opens a
+  control, the geofence, the camera and other commands. With it on, a call from the client opens a
   dialog in Corvus with the client's name and what it wants to do, and nothing
   is sent until you press <strong>Allow</strong>. <strong>Refuse</strong>, or
   45 seconds without an answer, tells the client no. A call that needs your
@@ -264,6 +282,17 @@
   waiting, and puts a vehicle under direct control in hold. Reading stays on,
   so the client can still see what happened. Switching the server off has the
   same effect on what is waiting.
+</p>
+
+<h2 id="drawings">Drawings</h2>
+<p>
+  <code>draw_on_map</code> draws lines, arrows, areas, circles, sectors (a field
+  of view), markers and text on the Home map, flat and in 3D. Places can be
+  coordinates, or relative to the vehicle or home: 200 m along its heading, 50 m
+  north of home. So you can ask for an arrow from the aircraft to the search
+  area, look at it, and then have it flown along with <code>fly_drawing</code>.
+  A pill on the map says how much is drawn and <strong>Clear</strong> takes all
+  of it away. Drawings last until Corvus is closed. The map holds at most 200.
 </p>
 
 <h2 id="plugins">Plugin tools</h2>
@@ -309,9 +338,11 @@
 <aside class="guide-toc" aria-labelledby="toc-title">
   <p class="guide-toc-title" id="toc-title">On this page</p>
   <ul>
+    <li><a href="#ai-chat">AI Chat needs no setting up</a></li>
     <li><a href="#setup">Setting it up</a></li>
     <li><a href="#permissions">What the AI client may do</a></li>
     <li><a href="#indicator">On the map</a></li>
+    <li><a href="#drawings">Drawings</a></li>
     <li><a href="#plugins">Plugin tools</a></li>
     <li><a href="#limits">What the switches cannot do</a></li>
   </ul>

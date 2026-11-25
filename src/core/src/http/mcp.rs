@@ -34,15 +34,36 @@ pub trait McpEndpoint: Send + Sync {
     /// Does the `Authorization` header carry the token?
     fn authorized(&self, authorization: Option<&str>) -> bool;
 
+    /// Does the header carry the token of this Corvus' own AI Chat, which may
+    /// come in while the server is off?
+    fn assistant(&self, _authorization: Option<&str>) -> bool {
+        false
+    }
+
     /// One POSTed JSON-RPC message or batch: `(status, reply, headers)`; a
-    /// reply of `None` is a 202 with no body.
-    fn handle_post(&self, message: Value, session: Option<&str>) -> (u16, Option<Value>, Vec<(String, String)>);
+    /// reply of `None` is a 202 with no body. A session belongs to the side it
+    /// was opened from: `who` names the one that asks.
+    fn handle_post(
+        &self,
+        message: Value,
+        session: Option<&str>,
+        who: Caller,
+    ) -> (u16, Option<Value>, Vec<(String, String)>);
 
     /// The event stream of a session (`GET /mcp`), or `None` without one.
-    fn open_stream(&self, session: Option<&str>) -> Option<Box<dyn SseStream>>;
+    fn open_stream(&self, session: Option<&str>, who: Caller) -> Option<Box<dyn SseStream>>;
 
     /// A client said goodbye (`DELETE /mcp`).
-    fn end_session(&self, session: Option<&str>) -> bool;
+    fn end_session(&self, session: Option<&str>, who: Caller) -> bool;
+}
+
+/// Whose token a request carried.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Caller {
+    /// A program the operator gave the token to.
+    Client,
+    /// The AI Chat plugin of this Corvus.
+    Assistant,
 }
 
 /// The service the AI area registers to turn `/mcp` on.
@@ -60,7 +81,7 @@ fn reply(status: u16, payload: Option<Value>, headers: &[(String, String)]) -> R
 }
 
 /// This computer, switched on, and the token: or the reply saying which is missing.
-fn admit(req: &Request, mcp: Option<&McpHandle>) -> Result<Arc<dyn McpEndpoint>, Response> {
+fn admit(req: &Request, mcp: Option<&McpHandle>) -> Result<(Arc<dyn McpEndpoint>, Caller), Response> {
     let refuse = |status: u16, code: i64, msg: &str| reply(status, Some(jsonrpc_error(Value::Null, code, msg)), &[]);
     let Some(mcp) = mcp else {
         return Err(refuse(503, -32000, "MCP is not available"));
@@ -68,6 +89,9 @@ fn admit(req: &Request, mcp: Option<&McpHandle>) -> Result<Arc<dyn McpEndpoint>,
     let svc = mcp.0.clone();
     if !req.is_loopback() {
         return Err(refuse(403, -32000, "The Corvus MCP server only answers this computer."));
+    }
+    if svc.assistant(req.headers.get("Authorization")) {
+        return Ok((svc, Caller::Assistant));
     }
     if !svc.enabled() {
         return Err(refuse(
@@ -84,11 +108,11 @@ fn admit(req: &Request, mcp: Option<&McpHandle>) -> Result<Arc<dyn McpEndpoint>,
             &[("WWW-Authenticate".into(), "Bearer realm=\"corvus-gcs\"".into())],
         ));
     }
-    Ok(svc)
+    Ok((svc, Caller::Client))
 }
 
 pub fn handle(req: &Request, mcp: Option<&McpHandle>) -> Response {
-    let svc = match admit(req, mcp) {
+    let (svc, who) = match admit(req, mcp) {
         Ok(s) => s,
         Err(r) => return r,
     };
@@ -131,7 +155,7 @@ pub fn handle(req: &Request, mcp: Option<&McpHandle>) -> Response {
                     &[],
                 );
             };
-            let (status, payload, headers) = svc.handle_post(message, session);
+            let (status, payload, headers) = svc.handle_post(message, session, who);
             reply(status, payload, &headers)
         }
         Method::Get => {
@@ -139,12 +163,12 @@ pub fn handle(req: &Request, mcp: Option<&McpHandle>) -> Response {
                 .headers
                 .get("Accept")
                 .is_some_and(|a| a.contains("text/event-stream"));
-            match wants_stream.then(|| svc.open_stream(session)).flatten() {
+            match wants_stream.then(|| svc.open_stream(session, who)).flatten() {
                 Some(stream) => Response::sse(stream),
                 None => reply(405, None, &[("Allow".into(), "POST, DELETE".into())]),
             }
         }
-        Method::Delete => reply(if svc.end_session(session) { 200 } else { 404 }, None, &[]),
+        Method::Delete => reply(if svc.end_session(session, who) { 200 } else { 404 }, None, &[]),
     }
 }
 
@@ -233,17 +257,19 @@ impl TokenStore {
     /// Whether an `Authorization` header carries the token: scheme `Bearer`
     /// in any case, the value compared in constant time.
     pub fn authorized(&self, header: Option<&str>) -> bool {
-        let Some(h) = header else { return false };
-        let (scheme, value) = h.trim().split_once(' ').unwrap_or((h.trim(), ""));
-        let value = value.trim();
-        if !scheme.eq_ignore_ascii_case("bearer") || value.is_empty() {
-            return false;
-        }
-        constant_time_eq(value.as_bytes(), self.token().as_bytes())
+        bearer(header).is_some_and(|value| constant_time_eq(value.as_bytes(), self.token().as_bytes()))
     }
 }
 
-fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+/// The value of an `Authorization: Bearer` header.
+pub fn bearer(header: Option<&str>) -> Option<&str> {
+    let h = header?.trim();
+    let (scheme, value) = h.split_once(' ').unwrap_or((h, ""));
+    let value = value.trim();
+    (scheme.eq_ignore_ascii_case("bearer") && !value.is_empty()).then_some(value)
+}
+
+pub(crate) fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     if a.len() != b.len() {
         return false;
     }
@@ -323,20 +349,28 @@ mod tests {
         fn authorized(&self, h: Option<&str>) -> bool {
             h == Some("Bearer good")
         }
-        fn handle_post(&self, m: Value, session: Option<&str>) -> (u16, Option<Value>, Vec<(String, String)>) {
+        fn assistant(&self, h: Option<&str>) -> bool {
+            h == Some("Bearer chat")
+        }
+        fn handle_post(
+            &self,
+            m: Value,
+            session: Option<&str>,
+            who: Caller,
+        ) -> (u16, Option<Value>, Vec<(String, String)>) {
             if m.get("method") == Some(&json!("notify")) {
                 return (202, None, vec![]);
             }
             (
                 200,
-                Some(json!({"echo": m, "session": session})),
+                Some(json!({"echo": m, "session": session, "chat": who == Caller::Assistant})),
                 vec![("Mcp-Session-Id".into(), "s1".into())],
             )
         }
-        fn open_stream(&self, session: Option<&str>) -> Option<Box<dyn SseStream>> {
+        fn open_stream(&self, session: Option<&str>, _: Caller) -> Option<Box<dyn SseStream>> {
             session.map(|_| -> Box<dyn SseStream> { Box::new(Closed) })
         }
-        fn end_session(&self, session: Option<&str>) -> bool {
+        fn end_session(&self, session: Option<&str>, _: Caller) -> bool {
             session == Some("s1")
         }
     }
@@ -393,6 +427,22 @@ mod tests {
             json!({"code": -32001, "message": "Missing or wrong token. Copy it from Settings, Connections, MCP."})
         );
         assert_eq!(body(&r)["jsonrpc"], json!("2.0"));
+    }
+
+    #[test]
+    fn the_chat_of_this_corvus_comes_in_while_the_server_is_off() {
+        let off = McpHandle(Arc::new(Fake { on: false }));
+        let mut post = req(Method::Post, Some("Bearer chat"));
+        post.body = br#"{"method": "ping"}"#.to_vec();
+        let r = handle(&post, Some(&off));
+        assert_eq!((r.status, body(&r)["chat"].clone()), (200, json!(true)));
+        let mut far = req(Method::Post, Some("Bearer chat"));
+        far.peer = Some("10.0.0.5".parse().unwrap());
+        assert_eq!(handle(&far, Some(&off)).status, 403, "from this computer only");
+        let on = McpHandle(Arc::new(Fake { on: true }));
+        let mut post = req(Method::Post, Some("Bearer good"));
+        post.body = br#"{"method": "ping"}"#.to_vec();
+        assert_eq!(body(&handle(&post, Some(&on)))["chat"], json!(false));
     }
 
     #[test]

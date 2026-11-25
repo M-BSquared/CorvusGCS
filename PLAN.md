@@ -142,6 +142,15 @@ CI has no Python job left (`rust-gui`, `rust-windows`, the three bundle jobs,
 * P2 See the Rust side of the MCP window (heartbeat, plugin calls) against the
   running interface; test Direct Control (5 Hz, then hold) against a simulated
   vehicle, not only a fake clock.
+* P2 The tools of `mcp/more.rs` (moves, orbit, patterns, heading, ROI, gimbal, photo) are held to a
+  scripted PX4 over UDP (`mcp_px4_end_to_end.rs`). **Verify** on a SITL of PX4 1.16 to 1.18 and of
+  ArduPilot: the yaw of `set_heading` (DO_REPOSITION in radians on PX4, CONDITION_YAW in GUIDED on
+  ArduPilot), whether PX4's orbit counts its turns, the ring route that stands in for an orbit on
+  ArduPilot, and DO_GIMBAL_MANAGER_PITCHYAW, which PX4 may refuse from a station that did not take
+  control of the gimbal (DO_GIMBAL_MANAGER_CONFIGURE is not on the command list).
+* P2 See the MCP card and the permissions dialog of Settings on screen, and AI Chat with a real
+  model. Seen: the chat with a scripted model, its question dialog, the drawings on both maps. Drawings show on the Home map only, not
+  in the planner, and end with the program.
 * P3 Give the plugin crates a `plugin.json` and replace the table in
   `registry.rs` by `include_str!`.
 * P1 Plugin repositories (src/README.md, "Plugins as libraries"): see one through. No plugin has

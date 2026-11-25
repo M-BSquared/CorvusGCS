@@ -18,6 +18,8 @@
 //! `call` event addressed to this window is handed to the plugin
 //! (`take_calls`) and its answer goes back through `reply`.
 
+pub mod drawings;
+
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -30,6 +32,8 @@ use crate::ui::kit::{self, Button, Variant};
 use crate::ui::modal::{self, Size};
 use crate::ui::style::{self, Weight};
 
+/// How far under one pill on the map the next one sits.
+pub const PILL_STEP: f32 = 44.0;
 const HEARTBEAT: Duration = Duration::from_secs(10);
 
 /// What the pill says.
@@ -41,7 +45,9 @@ pub struct Badge {
 
 /// `badgeState`: what the pill says for a status, or None for no pill.
 pub fn badge_state(s: &Value) -> Option<Badge> {
-    if s.get("enabled") != Some(&Value::Bool(true)) {
+    let chat = |k: &str| s.get("assistant").and_then(|a| a.get(k)) == Some(&Value::Bool(true));
+    let server = s.get("enabled") == Some(&Value::Bool(true));
+    if !server && !chat("on") {
         return None;
     }
     if let Some(c) = s.get("control").filter(|c| c.is_object()) {
@@ -64,9 +70,9 @@ pub fn badge_state(s: &Value) -> Option<Badge> {
             text: "AI client is asking".into(),
         });
     }
-    let active = s.get("active") == Some(&Value::Bool(true));
-    let writes = s.get("writes") == Some(&Value::Bool(true));
-    (active && writes).then(|| Badge {
+    let client = server && s.get("active") == Some(&Value::Bool(true)) && s.get("writes") == Some(&Value::Bool(true));
+    let chatting = chat("on") && chat("active") && chat("writes");
+    (client || chatting).then(|| Badge {
         level: "on",
         text: "AI client connected".into(),
     })
@@ -192,6 +198,15 @@ fn take_event(shared: &Mutex<Shared>, e: &Value) {
                 g.notes.push(("warning".into(), text.to_string()));
             }
         }
+        // What the client itself has to tell the operator.
+        Some("say") => {
+            let text = e.get("text").and_then(Value::as_str).unwrap_or("");
+            let level = e.get("level").and_then(Value::as_str);
+            let level = level.filter(|l| ["warning", "critical"].contains(l)).unwrap_or("info");
+            if !text.is_empty() {
+                g.notes.push((level.into(), format!("AI: {text}")));
+            }
+        }
         _ => {}
     }
 }
@@ -298,7 +313,10 @@ impl Mcp {
         let enabled = self
             .shared
             .lock()
-            .map(|g| g.status.get("enabled") == Some(&Value::Bool(true)))
+            .map(|g| {
+                g.status.get("enabled") == Some(&Value::Bool(true))
+                    || g.status.pointer("/assistant/on") == Some(&Value::Bool(true))
+            })
             .unwrap_or(false);
         if enabled && self.last_beat.is_none_or(|t| now.duration_since(t) >= HEARTBEAT) {
             self.last_beat = Some(now);
@@ -463,6 +481,36 @@ mod tests {
         assert_eq!(
             badge_state(&json!({"enabled": true, "control": {"kind": "velocity"}})).map(|b| b.text),
             Some("AI client flying (velocity)".to_string())
+        );
+    }
+
+    #[test]
+    fn the_pill_follows_the_chat_while_the_server_is_off() {
+        let chat = |active: bool, writes: bool| json!({"enabled": false, "active": active, "writes": false, "assistant": {"on": true, "active": active, "writes": writes}});
+        assert_eq!(badge_state(&chat(false, true)), None);
+        assert_eq!(badge_state(&chat(true, false)), None);
+        assert_eq!(badge_state(&chat(true, true)).map(|b| b.level), Some("on"));
+        let left = json!({"enabled": false, "active": true, "writes": true, "assistant": {"on": true, "active": false, "writes": true}});
+        assert_eq!(badge_state(&left), None, "a client of the server that was switched off");
+        let asks = json!({"enabled": false, "assistant": {"on": true}, "pending": [{"id": "a"}]});
+        assert_eq!(badge_state(&asks).map(|b| b.level), Some("ask"));
+    }
+
+    #[test]
+    fn what_the_client_says_reaches_the_board() {
+        let shared = Mutex::new(Shared::default());
+        take_event(
+            &shared,
+            &json!({"type": "say", "text": "Look left", "level": "critical"}),
+        );
+        take_event(&shared, &json!({"type": "say", "text": "Done", "level": "odd"}));
+        let g = shared.lock().expect("shared");
+        assert_eq!(
+            g.notes,
+            vec![
+                ("critical".to_string(), "AI: Look left".to_string()),
+                ("info".to_string(), "AI: Done".to_string())
+            ]
         );
     }
 

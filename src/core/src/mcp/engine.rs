@@ -16,17 +16,17 @@
 //! joined in [`McpService::shutdown`].
 
 use std::collections::{HashMap, VecDeque};
-use std::sync::{Arc, Condvar, Mutex, MutexGuard, Weak};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, OnceLock, Weak};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
 use indexmap::IndexMap;
 use serde_json::{json, Value};
 
-use super::settings::{self, level, plugin_allowed, Permission, CONTROL_MAX_S, PERMISSIONS};
+use super::settings::{self, assistant_level, level, plugin_allowed, switched, Permission, CONTROL_MAX_S, PERMISSIONS};
 use super::tools::{self, fmt, Run, Tool, CONTROL_DEFAULT_S, MAX_PARAMS_LISTED};
 use crate::config::truthy;
-use crate::http::mcp::TokenStore;
+use crate::http::mcp::{bearer, constant_time_eq, Caller, TokenStore};
 use crate::json::Map;
 use crate::plugins::registry::is_valid_id;
 
@@ -58,6 +58,9 @@ pub const JSONRPC_INTERNAL_ERROR: i64 = -32603;
 
 pub const INSTRUCTIONS: &str = "Corvus GCS is a ground control station connected to a real vehicle (PX4 or ArduPilot). Every tool acts on that vehicle through the station, with the checks the operator's own buttons have. The operator decides which tools you have and may have to approve a call in Corvus first; a refused call says why. Read get_vehicle_state before acting, and check the result of every command. Heights are metres above home unless a tool says otherwise. Direct control lasts only for the duration you give; the vehicle holds when you stop sending.";
 
+/// What the AI Chat plugin of this Corvus is told besides.
+pub const ASSISTANT_INSTRUCTIONS: &str = "You sit in the operator's own window. Use the tools instead of describing what could be done: draw on the map with draw_on_map whenever a place, a direction, a route or an area is meant, and preview a flight with plan_pattern or a drawing before you fly it. Places can be given relative to the vehicle or home (from, north_m, east_m, bearing_deg, distance_m), so do not work out coordinates yourself. After a flight command use wait_for to see that it happened. What the operator has not allowed outright is asked of them when you call it; a refusal is their answer, do not try another way.";
+
 /// Runs one Corvus endpoint: `(method, path, body)` to `(status, body)`.
 pub type Dispatch = Arc<dyn Fn(&str, &str, Option<Map>) -> (u16, Value) + Send + Sync>;
 /// The raw `mcp` block of the config.
@@ -65,6 +68,8 @@ pub type LoadSettings = Arc<dyn Fn() -> Option<Value> + Send + Sync>;
 /// Persists the `mcp` block (`None` removes it).
 pub type SaveSettings = Arc<dyn Fn(Option<Map>) -> std::io::Result<()> + Send + Sync>;
 pub type Clock = Arc<dyn Fn() -> f64 + Send + Sync>;
+/// Whether Corvus is on its way out.
+pub type Closing = Arc<dyn Fn() -> bool + Send + Sync>;
 pub type Listener = Arc<dyn Fn(&Value) + Send + Sync>;
 
 /// How long the two waits last in real time. The sentences an agent reads
@@ -88,13 +93,13 @@ impl Default for Timing {
 #[derive(Debug)]
 pub struct ToolError(pub String);
 
-type ToolResult = Result<Value, ToolError>;
+pub(super) type ToolResult = Result<Value, ToolError>;
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-fn obj(v: Value) -> Map {
+pub(super) fn obj(v: Value) -> Map {
     v.as_object().cloned().unwrap_or_default()
 }
 
@@ -113,7 +118,7 @@ fn short_id(s: &str, max: usize) -> bool {
 }
 
 /// `urllib.parse.quote(text, safe="")`.
-fn quote(text: &str) -> String {
+pub(super) fn quote(text: &str) -> String {
     let mut out = String::new();
     for b in text.bytes() {
         if b.is_ascii_alphanumeric() || matches!(b, b'_' | b'.' | b'-' | b'~') {
@@ -272,6 +277,7 @@ impl StreamQueue {
 struct Session {
     client: String,
     client_version: String,
+    who: Caller,
     seen: f64,
     streams: Vec<Arc<StreamQueue>>,
 }
@@ -292,18 +298,23 @@ struct Pending {
     tool: String,
     summary: String,
     permission: &'static str,
+    who: Caller,
+    /// Whose question it is: it goes with the session.
+    session: Option<String>,
     deadline: f64,
     answer: Mutex<Option<Answer>>,
     wake: Condvar,
 }
 
 struct Call {
+    who: Caller,
     outcome: Mutex<Option<Result<Value, String>>>,
     wake: Condvar,
 }
 
 struct Control {
     kind: &'static str,
+    who: Caller,
     vehicle: Option<String>,
     path: &'static str,
     body: Map,
@@ -345,8 +356,12 @@ pub struct McpService {
     clock: Clock,
     timing: Timing,
     me: Weak<McpService>,
+    /// The token of this Corvus' own AI Chat: new with every start, never on disk.
+    assistant_token: String,
     state: Mutex<State>,
     control_wake: Condvar,
+    /// Asked by everything that waits, so a window that closes does not wait for it.
+    closing: OnceLock<Closing>,
     listeners: Mutex<Vec<(u64, Listener)>>,
     next_listener: Mutex<u64>,
     control_thread: Mutex<Option<JoinHandle<()>>>,
@@ -369,16 +384,76 @@ impl McpService {
             clock,
             timing,
             me: me.clone(),
+            assistant_token: random_hex(32),
             state: Mutex::new(State::default()),
             control_wake: Condvar::new(),
+            closing: OnceLock::new(),
             listeners: Mutex::new(Vec::new()),
             next_listener: Mutex::new(0),
             control_thread: Mutex::new(None),
         })
     }
 
-    fn now(&self) -> f64 {
+    pub(super) fn now(&self) -> f64 {
         (self.clock)()
+    }
+
+    /// Says how to find out that Corvus is closing.
+    pub fn set_closing(&self, closing: Closing) {
+        let _ = self.closing.set(closing);
+    }
+
+    pub(super) fn closing(&self) -> bool {
+        lock(&self.state).stopping || self.closing.get().is_some_and(|f| f())
+    }
+
+    /// Waits until `slot` holds something, at most `wait` and no longer than
+    /// Corvus runs. What is in it is taken out.
+    fn wait_for_slot<T>(&self, slot: &Mutex<Option<T>>, wake: &Condvar, wait: Duration) -> Option<T> {
+        let deadline = std::time::Instant::now() + wait;
+        let mut guard = lock(slot);
+        while guard.is_none() {
+            let left = deadline.saturating_duration_since(std::time::Instant::now());
+            if left.is_zero() || self.closing.get().is_some_and(|f| f()) {
+                break;
+            }
+            let slice = left.min(Duration::from_millis(250));
+            guard = wake.wait_timeout(guard, slice).unwrap_or_else(|e| e.into_inner()).0;
+        }
+        guard.take()
+    }
+
+    // ---- this Corvus' own AI Chat --------------------------------------
+
+    /// Whether the AI Chat plugin may sign in.
+    pub fn assistant_on(&self) -> bool {
+        switched(&self.settings(), "assistant")
+    }
+
+    /// The token the AI Chat plugin signs in with.
+    pub fn assistant_token(&self) -> &str {
+        &self.assistant_token
+    }
+
+    pub fn assistant_authorized(&self, header: Option<&str>) -> bool {
+        bearer(header).is_some_and(|v| constant_time_eq(v.as_bytes(), self.assistant_token.as_bytes()))
+            && self.assistant_on()
+    }
+
+    /// What `who` may do with a permission.
+    fn level_of(settings: &Map, permission: &str, who: Caller) -> &'static str {
+        match who {
+            Caller::Client => level(settings, permission),
+            Caller::Assistant => assistant_level(settings, permission),
+        }
+    }
+
+    /// Whether `who` may be talked to at all.
+    fn admitted(settings: &Map, who: Caller) -> bool {
+        match who {
+            Caller::Client => switched(settings, "enabled"),
+            Caller::Assistant => switched(settings, "assistant"),
+        }
     }
 
     // ---- settings ----------------------------------------------------
@@ -397,7 +472,7 @@ impl McpService {
     /// that failed.
     pub fn update_settings(&self, patch: &Map) -> Result<Map, UpdateError> {
         let mut current = self.settings();
-        for key in ["enabled", "fleet"] {
+        for key in settings::switches() {
             if let Some(v) = patch.get(key) {
                 if !v.is_boolean() {
                     return Err(UpdateError::Invalid(format!("{key} must be true or false")));
@@ -429,13 +504,7 @@ impl McpService {
             }
         }
         (self.save)(settings::compact_settings(&current)).map_err(UpdateError::Save)?;
-        if current.get("enabled") != Some(&json!(true)) {
-            self.deny_all("The operator switched the MCP server off.");
-            self.end_control("MCP switched off");
-        }
-        if current["permissions"].get("control") != Some(&json!(true)) {
-            self.end_control("direct control switched off");
-        }
+        self.drop_unwanted(&current);
         if patch.contains_key("enabled") {
             let on = if current.get("enabled") == Some(&json!(true)) {
                 "on"
@@ -450,11 +519,22 @@ impl McpService {
 
     /// The config was replaced (an import, a reset): re-read and tell everyone.
     pub fn settings_reloaded(&self) {
-        if !self.enabled() {
-            self.deny_all("The operator switched the MCP server off.");
-            self.end_control("MCP switched off");
-        }
+        self.drop_unwanted(&self.settings());
         self.changed();
+    }
+
+    /// Refuses what waits and ends direct control for whoever is no longer
+    /// allowed it.
+    fn drop_unwanted(&self, settings: &Map) {
+        for who in [Caller::Client, Caller::Assistant] {
+            if !McpService::admitted(settings, who) {
+                self.deny("The operator switched the MCP server off.", Some(who));
+                self.end_control_of(who, "MCP switched off");
+            }
+            if McpService::level_of(settings, "control", who) == "off" {
+                self.end_control_of(who, "direct control switched off");
+            }
+        }
     }
 
     /// The operator's Stop: every permission that changes anything goes off.
@@ -467,6 +547,7 @@ impl McpService {
                 perms.insert(p.id.into(), false.into());
             }
         }
+        current.insert("assistant_ask".into(), false.into());
         (self.save)(settings::compact_settings(&current))?;
         self.deny_all("The operator stopped the AI client.");
         self.end_control("stopped by the operator");
@@ -571,6 +652,10 @@ impl McpService {
         });
         let pending: Vec<Value> = st.pending.values().map(|p| self.pending_event(p, now)).collect();
         let windows = live_windows(&mut st, now).len();
+        let chatting = st
+            .sessions
+            .values()
+            .any(|s| s.who == Caller::Assistant && now - s.seen <= CLIENT_ACTIVE_S);
         let last = st.last.clone();
         let active = clients
             .iter()
@@ -589,6 +674,11 @@ impl McpService {
         out.insert("pending".into(), Value::Array(pending));
         out.insert("windows".into(), windows.into());
         out.insert("last".into(), last.unwrap_or(Value::Null));
+        let ask = switched(&settings, "assistant_ask");
+        out.insert(
+            "assistant".into(),
+            json!({"on": switched(&settings, "assistant"), "ask": ask, "active": chatting, "writes": writes || ask}),
+        );
         out
     }
 
@@ -655,11 +745,15 @@ impl McpService {
 
     /// The tools this agent may call right now, as `tools/list` gives them.
     pub fn tools(&self) -> Vec<Value> {
+        self.tools_for(Caller::Client)
+    }
+
+    pub fn tools_for(&self, who: Caller) -> Vec<Value> {
         let settings = self.settings();
         let fleet = settings.get("fleet") == Some(&json!(true));
         let mut out = Vec::new();
         for t in tools::builtin() {
-            if level(&settings, t.permission) == "off" {
+            if McpService::level_of(&settings, t.permission, who) == "off" {
                 continue;
             }
             out.push(json!({
@@ -669,7 +763,7 @@ impl McpService {
                                 "destructiveHint": !t.read_only, "openWorldHint": true},
             }));
         }
-        if level(&settings, "plugins") != "off" {
+        if McpService::level_of(&settings, "plugins", who) != "off" {
             for t in self.plugin_tools() {
                 if !plugin_allowed(&settings, t["plugin"].as_str().unwrap_or("")) {
                     continue;
@@ -730,6 +824,17 @@ impl McpService {
         message: &Value,
         session_id: Option<&str>,
     ) -> (u16, Option<Value>, Vec<(String, String)>) {
+        self.handle_post_from(message, session_id, Caller::Client)
+    }
+
+    /// [`McpService::handle_post`] for whoever sent it. A session is known only
+    /// to the side that opened it.
+    pub fn handle_post_from(
+        &self,
+        message: &Value,
+        session_id: Option<&str>,
+        who: Caller,
+    ) -> (u16, Option<Value>, Vec<(String, String)>) {
         let mut headers = Vec::new();
         let batch = message.is_array();
         let messages: Vec<&Value> = match message {
@@ -747,7 +852,7 @@ impl McpService {
         let mut session: Option<String> = None;
         if let Some(sid) = session_id.filter(|s| !s.is_empty() && !is_init) {
             let mut st = lock(&self.state);
-            match st.sessions.get_mut(sid) {
+            match st.sessions.get_mut(sid).filter(|s| s.who == who) {
                 Some(s) => {
                     s.seen = self.now();
                     session = Some(sid.to_string());
@@ -767,7 +872,7 @@ impl McpService {
         }
         let mut replies = Vec::new();
         for msg in messages {
-            let (reply, new_session) = self.rpc(msg, session.as_deref());
+            let (reply, new_session) = self.rpc(msg, session.as_deref(), who);
             if let Some(sid) = new_session {
                 headers.retain(|(k, _): &(String, String)| k != "Mcp-Session-Id");
                 headers.push(("Mcp-Session-Id".into(), sid));
@@ -787,7 +892,7 @@ impl McpService {
         (200, Some(body), headers)
     }
 
-    fn rpc(&self, msg: &Value, session: Option<&str>) -> (Option<Value>, Option<String>) {
+    fn rpc(&self, msg: &Value, session: Option<&str>, who: Caller) -> (Option<Value>, Option<String>) {
         let Some(m) = msg.as_object().filter(|m| m.get("jsonrpc") == Some(&json!("2.0"))) else {
             return (
                 Some(jsonrpc_error(
@@ -819,11 +924,11 @@ impl McpService {
         };
         match method {
             "initialize" => {
-                let (result, sid) = self.initialize(&params);
+                let (result, sid) = self.initialize(&params, who);
                 (Some(jsonrpc_result(&id, result)), Some(sid))
             }
             "ping" => (Some(jsonrpc_result(&id, json!({}))), None),
-            "tools/list" => (Some(jsonrpc_result(&id, json!({"tools": self.tools()}))), None),
+            "tools/list" => (Some(jsonrpc_result(&id, json!({"tools": self.tools_for(who)}))), None),
             "tools/call" => {
                 let name = params.get("name");
                 let args = match params.get("arguments") {
@@ -842,7 +947,7 @@ impl McpService {
                         None,
                     );
                 };
-                match self.call_tool(name, &args, session) {
+                match self.call_tool_from(name, &args, session, who) {
                     None => (
                         Some(jsonrpc_error(
                             id,
@@ -868,7 +973,7 @@ impl McpService {
         }
     }
 
-    fn initialize(&self, params: &Map) -> (Value, String) {
+    fn initialize(&self, params: &Map, who: Caller) -> (Value, String) {
         let version = match params.get("protocolVersion").and_then(Value::as_str) {
             Some(v) if PROTOCOL_VERSIONS.contains(&v) => v,
             _ => DEFAULT_PROTOCOL,
@@ -903,6 +1008,7 @@ impl McpService {
                 Session {
                     client: client.clone(),
                     client_version,
+                    who,
                     seen: now,
                     streams: Vec::new(),
                 },
@@ -916,7 +1022,10 @@ impl McpService {
                 "protocolVersion": version,
                 "capabilities": {"tools": {"listChanged": true}},
                 "serverInfo": {"name": SERVER_NAME, "title": SERVER_TITLE, "version": crate::version::version()},
-                "instructions": INSTRUCTIONS,
+                "instructions": match who {
+                    Caller::Client => INSTRUCTIONS.to_string(),
+                    Caller::Assistant => format!("{INSTRUCTIONS} {ASSISTANT_INSTRUCTIONS}"),
+                },
             }),
             sid,
         )
@@ -924,11 +1033,21 @@ impl McpService {
 
     /// A client said goodbye (`DELETE /mcp`).
     pub fn end_session(&self, session_id: Option<&str>) -> bool {
+        self.end_session_of(session_id, Caller::Client)
+    }
+
+    pub fn end_session_of(&self, session_id: Option<&str>, who: Caller) -> bool {
         {
             let mut st = lock(&self.state);
-            let Some(sid) = session_id.filter(|s| st.sessions.contains_key(*s)) else {
+            let Some(sid) = session_id.filter(|s| st.sessions.get(*s).is_some_and(|x| x.who == who)) else {
                 return false;
             };
+            // A client that has gone (the operator pressed Stop in the chat) is asking
+            // for nothing any more: what it asked must not be allowed after the fact.
+            for p in st.pending.values().filter(|p| p.session.as_deref() == Some(sid)) {
+                *lock(&p.answer) = Some(Answer::Refuse("The client has gone.".into()));
+                p.wake.notify_all();
+            }
             drop_session(&mut st, sid);
         }
         self.emit_status();
@@ -936,9 +1055,9 @@ impl McpService {
     }
 
     /// The queue a `GET /mcp` stream drains, or `None` without a session.
-    pub(super) fn open_stream(&self, session_id: Option<&str>) -> Option<Arc<StreamQueue>> {
+    pub(super) fn open_stream(&self, session_id: Option<&str>, who: Caller) -> Option<Arc<StreamQueue>> {
         let mut st = lock(&self.state);
-        let session = st.sessions.get_mut(session_id.unwrap_or(""))?;
+        let session = st.sessions.get_mut(session_id.unwrap_or("")).filter(|s| s.who == who)?;
         let q = Arc::new(StreamQueue {
             items: Mutex::new(VecDeque::new()),
             wake: Condvar::new(),
@@ -958,6 +1077,10 @@ impl McpService {
 
     /// Runs one tool for an agent. `None` for a name that is no tool at all.
     pub fn call_tool(&self, name: &str, args: &Map, session: Option<&str>) -> Option<Value> {
+        self.call_tool_from(name, args, session, Caller::Client)
+    }
+
+    pub fn call_tool_from(&self, name: &str, args: &Map, session: Option<&str>, who: Caller) -> Option<Value> {
         let settings = self.settings();
         let client = session
             .and_then(|s| lock(&self.state).sessions.get(s).map(|s| s.client.clone()))
@@ -969,7 +1092,7 @@ impl McpService {
             None
         };
         let permission: &'static str = tool.map_or("plugins", |t| t.permission);
-        let perm_level = level(&settings, permission);
+        let perm_level = McpService::level_of(&settings, permission, who);
         let plugin_off = plugin_tool
             .as_ref()
             .is_some_and(|t| !plugin_allowed(&settings, t["plugin"].as_str().unwrap_or("")));
@@ -1002,7 +1125,9 @@ impl McpService {
         };
         let where_ = vehicle.map(|v| format!(" ({})", fmt(Some(v)))).unwrap_or_default();
         let mut ask = perm_level == "confirm" || plugin_tool.as_ref().is_some_and(|p| p["confirm"] == json!(true));
-        if ask && tool.is_some_and(|t| t.permission == "control") && self.control_live(vehicle.and_then(Value::as_str))
+        if ask
+            && tool.is_some_and(|t| t.permission == "control")
+            && self.control_live(vehicle.and_then(Value::as_str), who)
         {
             ask = false;
         }
@@ -1010,7 +1135,7 @@ impl McpService {
             ask = false;
         }
         if ask {
-            if let Err(reason) = self.confirm(&client, name, &format!("{summary}{where_}"), permission) {
+            if let Err(reason) = self.confirm(&client, name, &format!("{summary}{where_}"), permission, who, session) {
                 return Some(self.refused(name, &reason));
             }
         }
@@ -1022,8 +1147,8 @@ impl McpService {
             self.log(&format!("MCP {client}: {summary}{where_}"), "cmd", false);
         }
         let outcome = match (&tool, &plugin_tool) {
-            (Some(t), _) => self.run(t, args),
-            (None, Some(p)) => self.call_plugin(p, args),
+            (Some(t), _) => self.run(t, args, who),
+            (None, Some(p)) => self.call_plugin(p, args, who),
             _ => unreachable!("a tool was found above"),
         };
         match outcome {
@@ -1085,7 +1210,7 @@ impl McpService {
         Ok(reply)
     }
 
-    fn run(&self, tool: &Tool, args: &Map) -> ToolResult {
+    fn run(&self, tool: &Tool, args: &Map, who: Caller) -> ToolResult {
         let vehicle = args.get("vehicle").and_then(Value::as_str);
         match tool.run {
             Run::Get(path, key) => {
@@ -1180,9 +1305,10 @@ impl McpService {
                 }
                 self.api("POST", "/api/mavlink/command", Some(body), vehicle)
             }
-            Run::Manual => self.control("manual", args),
-            Run::Velocity => self.control("velocity", args),
+            Run::Manual => self.control("manual", args, who),
+            Run::Velocity => self.control("velocity", args, who),
             Run::StopControl => self.stop_control(vehicle),
+            Run::Built(f) => f(self, args),
         }
     }
 
@@ -1207,7 +1333,15 @@ impl McpService {
     // ---- confirmation -------------------------------------------------
 
     /// Asks the operator. `Ok`, or the reason it was not allowed.
-    fn confirm(&self, client: &str, tool: &str, summary: &str, permission: &'static str) -> Result<(), String> {
+    fn confirm(
+        &self,
+        client: &str,
+        tool: &str,
+        summary: &str,
+        permission: &'static str,
+        who: Caller,
+        session: Option<&str>,
+    ) -> Result<(), String> {
         let now = self.now();
         let pending = {
             let mut st = lock(&self.state);
@@ -1220,6 +1354,8 @@ impl McpService {
                 tool: tool.into(),
                 summary: summary.into(),
                 permission,
+                who,
+                session: session.map(str::to_string),
                 deadline: now + CONFIRM_TIMEOUT_S,
                 answer: Mutex::new(None),
                 wake: Condvar::new(),
@@ -1229,19 +1365,13 @@ impl McpService {
         };
         self.emit(self.pending_event(&pending, now));
         self.emit_status();
-        {
-            let guard = lock(&pending.answer);
-            let _ = pending
-                .wake
-                .wait_timeout_while(guard, self.timing.confirm, |a| a.is_none())
-                .unwrap_or_else(|e| e.into_inner());
-        }
+        let answer = self.wait_for_slot(&pending.answer, &pending.wake, self.timing.confirm);
         lock(&self.state).pending.shift_remove(&pending.id);
-        let answer = lock(&pending.answer).take();
         self.emit(json!({"type": "confirm_done", "id": pending.id, "allowed": matches!(answer, Some(Answer::Allow))}));
         self.emit_status();
         match answer {
             Some(Answer::Allow) => Ok(()),
+            None if self.closing() => Err("Corvus GCS is closing.".into()),
             None => Err(format!("The operator did not answer within {} s.", CONFIRM_TIMEOUT_S)),
             Some(Answer::Refuse(why)) => Err(why),
         }
@@ -1253,7 +1383,11 @@ impl McpService {
         let Some(p) = lock(&self.state).pending.get(id).cloned() else {
             return false;
         };
-        *lock(&p.answer) = Some(if allow == &json!(true) {
+        let mut slot = lock(&p.answer);
+        if slot.is_some() {
+            return false;
+        }
+        *slot = Some(if allow == &json!(true) {
             Answer::Allow
         } else {
             Answer::Refuse("The operator refused.".into())
@@ -1263,12 +1397,17 @@ impl McpService {
     }
 
     fn deny_all(&self, reason: &str) {
+        self.deny(reason, None);
+    }
+
+    /// Refuses the questions and plugin calls of `who`, or of everybody.
+    fn deny(&self, reason: &str, who: Option<Caller>) {
         let st = lock(&self.state);
-        for p in st.pending.values() {
+        for p in st.pending.values().filter(|p| who.is_none_or(|w| p.who == w)) {
             *lock(&p.answer) = Some(Answer::Refuse(reason.to_string()));
             p.wake.notify_all();
         }
-        for c in st.calls.values() {
+        for c in st.calls.values().filter(|c| who.is_none_or(|w| c.who == w)) {
             *lock(&c.outcome) = Some(Err(reason.to_string()));
             c.wake.notify_all();
         }
@@ -1276,9 +1415,10 @@ impl McpService {
 
     // ---- plugin calls --------------------------------------------------
 
-    fn call_plugin(&self, tool: &Map, args: &Map) -> ToolResult {
+    fn call_plugin(&self, tool: &Map, args: &Map, who: Caller) -> ToolResult {
         let id = random_hex(8);
         let call = Arc::new(Call {
+            who,
             outcome: Mutex::new(None),
             wake: Condvar::new(),
         });
@@ -1287,14 +1427,7 @@ impl McpService {
             json!({"type": "call", "id": id, "window": tool["window"], "plugin": tool["plugin"],
                          "tool": tool["name"], "args": args}),
         );
-        let outcome = {
-            let guard = lock(&call.outcome);
-            let (mut guard, _) = call
-                .wake
-                .wait_timeout_while(guard, self.timing.plugin_call, |o| o.is_none())
-                .unwrap_or_else(|e| e.into_inner());
-            guard.take()
-        };
+        let outcome = self.wait_for_slot(&call.outcome, &call.wake, self.timing.plugin_call);
         lock(&self.state).calls.remove(&id);
         match outcome {
             None => Err(ToolError(format!(
@@ -1322,16 +1455,16 @@ impl McpService {
 
     // ---- direct control -------------------------------------------------
 
-    fn control_live(&self, vehicle: Option<&str>) -> bool {
+    fn control_live(&self, vehicle: Option<&str>, who: Caller) -> bool {
         let now = self.now();
         lock(&self.state)
             .control
             .as_ref()
-            .is_some_and(|c| c.vehicle.as_deref() == vehicle.filter(|v| !v.is_empty()) && c.until > now)
+            .is_some_and(|c| c.who == who && c.vehicle.as_deref() == vehicle.filter(|v| !v.is_empty()) && c.until > now)
     }
 
     /// Starts or extends direct control: repeated until it runs out, then hold.
-    fn control(&self, kind: &'static str, args: &Map) -> ToolResult {
+    fn control(&self, kind: &'static str, args: &Map, who: Caller) -> ToolResult {
         let seconds = num(args, "duration_s", Some(CONTROL_DEFAULT_S))?;
         if !(0.2..=CONTROL_MAX_S).contains(&seconds) {
             return Err(ToolError(format!("duration_s must be between 0.2 and {CONTROL_MAX_S}")));
@@ -1374,6 +1507,7 @@ impl McpService {
             let mut st = lock(&self.state);
             st.control = Some(Control {
                 kind,
+                who,
                 vehicle,
                 path,
                 body: frame_body,
@@ -1418,6 +1552,22 @@ impl McpService {
         let control = lock(&self.state).control.take();
         self.control_wake.notify_all();
         if let Some(c) = control {
+            self.hold(c.vehicle.as_deref(), why);
+        }
+    }
+
+    /// [`McpService::end_control`] when it is `who` that has it.
+    fn end_control_of(&self, who: Caller, why: &str) {
+        let control = {
+            let mut st = lock(&self.state);
+            if st.control.as_ref().is_some_and(|c| c.who == who) {
+                st.control.take()
+            } else {
+                None
+            }
+        };
+        if let Some(c) = control {
+            self.control_wake.notify_all();
             self.hold(c.vehicle.as_deref(), why);
         }
     }
@@ -1472,6 +1622,29 @@ impl McpService {
         }
     }
 
+    // ---- what the other tools need of the service --------------------------
+
+    /// A line for the notification board of every open window.
+    pub(super) fn say(&self, text: &str, level: &str) {
+        eprintln!("corvus: MCP: {text}");
+        self.emit(json!({"type": "say", "text": text, "level": level}));
+    }
+
+    /// Sleeps `wait`, or until Corvus closes: true when it does.
+    pub(super) fn pause(&self, wait: Duration) -> bool {
+        let deadline = std::time::Instant::now() + wait;
+        loop {
+            if self.closing() {
+                return true;
+            }
+            let left = deadline.saturating_duration_since(std::time::Instant::now());
+            if left.is_zero() {
+                return false;
+            }
+            std::thread::sleep(left.min(Duration::from_millis(100)));
+        }
+    }
+
     // ---- teardown --------------------------------------------------------
 
     /// Refuses what waits, holds a vehicle under direct control, joins the thread.
@@ -1521,7 +1694,7 @@ fn drop_session(st: &mut State, sid: &str) {
     }
 }
 
-fn num(args: &Map, key: &str, default: Option<f64>) -> Result<f64, ToolError> {
+pub(super) fn num(args: &Map, key: &str, default: Option<f64>) -> Result<f64, ToolError> {
     match args.get(key) {
         Some(Value::Number(n)) => n.as_f64().ok_or_else(|| ToolError(format!("{key} must be a number"))),
         None => default.ok_or_else(|| ToolError(format!("{key} must be a number"))),
@@ -1529,7 +1702,7 @@ fn num(args: &Map, key: &str, default: Option<f64>) -> Result<f64, ToolError> {
     }
 }
 
-fn req_str(args: &Map, key: &str) -> Result<String, ToolError> {
+pub(super) fn req_str(args: &Map, key: &str) -> Result<String, ToolError> {
     match args.get(key) {
         Some(Value::String(s)) if !s.trim().is_empty() => Ok(s.trim().to_string()),
         _ => Err(ToolError(format!("{key} must be a non-empty string"))),

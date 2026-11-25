@@ -7,6 +7,7 @@ use std::sync::OnceLock;
 
 use serde_json::{json, Value};
 
+use super::engine::{McpService, ToolError};
 use super::settings::CONTROL_MAX_S;
 use crate::json::Map;
 
@@ -28,6 +29,8 @@ pub enum Run {
     Manual,
     Velocity,
     StopControl,
+    /// A tool of [`super::more`], which runs its endpoints itself.
+    Built(fn(&McpService, &Map) -> Result<Value, ToolError>),
 }
 
 pub struct Tool {
@@ -46,7 +49,7 @@ pub struct Tool {
     pub read_only: bool,
 }
 
-fn obj(v: Value) -> Map {
+pub(super) fn obj(v: Value) -> Map {
     v.as_object().cloned().unwrap_or_default()
 }
 
@@ -105,20 +108,20 @@ fn plan_schema() -> Value {
     })
 }
 
-fn get(a: &Map, key: &str) -> Value {
+pub(super) fn get(a: &Map, key: &str) -> Value {
     a.get(key).cloned().unwrap_or(Value::Null)
 }
 
 /// The listed arguments, as they are, and nothing else: a tool passes on only
 /// what its schema names.
-fn pick(a: &Map, keys: &[&str]) -> Map {
+pub(super) fn pick(a: &Map, keys: &[&str]) -> Map {
     keys.iter()
         .filter_map(|k| a.get(*k).map(|v| ((*k).to_string(), v.clone())))
         .collect()
 }
 
 #[allow(clippy::too_many_arguments)]
-fn tool(
+pub(super) fn tool(
     name: &'static str,
     permission: &'static str,
     title: &'static str,
@@ -294,6 +297,7 @@ fn build() -> Vec<Tool> {
     ]
     .into_iter()
     .chain(tak_tools())
+    .chain(super::more::tools())
     .collect()
 }
 
@@ -393,6 +397,12 @@ fn tak_tools() -> Vec<Tool> {
                 _ => "change the TAK identity".into(),
             }), false, false),
     ]
+}
+
+/// The tools added since the Python program's list was frozen, for the tests
+/// that hold the rest to it.
+pub fn is_extension(name: &str) -> bool {
+    super::more::NAMES.contains(&name) || name.starts_with("tak_")
 }
 
 static TOOLS: OnceLock<Vec<Tool>> = OnceLock::new();

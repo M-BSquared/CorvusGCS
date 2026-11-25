@@ -743,17 +743,22 @@ mod tests {
         fn authorized(&self, h: Option<&str>) -> bool {
             h == Some("Bearer t0ken")
         }
-        fn handle_post(&self, m: Value, _: Option<&str>) -> (u16, Option<Value>, Vec<(String, String)>) {
+        fn handle_post(
+            &self,
+            m: Value,
+            _: Option<&str>,
+            _: crate::http::mcp::Caller,
+        ) -> (u16, Option<Value>, Vec<(String, String)>) {
             (
                 200,
                 Some(json!({"jsonrpc": "2.0", "id": m["id"], "result": {}})),
                 vec![],
             )
         }
-        fn open_stream(&self, _: Option<&str>) -> Option<Box<dyn SseStream>> {
+        fn open_stream(&self, _: Option<&str>, _: crate::http::mcp::Caller) -> Option<Box<dyn SseStream>> {
             None
         }
-        fn end_session(&self, _: Option<&str>) -> bool {
+        fn end_session(&self, _: Option<&str>, _: crate::http::mcp::Caller) -> bool {
             false
         }
     }

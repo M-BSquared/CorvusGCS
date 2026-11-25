@@ -17,6 +17,8 @@ use crate::ui::style::{self, Weight};
 const VEHICLES_HINT: &str = "Forgetting a vehicle takes it off the list and the map until it is heard again. An armed vehicle cannot be forgotten. Rename or recolour one in the Vehicles dialog of the top bar.";
 const FLEET_HINT: &str = "One link is one vehicle. A second vehicle needs a radio of its own and a link of its own. Another autopilot heard on a link is ignored.";
 
+const MCP_CHAT_HINT: &str = "The AI Chat plugin uses the station's tools by itself, with no token and while the switch above is off. The permissions hold for it too.";
+const MCP_CHAT_ASK_HINT: &str = "What is off below is offered to AI Chat all the same, and Corvus asks you each time before anything happens. Off, AI Chat gets only what you switched on. Stop on the map switches this off.";
 const MCP_SERVER_HINT: &str = "Lets an AI client such as OpenCode read the vehicle and, as far as you allow it, fly it. Only this computer can connect, and only with its token.";
 
 fn s<'a>(v: &'a Value, key: &str) -> &'a str {
@@ -652,8 +654,12 @@ impl SettingsPage {
             let mut perms = false;
             let mut connect = false;
             let mut toggled = None;
+            let mut chat_toggled = None;
+            let chat = settings.get("assistant").and_then(Value::as_bool).unwrap_or(false);
             form::card(ui, f, "", |ui, f| {
                 toggled = form::switch(ui, f, "mcpserver", "MCP server", MCP_SERVER_HINT, on);
+                f.skip(6.0);
+                chat_toggled = form::switch(ui, f, "mcpchat", "AI Chat", MCP_CHAT_HINT, chat);
                 f.skip(2.0);
                 let who = kit::wrapped_weight(
                     ui,
@@ -700,6 +706,10 @@ impl SettingsPage {
             if let Some(v) = toggled {
                 self.hush("mcp");
                 self.act(ui.ctx(), "mcp_save", "", "/api/mcp/settings", json!({"enabled": v}));
+            }
+            if let Some(v) = chat_toggled {
+                self.hush("mcp");
+                self.act(ui.ctx(), "mcp_save", "", "/api/mcp/settings", json!({"assistant": v}));
             }
             if perms {
                 self.dialog = Some(Dialog::McpPerms);
@@ -771,6 +781,17 @@ impl SettingsPage {
                     ) {
                         save.push(json!({"fleet": v}));
                     }
+                        f.skip(10.0);
+                        if let Some(v) = form::switch(
+                            ui,
+                            &mut f,
+                            "mcpchatask",
+                            "Ask me for what AI Chat may not do",
+                            MCP_CHAT_ASK_HINT,
+                            on(&["assistant_ask"]),
+                        ) {
+                            save.push(json!({"assistant_ask": v}));
+                        }
                         f.skip(10.0);
                         let intro = format!(
                         "A tool that is off is not even offered to the client. With Ask me first, Corvus shows you each request and sends nothing until you allow it. Direct control lasts at most {} s per request; without a new one the vehicle holds.",

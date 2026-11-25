@@ -46,6 +46,7 @@ struct App {
     welcome: crate::welcome::Welcome,
     caps: crate::data::capabilities::Cache,
     mcp: crate::mcp::Mcp,
+    drawings: crate::mcp::drawings::Drawings,
     update: crate::update::Update,
     updates_on: bool,
     topbar_hidden: Vec<&'static str>,
@@ -276,6 +277,13 @@ impl App {
         self.plugins.update(ctx, state);
         if let Some(shapes) = self.plugins.take_shapes() {
             self.map.plugins.set(shapes);
+        }
+        if let Some(shapes) = self.drawings.take_shapes() {
+            self.map.plugins.set_drawn(shapes);
+        }
+        if let Some(points) = self.drawings.take_show() {
+            // The page stays: the operator may be in the middle of something else.
+            self.fit_map(&points, ctx);
         }
         let out = self.plugins.take_out();
         if let Some(owner) = out.pick {
@@ -639,8 +647,14 @@ impl App {
             screen_rect.max,
         );
         let below = self.flight.bar_bottom + crate::home::flight::INSET;
-        self.mcp
-            .show(ui.ctx(), (self.page == Page::Home).then_some(main_rect), below);
+        let map_rect = (self.page == Page::Home).then_some(main_rect);
+        self.mcp.show(ui.ctx(), map_rect, below);
+        let under = if self.mcp.badge().is_some() {
+            crate::mcp::PILL_STEP
+        } else {
+            0.0
+        };
+        self.drawings.show(ui.ctx(), map_rect, below + under);
         for (level, text) in self.mcp.take_notes() {
             self.board.add_local(&level, &text, now);
         }
@@ -851,6 +865,7 @@ impl eframe::App for App {
         self.fleet.shut_down();
         self.control.shut_down();
         self.mcp.shut_down();
+        self.drawings.shut_down();
         self.panel.shut_down();
         self.map.shut_down();
     }
@@ -990,6 +1005,7 @@ pub fn run(
                 ),
                 caps: Default::default(),
                 mcp: crate::mcp::Mcp::start(server.clone(), &ctx),
+                drawings: crate::mcp::drawings::Drawings::start(server.clone(), &ctx),
                 update: crate::update::Update::new(),
                 topbar_hidden: settings::Effects::of(&config).topbar_hidden,
                 rangefinder: settings::Effects::of(&config).rangefinder,

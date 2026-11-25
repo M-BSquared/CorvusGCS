@@ -453,9 +453,13 @@
   A chat with a language model of your choice: one on this computer or the local network
   (Ollama, LM Studio, llama.cpp, vLLM), or a hosted one. Enter the address, the model and,
   where one is needed, the key under the gear of AI Chat in <strong>Settings</strong>,
-  <strong>Plugins</strong>. The model can use the station through the
-  <a href="mcp.html">MCP server</a>, so it gets the tools your switches there allow, with the
-  same question before anything that changes the aircraft. <strong>Stop</strong> ends an
+  <strong>Plugins</strong>. The model uses the station's <a href="mcp.html#ai-chat">tools</a> by
+  itself, nothing has to be switched on: it reads the aircraft, draws on the map, and flies what
+  you ask for. Corvus asks you before anything that changes the aircraft, unless you allowed it
+  under <a href="mcp.html#permissions">Permissions</a>. A model on this computer or the local network
+  is offered the 24 tools that read, draw and fly, a hosted one all of them; <strong>Number of
+  tools</strong> in the gear changes that. Run a local model with a context of 8000 tokens or more
+  (<code>num_ctx</code> in Ollama). <strong>Stop</strong> ends an
   answer at once. With a model on this computer it works without internet.
 </p>
 

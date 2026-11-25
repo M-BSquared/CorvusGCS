@@ -94,16 +94,18 @@ impl Vehicle {
                     .with("command", int(command))
                     .with("result", int(result))
             };
-            let mission_ack = || {
+            let mission_ack = |kind: f64| {
                 Message::named("MISSION_ACK", Wire::V2)
                     .unwrap()
+                    .with("mission_type", int(kind as i64))
                     .with("target_system", int(254))
                     .with("target_component", int(190))
                     .with("type", int(0))
             };
-            let request = |seq: i64| {
+            let request = |seq: i64, kind: f64| {
                 Message::named("MISSION_REQUEST_INT", Wire::V2)
                     .unwrap()
+                    .with("mission_type", int(kind as i64))
                     .with("target_system", int(254))
                     .with("target_component", int(190))
                     .with("seq", int(seq))
@@ -239,19 +241,23 @@ impl Vehicle {
                         }
                         "MISSION_COUNT" => {
                             total = seen.f("count") as i64;
-                            let _ = conn.send(&if total == 0 { mission_ack() } else { request(0) });
+                            let _ = conn.send(&if total == 0 {
+                                mission_ack(seen.f("mission_type"))
+                            } else {
+                                request(0, seen.f("mission_type"))
+                            });
                         }
                         "MISSION_ITEM_INT" => {
                             let seq = seen.f("seq") as i64;
                             let _ = conn.send(&if seq + 1 < total {
-                                request(seq + 1)
+                                request(seq + 1, seen.f("mission_type"))
                             } else {
-                                mission_ack()
+                                mission_ack(seen.f("mission_type"))
                             });
                         }
                         "MISSION_CLEAR_ALL" => {
                             total = 0;
-                            let _ = conn.send(&mission_ack());
+                            let _ = conn.send(&mission_ack(seen.f("mission_type")));
                         }
                         "MISSION_REQUEST_LIST" => {
                             let _ = conn.send(
@@ -480,7 +486,20 @@ fn an_mcp_client_flies_a_px4_over_http() {
             .map(|t| t["name"].as_str().unwrap().to_string())
             .collect()
     };
-    let names = listed(&mut ai);
+    let mut names = listed(&mut ai);
+    for later in ["wait_for", "draw_on_map"] {
+        assert!(
+            names.iter().any(|n| n == later),
+            "reading and drawing need no switch: {later}"
+        );
+    }
+    for closed in ["orbit", "set_geofence", "take_photo", "fly_pattern"] {
+        assert!(
+            !names.iter().any(|n| n == closed),
+            "{closed} is off until it is allowed"
+        );
+    }
+    names.retain(|n| !corvus_core::mcp::tools::is_extension(n));
     assert_eq!(
         names,
         [
@@ -571,7 +590,7 @@ fn an_mcp_client_flies_a_px4_over_http() {
         listed(&mut ai).len(),
         corvus_core::mcp::tools::builtin()
             .iter()
-            .filter(|t| !corvus_core::mcp::settings::EXTENSIONS.contains(&t.permission))
+            .filter(|t| t.permission == "map" || !corvus_core::mcp::settings::EXTENSIONS.contains(&t.permission))
             .count(),
         "every built in tool the switches above open is listed"
     );
@@ -999,7 +1018,9 @@ fn an_mcp_client_flies_a_px4_over_http() {
     vehicle.take();
     let (status, _, _) = http(addr, "POST", "/api/mcp/stop", "", Some(&json!({})));
     assert_eq!(status, 200);
-    assert_eq!(listed(&mut ai).len(), 8);
+    let mut left = listed(&mut ai);
+    left.retain(|n| !corvus_core::mcp::tools::is_extension(n));
+    assert_eq!(left.len(), 8);
     ai.refused("arm", json!({}));
     ai.refused("send_command", json!({"command": "DO_CHANGE_SPEED", "params": [1, 5]}));
     assert!(commands(&vehicle.take())
@@ -1015,4 +1036,461 @@ fn an_mcp_client_flies_a_px4_over_http() {
     );
     drop(vehicle);
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A core with the map drawings, a scripted PX4 on it, and the AI Chat's way in.
+struct Station {
+    core: corvus_core::Core,
+    addr: SocketAddr,
+    vehicle: Vehicle,
+    dir: std::path::PathBuf,
+}
+
+impl Station {
+    fn start(tag: &str) -> Station {
+        let port = free_port();
+        let dir = std::env::temp_dir().join(format!("corvus-mcp-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("config.json"),
+            json!({"mavlink_connection": format!("udp:127.0.0.1:{port}"), "tlog_dir": dir.join("tlogs")}).to_string(),
+        )
+        .unwrap();
+        let core = CoreBuilder::new(CoreOptions::in_dir(&dir))
+            .module(VehicleModule::new())
+            .module(corvus_core::PluginsModule::new())
+            .module(corvus_core::McpModule::new())
+            .module(corvus_core::DrawingsModule::new())
+            .module(corvus_core::SetupSchemasModule::new())
+            .module(Http::new(HttpOptions {
+                port: 0,
+                ..HttpOptions::default()
+            }))
+            .build()
+            .unwrap();
+        core.start().unwrap();
+        let addr = core.service::<HttpInfo>().unwrap().addr().unwrap();
+        core.service::<VehicleService>().unwrap().active().bridge.start();
+        let vehicle = Vehicle::start(port);
+        wait_for("the vehicle", Duration::from_secs(15), || {
+            core.store().get("connected").is_some_and(|v| v == true)
+        });
+        wait_for("the position", Duration::from_secs(5), || {
+            core.store().get("position").is_some_and(|v| v[1] != 0.0)
+        });
+        Station {
+            core,
+            addr,
+            vehicle,
+            dir,
+        }
+    }
+
+    /// Signs in with `token`, as AI Chat does.
+    fn sign_in(&self, token: &str) -> Client {
+        let auth = format!("Authorization: Bearer {token}\r\n");
+        let init = json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
+            "protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "Corvus AI Chat"}}});
+        let (status, headers, body) = http(self.addr, "POST", "/mcp", &auth, Some(&init));
+        assert_eq!(status, 200, "{body}");
+        let session = headers.iter().find(|(k, _)| k == "mcp-session-id").unwrap().1.clone();
+        Client {
+            addr: self.addr,
+            auth: format!("{auth}Mcp-Session-Id: {session}\r\n"),
+            next: 1,
+        }
+    }
+
+    fn chat_token(&self) -> String {
+        let (_, _, card) = http(self.addr, "GET", "/api/mcp", "", None);
+        card["assistant"]["token"].as_str().unwrap().to_string()
+    }
+
+    fn set(&self, patch: Json) {
+        let (status, _, body) = http(self.addr, "POST", "/api/mcp/settings", "", Some(&patch));
+        assert_eq!(status, 200, "{body}");
+    }
+}
+
+impl Drop for Station {
+    fn drop(&mut self) {
+        self.core.stop();
+        let _ = std::fs::remove_dir_all(&self.dir);
+    }
+}
+
+fn all_allowed() -> Json {
+    let ids = [
+        "params_write",
+        "mission",
+        "arm",
+        "flight",
+        "goto",
+        "control",
+        "command",
+        "geofence",
+        "camera",
+    ];
+    let on: serde_json::Map<String, Json> = ids.iter().map(|i| (i.to_string(), json!(true))).collect();
+    let quiet: serde_json::Map<String, Json> = ids.iter().map(|i| (i.to_string(), json!(false))).collect();
+    json!({"permissions": on, "confirm": quiet})
+}
+
+#[test]
+fn the_chat_signs_in_by_itself_and_is_asked_for_what_is_not_allowed() {
+    let st = Station::start("chat");
+    let mut chat = st.sign_in(&st.chat_token());
+    let ping = json!({"jsonrpc": "2.0", "id": 1, "method": "ping"});
+    let (status, _, _) = http(st.addr, "POST", "/mcp", "Authorization: Bearer nope\r\n", Some(&ping));
+    assert_eq!(status, 403, "the server for other programs stays off");
+    assert_eq!(chat.ok("get_vehicle_state", json!({}))["connected"], true);
+    let (_, body) = chat.rpc("tools/list", json!({}));
+    let offered = body["result"]["tools"].as_array().unwrap().len();
+    assert_eq!(
+        offered,
+        corvus_core::mcp::tools::builtin().len(),
+        "everything is offered, what is off is asked for"
+    );
+
+    // With no window to ask in, nothing goes out.
+    let why = chat.refused("arm", json!({}));
+    assert!(why.contains("no Corvus window is open"), "{why}");
+    assert!(commands(&st.vehicle.take()).iter().all(|c| c.f("command") != 400.0));
+
+    // With one, the operator's answer decides.
+    let svc = st.core.service::<McpService>().unwrap();
+    for (allow, reached) in [(false, 0), (true, 1)] {
+        svc.window_heartbeat(&json!("w1"), &json!([])).unwrap();
+        st.vehicle.take();
+        let mut c = Client {
+            addr: st.addr,
+            auth: chat.auth.clone(),
+            next: 50,
+        };
+        let t = std::thread::spawn(move || c.call("arm", json!({})));
+        wait_for("the question", Duration::from_secs(5), || {
+            !svc.status()["pending"].as_array().unwrap().is_empty()
+        });
+        let q = svc.status()["pending"][0].clone();
+        assert_eq!(
+            (q["client"].as_str(), q["summary"].as_str()),
+            (Some("Corvus AI Chat"), Some("arm"))
+        );
+        svc.answer(&q["id"], &json!(allow));
+        let (is_error, _) = t.join().unwrap();
+        assert_eq!(is_error, !allow);
+        let arms = commands(&st.vehicle.take())
+            .iter()
+            .filter(|c| c.f("command") == 400.0)
+            .count();
+        assert_eq!(arms, reached);
+    }
+
+    // The sessions of the two sides are not interchangeable.
+    st.set(json!({"enabled": true}));
+    let (_, _, card) = http(st.addr, "GET", "/api/mcp", "", None);
+    let session = chat.auth.split("Mcp-Session-Id: ").nth(1).unwrap();
+    let mixed = format!(
+        "Authorization: Bearer {}\r\nMcp-Session-Id: {session}",
+        card["token"].as_str().unwrap()
+    );
+    let (status, _, _) = http(st.addr, "POST", "/mcp", &mixed, Some(&ping));
+    assert_eq!(status, 404, "another program cannot borrow the chat's session");
+    let mut other = st.sign_in(card["token"].as_str().unwrap());
+    let why = other.refused("arm", json!({}));
+    assert!(why.contains("not allowed"), "asking is the chat's alone: {why}");
+    st.set(json!({"enabled": false}));
+    assert_eq!(chat.ok("get_vehicle_state", json!({}))["connected"], true);
+
+    // Stop takes the asking away, and switching the chat off shuts it out.
+    let (status, _, _) = http(st.addr, "POST", "/api/mcp/stop", "", Some(&json!({})));
+    assert_eq!(status, 200);
+    let why = chat.refused("arm", json!({}));
+    assert!(why.contains("not allowed"), "{why}");
+    assert_eq!(
+        chat.ok("get_vehicle_state", json!({}))["connected"],
+        true,
+        "reading stays"
+    );
+    st.set(json!({"assistant": false}));
+    let (status, _, _) = http(st.addr, "POST", "/mcp", &chat.auth, Some(&ping));
+    assert_eq!(status, 403);
+}
+
+#[test]
+fn closing_does_not_wait_for_an_unanswered_question() {
+    let st = Station::start("closing");
+    let chat = st.sign_in(&st.chat_token());
+    let svc = st.core.service::<McpService>().unwrap();
+    svc.window_heartbeat(&json!("w1"), &json!([])).unwrap();
+    let mut c = Client {
+        addr: st.addr,
+        auth: chat.auth.clone(),
+        next: 9,
+    };
+    let t = std::thread::spawn(move || {
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| c.call("arm", json!({}))));
+    });
+    wait_for("the question", Duration::from_secs(5), || {
+        !svc.status()["pending"].as_array().unwrap().is_empty()
+    });
+    let started = Instant::now();
+    st.core.stop();
+    assert!(started.elapsed() < Duration::from_secs(8), "{:?}", started.elapsed());
+    let _ = t.join();
+}
+
+#[test]
+fn a_question_goes_with_the_chat_that_asked_it() {
+    let st = Station::start("gone");
+    let chat = st.sign_in(&st.chat_token());
+    let svc = st.core.service::<McpService>().unwrap();
+    svc.window_heartbeat(&json!("w1"), &json!([])).unwrap();
+    let mut c = Client {
+        addr: st.addr,
+        auth: chat.auth.clone(),
+        next: 9,
+    };
+    let t = std::thread::spawn(move || c.call("arm", json!({})));
+    wait_for("the question", Duration::from_secs(5), || {
+        !svc.status()["pending"].as_array().unwrap().is_empty()
+    });
+    let id = svc.status()["pending"][0]["id"].clone();
+    // Stop in the chat ends the session while the dialog is still open.
+    let (status, _, _) = http(st.addr, "DELETE", "/mcp", &chat.auth, None);
+    assert_eq!(status, 200);
+    assert!(!svc.answer(&id, &json!(true)), "Allow comes too late");
+    let (is_error, why) = t.join().unwrap();
+    assert!(is_error, "{why}");
+    assert!(commands(&st.vehicle.take()).iter().all(|c| c.f("command") != 400.0));
+}
+
+#[test]
+fn the_chat_draws_measures_and_shows() {
+    let st = Station::start("draw");
+    let mut ai = st.sign_in(&st.chat_token());
+    let ids = ai.ok(
+        "draw_on_map",
+        json!({"shapes": [
+            {"kind": "arrow", "id": "way", "points": [{"from": "vehicle"}, {"from": "vehicle", "forward_m": 200}], "color": "red"},
+            {"kind": "circle", "from": "home", "radius_m": 50, "text": "Keep out"},
+            {"kind": "marker", "lat": 48.08, "lon": 11.64, "icon": "flag"}
+        ]}),
+    );
+    assert_eq!(ids["ids"].as_array().unwrap().len(), 3);
+    let drawn = ai.ok("list_drawings", json!({}));
+    let way = &drawn["shapes"][0];
+    assert_eq!(way["color"], "#FF5A52");
+    let (a, b) = (&way["points"][0], &way["points"][1]);
+    assert!((a["lat"].as_f64().unwrap() - 48.0795).abs() < 1e-6);
+    assert!(
+        b["lon"].as_f64().unwrap() > 11.640 && (b["lat"].as_f64().unwrap() - 48.0795).abs() < 1e-4,
+        "the nose points east: {b}"
+    );
+    let m = ai.ok(
+        "measure",
+        json!({"points": [{"from": "vehicle"}, {"from": "vehicle", "north_m": 100}]}),
+    );
+    assert!((m["total_m"].as_f64().unwrap() - 100.0).abs() < 0.5, "{m}");
+    let p = ai.ok(
+        "resolve_place",
+        json!({"place": {"from": "home", "bearing_deg": 90, "distance_m": 500}}),
+    );
+    assert!(
+        (p["from_vehicle"]["distance_m"].as_f64().unwrap() - 500.0).abs() < 1.0,
+        "{p}"
+    );
+    ai.ok("show_on_map", json!({"ids": ["way"]}));
+    ai.refused("show_on_map", json!({"ids": ["nope"]}));
+    ai.refused(
+        "draw_on_map",
+        json!({"shapes": [{"kind": "line", "points": [{"from": "moon"}]}]}),
+    );
+    assert_eq!(ai.ok("remove_drawings", json!({"ids": ["way"]}))["removed"], 1);
+    assert_eq!(ai.ok("remove_drawings", json!({"all": true}))["removed"], 2);
+    let said: Arc<Mutex<Vec<Json>>> = Arc::default();
+    let sink = said.clone();
+    st.core
+        .service::<McpService>()
+        .unwrap()
+        .add_listener(Arc::new(move |e: &Json| sink.lock().unwrap().push(e.clone())));
+    ai.ok("notify_operator", json!({"text": "Look left", "level": "warning"}));
+    assert!(said
+        .lock()
+        .unwrap()
+        .contains(&json!({"type": "say", "text": "Look left", "level": "warning"})));
+    let seen = st.vehicle.take();
+    assert!(
+        commands(&seen)
+            .iter()
+            .all(|c| ![192.0, 16.0, 300.0].contains(&c.f("command")))
+            && seen.iter().all(|s| s.name != "MISSION_ITEM_INT"),
+        "a drawing never reaches the vehicle"
+    );
+}
+
+#[test]
+fn the_chat_steers_relative_to_the_vehicle() {
+    let st = Station::start("steer");
+    st.set(all_allowed());
+    let mut ai = st.sign_in(&st.chat_token());
+    let why = ai.refused("move_by", json!({"north_m": 10}));
+    assert!(why.contains("not flying"), "{why}");
+    ai.refused("orbit", json!({"center": {"from": "vehicle"}, "radius_m": 20}));
+    let seen = st.vehicle.take();
+    assert!(
+        commands(&seen)
+            .iter()
+            .all(|c| ![34.0, 192.0, 400.0].contains(&c.f("command"))),
+        "a move on the ground starts nothing"
+    );
+    ai.ok("takeoff", json!({"altitude": 25}));
+    let up = ai.ok("wait_for", json!({"until": "airborne", "timeout_s": 10}));
+    assert_eq!(up["reached"], true, "{up}");
+    let late = ai.ok("wait_for", json!({"until": "altitude", "altitude": 90, "timeout_s": 1}));
+    assert_eq!(late["reached"], false, "{late}");
+    wait_for("the height", Duration::from_secs(5), || {
+        ai.ok("get_vehicle_state", json!({}))["altitude_agl"].as_f64().unwrap() > 20.0
+    });
+    st.vehicle.take();
+
+    let moved = ai.ok("move_by", json!({"forward_m": 40, "up_m": 5}));
+    let go = command(&st.vehicle.take(), 192);
+    assert!((go.f("y") / 1e7 - moved["lon"].as_f64().unwrap()).abs() < 1e-6);
+    assert!(go.f("y") / 1e7 > 11.6389, "forward is east: {go:?}");
+    assert!((go.f("z") - (HOME_AMSL_M + 30.0)).abs() < 0.6, "{go:?}");
+
+    ai.ok("change_altitude", json!({"altitude": 40}));
+    assert!((command(&st.vehicle.take(), 192).f("z") - (HOME_AMSL_M + 40.0)).abs() < 0.6);
+    ai.refused("change_altitude", json!({"altitude": 4000}));
+    st.vehicle.take();
+
+    ai.ok("set_speed", json!({"speed": 6}));
+    let speed = command(&st.vehicle.take(), 178);
+    assert_eq!((speed.f("param1"), speed.f("param2")), (1.0, 6.0));
+
+    ai.ok("set_heading", json!({"heading": 270}));
+    let turn = command(&st.vehicle.take(), 192);
+    assert!(
+        (turn.f("param4") + std::f64::consts::FRAC_PI_2).abs() < 1e-3,
+        "west, in radians: {turn:?}"
+    );
+    assert!((turn.f("x") / 1e7 - 48.0795).abs() < 1e-6, "and it stays where it is");
+    ai.ok("face_place", json!({"place": {"from": "vehicle", "north_m": 100}}));
+    assert!(command(&st.vehicle.take(), 192).f("param4").abs() < 1e-3);
+
+    ai.ok("orbit", json!({"center": {"from": "vehicle", "north_m": 30}, "radius_m": 30, "speed": 3, "clockwise": false, "turns": 2}));
+    let orbit = command(&st.vehicle.take(), 34);
+    assert_eq!((orbit.f("param1"), orbit.f("param2")), (-30.0, 3.0));
+    assert!((orbit.f("param4") - 2.0 * std::f64::consts::TAU).abs() < 1e-3);
+
+    ai.ok("look_at", json!({"place": {"lat": 48.08, "lon": 11.64}}));
+    let roi = command(&st.vehicle.take(), 195);
+    assert!((roi.f("x") / 1e7 - 48.08).abs() < 1e-6, "{roi:?}");
+    ai.call("stop_looking", json!({}));
+    ai.ok("take_photo", json!({}));
+    assert_eq!(command(&st.vehicle.take(), 203).f("param5"), 1.0);
+    ai.ok("set_photo_distance", json!({"distance_m": 15}));
+    assert_eq!(command(&st.vehicle.take(), 206).f("param1"), 15.0);
+    ai.ok("point_gimbal", json!({"pitch_deg": -90, "yaw_frame": "north"}));
+    let g = command(&st.vehicle.take(), 1000);
+    assert_eq!((g.f("param1"), g.f("param5")), (-90.0, 28.0));
+    ai.refused("point_gimbal", json!({"pitch_deg": -120}));
+    ai.ok("set_mission_item", json!({"item": 3}));
+    assert_eq!(command(&st.vehicle.take(), 224).f("param1"), 3.0);
+    ai.ok("resume_mission", json!({}));
+    let mode = command(&st.vehicle.take(), 176);
+    assert_eq!((mode.f("param2"), mode.f("param3")), (4.0, 4.0), "AUTO MISSION");
+}
+
+#[test]
+fn the_chat_plans_patterns_and_flies_drawings() {
+    let st = Station::start("pattern");
+    st.set(all_allowed());
+    let mut ai = st.sign_in(&st.chat_token());
+    let area = json!([
+        {"from": "home", "north_m": 50, "east_m": 0},
+        {"from": "home", "north_m": 250, "east_m": 0},
+        {"from": "home", "north_m": 250, "east_m": 100},
+        {"from": "home", "north_m": 50, "east_m": 100}
+    ]);
+    let grid = json!({"pattern": "grid", "points": area, "spacing_m": 25, "altitude": 40, "speed": 5});
+    let plan = ai.ok("plan_pattern", grid.clone());
+    assert_eq!(plan["points"], 8, "{plan}");
+    let seen = st.vehicle.take();
+    assert!(
+        seen.iter().all(|s| s.name != "MISSION_COUNT"),
+        "a preview sends nothing"
+    );
+    let drawn = ai.ok("list_drawings", json!({}));
+    let ids: Vec<&str> = drawn["shapes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(ids, ["pattern-area", "pattern-path", "pattern-start"]);
+
+    let up = ai.ok("fly_pattern", grid);
+    assert_eq!(up["started"], false, "{up}");
+    let sent: Vec<f64> = st
+        .vehicle
+        .take()
+        .iter()
+        .filter(|s| s.name == "MISSION_ITEM_INT")
+        .map(|s| s.f("command"))
+        .collect();
+    assert_eq!(sent[..2], [178.0, 22.0], "the speed, then the takeoff");
+    assert_eq!(sent.len(), 11);
+    assert_eq!(sent[10], 20.0, "and home at the end");
+    let why = ai.refused(
+        "plan_pattern",
+        json!({"pattern": "grid", "points": area, "spacing_m": 1, "angle_deg": 90, "altitude": 40}),
+    );
+    assert!(why.contains("spacing_m"), "{why}");
+    ai.ok(
+        "plan_pattern",
+        json!({"pattern": "spiral", "center": {"from": "home"}, "radius_m": 60, "spacing_m": 20, "altitude": 30}),
+    );
+    ai.ok(
+        "plan_pattern",
+        json!({"pattern": "circle", "center": {"from": "home"}, "radius_m": 60, "altitude": 30}),
+    );
+
+    ai.ok("draw_on_map", json!({"clear": true, "shapes": [{"kind": "arrow", "id": "leg", "points": [
+        {"from": "home", "north_m": 20}, {"from": "home", "north_m": 80}, {"from": "home", "north_m": 80, "east_m": 60}]}]}));
+    ai.ok("fly_drawing", json!({"id": "leg", "altitude": 20}));
+    let seen = st.vehicle.take();
+    let sent: Vec<f64> = seen
+        .iter()
+        .filter(|s| s.name == "MISSION_ITEM_INT")
+        .map(|s| s.f("command"))
+        .collect();
+    assert_eq!(sent, [22.0, 16.0, 16.0, 16.0]);
+    command(&seen, 300);
+    ai.refused("fly_drawing", json!({"id": "nope", "altitude": 20}));
+
+    // ---- the geofence and the saved missions ------------------------------
+    ai.ok("set_geofence", json!({"points": area}));
+    let fence = ai.ok("get_geofence", json!({}));
+    assert_eq!(fence["polygon"].as_array().unwrap().len(), 4, "{fence}");
+    assert!(st
+        .vehicle
+        .take()
+        .iter()
+        .any(|s| s.name == "MISSION_ITEM_INT" && s.f("command") == 5001.0));
+    let crossed = json!([{"from": "home"}, {"from": "home", "north_m": 100, "east_m": 100},
+                         {"from": "home", "north_m": 100}, {"from": "home", "east_m": 100}]);
+    let why = ai.refused("set_geofence", json!({"points": crossed}));
+    assert!(why.contains("cross"), "{why}");
+    ai.ok("clear_geofence", json!({}));
+    let plan = json!({"items": [{"type": "waypoint", "lat": 48.08, "lon": 11.64, "alt": 20}]});
+    ai.ok("save_mission", json!({"name": "Field", "plan": plan}));
+    let saved = ai.ok("list_saved_missions", json!({}));
+    assert!(saved.to_string().contains("Field"), "{saved}");
+    assert_eq!(
+        ai.ok("get_saved_mission", json!({"name": "Field"}))["plan"]["items"][0]["alt"],
+        20.0
+    );
 }

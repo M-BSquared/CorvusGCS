@@ -13,6 +13,8 @@
 //! [`McpModule`] is the one line an area adds to the core.
 
 pub mod engine;
+pub mod geo;
+mod more;
 pub mod settings;
 pub mod tools;
 
@@ -22,7 +24,7 @@ use std::time::Duration;
 use serde_json::{json, Value};
 
 use crate::core::Core;
-use crate::http::mcp::{McpEndpoint, McpHandle};
+use crate::http::mcp::{Caller, McpEndpoint, McpHandle};
 use crate::http::HttpInfo;
 use crate::json::Map;
 use crate::module::{Module, Registry};
@@ -111,12 +113,21 @@ impl McpEndpoint for Endpoint {
         self.0.authorized(authorization)
     }
 
-    fn handle_post(&self, message: Value, session: Option<&str>) -> (u16, Option<Value>, Vec<(String, String)>) {
-        self.0.handle_post(&message, session)
+    fn assistant(&self, authorization: Option<&str>) -> bool {
+        self.0.assistant_authorized(authorization)
     }
 
-    fn open_stream(&self, session: Option<&str>) -> Option<Box<dyn SseStream>> {
-        let queue = self.0.open_stream(session)?;
+    fn handle_post(
+        &self,
+        message: Value,
+        session: Option<&str>,
+        who: Caller,
+    ) -> (u16, Option<Value>, Vec<(String, String)>) {
+        self.0.handle_post_from(&message, session, who)
+    }
+
+    fn open_stream(&self, session: Option<&str>, who: Caller) -> Option<Box<dyn SseStream>> {
+        let queue = self.0.open_stream(session, who)?;
         Some(Box::new(McpStream {
             svc: self.0.clone(),
             session: session.unwrap_or("").to_string(),
@@ -124,8 +135,8 @@ impl McpEndpoint for Endpoint {
         }))
     }
 
-    fn end_session(&self, session: Option<&str>) -> bool {
-        self.0.end_session(session)
+    fn end_session(&self, session: Option<&str>, who: Caller) -> bool {
+        self.0.end_session_of(session, who)
     }
 }
 
@@ -180,6 +191,8 @@ impl Module for McpModule {
             clock,
             self.timing.unwrap_or_default(),
         );
+        let cell = self.cell.clone();
+        svc.set_closing(Arc::new(move || cell.get().is_none_or(|c| c.is_stopping())));
         core.insert_service(svc.clone());
         core.insert_service(Arc::new(McpHandle(Arc::new(Endpoint(svc)))));
         Ok(())
@@ -236,6 +249,10 @@ fn api_mcp(core: &Core, req: &Request) -> Response {
         "url": url(core),
         "token": if local { svc.token() } else { String::new() },
         "local": local,
+        "assistant": {
+            "on": svc.assistant_on(),
+            "token": if local { svc.assistant_token() } else { "" },
+        },
         "control_max_s": settings::CONTROL_MAX_S,
         "confirm_timeout_s": engine::CONFIRM_TIMEOUT_S,
     }))

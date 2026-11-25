@@ -19,6 +19,9 @@ fn fixture() -> Value {
     serde_json::from_str(include_str!("data/ai_mcp_engine.json")).unwrap()
 }
 
+/// The switches for this Corvus' own AI Chat, and what the status says of it.
+const SWITCHES_SINCE: [&str; 2] = ["assistant", "assistant_ask"];
+
 /// The settings as the Python program knew them: the permissions added since
 /// (`EXTENSIONS`) are left out, because the fixture was frozen without them.
 fn python_part(mut settings: Map<String, Value>) -> Value {
@@ -27,15 +30,17 @@ fn python_part(mut settings: Map<String, Value>) -> Value {
             block.retain(|k, _| !EXTENSIONS.contains(&k.as_str()));
         }
     }
+    settings.retain(|k, _| !SWITCHES_SINCE.contains(&k.as_str()));
     Value::Object(settings)
 }
 
-/// `value` with the permissions added since the freeze taken out wherever a
-/// permission map appears.
+/// `value` with what was added since the freeze taken out: the permissions
+/// wherever a permission map appears, the tools of a list, the AI Chat switches.
 fn without_extensions(value: &Value) -> Value {
     match value {
         Value::Object(o) => Value::Object(
             o.iter()
+                .filter(|(k, _)| !SWITCHES_SINCE.contains(&k.as_str()))
                 .map(|(k, v)| {
                     let mut v = without_extensions(v);
                     if k == "permissions" || k == "confirm" {
@@ -47,7 +52,12 @@ fn without_extensions(value: &Value) -> Value {
                 })
                 .collect(),
         ),
-        Value::Array(a) => Value::Array(a.iter().map(without_extensions).collect()),
+        Value::Array(a) => Value::Array(
+            a.iter()
+                .filter(|v| !(v.get("inputSchema").is_some() && v["name"].as_str().is_some_and(tools::is_extension)))
+                .map(without_extensions)
+                .collect(),
+        ),
         other => other.clone(),
     }
 }
@@ -78,12 +88,17 @@ fn the_settings_are_coerced_made_effective_and_compacted_as_python_does() {
         .unwrap()
         .iter()
         .filter(|p| !EXTENSIONS.contains(&p["id"].as_str().unwrap()))
-        .cloned()
+        .map(|p| {
+            let mut p = p.clone();
+            let names = p["tools"].as_array_mut().unwrap();
+            names.retain(|n| !tools::is_extension(n.as_str().unwrap()));
+            p
+        })
         .collect();
     assert_eq!(Value::Array(catalog), f["catalog"]);
     let built: Vec<Value> = tools::builtin()
         .iter()
-        .filter(|t| !EXTENSIONS.contains(&t.permission))
+        .filter(|t| !tools::is_extension(t.name))
         .map(|t| json!([t.name, t.permission, t.vehicle, t.read_only]))
         .collect();
     assert_eq!(Value::Array(built), f["builtin"]);
@@ -351,4 +366,93 @@ fn shutdown_refuses_what_waits_and_joins_the_control_thread() {
         .handle_post(&json!({"jsonrpc": "2.0", "id": 1, "method": "ping"}), None)
         .1
         .is_some());
+}
+
+/// A vehicle whose autopilot turns by CONDITION_YAW and has no orbit of its own
+/// (ArduPilot's command list), flying at 48.0, 11.0, 20 m.
+fn without_orbit(ground: bool, class: &str) -> Rig {
+    let r = rig(&json!({
+        "GET /api/state": [200, {"connected": true, "armed": true, "landed_state": 2, "position": [11.0, 48.0],
+                                 "home": [11.0, 48.0], "altitude_agl": 20.0, "heading": 0.0}],
+        "GET /api/mavlink/capabilities": [200, {"ground": ground, "vehicle": class, "mission_mode": "AUTO",
+            "commands": ["CONDITION_YAW", "DO_REPOSITION", "DO_CHANGE_SPEED"]}],
+    }));
+    *r.raw.lock().unwrap() = Some(json!({
+        "enabled": true, "permissions": {"goto": true, "flight": true, "mission": true},
+        "confirm": {"goto": false, "flight": false, "mission": false}}));
+    r
+}
+
+fn posted(r: &Rig) -> Vec<Value> {
+    let calls = std::mem::take(&mut *r.calls.lock().unwrap());
+    calls.into_iter().filter(|c| c[0] == "POST").collect()
+}
+
+#[test]
+fn what_the_capabilities_lack_is_flown_another_way_or_refused() {
+    let r = without_orbit(false, "copter");
+    let call = |name: &str, args: Value| r.svc.call_tool(name, args.as_object().unwrap(), None).unwrap();
+    let ok = |name: &str, args: Value| {
+        let out = call(name, args);
+        assert_eq!(out["isError"], false, "{name}: {out}");
+        out
+    };
+    ok(
+        "orbit",
+        json!({"center": {"from": "vehicle", "north_m": 50}, "radius_m": 50, "turns": 2}),
+    );
+    let sent = posted(&r);
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0][1], "/api/mavlink/gotopoints", "the circle as a route");
+    let points = sent[0][2]["points"].as_array().unwrap();
+    assert_eq!(points.len(), 49);
+    assert!(points.iter().all(|p| p["alt_agl"] == 20.0));
+    assert!(
+        (points[0]["lat"].as_f64().unwrap() - 48.0).abs() < 1e-5,
+        "it begins where the vehicle is"
+    );
+    let out = call(
+        "orbit",
+        json!({"center": {"from": "vehicle"}, "radius_m": 50, "turns": 0}),
+    );
+    assert_eq!(out["isError"], true, "without end it cannot");
+    assert!(posted(&r).is_empty());
+
+    ok("set_heading", json!({"heading": -90}));
+    assert_eq!(
+        posted(&r)[0][2],
+        json!({"command": "CONDITION_YAW", "params": [270.0, 0, 0, 0, 0, 0, 0]})
+    );
+    ok("resume_mission", json!({}));
+    assert_eq!(posted(&r)[0], json!(["POST", "/api/mavlink/mode", {"mode": "AUTO"}]));
+    ok("move_by", json!({"right_m": 10, "up_m": 2}));
+    let to = posted(&r)[0][2]["points"][0].clone();
+    assert!(to["lon"].as_f64().unwrap() > 11.0 && to["alt_agl"] == 22.0, "{to}");
+}
+
+#[test]
+fn a_plane_and_a_rover_are_not_asked_what_they_cannot_do() {
+    let plane = without_orbit(false, "plane");
+    let call = |r: &Rig, name: &str, args: Value| r.svc.call_tool(name, args.as_object().unwrap(), None).unwrap();
+    assert_eq!(call(&plane, "set_heading", json!({"heading": 10}))["isError"], true);
+    call(&plane, "set_speed", json!({"speed": 18}));
+    let sent = posted(&plane);
+    assert_eq!(sent.len(), 1, "only the speed went out");
+    assert_eq!(sent[0][2]["params"][0], 0, "a plane's speed is its airspeed");
+
+    let rover = without_orbit(true, "rover");
+    for (name, args) in [
+        ("set_heading", json!({"heading": 10})),
+        ("change_altitude", json!({"altitude": 10})),
+    ] {
+        assert_eq!(call(&rover, name, args)["isError"], true, "{name}");
+    }
+    assert!(posted(&rover).is_empty());
+    call(&rover, "move_by", json!({"north_m": 10}));
+    let sent = posted(&rover);
+    assert!(
+        sent[0][2]["points"][0].get("alt_agl").is_none(),
+        "a rover is given no height: {}",
+        sent[0]
+    );
 }

@@ -28,9 +28,20 @@ pub const CONTROL_MAX_S: f64 = 5.0;
 
 /// The permissions added after the Python program's catalog was frozen. The
 /// fixtures hold the first ten and nothing else, so tests compare those.
-pub const EXTENSIONS: [&str; 3] = ["tak_read", "tak_send", "tak_setup"];
+pub const EXTENSIONS: [&str; 6] = ["tak_read", "tak_send", "tak_setup", "map", "geofence", "camera"];
 
-pub const PERMISSIONS: [Permission; 13] = [
+/// The switches that are not a permission, with what they are when the file
+/// does not say. `assistant` lets the AI Chat plugin of this Corvus sign in
+/// while the server for other programs is off, `assistant_ask` has Corvus ask
+/// the operator, every time, for what is switched off below.
+const SWITCHES: [(&str, bool); 4] = [
+    ("enabled", false),
+    ("fleet", false),
+    ("assistant", true),
+    ("assistant_ask", true),
+];
+
+pub const PERMISSIONS: [Permission; 16] = [
     Permission {
         id: "telemetry",
         label: "Read telemetry and status",
@@ -135,6 +146,30 @@ pub const PERMISSIONS: [Permission; 13] = [
         default_on: false,
         default_confirm: true,
     },
+    Permission {
+        id: "map",
+        label: "Draw on the map",
+        hint: "Lines, arrows, areas, circles, markers and text on the Home map, moving the map there, a message to you, and the place search, which sends the searched name to OpenStreetMap. Nothing of it reaches the vehicle.",
+        writes: false,
+        default_on: true,
+        default_confirm: false,
+    },
+    Permission {
+        id: "geofence",
+        label: "Change the geofence",
+        hint: "Replace the area of the geofence here and on the vehicle, or take it off the vehicle.",
+        writes: true,
+        default_on: false,
+        default_confirm: true,
+    },
+    Permission {
+        id: "camera",
+        label: "Camera and gimbal",
+        hint: "Look at a point, aim the gimbal, take photos. A multicopter without a gimbal may turn to look at a point.",
+        writes: true,
+        default_on: false,
+        default_confirm: true,
+    },
 ];
 
 pub fn permission(id: &str) -> Option<&'static Permission> {
@@ -145,7 +180,7 @@ pub fn permission(id: &str) -> Option<&'static Permission> {
 pub fn coerce_settings(raw: &Value) -> Option<Map> {
     let raw = raw.as_object()?;
     let mut out = Map::new();
-    for key in ["enabled", "fleet"] {
+    for (key, _) in SWITCHES {
         if let Some(Value::Bool(b)) = raw.get(key) {
             out.insert(key.into(), (*b).into());
         }
@@ -195,8 +230,9 @@ pub fn effective_settings(raw: Option<&Value>) -> Map {
         confirms.insert(p.id.into(), c.into());
     }
     let mut out = Map::new();
-    out.insert("enabled".into(), saved.get("enabled").cloned().unwrap_or(json!(false)));
-    out.insert("fleet".into(), saved.get("fleet").cloned().unwrap_or(json!(false)));
+    for (key, default) in SWITCHES {
+        out.insert(key.into(), saved.get(key).cloned().unwrap_or(json!(default)));
+    }
     out.insert("permissions".into(), Value::Object(permissions));
     out.insert("confirm".into(), Value::Object(confirms));
     out.insert("plugins".into(), Value::Object(block("plugins")));
@@ -207,7 +243,7 @@ pub fn effective_settings(raw: Option<&Value>) -> Map {
 pub fn compact_settings(settings: &Map) -> Option<Map> {
     let defaults = effective_settings(None);
     let mut out = Map::new();
-    for key in ["enabled", "fleet"] {
+    for (key, _) in SWITCHES {
         if settings.get(key) != defaults.get(key) {
             out.insert(key.into(), settings.get(key).cloned().unwrap_or(Value::Null));
         }
@@ -251,6 +287,25 @@ pub fn level(settings: &Map, permission: &str) -> &'static str {
         "confirm"
     } else {
         "allow"
+    }
+}
+
+/// Whether a switch that is not a permission is on.
+pub fn switched(settings: &Map, key: &str) -> bool {
+    settings.get(key) == Some(&Value::Bool(true))
+}
+
+/// The names of those switches, for a patch of the settings.
+pub fn switches() -> impl Iterator<Item = &'static str> {
+    SWITCHES.iter().map(|(k, _)| *k)
+}
+
+/// [`level`] for the AI Chat plugin: the operator is at the window it runs in,
+/// so what is off is asked for instead of refused, as long as they allow that.
+pub fn assistant_level(settings: &Map, permission: &str) -> &'static str {
+    match level(settings, permission) {
+        "off" if switched(settings, "assistant_ask") => "confirm",
+        other => other,
     }
 }
 

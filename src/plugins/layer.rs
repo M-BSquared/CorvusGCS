@@ -11,7 +11,9 @@ use super::MapEvent;
 /// Every plugin's shapes, flat, with what the pointer has done to them.
 #[derive(Default)]
 pub struct Layer {
+    /// The plugins' shapes, then what an AI client drew.
     shapes: Vec<Shape>,
+    plugins: usize,
     /// The plugin waiting for a click on the map.
     pub pick: Option<&'static str>,
     events: Vec<(&'static str, MapEvent)>,
@@ -19,7 +21,16 @@ pub struct Layer {
 
 impl Layer {
     pub fn set(&mut self, shapes: Vec<Shape>) {
+        let drawn = self.shapes.split_off(self.plugins.min(self.shapes.len()));
+        self.plugins = shapes.len();
         self.shapes = shapes;
+        self.shapes.extend(drawn);
+    }
+
+    /// What an AI client drew.
+    pub fn set_drawn(&mut self, shapes: Vec<Shape>) {
+        self.shapes.truncate(self.plugins);
+        self.shapes.extend(shapes);
     }
 
     pub fn shapes(&self) -> &[Shape] {

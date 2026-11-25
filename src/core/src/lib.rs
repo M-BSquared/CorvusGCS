@@ -83,6 +83,7 @@ pub mod bundle;
 pub mod clock;
 pub mod config;
 pub mod dialect;
+pub mod drawings;
 pub mod firmware;
 pub mod fleet;
 pub mod forwarder;
@@ -122,6 +123,7 @@ pub mod settings;
 mod unported;
 
 pub use crate::core::{Core, CoreBuilder, Options};
+pub use crate::drawings::{DrawingsModule, DrawingsService};
 pub use crate::events::{Binding, Topic};
 pub use crate::firmware::{Firmware, FirmwareModule};
 pub use crate::http::mcp::{McpEndpoint, McpHandle, TokenStore};

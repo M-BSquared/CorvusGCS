@@ -62,6 +62,7 @@ impl Backend {
             .module(corvus_core::PluginsModule::new())
             .module(corvus_core::McpModule::new())
             .module(corvus_core::TakModule::new())
+            .module(corvus_core::DrawingsModule::new())
             .module(corvus_core::SetupSchemasModule::new())
             .module(corvus_core::MapDataModule::new())
             .module(corvus_core::Http::new(corvus_core::HttpOptions {

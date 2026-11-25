@@ -117,13 +117,14 @@ pub const FONTS: [Entry; 2] = [
     },
 ];
 
-pub const RUNTIME: [Entry; 14] = [
+pub const RUNTIME: [Entry; 15] = [
     e("MAVLink message definitions", "MIT", "The common and dialect message sets, compiled into corvus_link at build time.", "https://mavlink.io/"),
     e("Rust standard library", "MIT / Apache 2.0", "The runtime of the whole program.", "https://www.rust-lang.org/"),
     e("RustCrypto sha2", "MIT / Apache 2.0", "SHA-256 for MAVLink 2 message signing.", "https://github.com/RustCrypto/hashes"),
     e("socket2, libc, windows-sys, indexmap", "MIT / Apache 2.0", "Sockets and system calls under the links, and the ordered parameter cache.", "https://github.com/rust-lang/socket2"),
     e("serialport-rs", "MPL 2.0", "Serial port enumeration on every platform and the serial link on Windows. Unmodified; source at the link. Its dependency unescaper is offered under MIT or GPL 3.0 and used here under MIT.", "https://github.com/serialport/serialport-rs"),
     e("russh", "Apache 2.0", "The SSH client behind the terminal tab, one shot commands and the companion computer power controls. Pure Rust, so no OpenSSL or libssh2 ships.", "https://github.com/Eugeny/russh"),
+    e("remoteid", "MIT", "Optional, only in builds made with the remoteid-model feature: the ASTM F3411 and ASD-STAN enum spans and the ODID epoch, checked against the built in copy. By Matt Busel.", "https://github.com/Mattbusel/remoteid"),
     e("tokio", "MIT", "A private single threaded runtime for each SSH session.", "https://tokio.rs/"),
     e("rustls and ring", "Apache 2.0 or ISC or MIT / ISC and Apache 2.0", "TLS for the map tiles, the place search, the update check and secure WebSocket links, with the system's own certificate store.", "https://github.com/rustls/rustls"),
     e("ureq and webpki-roots", "MIT or Apache 2.0 / CDLA Permissive 2.0", "The HTTPS client for tiles, place search and the update check, and the Mozilla root certificate list it carries.", "https://github.com/algesten/ureq"),

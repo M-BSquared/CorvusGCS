@@ -110,8 +110,9 @@ window. Everything is torn down on one normal exit path.
 
 MCP (Model Context Protocol, Streamable HTTP, `src/core/src/mcp`,
 `src/core/src/http/mcp.rs`, and the window's half in `src/mcp`): off by
-default, loopback only, bearer token in `~/.corvus/mcp-token`, one operator
-switch per kind of act. Every tool runs an existing route in process, never the
+default for other programs, loopback only, bearer token in `~/.corvus/mcp-token`,
+one operator switch per kind of act. The AI Chat plugin signs in by itself with a
+token of its own (`Caller::Assistant`) and is asked, not refused, for what is off. Every tool runs an existing route in process, never the
 link directly, so an MCP tool cannot do what a button could not. Plugins add
 tools from the interface. A new route that changes the vehicle is not
 reachable over MCP until a tool and its permission are added there on purpose.
