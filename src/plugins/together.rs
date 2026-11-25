@@ -159,7 +159,8 @@ fn rig(tag: &str, only_tak: bool, shared: bool, sends: bool) -> Rig {
     if !only_tak {
         testlib::package(&packages, "map-entities", "corvus_plugin_map_entities");
     }
-    let reg = Registry::with_packages(&testlib::sandbox(), server, &ctx, &json!({}), Vec::new(), &packages);
+    let mut reg = Registry::with_packages(&testlib::sandbox(), server, &ctx, &json!({}), Vec::new(), &packages);
+    reg.finish_preparing();
     assert_eq!(reg.refused, []);
     Rig {
         ctx,

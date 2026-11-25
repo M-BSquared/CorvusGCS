@@ -18,6 +18,7 @@ mod view;
 use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 use std::io::Read;
+#[cfg(test)]
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -33,6 +34,7 @@ use corvus_api::wire::{self, Delivery, Effect, Maybe, Op, Ret};
 use corvus_package::Manifest;
 use eframe::egui;
 use serde_json::{json, Value};
+use wasmtime::Module;
 
 use crate::net::http::{self, Server};
 use crate::net::stream::Stream;
@@ -125,18 +127,25 @@ fn leak(text: &str) -> &'static str {
 }
 
 impl WasmPlugin {
-    /// Starts the module `bytes`, whose manifest the caller has read and
-    /// found fit for this version. `cache` is the folder its compiled form is
-    /// kept in.
+    /// [`start`](Self::start) of the module `bytes`, compiled now or taken from
+    /// `cache`, the folder its compiled form is kept in.
+    #[cfg(test)]
     pub fn load(
         sandbox: &Arc<Sandbox>,
         manifest: &Manifest,
         bytes: &[u8],
         cache: Option<&Path>,
     ) -> Result<WasmPlugin, String> {
+        let module = runtime::compiled(sandbox, bytes, cache)?;
+        WasmPlugin::start_module(sandbox, manifest, &module)
+    }
+
+    /// Starts a compiled module, whose manifest the caller has read and found fit
+    /// for this version.
+    pub fn start_module(sandbox: &Arc<Sandbox>, manifest: &Manifest, module: &Module) -> Result<WasmPlugin, String> {
         let granted = Granted::new(&manifest.permissions);
         let files = granted.has(permissions::FILES);
-        let mut instance = Instance::start(sandbox, &manifest.id, bytes, files, cache)?;
+        let mut instance = Instance::start(sandbox, &manifest.id, module, files)?;
         let hello = instance.call(&wire::Call {
             now: now(),
             op: Some(Maybe::Known(Op::Init(wire::Init {

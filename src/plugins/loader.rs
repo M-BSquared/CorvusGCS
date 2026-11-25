@@ -22,6 +22,7 @@ use std::time::Duration;
 
 use corvus_package::Manifest;
 use serde_json::Value;
+use wasmtime::Module;
 
 use super::wasm::{runtime, Sandbox, WasmPlugin};
 
@@ -68,6 +69,8 @@ pub struct Package {
 pub struct Found {
     pub packages: Vec<Package>,
     pub refused: Vec<Refused>,
+    /// Good packages that have to be compiled before they can start.
+    pub waiting: Vec<Prepared>,
 }
 
 fn home() -> Option<PathBuf> {
@@ -107,8 +110,25 @@ pub fn before(dir: &Path) -> BTreeSet<String> {
         .collect()
 }
 
-/// Loads every package under `dir` but those in `taken`, which the program has already.
+/// Loads every package under `dir` but those in `taken`, which the program has already,
+/// compiling what has to be compiled.
 pub fn installed(sandbox: &Arc<Sandbox>, dir: &Path, taken: &[&str]) -> Found {
+    let mut found = scan(sandbox, dir, taken);
+    for prepared in std::mem::take(&mut found.waiting) {
+        match prepared.start(sandbox) {
+            Ok(p) => found.packages.push(p),
+            Err(r) => found.refused.push(r),
+        }
+    }
+    found.packages.sort_by(|a, b| a.manifest.id.cmp(&b.manifest.id));
+    found.refused.sort_by(|a, b| a.id.cmp(&b.id));
+    found
+}
+
+/// What can be had of `dir` at once: the packages whose compiled form is kept are started, and
+/// those that have to be compiled first, which takes too long for the window's thread, come back
+/// as [`Found::waiting`].
+pub fn scan(sandbox: &Arc<Sandbox>, dir: &Path, taken: &[&str]) -> Found {
     let mut found = Found::default();
     if OFF.load(Ordering::Relaxed) {
         return found;
@@ -137,8 +157,12 @@ pub fn installed(sandbox: &Arc<Sandbox>, dir: &Path, taken: &[&str]) -> Found {
             });
             continue;
         }
-        match load_package(sandbox, dir, &id) {
-            Ok(p) => found.packages.push(p),
+        match prepare(sandbox, dir, &id) {
+            Ok(p) if p.module.is_none() => found.waiting.push(p),
+            Ok(p) => match p.start(sandbox) {
+                Ok(p) => found.packages.push(p),
+                Err(r) => found.refused.push(r),
+            },
             Err(r) => found.refused.push(r),
         }
     }
@@ -238,8 +262,66 @@ pub fn needs_newer(manifest: &Manifest) -> Option<String> {
     (!manifest.fits(have)).then(|| format!("it needs Corvus GCS {} or newer, this is {have}", manifest.min_corvus))
 }
 
+/// A package that has been checked and is this program's to run, compiled or not yet.
+pub struct Prepared {
+    pub manifest: Manifest,
+    pub sha256: String,
+    bytes: Vec<u8>,
+    folder: PathBuf,
+    module: Option<Module>,
+}
+
+impl Prepared {
+    pub fn id(&self) -> &str {
+        &self.manifest.id
+    }
+
+    fn refused(&self, why: String) -> Refused {
+        Refused {
+            id: self.manifest.id.clone(),
+            why: format!("it could not be started: {why}"),
+            needs_newer: false,
+        }
+    }
+
+    /// Compiles the module unless that is done, and keeps the result beside it. This is the
+    /// part that takes long; any thread may do it.
+    pub fn compile(&mut self, sandbox: &Sandbox) -> Result<(), Refused> {
+        if self.module.is_none() {
+            let module = runtime::compiled(sandbox, &self.bytes, Some(&self.folder)).map_err(|e| self.refused(e))?;
+            self.module = Some(module);
+        }
+        Ok(())
+    }
+
+    /// Whether the package is still the one installed: it may have been updated or removed while
+    /// it was compiled.
+    pub fn still_installed(&self) -> bool {
+        read_manifest(&self.folder).is_ok_and(|m| m.sha256 == self.sha256 || m.sha256.is_empty())
+    }
+
+    /// Starts the plugin, compiling it first if that is still to do.
+    pub fn start(mut self, sandbox: &Arc<Sandbox>) -> Result<Package, Refused> {
+        self.compile(sandbox)?;
+        let Some(module) = &self.module else {
+            return Err(self.refused("there is no compiled module".into()));
+        };
+        let plugin = WasmPlugin::start_module(sandbox, &self.manifest, module).map_err(|e| self.refused(e))?;
+        Ok(Package {
+            plugin,
+            manifest: self.manifest,
+            sha256: self.sha256,
+        })
+    }
+}
+
 /// Loads the package `id` of `dir`: its module, checked, started in the sandbox.
 pub fn load_package(sandbox: &Arc<Sandbox>, dir: &Path, id: &str) -> Result<Package, Refused> {
+    prepare(sandbox, dir, id)?.start(sandbox)
+}
+
+/// Checks the package `id` of `dir`, and takes its compiled form when one is kept.
+pub fn prepare(sandbox: &Sandbox, dir: &Path, id: &str) -> Result<Prepared, Refused> {
     let refuse = |why: String| Refused {
         id: id.to_string(),
         why,
@@ -278,12 +360,13 @@ pub fn load_package(sandbox: &Arc<Sandbox>, dir: &Path, id: &str) -> Result<Pack
     }
     // No more than the operator saw when it was installed, whatever the module asks for.
     manifest.permissions.retain(|p| installed.permissions.contains(p));
-    let plugin = WasmPlugin::load(sandbox, &manifest, &bytes, Some(&folder))
-        .map_err(|e| refuse(format!("it could not be started: {e}")))?;
-    Ok(Package {
-        plugin,
+    let module = runtime::kept(sandbox, &bytes, &folder);
+    Ok(Prepared {
         manifest,
         sha256,
+        bytes,
+        folder,
+        module,
     })
 }
 

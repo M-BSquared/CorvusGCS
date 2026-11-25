@@ -381,9 +381,14 @@ go in as MessagePack, effects come out.
   environment: of WASI a module gets a clock, random numbers and a line to the log, everything else
   answers "not allowed". Memory is capped at 512 MB and a call that runs longer than a few seconds
   is cut off. A trap, a panic or a loop stops that plugin; the program carries on.
-* **Compiling** takes a good part of a second a module. It happens while a plugin is installed, and
-  the result is kept beside it (`*.cwasm`, with its checksum), named after the module and the
-  runtime. After an update of the runtime the first start compiles once more.
+* **Compiling** takes a good part of a second a module, longer on a slow computer, and never on
+  the window's thread. It happens while a plugin is installed, and the result is kept beside it
+  (`*.cwasm`, with its checksum), named after the module and the runtime. A start takes what is
+  kept at once. What is stale or damaged, after an update of the runtime, is compiled by one thread
+  (`src/plugins/preparing.rs`) while the window runs, and each plugin starts as it gets ready: the
+  PLUGINS tab says so meanwhile. Such a plugin is appended to the registry's entries and sorted
+  only for display, since tabs and dialogs hold an entry by its index. Closing waits for the module
+  at hand and begins no other.
 
 ### Permissions
 

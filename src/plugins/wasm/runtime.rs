@@ -8,6 +8,7 @@
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -343,6 +344,9 @@ fn linker(engine: &Engine, module: &Module) -> Result<Linker<State>, String> {
 /// The ending of a compiled module kept beside the module it was made of.
 pub const COMPILED: &str = "cwasm";
 
+/// Tells apart the half written files of two threads that compile at once.
+static PARTS: AtomicU64 = AtomicU64::new(0);
+
 /// The name of the compiled form of `bytes`: of the module, and of what compiles it, so one made
 /// by another version of the runtime or for another processor is never taken.
 fn compiled_name(sandbox: &Sandbox, bytes: &[u8]) -> String {
@@ -353,20 +357,28 @@ fn compiled_name(sandbox: &Sandbox, bytes: &[u8]) -> String {
     format!("{}-{:016x}.{COMPILED}", &module[..16], hasher.finish())
 }
 
-/// `bytes` as machine code. Compiling takes most of a second, so with `cache`, the folder of the
-/// installed plugin, the result is kept and the next start reads it. What is kept begins with the
-/// checksum of the rest, so a file cut short or damaged is thrown away and made again.
+/// The compiled form of `bytes` kept in `folder`, when there is a good one. Reading it takes a
+/// few milliseconds.
+pub fn kept(sandbox: &Sandbox, bytes: &[u8], folder: &Path) -> Option<Module> {
+    read_compiled(sandbox, &folder.join(compiled_name(sandbox, bytes)))
+}
+
+/// `bytes` as machine code. Compiling takes most of a second, longer on a slow computer, so with
+/// `cache`, the folder of the installed plugin, the result is kept and the next start reads it
+/// ([`kept`]). What is kept begins with the checksum of the rest, so a file cut short or damaged
+/// is thrown away and made again.
 pub fn compiled(sandbox: &Sandbox, bytes: &[u8], cache: Option<&Path>) -> Result<Module, String> {
-    let kept = cache.map(|folder| folder.join(compiled_name(sandbox, bytes)));
-    if let Some(module) = kept.as_deref().and_then(|p| read_compiled(sandbox, p)) {
+    if let Some(module) = cache.and_then(|folder| self::kept(sandbox, bytes, folder)) {
         return Ok(module);
     }
+    let kept = cache.map(|folder| folder.join(compiled_name(sandbox, bytes)));
     let module = Module::from_binary(&sandbox.engine, bytes)
         .map_err(|e| format!("it is not a module this program can run: {e}"))?;
     if let (Some(path), Ok(code)) = (kept, module.serialize()) {
         let mut file = corvus_package::sha256_hex(&code).into_bytes();
         file.extend_from_slice(&code);
-        let part = path.with_extension(format!("{}.tmp", std::process::id()));
+        let nth = PARTS.fetch_add(1, Ordering::Relaxed);
+        let part = path.with_extension(format!("{}-{nth}.tmp", std::process::id()));
         if std::fs::write(&part, file)
             .and_then(|()| std::fs::rename(&part, &path))
             .is_err()
@@ -403,17 +415,9 @@ pub struct Instance {
 }
 
 impl Instance {
-    /// Starts `bytes`, compiled now or taken from `cache` (see [`compiled`]). `files` is whether
-    /// it may ask for files.
-    pub fn start(
-        sandbox: &Arc<Sandbox>,
-        id: &str,
-        bytes: &[u8],
-        files: bool,
-        cache: Option<&Path>,
-    ) -> Result<Instance, String> {
-        let module = compiled(sandbox, bytes, cache)?;
-        let linker = linker(&sandbox.engine, &module)?;
+    /// Starts a [compiled] module. `files` is whether it may ask for files.
+    pub fn start(sandbox: &Arc<Sandbox>, id: &str, module: &Module, files: bool) -> Result<Instance, String> {
+        let linker = linker(&sandbox.engine, module)?;
         let limits = StoreLimitsBuilder::new()
             .memory_size(MEMORY_MAX)
             .memories(1)
@@ -438,7 +442,7 @@ impl Instance {
         store.epoch_deadline_trap();
         store.set_epoch_deadline(FIRST_TICKS);
         let instance = linker
-            .instantiate(&mut store, &module)
+            .instantiate(&mut store, module)
             .map_err(|e| format!("it could not be started: {e}"))?;
         // A library of WASI sets itself up in `_initialize` before anything else of it runs.
         if let Ok(init) = instance.get_typed_func::<(), ()>(&mut store, "_initialize") {

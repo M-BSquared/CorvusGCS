@@ -16,6 +16,7 @@
 
 pub mod layer;
 pub mod loader;
+mod preparing;
 mod ssh_setup;
 pub mod store;
 #[cfg(test)]
@@ -111,6 +112,8 @@ pub struct Registry {
     packaged: Vec<(String, String)>,
     /// What runs the installed modules; `None` where it does not start.
     sandbox: Option<Arc<wasm::Sandbox>>,
+    /// The installed plugins still being compiled.
+    preparing: Option<preparing::Preparing>,
 }
 
 /// What was a plugin and is a part of the program now: shown where it belongs, on no list of
@@ -120,7 +123,8 @@ pub const PARTS: [&str; 1] = [crate::panel::launcher::ID];
 impl Registry {
     pub fn new(server: Server, ctx: &egui::Context, config: &Value) -> Registry {
         let sandbox = wasm::Sandbox::new().inspect_err(|e| eprintln!("plugins: {e}")).ok();
-        if let Some(src) = store::Source::real(sandbox.clone()) {
+        // Without the sandbox: what changed is compiled with the rest, not before the window.
+        if let Some(src) = store::Source::real(None) {
             store::follow_beside(&src);
         }
         let own: Vec<Box<dyn Plugin>> = vec![Box::new(crate::panel::launcher::SshLauncher::default())];
@@ -145,7 +149,7 @@ impl Registry {
         dir: &std::path::Path,
     ) -> Registry {
         let taken: Vec<&str> = plugins.iter().map(|p| p.info().id).collect();
-        let found = loader::installed(sandbox, dir, &taken);
+        let found = loader::scan(sandbox, dir, &taken);
         for r in &found.refused {
             eprintln!("plugin package {} not loaded: {}", r.id, r.why);
         }
@@ -168,6 +172,9 @@ impl Registry {
                 .push(("Plugins".into(), "warning", NEEDS_NEWER.into()));
         }
         registry.refused = found.refused;
+        if !found.waiting.is_empty() {
+            registry.preparing = Some(preparing::Preparing::start(sandbox.clone(), ctx, found.waiting));
+        }
         registry
     }
 
@@ -206,6 +213,7 @@ impl Registry {
             refused: Vec::new(),
             packaged: Vec::new(),
             sandbox: None,
+            preparing: None,
         }
     }
 
@@ -237,16 +245,10 @@ impl Registry {
             };
             match loader::load_package(&sandbox, &dir, &id) {
                 Ok(p) => {
-                    self.packaged.push((p.manifest.id, p.sha256));
-                    let mut e = Entry::of(Box::new(p.plugin));
-                    // What was saved for it, from an earlier time it was installed.
-                    if let Some(s) = self.backend.as_ref().and_then(|b| b.get("settings")?.get(&id)) {
-                        if s.is_object() {
-                            e.saved = s.clone();
-                        }
+                    if let Some(preparing) = &mut self.preparing {
+                        preparing.forget(&id);
                     }
-                    self.entries.push(e);
-                    self.shapes_dirty = true;
+                    self.add(p);
                     self.store.say(format!("{id} {version} is installed and ready."), true);
                 }
                 Err(r) => {
@@ -256,6 +258,83 @@ impl Registry {
                 }
             }
         }
+    }
+
+    /// Takes a plugin that has just started into the registry. It goes to the end of the entries,
+    /// whatever its place among the cards: tabs and dialogs hold on to an entry by its index.
+    fn add(&mut self, package: loader::Package) {
+        let id = package.manifest.id;
+        let mut e = Entry::of(Box::new(package.plugin));
+        // What was saved for it, now or at an earlier time it was installed.
+        if let Some(s) = self.backend.as_ref().and_then(|b| b.get("settings")?.get(&id)) {
+            if s.is_object() {
+                e.saved = s.clone();
+            }
+        }
+        self.refused.retain(|r| r.id != id);
+        self.packaged.push((id, package.sha256));
+        self.entries.push(e);
+        self.shapes_dirty = true;
+    }
+
+    /// Starts the plugins that have been compiled since the last frame.
+    fn poll_preparing(&mut self) {
+        let Some(preparing) = &mut self.preparing else {
+            return;
+        };
+        let ready = preparing.take();
+        if preparing.done() {
+            self.preparing = None;
+        }
+        for result in ready {
+            let Some(sandbox) = self.sandbox.clone() else {
+                return;
+            };
+            let started = match result {
+                // Installed again, or removed, while it was compiled.
+                Ok(p) if self.index_of(p.id()).is_some() || !p.still_installed() => continue,
+                Ok(p) => p.start(&sandbox),
+                Err(refused) => Err(refused),
+            };
+            match started {
+                Ok(package) => self.add(package),
+                Err(refused) => {
+                    eprintln!("plugin package {} not loaded: {}", refused.id, refused.why);
+                    self.refused.push(refused);
+                }
+            }
+        }
+    }
+
+    /// Whether installed plugin `id` is still being compiled.
+    pub fn is_preparing(&self, id: &str) -> bool {
+        self.preparing.as_ref().is_some_and(|p| p.is_waiting_for(id))
+    }
+
+    /// Whether any installed plugin is still to come.
+    pub fn preparing(&self) -> bool {
+        self.preparing.is_some()
+    }
+
+    /// Waits for every plugin to be there, as a frame after another would.
+    #[cfg(test)]
+    pub fn finish_preparing(&mut self) {
+        let end = std::time::Instant::now() + std::time::Duration::from_secs(600);
+        while self.preparing.is_some() {
+            assert!(std::time::Instant::now() < end, "the plugins were not prepared");
+            self.poll_preparing();
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+    }
+
+    /// The entries as the operator sees them in order: by their `order`, then by name.
+    fn by_place(&self) -> Vec<usize> {
+        let mut all: Vec<usize> = (0..self.entries.len()).collect();
+        all.sort_by_key(|&i| {
+            let info = self.entries[i].info;
+            (info.order, info.name.to_lowercase())
+        });
+        all
     }
 
     /// The checksum of the module plugin `id` runs from, when it came from an installed package
@@ -287,7 +366,7 @@ impl Registry {
 
     /// The plugins that have a tab, in order.
     pub fn tabbed(&self) -> Vec<usize> {
-        (0..self.entries.len()).filter(|&i| self.in_tab(i)).collect()
+        self.by_place().into_iter().filter(|&i| self.in_tab(i)).collect()
     }
 
     /// Whether `i` is a part of the program rather than a plugin.
@@ -385,6 +464,7 @@ impl Registry {
         }
         self.poll_saves();
         self.poll_store(ctx);
+        self.poll_preparing();
         if !self.loaded {
             return;
         }
@@ -694,6 +774,8 @@ impl Registry {
 
     /// Ends every plugin's view.
     pub fn shut_down(&mut self, ctx: &egui::Context, state: &Value) {
+        // Waits for the module being compiled and starts no other.
+        self.preparing = None;
         for i in 0..self.entries.len() {
             self.end_live(i, ctx, state);
         }

@@ -421,6 +421,7 @@ impl SettingsPage {
             .map(|r| r.id.clone())
             .collect();
         let waiting = registry.store.waiting_for_download();
+        let preparing: Vec<bool> = rows.iter().map(|r| registry.is_preparing(&r.id)).collect();
         let busy = registry.store.busy();
         let problem = registry.store.problem().map(str::to_string);
         let loading = registry.store.loading();
@@ -450,6 +451,7 @@ impl SettingsPage {
                         looking: loading,
                         busy,
                         waiting: row.installed.is_none() && waiting.contains(&row.id),
+                        preparing: preparing[i],
                     };
                     if let Some(install) = store_row(ui, f, row, &now, i == 0) {
                         act = Some((install, row.id.clone()));
@@ -534,6 +536,8 @@ struct Now<'a> {
     busy: bool,
     /// Asked for and not downloaded yet.
     waiting: bool,
+    /// Installed, and still being compiled.
+    preparing: bool,
 }
 
 /// One plugin of the store. `Some(true)` when Install or Update was pressed, `Some(false)` for Remove.
@@ -567,6 +571,7 @@ fn store_row(
         (Some(m), _) if row.update_available() => format!("{} \u{b7} needs an update", m.version),
         (Some(m), Some(sha)) if sha != m.sha256 => format!("{} \u{b7} runs after the next start", m.version),
         (Some(m), Some(_)) => format!("{} \u{b7} installed", m.version),
+        (Some(m), None) if now.preparing => format!("{} \u{b7} being prepared", m.version),
         (Some(m), None) => format!("{} \u{b7} not loaded", m.version),
     };
     let o = style::galley_mono(ui, &crate::i18n::tr_joined(&state), 12.0, style::text_3());

@@ -22,6 +22,8 @@ const GRID_GAP: f32 = 10.0;
 const GRID_MIN: f32 = 200.0;
 /// `.plugin-card`: 14 px padding, 8 px between the icon and the text.
 const CARD_PAD: f32 = 14.0;
+/// Said while installed plugins are still being compiled, after an update.
+const PREPARING: &str = "Plugins are being prepared. They appear here in a moment.";
 
 /// How many columns of `minmax(200px, 1fr)` fit in `w`.
 pub fn columns(w: f32) -> usize {
@@ -53,13 +55,16 @@ impl Registry {
     }
 
     fn show_grid(&mut self, ui: &mut egui::Ui, rect: Rect, state: &Value) {
-        let cards: Vec<usize> = (0..self.entries.len()).filter(|&i| !self.is_part(i)).collect();
+        let cards: Vec<usize> = self.by_place().into_iter().filter(|&i| !self.is_part(i)).collect();
+        let preparing = self.preparing();
         let shown: Vec<usize> = cards.iter().copied().filter(|&i| !self.in_tab(i)).collect();
         if shown.is_empty() {
             crate::panel::plugins_empty(
                 ui,
                 rect,
-                if cards.is_empty() {
+                if preparing {
+                    PREPARING
+                } else if cards.is_empty() {
                     "Extensions and tools plug in here."
                 } else {
                     "Every installed plugin has a tab of its own."
@@ -79,6 +84,14 @@ impl Registry {
                 let cols = columns(w);
                 let cw = (w - GRID_GAP * (cols as f32 - 1.0)) / cols as f32;
                 let mut y = top + GRID_PAD;
+                // Above the cards, where it is seen without scrolling.
+                if preparing {
+                    let g = kit::wrapped_weight(ui, PREPARING, 12.0, Weight::W400, style::text_3(), w, 1.4);
+                    let h = g.size().y;
+                    ui.painter()
+                        .galley(Pos2::new(rect.left() + GRID_PAD, y), g, style::text_3());
+                    y += h + GRID_GAP;
+                }
                 for row in shown.chunks(cols) {
                     let heights: Vec<f32> = row.iter().map(|&i| card_height(ui, self.entries[i].info, cw)).collect();
                     let rh = heights.iter().copied().fold(0.0, f32::max);

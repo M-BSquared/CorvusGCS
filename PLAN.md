@@ -96,10 +96,10 @@ PLUGINS cards, Vibration Monitor, typing into AI Chat. Open before the release:
       with the release, then run `./release.sh` in each plugin once the release is out. Keep the
       `abi-*` releases for 2026.11.93.
 - [ ] Make `protocol-1.wasm.gz` again if the protocol changed since, then never again.
-- [ ] Compile in the background at start. After an update that changes the runtime, the kept compiled
-      modules are stale and the first start compiles them on the window's thread: 7.6 s for all eight
-      on an Apple Silicon Mac (0.6 s with them kept), longer on a field laptop. The release program
-      grew by 9.3 MB (40.5 to 49.8 MB, macOS arm64).
+- [ ] Compiling in the background uses every core for a few seconds after an update of the runtime
+      (all eight: 7.6 s on an Apple Silicon Mac). See on a slow field laptop that the window and the
+      telemetry stay smooth meanwhile. The release program grew by 9.3 MB (40.5 to 49.8 MB, macOS
+      arm64).
 - [ ] A module is about 6.5 MB (2.2 MB compressed). Look at what in it can go.
 - [ ] The manual's picture of Settings, Plugins shows no permission lines yet.
 
