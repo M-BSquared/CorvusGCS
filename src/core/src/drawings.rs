@@ -4,8 +4,9 @@
 //! The list lives in memory and ends with the program. It is a sketch for the
 //! operator: nothing of it is sent to the vehicle, and nothing flies by it
 //! unless a tool is told to. The `drawings` topic carries the whole list on
-//! every change (it is bounded, see the caps) and a `show` event that asks the
-//! windows to frame some places.
+//! every change (it is bounded, see the caps), a `show` event that asks the
+//! windows to frame some places, and an `open` event that asks them to open a
+//! page ([`PAGES`]).
 
 use std::sync::{Arc, Mutex, MutexGuard};
 
@@ -18,6 +19,60 @@ use crate::mcp::geo;
 use crate::module::{Module, Registry};
 use crate::request::Request;
 use crate::response::Response;
+
+/// The pages a window can be asked to open, as `--page` names them, and the tabs of the side
+/// panel. A plugin's own view is `plugin:<id>` besides. The interface holds its pages to this list.
+pub const PAGES: [&str; 41] = [
+    "home",
+    "mission",
+    "setup",
+    "setup:firstsetup",
+    "setup:calibration",
+    "setup:control",
+    "setup:tuning",
+    "setup:motors",
+    "setup:safety",
+    "setup:battery",
+    "setup:sik",
+    "setup:rtk",
+    "setup:remoteid",
+    "setup:parameters",
+    "setup:firmware",
+    "setup:betaflight",
+    "setup:video",
+    "analysis",
+    "analysis:ulog",
+    "analysis:tlog",
+    "analysis:review",
+    "analysis:scope",
+    "logs",
+    "settings",
+    "settings:interface",
+    "settings:layout",
+    "settings:flight",
+    "settings:map",
+    "settings:controls",
+    "settings:connections",
+    "settings:data",
+    "settings:plugins",
+    "settings:about",
+    "panel:link",
+    "panel:console",
+    "panel:ssh",
+    "panel:plugins",
+    "notifications",
+    "map:2d",
+    "map:3d",
+    "map:vehicle",
+];
+
+/// Whether a window can be asked to open `page`.
+pub fn is_page(page: &str) -> bool {
+    PAGES.contains(&page)
+        || page
+            .strip_prefix("plugin:")
+            .is_some_and(crate::plugins::registry::is_valid_id)
+}
 
 pub const MAX_SHAPES: usize = 200;
 /// The most points one shape may have.
@@ -278,10 +333,23 @@ impl DrawingsService {
         gone
     }
 
-    /// Asks the windows to frame these places, `[lat, lon]`.
-    pub fn show(&self, places: &[[f64; 2]]) {
+    /// Asks the windows to frame these places, `[lat, lon]`, one place at `zoom`, with the Home
+    /// page brought to the front when `open` says so.
+    pub fn show(&self, places: &[[f64; 2]], zoom: Option<f64>, open: bool) {
         let points: Vec<[f64; 2]> = places.iter().map(|p| [p[1], p[0]]).collect();
-        lock(&self.state).tell(&json!({"type": "show", "points": points}));
+        let mut event = json!({"type": "show", "points": points});
+        if let Some(z) = zoom {
+            event["zoom"] = json!(z);
+        }
+        if open {
+            event["open"] = json!(true);
+        }
+        lock(&self.state).tell(&event);
+    }
+
+    /// Asks the windows to open a page of [`PAGES`].
+    pub fn open(&self, page: &str) {
+        lock(&self.state).tell(&json!({"type": "open", "page": page}));
     }
 
     fn add_listener(&self, f: Listener) -> (u64, Value) {
@@ -330,6 +398,7 @@ impl Module for DrawingsModule {
         reg.post("/api/map/drawings", api_draw);
         reg.post("/api/map/drawings/remove", api_remove);
         reg.post("/api/map/show", api_show);
+        reg.post("/api/window/open", api_open);
     }
 }
 
@@ -416,12 +485,50 @@ fn api_show(core: &Core, req: &Request) -> Response {
     if places.is_empty() {
         return Response::not_ok(400, "name points or ids to show");
     }
-    svc.show(&places);
+    let zoom = match p.get("zoom") {
+        None | Some(Value::Null) => None,
+        Some(z) => match z.as_f64().filter(|z| (1.0..=20.0).contains(z)) {
+            Some(z) => Some(z),
+            None => return Response::not_ok(400, "zoom must be a number from 1 to 20"),
+        },
+    };
+    svc.show(&places, zoom, p.get("open") == Some(&json!(true)));
     Response::json(json!({"ok": true}))
+}
+
+fn api_open(core: &Core, req: &Request) -> Response {
+    let svc = svc!(core);
+    match req.payload().get("page").and_then(Value::as_str) {
+        Some(page) if is_page(page) => {
+            svc.open(page);
+            Response::json(json!({"ok": true}))
+        }
+        _ => Response::not_ok(400, "there is no page of that name"),
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn pages_are_the_known_ones_and_the_plugins() {
+        assert!(is_page("settings:plugins") && is_page("plugin:map-entities"));
+        for bad in [
+            "",
+            "Settings",
+            "settings:",
+            "setup:nope",
+            "plugin:",
+            "plugin:../x",
+            "plugin:a b",
+        ] {
+            assert!(!is_page(bad), "{bad}");
+        }
+        let mut all = PAGES.to_vec();
+        all.sort_unstable();
+        all.dedup();
+        assert_eq!(all.len(), PAGES.len());
+    }
+
     use super::*;
 
     fn line(id: &str) -> Value {
@@ -514,12 +621,19 @@ mod tests {
         let (id, first) = svc.add_listener(Arc::new(move |e: &Value| lock(&h).push(e.clone())));
         assert_eq!(first, json!({"type": "snapshot", "shapes": []}));
         svc.draw(&[line("a")], false).unwrap();
-        svc.show(&[[48.0, 11.0]]);
+        svc.show(&[[48.0, 11.0]], None, false);
+        svc.show(&[[48.0, 11.0]], Some(9.0), true);
+        svc.open("settings:map");
         svc.remove_listener(id);
         svc.remove(None);
         let heard = lock(&heard);
-        assert_eq!(heard.len(), 2);
+        assert_eq!(heard.len(), 4);
         assert_eq!(heard[0]["shapes"][0]["id"], "a");
         assert_eq!(heard[1], json!({"type": "show", "points": [[11.0, 48.0]]}));
+        assert_eq!(
+            heard[2],
+            json!({"type": "show", "points": [[11.0, 48.0]], "zoom": 9.0, "open": true})
+        );
+        assert_eq!(heard[3], json!({"type": "open", "page": "settings:map"}));
     }
 }

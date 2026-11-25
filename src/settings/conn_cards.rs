@@ -19,6 +19,8 @@ const FLEET_HINT: &str = "One link is one vehicle. A second vehicle needs a radi
 
 const MCP_CHAT_HINT: &str = "The AI Chat plugin uses the station's tools by itself, with no token and while the switch above is off. The permissions hold for it too.";
 const MCP_CHAT_ASK_HINT: &str = "What is off below is offered to AI Chat all the same, and Corvus asks you each time before anything happens. Off, AI Chat gets only what you switched on. Stop on the map switches this off.";
+/// What the operator reads before an AI client may do anything.
+const MCP_RISK: &str = "A language model makes mistakes. What you allow here it may do at any moment, also wrongly, up to flying the aircraft. Keep your hands on the controls. You connect an AI client and allow its acts at your own risk.";
 const MCP_SERVER_HINT: &str = "Lets an AI client such as OpenCode read the vehicle and, as far as you allow it, fly it. Only this computer can connect, and only with its token.";
 
 fn s<'a>(v: &'a Value, key: &str) -> &'a str {
@@ -657,6 +659,8 @@ impl SettingsPage {
             let mut chat_toggled = None;
             let chat = settings.get("assistant").and_then(Value::as_bool).unwrap_or(false);
             form::card(ui, f, "", |ui, f| {
+                form::message(ui, f, MCP_RISK, Tone::Warn);
+                f.skip(10.0);
                 toggled = form::switch(ui, f, "mcpserver", "MCP server", MCP_SERVER_HINT, on);
                 f.skip(6.0);
                 chat_toggled = form::switch(ui, f, "mcpchat", "AI Chat", MCP_CHAT_HINT, chat);

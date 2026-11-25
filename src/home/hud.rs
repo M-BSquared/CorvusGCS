@@ -1,4 +1,4 @@
-//! The flight HUD at the bottom left of the map: compass, attitude
+//! The flight HUD at the bottom right of the map: compass, attitude
 //! indicator and six readouts, drawn from the web HUD's own geometry
 //! (python/src/js/instruments.js, the SVGs in index.html, flight.css).
 //!
@@ -16,6 +16,9 @@ use crate::home::topbar::is_airborne;
 use crate::ui::card;
 use crate::ui::style::{self, Weight};
 
+/// How far down and how wide the map's buttons at its top right reach.
+const RAIL_FOOT: f32 = 300.0;
+const RAIL_W: f32 = 60.0;
 const PAD: f32 = 8.0;
 const DIAL_GAP: f32 = 10.0;
 /// Pixels per degree of pitch, in viewBox units.
@@ -295,7 +298,7 @@ impl Hud {
     }
 
     /// Draws the panel in `host` (the map): where it was left, or at the
-    /// bottom left `inset` from the edges. `hud_w` is `--hud-w`.
+    /// bottom right `inset` from the edges. `hud_w` is `--hud-w`.
     #[allow(clippy::too_many_arguments)]
     pub fn show(
         &mut self,
@@ -315,7 +318,7 @@ impl Hud {
         let pinned = self.place.flag_or("pinned", true);
         let width = look.width(hud_w);
         let size = Vec2::new(width, Hud::height(ui, width, single, &look));
-        let default = mapwindow::corner(host, size, Some(inset), None, None, Some(inset));
+        let default = Hud::default_corner(host, size, inset);
         let rect = self.place.rect(host, size, default);
         let painter = ui.painter().clone();
         let top = look.top_corner(hud_w, single);
@@ -355,6 +358,13 @@ impl Hud {
             self.body(ui, &painter, rect, state, units, now, (h, p, r), single, &look);
         }
         self.controls(ui, rect, &look, pinned);
+    }
+
+    /// The bottom right corner; on a map so low that it would lie under the map's buttons, beside them.
+    fn default_corner(host: Rect, size: Vec2, inset: f32) -> Vec2 {
+        let under = host.height() - size.y - inset < RAIL_FOOT;
+        let right = inset + if under { RAIL_W } else { 0.0 };
+        mapwindow::corner(host, size, None, Some(right), None, Some(inset))
     }
 
     /// The two dials, their readouts and the numbers.
@@ -456,7 +466,7 @@ impl Hud {
         };
         let hovered = ui.rect_contains_pointer(rect.union(bar));
         // A finger never hovers, so the buttons stay.
-        let fade = if look.collapsed || crate::app::touch::on() {
+        let fade = if look.collapsed || crate::app::touch::on() || crate::app::scene::hud_controls() {
             1.0
         } else {
             ui.ctx()
@@ -864,6 +874,17 @@ mod tests {
             collapsed: false,
             square: false,
         }
+    }
+
+    #[test]
+    fn it_stands_at_the_bottom_right_and_beside_the_buttons_of_a_low_map() {
+        use super::{Hud, Rect, Vec2};
+        let map = |w, h| Rect::from_min_size(super::Pos2::ZERO, Vec2::new(w, h));
+        let size = Vec2::new(320.0, 341.0);
+        let at = Hud::default_corner(map(1150.0, 940.0), size, 16.0);
+        assert_eq!(at, Vec2::new(1150.0 - 320.0 - 16.0, 940.0 - 341.0 - 16.0));
+        let low = Hud::default_corner(map(700.0, 440.0), size, 16.0);
+        assert_eq!(low.x, 700.0 - 320.0 - 16.0 - super::RAIL_W);
     }
 
     #[test]

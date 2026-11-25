@@ -13,8 +13,29 @@
 //! started.
 
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
-use crate::net::http::{self, Server};
+use crate::net::http::{self, Key, Server};
+
+/// The key [`corvus_core::API_KEY_ENV`] gives for a backend this process did
+/// not start. Without it such a backend can be read and nothing else.
+pub fn key_from_env() -> Option<Key> {
+    std::env::var(corvus_core::API_KEY_ENV).ok().and_then(|k| Key::new(&k))
+}
+
+/// Whether `server` takes this window's writes, asked with a read that needs
+/// the same key and changes nothing.
+pub fn may_write(server: &Server) -> bool {
+    http::request(
+        server,
+        "GET",
+        "/api/key",
+        None,
+        "application/json",
+        Duration::from_secs(10),
+    )
+    .is_ok_and(|r| r.status == 200)
+}
 
 /// A backend of an earlier run that still holds the instance lock and answers:
 /// its address when there is one. The core refuses to start beside
@@ -33,9 +54,22 @@ fn peer_from_lock(lock: &Path) -> Option<Server> {
     let text = std::fs::read_to_string(lock).ok()?;
     let record: serde_json::Value = serde_json::from_str(text.trim_end_matches('\0').trim()).ok()?;
     let port = u16::try_from(record.get("port")?.as_u64()?).ok().filter(|p| *p != 0)?;
-    let server = Server::local(port);
+    let mut server = Server::local(port);
     http::get_json(&server, "/api/version").ok()?;
+    server.key = key_from_env();
     Some(server)
+}
+
+/// The server of the core in this process, with the key to write to it.
+fn own_server(core: &corvus_core::Core) -> Result<Server, String> {
+    let port = core
+        .service::<corvus_core::HttpInfo>()
+        .and_then(|i| i.addr())
+        .map(|a| a.port())
+        .ok_or("the backend has no port")?;
+    let mut server = Server::local(port);
+    server.key = core.service::<corvus_core::ApiKey>().and_then(|k| Key::new(k.secret()));
+    Ok(server)
 }
 
 /// A running backend.
@@ -63,6 +97,7 @@ impl Backend {
             .module(corvus_core::McpModule::new())
             .module(corvus_core::TakModule::new())
             .module(corvus_core::DrawingsModule::new())
+            .module(corvus_core::PlannerModule::new())
             .module(corvus_core::SetupSchemasModule::new())
             .module(corvus_core::MapDataModule::new())
             .module(corvus_core::Http::new(corvus_core::HttpOptions {
@@ -72,14 +107,10 @@ impl Backend {
             .build()?;
         core.claim_instance()?;
         core.start().map_err(|e| format!("could not start the backend: {e}"))?;
-        let port = core
-            .service::<corvus_core::HttpInfo>()
-            .and_then(|i| i.addr())
-            .map(|a| a.port())
-            .ok_or("the backend has no port")?;
+        let server = own_server(&core)?;
         Ok(Backend {
             core: Some(core),
-            server: Server::local(port),
+            server,
         })
     }
 
@@ -178,15 +209,26 @@ mod tests {
             .build()?;
         core.claim_instance()?;
         core.start().map_err(|e| e.to_string())?;
-        let port = core
-            .service::<corvus_core::HttpInfo>()
-            .and_then(|i| i.addr())
-            .map(|a| a.port())
-            .unwrap();
+        let server = own_server(&core)?;
         Ok(Backend {
             core: Some(core),
-            server: Server::local(port),
+            server,
         })
+    }
+
+    #[test]
+    fn only_a_window_with_the_key_may_write() {
+        let mut b = core_in("key").unwrap();
+        let mut server = b.server().clone();
+        assert!(may_write(&server));
+        let body = serde_json::json!({"language": "de"});
+        assert!(http::post_json(&server, "/api/config", &body).is_ok());
+        server.key = Key::new("not-the-key-of-this-corvus");
+        assert!(!may_write(&server));
+        server.key = None;
+        assert!(!may_write(&server));
+        assert!(http::post_json(&server, "/api/config", &body).is_err());
+        b.stop();
     }
 
     #[test]

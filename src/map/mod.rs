@@ -681,6 +681,18 @@ impl Map {
         self.follow = false;
         let _ = self.memory.set_zoom(zoom);
         self.memory.center_at(walkers::lon_lat(lng, lat));
+        if let Some(t) = self.three.as_mut().filter(|_| self.three_d) {
+            t.look_at(lng, lat, zoom);
+        }
+    }
+
+    /// 3D for a picture: from where the flat map looks, turned and closer by as much.
+    pub fn stage_three_d(&mut self, ctx: &egui::Context, bearing: f64, closer: f64) {
+        self.ensure_three(ctx);
+        self.set_three_d(true);
+        if let (Some(t), Some((lng, lat, zoom))) = (self.three.as_mut(), self.view) {
+            t.start_at(lng, lat, zoom + closer, bearing);
+        }
     }
 
     /// Shows or hides the outlines of the downloaded areas; showing asks the

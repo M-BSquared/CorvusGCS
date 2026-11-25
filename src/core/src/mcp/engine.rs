@@ -47,6 +47,8 @@ pub const MAX_SESSIONS: usize = 16;
 pub const MAX_PLUGIN_TOOLS: usize = 64;
 pub const MAX_SCHEMA_BYTES: usize = 8192;
 pub const MAX_DESCRIPTION: usize = 1000;
+/// How much of a plugin tool's arguments the question to the operator shows.
+pub const MAX_SUMMARY: usize = 400;
 pub const STREAM_QUEUE: usize = 32;
 pub const WHERE: &str = "Settings, Connections, MCP";
 
@@ -59,7 +61,7 @@ pub const JSONRPC_INTERNAL_ERROR: i64 = -32603;
 pub const INSTRUCTIONS: &str = "Corvus GCS is a ground control station connected to a real vehicle (PX4 or ArduPilot). Every tool acts on that vehicle through the station, with the checks the operator's own buttons have. The operator decides which tools you have and may have to approve a call in Corvus first; a refused call says why. Read get_vehicle_state before acting, and check the result of every command. Heights are metres above home unless a tool says otherwise. Direct control lasts only for the duration you give; the vehicle holds when you stop sending.";
 
 /// What the AI Chat plugin of this Corvus is told besides.
-pub const ASSISTANT_INSTRUCTIONS: &str = "You sit in the operator's own window. Use the tools instead of describing what could be done: draw on the map with draw_on_map whenever a place, a direction, a route or an area is meant, and preview a flight with plan_pattern or a drawing before you fly it. Places can be given relative to the vehicle or home (from, north_m, east_m, bearing_deg, distance_m), so do not work out coordinates yourself. After a flight command use wait_for to see that it happened. What the operator has not allowed outright is asked of them when you call it; a refusal is their answer, do not try another way.";
+pub const ASSISTANT_INSTRUCTIONS: &str = "You sit in the operator's own window. Call a tool instead of describing what could be done. Questions about the vehicle: get_telemetry. Showing a place, a direction or an area: draw_marker, draw_line, draw_circle or draw_area, and show_on_map to move the map there. A route: plan_mission or plan_survey puts it into the operator's mission planner and sends nothing; edit_mission_item changes it; upload_mission_plan sends it when the operator wants it flown. Places can be given relative to the vehicle or home (from, north_m, east_m, forward_m, right_m, bearing_deg, distance_m), so do not work out coordinates yourself. After a flight command use wait_for to see that it happened. What the operator has not allowed outright is asked of them when you call it; a refusal is their answer, do not try another way.";
 
 /// Runs one Corvus endpoint: `(method, path, body)` to `(status, body)`.
 pub type Dispatch = Arc<dyn Fn(&str, &str, Option<Map>) -> (u16, Value) + Send + Sync>;
@@ -164,6 +166,35 @@ pub fn plugin_tool_name(plugin_id: &str, name: &str) -> String {
         })
         .collect();
     first_chars(&format!("{safe}_{name}"), 64)
+}
+
+/// What the operator is asked for a plugin's tool: its title and what it is called with. The
+/// engine does not know what the arguments mean, so it shows them all.
+fn with_arguments(title: &str, args: &Map) -> String {
+    let list: Vec<String> = args
+        .iter()
+        .filter(|(_, v)| !v.is_null())
+        .map(|(k, v)| format!("{k} {}", v.as_str().map_or_else(|| v.to_string(), str::to_string)))
+        .collect();
+    if list.is_empty() {
+        return title.to_string();
+    }
+    // One line of plain characters: nothing can hide behind a line break or turn the text around.
+    let plain: String = list
+        .join(", ")
+        .chars()
+        .map(|c| if c.is_control() || is_invisible(c) { ' ' } else { c })
+        .collect();
+    let mut text = first_chars(&plain, MAX_SUMMARY);
+    if plain.chars().nth(MAX_SUMMARY).is_some() {
+        text.push('\u{2026}');
+    }
+    format!("{title}: {text}")
+}
+
+/// Characters that show nothing or change the direction of the text around them.
+fn is_invisible(c: char) -> bool {
+    matches!(c, '\u{ad}' | '\u{61c}' | '\u{180e}' | '\u{200b}'..='\u{200f}' | '\u{2028}'..='\u{202e}' | '\u{2060}'..='\u{206f}' | '\u{feff}')
 }
 
 /// The tools a window announced, keeping only well formed ones.
@@ -703,6 +734,12 @@ impl McpService {
         Ok(json!({"tools": n}))
     }
 
+    /// Whether a Corvus window is open.
+    pub fn window_open(&self) -> bool {
+        let now = self.now();
+        !live_windows(&mut lock(&self.state), now).is_empty()
+    }
+
     /// Every plugin tool an open window offers, the first window first.
     pub fn plugin_tools(&self) -> Vec<Map> {
         let now = self.now();
@@ -1024,7 +1061,10 @@ impl McpService {
                 "serverInfo": {"name": SERVER_NAME, "title": SERVER_TITLE, "version": crate::version::version()},
                 "instructions": match who {
                     Caller::Client => INSTRUCTIONS.to_string(),
-                    Caller::Assistant => format!("{INSTRUCTIONS} {ASSISTANT_INSTRUCTIONS}"),
+                    Caller::Assistant => format!(
+                        "{} {ASSISTANT_INSTRUCTIONS}",
+                        INSTRUCTIONS.replace("get_vehicle_state", "get_telemetry")
+                    ),
                 },
             }),
             sid,
@@ -1103,6 +1143,10 @@ impl McpService {
                 &format!("The operator has not allowed this in Corvus ({label}, under {WHERE})."),
             ));
         }
+        let tidied = tool
+            .filter(|t| super::simple::is_tidied(t.name))
+            .map(|t| super::simple::tidy(args, &t.properties));
+        let args = tidied.as_ref().unwrap_or(args);
         let vehicle = args.get("vehicle").filter(|v| !v.is_null());
         if let Some(v) = vehicle {
             if !tool.is_some_and(|t| t.vehicle) {
@@ -1120,7 +1164,7 @@ impl McpService {
         }
         let summary = match (&tool, &plugin_tool) {
             (Some(t), _) => (t.summary)(args).unwrap_or_else(|| name.to_string()),
-            (None, Some(p)) => p["title"].as_str().unwrap_or(name).to_string(),
+            (None, Some(p)) => with_arguments(p["title"].as_str().unwrap_or(name), args),
             _ => name.to_string(),
         };
         let where_ = vehicle.map(|v| format!(" ({})", fmt(Some(v)))).unwrap_or_default();
@@ -1713,5 +1757,41 @@ impl StreamQueue {
     #[allow(dead_code)]
     fn len(&self) -> usize {
         lock(&self.items).len()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn asked(args: Value) -> String {
+        with_arguments("Run in the PX4 shell", args.as_object().unwrap())
+    }
+
+    #[test]
+    fn the_question_about_a_plugins_tool_shows_what_it_is_called_with() {
+        assert_eq!(asked(json!({})), "Run in the PX4 shell");
+        assert_eq!(asked(json!({"id": null})), "Run in the PX4 shell");
+        assert_eq!(
+            asked(json!({"command": "param set A 1"})),
+            "Run in the PX4 shell: command param set A 1"
+        );
+        assert_eq!(
+            asked(json!({"n": 3, "on": true, "list": ["a"]})),
+            "Run in the PX4 shell: n 3, on true, list [\"a\"]"
+        );
+    }
+
+    #[test]
+    fn nothing_hides_in_the_question() {
+        let t = asked(json!({"command": "ver\n\r\u{202e}\u{200b}\u{7}x"}));
+        assert!(t.chars().all(|c| !c.is_control() && !is_invisible(c)), "{t:?}");
+        let long = asked(json!({"command": "\u{e4}".repeat(5000)}));
+        assert!(long.ends_with('\u{2026}') && long.chars().count() < MAX_SUMMARY + 40);
+        let whole = asked(json!({"command": "x".repeat(200)}));
+        assert!(
+            whole.ends_with(&"x".repeat(200)),
+            "a whole shell command is always shown"
+        );
     }
 }

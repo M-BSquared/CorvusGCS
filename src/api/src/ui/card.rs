@@ -47,7 +47,7 @@ impl Look {
     fn radius(self) -> u8 {
         match self {
             Look::Panel | Look::Page => style::RADIUS,
-            Look::Inset => 10,
+            Look::Inset | Look::Tone(Tone::Ok | Tone::Err | Tone::Warn) => 10,
             Look::Custom { radius, .. } => radius,
             _ => style::RADIUS_BTN,
         }
@@ -63,9 +63,10 @@ impl Look {
             Look::Well => (style::input(0.6), style::border()),
             Look::Console => (style::terminal_bg(), style::border_soft()),
             Look::Chosen => (style::accent_dim(), style::accent()),
-            Look::Tone(Tone::Ok) => (style::healthy_dark(), style::healthy()),
-            Look::Tone(Tone::Err) => (style::critical_dark(), style::critical()),
-            Look::Tone(Tone::Warn) => (style::warning_dark(), style::warning()),
+            Look::Tone(t) => {
+                let n = crate::ui::message::notice(t);
+                (n.fill, n.line)
+            }
             Look::Custom { fill, line, .. } => (fill, line),
         }
     }
@@ -81,6 +82,13 @@ pub fn paint(painter: &Painter, rect: Rect, look: Look) {
     let (fill, line) = look.colours();
     painter.rect_filled(rect, look.radius(), fill);
     painter.rect_stroke(rect, look.radius(), Stroke::new(1.0, line), egui::StrokeKind::Inside);
+    bar(painter, rect, look);
+}
+
+fn bar(painter: &Painter, rect: Rect, look: Look) {
+    if let Look::Tone(t) = look {
+        crate::ui::message::paint_bar(painter, rect, t);
+    }
 }
 
 /// The surface of a floating window: the pop shadow, the frosted backdrop
@@ -123,6 +131,7 @@ pub fn fill(painter: &Painter, slot: egui::layers::ShapeIdx, rect: Rect, look: L
     let (fill, line) = look.colours();
     painter.set(slot, Shape::rect_filled(rect, look.radius(), fill));
     painter.rect_stroke(rect, look.radius(), Stroke::new(1.0, line), egui::StrokeKind::Inside);
+    bar(painter, rect, look);
 }
 
 #[cfg(test)]

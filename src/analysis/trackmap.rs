@@ -320,7 +320,7 @@ impl TrackMap {
         .panning(false)
         .double_click_to_zoom(true);
         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner));
-        child.set_clip_rect(inner);
+        child.set_clip_rect(inner.intersect(ui.clip_rect()));
         let response = child.add(map);
         let now = ui.input(|i| i.time);
         let over = ui.input(|i| i.pointer.hover_pos()).is_some_and(|p| inner.contains(p));

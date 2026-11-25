@@ -557,6 +557,9 @@ pub fn plugin_rows(listed: &[Value], registry: &crate::plugins::Registry) -> Vec
         let Some(id) = p.get("id").and_then(Value::as_str) else {
             continue;
         };
+        if crate::plugins::PARTS.contains(&id) {
+            continue;
+        }
         let mut row = p.clone();
         let known = registry.index_of(id);
         // The backend lists the plugins of this program, including the ones that are
@@ -572,6 +575,8 @@ pub fn plugin_rows(listed: &[Value], registry: &crate::plugins::Registry) -> Vec
                 o.insert("source".into(), serde_json::json!("installed"));
             }
             if let Some(i) = known {
+                // The one that runs: the backend's list is older than a plugin built since.
+                o.insert("version".into(), serde_json::json!(registry.info(i).version));
                 o.insert("in_tab".into(), serde_json::json!(registry.in_tab(i)));
                 o.insert("stopped".into(), serde_json::json!(registry.failure(i).is_some()));
                 o.insert("gear".into(), serde_json::json!(registry.has_options(i)));
@@ -580,6 +585,7 @@ pub fn plugin_rows(listed: &[Value], registry: &crate::plugins::Registry) -> Vec
         rows.push(row);
     }
     let mut own: Vec<usize> = (0..registry.len())
+        .filter(|&i| !registry.is_part(i))
         .filter(|&i| {
             !rows
                 .iter()

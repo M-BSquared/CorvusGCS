@@ -769,11 +769,11 @@ impl CalibrationPage {
         }
         let quiet = now_ms - st.last_event_at;
         let dog = watchdog(st.phase, st.seen_vehicle_message, st.confirm.is_some(), quiet);
-        let dog_g = dog
+        let dog_note = dog
             .as_ref()
-            .map(|t| kit::wrapped_weight(ui, t, 11.5, Weight::W400, style::warning(), text_w - 22.0, 1.5));
-        if let Some(g) = &dog_g {
-            text_h += 8.0 + g.size().y + 18.0;
+            .map(|t| crate::ui::message::NoticeBox::new(Tone::Warn, t).text_size(11.5, 1.5));
+        if let Some(note) = dog_note {
+            text_h += 8.0 + note.height(ui, text_w);
         }
         // follow ups under the instruction
         let mut buttons: Vec<(&'static str, Button<'_>)> = Vec::new();
@@ -949,12 +949,9 @@ impl CalibrationPage {
                 .show(&painter, bar);
             ty += 5.0;
         }
-        if let Some(g) = dog_g {
+        if let Some(note) = dog_note {
             ty += 8.0;
-            let r = Rect::from_min_size(Pos2::new(text_x, ty), Vec2::new(text_w, g.size().y + 18.0));
-            card::paint(&painter, r, card::Look::Tone(Tone::Warn));
-            painter.galley(r.min + Vec2::new(11.0, 9.0), g, style::warning());
-            ty = r.bottom();
+            ty = note.show(ui, text_x, ty, text_w).bottom();
         }
         let mut hit: Option<&'static str> = None;
         if actions_h > 0.0 {
@@ -1286,7 +1283,7 @@ impl CalibrationPage {
                             12.0,
                             Weight::W500,
                             style::text_1(),
-                            mw - 28.0 - 28.0,
+                            mw - 64.0,
                             1.5,
                         ));
                     }
@@ -1301,11 +1298,11 @@ impl CalibrationPage {
                         icons::paint(
                             ui,
                             icon,
-                            Rect::from_center_size(Pos2::new(r.left() + 15.0 + 9.0, ly + lh / 2.0), Vec2::splat(18.0)),
+                            Rect::from_center_size(Pos2::new(r.left() + 22.0 + 9.0, ly + lh / 2.0), Vec2::splat(18.0)),
                             style::critical(),
                         );
                         ui.painter().galley(
-                            Pos2::new(r.left() + 14.0 + 28.0, ly + (lh - g.size().y) / 2.0),
+                            Pos2::new(r.left() + 22.0 + 28.0, ly + (lh - g.size().y) / 2.0),
                             g,
                             style::text_1(),
                         );

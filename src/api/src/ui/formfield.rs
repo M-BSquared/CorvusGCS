@@ -1,4 +1,4 @@
-//! `Corvus.ui.field` of the web interface (`.field`, `.field-label`,
+//! `Corvus.let _ = ctx.run_ui(egui::RawInput::default(), |ui| h = hint(ui, 0.0, 0.0, w, text));.field` of the web interface (`.field`, `.field-label`,
 //! `.field-hint`, `.field-input`, `.field-select`): a small uppercase caption,
 //! the control and a hint under it, 5 px apart. The pages of Setup that are a
 //! plain form (RTK, the telemetry radio, Remote ID, Video) are built from
@@ -45,15 +45,16 @@ pub fn caption(
     h
 }
 
-/// The hint wrapped to `w`; returns its height.
-pub fn hint(ui: &egui::Ui, x: f32, y: f32, w: f32, text: &str) -> f32 {
+/// Lines a hint takes before the rest goes behind its hint icon.
+const HINT_ROWS: usize = 2;
+
+/// The hint wrapped to `w`; returns its height. Past `HINT_ROWS` lines it
+/// shows its first sentence and a hint icon opens the whole text.
+pub fn hint(ui: &mut egui::Ui, x: f32, y: f32, w: f32, text: &str) -> f32 {
     if text.is_empty() {
         return 0.0;
     }
-    let g = kit::wrapped_weight(ui, text, 10.5, Weight::W400, style::text_3(), w, 1.4);
-    let h = g.size().y;
-    ui.painter().galley(Pos2::new(x, y), g, style::text_3());
-    h
+    popover::teaser(ui, x, y, w, text, 10.5, 1.4, HINT_ROWS, ("hintinfo", text))
 }
 
 /// A text box `w` wide at `x, y`: mono for numbers, dots for a secret.
@@ -166,3 +167,26 @@ pub fn field_info(
 
 /// The caption row of a field that has an info icon.
 pub const INFO_ROW: f32 = 16.0;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn height_of(text: &str, w: f32) -> f32 {
+        let ctx = egui::Context::default();
+        crate::ui::fonts::install(&ctx);
+        let mut h = 0.0;
+        ctx.run_ui(egui::RawInput::default(), |ui| h = hint(ui, 0.0, 0.0, w, text))
+            .drop_without_applying_deltas();
+        h
+    }
+
+    #[test]
+    fn a_long_hint_keeps_to_two_lines_and_a_short_one_is_left_alone() {
+        let line = (10.5_f32 * 1.4).ceil();
+        let long = "A very long explanation that goes on and on about what this switch does. ".repeat(12);
+        assert_eq!(height_of(&long, 300.0), 2.0 * line);
+        assert_eq!(height_of("Short.", 300.0), line);
+        assert_eq!(height_of("", 300.0), 0.0);
+    }
+}

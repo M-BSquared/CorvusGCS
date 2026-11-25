@@ -111,14 +111,20 @@ pub struct Registry {
     packages: Option<std::path::PathBuf>,
 }
 
+/// What was a plugin and is a part of the program now: shown where it belongs, on no list of
+/// plugins, and an installed copy of it is passed over in silence.
+pub const PARTS: [&str; 1] = [crate::panel::launcher::ID];
+
 impl Registry {
     pub fn new(server: Server, ctx: &egui::Context, config: &Value) -> Registry {
         if let Some(src) = store::Source::real() {
             store::follow_beside(&src);
         }
+        let mut own = builtin();
+        own.push(Box::new(crate::panel::launcher::SshLauncher::default()));
         match loader::packages_dir() {
-            Some(dir) => Registry::with_packages(server, ctx, config, builtin(), &dir),
-            None => Registry::with_plugins(server, ctx, config, builtin()),
+            Some(dir) => Registry::with_packages(server, ctx, config, own, &dir),
+            None => Registry::with_plugins(server, ctx, config, own),
         }
     }
 
@@ -280,6 +286,11 @@ impl Registry {
     /// The plugins that have a tab, in order.
     pub fn tabbed(&self) -> Vec<usize> {
         (0..self.entries.len()).filter(|&i| self.in_tab(i)).collect()
+    }
+
+    /// Whether `i` is a part of the program rather than a plugin.
+    pub fn is_part(&self, i: usize) -> bool {
+        PARTS.contains(&self.entries[i].info.id)
     }
 
     pub fn info(&self, i: usize) -> Info {
@@ -738,6 +749,47 @@ mod tests {
         fn mcp_take(&mut self, _token: u64) -> Option<Result<Value, String>> {
             None
         }
+    }
+
+    #[test]
+    fn what_became_a_part_of_the_program_is_on_no_list_of_plugins() {
+        let part: Box<dyn Plugin> = Box::new(crate::panel::launcher::SshLauncher::default());
+        let ctx = egui::Context::default();
+        let r = Registry::with_plugins(Server::local(1), &ctx, &json!({}), vec![part]);
+        let i = r.index_of(crate::panel::launcher::ID).unwrap();
+        assert!(r.is_part(i) && !r.in_tab(i) && !r.has_options(i));
+        let listed = [json!({"id": "ssh-launcher", "version": "1.3.0", "source": "bundled"})];
+        assert!(crate::settings::model::plugin_rows(&listed, &r).is_empty());
+        assert!(OFFERED.iter().all(|o| !PARTS.contains(&o.id)));
+        // A copy from the time it was a plugin is not loaded, and no list says so.
+        let dir = std::env::temp_dir().join(format!("corvus-part-{}", std::process::id()));
+        let folder = dir.join("ssh-launcher");
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(
+            folder.join(loader::MANIFEST),
+            r#"{"id": "ssh-launcher", "version": "1.3.0", "library": "x.lib", "sha256": "00"}"#,
+        )
+        .unwrap();
+        let found = loader::installed(&dir, &PARTS);
+        assert!(found.packages.is_empty() && found.refused.is_empty());
+        let r = Registry::with_packages(Server::local(1), &ctx, &json!({}), Vec::new(), &dir);
+        assert!(r.refused.is_empty());
+        assert!(crate::settings::model::plugin_rows(&[], &r).is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn settings_shows_the_version_that_runs() {
+        let plugin: Box<dyn Plugin> = Box::new(Faulty {
+            id: "good",
+            panic_in_tick: false,
+            ticks: Default::default(),
+        });
+        let ctx = egui::Context::default();
+        let r = Registry::with_plugins(Server::local(1), &ctx, &json!({}), vec![plugin]);
+        let listed = [json!({"id": "good", "version": "0.9.0", "source": "bundled"})];
+        let rows = crate::settings::model::plugin_rows(&listed, &r);
+        assert_eq!((rows.len(), &rows[0]["version"]), (1, &json!("1.0.0")));
     }
 
     #[test]

@@ -158,7 +158,7 @@ CI has no Python job left (`rust-gui`, `rust-windows`, the three bundle jobs,
   each plugin builds for it. `plugin.yml` has not run, and a library has not been loaded on Linux
   or Windows (the tests that do are in `cargo test`, so the first push says). Verified on macOS
   arm64: libraries built in another folder load in a program built here.
-* P1 The plugins that were built in (Vibration Monitor, SSH Launcher, Schwalby, Map Entities, and
+* P1 The plugins that were built in (Vibration Monitor, Schwalby, Map Entities, and
   since the last release NuttX Console and Trajectory Viewer) are gone after an update until they
   are installed from Settings, Plugins. Tell the operator: release notes, manual, and perhaps a
   notice where a saved config of one is found.

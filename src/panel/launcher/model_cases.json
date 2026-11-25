@@ -1,0 +1,903 @@
+{
+ "coerceButton": [
+  {
+   "in": [
+    {
+     "id": "a",
+     "command": "./start.sh",
+     "label": "Start"
+    }
+   ],
+   "out": {
+    "id": "a",
+    "label": "Start",
+    "connection": "",
+    "directory": "",
+    "command": "./start.sh",
+    "mode": "terminal",
+    "restart": false
+   }
+  },
+  {
+   "in": [
+    {
+     "id": "b",
+     "command": "  ls -la  ",
+     "label": "  ",
+     "directory": " ~/mission ",
+     "connection": " pi ",
+     "mode": "background",
+     "restart": true
+    }
+   ],
+   "out": {
+    "id": "b",
+    "label": "ls -la",
+    "connection": "pi",
+    "directory": "~/mission",
+    "command": "ls -la",
+    "mode": "background",
+    "restart": true
+   }
+  },
+  {
+   "in": [
+    {
+     "id": "c",
+     "command": "x",
+     "detach": true
+    }
+   ],
+   "out": {
+    "id": "c",
+    "label": "x",
+    "connection": "",
+    "directory": "",
+    "command": "x",
+    "mode": "background",
+    "restart": false
+   }
+  },
+  {
+   "in": [
+    {
+     "id": "d",
+     "command": "x",
+     "detach": false,
+     "restart": true
+    }
+   ],
+   "out": {
+    "id": "d",
+    "label": "x",
+    "connection": "",
+    "directory": "",
+    "command": "x",
+    "mode": "terminal",
+    "restart": true
+   }
+  },
+  {
+   "in": [
+    {
+     "id": "e",
+     "command": "x",
+     "mode": "weird",
+     "detach": true
+    }
+   ],
+   "out": {
+    "id": "e",
+    "label": "x",
+    "connection": "",
+    "directory": "",
+    "command": "x",
+    "mode": "background",
+    "restart": false
+   }
+  },
+  {
+   "in": [
+    {
+     "id": "f",
+     "command": "   "
+    }
+   ],
+   "out": null
+  },
+  {
+   "in": [
+    {
+     "id": "g",
+     "command": 42,
+     "label": 7
+    }
+   ],
+   "out": {
+    "id": "g",
+    "label": "7",
+    "connection": "",
+    "directory": "",
+    "command": "42",
+    "mode": "terminal",
+    "restart": false
+   }
+  },
+  {
+   "in": [
+    {
+     "id": "h",
+     "command": "y",
+     "restart": "yes"
+    }
+   ],
+   "out": {
+    "id": "h",
+    "label": "y",
+    "connection": "",
+    "directory": "",
+    "command": "y",
+    "mode": "terminal",
+    "restart": false
+   }
+  },
+  {
+   "in": [
+    null
+   ],
+   "out": null
+  },
+  {
+   "in": [
+    "text"
+   ],
+   "out": null
+  }
+ ],
+ "normalizeButtons": [
+  {
+   "in": [
+    {
+     "buttons": [
+      {
+       "id": "a",
+       "command": "a"
+      },
+      {
+       "id": "b",
+       "command": ""
+      },
+      {
+       "id": "c",
+       "command": "c",
+       "mode": "background"
+      }
+     ]
+    }
+   ],
+   "out": [
+    {
+     "id": "a",
+     "label": "a",
+     "connection": "",
+     "directory": "",
+     "command": "a",
+     "mode": "terminal",
+     "restart": false
+    },
+    {
+     "id": "c",
+     "label": "c",
+     "connection": "",
+     "directory": "",
+     "command": "c",
+     "mode": "background",
+     "restart": false
+    }
+   ]
+  },
+  {
+   "in": [
+    {
+     "connection": "pi",
+     "directory": "/m",
+     "command": "./go.sh",
+     "detach": true,
+     "id": "one"
+    }
+   ],
+   "out": [
+    {
+     "id": "one",
+     "label": "./go.sh",
+     "connection": "pi",
+     "directory": "/m",
+     "command": "./go.sh",
+     "mode": "background",
+     "restart": false
+    }
+   ]
+  },
+  {
+   "in": [
+    {}
+   ],
+   "out": []
+  },
+  {
+   "in": [
+    null
+   ],
+   "out": []
+  },
+  {
+   "in": [
+    {
+     "buttons": [
+      {
+       "id": "k0",
+       "command": "c0"
+      },
+      {
+       "id": "k1",
+       "command": "c1"
+      },
+      {
+       "id": "k2",
+       "command": "c2"
+      },
+      {
+       "id": "k3",
+       "command": "c3"
+      },
+      {
+       "id": "k4",
+       "command": "c4"
+      },
+      {
+       "id": "k5",
+       "command": "c5"
+      },
+      {
+       "id": "k6",
+       "command": "c6"
+      },
+      {
+       "id": "k7",
+       "command": "c7"
+      },
+      {
+       "id": "k8",
+       "command": "c8"
+      },
+      {
+       "id": "k9",
+       "command": "c9"
+      },
+      {
+       "id": "k10",
+       "command": "c10"
+      },
+      {
+       "id": "k11",
+       "command": "c11"
+      },
+      {
+       "id": "k12",
+       "command": "c12"
+      },
+      {
+       "id": "k13",
+       "command": "c13"
+      },
+      {
+       "id": "k14",
+       "command": "c14"
+      }
+     ]
+    }
+   ],
+   "out": [
+    {
+     "id": "k0",
+     "label": "c0",
+     "connection": "",
+     "directory": "",
+     "command": "c0",
+     "mode": "terminal",
+     "restart": false
+    },
+    {
+     "id": "k1",
+     "label": "c1",
+     "connection": "",
+     "directory": "",
+     "command": "c1",
+     "mode": "terminal",
+     "restart": false
+    },
+    {
+     "id": "k2",
+     "label": "c2",
+     "connection": "",
+     "directory": "",
+     "command": "c2",
+     "mode": "terminal",
+     "restart": false
+    },
+    {
+     "id": "k3",
+     "label": "c3",
+     "connection": "",
+     "directory": "",
+     "command": "c3",
+     "mode": "terminal",
+     "restart": false
+    },
+    {
+     "id": "k4",
+     "label": "c4",
+     "connection": "",
+     "directory": "",
+     "command": "c4",
+     "mode": "terminal",
+     "restart": false
+    },
+    {
+     "id": "k5",
+     "label": "c5",
+     "connection": "",
+     "directory": "",
+     "command": "c5",
+     "mode": "terminal",
+     "restart": false
+    },
+    {
+     "id": "k6",
+     "label": "c6",
+     "connection": "",
+     "directory": "",
+     "command": "c6",
+     "mode": "terminal",
+     "restart": false
+    },
+    {
+     "id": "k7",
+     "label": "c7",
+     "connection": "",
+     "directory": "",
+     "command": "c7",
+     "mode": "terminal",
+     "restart": false
+    },
+    {
+     "id": "k8",
+     "label": "c8",
+     "connection": "",
+     "directory": "",
+     "command": "c8",
+     "mode": "terminal",
+     "restart": false
+    },
+    {
+     "id": "k9",
+     "label": "c9",
+     "connection": "",
+     "directory": "",
+     "command": "c9",
+     "mode": "terminal",
+     "restart": false
+    },
+    {
+     "id": "k10",
+     "label": "c10",
+     "connection": "",
+     "directory": "",
+     "command": "c10",
+     "mode": "terminal",
+     "restart": false
+    },
+    {
+     "id": "k11",
+     "label": "c11",
+     "connection": "",
+     "directory": "",
+     "command": "c11",
+     "mode": "terminal",
+     "restart": false
+    }
+   ]
+  }
+ ],
+ "remoteLine": [
+  {
+   "in": [
+    {
+     "directory": "/home/p'x",
+     "command": " ./a.sh "
+    }
+   ],
+   "out": "cd -- '/home/p'\\''x' && ./a.sh"
+  },
+  {
+   "in": [
+    {
+     "directory": "",
+     "command": "x"
+    }
+   ],
+   "out": "x"
+  },
+  {
+   "in": [
+    {
+     "directory": "/d",
+     "command": "  "
+    }
+   ],
+   "out": ""
+  },
+  {
+   "in": [
+    {
+     "directory": "-rf",
+     "command": "ls"
+    }
+   ],
+   "out": "cd -- '-rf' && ls"
+  },
+  {
+   "in": [
+    null
+   ],
+   "out": ""
+  }
+ ],
+ "previewLine": [
+  {
+   "in": [
+    {
+     "connection": "pi",
+     "directory": "/m",
+     "command": "./s.sh",
+     "mode": "background"
+    }
+   ],
+   "out": "ssh pi 'cd /m && nohup ./s.sh &'"
+  },
+  {
+   "in": [
+    {
+     "connection": "",
+     "directory": "",
+     "command": "./s.sh",
+     "mode": "terminal"
+    }
+   ],
+   "out": "./s.sh"
+  },
+  {
+   "in": [
+    {
+     "connection": "pi",
+     "directory": "/m",
+     "command": "./s.sh",
+     "mode": "terminal"
+    }
+   ],
+   "out": "ssh pi 'cd /m && ./s.sh'"
+  },
+  {
+   "in": [
+    {
+     "connection": "pi",
+     "directory": "/m",
+     "command": " "
+    }
+   ],
+   "out": ""
+  },
+  {
+   "in": [
+    {
+     "connection": " pi ",
+     "directory": "",
+     "command": "a b",
+     "detach": true
+    }
+   ],
+   "out": "ssh pi 'nohup a b &'"
+  }
+ ],
+ "derivedName": [
+  {
+   "in": [
+    {
+     "host": " 10.0.0.7 ",
+     "username": "pilot"
+    }
+   ],
+   "out": "pilot@10.0.0.7"
+  },
+  {
+   "in": [
+    {
+     "host": "h",
+     "username": ""
+    }
+   ],
+   "out": "h"
+  },
+  {
+   "in": [
+    {
+     "host": "",
+     "username": "u"
+    }
+   ],
+   "out": ""
+  }
+ ],
+ "newConnectionError": [
+  {
+   "in": [
+    {
+     "host": "",
+     "port": "22",
+     "name": "",
+     "username": ""
+    },
+    []
+   ],
+   "out": "Name the host to connect to."
+  },
+  {
+   "in": [
+    {
+     "host": "h",
+     "port": "70000",
+     "name": "",
+     "username": ""
+    },
+    []
+   ],
+   "out": "The port has to be a number between 1 and 65535."
+  },
+  {
+   "in": [
+    {
+     "host": "h",
+     "port": "2.5",
+     "name": "",
+     "username": ""
+    },
+    []
+   ],
+   "out": "The port has to be a number between 1 and 65535."
+  },
+  {
+   "in": [
+    {
+     "host": "h",
+     "port": "abc",
+     "name": "",
+     "username": ""
+    },
+    []
+   ],
+   "out": "The port has to be a number between 1 and 65535."
+  },
+  {
+   "in": [
+    {
+     "host": "h",
+     "port": "22",
+     "name": "pi",
+     "username": ""
+    },
+    [
+     "pi"
+    ]
+   ],
+   "out": "\"pi\" is already saved. Pick it above, or save this one as another name."
+  },
+  {
+   "in": [
+    {
+     "host": "h",
+     "port": "",
+     "name": "",
+     "username": "u"
+    },
+    [
+     "u@h"
+    ]
+   ],
+   "out": "\"u@h\" is already saved. Pick it above, or save this one as another name."
+  },
+  {
+   "in": [
+    {
+     "host": "h",
+     "port": "22",
+     "name": "",
+     "username": "u"
+    },
+    []
+   ],
+   "out": ""
+  }
+ ],
+ "newConnectionBody": [
+  {
+   "in": [
+    {
+     "host": " h ",
+     "port": "2222",
+     "name": "",
+     "username": " u ",
+     "password": " p ",
+     "key_path": " /k "
+    }
+   ],
+   "out": {
+    "name": "u@h",
+    "host": "h",
+    "port": 2222,
+    "username": "u",
+    "password": " p ",
+    "key_path": "/k"
+   }
+  },
+  {
+   "in": [
+    {
+     "host": "h",
+     "port": "0",
+     "name": "n",
+     "username": "",
+     "password": "",
+     "key_path": ""
+    }
+   ],
+   "out": {
+    "name": "n",
+    "host": "h",
+    "port": 22,
+    "username": "",
+    "password": "",
+    "key_path": ""
+   }
+  },
+  {
+   "in": [
+    {
+     "host": "h",
+     "port": "x",
+     "name": "n",
+     "username": "",
+     "password": "",
+     "key_path": ""
+    }
+   ],
+   "out": {
+    "name": "n",
+    "host": "h",
+    "port": 22,
+    "username": "",
+    "password": "",
+    "key_path": ""
+   }
+  }
+ ],
+ "resultSummary": [
+  {
+   "in": [
+    {
+     "ok": true,
+     "stdout": "pid 123\nmore",
+     "pid": 123
+    }
+   ],
+   "out": {
+    "text": "Started in the background (pid pid 123\nmore).",
+    "kind": "ok"
+   }
+  },
+  {
+   "in": [
+    {
+     "ok": true
+    }
+   ],
+   "out": {
+    "text": "Started in the background.",
+    "kind": "ok"
+   }
+  },
+  {
+   "in": [
+    {
+     "ok": false,
+     "stderr": "boom\nsecond"
+    }
+   ],
+   "out": {
+    "text": "boom",
+    "kind": "err"
+   }
+  },
+  {
+   "in": [
+    {
+     "ok": false,
+     "error": "no route"
+    }
+   ],
+   "out": {
+    "text": "no route",
+    "kind": "err"
+   }
+  },
+  {
+   "in": [
+    {
+     "ok": false
+    }
+   ],
+   "out": {
+    "text": "The command failed.",
+    "kind": "err"
+   }
+  },
+  {
+   "in": [
+    null
+   ],
+   "out": {
+    "text": "The command failed.",
+    "kind": "err"
+   }
+  }
+ ],
+ "missingConnections": [
+  {
+   "in": [
+    [
+     {
+      "connection": "a"
+     },
+     {
+      "connection": "b"
+     },
+     {
+      "connection": "a"
+     },
+     {
+      "connection": ""
+     }
+    ],
+    [
+     {
+      "name": "b"
+     }
+    ]
+   ],
+   "out": [
+    "a"
+   ]
+  },
+  {
+   "in": [
+    [],
+    []
+   ],
+   "out": []
+  },
+  {
+   "in": [
+    [
+     {
+      "connection": " x "
+     }
+    ],
+    null
+   ],
+   "out": [
+    "x"
+   ]
+  }
+ ],
+ "restarts": [
+  {
+   "in": [
+    {
+     "restart": true,
+     "mode": "terminal"
+    }
+   ],
+   "out": true
+  },
+  {
+   "in": [
+    {
+     "restart": true,
+     "mode": "background"
+    }
+   ],
+   "out": false
+  },
+  {
+   "in": [
+    {
+     "restart": true,
+     "detach": true
+    }
+   ],
+   "out": false
+  },
+  {
+   "in": [
+    {
+     "restart": false
+    }
+   ],
+   "out": false
+  },
+  {
+   "in": [
+    null
+   ],
+   "out": false
+  }
+ ],
+ "coerceMode": [
+  {
+   "in": [
+    {
+     "mode": "background"
+    }
+   ],
+   "out": "background"
+  },
+  {
+   "in": [
+    {
+     "mode": "terminal"
+    }
+   ],
+   "out": "terminal"
+  },
+  {
+   "in": [
+    {
+     "detach": true
+    }
+   ],
+   "out": "background"
+  },
+  {
+   "in": [
+    {
+     "detach": false
+    }
+   ],
+   "out": "terminal"
+  },
+  {
+   "in": [
+    {
+     "mode": "x",
+     "detach": true
+    }
+   ],
+   "out": "background"
+  },
+  {
+   "in": [
+    {}
+   ],
+   "out": "terminal"
+  }
+ ]
+}

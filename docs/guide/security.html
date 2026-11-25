@@ -180,23 +180,53 @@
 </p>
 <pre><code>CORVUS_BIND=0.0.0.0 ./run.sh</code></pre>
 <p>
+  Over the network anyone who reaches the port can read: telemetry, the
+  mission and the settings. Changing anything needs a key. Without it every
+  request that would change something is refused. To let a second station
+  command the aircraft, set <code>CORVUS_API_KEY</code> to the same long
+  random value (24 characters or more) on both computers:
+</p>
+<pre><code>CORVUS_BIND=0.0.0.0 CORVUS_API_KEY=your-long-random-value ./run.sh</code></pre>
+<p>
   On the second computer, start Corvus with <code>--server</code> and the
   first one's address and port. That is 8000 unless the first Corvus found it
   taken; the port it really took is in <code>~/.corvus/corvus.lock</code>.
 </p>
-<pre><code>corvus-gcs --server http://192.168.1.20:PORT</code></pre>
+<pre><code>CORVUS_API_KEY=your-long-random-value corvus-gcs --server http://192.168.1.20:PORT</code></pre>
 <p>
-  Corvus says so in its log at every launch. There is no authentication, and
-  a program on the network that reaches the port can arm the aircraft, so
-  treat that network the way you would treat handing someone the transmitter.
+  The key travels unencrypted. Whoever has it can arm the aircraft, so use a
+  network you trust or an SSH tunnel, and treat the key the way you would
+  treat the transmitter.
+</p>
+<p>
+  Some things stay on the computer Corvus runs on, with or without the key:
+  programs and terminals on that computer, SSH and its saved passwords, the
+  MCP settings and its confirmations (its Stop button also works from the
+  second station), settings export, import and reset, plugin settings and the
+  choice of the video program.
+</p>
+
+<h3 id="api-key">Other programs on this computer</h3>
+<p>
+  The same key protects the API on this computer. Corvus makes a new one at
+  every start and keeps it in memory only: its own window and plugins have
+  it, no file holds it and no request returns it. Another program, an AI
+  client that can send requests or another user of the computer can read
+  telemetry, but cannot arm, run a program, switch on MCP permissions or
+  answer a confirmation. An AI client works through
+  <a href="mcp.html">MCP</a>, with its own token and your switches. A script
+  that has to use the API needs <code>CORVUS_API_KEY</code> set for Corvus
+  and sends the value in the header <code>X-Corvus-Key</code>. This does not
+  protect against a program that runs under your own user and may read the
+  memory or the files of other programs.
 </p>
 
 <h2 id="browser">What a web page can do</h2>
 <h3 id="cors">Reading your telemetry: no</h3>
 <p>
-  A website open in your browser cannot read your telemetry. The API names
-  only loopback origins as allowed to read its answers, so another tool on
-  your own machine still works and the web at large gets nothing: no page can
+  A website open in your browser cannot read your telemetry. The API lets
+  only its own origin read its answers: the same host and port. A page from
+  another port on your own computer gets nothing either, so no page can
   fetch the position, battery and mode, or the SSH host, user name and key
   path out of the configuration. If a tool on another origin genuinely needs
   access, name exactly that origin in <code>CORVUS_ALLOWED_ORIGIN</code>.

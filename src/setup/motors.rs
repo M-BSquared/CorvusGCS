@@ -739,21 +739,8 @@ impl MotorsPage {
             .galley(Pos2::new(status_x, ay + rh / 2.0 - sg.size().y / 2.0), sg, color);
         let mut y = bottom + 26.0;
         if armed {
-            let g = kit::wrapped_weight(
-                ui,
-                "Motor configuration is read-only while armed",
-                11.5,
-                Weight::W400,
-                style::warning(),
-                w - 28.0,
-                1.4,
-            );
-            let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, g.size().y + 24.0));
-            {
-                card::paint(ui.painter(), r, card::Look::Tone(Tone::Warn));
-            }
-            ui.painter().galley(r.min + Vec2::new(14.0, 12.0), g, style::warning());
-            y = r.bottom() + 4.0;
+            y = crate::ui::message::boxed(ui, x, y, w, "Motor configuration is read-only while armed", Tone::Warn)
+                + 4.0;
         }
         let Some(doc) = self.doc.clone() else { return y };
         if doc.motors.is_empty() && doc.sections.is_empty() && doc.sensors.is_empty() {
@@ -1899,7 +1886,7 @@ impl MotorsPage {
             "Remove all propellers first.",
             12.0,
             Weight::W700,
-            style::critical(),
+            crate::ui::message::notice(Tone::Err).text,
             0.0,
         );
         let d = kit::wrapped_weight(
@@ -1908,7 +1895,7 @@ impl MotorsPage {
             11.0,
             Weight::W400,
             style::text_2(),
-            iw - 20.0 - t.size().x - 8.0,
+            iw - 22.0 - 14.0 - t.size().x - 8.0,
             1.45,
         );
         let strip_h = 14.0 + t.size().y.max(d.size().y);
@@ -1918,12 +1905,12 @@ impl MotorsPage {
             card::paint(&painter, r, card::Look::Tone(Tone::Err));
         }
         painter.galley(
-            Pos2::new(strip.left() + 10.0, strip.top() + 7.0),
+            Pos2::new(strip.left() + 22.0, strip.top() + 7.0),
             t.clone(),
-            style::critical(),
+            crate::ui::message::notice(Tone::Err).text,
         );
         painter.galley(
-            Pos2::new(strip.left() + 10.0 + t.size().x + 8.0, strip.top() + 7.0),
+            Pos2::new(strip.left() + 22.0 + t.size().x + 8.0, strip.top() + 7.0),
             d,
             style::text_2(),
         );

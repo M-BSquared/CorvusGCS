@@ -316,8 +316,41 @@ fn wait_for(what: &str, limit: Duration, mut done: impl FnMut() -> bool) {
     panic!("timed out waiting for {what}");
 }
 
-/// One HTTP request: `(status, headers lowercased, body as JSON)`.
+/// The key of each core started here, by its address.
+static KEYS: std::sync::Mutex<Vec<(SocketAddr, String)>> = std::sync::Mutex::new(Vec::new());
+
+fn remember_key(core: &corvus_core::Core, addr: SocketAddr) {
+    let key = core.service::<corvus_core::ApiKey>().unwrap().secret().to_string();
+    let mut keys = KEYS.lock().unwrap();
+    keys.retain(|(a, _)| *a != addr);
+    keys.push((addr, key));
+}
+
+/// One HTTP request: `(status, headers lowercased, body as JSON)`. The routes
+/// under `/api` are the window's here, so they get its key; `/mcp` is the AI
+/// client's, which has none.
 fn http(
+    addr: SocketAddr,
+    method: &str,
+    path: &str,
+    headers: &str,
+    body: Option<&Json>,
+) -> (u16, Vec<(String, String)>, Json) {
+    let key = KEYS
+        .lock()
+        .unwrap()
+        .iter()
+        .find(|(a, _)| *a == addr)
+        .map(|(_, k)| k.clone());
+    let headers = match key {
+        Some(k) if path.starts_with("/api/") => format!("X-Corvus-Key: {k}\r\n{headers}"),
+        _ => headers.to_string(),
+    };
+    http_as_anyone(addr, method, path, &headers, body)
+}
+
+/// [`http`] of a program that has no key.
+fn http_as_anyone(
     addr: SocketAddr,
     method: &str,
     path: &str,
@@ -438,6 +471,7 @@ fn an_mcp_client_flies_a_px4_over_http() {
         .unwrap();
     core.start().unwrap();
     let addr = core.service::<HttpInfo>().unwrap().addr().unwrap();
+    remember_key(&core, addr);
     core.service::<VehicleService>().unwrap().active().bridge.start();
     let vehicle = Vehicle::start(port);
     wait_for("the vehicle", Duration::from_secs(15), || {
@@ -590,7 +624,8 @@ fn an_mcp_client_flies_a_px4_over_http() {
         listed(&mut ai).len(),
         corvus_core::mcp::tools::builtin()
             .iter()
-            .filter(|t| t.permission == "map" || !corvus_core::mcp::settings::EXTENSIONS.contains(&t.permission))
+            .filter(|t| ["map", "pages", "planner"].contains(&t.permission)
+                || !corvus_core::mcp::settings::EXTENSIONS.contains(&t.permission))
             .count(),
         "every built in tool the switches above open is listed"
     );
@@ -1062,6 +1097,7 @@ impl Station {
             .module(corvus_core::PluginsModule::new())
             .module(corvus_core::McpModule::new())
             .module(corvus_core::DrawingsModule::new())
+            .module(corvus_core::PlannerModule::new())
             .module(corvus_core::SetupSchemasModule::new())
             .module(Http::new(HttpOptions {
                 port: 0,
@@ -1071,6 +1107,7 @@ impl Station {
             .unwrap();
         core.start().unwrap();
         let addr = core.service::<HttpInfo>().unwrap().addr().unwrap();
+        remember_key(&core, addr);
         core.service::<VehicleService>().unwrap().active().bridge.start();
         let vehicle = Vehicle::start(port);
         wait_for("the vehicle", Duration::from_secs(15), || {
@@ -1219,6 +1256,38 @@ fn the_chat_signs_in_by_itself_and_is_asked_for_what_is_not_allowed() {
 }
 
 #[test]
+fn an_agent_that_sends_requests_does_not_get_past_the_switches() {
+    let st = Station::start("agent");
+    st.vehicle.take();
+    for (method, path, body) in [
+        ("GET", "/api/mcp", None),
+        (
+            "POST",
+            "/api/mcp/settings",
+            Some(json!({"enabled": true, "permissions": {"arm": true}})),
+        ),
+        ("POST", "/api/mcp/token", Some(json!({}))),
+        ("POST", "/api/mcp/confirm", Some(json!({"id": "x", "allow": true}))),
+        ("POST", "/api/mcp/window", Some(json!({"id": "w", "tools": []}))),
+        ("POST", "/api/mavlink/arm", Some(json!({"arm": true}))),
+        ("POST", "/api/mavlink/takeoff", Some(json!({"altitude": 10}))),
+    ] {
+        let (status, _, answer) = http_as_anyone(st.addr, method, path, "", body.as_ref());
+        assert_eq!(status, 401, "{path}: {answer}");
+        assert!(
+            answer.get("token").is_none() && answer.get("assistant").is_none(),
+            "{answer}"
+        );
+    }
+    let (_, _, card) = http(st.addr, "GET", "/api/mcp", "", None);
+    assert_eq!(card["settings"]["enabled"], false);
+    assert_eq!(card["settings"]["permissions"]["arm"], false);
+    std::thread::sleep(Duration::from_millis(300));
+    let seen = st.vehicle.take();
+    assert!(commands(&seen).iter().all(|c| c.f("command") != 400.0), "nothing armed");
+}
+
+#[test]
 fn closing_does_not_wait_for_an_unanswered_question() {
     let st = Station::start("closing");
     let chat = st.sign_in(&st.chat_token());
@@ -1303,6 +1372,13 @@ fn the_chat_draws_measures_and_shows() {
     );
     ai.ok("show_on_map", json!({"ids": ["way"]}));
     ai.refused("show_on_map", json!({"ids": ["nope"]}));
+    ai.ok(
+        "show_on_map",
+        json!({"points": [{"lat": -33.86, "lon": 151.21}], "zoom": 11, "open": true}),
+    );
+    ai.refused("show_on_map", json!({"points": [{"lat": 1, "lon": 1}], "zoom": 99}));
+    let why = ai.refused("open_page", json!({"page": "settings"}));
+    assert!(why.contains("No Corvus window"), "{why}");
     ai.refused(
         "draw_on_map",
         json!({"shapes": [{"kind": "line", "points": [{"from": "moon"}]}]}),
@@ -1493,4 +1569,192 @@ fn the_chat_plans_patterns_and_flies_drawings() {
         ai.ok("get_saved_mission", json!({"name": "Field"}))["plan"]["items"][0]["alt"],
         20.0
     );
+}
+
+#[test]
+fn the_chat_reads_telemetry_draws_simply_and_plans_in_the_planner() {
+    let st = Station::start("simple");
+    let mut ai = st.sign_in(&st.chat_token());
+
+    // ---- telemetry ----------------------------------------------------------
+    let t = ai.ok("get_telemetry", json!({}));
+    assert_eq!(t["armed"], false);
+    assert_eq!(t["flying"], false);
+    assert!((t["lat"].as_f64().unwrap() - 48.0795).abs() < 1e-6, "{t}");
+    assert_eq!(t["distance_from_home_m"], 0.0);
+    let t = ai.ok("get_telemetry", json!({"groups": "gps", "seconds": "0.5"}));
+    assert_eq!(t["satellites"], 14);
+    assert!(t.get("armed").is_none(), "only what was asked for: {t}");
+    assert_eq!(t["watched"]["satellites"]["max"], 14.0);
+    ai.refused("get_telemetry", json!({"groups": ["weather"]}));
+
+    // ---- drawing, as small models write it ----------------------------------
+    let line = ai.ok(
+        "draw_line",
+        json!({"points": "[[48.08, 11.64], [48.081, 11.64]]", "arrow": "true"}),
+    );
+    assert!((line["length_m"].as_f64().unwrap() - 111.0).abs() < 1.0, "{line}");
+    let area = ai.ok(
+        "draw_area",
+        json!({"points": ["vehicle", {"north_m": 100}, {"east_m": 100}], "color": "red"}),
+    );
+    assert!((area["area_m2"].as_f64().unwrap() - 5000.0).abs() < 50.0, "{area}");
+    ai.ok(
+        "draw_circle",
+        json!({"from": "home", "radius_m": 50, "text": "Keep out"}),
+    );
+    ai.ok(
+        "draw_marker",
+        json!({"lat": 48.08, "lon": 11.64, "icon": "flag", "id": "goal"}),
+    );
+    ai.ok(
+        "draw_on_map",
+        json!({"shapes": {"lat": 48.08, "lon": 11.65, "radius_m": 20}}),
+    );
+    let kinds: Vec<Json> = ai.ok("list_drawings", json!({}))["shapes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["kind"].clone())
+        .collect();
+    assert_eq!(kinds, ["arrow", "polygon", "circle", "marker", "circle"]);
+
+    // ---- the planner --------------------------------------------------------
+    assert_eq!(ai.ok("get_mission_plan", json!({}))["count"], 0);
+    let plan = ai.ok(
+        "plan_mission",
+        json!({"waypoints": [{"from": "vehicle", "north_m": 200}, {"from": "vehicle", "north_m": 200, "east_m": 100,
+               "altitude": 60, "hold_s": 5}], "altitude": 40, "speed": 8}),
+    );
+    let types: Vec<&str> = plan["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| i["type"].as_str().unwrap())
+        .collect();
+    assert_eq!(types, ["takeoff", "waypoint", "waypoint", "return"]);
+    assert!((plan["items"][1]["from_previous_m"].as_f64().unwrap() - 200.0).abs() < 0.5);
+    assert_eq!(plan["items"][2]["altitude"], 60.0);
+    assert_eq!(plan["items"][2]["hold_s"], 5.0);
+    let plan = ai.ok("edit_mission_item", json!({"item": 2, "altitude": 55, "east_m": 30}));
+    assert_eq!(plan["items"][1]["altitude"], 55.0);
+    assert!(
+        (plan["items"][1]["from_previous_m"].as_f64().unwrap() - 202.2).abs() < 0.5,
+        "moved from where it was"
+    );
+    let plan = ai.ok(
+        "plan_mission",
+        json!({"waypoints": [{"from": "home", "north_m": -100}], "append": true}),
+    );
+    let types: Vec<&str> = plan["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| i["type"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        types,
+        ["takeoff", "waypoint", "waypoint", "waypoint", "return"],
+        "before the ending"
+    );
+    assert_eq!(ai.ok("remove_mission_item", json!({"item": 4}))["count"], 4);
+    let plan = ai.ok("edit_mission_item", json!({"item": 3, "move_to": 2}));
+    assert_eq!(plan["items"][1]["altitude"], 60.0);
+    let why = ai.refused("edit_mission_item", json!({"item": 2, "move_to": 1}));
+    assert!(why.contains("stays first"), "{why}");
+    let plan = ai.ok("plan_mission", json!({"waypoints": ["home"], "at": 2}));
+    assert_eq!(
+        plan["items"][1]["altitude"], 30.0,
+        "before the point that was the second"
+    );
+    ai.ok("remove_mission_item", json!({"item": 2}));
+    ai.ok("edit_mission_item", json!({"item": 2, "move_to": 3}));
+    let plan = ai.ok(
+        "set_mission_plan",
+        json!({"name": "Field", "start": "home", "aircraft": "multirotor"}),
+    );
+    assert_eq!(plan["name"], "Field");
+    ai.refused("set_mission_plan", json!({"aircraft": "balloon"}));
+    ai.refused("edit_mission_item", json!({"item": 9, "altitude": 10}));
+    ai.refused(
+        "plan_mission",
+        json!({"waypoints": [{"lat": 48.0, "lon": 11.0, "type": "teleport"}]}),
+    );
+    assert_eq!(
+        ai.ok("get_mission_plan", json!({}))["count"],
+        4,
+        "a refusal leaves the plan"
+    );
+    assert!(
+        st.vehicle.take().iter().all(|s| !s.name.starts_with("MISSION_")),
+        "planning sends nothing"
+    );
+
+    // ---- what the window shows is what is read ------------------------------
+    let (_, _, held) = http(st.addr, "GET", "/api/mission/planner", "", None);
+    let mut shown = held["plan"].clone();
+    shown["items"].as_array_mut().unwrap().remove(1);
+    let report = json!({"plan": shown, "seq": held["seq"], "page": false,
+                       "checks": {"problems": ["The route comes close to the ground."]}});
+    let (_, _, body) = http(st.addr, "POST", "/api/mission/planner/mirror", "", Some(&report));
+    assert_eq!(body["taken"], true, "{body}");
+    let read = ai.ok("get_mission_plan", json!({}));
+    assert_eq!(read["count"], 3);
+    assert_eq!(read["problems"][0], "The route comes close to the ground.");
+    let plan = ai.ok("edit_mission_item", json!({"item": 2, "altitude": 50}));
+    assert!(plan["note"].as_str().unwrap().contains("Settings, Layout"), "{plan}");
+
+    // ---- and it goes to the vehicle only with the operator's yes -------------
+    let why = ai.refused("upload_mission_plan", json!({}));
+    assert!(why.contains("no Corvus window is open"), "{why}");
+    st.set(all_allowed());
+    assert_eq!(
+        ai.ok("upload_mission_plan", json!({}))["items"],
+        4,
+        "three points and the speed"
+    );
+    let seen = st.vehicle.take();
+    assert!(seen.iter().any(|s| s.name == "MISSION_ITEM_INT"));
+    assert!(
+        commands(&seen)
+            .iter()
+            .all(|c| ![400.0, 300.0].contains(&c.f("command"))),
+        "uploading neither arms nor starts"
+    );
+    let survey = ai.ok(
+        "plan_survey",
+        json!({"points": [{"from": "home"}, {"from": "home", "north_m": 200}, {"from": "home", "north_m": 200, "east_m": 200}],
+               "altitude": 50, "spacing_m": 50}),
+    );
+    assert!(survey["points"].as_u64().unwrap() > 3, "{survey}");
+    let plan = ai.ok("get_mission_plan", json!({}));
+    assert_eq!(plan["items"][0]["type"], "takeoff");
+    assert_eq!(ai.ok("remove_mission_item", json!({"all": true}))["count"], 0);
+    ai.refused("upload_mission_plan", json!({}));
+
+    // ---- what is saved and what is on board, into the planner ---------------
+    ai.refused("save_mission", json!({"name": "Empty"}));
+    ai.ok("plan_mission", json!({"waypoints": [{"from": "home", "north_m": 50}]}));
+    ai.ok("save_mission", json!({"name": "Short"}));
+    ai.ok("remove_mission_item", json!({"all": true}));
+    assert_eq!(ai.ok("open_mission_plan", json!({"name": "Short"}))["count"], 3);
+    ai.ok("remove_mission_item", json!({"item": 1}));
+    let plan = ai.ok(
+        "plan_mission",
+        json!({"waypoints": [{"from": "home", "north_m": 80}], "at": 2}),
+    );
+    let types: Vec<&str> = plan["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| i["type"].as_str().unwrap())
+        .collect();
+    assert_eq!(types, ["waypoint", "waypoint", "return"], "no takeoff in the middle");
+    let plan = ai.ok(
+        "plan_mission",
+        json!({"waypoints": [{"from": "home", "north_m": 90}], "append": true, "takeoff": true}),
+    );
+    assert_eq!(plan["items"][0]["type"], "takeoff", "asked for, it comes first");
+    ai.refused("open_mission_plan", json!({"name": "Nowhere"}));
+    ai.refused("open_mission_plan", json!({}));
 }

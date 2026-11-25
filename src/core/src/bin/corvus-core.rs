@@ -59,6 +59,7 @@ fn main() -> ExitCode {
         .module(corvus_core::McpModule::new())
         .module(corvus_core::TakModule::new())
         .module(corvus_core::DrawingsModule::new())
+        .module(corvus_core::PlannerModule::new())
         .module(corvus_core::SetupSchemasModule::new())
         .module(corvus_core::MapDataModule::new())
         .module(Http::new(HttpOptions {

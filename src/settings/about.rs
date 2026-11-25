@@ -384,10 +384,8 @@ fn plugin_row(ui: &mut egui::Ui, f: &mut Form, p: &Value, first: bool) -> bool {
     }
     let mut y = top + head_h;
     if let Some(d) = p.get("description").and_then(Value::as_str).filter(|d| !d.is_empty()) {
-        let g = crate::ui::kit::wrapped_weight(ui, d, 12.0, Weight::W400, style::text_3(), f.w, 1.5);
-        let h = g.size().y;
-        ui.painter().galley(Pos2::new(f.x, y + 4.0), g, style::text_3());
-        y += 4.0 + h;
+        let id = p.get("id").and_then(Value::as_str).unwrap_or("");
+        y += 4.0 + form::desc_info_at(ui, f.x, y + 4.0, f.w, d, 2, ("plugindesc", id));
     }
     y += 14.0;
     ui.painter().hline(
@@ -430,7 +428,9 @@ impl SettingsPage {
         let (mut refresh, mut update_all, mut file) = (false, false, false);
         form::section(ui, f, "Available plugins", |ui, f| {
             form::card(ui, f, "", |ui, f| {
-                form::desc(ui, f, STORE_INFO);
+                form::desc_info(ui, f, STORE_INFO, 2, "storeinfo");
+                f.skip(10.0);
+                form::message(ui, f, crate::plugins::store::RISK, Tone::Warn);
                 f.skip(10.0);
                 if let (Some(why), true) = (&problem, missing) {
                     form::message(
@@ -608,14 +608,12 @@ fn store_row(
         .as_ref()
         .and(now.refused)
         .map(|w| format!("Not loaded: {w}."));
-    for text in [Some(row.description.as_str()).filter(|d| !d.is_empty()), why.as_deref()]
+    for (i, text) in [Some(row.description.as_str()).filter(|d| !d.is_empty()), why.as_deref()]
         .into_iter()
         .flatten()
+        .enumerate()
     {
-        let g = crate::ui::kit::wrapped_weight(ui, text, 12.0, Weight::W400, style::text_3(), f.w, 1.5);
-        let h = g.size().y;
-        ui.painter().galley(Pos2::new(f.x, y + 4.0), g, style::text_3());
-        y += 4.0 + h;
+        y += 4.0 + form::desc_info_at(ui, f.x, y + 4.0, f.w, text, 2, ("storedesc", &row.id, i));
     }
     if let Some(Doing::Installing(step)) = now.doing {
         y += 10.0;

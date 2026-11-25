@@ -1,0 +1,23 @@
+[package]
+name = "corvus_scene"
+version = "0.0.0"
+edition = "2021"
+rust-version = "1.99"
+publish = false
+description = "Makes the pictures of the README and the website: simulated aircraft, staged windows (corvus-scene); never shipped"
+
+[[bin]]
+name = "corvus-scene"
+path = "src/main.rs"
+
+[dependencies]
+corvus_link = { path = "../link" }
+# The aircraft's parameters, the scenes and the window's staging, in the order they are written.
+serde_json = { version = "1", features = ["preserve_order"] }
+# The window's picture at the sizes the website shows.
+image = { workspace = true }
+# The flight log, and the parameter descriptions the aircraft serves.
+lzma-rs = "0.3"
+# The companion computers behind the terminals: the SSH server of the core's own tests.
+russh = { version = "0.65", default-features = false, features = ["ring", "rsa", "flate2"] }
+tokio = { version = "1", default-features = false, features = ["rt", "net", "time", "sync", "io-util", "macros"] }

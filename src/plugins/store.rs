@@ -48,6 +48,9 @@ const LIBRARY_TIMEOUT: Duration = Duration::from_secs(1800);
 const NOTES_MAX: usize = 32;
 const UNREACHED: &str = "could not reach the server";
 
+/// What the operator reads wherever plugins are installed.
+pub const RISK: &str = "A plugin is code that runs inside Corvus GCS with your rights: it can run programs, read files and steer the aircraft, and it may use third party libraries. Its download is checked against its repository, but not every plugin has been reviewed. Install only what you trust. You do so at your own risk.";
+
 /// The folder beside the program that libraries are taken from.
 pub const BESIDE: &str = "corvus-plugins";
 
@@ -374,6 +377,9 @@ pub fn install_file(src: &Source, path: &Path) -> Result<Done, String> {
     if !corvus_package::is_valid_id(&id) {
         return Err("the file is not a Corvus plugin for this computer".into());
     }
+    if super::PARTS.contains(&id.as_str()) {
+        return Err("this is a part of Corvus GCS now and does not need to be installed".into());
+    }
     let name = src.offered.iter().find(|o| o.id == id).map_or(id.as_str(), |o| o.name);
     // Only what lies beside the program is followed when it changes, not a file from anywhere.
     let origin = path
@@ -436,6 +442,9 @@ fn file_stamp(path: &Path) -> String {
 /// plugins, goes on with the plugins that fit it.
 pub fn follow_beside(src: &Source) {
     for (id, m) in installed(&src.dir) {
+        if super::PARTS.contains(&id.as_str()) {
+            continue;
+        }
         let origin = Path::new(&m.origin);
         let followed = !m.origin.is_empty() && origin.parent().is_some_and(|p| src.beside.iter().any(|b| b == p));
         if !followed || !origin.is_file() || file_stamp(origin) == m.origin_stamp {
@@ -818,6 +827,9 @@ impl Store {
             .collect();
         // Installed from a file and not on any list: it can be removed here.
         for (id, m) in &self.have {
+            if super::PARTS.contains(&id.as_str()) {
+                continue;
+            }
             if !rows.iter().any(|r| r.id == *id) {
                 rows.push(Row {
                     id: id.clone(),
@@ -1305,6 +1317,29 @@ mod tests {
     }
 
     #[test]
+    fn a_part_of_the_program_is_neither_installed_nor_followed() {
+        let src = local("part");
+        let path = src.beside[0].join(corvus_package::built_name("corvus_plugin_ssh_launcher"));
+        std::fs::write(&path, library("abi-1", "corvus_plugin_ssh_launcher", "")).unwrap();
+        let why = install_file(&src, &path).unwrap_err();
+        assert!(why.contains("part of Corvus GCS"), "{why}");
+        assert!(installed(&src.dir).is_empty());
+        // What an earlier version installed from there stays as it is.
+        let folder = src.dir.join("ssh-launcher");
+        std::fs::create_dir_all(&folder).unwrap();
+        let manifest = json!({"id": "ssh-launcher", "version": "1.3.0", "library": "x.lib", "sha256": "00",
+                              "origin": path.to_string_lossy(), "origin_stamp": "1-1"})
+        .to_string();
+        std::fs::write(folder.join(loader::MANIFEST), &manifest).unwrap();
+        follow_beside(&src);
+        assert_eq!(
+            std::fs::read_to_string(folder.join(loader::MANIFEST)).unwrap(),
+            manifest
+        );
+        let _ = std::fs::remove_dir_all(src.dir.parent().unwrap());
+    }
+
+    #[test]
     fn the_list_is_complete_without_a_release() {
         let src = local("offline");
         let ctx = egui::Context::default();
@@ -1382,7 +1417,6 @@ mod tests {
             "nuttx-console",
             "remote-id-check",
             "schwalby",
-            "ssh-launcher",
             "tak",
             "trajectory-viewer",
             "vibration",

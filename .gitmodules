@@ -10,9 +10,6 @@
 [submodule "plugins/schwalby"]
 	path = plugins/schwalby
 	url = https://github.com/M-BSquared/corvus-schwalby.git
-[submodule "plugins/ssh-launcher"]
-	path = plugins/ssh-launcher
-	url = https://github.com/M-BSquared/corvus-ssh-launcher.git
 [submodule "plugins/tak"]
 	path = plugins/tak
 	url = https://github.com/M-BSquared/corvus-tak.git

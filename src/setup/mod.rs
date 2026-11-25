@@ -347,6 +347,43 @@ impl SetupPage {
         )));
     }
 
+    /// Whether the tile's page `id` is open.
+    pub fn is_on(&self, id: &str) -> bool {
+        let on = match &self.view {
+            View::Tiles => "",
+            View::Parameters(_) => "parameters",
+            View::Safety(_) => "safety",
+            View::Motors(_) => "motors",
+            View::Battery(_) => "battery",
+            View::Calibration(_) => "calibration",
+            View::Radio(_) => "control",
+            View::Tuning(_) => "tuning",
+            View::Rtk(_) => "rtk",
+            View::Firmware(_) => "firmware",
+            View::FirstSetup(_) => "firstsetup",
+            View::Video(_) => "video",
+            View::Sik(_) => "sik",
+            View::Betaflight(_) => "betaflight",
+            View::RemoteId(_) => "remoteid",
+            View::Elsewhere(_) => return false,
+        };
+        on == id
+    }
+
+    /// Whether the open page may hold work that opening another one would throw away:
+    /// parameters changed and not written, a calibration, a firmware on its way.
+    pub fn holds_work(&self) -> bool {
+        matches!(
+            self.view,
+            View::Parameters(_)
+                | View::Calibration(_)
+                | View::Firmware(_)
+                | View::FirstSetup(_)
+                | View::Sik(_)
+                | View::Tuning(_)
+        )
+    }
+
     /// Back to the tiles (leaving the left rail's SETUP does the same).
     pub fn reset(&mut self) {
         self.view = View::Tiles;

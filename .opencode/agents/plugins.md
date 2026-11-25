@@ -1,5 +1,5 @@
 ---
-description: Plugin specialist for Corvus GCS. Owns the plugin crates in plugins (submodules: AI Chat, Map Entities, NuttX Console, Schwalby, SSH Launcher, TAK, Trajectory Viewer, Vibration Monitor), the plugin registry and views in the interface, the Plugin trait and Host of corvus_api, the window's half of the MCP server, and the backend's plugin, file, config and MCP areas. Keeps the plugin contract stable.
+description: Plugin specialist for Corvus GCS. Owns the plugin crates in plugins (submodules: AI Chat, Map Entities, NuttX Console, Remote ID Check, Schwalby, TAK, Trajectory Viewer, Vibration Monitor), the plugin registry and views in the interface, the Plugin trait and Host of corvus_api, the window's half of the MCP server, and the backend's plugin, file, config and MCP areas. Keeps the plugin contract stable.
 mode: subagent
 permission:
   edit:

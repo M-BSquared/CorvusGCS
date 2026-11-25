@@ -364,6 +364,11 @@
 </p>
 <pre><code>CORVUS_ALLOW_MULTI=1 ./run.sh</code></pre>
 <p>
+  A second start without that does not open a second window on the running
+  Corvus unless both have the same
+  <a href="security.html#api-key"><code>CORVUS_API_KEY</code></a>.
+</p>
+<p>
   The guard is a lock the operating system holds for the running process, not
   a file left on disk, so a Corvus that crashed or was force quit leaves nothing
   to clean up. The next launch just works.

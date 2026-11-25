@@ -160,6 +160,11 @@
   switch it on, and you decide each kind of act on its own.
 </p>
 
+<div class="callout callout-warn" id="risk">
+  <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-alert"></use></svg>
+  <div><p><strong>At your own risk.</strong> A language model makes mistakes. What you allow it may do at any moment, also wrongly, up to flying the aircraft. A model may misread what you wrote, and it may follow text it reads in a log, a chat or a web page. Corvus checks and limits what reaches the aircraft, but it cannot judge whether an act makes sense. Leave off what you do not need, keep <strong>Ask me first</strong> on, keep your hands on the controls, and try it with the propellers off. You connect an AI client and allow its acts at your own risk. Nothing of this is needed to fly with Corvus.</p></div>
+</div>
+
 <h2 id="ai-chat">AI Chat needs no setting up</h2>
 <p>
   The <a href="plugins.html#ai-chat">AI Chat</a> plugin signs in by itself, with
@@ -218,14 +223,16 @@
 <table>
   <thead><tr><th>Switch</th><th>Tools</th></tr></thead>
   <tbody>
-    <tr><td>Read telemetry and status</td><td><code>get_vehicle_state</code>, <code>list_vehicles</code>, <code>get_capabilities</code>, <code>list_flight_modes</code>, <code>download_mission</code>, <code>get_geofence</code>, <code>list_saved_missions</code>, <code>get_saved_mission</code>, <code>wait_for</code> (until it is airborne, has arrived, has landed and so on, at most 30 seconds per call), <code>resolve_place</code>, <code>measure</code>, <code>plan_pattern</code> (a preview on the map, nothing is sent)</td></tr>
+    <tr><td>Read telemetry and status</td><td><code>get_telemetry</code> (short, by group, or watched for up to 20 seconds), <code>get_vehicle_state</code> (everything), <code>list_vehicles</code>, <code>get_capabilities</code>, <code>list_flight_modes</code>, <code>download_mission</code>, <code>get_geofence</code>, <code>list_saved_missions</code>, <code>get_saved_mission</code>, <code>wait_for</code> (until it is airborne, has arrived, has landed and so on, at most 30 seconds per call), <code>resolve_place</code>, <code>measure</code>, <code>plan_pattern</code> (a preview on the map, nothing is sent)</td></tr>
     <tr><td>Read parameters</td><td><code>list_parameters</code>, <code>get_parameters</code>, <code>download_parameters</code></td></tr>
     <tr><td>Change parameters</td><td><code>set_parameter</code>, only for names the connected firmware reported</td></tr>
-    <tr><td>Missions</td><td><code>upload_mission</code>, <code>start_mission</code>, <code>clear_mission</code>, <code>resume_mission</code>, <code>set_mission_item</code>, <code>save_mission</code>, <code>fly_pattern</code> (grid, spiral, circle or line). Starting a mission arms the vehicle.</td></tr>
+    <tr><td>Missions</td><td><code>upload_mission_plan</code> (the plan in the mission planner), <code>upload_mission</code>, <code>start_mission</code>, <code>clear_mission</code>, <code>resume_mission</code>, <code>set_mission_item</code>, <code>save_mission</code>, <code>fly_pattern</code> (grid, spiral, circle or line). Starting a mission arms the vehicle.</td></tr>
     <tr><td>Arm and disarm</td><td><code>arm</code>, <code>disarm</code></td></tr>
     <tr><td>Takeoff, land, return, hold and flight mode</td><td><code>takeoff</code>, <code>land</code>, <code>return_to_launch</code>, <code>hold</code>, <code>set_flight_mode</code>, <code>set_home</code>, <code>set_speed</code>, <code>set_heading</code>, <code>face_place</code></td></tr>
     <tr><td>Fly to a point</td><td><code>fly_to</code>, one point or several, at a height above home; <code>move_by</code>, <code>change_altitude</code> and <code>orbit</code> in the air only; <code>fly_drawing</code>, along a drawing</td></tr>
-    <tr><td>Draw on the map</td><td><code>draw_on_map</code>, <code>list_drawings</code>, <code>remove_drawings</code>, <code>show_on_map</code>, <code>search_place</code>, <code>notify_operator</code>. On from the start: nothing of it reaches the vehicle. The place search sends the searched name to OpenStreetMap.</td></tr>
+    <tr><td>Draw on the map</td><td><code>draw_marker</code>, <code>draw_line</code>, <code>draw_circle</code>, <code>draw_area</code>, <code>draw_on_map</code> (several shapes at once), <code>list_drawings</code>, <code>remove_drawings</code>, <code>show_on_map</code>, <code>search_place</code>, <code>notify_operator</code>. On from the start: nothing of it reaches the vehicle. The place search sends the searched name to OpenStreetMap.</td></tr>
+    <tr><td>Open pages</td><td><code>open_page</code>: bring a page of the window to the front, such as the mission planner, a setup page, a tab of the settings, the SSH tab, a plugin or the 3D map. It only opens it</td></tr>
+    <tr><td>Plan in the mission planner</td><td><code>get_mission_plan</code>, <code>open_mission_plan</code>, <code>plan_mission</code>, <code>plan_survey</code>, <code>edit_mission_item</code>, <code>remove_mission_item</code>, <code>set_mission_plan</code>. On from the start: nothing of it reaches the vehicle.</td></tr>
     <tr><td>Change the geofence</td><td><code>set_geofence</code>, <code>clear_geofence</code></td></tr>
     <tr><td>Camera and gimbal</td><td><code>look_at</code>, <code>stop_looking</code>, <code>point_gimbal</code>, <code>take_photo</code>, <code>set_photo_distance</code>. What the autopilot does not know is refused with the reason.</td></tr>
     <tr><td>Direct control</td><td><code>manual_control</code>, <code>set_velocity</code>, <code>stop_control</code></td></tr>
@@ -286,7 +293,8 @@
 
 <h2 id="drawings">Drawings</h2>
 <p>
-  <code>draw_on_map</code> draws lines, arrows, areas, circles, sectors (a field
+  <code>draw_marker</code>, <code>draw_line</code>, <code>draw_circle</code> and <code>draw_area</code>
+  draw one thing each, which small models do best. <code>draw_on_map</code> draws several at once: lines, arrows, areas, circles, sectors (a field
   of view), markers and text on the Home map, flat and in 3D. Places can be
   coordinates, or relative to the vehicle or home: 200 m along its heading, 50 m
   north of home. So you can ask for an arrow from the aircraft to the search
@@ -295,14 +303,67 @@
   of it away. Drawings last until Corvus is closed. The map holds at most 200.
 </p>
 
+<h2 id="telemetry">Asking for telemetry</h2>
+<p>
+  "How full is the battery?", "Is the GPS good?", "How much does it vibrate right now?":
+  <code>get_telemetry</code> answers a group of values with the unit in each name: overview,
+  position, attitude, speed, battery, gps, link, mission, health and vehicle. With
+  <code>seconds</code> it watches that long (20 at most) and answers the smallest, the largest and
+  the mean value too. A value the vehicle does not report is <code>null</code>.
+</p>
+
+<h2 id="planner">Planning missions</h2>
+<p>
+  <code>plan_mission</code> puts a route into the <a href="mission.html">mission planner</a>:
+  "plan a square of 200 m around the aircraft at 40 m". <code>plan_survey</code> covers an area back
+  and forth. <code>get_mission_plan</code> reads what you have drawn there yourself, with the
+  warnings the planner gives about it. <code>edit_mission_item</code> moves a point, changes its
+  height, speed and so on or its place in the order, <code>remove_mission_item</code> takes it out,
+  and <code>set_mission_plan</code> sets the name, the start and the aircraft.
+  <code>open_mission_plan</code> opens a saved mission or reads the one the vehicle holds, and
+  <code>save_mission</code> saves what is in the planner (with the <strong>Missions</strong> permission).
+  Nothing is sent to the vehicle: you look at the plan, change what you like, and upload it, or have
+  it uploaded with <code>upload_mission_plan</code>, which needs the <strong>Missions</strong>
+  permission. When the client replaces a plan of yours, the planner says so and
+  <strong>Take mine back</strong> brings yours back. A client that may open pages
+  brings the planner to the front, also when its page is off under <strong>Settings</strong>,
+  <strong>Layout</strong>; it then stays until Corvus is closed.
+</p>
+
+<h2 id="showing">Showing places and pages</h2>
+<p>
+  <code>show_on_map</code> moves the map anywhere: to coordinates, to a place relative to the
+  vehicle or home, to drawings, or to a place by its name ("show me Neubiberg", which needs
+  internet). The client can choose the zoom and bring the map to the front. <code>open_page</code>
+  opens a page: "open the plugin settings", "show the parameters", "switch to 3D". It presses
+  nothing on it. Corvus stays where it is while a page with unfinished work is open (parameters,
+  a calibration, a firmware) and puts a line on the notification board instead.
+</p>
+
 <h2 id="plugins">Plugin tools</h2>
 <p>
   Plugins can add tools of their own. The client sees them only with
   <strong>Plugin tools</strong> on, the plugin's own switch on in the list
-  at the end of the Permissions dialog, and whatever the plugin itself asks for. Schwalby, for instance,
-  has two switches in its gear: one lets the client add buttons that run on
-  this computer, the other lets it press buttons (see
-  <a href="plugins.html#schwalby">Schwalby</a>). A plugin's tools run in the
+  at the end of the Permissions dialog, and whatever the plugin itself asks for. These plugins have switches of
+  their own, in their gear under <strong>Settings</strong>, <strong>Plugins</strong>. All are off at first.
+</p>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Plugin</th><th>Switch in its gear</th><th>What the client may do</th></tr></thead>
+  <tbody>
+    <tr><td><a href="plugins.html#map-entities">Map Entities</a></td><td>AI clients may read what is placed</td><td>List what is placed with what the aircraft did to it, and show it on the map</td></tr>
+    <tr><td></td><td>AI clients may place things</td><td>Place things, and change or remove the ones it added. They carry an AI mark and are not shared with other plugins</td></tr>
+    <tr><td><a href="plugins.html#nuttx-console">NuttX Console</a></td><td>AI clients may read from the shell</td><td>Run a short list of commands that only print something, such as <code>ver all</code>, <code>dmesg</code>, <code>listener</code> or <code>param show</code></td></tr>
+    <tr><td></td><td>AI clients may run any command</td><td>Run any one line. You are asked before each and see the command, and it is refused while the aircraft is armed</td></tr>
+    <tr><td><a href="plugins.html#schwalby">Schwalby</a></td><td>AI clients may add buttons</td><td>Add buttons that run on this computer, each waiting for you to allow it</td></tr>
+    <tr><td></td><td>AI clients may press buttons</td><td>Press an allowed button and stop it again</td></tr>
+    <tr><td><a href="plugins.html#tak">TAK</a></td><td>Let an AI client steer the map layer</td><td>Focus a contact and choose what the map shows</td></tr>
+  </tbody>
+</table>
+</div>
+<p>
+  When Corvus asks you about a plugin's tool, the question shows what it is called with.
+  A plugin's tools run in the
   Corvus window, so they exist only while one is open. How to write one is in
   <a href="plugins.html#mcp">Tools for an AI client</a>.
 </p>
@@ -343,6 +404,9 @@
     <li><a href="#permissions">What the AI client may do</a></li>
     <li><a href="#indicator">On the map</a></li>
     <li><a href="#drawings">Drawings</a></li>
+    <li><a href="#telemetry">Asking for telemetry</a></li>
+    <li><a href="#planner">Planning missions</a></li>
+    <li><a href="#showing">Showing places and pages</a></li>
     <li><a href="#plugins">Plugin tools</a></li>
     <li><a href="#limits">What the switches cannot do</a></li>
   </ul>

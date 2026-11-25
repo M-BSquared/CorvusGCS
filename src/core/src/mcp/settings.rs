@@ -28,7 +28,16 @@ pub const CONTROL_MAX_S: f64 = 5.0;
 
 /// The permissions added after the Python program's catalog was frozen. The
 /// fixtures hold the first ten and nothing else, so tests compare those.
-pub const EXTENSIONS: [&str; 6] = ["tak_read", "tak_send", "tak_setup", "map", "geofence", "camera"];
+pub const EXTENSIONS: [&str; 8] = [
+    "tak_read",
+    "tak_send",
+    "tak_setup",
+    "map",
+    "pages",
+    "planner",
+    "geofence",
+    "camera",
+];
 
 /// The switches that are not a permission, with what they are when the file
 /// does not say. `assistant` lets the AI Chat plugin of this Corvus sign in
@@ -41,7 +50,7 @@ const SWITCHES: [(&str, bool); 4] = [
     ("assistant_ask", true),
 ];
 
-pub const PERMISSIONS: [Permission; 16] = [
+pub const PERMISSIONS: [Permission; 18] = [
     Permission {
         id: "telemetry",
         label: "Read telemetry and status",
@@ -150,6 +159,22 @@ pub const PERMISSIONS: [Permission; 16] = [
         id: "map",
         label: "Draw on the map",
         hint: "Lines, arrows, areas, circles, markers and text on the Home map, moving the map there, a message to you, and the place search, which sends the searched name to OpenStreetMap. Nothing of it reaches the vehicle.",
+        writes: false,
+        default_on: true,
+        default_confirm: false,
+    },
+    Permission {
+        id: "pages",
+        label: "Open pages",
+        hint: "Bring a page of this window to the front, such as a tab of the settings. It only opens it: nothing on the page is pressed or changed.",
+        writes: false,
+        default_on: true,
+        default_confirm: false,
+    },
+    Permission {
+        id: "planner",
+        label: "Plan in the mission planner",
+        hint: "Read the plan in the mission planner, replace it and change its points. Nothing of it reaches the vehicle, and a plan of yours that was replaced can be taken back there.",
         writes: false,
         default_on: true,
         default_confirm: false,

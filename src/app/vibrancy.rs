@@ -10,7 +10,9 @@
 
 /// Whether a window of its own can be blurred here.
 pub fn blurs() -> bool {
-    cfg!(target_os = "macos")
+    // Off for now: the Popover material under the transparent window came out as a flat grey instead of the
+    // light theme. Windows of their own are solid until that is looked at again; `apply` stays for then.
+    false
 }
 
 /// Blurs the window titled `title`, and keeps its look in step with the theme.
@@ -24,6 +26,9 @@ pub fn apply(title: &str, dark: bool, radius: f64) {
         NSAutoresizingMaskOptions, NSVisualEffectBlendingMode, NSVisualEffectMaterial, NSVisualEffectState,
         NSVisualEffectView, NSWindowOrderingMode,
     };
+    use objc2_foundation::NSString;
+
+    const TAG: &str = "corvus-vibrancy";
 
     let Some(mtm) = MainThreadMarker::new() else {
         return;
@@ -46,10 +51,16 @@ pub fn apply(title: &str, dark: bool, radius: f64) {
                 NSAppearanceNameAqua
             }
         };
-        let existing = frame
-            .subviews()
-            .iter()
-            .find(|v| v.isKindOfClass(NSVisualEffectView::class()));
+        // The system may put visual effect views into the frame itself, so ours is
+        // found by its identifier and not by its class.
+        let tag = NSString::from_str(TAG);
+        let existing = frame.subviews().iter().find(|v| {
+            if !v.isKindOfClass(NSVisualEffectView::class()) {
+                return false;
+            }
+            let id: Option<Retained<NSString>> = unsafe { msg_send![&**v, identifier] };
+            id.is_some_and(|id| id.isEqualToString(&tag))
+        });
         let view: Retained<NSVisualEffectView> = match existing {
             Some(v) => {
                 let view: Retained<NSVisualEffectView> = unsafe { Retained::cast_unchecked(v) };
@@ -58,6 +69,9 @@ pub fn apply(title: &str, dark: bool, radius: f64) {
             }
             None => NSVisualEffectView::initWithFrame(mtm.alloc(), frame.bounds()),
         };
+        unsafe {
+            let _: () = msg_send![&*view, setIdentifier: &*tag];
+        }
         view.setMaterial(NSVisualEffectMaterial::Popover);
         view.setBlendingMode(NSVisualEffectBlendingMode::BehindWindow);
         view.setState(NSVisualEffectState::Active);

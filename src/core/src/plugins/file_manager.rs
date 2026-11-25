@@ -138,7 +138,8 @@ pub fn clean_env(env: &HashMap<String, String>, root: &Path) -> HashMap<String, 
 
 /// The environment for a launcher: this process' own, cleaned.
 pub fn child_env() -> HashMap<String, String> {
-    let env: HashMap<String, String> = std::env::vars().collect();
+    let mut env: HashMap<String, String> = std::env::vars().collect();
+    env.remove(crate::http::security::API_KEY_ENV);
     let root = std::env::current_exe()
         .ok()
         .and_then(|p| p.parent().map(Path::to_path_buf))

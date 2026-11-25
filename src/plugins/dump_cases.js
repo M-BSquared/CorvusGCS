@@ -195,7 +195,7 @@ vibCases.window = { max: vib.MAX_POINTS, first: longBuf.vx[0], length: longBuf.v
 
 const files = {
   "src/plugins/vibration/src/model_cases.json": vibCases,
-  "src/plugins/ssh-launcher/src/model_cases.json": sshCases,
+  "src/panel/launcher/model_cases.json": sshCases,
   "src/plugins/map-entities/src/model_cases.json": meCases,
 };
 let stale = false;

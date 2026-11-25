@@ -365,6 +365,85 @@ fn paint(ui: &egui::Ui, l: &Laid, rect: Rect, look: Look) {
     }
 }
 
+/// The first sentence of `text`, when more follows it. A full stop after an
+/// abbreviation ("e.g.", "z. B.", "bzw.") does not end one.
+fn first_sentence(text: &str) -> Option<&str> {
+    const ABBREVIATIONS: [&str; 8] = ["bzw", "usw", "ggf", "evtl", "inkl", "etc", "vs", "ca"];
+    let mut word_start = 0;
+    for (i, ch) in text.char_indices() {
+        let end = match ch {
+            '\n' => Some(i),
+            '.' | '!' | '?' | '\u{3002}' => {
+                let word = &text[word_start..i];
+                let abbreviation = ch == '.'
+                    && (word.chars().count() <= 1
+                        || word.contains('.')
+                        || ABBREVIATIONS.contains(&word.to_lowercase().as_str()));
+                let spaced = text[i + ch.len_utf8()..]
+                    .chars()
+                    .next()
+                    .is_some_and(char::is_whitespace);
+                (spaced && !abbreviation).then_some(i + ch.len_utf8())
+            }
+            _ => None,
+        };
+        if let Some(end) = end {
+            let short = text[..end].trim();
+            if short.chars().count() >= 12 && !text[end..].trim().is_empty() {
+                return Some(short);
+            }
+        }
+        if ch.is_whitespace() {
+            word_start = i + ch.len_utf8();
+        }
+    }
+    None
+}
+
+/// Muted text of `size` held to `rows` lines at `x, y`, `w` wide; returns its
+/// height. What would run longer shows its first sentence with a hint icon
+/// right behind it, and the whole text is the sheet that icon opens. A text
+/// of one long sentence is cut at `rows` lines with the icon at the edge.
+#[allow(clippy::too_many_arguments)]
+pub fn teaser(
+    ui: &mut egui::Ui,
+    x: f32,
+    y: f32,
+    w: f32,
+    text: &str,
+    size: f32,
+    line: f32,
+    rows: usize,
+    id: impl std::hash::Hash + std::fmt::Debug,
+) -> f32 {
+    let color = style::text_3();
+    let full = kit::wrapped_weight(ui, text, size, Weight::W400, color, w, line);
+    if full.rows.len() <= rows {
+        let h = full.size().y;
+        ui.painter().galley(Pos2::new(x, y), full, color);
+        return h;
+    }
+    const ICON: f32 = 22.0;
+    let shown = crate::i18n::tr(text);
+    let short = first_sentence(&shown).map(|s| kit::wrapped_weight(ui, s, size, Weight::W400, color, w - ICON, line));
+    let (g, inline) = match short {
+        Some(g) if g.rows.len() <= rows => (g, true),
+        _ => (
+            crate::ui::text::clamped(ui, text, size, Weight::W400, color, 0.0, w - ICON, rows, Some(line)),
+            false,
+        ),
+    };
+    let h = g.size().y;
+    let row_h = h / g.rows.len().max(1) as f32;
+    let (cx, cy) = match g.rows.last() {
+        Some(last) if inline => (x + last.rect().max.x + 6.0 + 8.0, y + h - row_h / 2.0),
+        _ => (x + w - 8.0, y + h - row_h / 2.0),
+    };
+    ui.painter().galley(Pos2::new(x, y), g, color);
+    info(ui, Pos2::new(cx.min(x + w - 8.0), cy), "", text, id);
+    h
+}
+
 /// Whether the anchor's sheet is open, for the anchor's own highlight.
 pub fn is_open(ctx: &egui::Context, id: Id) -> bool {
     ctx.data(|d| d.get_temp::<State>(id.with("popover-state")))
@@ -433,5 +512,43 @@ mod tests {
     fn a_content_with_nothing_to_say_is_empty() {
         assert!(Content::default().is_empty());
         assert!(!Content::hint("", "x").is_empty());
+    }
+}
+
+#[cfg(test)]
+mod sentence_tests {
+    use super::first_sentence;
+
+    #[test]
+    fn the_first_sentence_is_cut_where_it_ends() {
+        assert_eq!(
+            first_sentence("Install what you need. A plugin comes from its own repository."),
+            Some("Install what you need.")
+        );
+        assert_eq!(first_sentence("Only one sentence here."), None);
+    }
+
+    #[test]
+    fn abbreviations_and_numbers_do_not_end_a_sentence() {
+        assert_eq!(
+            first_sentence("Pick a value, e.g. 19.8 V, for the pack. Then save it."),
+            Some("Pick a value, e.g. 19.8 V, for the pack.")
+        );
+        assert_eq!(
+            first_sentence("Setzen Sie z. B. den Wert fest, wenn Sie ihn kennen. Danach speichern."),
+            Some("Setzen Sie z. B. den Wert fest, wenn Sie ihn kennen.")
+        );
+    }
+
+    #[test]
+    fn a_line_break_ends_it_too_and_a_stub_does_not() {
+        assert_eq!(
+            first_sentence("One folder per plugin\nThe rest of it"),
+            Some("One folder per plugin")
+        );
+        assert_eq!(
+            first_sentence("Off. The bar keeps its full size and only narrows."),
+            None
+        );
     }
 }

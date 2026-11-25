@@ -3,7 +3,8 @@
 //! `/send`, `/resize`, `/disconnect`, the output stream and the WebSocket.
 //! Starting a program is nothing the operator cannot already do on their own
 //! laptop, but it is not something a machine on the flight line network may
-//! do, so the ones that start one answer only to this computer.
+//! do, so all of these answer only to this computer: a session that is open
+//! takes typed commands as well as a new one (`http::security`).
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;

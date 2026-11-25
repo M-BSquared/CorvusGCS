@@ -365,23 +365,22 @@
   </section>
 
   <!-- ===================== SCREENSHOTS =====================
-       Every picture here was made from the web interface, which the native
-       program draws the same; new ones come from the app (CORVUS_GUI_SHOT,
-       see the verify agent). Each one has an 800 px copy (name-800.jpg) that the list loads;
+       Every picture here is a scene of corvus-scene (src/scene), which makes
+       it again the same way. Each one has an 800 px copy (name-800.jpg) that the list loads;
        the large preview and the lightbox use the 1600 px original. Without
        script the four groups simply show as lists of captioned pictures. -->
   <section class="section" id="screenshots" aria-labelledby="screenshots-title">
     <div class="wrap">
       <header class="section-head reveal">
         <h2 id="screenshots-title">The interface</h2>
-        <p class="section-sub">29 screenshots from simulated flights. They play through on their own: pick one, use the arrows or press pause to stop.</p>
+        <p class="section-sub">32 screenshots from simulated flights. They play through on their own: pick one, use the arrows or press pause to stop.</p>
       </header>
 
       <div class="gallery-tabs reveal" role="tablist" aria-label="Screenshot groups" id="gallery-tabs">
-        <button class="gallery-tab" type="button" role="tab" id="tab-fly" aria-controls="shots-fly" aria-selected="true">Fly<span class="mono">11</span></button>
+        <button class="gallery-tab" type="button" role="tab" id="tab-fly" aria-controls="shots-fly" aria-selected="true">Fly<span class="mono">12</span></button>
         <button class="gallery-tab" type="button" role="tab" id="tab-setup" aria-controls="shots-setup" aria-selected="false" tabindex="-1">Set up<span class="mono">11</span></button>
         <button class="gallery-tab" type="button" role="tab" id="tab-review" aria-controls="shots-review" aria-selected="false" tabindex="-1">Review<span class="mono">3</span></button>
-        <button class="gallery-tab" type="button" role="tab" id="tab-plugins" aria-controls="shots-plugins" aria-selected="false" tabindex="-1">Plugins<span class="mono">4</span></button>
+        <button class="gallery-tab" type="button" role="tab" id="tab-plugins" aria-controls="shots-plugins" aria-selected="false" tabindex="-1">Plugins<span class="mono">6</span></button>
       </div>
 
       <div class="viewer reveal" id="viewer">
@@ -506,6 +505,16 @@
                        alt="Two SSH sessions during a flight: one to the companion computer in the side panel and one to the payload computer in a floating window over the map.">
                 </button>
                 <figcaption><strong>On the companion computer.</strong> A real SSH terminal, also in its own window.</figcaption>
+              </figure>
+              <figure class="shot">
+                <button class="shot-btn" type="button" data-full="assets/images/ssh-launcher.jpg">
+                  <img src="assets/images/ssh-launcher-800.jpg"
+                       srcset="assets/images/ssh-launcher-800.jpg 800w, assets/images/ssh-launcher.jpg 1600w"
+                       sizes="(max-width: 900px) 220px, 144px"
+                       width="1600" height="1000" loading="lazy" decoding="async"
+                       alt="The SSH tab of the side panel beside the map: three saved connections, and under them the SSH Launcher with four buttons, two of them running on the companion computer.">
+                </button>
+                <figcaption><strong>SSH Launcher.</strong> Companion computer scripts, one press each, built in.</figcaption>
               </figure>
               <figure class="shot">
                 <button class="shot-btn" type="button" data-full="assets/images/flight-german.jpg">
@@ -683,8 +692,18 @@
           </section>
           <section class="gallery-group" id="shots-plugins" data-group="Plugins" role="tabpanel" aria-labelledby="tab-plugins">
             <h3 class="gallery-heading">Plugins</h3>
-            <p class="gallery-intro">Four ship with Corvus and run beside the map.</p>
+            <p class="gallery-intro">The core stays small and robust. Eight plugins add to it when you need them, installed from Settings: Schwalby, Map Entities, Vibration Monitor, NuttX Console, Trajectory Viewer, TAK, Remote ID Check and AI Chat.</p>
             <div class="gallery">
+              <figure class="shot">
+                <button class="shot-btn" type="button" data-full="assets/images/plugin-schwalby.jpg">
+                  <img src="assets/images/plugin-schwalby-800.jpg"
+                       srcset="assets/images/plugin-schwalby-800.jpg 800w, assets/images/plugin-schwalby.jpg 1600w"
+                       sizes="(max-width: 900px) 220px, 144px"
+                       width="1600" height="1000" loading="lazy" decoding="async"
+                       alt="The Schwalby plugin in the dark green theme: the companion computer's status above a shelf of buttons that run on this laptop or over SSH, two of them running.">
+                </button>
+                <figcaption><strong>Schwalby.</strong> Buttons that start a program here or over SSH.</figcaption>
+              </figure>
               <figure class="shot">
                 <button class="shot-btn" type="button" data-full="assets/images/plugin-map-entities.jpg">
                   <img src="assets/images/plugin-map-entities-800.jpg"
@@ -706,31 +725,42 @@
                 <figcaption><strong>Vibration Monitor.</strong> Gyro and accelerometer vibration, live.</figcaption>
               </figure>
               <figure class="shot">
-                <button class="shot-btn" type="button" data-full="assets/images/plugin-ssh-launcher.jpg">
-                  <img src="assets/images/plugin-ssh-launcher-800.jpg"
-                       srcset="assets/images/plugin-ssh-launcher-800.jpg 800w, assets/images/plugin-ssh-launcher.jpg 1600w"
+                <button class="shot-btn" type="button" data-full="assets/images/plugin-nuttx-console.jpg">
+                  <img src="assets/images/plugin-nuttx-console-800.jpg"
+                       srcset="assets/images/plugin-nuttx-console-800.jpg 800w, assets/images/plugin-nuttx-console.jpg 1600w"
                        sizes="(max-width: 900px) 220px, 144px"
                        width="1600" height="1000" loading="lazy" decoding="async"
-                       alt="The SSH Launcher plugin with four buttons, two of them running on the companion computer, and the mission script's terminal open in a window over the map.">
+                       alt="The NuttX Console plugin in the orange theme: the PX4 shell over MAVLink showing the output of ver all, param show and listener sensor_combined beside the map.">
                 </button>
-                <figcaption><strong>SSH Launcher.</strong> Companion computer scripts, one press each.</figcaption>
+                <figcaption><strong>NuttX Console.</strong> The PX4 shell over the telemetry link.</figcaption>
               </figure>
               <figure class="shot">
-                <button class="shot-btn" type="button" data-full="assets/images/plugin-schwalby.jpg">
-                  <img src="assets/images/plugin-schwalby-800.jpg"
-                       srcset="assets/images/plugin-schwalby-800.jpg 800w, assets/images/plugin-schwalby.jpg 1600w"
+                <button class="shot-btn" type="button" data-full="assets/images/plugin-trajectory-viewer.jpg">
+                  <img src="assets/images/plugin-trajectory-viewer-800.jpg"
+                       srcset="assets/images/plugin-trajectory-viewer-800.jpg 800w, assets/images/plugin-trajectory-viewer.jpg 1600w"
                        sizes="(max-width: 900px) 220px, 144px"
                        width="1600" height="1000" loading="lazy" decoding="async"
-                       alt="The Schwalby plugin in the dark green theme: the companion computer's status above a shelf of buttons that run on this laptop or over SSH, two of them running.">
+                       alt="The Trajectory Viewer plugin: a planned route read from a file drawn in pink under the flown track, with the file, its coordinate frame and colour in the side panel.">
                 </button>
-                <figcaption><strong>Schwalby.</strong> Buttons that start a program here or over SSH.</figcaption>
+                <figcaption><strong>Trajectory Viewer.</strong> A planned route under the flown track.</figcaption>
+              </figure>
+              <figure class="shot">
+                <button class="shot-btn" type="button" data-full="assets/images/plugin-ai-chat.jpg">
+                  <img src="assets/images/plugin-ai-chat-800.jpg"
+                       srcset="assets/images/plugin-ai-chat-800.jpg 800w, assets/images/plugin-ai-chat.jpg 1600w"
+                       sizes="(max-width: 900px) 220px, 144px"
+                       width="1600" height="1000" loading="lazy" decoding="async"
+                       alt="The AI Chat plugin beside the map: the model was asked to mark a search area and a keep out zone, called the tools draw_on_map and list_drawings, and the map shows a yellow area and a red circle beside the flown track.">
+                </button>
+                <figcaption><strong>AI Chat.</strong> A model of your choice draws, explains and flies what you allow.</figcaption>
               </figure>
             </div>
           </section>
         </div>
       </div>
 
-      <p class="fineprint">Real interface, real MAVLink, simulated aircraft, Neubiberg test site. All six themes appear.</p>
+      <p class="fineprint">Real interface, real MAVLink, simulated aircraft, Neubiberg test site. All six themes appear. In the AI Chat picture a script stands in for the model.</p>
+      <p class="fineprint">AI is optional and comes as an extra: the AI Chat plugin, or any other program that speaks MCP. Corvus works in full without it, and what is connected is used at your own risk. <a href="guide/mcp.html">More</a></p>
     </div>
   </section>
 
@@ -858,6 +888,7 @@
             Source code on GitHub
           </a>
         </div>
+        <p class="download-risk"><strong>Use at your own risk.</strong> Provided as is, without any warranty. You are responsible for every flight.</p>
 
         <ul class="platforms">
           <li class="glow reveal" data-os="mac">
@@ -943,6 +974,8 @@
            alt="Universität der Bundeswehr München">
     </div>
   </section>
+
+  <p class="wrap footer-disclaimer"><strong>Use at your own risk.</strong> Corvus GCS comes as is, without any warranty, and is not certified flight software. You are responsible for every flight, and the author accepts no liability as far as the law allows.</p>
 
   <div class="wrap footer-base">
     <p class="copyright">&copy; <span id="year">2026</span> Maximilian Böck</p>

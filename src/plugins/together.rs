@@ -125,7 +125,10 @@ fn rig(tag: &str, only_tak: bool, shared: bool, sends: bool) -> Rig {
         .and_then(|i| i.addr())
         .map(|a| a.port())
         .unwrap();
-    let server = Server::local(port);
+    let mut server = Server::local(port);
+    server.key = core
+        .service::<corvus_core::ApiKey>()
+        .and_then(|k| http::Key::new(k.secret()));
     let save = |id: &str, settings: Value| {
         http::post_json(
             &server,

@@ -316,11 +316,14 @@ impl Lock {
     }
 
     /// The notice in the pad.
+    pub const NOTICE_LOCKED: &'static str = "Keyboard locked. Press Shift + W twice to unlock.";
+    pub const NOTICE_UNLOCKED: &'static str = "Keyboard unlocked. Esc locks it again.";
+
     pub fn notice(&self) -> &'static str {
         if self.locked {
-            "Keyboard locked. Press Shift + W twice to unlock."
+            Lock::NOTICE_LOCKED
         } else {
-            "Keyboard unlocked. Esc locks it again."
+            Lock::NOTICE_UNLOCKED
         }
     }
 }

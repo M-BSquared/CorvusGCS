@@ -116,6 +116,8 @@ pub fn child_env_from(env: &BTreeMap<String, String>, root: &str) -> BTreeMap<St
     for key in ALWAYS_DROP {
         out.remove(key);
     }
+    // The key that lets a client of this Corvus write is no other program's.
+    out.remove(crate::http::security::API_KEY_ENV);
     out.retain(|k, _| !k.starts_with("_PYI_"));
     if let Some(home) = out.get("PYTHONHOME").cloned() {
         if !home.is_empty() && ours(&home, &dirs) {
@@ -184,6 +186,13 @@ mod tests {
         assert!(!out.contains_key("_PYI_X"));
         assert!(!out.contains_key("APPDIR") && !out.contains_key("OWD"));
         assert_eq!(out.get("HOME").map(String::as_str), Some("/home/me"));
+    }
+
+    #[test]
+    fn the_api_key_is_not_passed_on() {
+        let e = env(&[("CORVUS_API_KEY", "0123456789abcdefghijklmn"), ("HOME", "/home/me")]);
+        let out = child_env_from(&e, "/opt/corvus/app");
+        assert!(!out.contains_key("CORVUS_API_KEY") && out.contains_key("HOME"));
     }
 
     #[test]

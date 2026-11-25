@@ -32,6 +32,8 @@ const KEY: f32 = 26.0;
 const GP_RING: f32 = 30.0;
 const GP_DOT: f32 = 10.0;
 const GP_W: f32 = 104.0;
+const LOCK_PAD_X: f32 = 8.0;
+const LOCK_PAD_Y: f32 = 5.0;
 
 /// A key cluster: its caption and its four keys (direction, letter, icon).
 type Cluster = (&'static str, [(&'static str, &'static str, Option<&'static str>); 4]);
@@ -439,7 +441,7 @@ impl Control {
         }
         let h = self.row_height(ui);
         let lock_h = if self.cfg.keyboard() {
-            5.0 + 10.0 * 1.21 + 8.0 + 2.0
+            5.0 + self.lock_height(ui)
         } else {
             0.0
         };
@@ -512,16 +514,31 @@ impl Control {
             let g = style::galley_mono(ui, &self.axes_text(), 9.5, style::text_2());
             return (8.0 * 2.0 + 13.0 + 6.0 + g.size().x + 6.0 + 18.0).max(120.0);
         }
-        let lock = if self.cfg.keyboard() {
-            style::galley(ui, self.lock.notice(), 10.0, Weight::W600, style::warning(), 0.3)
-                .size()
-                .x
-                + 16.0
-                + 2.0
-        } else {
-            0.0
-        };
-        (self.surfaces_width()).max(lock) + 16.0
+        self.surfaces_width() + 16.0
+    }
+
+    /// The lock notice, centred and wrapped to the width of the key clusters.
+    fn lock_galley(&self, ui: &egui::Ui, text: &str, color: Color32) -> std::sync::Arc<egui::Galley> {
+        let mut job = egui::text::LayoutJob::single_section(
+            crate::i18n::tr(text).replace(" + ", "\u{a0}+\u{a0}"),
+            egui::TextFormat {
+                font_id: style::font(10.0, Weight::W600),
+                color,
+                extra_letter_spacing: 0.3,
+                line_height: Some(13.0),
+                ..Default::default()
+            },
+        );
+        job.halign = egui::Align::Center;
+        job.wrap.max_width = (self.surfaces_width() - 2.0 * LOCK_PAD_X).max(40.0);
+        ui.painter().layout_job(job)
+    }
+
+    /// The notice box's height: the taller of the two notices, so the card
+    /// does not jump when the keyboard is locked or unlocked.
+    fn lock_height(&self, ui: &egui::Ui) -> f32 {
+        let h = |text: &str| self.lock_galley(ui, text, style::text_2()).size().y;
+        h(Lock::NOTICE_LOCKED).max(h(Lock::NOTICE_UNLOCKED)) + 2.0 * LOCK_PAD_Y
     }
 
     fn axes_text(&self) -> String {
@@ -625,7 +642,7 @@ impl Control {
         }
         if self.cfg.keyboard() {
             let lock = Rect::from_min_max(
-                Pos2::new(pad.left(), r.bottom() - 7.0 - (10.0 * 1.21 + 8.0 + 2.0)),
+                Pos2::new(pad.left(), r.bottom() - 7.0 - self.lock_height(ui)),
                 Pos2::new(pad.right(), r.bottom() - 7.0),
             );
             let (text, border) = if self.lock.locked {
@@ -639,8 +656,8 @@ impl Control {
                 Stroke::new(1.0, border),
                 egui::StrokeKind::Inside,
             );
-            let g = style::galley(ui, self.lock.notice(), 10.0, Weight::W600, text, 0.3);
-            painter.galley(lock.center() - g.size() / 2.0, g, text);
+            let g = self.lock_galley(ui, self.lock.notice(), text);
+            painter.galley(lock.center() - g.rect.center().to_vec2(), g, text);
         }
     }
 }

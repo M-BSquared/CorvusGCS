@@ -5,6 +5,7 @@
 pub mod nav;
 pub mod popout;
 pub mod responsive;
+pub mod scene;
 pub mod soak;
 pub mod touch;
 pub mod vibrancy;
@@ -63,6 +64,9 @@ struct App {
     checklist: crate::setup::checklist::Checklist,
     touch: touch::Touch,
     shot_sent: bool,
+    /// The staging of a picture, when there is one, and the map it frames.
+    scene: Option<scene::Scene>,
+    scene_map: egui::Vec2,
     broken_frames: u32,
     soak: soak::Soak,
     click_stage: u32,
@@ -281,10 +285,27 @@ impl App {
         if let Some(shapes) = self.drawings.take_shapes() {
             self.map.plugins.set_drawn(shapes);
         }
-        if let Some(points) = self.drawings.take_show() {
-            // The page stays: the operator may be in the middle of something else.
-            self.fit_map(&points, ctx);
+        if let Some(show) = self.drawings.take_show() {
+            // Unless it was asked for, the page stays: the operator may be in the middle of
+            // something else.
+            if show.open {
+                self.open_page("home", ctx, state, now);
+            }
+            match (show.points.as_slice(), show.zoom) {
+                ([p], Some(zoom)) => self.map.go_to(p[0], p[1], zoom),
+                (points, _) => self.fit_map(points, ctx),
+            }
         }
+        if let Some(page) = self.drawings.take_open() {
+            self.open_page(&page, ctx, state, now);
+        }
+        for what in self.drawings.take_planned() {
+            let told = self.mission.take_planned(what, state);
+            if let (Some(text), true) = (told, self.page != Page::Mission || !self.mission_page) {
+                self.board.add_local("info", &text, now);
+            }
+        }
+        self.mission.report_plan(ctx, self.mission_page, now / 1000.0);
         let out = self.plugins.take_out();
         if let Some(owner) = out.pick {
             self.map.plugins.pick = Some(owner);
@@ -321,6 +342,118 @@ impl App {
     }
 
     /// `fitCoords`: frames these points on the map with 80 px around them.
+    /// The staging of a picture: the frame and the steps that are due.
+    fn stage(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+        let Some(mut scene) = self.scene.take() else { return };
+        scene.hold_frame(ctx);
+        if scene.collapsed() && !self.panel.user_toggled {
+            self.panel.collapsed = true;
+            self.panel.user_toggled = true;
+        }
+        for act in scene.input(raw_input) {
+            match act {
+                scene::Act::Open(page) => {
+                    let now = raw_input.time.unwrap_or(0.0);
+                    self.open_page(&page, ctx, &Value::Null, now);
+                }
+                scene::Act::Panel(tab) => self.panel.open_tab_named(&tab),
+                scene::Act::Fit(bounds) => {
+                    if let Some((lng, lat, zoom)) = scene::Scene::fitted(bounds, self.scene_map) {
+                        self.map.go_to(lng, lat, zoom);
+                    }
+                }
+                scene::Act::Look([lng, lat, zoom]) => self.map.go_to(lng, lat, zoom),
+                scene::Act::ThreeD { bearing, zoom } => self.map.stage_three_d(ctx, bearing, zoom),
+            }
+        }
+        ctx.request_repaint_after(std::time::Duration::from_millis(50));
+        self.scene = Some(scene);
+    }
+
+    /// Goes to a page of the left rail, as pressing it does.
+    fn go_to_page(&mut self, page: Page, ctx: &egui::Context) {
+        if self.page == Page::Analysis && page != Page::Analysis {
+            self.analysis.reset();
+        }
+        if page == Page::Logs && self.page != Page::Logs {
+            self.logs.reset();
+        }
+        if page == Page::Settings && self.page != Page::Settings {
+            self.settings.enter(ctx);
+        }
+        if self.page == Page::Mission && page != Page::Mission {
+            self.mission.suspend();
+        }
+        self.page = page;
+    }
+
+    /// Opens a page an AI client named (`corvus_core::drawings::PAGES`). It only opens it, and not
+    /// over the first start setup or a page with work under way.
+    fn open_page(&mut self, page: &str, ctx: &egui::Context, state: &Value, now: f64) {
+        let (top, sub) = page.split_once(':').map_or((page, None), |(a, b)| (a, Some(b)));
+        let busy = match (top, sub) {
+            _ if self.welcome.is_open() => true,
+            ("setup", Some(id)) => self.setup.holds_work() && !self.setup.is_on(id),
+            _ => false,
+        };
+        if busy {
+            let text = "An AI client asked for another page. Corvus stays here because something is under way.";
+            self.board.add_local("info", text, now);
+            return;
+        }
+        if top == "mission" && !self.mission_page {
+            // for this run, as `--page mission` does; the setting stays the operator's
+            self.mission_page = true;
+            let text = "An AI client opened the mission planner. Settings, Layout keeps it for next time.";
+            self.board.add_local("info", text, now);
+        }
+        match (top, sub) {
+            ("home", _) => self.go_to_page(Page::Home, ctx),
+            ("mission", _) => self.go_to_page(Page::Mission, ctx),
+            ("logs", _) => self.go_to_page(Page::Logs, ctx),
+            ("setup", sub) => {
+                self.go_to_page(Page::Setup, ctx);
+                match sub {
+                    Some(id) if !self.setup.is_on(id) => self.setup.open(id, ctx),
+                    _ => {}
+                }
+            }
+            ("analysis", sub) => {
+                self.go_to_page(Page::Analysis, ctx);
+                if let Some(view) = sub {
+                    self.analysis.open(view);
+                }
+            }
+            ("settings", sub) => {
+                self.go_to_page(Page::Settings, ctx);
+                if let Some(tab) = sub {
+                    self.settings.open_tab(tab);
+                }
+            }
+            ("panel", Some(tab)) => self.panel.open_tab_named(tab),
+            ("plugin", Some(id)) => {
+                if let Some(i) = self.plugins.index_of(id) {
+                    if self.plugins.in_tab(i) {
+                        self.panel.open_own(i);
+                    } else {
+                        self.panel.open_tab_named("plugins");
+                        self.plugins.open_card(i, ctx, state);
+                    }
+                }
+            }
+            ("notifications", _) => self.board.set_open(true, now),
+            ("map", Some(what)) => {
+                self.go_to_page(Page::Home, ctx);
+                match what {
+                    "3d" => self.map.tilt_three_d(true),
+                    "2d" => self.map.tilt_three_d(false),
+                    _ => self.map.recenter(state),
+                }
+            }
+            _ => {}
+        }
+    }
+
     fn fit_map(&mut self, coords: &[[f64; 2]], ctx: &egui::Context) {
         let corners: Vec<[f64; 2]> = coords.to_vec();
         let size = ctx.content_rect().size();
@@ -490,6 +623,7 @@ impl App {
                     egui::pos2(rail.right(), body.top()),
                     egui::pos2(panel.left(), body.bottom()),
                 );
+                self.scene_map = main.size();
                 if self.page != Page::Mission {
                     self.map.planner = false;
                     self.map.bottom_lift = 0.0;
@@ -505,7 +639,7 @@ impl App {
                     self.hud.show(
                         &mut map_ui,
                         main,
-                        8.0,
+                        16.0,
                         &state,
                         &self.units,
                         now,
@@ -580,19 +714,7 @@ impl App {
                     if page == Page::Setup && self.page == Page::Setup {
                         self.setup.reset();
                     }
-                    if self.page == Page::Analysis && page != Page::Analysis {
-                        self.analysis.reset();
-                    }
-                    if page == Page::Logs && self.page != Page::Logs {
-                        self.logs.reset();
-                    }
-                    if page == Page::Settings && self.page != Page::Settings {
-                        self.settings.enter(ui.ctx());
-                    }
-                    if self.page == Page::Mission && page != Page::Mission {
-                        self.mission.suspend();
-                    }
-                    self.page = page;
+                    self.go_to_page(page, ui.ctx());
                 }
                 let mut panel_ui = ui.new_child(egui::UiBuilder::new().max_rect(panel));
                 panel_ui.set_clip_rect(panel);
@@ -761,6 +883,7 @@ impl eframe::App for App {
             }
         }
         self.shoot(ctx, raw_input);
+        self.stage(ctx, raw_input);
         let now = raw_input.time.unwrap_or(0.0);
         self.soak_tick(ctx, now);
         self.touch.handle(raw_input, now);
@@ -771,13 +894,26 @@ impl eframe::App for App {
         // is a right click), the
         // first at 6 s and one more every half second, for a menu or a drawn
         // shape to look at; `enter` presses the Enter key.
-        // CORVUS_GUI_TEXT="..." types that text once the clicks are done.
+        // CORVUS_GUI_TEXT="..." types that text once the clicks are done, with a line break at its
+        // end Enter is pressed after it.
         if let Ok(text) = std::env::var("CORVUS_GUI_TEXT") {
             let steps = std::env::var("CORVUS_GUI_CLICK").map_or(0, |l| l.split(';').count()) as u32;
             let due = raw_input.time.unwrap_or(0.0) > 7.0 + 0.5 * f64::from(steps);
             if self.click_stage == steps * 2 && due {
                 self.click_stage += 1;
-                raw_input.events.push(egui::Event::Text(text));
+                let typed = text.trim_end_matches('\n').to_string();
+                raw_input.events.push(egui::Event::Text(typed));
+            } else if self.click_stage == steps * 2 + 1 && due && text.ends_with('\n') {
+                self.click_stage += 1;
+                for pressed in [true, false] {
+                    raw_input.events.push(egui::Event::Key {
+                        key: egui::Key::Enter,
+                        physical_key: Some(egui::Key::Enter),
+                        pressed,
+                        repeat: false,
+                        modifiers: Default::default(),
+                    });
+                }
             }
         }
         if let Ok(list) = std::env::var("CORVUS_GUI_CLICK") {
@@ -998,7 +1134,12 @@ pub fn run(
                 popout::set_solid_terminals(e.solid_terminals);
                 flight.shrink = e.flight_bar_shrink;
             }
-            ctx.set_zoom_factor(scale);
+            let scene = scene::Scene::from_env();
+            ctx.set_zoom_factor(match (&scene, window_size()) {
+                // Right from the first frame: windows on the map stand where the map was.
+                (Some(s), Some([w, _])) => s.first_zoom(w).unwrap_or(scale),
+                _ => scale,
+            });
             let panel = Panel::new(server.clone(), &ctx, &config);
             let plugins = Registry::new(server.clone(), &ctx, &config);
             let mut rail = MapRail::default();
@@ -1041,6 +1182,8 @@ pub fn run(
                 checklist: crate::setup::checklist::Checklist::new(server.clone(), &ctx),
                 touch: touch::Touch::load(),
                 shot_sent: false,
+                scene,
+                scene_map: egui::Vec2::ZERO,
                 broken_frames: 0,
                 soak: Default::default(),
                 click_stage: 0,

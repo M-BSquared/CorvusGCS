@@ -895,33 +895,14 @@ impl FirmwarePage {
     }
 }
 
-/// `.firmware-detected`: the board the backend recognised, in the healthy
-/// colours, with a check before the sentence.
+/// `.firmware-detected`: the board the backend recognised, with a check before
+/// the sentence.
 fn detected_note(ui: &egui::Ui, x: f32, y: f32, w: f32, text: &str) -> f32 {
-    let g = kit::wrapped_weight(
-        ui,
-        text,
-        11.5,
-        Weight::W400,
-        style::healthy(),
-        w - 2.0 - 20.0 - 13.0 - 7.0,
-        1.5,
-    );
-    let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, g.size().y + 16.0 + 2.0));
-    let p = ui.painter();
-    card::paint(p, r, card::Look::Tone(crate::ui::message::Tone::Ok));
-    icons::paint(
-        ui,
-        "circle-check",
-        Rect::from_min_size(Pos2::new(r.left() + 11.0, r.top() + 9.0 + 1.0), Vec2::splat(13.0)),
-        style::healthy(),
-    );
-    p.galley(
-        Pos2::new(r.left() + 11.0 + 13.0 + 7.0, r.top() + 9.0),
-        g,
-        style::healthy(),
-    );
-    r.bottom()
+    crate::ui::message::NoticeBox::new(crate::ui::message::Tone::Ok, text)
+        .icon("circle-check")
+        .text_size(11.5, 1.5)
+        .show(ui, x, y, w)
+        .bottom()
 }
 
 /// `.firmware-board-detail`: the exact file, its size, and the chips that say

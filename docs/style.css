@@ -967,6 +967,9 @@ html:not(.js) .shot figcaption { grid-column: 1; margin-top: 8px; }
 .release-line { margin-bottom: 26px; font-family: var(--mono); font-size: 0.8125rem; color: var(--text-3); }
 .release-line .tag { color: var(--text-1); font-weight: 600; }
 
+.download-risk { margin-top: 14px; font-size: 0.8125rem; color: var(--text-3); text-align: center; }
+.download-risk strong { color: var(--text-2); font-weight: 600; }
+
 .platforms {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1108,6 +1111,13 @@ html:not(.js) .shot figcaption { grid-column: 1; margin-top: 8px; }
   border-radius: var(--radius-btn);
   background: var(--orgmark-plate);
 }
+
+.footer-disclaimer {
+  padding-block: 4px 18px;
+  color: var(--text-3);
+  font-size: 0.75rem; line-height: 1.6;
+}
+.footer-disclaimer strong { color: var(--text-2); font-weight: 600; }
 
 .footer-base {
   display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px 24px;

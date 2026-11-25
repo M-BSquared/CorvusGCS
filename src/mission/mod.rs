@@ -12,6 +12,7 @@
 //! * `plan`: the item table, bounds and editing rules.
 //! * `geometry`: distances, stations, the profile line, sweeps.
 //! * `issues`: the warnings, a row's text and the display units.
+//! * `ai`: the plan an AI client made or changed, and what it replaced.
 //! * `backend`, `progress`: the calls, and which leg the vehicle is flying.
 //! * `mapview`: the plan on the map and the pointer on it.
 //! * `toolbar`: the tool bar, its hint and the pattern card.
@@ -19,6 +20,7 @@
 //! * `profile`: the altitude profile.
 //! * `dialogs`: the confirmations and the list of saved plans.
 
+pub mod ai;
 pub mod backend;
 mod dialogs;
 mod edit;
@@ -122,7 +124,10 @@ pub struct MissionPage {
     fit_pending: bool,
     last_plan: Option<String>,
     first: bool,
+    /// The plan to begin with was asked for.
+    begun: bool,
     open_first: Option<String>,
+    pub(crate) ai: ai::AiPlan,
     /// The plan has not been looked for on the map yet (`notePlanOffscreen`),
     /// and whether the status line says it is outside the view.
     check_view: bool,
@@ -197,6 +202,8 @@ impl MissionPage {
             fit_pending: false,
             last_plan: None,
             first: true,
+            begun: false,
+            ai: ai::AiPlan::default(),
             check_view: false,
             offscreen: false,
             open_first: None,
@@ -399,6 +406,8 @@ impl MissionPage {
                         },
                     );
                 }
+                // a plan an AI client made meanwhile is not taken away by the last one
+                (Job::LoadPlan { quiet: true, .. }, Ok(_)) if self.ai.placed() => {}
                 (Job::LoadPlan { name, quiet }, Ok(res)) => {
                     if let Some(p) = res.get("plan").filter(|p| p.is_object()) {
                         self.plan.load_json(p, self.vehicle_type(), self.link.start);
@@ -645,6 +654,7 @@ impl MissionPage {
                 self.confirm_clear();
             }
             self.show_toolbar(&mut map_ui, map_rect, now, narrow);
+            self.show_ai(&ctx, map_rect);
             if band.is_none() {
                 self.show_profile(&mut map_ui, map_rect, narrow, false);
             }
@@ -663,7 +673,6 @@ impl MissionPage {
         }
         self.apply_map(out);
         self.check_offscreen(map, map_rect.size());
-        let _ = ctx;
     }
 
     /// The page under 960 px (`max-959` of `mission.css`): the map, the
@@ -708,6 +717,20 @@ impl MissionPage {
             });
     }
 
+    /// Asks once for the plan the page opens with, unless an AI client put one there before.
+    fn begin(&mut self, ctx: &egui::Context) {
+        if std::mem::replace(&mut self.begun, true) {
+            return;
+        }
+        if let Some(name) = self.open_first.take() {
+            self.send(ctx, Job::LoadPlan { name, quiet: false });
+        } else if let Some(name) = last::read() {
+            // the plan the operator was drawing last time; no framing, and
+            // no complaint when it is gone
+            self.send(ctx, Job::LoadPlan { name, quiet: true });
+        }
+    }
+
     /// Draws the page into `main`: the map with its tool bar and profile on
     /// the left, the sidebar on the right.
     #[allow(clippy::too_many_arguments)]
@@ -731,13 +754,7 @@ impl MissionPage {
             self.first = false;
             self.check_view = true;
             self.update_hint();
-            if let Some(name) = self.open_first.take() {
-                self.send(&ctx, Job::LoadPlan { name, quiet: false });
-            } else if let Some(name) = last::read() {
-                // the plan the operator was drawing last time; no framing, and
-                // no complaint when it is gone
-                self.send(&ctx, Job::LoadPlan { name, quiet: true });
-            }
+            self.begin(&ctx);
         }
         map.planner = true;
         rail.planner = true;

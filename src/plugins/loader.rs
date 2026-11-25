@@ -116,6 +116,10 @@ pub fn installed(dir: &Path, taken: &[&str]) -> Found {
         .collect();
     ids.sort();
     for id in ids {
+        // A copy from the time it was a plugin: nothing to load and nothing to tell.
+        if super::PARTS.contains(&id.as_str()) {
+            continue;
+        }
         if taken.contains(&id.as_str()) {
             found.refused.push(Refused {
                 id,

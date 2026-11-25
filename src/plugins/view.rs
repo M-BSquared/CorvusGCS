@@ -28,6 +28,15 @@ pub fn columns(w: f32) -> usize {
     (((w + GRID_GAP) / (GRID_MIN + GRID_GAP)).floor() as usize).max(1)
 }
 
+/// A plugin was stopped: says so where its view was.
+fn stopped(ui: &egui::Ui, area: Rect) -> f32 {
+    let text = corvus_api::i18n::tr(super::STOPPED);
+    let g = kit::wrapped_weight(ui, &text, 12.0, Weight::W400, style::critical(), area.width(), 1.4);
+    let h = g.size().y;
+    ui.painter().galley(area.min, g, style::critical());
+    h
+}
+
 impl Registry {
     /// The PLUGINS tab: the cards, or the opened plugin.
     pub fn show_cards(&mut self, ui: &mut egui::Ui, rect: Rect, state: &Value) {
@@ -44,12 +53,13 @@ impl Registry {
     }
 
     fn show_grid(&mut self, ui: &mut egui::Ui, rect: Rect, state: &Value) {
-        let shown: Vec<usize> = (0..self.entries.len()).filter(|&i| !self.in_tab(i)).collect();
+        let cards: Vec<usize> = (0..self.entries.len()).filter(|&i| !self.is_part(i)).collect();
+        let shown: Vec<usize> = cards.iter().copied().filter(|&i| !self.in_tab(i)).collect();
         if shown.is_empty() {
             crate::panel::plugins_empty(
                 ui,
                 rect,
-                if self.entries.is_empty() {
+                if cards.is_empty() {
                     "Extensions and tools plug in here."
                 } else {
                     "Every installed plugin has a tab of its own."
@@ -147,17 +157,20 @@ impl Registry {
                 );
                 let h = self
                     .with(i, &ctx, state, |p, h| p.show(ui, area, h))
-                    .unwrap_or_else(|| {
-                        // the plugin was stopped: say so where its view was
-                        let text = corvus_api::i18n::tr(super::STOPPED);
-                        let g =
-                            kit::wrapped_weight(ui, &text, 12.0, Weight::W400, style::critical(), area.width(), 1.4);
-                        let h = g.size().y;
-                        ui.painter().galley(area.min, g, style::critical());
-                        h
-                    });
+                    .unwrap_or_else(|| stopped(ui, area));
                 ui.allocate_space(Vec2::new(area.width(), pad_top + h + CARD_PAD));
             });
+    }
+
+    /// A part of the program (`PARTS`) drawn where it belongs, from the top of `area`; returns the
+    /// height it took.
+    pub fn show_part(&mut self, ui: &mut egui::Ui, area: Rect, state: &Value, i: usize) -> f32 {
+        let ctx = ui.ctx().clone();
+        self.ensure_live(i, &ctx, state);
+        match self.with(i, &ctx, state, |p, h| p.show(ui, area, h)) {
+            Some(h) => h,
+            None => stopped(ui, area),
+        }
     }
 
     /// The dialog behind a plugin's gear. Every change is in force and saved

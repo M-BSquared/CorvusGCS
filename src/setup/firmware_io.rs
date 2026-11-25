@@ -82,10 +82,11 @@ pub fn post_octets(server: &Server, path: &str, body: &[u8], cancel: &AtomicBool
     stream.set_write_timeout(Some(Duration::from_secs(30))).map_err(fail)?;
     stream.set_read_timeout(Some(Duration::from_secs(60))).map_err(fail)?;
     let head = format!(
-        "POST {path} HTTP/1.1\r\nHost: {}:{}\r\nAccept: application/json\r\nConnection: close\r\nContent-Type: application/octet-stream\r\nContent-Length: {}\r\n\r\n",
+        "POST {path} HTTP/1.1\r\nHost: {}:{}\r\nAccept: application/json\r\nConnection: close\r\nContent-Type: application/octet-stream\r\nContent-Length: {}\r\n{}\r\n",
         server.host,
         server.port,
-        body.len()
+        body.len(),
+        server.key_line()
     );
     stream.write_all(head.as_bytes()).map_err(fail)?;
     for chunk in body.chunks(CHUNK) {

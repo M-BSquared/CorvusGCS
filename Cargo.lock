@@ -1020,7 +1020,6 @@ dependencies = [
  "corvus_plugin_probe",
  "corvus_plugin_remote_id_check",
  "corvus_plugin_schwalby",
- "corvus_plugin_ssh_launcher",
  "corvus_plugin_tak",
  "corvus_plugin_trajectory_viewer",
  "corvus_plugin_vibration",
@@ -1125,15 +1124,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "corvus_plugin_ssh_launcher"
-version = "0.0.0"
-dependencies = [
- "corvus_api",
- "eframe",
- "serde_json",
-]
-
-[[package]]
 name = "corvus_plugin_tak"
 version = "0.0.0"
 dependencies = [
@@ -1158,6 +1148,18 @@ dependencies = [
  "corvus_api",
  "eframe",
  "serde_json",
+]
+
+[[package]]
+name = "corvus_scene"
+version = "0.0.0"
+dependencies = [
+ "corvus_link",
+ "image",
+ "lzma-rs",
+ "russh",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]

@@ -11,6 +11,11 @@ const fn hex(rgb: u32) -> Color32 {
     Color32::from_rgb((rgb >> 16) as u8, (rgb >> 8) as u8, rgb as u8)
 }
 
+/// `#RRGGBB` as a colour.
+pub fn hex_color(rgb: u32) -> Color32 {
+    hex(rgb)
+}
+
 /// `rgb(r g b / a)`.
 pub fn rgba(rgb: u32, a: f32) -> Color32 {
     let c = hex(rgb);

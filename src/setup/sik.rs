@@ -728,7 +728,7 @@ impl SikPage {
             let lines = model::reset_detail(side);
             let gs: Vec<_> = lines
                 .iter()
-                .map(|l| kit::wrapped_weight(ui, l, 12.0, Weight::W500, style::text_1(), w - 28.0, 1.5))
+                .map(|l| kit::wrapped_weight(ui, l, 12.0, Weight::W500, style::text_1(), w - 36.0, 1.5))
                 .collect();
             let h: f32 = gs.iter().map(|g| g.size().y).sum::<f32>() + 8.0 + 24.0 + 2.0;
             let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, h));
@@ -736,7 +736,7 @@ impl SikPage {
             let mut ty = y + 13.0;
             for g in gs {
                 let gh = g.size().y;
-                ui.painter().galley(Pos2::new(x + 15.0, ty), g, style::text_1());
+                ui.painter().galley(Pos2::new(x + 22.0, ty), g, style::text_1());
                 ty += gh + 8.0;
             }
             let (hit, bottom) = modal::actions(

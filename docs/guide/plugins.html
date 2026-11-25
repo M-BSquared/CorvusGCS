@@ -6,7 +6,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Plugins · Corvus GCS documentation</title>
-<meta name="description" content="The Vibration Monitor, the SSH Launcher, Schwalby and Map Entities, the NuttX Console and the Trajectory Viewer to install, and writing a plugin of your own.">
+<meta name="description" content="AI Chat, Map Entities, the NuttX Console, the Remote ID Check, Schwalby, TAK, the Trajectory Viewer and the Vibration Monitor to install, and writing a plugin of your own.">
 <link rel="canonical" href="https://m-bsquared.github.io/CorvusGCS/guide/plugins.html">
 <meta name="theme-color" content="#0B0E12" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#F4F6F8" media="(prefers-color-scheme: light)">
@@ -14,7 +14,7 @@
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="Corvus GCS">
 <meta property="og:title" content="Plugins · Corvus GCS documentation">
-<meta property="og:description" content="The Vibration Monitor, the SSH Launcher, Schwalby and Map Entities, the NuttX Console and the Trajectory Viewer to install, and writing a plugin of your own.">
+<meta property="og:description" content="AI Chat, Map Entities, the NuttX Console, the Remote ID Check, Schwalby, TAK, the Trajectory Viewer and the Vibration Monitor to install, and writing a plugin of your own.">
 <meta property="og:url" content="https://m-bsquared.github.io/CorvusGCS/guide/plugins.html">
 <meta property="og:image" content="https://m-bsquared.github.io/CorvusGCS/assets/images/social-preview.jpg">
 <link rel="icon" type="image/png" sizes="32x32" href="../assets/icons/favicon-32.png">
@@ -173,6 +173,10 @@
   once, so install what you need before you go into the field; after that nothing does.
   Settings of a plugin stay when you remove it.
 </p>
+<div class="callout callout-warn">
+  <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-alert"></use></svg>
+  <div><p>A plugin is code that runs inside Corvus with your rights: it can run programs, read files and steer the aircraft, and it may use third party libraries. Its download is checked against its repository, but not every plugin has been reviewed. Install only what you trust. You do so at your own risk. Corvus itself is complete without any.</p></div>
+</div>
 <p>
   For a computer without internet, download the plugin on another one, from the release
   <code>corvus-</code> with your version in the <a href="#more">plugin's repository</a>
@@ -206,55 +210,9 @@
   and puts the default rate back when you close it.
 </p>
 
-<h2 id="ssh-launcher">SSH Launcher</h2>
-<p>
-  A shelf of buttons for the programs you start before a flight. Each button
-  carries its own saved SSH connection, folder and command, so the mission
-  script, the video pipeline and the log recorder are three presses rather than
-  three trips to a terminal. Add, rename, edit and remove buttons in the plugin
-  itself; they are saved and there again at the next launch.
-</p>
-
-<figure class="doc-shot">
-  <a href="../assets/images/plugin-ssh-launcher.jpg"><img src="../assets/images/plugin-ssh-launcher-800.jpg"
-     srcset="../assets/images/plugin-ssh-launcher-800.jpg 800w, ../assets/images/plugin-ssh-launcher.jpg 1600w"
-     sizes="(max-width: 900px) calc(100vw - 40px), 760px" width="1600" height="1000" loading="lazy" decoding="async"
-     alt="The SSH Launcher plugin with four buttons, two of them running on the companion computer, and the mission script's terminal open in a window over the map."></a>
-  <figcaption>Two programs running on the companion computer, the mission script's terminal open over the map.</figcaption>
-</figure>
-
-<h3 id="launcher-running">How a button runs its program</h3>
-<ul>
-  <li><strong>In its own SSH session.</strong> Pressing the button again runs the program again <strong>in that same terminal</strong>: one run under the last, in one scrollback, with nothing thrown away in between. (It is a real shell: if the last program is still running in the foreground, what you send goes to it, just as if you had typed it. Press <kbd>Ctrl</kbd>+<kbd>C</kbd> first, or let it finish.)</li>
-  <li><strong>The arrow</strong> beside a button opens that session's terminal, a <a href="video.html#windows">window</a> you can move, resize, maximise and put away. Only the arrow opens it: pressing the button starts the program without throwing a window at you, which matters when four of them go up on the pad. Pressed before the button, the arrow opens the terminal on a plain shell, and the button then runs the program in it.</li>
-  <li><strong>Closing the window</strong> with × leaves the program running, and the arrow brings the window back with its scrollback intact.</li>
-  <li><strong>A green dot</strong> marks buttons that have something running. On those rows the pencil becomes a red <strong>stop</strong> button: it sends <kbd>Ctrl</kbd>+<kbd>C</kbd>, gives the program a second to finish, then closes the session, which ends the program and the connection. Stop a button before editing it.</li>
-  <li><strong>The grip</strong> at the left of each row appears once the pencil at the bottom of the card is switched on. Drag it up or down to move the button, or focus it and press <kbd>↑</kbd> or <kbd>↓</kbd>. The new order is saved at once.</li>
-  <li><strong>The colour</strong> of a button is set in its editor: the first chip is the default, which follows the theme, then a few preset colours, and the last chip opens a picker for any other. The label switches between white and black so it stays readable.</li>
-</ul>
-<p>
-  Turn <strong>Run in a terminal</strong> off for a program that has to outlive
-  Corvus itself. It is then started with <code>nohup</code> and detached, with
-  nothing to watch and nothing to stop from here.
-</p>
-
-<h3 id="launcher-connections">Connections</h3>
-<p>
-  A button does not need a connection set up beforehand. The connection list in
-  its editor ends with <strong>New connection…</strong>, which asks for host,
-  user, password and key file right there, so a shelf can be built on the pad
-  for a companion computer Corvus has never seen. What you type is saved as an
-  ordinary SSH connection (it appears in the SSH tab, ready for the next button,
-  editable and removable), named <code>user@host</code> unless you name it.
-</p>
-<p>
-  The plugin never holds a password. A button names a saved SSH connection, and
-  the backend takes the credentials from there.
-</p>
-
 <h2 id="schwalby">Schwalby</h2>
 <p>
-  A shelf of one press buttons like the SSH Launcher's, for programs on the
+  A shelf of one press buttons like the <a href="workspace.html#ssh-launcher">SSH Launcher</a>'s, for programs on the
   ground station as well as on the aircraft. When you create a button, the
   <strong>Local / SSH</strong> switch at the top of its settings decides where
   it runs:
@@ -276,9 +234,8 @@
 <p>
   Each row says where it runs. Moving a running button to the other side (or to
   another connection) asks first and closes its old session, so the next press
-  can never land on the wrong machine. Schwalby and the SSH Launcher are
-  separate plugins with their own buttons and settings; neither touches the
-  other's.
+  can never land on the wrong machine. Schwalby and the SSH Launcher have
+  their own buttons and settings; neither touches the other's.
 </p>
 <p>
   Schwalby can have a tab of its own. Switch on <strong>Own tab</strong> in its
@@ -450,6 +407,10 @@
 </p>
 
 <h2 id="ai-chat">AI Chat</h2>
+<div class="callout callout-warn">
+  <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#i-alert"></use></svg>
+  <div><p>A language model makes mistakes, also with the tools of the station. You use it at your own risk. Read <a href="mcp.html#risk">what that means</a> first.</p></div>
+</div>
 <p>
   A chat with a language model of your choice: one on this computer or the local network
   (Ollama, LM Studio, llama.cpp, vLLM), or a hosted one. Enter the address, the model and,
@@ -458,7 +419,7 @@
   itself, nothing has to be switched on: it reads the aircraft, draws on the map, and flies what
   you ask for. Corvus asks you before anything that changes the aircraft, unless you allowed it
   under <a href="mcp.html#permissions">Permissions</a>. A model on this computer or the local network
-  is offered the 24 tools that read, draw and fly, a hosted one all of them; <strong>Number of
+  is offered the 34 tools that read, draw, plan, open pages and fly and up to 12 of plugins that are switched on for it, a hosted one all of them; <strong>Number of
   tools</strong> in the gear changes that. Run a local model with a context of 8000 tokens or more
   (<code>num_ctx</code> in Ollama). <strong>Stop</strong> ends an
   answer at once. With a model on this computer it works without internet.
@@ -470,6 +431,8 @@
   ASD-STAN do, and says when the standard has no such code. It reads only: the identity, the broadcast and the aircraft stay as
   they are, and it is no proof that an identity is valid. Its tables are copied from
   <a href="https://github.com/Mattbusel/remoteid" target="_blank" rel="noopener">remoteid</a> by Matthew Busel (MIT).
+  <strong>Third party code</strong> at the top of the view warns that it uses third party open source packages:
+  use it with caution. The credits are there and under the list.
   The identity itself is under <a href="hardware.html#remote-id">Setup, Remote ID</a>.
 </p>
 
@@ -489,7 +452,6 @@
     <tr><td><a href="#nuttx-console">NuttX Console</a></td><td><a href="https://github.com/M-BSquared/corvus-nuttx-console">corvus-nuttx-console</a></td><td><code>nuttx-console</code></td></tr>
     <tr><td><a href="#remote-id-check">Remote ID Check</a></td><td><a href="https://github.com/M-BSquared/corvus-remote-id-check">corvus-remote-id-check</a></td><td><code>remote-id-check</code></td></tr>
     <tr><td><a href="#schwalby">Schwalby</a></td><td><a href="https://github.com/M-BSquared/corvus-schwalby">corvus-schwalby</a></td><td><code>schwalby</code></td></tr>
-    <tr><td><a href="#ssh-launcher">SSH Launcher</a></td><td><a href="https://github.com/M-BSquared/corvus-ssh-launcher">corvus-ssh-launcher</a></td><td><code>ssh-launcher</code></td></tr>
     <tr><td><a href="#tak">TAK</a></td><td><a href="https://github.com/M-BSquared/corvus-tak">corvus-tak</a></td><td><code>tak</code></td></tr>
     <tr><td><a href="#trajectory-viewer">Trajectory Viewer</a></td><td><a href="https://github.com/M-BSquared/corvus-trajectory-viewer">corvus-trajectory-viewer</a></td><td><code>trajectory-viewer</code></td></tr>
     <tr><td><a href="#vibration">Vibration Monitor</a></td><td><a href="https://github.com/M-BSquared/corvus-vibration">corvus-vibration</a></td><td><code>vibration</code></td></tr>
@@ -791,7 +753,9 @@ fn options_changed(&amp;mut self, h: &amp;mut Host) {
   plugin runs there. The operator still decides: the client sees a plugin's
   tools only with <strong>Plugin tools</strong> on and that plugin's switch on
   under Settings, Connections, MCP, and with <strong>Ask me first</strong> on
-  each call waits for them. Schwalby is the shipped plugin that offers tools.
+  each call waits for them, with what the tool is called with in the question. A tool
+  with <code>confirm</code> set is always asked about. Map Entities, NuttX Console,
+  Schwalby and TAK offer tools.
 </p>
 
 <h3 id="translations">Translations</h3>
@@ -832,8 +796,7 @@ fn options_changed(&amp;mut self, h: &amp;mut Host) {
   from there:
 </p>
 <ul>
-  <li><code>plugins/ssh-launcher</code>: a form, saved settings and a backend call.</li>
-  <li><code>plugins/schwalby</code>: the same, with a control and tools for an AI client.</li>
+  <li><code>plugins/schwalby</code>: a form, saved settings, backend calls, a control and tools for an AI client.</li>
   <li><code>plugins/vibration</code>: a live chart on the telemetry stream.</li>
   <li><code>plugins/map-entities</code>: placing things on the map by clicking, markers that can be dragged, and watching the aircraft's track against them.</li>
 </ul>
@@ -866,7 +829,6 @@ fn options_changed(&amp;mut self, h: &amp;mut Host) {
   <ul>
     <li><a href="#install">Install a plugin</a></li>
     <li><a href="#vibration">Vibration Monitor</a></li>
-    <li><a href="#ssh-launcher">SSH Launcher</a></li>
     <li><a href="#schwalby">Schwalby</a></li>
     <li><a href="#map-entities">Map Entities</a></li>
     <li><a href="#tak">TAK</a></li>

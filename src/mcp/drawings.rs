@@ -29,7 +29,28 @@ const HEAD_HALF_DEG: f64 = 24.0;
 struct Shared {
     shapes: Vec<Value>,
     changed: bool,
-    show: Option<Vec<[f64; 2]>>,
+    show: Option<Show>,
+    open: Option<String>,
+    planner: Vec<Planned>,
+}
+
+/// What an AI client did with the mission planner.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Planned {
+    /// A plan to show, with its number.
+    Plan { seq: u64, plan: Value },
+    /// The vehicle took plan `seq` as its mission `revision`.
+    Sent { seq: u64, revision: Option<i64> },
+}
+
+/// Places the client asked to see, longitude first.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Show {
+    pub points: Vec<[f64; 2]>,
+    /// For one place.
+    pub zoom: Option<f64>,
+    /// The Home page is to come to the front.
+    pub open: bool,
 }
 
 /// The drawings of the backend as this window has them.
@@ -58,7 +79,34 @@ fn take_event(shared: &Mutex<Shared>, e: &Value) {
                 })
                 .unwrap_or_default();
             if !points.is_empty() {
-                g.show = Some(points);
+                g.show = Some(Show {
+                    points,
+                    zoom: e
+                        .get("zoom")
+                        .and_then(Value::as_f64)
+                        .filter(|z| (1.0..=20.0).contains(z)),
+                    open: e.get("open") == Some(&json!(true)),
+                });
+            }
+        }
+        Some("open") => {
+            g.open = e.get("page").and_then(Value::as_str).map(str::to_string);
+        }
+        Some("plan") => {
+            if let (Some(seq), Some(plan)) = (e.get("seq").and_then(Value::as_u64), e.get("plan")) {
+                // only the newest counts
+                g.planner.retain(|p| !matches!(p, Planned::Plan { .. }));
+                g.planner.push(Planned::Plan {
+                    seq,
+                    plan: plan.clone(),
+                });
+            }
+        }
+        Some("sent") => {
+            if let Some(seq) = e.get("seq").and_then(Value::as_u64) {
+                let revision = e.get("revision").and_then(Value::as_i64);
+                g.planner.retain(|p| !matches!(p, Planned::Sent { .. }));
+                g.planner.push(Planned::Sent { seq, revision });
             }
         }
         _ => {}
@@ -69,14 +117,18 @@ impl Drawings {
     pub fn start(server: Server, ctx: &egui::Context) -> Drawings {
         let shared: Arc<Mutex<Shared>> = Arc::default();
         let (s, c) = (shared.clone(), ctx.clone());
-        let stream = Stream::start(server.clone(), "/api/events?topics=drawings".into(), move |ev| {
-            if ev.name == "drawings" {
-                if let Ok(v) = serde_json::from_str::<Value>(&ev.data) {
-                    take_event(&s, &v);
-                    c.request_repaint();
+        let stream = Stream::start(
+            server.clone(),
+            "/api/events?topics=drawings,planner".into(),
+            move |ev| {
+                if ev.name == "drawings" || ev.name == "planner" {
+                    if let Ok(v) = serde_json::from_str::<Value>(&ev.data) {
+                        take_event(&s, &v);
+                        c.request_repaint();
+                    }
                 }
-            }
-        });
+            },
+        );
         Drawings {
             server,
             shared,
@@ -91,8 +143,21 @@ impl Drawings {
         std::mem::take(&mut g.changed).then(|| shapes_of(&g.shapes))
     }
 
-    /// The places the client asked to see, longitude first.
-    pub fn take_show(&self) -> Option<Vec<[f64; 2]>> {
+    /// The page the client asked to open.
+    pub fn take_open(&self) -> Option<String> {
+        self.shared.lock().ok()?.open.take()
+    }
+
+    /// What the client did with the mission planner since the last call, in order.
+    pub fn take_planned(&self) -> Vec<Planned> {
+        self.shared
+            .lock()
+            .map(|mut g| std::mem::take(&mut g.planner))
+            .unwrap_or_default()
+    }
+
+    /// The places the client asked to see.
+    pub fn take_show(&self) -> Option<Show> {
         self.shared.lock().ok()?.show.take()
     }
 
@@ -107,53 +172,22 @@ impl Drawings {
         }
         let n = self.count();
         let Some(host) = host.filter(|_| n > 0) else { return };
-        egui::Area::new(egui::Id::NULL.with("ai-drawings"))
-            .order(egui::Order::Middle)
-            .fixed_pos(host.min)
-            .show(ctx, |ui| {
-                let text = if n == 1 {
-                    crate::i18n::tr("1 AI drawing").into_owned()
-                } else {
-                    crate::i18n::tr_fmt("{n} AI drawings", &[("n", &n.to_string())])
-                };
-                let g = style::galley(ui, &text, 12.0, Weight::W600, style::text_1(), 0.0);
-                let clear = Button::new("Clear", Variant::Secondary)
-                    .icon("trash-2")
-                    .small()
-                    .enabled(self.clearing.is_none());
-                let (bw, bh) = (clear.width(ui), clear.height());
-                let size = Vec2::new(12.0 + g.size().x + 8.0 + bw + 4.0, bh + 8.0);
-                let r = Rect::from_min_size(
-                    Pos2::new(host.center().x - size.x / 2.0, host.top() + below + 4.0),
-                    size,
-                );
-                let painter = ui.painter().clone();
-                painter.add(crate::ui::card::sheet(
-                    "ai-drawings",
-                    r,
-                    255,
-                    style::glass(0.8),
-                    style::border_soft(),
-                ));
-                painter.galley(
-                    Pos2::new(r.left() + 12.0, r.center().y - g.size().y / 2.0),
-                    g,
-                    style::text_1(),
-                );
-                let br = Rect::from_min_size(
-                    Pos2::new(r.right() - 4.0 - bw, r.center().y - bh / 2.0),
-                    Vec2::new(bw, bh),
-                );
-                if clear
-                    .title("Take what the AI client drew off the map")
-                    .show(ui, br, "ai-drawings-clear")
-                {
-                    let s = self.server.clone();
-                    self.clearing = Some(Pending::spawn(ui.ctx(), move || {
-                        http::post_json(&s, "/api/map/drawings/remove", &json!({"all": true}))
-                    }));
-                }
-            });
+        let text = if n == 1 {
+            crate::i18n::tr("1 AI drawing").into_owned()
+        } else {
+            crate::i18n::tr_fmt("{n} AI drawings", &[("n", &n.to_string())])
+        };
+        let clear = Button::new("Clear", Variant::Secondary)
+            .icon("trash-2")
+            .small()
+            .enabled(self.clearing.is_none())
+            .title("Take what the AI client drew off the map");
+        if pill(ctx, "ai-drawings", host, below, &text, vec![clear]) == Some(0) {
+            let s = self.server.clone();
+            self.clearing = Some(Pending::spawn(ctx, move || {
+                http::post_json(&s, "/api/map/drawings/remove", &json!({"all": true}))
+            }));
+        }
     }
 
     pub fn shut_down(&mut self) {
@@ -161,6 +195,54 @@ impl Drawings {
             s.stop();
         }
     }
+}
+
+/// A line of text with buttons at the top of `host`, `below` points down: the button pressed.
+pub fn pill(
+    ctx: &egui::Context,
+    id: &'static str,
+    host: Rect,
+    below: f32,
+    text: &str,
+    buttons: Vec<Button>,
+) -> Option<usize> {
+    let mut pressed = None;
+    egui::Area::new(egui::Id::NULL.with(id))
+        .order(egui::Order::Middle)
+        .fixed_pos(host.min)
+        .show(ctx, |ui| {
+            let g = style::galley(ui, text, 12.0, Weight::W600, style::text_1(), 0.0);
+            let sizes: Vec<Vec2> = buttons.iter().map(|b| Vec2::new(b.width(ui), b.height())).collect();
+            let wide: f32 = sizes.iter().map(|s| s.x + 4.0).sum();
+            let tall = sizes.iter().map(|s| s.y).fold(g.size().y, f32::max);
+            let size = Vec2::new(12.0 + g.size().x + 8.0 + wide, tall + 8.0);
+            let r = Rect::from_min_size(
+                Pos2::new(host.center().x - size.x / 2.0, host.top() + below + 4.0),
+                size,
+            );
+            let painter = ui.painter().clone();
+            painter.add(crate::ui::card::sheet(
+                id,
+                r,
+                255,
+                style::glass(0.8),
+                style::border_soft(),
+            ));
+            let mut x = r.left() + 12.0 + g.size().x + 8.0;
+            painter.galley(
+                Pos2::new(r.left() + 12.0, r.center().y - g.size().y / 2.0),
+                g,
+                style::text_1(),
+            );
+            for (i, (button, s)) in buttons.into_iter().zip(sizes).enumerate() {
+                let at = Rect::from_min_size(Pos2::new(x, r.center().y - s.y / 2.0), s);
+                if button.show(ui, at, (id, i)) {
+                    pressed = Some(i);
+                }
+                x += s.x + 4.0;
+            }
+        });
+    pressed
 }
 
 fn lon_lat(p: geo::Place) -> [f64; 2] {
@@ -354,6 +436,32 @@ mod tests {
         take_event(&shared, &json!({"type": "show", "points": []}));
         let g = shared.lock().unwrap();
         assert!(g.changed && g.shapes.len() == 1);
-        assert_eq!(g.show, Some(vec![[11.6, 48.0]]));
+        let one = |zoom, open| Show {
+            points: vec![[11.6, 48.0]],
+            zoom,
+            open,
+        };
+        assert_eq!(g.show, Some(one(None, false)));
+        drop(g);
+        let event = |zoom: f64| json!({"type": "show", "points": [[11.6, 48.0]], "zoom": zoom, "open": true});
+        take_event(&shared, &event(9.0));
+        assert_eq!(shared.lock().unwrap().show, Some(one(Some(9.0), true)));
+        take_event(&shared, &event(1e9));
+        assert_eq!(shared.lock().unwrap().show, Some(one(None, true)));
+        take_event(&shared, &json!({"type": "open", "page": "settings:map"}));
+        assert_eq!(shared.lock().unwrap().open.as_deref(), Some("settings:map"));
+    }
+
+    #[test]
+    fn the_pages_a_client_can_name_are_the_ones_there_are() {
+        let named = |top: &str| -> Vec<&str> {
+            corvus_core::drawings::PAGES
+                .iter()
+                .filter_map(|p| p.strip_prefix(top)?.strip_prefix(':'))
+                .collect()
+        };
+        assert_eq!(named("setup"), crate::setup::tile_ids());
+        let tabs: Vec<&str> = crate::settings::model::TABS.iter().map(|t| t.0).collect();
+        assert_eq!(named("settings"), tabs);
     }
 }

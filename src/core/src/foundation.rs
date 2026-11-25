@@ -45,6 +45,10 @@ impl Module for Foundation {
             lock: Mutex::new(InstanceLock::new(o.paths.lock())),
         }));
         reg.get("/api/version", api_version);
+        // The HTTP server lets this through with the key alone.
+        reg.get(crate::http::security::KEY_CHECK, |_, _| {
+            Response::json(json!({"ok": true}))
+        });
         reg.get("/api/state", api_state);
         reg.get("/api/telemetry", api_telemetry);
         reg.get("/api/events", api_events);
@@ -122,6 +126,14 @@ fn api_config(core: &Core, _req: &Request) -> Response {
 }
 
 fn api_config_update(core: &Core, req: &Request) -> Response {
+    // These two name hosts that get passwords and the program that decodes video.
+    if !req.is_loopback()
+        && ["ssh_connections", "video"]
+            .iter()
+            .any(|k| req.payload().contains_key(*k))
+    {
+        return Response::not_ok(403, crate::http::security::THIS_COMPUTER_ONLY);
+    }
     match core.settings().apply_partial(core, req.payload()) {
         Ok(public) => Response::json(json!({"ok": true, "config": public})),
         Err(e) => Response::error(400, &e),

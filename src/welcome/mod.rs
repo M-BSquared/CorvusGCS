@@ -585,12 +585,16 @@ impl Session {
     /// The plugins on offer, each with a switch. Nothing is downloaded before Finish.
     fn plugins(&mut self, ui: &mut egui::Ui, f: &mut Form, store: &mut Store) {
         store.want(ui.ctx());
-        form::desc(
+        form::desc_info(
             ui,
             f,
             "Plugins add features such as TAK, AI Chat or a NuttX console. Each one is downloaded from its own repository on GitHub, which needs an internet connection now. Corvus GCS itself never needs one to fly. You can add or remove plugins later under Settings, Plugins.",
+            2,
+            "welcomeplugins",
         );
         f.skip(12.0);
+        form::message(ui, f, crate::plugins::store::RISK, Tone::Warn);
+        f.skip(10.0);
         let ids: Vec<&str> = store.offered().iter().map(|o| o.id).collect();
         let rows: Vec<_> = store
             .rows()

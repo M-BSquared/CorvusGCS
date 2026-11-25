@@ -1,0 +1,1330 @@
+{
+ "mission": {
+  "version": 1,
+  "name": "Campus hop",
+  "home": {
+   "lat": 48.075718,
+   "lon": 11.642051
+  },
+  "speed": 6.0,
+  "items": [
+   {
+    "type": "takeoff",
+    "lat": 48.075718,
+    "lon": 11.642051,
+    "alt": 40.0,
+    "pitch": 0,
+    "name": "Climb out"
+   },
+   {
+    "type": "waypoint",
+    "lat": 48.0758116,
+    "lon": 11.6427392,
+    "alt": 40.0,
+    "hold": 0,
+    "accept_radius": 0,
+    "name": "Field 1"
+   },
+   {
+    "type": "waypoint",
+    "lat": 48.0759742,
+    "lon": 11.6433779,
+    "alt": 40.0,
+    "hold": 0,
+    "accept_radius": 0,
+    "name": "Field 2"
+   },
+   {
+    "type": "waypoint",
+    "lat": 48.0762061,
+    "lon": 11.6439672,
+    "alt": 40.0,
+    "hold": 0,
+    "accept_radius": 0,
+    "name": "Field 3"
+   },
+   {
+    "type": "loiter_turns",
+    "lat": 48.076507,
+    "lon": 11.644507,
+    "alt": 45.0,
+    "turns": 2,
+    "radius": 25,
+    "direction": 1,
+    "name": "Survey point"
+   },
+   {
+    "type": "rtl"
+   }
+  ]
+ },
+ "scenes": [
+  {
+   "id": "flight",
+   "web": "flight-light",
+   "title": "In flight: map, instrument panel and workspace",
+   "readme": "screenshot_flight.jpg",
+   "page": "home",
+   "panel": "link",
+   "path": "swoop",
+   "takeoff": 8.0,
+   "settle": 50.0
+  },
+  {
+   "id": "map",
+   "web": "map",
+   "title": "The map is the interface",
+   "readme": "screenshot_map.jpg",
+   "page": "home",
+   "panel": "collapsed",
+   "path": "swoop",
+   "takeoff": 8.0,
+   "settle": 50.0
+  },
+  {
+   "id": "three_d",
+   "web": "map-3d-dom",
+   "title": "The map in 3D",
+   "theme": "blue",
+   "page": "home",
+   "panel": "collapsed",
+   "path": "swoop",
+   "takeoff": 8.0,
+   "terrain": "dem_11e6db89d6",
+   "three_d": {
+    "bearing": 20.0,
+    "zoom": 0.6
+   },
+   "settle": 50.0
+  },
+  {
+   "id": "mission",
+   "web": "mission",
+   "title": "The mission planner",
+   "readme": "screenshot_mission.jpg",
+   "page": "mission:Campus hop",
+   "panel": "collapsed",
+   "path": "parked",
+   "takeoff": 0.0,
+   "armed": false,
+   "mode": "POSCTL",
+   "settle": 12.0,
+   "steps": [
+    {
+     "at": 10,
+     "click": [
+      1214,
+      182
+     ]
+    },
+    {
+     "at": 12,
+     "gone": true
+    }
+   ]
+  },
+  {
+   "id": "setup",
+   "web": "setup",
+   "title": "Setup: every configuration page, one tile each",
+   "page": "setup",
+   "panel": "collapsed",
+   "path": "parked",
+   "takeoff": 0.0,
+   "armed": false,
+   "mode": "POSCTL",
+   "settle": 10.0
+  },
+  {
+   "id": "first_setup",
+   "web": "first-setup",
+   "title": "Setup: First Setup",
+   "theme": "blue",
+   "page": "firstsetup",
+   "panel": "collapsed",
+   "path": "parked",
+   "takeoff": 0.0,
+   "armed": false,
+   "mode": "POSCTL",
+   "settle": 14.0
+  },
+  {
+   "id": "motors",
+   "web": "motors",
+   "title": "Setup: the airframe drawn to scale",
+   "readme": "screenshot_motors.png",
+   "page": "motors",
+   "panel": "collapsed",
+   "path": "parked",
+   "takeoff": 0.0,
+   "armed": false,
+   "mode": "POSCTL",
+   "settle": 14.0
+  },
+  {
+   "id": "battery",
+   "web": "battery",
+   "title": "Setup: battery and power",
+   "page": "battery",
+   "panel": "collapsed",
+   "path": "parked",
+   "takeoff": 0.0,
+   "armed": false,
+   "mode": "POSCTL",
+   "settle": 14.0
+  },
+  {
+   "id": "safety",
+   "web": "safety",
+   "title": "Setup: limits, failsafes and sensors",
+   "page": "safety",
+   "panel": "collapsed",
+   "sensors": true,
+   "path": "parked",
+   "takeoff": 0.0,
+   "armed": false,
+   "mode": "POSCTL",
+   "settle": 14.0
+  },
+  {
+   "id": "calibration",
+   "web": "calibration",
+   "title": "Guided accelerometer calibration",
+   "page": "calibration",
+   "panel": "collapsed",
+   "path": "parked",
+   "takeoff": 0.0,
+   "armed": false,
+   "mode": "POSCTL",
+   "pause_after": 3,
+   "settle": 36.0,
+   "steps": [
+    {
+     "at": 14,
+     "click": [
+      286,
+      631
+     ]
+    },
+    {
+     "at": 17,
+     "click": [
+      1411,
+      175
+     ]
+    },
+    {
+     "at": 19,
+     "gone": true
+    }
+   ]
+  },
+  {
+   "id": "analysis",
+   "title": "Analysis: vehicle logs and Flight Review",
+   "page": "analysis",
+   "panel": "collapsed",
+   "path": "parked",
+   "takeoff": 0.0,
+   "armed": false,
+   "mode": "POSCTL",
+   "logs": 9,
+   "review_log": true,
+   "settle": 15.0
+  },
+  {
+   "id": "flight_review",
+   "web": "flight-review",
+   "title": "Flight Review of the sortie",
+   "readme": "screenshot_flight_review.png",
+   "page": "analysis:review",
+   "panel": "collapsed",
+   "path": "parked",
+   "takeoff": 0.0,
+   "armed": false,
+   "mode": "POSCTL",
+   "logs": 9,
+   "review_log": true,
+   "settle": 12.0,
+   "steps": [
+    {
+     "at": 12,
+     "click": [
+      1462,
+      343
+     ]
+    },
+    {
+     "at": 18,
+     "click": [
+      1471,
+      845
+     ]
+    },
+    {
+     "at": 20,
+     "scroll": [
+      800,
+      400,
+      400
+     ]
+    },
+    {
+     "at": 21,
+     "gone": true
+    }
+   ]
+  },
+  {
+   "id": "flight_review_charts",
+   "web": "flight-review-charts",
+   "title": "Flight Review: estimate against setpoint",
+   "page": "analysis:review",
+   "panel": "collapsed",
+   "path": "parked",
+   "takeoff": 0.0,
+   "armed": false,
+   "mode": "POSCTL",
+   "logs": 9,
+   "review_log": true,
+   "settle": 14.0,
+   "steps": [
+    {
+     "at": 12,
+     "click": [
+      1462,
+      343
+     ]
+    },
+    {
+     "at": 18,
+     "scroll": [
+      800,
+      600,
+      5640
+     ]
+    },
+    {
+     "at": 20,
+     "gone": true
+    }
+   ]
+  },
+  {
+   "id": "console",
+   "web": "console",
+   "title": "The side workspace: MAVLink console",
+   "page": "home",
+   "panel": "console",
+   "path": "swoop",
+   "takeoff": 8.0,
+   "settle": 50.0
+  },
+  {
+   "id": "ssh",
+   "web": "ssh",
+   "title": "SSH terminals on the companion computers",
+   "readme": "screenshot_ssh.jpg",
+   "page": "home",
+   "panel": "ssh",
+   "path": "swoop",
+   "takeoff": 8.0,
+   "settle": 50.0,
+   "ssh": true,
+   "steps": [
+    {
+     "at": 12,
+     "click": [
+      1510,
+      358
+     ]
+    },
+    {
+     "at": 18,
+     "drag": [
+      800,
+      307,
+      385,
+      172
+     ]
+    },
+    {
+     "at": 21,
+     "click": [
+      1373,
+      243
+     ]
+    },
+    {
+     "at": 24,
+     "gone": true
+    }
+   ],
+   "ui": {
+    "windows_in_app": true
+   }
+  },
+  {
+   "id": "plugins",
+   "web": "plugins",
+   "title": "A plugin beside the map",
+   "theme": "light",
+   "page": "home",
+   "panel": "plugins",
+   "plugin": "vibration",
+   "path": "swoop",
+   "takeoff": 8.0,
+   "settle": 50.0
+  },
+  {
+   "id": "live_messages",
+   "web": "live-messages",
+   "title": "Live Messages: every MAVLink message on the link",
+   "readme": "screenshot_live_messages.png",
+   "page": "analysis:scope",
+   "panel": "collapsed",
+   "path": "swoop",
+   "takeoff": 8.0,
+   "settle": 20.0,
+   "steps": [
+    {
+     "at": 14,
+     "click": [
+      175,
+      451
+     ]
+    },
+    {
+     "at": 16,
+     "gone": true
+    }
+   ]
+  },
+  {
+   "id": "parameter_help",
+   "web": "parameter-help",
+   "title": "Every parameter explained",
+   "theme": "blue",
+   "page": "parameters",
+   "panel": "collapsed",
+   "full_table": true,
+   "path": "parked",
+   "takeoff": 0.0,
+   "armed": false,
+   "mode": "POSCTL",
+   "settle": 30.0,
+   "steps": [
+    {
+     "at": 14,
+     "click": [
+      226,
+      350
+     ]
+    },
+    {
+     "at": 15,
+     "gone": true
+    },
+    {
+     "at": 35,
+     "click": [
+      1296,
+      302
+     ]
+    },
+    {
+     "at": 37,
+     "scroll": [
+      800,
+      700,
+      700
+     ]
+    },
+    {
+     "at": 40,
+     "move": [
+      257,
+      671
+     ]
+    }
+   ]
+  },
+  {
+   "id": "german",
+   "web": "flight-german",
+   "title": "The interface in German",
+   "readme": "screenshot_german.jpg",
+   "theme": "light",
+   "language": "de",
+   "page": "home",
+   "panel": "link",
+   "path": "swoop",
+   "takeoff": 8.0,
+   "settle": 50.0
+  },
+  {
+   "id": "ssh_launcher",
+   "web": "ssh-launcher",
+   "title": "SSH Launcher: programs on the companion computer, one press each",
+   "page": "home",
+   "panel": "ssh",
+   "path": "swoop",
+   "takeoff": 8.0,
+   "plugin_settings": {
+    "ssh-launcher": {
+     "buttons": [
+      {
+       "id": "mission",
+       "label": "Mission script",
+       "connection": "Mission computer",
+       "directory": "~/mission",
+       "command": "./start_mission.sh",
+       "mode": "terminal"
+      },
+      {
+       "id": "recorder",
+       "label": "Recorder",
+       "connection": "Mission computer",
+       "directory": "~/payload",
+       "command": "python3 record.py --out /data/flights",
+       "mode": "terminal",
+       "restart": true
+      },
+      {
+       "id": "gimbal",
+       "label": "Gimbal",
+       "connection": "Mission computer",
+       "directory": "~/ws",
+       "command": "ros2 launch payload gimbal.launch.py",
+       "mode": "terminal"
+      },
+      {
+       "id": "router",
+       "label": "Restart MAVLink router",
+       "connection": "Mission computer",
+       "directory": "~",
+       "command": "systemctl restart mavlink-router",
+       "mode": "background"
+      }
+     ]
+    }
+   },
+   "settle": 50.0,
+   "ssh": true,
+   "ui": {
+    "windows_in_app": true
+   },
+   "steps": [
+    {
+     "at": 14,
+     "click": [
+      1377,
+      669
+     ]
+    },
+    {
+     "at": 19,
+     "click": [
+      1377,
+      773
+     ]
+    },
+    {
+     "at": 23,
+     "gone": true
+    }
+   ]
+  },
+  {
+   "id": "plugin_schwalby",
+   "web": "plugin-schwalby",
+   "title": "Schwalby: programs here or over SSH",
+   "theme": "green",
+   "page": "home",
+   "panel": "plugins",
+   "plugin": "schwalby",
+   "path": "swoop",
+   "takeoff": 8.0,
+   "plugin_settings": {
+    "schwalby": {
+     "companion": {
+      "name": "Companion",
+      "host": "127.0.0.1",
+      "interval_s": 2,
+      "timeout_s": 6,
+      "connection": "Mission computer"
+     },
+     "buttons": [
+      {
+       "id": "mission",
+       "label": "Mission script",
+       "target": "ssh",
+       "connection": "Mission computer",
+       "directory": "~/mission",
+       "command": "./start_mission.sh",
+       "mode": "terminal"
+      },
+      {
+       "id": "sync",
+       "label": "Copy logs to the NAS",
+       "target": "local",
+       "directory": "~/flights",
+       "command": "./sync_logs.sh",
+       "mode": "background"
+      },
+      {
+       "id": "recorder",
+       "label": "Recorder",
+       "target": "ssh",
+       "connection": "Mission computer",
+       "directory": "~/payload",
+       "command": "python3 record.py --out /data/flights",
+       "mode": "terminal",
+       "restart": true
+      },
+      {
+       "id": "disk",
+       "label": "Free space on /data",
+       "target": "ssh",
+       "connection": "Mission computer",
+       "directory": "~",
+       "command": "df -h /data",
+       "mode": "terminal"
+      }
+     ]
+    }
+   },
+   "settle": 50.0,
+   "ssh": true,
+   "steps": [
+    {
+     "at": 16,
+     "click": [
+      1366,
+      271
+     ]
+    },
+    {
+     "at": 20,
+     "click": [
+      1366,
+      360
+     ]
+    },
+    {
+     "at": 24,
+     "gone": true
+    }
+   ]
+  },
+  {
+   "id": "plugin_map_entities",
+   "web": "plugin-map-entities",
+   "title": "Map Entities: a gate, trees and a radar on the map",
+   "readme": "screenshot_map_entities.jpg",
+   "page": "home",
+   "panel": "plugins",
+   "plugin": "map-entities",
+   "path": "swoop",
+   "takeoff": 8.0,
+   "plugin_settings": {
+    "map-entities": {
+     "entities": [
+      {
+       "id": "field-gate",
+       "kind": "gate",
+       "name": "Field gate",
+       "color": "#FFD60A",
+       "lat": 48.0760732,
+       "lng": 11.6433106,
+       "lat2": 48.0758753,
+       "lng2": 11.6434452,
+       "base": 30,
+       "height": 20,
+       "note": "Fly through at 40 m"
+      },
+      {
+       "id": "oak",
+       "kind": "tree",
+       "name": "Oak",
+       "lat": 48.0761901,
+       "lng": 11.6428664,
+       "note": "",
+       "radius": 6,
+       "height": 18
+      },
+      {
+       "id": "lime",
+       "kind": "tree",
+       "name": "Lime",
+       "lat": 48.076244,
+       "lng": 11.6438086,
+       "note": "",
+       "radius": 5,
+       "height": 14
+      },
+      {
+       "id": "radar",
+       "kind": "radar",
+       "name": "Radar",
+       "lat": 48.0752234,
+       "lng": 11.6429932,
+       "note": "",
+       "radius": 70,
+       "alert": true,
+       "angle": 110,
+       "bearing": 15
+      },
+      {
+       "id": "pad",
+       "kind": "pad",
+       "name": "Pad",
+       "lat": 48.075718,
+       "lng": 11.642051,
+       "note": ""
+      },
+      {
+       "id": "pilot",
+       "kind": "person",
+       "name": "Pilot",
+       "lat": 48.0755921,
+       "lng": 11.6419433,
+       "note": ""
+      },
+      {
+       "id": "ground-station",
+       "kind": "vehicle",
+       "name": "Ground station",
+       "lat": 48.075673,
+       "lng": 11.6415799,
+       "note": ""
+      },
+      {
+       "id": "survey-camera",
+       "kind": "camera",
+       "name": "Survey camera",
+       "lat": 48.0766329,
+       "lng": 11.6447493,
+       "note": "",
+       "radius": 35,
+       "alert": false,
+       "angle": 360,
+       "bearing": 0
+      }
+     ]
+    }
+   },
+   "settle": 50.0,
+   "steps": [
+    {
+     "at": 40,
+     "click": [
+      1322,
+      667
+     ]
+    },
+    {
+     "at": 44,
+     "scroll": [
+      1400,
+      800,
+      420
+     ]
+    },
+    {
+     "at": 46,
+     "gone": true
+    }
+   ]
+  },
+  {
+   "id": "plugin_nuttx_console",
+   "web": "plugin-nuttx-console",
+   "title": "NuttX Console: the PX4 shell over MAVLink",
+   "theme": "orange",
+   "page": "home",
+   "panel": "plugins",
+   "plugin": "nuttx-console",
+   "path": "swoop",
+   "takeoff": 8.0,
+   "settle": 50.0,
+   "steps": [
+    {
+     "at": 14,
+     "click": [
+      1382,
+      938
+     ]
+    },
+    {
+     "at": 15,
+     "text": "ver all"
+    },
+    {
+     "at": 15.6,
+     "key": "Enter"
+    },
+    {
+     "at": 19,
+     "text": "param show MPC_XY_VEL_MAX"
+    },
+    {
+     "at": 19.6,
+     "key": "Enter"
+    },
+    {
+     "at": 23,
+     "text": "listener sensor_combined"
+    },
+    {
+     "at": 23.6,
+     "key": "Enter"
+    },
+    {
+     "at": 27,
+     "gone": true
+    }
+   ]
+  },
+  {
+   "id": "plugin_trajectory_viewer",
+   "web": "plugin-trajectory-viewer",
+   "title": "Trajectory Viewer: a reference route under the flown track",
+   "page": "home",
+   "panel": "plugins",
+   "plugin": "trajectory-viewer",
+   "path": "swoop",
+   "takeoff": 8.0,
+   "plugin_settings": {
+    "trajectory-viewer": {
+     "file": "campus_hop_planned.txt",
+     "points": "11.642051 48.075718 40\n11.6420945 48.0757287 40\n11.6421378 48.0757396 40\n11.6421809 48.0757506 40\n11.642224 48.0757618 40\n11.642267 48.075773 40\n11.6423101 48.0757841 40\n11.6423531 48.0757952 40\n11.6423962 48.0758061 40\n11.6424393 48.0758168 40\n11.6424826 48.0758272 40\n11.6425261 48.0758374 40\n11.6425697 48.0758472 40\n11.6426134 48.0758567 40\n11.6426574 48.0758658 40\n11.6427015 48.0758745 40\n11.6427458 48.0758829 40\n11.6427903 48.0758908 40\n11.642835 48.0758984 40\n11.6428799 48.0759057 40\n11.6429249 48.0759126 40\n11.6429701 48.0759193 40\n11.6430154 48.0759257 40\n11.6430608 48.0759318 40\n11.6431062 48.0759379 40\n11.6431516 48.0759438 40\n11.6431971 48.0759497 40\n11.6432425 48.0759556 40\n11.6432878 48.0759616 40\n11.6433329 48.0759678 40\n11.6433779 48.0759742 40\n11.6434227 48.075981 40\n11.6434672 48.0759881 40\n11.6435114 48.0759956 40\n11.6435552 48.0760037 40\n11.6435987 48.0760124 40\n11.6436417 48.0760217 40\n11.6436843 48.0760317 40\n11.6437263 48.0760425 40\n11.6437679 48.0760541 40\n11.6438089 48.0760666 40\n11.6438493 48.07608 40\n11.6438891 48.0760943 40\n11.6439283 48.0761096 40\n11.6439669 48.0761258 40\n11.6440049 48.0761431 40\n11.6440422 48.0761614 40\n11.6440789 48.0761806 40\n11.6441149 48.0762008 40\n11.6441504 48.076222 40\n11.6441852 48.0762442 40\n11.6442195 48.0762672 40\n11.6442533 48.0762911 40\n11.6442865 48.0763158 40\n11.6443192 48.0763413 40\n11.6443514 48.0763675 40\n11.6443832 48.0763944 40\n11.6444146 48.0764218 40\n11.6444457 48.0764498 40\n11.6444765 48.0764782 40\n11.644507 48.076507 40",
+     "frame": "wgs84",
+     "color": "magenta",
+     "drawn": true
+    }
+   },
+   "settle": 50.0
+  },
+  {
+   "id": "geofence",
+   "web": "geofence",
+   "title": "The geofence: the area the aircraft may fly in",
+   "page": "safety",
+   "panel": "collapsed",
+   "path": "parked",
+   "takeoff": 0.0,
+   "armed": false,
+   "mode": "POSCTL",
+   "geofence": [
+    [
+     11.6414184,
+     48.076995
+    ],
+    [
+     11.6430201,
+     48.0768242
+    ],
+    [
+     11.6443661,
+     48.0771299
+    ],
+    [
+     11.644743,
+     48.077022
+    ],
+    [
+     11.6450526,
+     48.0765454
+    ],
+    [
+     11.6450256,
+     48.0759518
+    ],
+    [
+     11.6417683,
+     48.0753043
+    ],
+    [
+     11.6413242,
+     48.0762306
+    ]
+   ],
+   "settle": 14.0,
+   "steps": [
+    {
+     "at": 16,
+     "scroll": [
+      1200,
+      700,
+      480
+     ]
+    },
+    {
+     "at": 20,
+     "click": [
+      415,
+      575
+     ]
+    },
+    {
+     "at": 22,
+     "gone": true
+    }
+   ]
+  },
+  {
+   "id": "geofence_edit",
+   "web": "geofence-edit",
+   "title": "Drawing the geofence on the large map",
+   "theme": "blue",
+   "page": "safety",
+   "panel": "collapsed",
+   "path": "parked",
+   "takeoff": 0.0,
+   "armed": false,
+   "mode": "POSCTL",
+   "geofence": [
+    [
+     11.6414184,
+     48.076995
+    ],
+    [
+     11.6430201,
+     48.0768242
+    ],
+    [
+     11.6443661,
+     48.0771299
+    ],
+    [
+     11.644743,
+     48.077022
+    ],
+    [
+     11.6450526,
+     48.0765454
+    ],
+    [
+     11.6450256,
+     48.0759518
+    ],
+    [
+     11.6417683,
+     48.0753043
+    ],
+    [
+     11.6413242,
+     48.0762306
+    ]
+   ],
+   "settle": 14.0,
+   "steps": [
+    {
+     "at": 16,
+     "scroll": [
+      1200,
+      700,
+      480
+     ]
+    },
+    {
+     "at": 20,
+     "click": [
+      415,
+      575
+     ]
+    },
+    {
+     "at": 24,
+     "click": [
+      746,
+      503
+     ]
+    },
+    {
+     "at": 26,
+     "gone": true
+    }
+   ]
+  },
+  {
+   "id": "geofence_3d",
+   "web": "geofence-dom",
+   "title": "The geofence in 3D, over a 20 cm surface model",
+   "page": "home",
+   "panel": "collapsed",
+   "path": "swoop",
+   "takeoff": 8.0,
+   "geofence": [
+    [
+     11.6414184,
+     48.076995
+    ],
+    [
+     11.6430201,
+     48.0768242
+    ],
+    [
+     11.6443661,
+     48.0771299
+    ],
+    [
+     11.644743,
+     48.077022
+    ],
+    [
+     11.6450526,
+     48.0765454
+    ],
+    [
+     11.6450256,
+     48.0759518
+    ],
+    [
+     11.6417683,
+     48.0753043
+    ],
+    [
+     11.6413242,
+     48.0762306
+    ]
+   ],
+   "terrain": "dem_11e6db89d6",
+   "three_d": {
+    "bearing": 25.0,
+    "zoom": 0.5
+   },
+   "settle": 50.0
+  },
+  {
+   "id": "geofence_map",
+   "web": "geofence-map",
+   "title": "The geofence on the Home map, in flight",
+   "page": "home",
+   "panel": "collapsed",
+   "path": "swoop",
+   "takeoff": 8.0,
+   "geofence": [
+    [
+     11.6414184,
+     48.076995
+    ],
+    [
+     11.6430201,
+     48.0768242
+    ],
+    [
+     11.6443661,
+     48.0771299
+    ],
+    [
+     11.644743,
+     48.077022
+    ],
+    [
+     11.6450526,
+     48.0765454
+    ],
+    [
+     11.6450256,
+     48.0759518
+    ],
+    [
+     11.6417683,
+     48.0753043
+    ],
+    [
+     11.6413242,
+     48.0762306
+    ]
+   ],
+   "settle": 50.0
+  },
+  {
+   "id": "fleet",
+   "web": "fleet",
+   "title": "Several vehicles on one map",
+   "page": "home",
+   "panel": "collapsed",
+   "path": "swoop",
+   "takeoff": 8.0,
+   "vehicle_name": "Bumble",
+   "fleet": [
+    {
+     "name": "Zippy",
+     "color": "#2F7DF6",
+     "kind": "drone",
+     "home": [
+      48.0766623,
+      11.6419164
+     ],
+     "path": "swoop",
+     "path_options": {
+      "end": [
+       48.0768422,
+       11.6445411
+      ],
+      "bulge": -15.0,
+      "alt": 45.0,
+      "speed": 7.0
+     },
+     "takeoff_time": 8.0
+    },
+    {
+     "name": "Rollo",
+     "color": "#1FA971",
+     "kind": "rover",
+     "home": [
+      48.0762756,
+      11.6423875
+     ],
+     "path": "slalom",
+     "path_options": {
+      "end": [
+       48.0764015,
+       11.6438008
+      ],
+      "amplitude": 6.0,
+      "wavelength": 26.0,
+      "speed": 2.5
+     },
+     "takeoff_time": 0.2
+    }
+   ],
+   "settle": 50.0
+  },
+  {
+   "id": "fleet_list",
+   "web": "fleet-vehicles",
+   "title": "The Vehicles dialog: drones and a rover in one list",
+   "theme": "blue",
+   "page": "home",
+   "panel": "collapsed",
+   "path": "swoop",
+   "takeoff": 8.0,
+   "vehicle_name": "Bumble",
+   "fleet": [
+    {
+     "name": "Zippy",
+     "color": "#2F7DF6",
+     "kind": "drone",
+     "home": [
+      48.0766623,
+      11.6419164
+     ],
+     "path": "swoop",
+     "path_options": {
+      "end": [
+       48.0768422,
+       11.6445411
+      ],
+      "bulge": -15.0,
+      "alt": 45.0,
+      "speed": 7.0
+     },
+     "takeoff_time": 8.0
+    },
+    {
+     "name": "Rollo",
+     "color": "#1FA971",
+     "kind": "rover",
+     "home": [
+      48.0762756,
+      11.6423875
+     ],
+     "path": "slalom",
+     "path_options": {
+      "end": [
+       48.0764015,
+       11.6438008
+      ],
+      "amplitude": 6.0,
+      "wavelength": 26.0,
+      "speed": 2.5
+     },
+     "takeoff_time": 0.2
+    }
+   ],
+   "settle": 50.0,
+   "steps": [
+    {
+     "at": 55,
+     "click": [
+      250,
+      30
+     ]
+    },
+    {
+     "at": 57,
+     "gone": true
+    }
+   ]
+  },
+  {
+   "id": "dark",
+   "web": "flight-dark",
+   "title": "A dark theme, in flight",
+   "readme": "screenshot_dark.jpg",
+   "theme": "green",
+   "page": "home",
+   "panel": "link",
+   "path": "swoop",
+   "takeoff": 8.0,
+   "settle": 50.0
+  },
+  {
+   "id": "parameters",
+   "web": "parameters",
+   "title": "The parameter editor",
+   "theme": "pink",
+   "page": "parameters",
+   "panel": "collapsed",
+   "full_table": true,
+   "path": "parked",
+   "takeoff": 0.0,
+   "armed": false,
+   "mode": "POSCTL",
+   "settle": 30.0,
+   "steps": [
+    {
+     "at": 14,
+     "click": [
+      226,
+      350
+     ]
+    },
+    {
+     "at": 15,
+     "gone": true
+    },
+    {
+     "at": 36,
+     "click": [
+      1296,
+      302
+     ]
+    },
+    {
+     "at": 37,
+     "gone": true
+    }
+   ]
+  },
+  {
+   "id": "rc",
+   "web": "rc",
+   "title": "Radio Control: the transmitter, drawn",
+   "readme": "screenshot_rc.png",
+   "page": "control",
+   "panel": "collapsed",
+   "path": "parked",
+   "takeoff": 0.0,
+   "armed": false,
+   "mode": "POSCTL",
+   "transmitter": {
+    "roll": 0.35,
+    "pitch": -0.2,
+    "throttle": 0.62,
+    "yaw": -0.1,
+    "switches": [
+     [
+      5,
+      2,
+      3
+     ],
+     [
+      6,
+      0,
+      2
+     ],
+     [
+      7,
+      0,
+      2
+     ],
+     [
+      8,
+      0,
+      2
+     ],
+     [
+      9,
+      1,
+      3
+     ],
+     [
+      10,
+      1,
+      2
+     ]
+    ],
+    "knobs": [
+     [
+      11,
+      0.7
+     ],
+     [
+      12,
+      0.3
+     ]
+    ],
+    "rssi": 94
+   },
+   "settle": 18.0
+  },
+  {
+   "id": "tuning",
+   "web": "tuning",
+   "title": "PID tuning, with the response drawn beside the setpoint",
+   "page": "tuning",
+   "panel": "collapsed",
+   "path": "figure_eight",
+   "path_options": {
+    "size": 90.0,
+    "alt": 40.0
+   },
+   "takeoff": 6.0,
+   "mode": "POSCTL",
+   "settle": 45.0
+  },
+  {
+   "id": "plugin_ai_chat",
+   "web": "plugin-ai-chat",
+   "title": "AI Chat beside the map",
+   "page": "home",
+   "panel": "plugins",
+   "plugin": "ai-chat",
+   "path": "swoop",
+   "takeoff": 8.0,
+   "model": true,
+   "plugin_settings": {
+    "ai-chat": {
+     "_options": {
+      "url": "http://127.0.0.1:8979",
+      "model": "local-model",
+      "offer": "all"
+     }
+    }
+   },
+   "settle": 50.0,
+   "steps": [
+    {
+     "at": 15,
+     "click": [
+      1380,
+      955
+     ]
+    },
+    {
+     "at": 16,
+     "text": "Mark a search area on the field and a keep out zone."
+    },
+    {
+     "at": 17,
+     "key": "Enter"
+    }
+   ]
+  }
+ ]
+}

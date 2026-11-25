@@ -1363,21 +1363,7 @@ impl ParamsPage {
         }
         y = after.max(y + rh) + 12.0 - 12.0;
         if armed {
-            let g = kit::wrapped_weight(
-                ui,
-                "Parameter editing disabled while armed",
-                11.5,
-                Weight::W400,
-                style::warning(),
-                w - 28.0,
-                1.4,
-            );
-            let r = Rect::from_min_size(Pos2::new(x, y + 12.0), Vec2::new(w, g.size().y + 24.0));
-            {
-                card::paint(ui.painter(), r, Look::Tone(Tone::Warn));
-            }
-            ui.painter().galley(r.min + Vec2::new(14.0, 12.0), g, style::warning());
-            y = r.bottom();
+            y = crate::ui::message::boxed(ui, x, y + 12.0, w, "Parameter editing disabled while armed", Tone::Warn);
         }
         y += 12.0;
         y = self.meta_note(ui, ctx, x, y);

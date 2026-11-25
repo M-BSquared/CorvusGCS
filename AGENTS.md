@@ -25,7 +25,8 @@ One cargo workspace, one `Cargo.lock`, one `target/`, the toolchain pinned by
 `rust-toolchain.toml`. Members: the interface crate (`corvus_gui`, the root),
 `src/core` (`corvus_core`, the backend), `src/link` (`corvus_link`, MAVLink),
 `src/api` (`corvus_api`, what plugins build on), one crate per plugin
-in `plugins/<id>/` (each a repository of its own, a submodule), and `src/tools` (`corvus_tools`, binary `corvus-build`).
+in `plugins/<id>/` (each a repository of its own, a submodule), `src/tools` (`corvus_tools`, binary `corvus-build`)
+and `src/scene` (`corvus_scene`, the pictures of the README and the website, see its README).
 
 Where to look first: `src/README.md` (how the interface, the core, the plugin
 API and the 3D map work, and the `CORVUS_GUI_*` switches), `src/PARITY.md`
@@ -80,9 +81,9 @@ machine readable ownership map.
 - `review`: the final safety and reliability audit, and the tests it writes.
 - `verify`: runs the real app in a sandbox home (`CORVUS_GUI_*` switches,
   `corvus-build soak`, the stand alone `corvus-core`), reports what it saw, and
-  makes the README and website pictures. Edits no product code. There is no
-  simulated aircraft any more: a vehicle is a real one or a SITL the operator
-  runs.
+  makes the README and website pictures (`corvus-scene`, `src/scene`). Edits no
+  product code. The aircraft of the scenes is a picture's and proves nothing: a
+  vehicle to check against is a real one or a SITL the operator runs.
 
 ## Product
 
@@ -104,7 +105,10 @@ threads, writes the thread safe **state store**; the interface reads the store
 and the push topics and calls routes through `Core::internal_call`, the same
 handler, validation and guards an HTTP request gets. An optional loopback
 HTTP, SSE and WebSocket server (`corvus_core::http`) serves the same routes to
-an AI client (`POST /mcp`), a `--server` client and a second station;
+an AI client (`POST /mcp`), a `--server` client and a second station. Over HTTP
+every write needs the per start key (`X-Corvus-Key`, `CORVUS_API_KEY`), and what
+runs programs, uses saved passwords or sets permissions answers this computer
+only (`src/core/src/http/security.rs`);
 `corvus-core` (`src/core/src/bin/corvus-core.rs`) runs the core without a
 window. Everything is torn down on one normal exit path.
 
@@ -470,6 +474,7 @@ cargo clippy -p corvus_link --all-targets --features tls --locked -- -D warnings
 cargo test -p corvus_core --test <file>   # one integration test file while iterating
 cargo build --timings           # where a build spends its time (target/cargo-timings/)
 HOME=$(mktemp -d) CORVUS_GUI_SHOT=out.png target/debug/corvus-gcs --page motors   # the window's own pixels in a sandbox home
+cargo run -p corvus_scene -- shoot flight   # a picture of the README or the website, made again the same way (src/scene/README.md)
 cargo run -q -p corvus_tools --bin corvus-build -- soak --mode 3d --at 11.6385,48.0795 --minutes 5   # a soak run in a sandbox home, memory sampled
 ./build.sh [--dmg] [--no-deb] [--fast]   # artifact for the current host (dispatches below); --fast: release code without LTO
 ./build-appimage.sh [--no-deb|--deb-only|--fast]   # Linux artifact  (x86_64)

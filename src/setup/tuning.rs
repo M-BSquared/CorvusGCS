@@ -698,20 +698,28 @@ impl TuningPage {
                 .small()
                 .enabled(!v.armed && v.connected);
             let (bw, bh) = (b.width(ui), b.height());
-            let tw = (iw - 28.0 - bw - 10.0).max(240.0f32.min(iw - 28.0));
-            let tg = kit::wrapped_weight(ui, reason, 11.5, Weight::W400, style::warning(), tw, 1.4);
+            let tw = (iw - 36.0 - bw - 10.0).max(240.0f32.min(iw - 36.0));
+            let tg = kit::wrapped_weight(
+                ui,
+                reason,
+                11.5,
+                Weight::W400,
+                crate::ui::message::notice(Tone::Warn).text,
+                tw,
+                1.4,
+            );
             let h = tg.size().y.max(bh) + 24.0;
             let r = Rect::from_min_size(Pos2::new(ix, cy), Vec2::new(iw, h));
             card::paint(&painter, r, card::Look::Tone(Tone::Warn));
             painter.galley(
-                Pos2::new(r.left() + 14.0, r.center().y - tg.size().y / 2.0),
+                Pos2::new(r.left() + 22.0, r.center().y - tg.size().y / 2.0),
                 tg.clone(),
-                style::warning(),
+                crate::ui::message::notice(Tone::Warn).text,
             );
             if b.show(
                 ui,
                 Rect::from_min_size(
-                    Pos2::new(r.left() + 14.0 + tg.size().x + 10.0, r.center().y - bh / 2.0),
+                    Pos2::new(r.left() + 22.0 + tg.size().x + 10.0, r.center().y - bh / 2.0),
                     Vec2::new(bw, bh),
                 ),
                 "tunereboot",

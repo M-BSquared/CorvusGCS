@@ -298,6 +298,7 @@ fn build() -> Vec<Tool> {
     .into_iter()
     .chain(tak_tools())
     .chain(super::more::tools())
+    .chain(super::simple::tools())
     .collect()
 }
 
@@ -402,7 +403,7 @@ fn tak_tools() -> Vec<Tool> {
 /// The tools added since the Python program's list was frozen, for the tests
 /// that hold the rest to it.
 pub fn is_extension(name: &str) -> bool {
-    super::more::NAMES.contains(&name) || name.starts_with("tak_")
+    super::more::NAMES.contains(&name) || super::simple::NAMES.contains(&name) || name.starts_with("tak_")
 }
 
 static TOOLS: OnceLock<Vec<Tool>> = OnceLock::new();

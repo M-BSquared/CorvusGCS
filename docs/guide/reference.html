@@ -235,7 +235,7 @@
 ./run.sh [--release | --fast] [the same arguments]</code></pre>
 <dl>
   <dt><code>--server</code></dt>
-  <dd>Use the backend of another Corvus at that address instead of the one inside this program.</dd>
+  <dd>Use the backend of another Corvus at that address instead of the one inside this program. Without that Corvus's <code>CORVUS_API_KEY</code> the window can only read.</dd>
   <dt><code>--page</code></dt>
   <dd>The page to open on: <code>setup</code>, a setup tile, <code>safety:SENSOR</code>, <code>mission</code>, <code>mission:NAME</code>, <code>settings</code>, <code>logs</code> or <code>analysis</code>.</dd>
   <dt><code>--scroll</code></dt>
@@ -262,8 +262,9 @@
 <table>
   <thead><tr><th>Variable</th><th>Effect</th></tr></thead>
   <tbody>
-    <tr><td><code>CORVUS_BIND</code></td><td>Listen on another interface than <code>127.0.0.1</code>, for example <code>0.0.0.0</code>. No authentication; see <a href="security.html#second-screen">Network and security</a>.</td></tr>
-    <tr><td><code>CORVUS_ALLOWED_ORIGIN</code></td><td>One exact web origin, besides loopback, allowed to read the API's answers.</td></tr>
+    <tr><td><code>CORVUS_BIND</code></td><td>Listen on another interface than <code>127.0.0.1</code>, for example <code>0.0.0.0</code>. Others can then read; changing anything needs <code>CORVUS_API_KEY</code>. See <a href="security.html#second-screen">Network and security</a>.</td></tr>
+    <tr><td><code>CORVUS_API_KEY</code></td><td>The key a second station or a script needs to change anything, at least 24 characters. Without it Corvus makes a random one at every start that only its own window has. With <code>--server</code>, the key of that Corvus. See <a href="security.html#api-key">Network and security</a>.</td></tr>
+    <tr><td><code>CORVUS_ALLOWED_ORIGIN</code></td><td>One exact web origin, besides the server's own, allowed to read the API's answers.</td></tr>
     <tr><td><code>CORVUS_ALLOW_MULTI=1</code></td><td>Allow a second Corvus to start. See <a href="connect.html#one-at-a-time">One Corvus at a time</a>.</td></tr>
     <tr><td><code>CORVUS_SSH_HOST_KEYS=strict</code></td><td>Refuse SSH hosts whose key is not already known.</td></tr>
     <tr><td><code>CORVUS_MAVLINK_SIGNING_KEY_FILE</code></td><td>Turn on MAVLink 2 signing with the key in this file. See <a href="security.html#signing">MAVLink signing</a>.</td></tr>

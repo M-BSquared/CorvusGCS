@@ -335,24 +335,30 @@ impl TermWindow {
                         );
                     }
                 }
+                let fill = terminal_fill(
+                    if crate::app::popout::solid_terminals() || (popped && crate::app::popout::solid_window()) {
+                        1.0
+                    } else {
+                        0.6
+                    },
+                );
                 painter.set(
                     bg,
-                    card::window_filled(
-                        "termwin",
-                        rect,
-                        terminal_fill(if popped {
-                            if crate::app::popout::solid_window() {
-                                1.0
-                            } else {
-                                0.5
-                            }
-                        } else if crate::app::popout::solid_terminals() {
-                            1.0
-                        } else {
-                            0.6
-                        }),
-                        style::border_strong(),
-                    ),
+                    if popped {
+                        // The blur behind a window of its own is the system's; the frost pass would
+                        // only copy back the empty, transparent frame.
+                        egui::Shape::Vec(vec![
+                            egui::Shape::rect_filled(rect, 12, fill),
+                            egui::Shape::rect_stroke(
+                                rect,
+                                12,
+                                Stroke::new(1.0, style::border_strong()),
+                                egui::StrokeKind::Inside,
+                            ),
+                        ])
+                    } else {
+                        card::window_filled("termwin", rect, fill, style::border_strong())
+                    },
                 );
             });
         if self.maximized.is_none() && !popped {

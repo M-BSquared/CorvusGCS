@@ -16,6 +16,7 @@ pub mod engine;
 pub mod geo;
 mod more;
 pub mod settings;
+mod simple;
 pub mod tools;
 
 use std::sync::{Arc, Mutex};

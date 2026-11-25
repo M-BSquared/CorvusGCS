@@ -6,7 +6,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Console and SSH · Corvus GCS documentation</title>
-<meta name="description" content="The MAVLink console and its commands, and the SSH terminal to a companion computer.">
+<meta name="description" content="The MAVLink console and its commands, the SSH terminal to a companion computer and the SSH Launcher.">
 <link rel="canonical" href="https://m-bsquared.github.io/CorvusGCS/guide/workspace.html">
 <meta name="theme-color" content="#0B0E12" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#F4F6F8" media="(prefers-color-scheme: light)">
@@ -14,7 +14,7 @@
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="Corvus GCS">
 <meta property="og:title" content="Console and SSH · Corvus GCS documentation">
-<meta property="og:description" content="The MAVLink console and its commands, and the SSH terminal to a companion computer.">
+<meta property="og:description" content="The MAVLink console and its commands, the SSH terminal to a companion computer and the SSH Launcher.">
 <meta property="og:url" content="https://m-bsquared.github.io/CorvusGCS/guide/workspace.html">
 <meta property="og:image" content="https://m-bsquared.github.io/CorvusGCS/assets/images/social-preview.jpg">
 <link rel="icon" type="image/png" sizes="32x32" href="../assets/icons/favicon-32.png">
@@ -263,10 +263,59 @@
 </ul>
 <p>
   Saved connections are also managed under <strong>Settings, SSH
-  Connections</strong>, and are what the launcher
-  <a href="plugins.html">plugins</a> use to start programs. How host keys are
+  Connections</strong>, and are what the
+  <a href="#ssh-launcher">SSH Launcher</a> and <a href="plugins.html#schwalby">Schwalby</a> use to start programs. How host keys are
   checked is described under <a href="security.html#ssh-host-keys">Network and
   security</a>.
+</p>
+<h2 id="ssh-launcher">SSH Launcher</h2>
+<p>
+  It is a part of Corvus, at the foot of the SSH tab. Buttons made while it was a plugin are still
+  there.
+</p>
+<p>
+  A shelf of buttons for the programs you start before a flight. Each button
+  carries its own saved SSH connection, folder and command, so the mission
+  script, the video pipeline and the log recorder are three presses rather than
+  three trips to a terminal. Add, rename, edit and remove buttons under the saved
+  connections in the SSH tab; they are saved and there again at the next launch.
+</p>
+
+<figure class="doc-shot">
+  <a href="../assets/images/ssh-launcher.jpg"><img src="../assets/images/ssh-launcher-800.jpg"
+     srcset="../assets/images/ssh-launcher-800.jpg 800w, ../assets/images/ssh-launcher.jpg 1600w"
+     sizes="(max-width: 900px) calc(100vw - 40px), 760px" width="1600" height="1000" loading="lazy" decoding="async"
+     alt="The SSH tab of the side panel beside the map: three saved connections, and under them the SSH Launcher with four buttons, two of them running on the companion computer."></a>
+  <figcaption>The launch buttons under the saved connections in the SSH tab.</figcaption>
+</figure>
+
+<h3 id="launcher-running">How a button runs its program</h3>
+<ul>
+  <li><strong>In its own SSH session.</strong> Pressing the button again runs the program again <strong>in that same terminal</strong>: one run under the last, in one scrollback, with nothing thrown away in between. (It is a real shell: if the last program is still running in the foreground, what you send goes to it, just as if you had typed it. Press <kbd>Ctrl</kbd>+<kbd>C</kbd> first, or let it finish.)</li>
+  <li><strong>The arrow</strong> beside a button opens that session's terminal, a <a href="video.html#windows">window</a> you can move, resize, maximise and put away. Only the arrow opens it: pressing the button starts the program without throwing a window at you, which matters when four of them go up on the pad. Pressed before the button, the arrow opens the terminal on a plain shell, and the button then runs the program in it.</li>
+  <li><strong>Closing the window</strong> with × leaves the program running, and the arrow brings the window back with its scrollback intact.</li>
+  <li><strong>A green dot</strong> marks buttons that have something running. On those rows the pencil becomes a red <strong>stop</strong> button: it sends <kbd>Ctrl</kbd>+<kbd>C</kbd>, gives the program a second to finish, then closes the session, which ends the program and the connection. Stop a button before editing it.</li>
+  <li><strong>The grip</strong> at the left of each row appears once the pencil at the bottom of the card is switched on. Drag it up or down to move the button, or focus it and press <kbd>↑</kbd> or <kbd>↓</kbd>. The new order is saved at once.</li>
+  <li><strong>The colour</strong> of a button is set in its editor: the first chip is the default, which follows the theme, then a few preset colours, and the last chip opens a picker for any other. The label switches between white and black so it stays readable.</li>
+</ul>
+<p>
+  Turn <strong>Run in a terminal</strong> off for a program that has to outlive
+  Corvus itself. It is then started with <code>nohup</code> and detached, with
+  nothing to watch and nothing to stop from here.
+</p>
+
+<h3 id="launcher-connections">Connections</h3>
+<p>
+  A button does not need a connection set up beforehand. The connection list in
+  its editor ends with <strong>New connection…</strong>, which asks for host,
+  user, password and key file right there, so a shelf can be built on the pad
+  for a companion computer Corvus has never seen. What you type is saved as an
+  ordinary SSH connection (it appears in the SSH tab, ready for the next button,
+  editable and removable), named <code>user@host</code> unless you name it.
+</p>
+<p>
+  The launcher never holds a password. A button names a saved SSH connection, and
+  the backend takes the credentials from there.
 </p>
 <!-- /guide:content -->
 </article>
@@ -287,6 +336,7 @@
     <li><a href="#console">The MAVLink console</a></li>
     <li><a href="#commands">Console commands</a></li>
     <li><a href="#ssh">SSH terminal</a></li>
+    <li><a href="#ssh-launcher">SSH Launcher</a></li>
   </ul>
 </aside>
 </div>

@@ -87,7 +87,7 @@ impl Form {
 }
 
 /// A muted note under a card's fields (`.field-hint` as a block).
-pub fn note(ui: &egui::Ui, f: &mut Form, text: &str) {
+pub fn note(ui: &mut egui::Ui, f: &mut Form, text: &str) {
     f.y += formfield::hint(ui, f.x, f.y, f.w, text);
     f.stacked_switch = false;
 }
@@ -98,6 +98,26 @@ pub fn desc(ui: &egui::Ui, f: &mut Form, text: &str) {
     let h = g.size().y;
     ui.painter().galley(f.pos(), g, style::text_3());
     f.y += h;
+    f.stacked_switch = false;
+}
+
+/// A paragraph at `x, y` held to `rows` lines. Longer text shows its first
+/// sentence and a hint icon opens the whole of it. Returns the height.
+pub fn desc_info_at(
+    ui: &mut egui::Ui,
+    x: f32,
+    y: f32,
+    w: f32,
+    text: &str,
+    rows: usize,
+    id: impl std::hash::Hash + std::fmt::Debug,
+) -> f32 {
+    popover::teaser(ui, x, y, w, text, 12.0, 1.5, rows, id)
+}
+
+/// `desc` held to `rows` lines, the rest behind a hint icon.
+pub fn desc_info(ui: &mut egui::Ui, f: &mut Form, text: &str, rows: usize, id: impl std::hash::Hash + std::fmt::Debug) {
+    f.y += desc_info_at(ui, f.x, f.y, f.w, text, rows, id);
     f.stacked_switch = false;
 }
 

@@ -21,7 +21,6 @@ use crate::net::stream::Stream;
 use crate::ui::card::{self, Look};
 use crate::ui::field::{Surface, TextField};
 use crate::ui::icons;
-use crate::ui::kit;
 use crate::ui::style::{self, Weight};
 
 const NEW_LINE: &str = "{a} new line";
@@ -372,7 +371,7 @@ impl ConsoleTab {
 
         // the footer and the command row from the bottom up
         let footer_h = 5.0 + 15.0;
-        let row_h = 9.0 * 2.0 + 34.0 + 1.0;
+        let row_h = 7.0 * 2.0 + 34.0 + 1.0;
         let footer = Rect::from_min_max(Pos2::new(rect.left(), rect.bottom() - footer_h), rect.max);
         let row = Rect::from_min_max(
             Pos2::new(rect.left(), footer.top() - row_h),
@@ -386,28 +385,45 @@ impl ConsoleTab {
 
         painter.rect_filled(row, 0, style::surface_1());
         painter.hline(row.x_range(), row.top() + 0.5, Stroke::new(1.0, style::border_soft()));
+        let cid = ui.scope_id().with("cinput");
+        let focused = ui.memory(|m| m.has_focus(cid));
+        let pill = Rect::from_center_size(
+            Pos2::new(row.center().x, row.center().y + 0.5),
+            Vec2::new(row.width() - 24.0, 34.0),
+        );
+        painter.rect_filled(pill, 17, style::surface_1());
+        painter.rect_filled(pill, 17, style::input(0.6));
+        if focused {
+            painter.rect_stroke(
+                pill.expand(2.0),
+                19,
+                Stroke::new(2.0, style::accent_dim()),
+                egui::StrokeKind::Inside,
+            );
+        }
+        painter.rect_stroke(
+            pill,
+            17,
+            Stroke::new(1.0, if focused { style::accent() } else { style::border() }),
+            egui::StrokeKind::Inside,
+        );
         let prompt = style::galley_mono(ui, ">>", 13.0, style::terminal_cmd());
         painter.galley(
-            Pos2::new(row.left() + 12.0, row.center().y - prompt.size().y / 2.0),
+            Pos2::new(pill.left() + 16.0, pill.center().y - prompt.size().y / 2.0),
             prompt.clone(),
             style::terminal_cmd(),
         );
-        let send = Rect::from_min_size(
-            Pos2::new(row.right() - 12.0 - 34.0, row.center().y - 17.0),
-            Vec2::splat(34.0),
-        );
+        let send = Rect::from_center_size(Pos2::new(pill.right() - 4.0 - 13.0, pill.center().y), Vec2::splat(26.0));
         let input = Rect::from_min_max(
-            Pos2::new(row.left() + 12.0 + prompt.size().x + 8.0, row.center().y - 16.5),
-            Pos2::new(send.left() - 8.0, row.center().y + 16.5),
+            Pos2::new(pill.left() + 16.0 + prompt.size().x + 8.0, pill.center().y - 12.0),
+            Pos2::new(send.left() - 8.0, pill.center().y + 12.0),
         );
-        let resp = kit::text_field(
-            ui,
-            input,
-            &mut self.input,
-            "Command (Tab completes, \u{2191} history, ? for help)",
-            true,
-            "cinput",
-        );
+        let resp = TextField::new(&mut self.input)
+            .surface(Surface::Bare)
+            .hint("Command (Tab completes, \u{2191} history, ? for help)")
+            .mono(true)
+            .pad(0.0, 0.0)
+            .show_with_id(ui, input, cid);
         if resp.has_focus() {
             if ui.input(|i| i.key_pressed(egui::Key::ArrowUp)) && self.hist_idx > 0 {
                 self.hist_idx -= 1;
@@ -431,11 +447,11 @@ impl ConsoleTab {
         } else {
             style::accent()
         };
-        painter.circle_filled(send.center(), 17.0, fill.gamma_multiply(if busy { 0.45 } else { 1.0 }));
+        painter.circle_filled(send.center(), 13.0, fill.gamma_multiply(if busy { 0.45 } else { 1.0 }));
         icons::paint(
             ui,
             "send",
-            Rect::from_center_size(send.center(), Vec2::splat(15.0)),
+            Rect::from_center_size(send.center(), Vec2::splat(13.0)),
             style::text_inverted(),
         );
         if sresp.clicked() && !busy {

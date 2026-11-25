@@ -2,11 +2,12 @@
 //! collapse handle, the resize grip, the tab strip and the four tabs.
 //!
 //! LINK and CONSOLE are whole. SSH lists the connections the backend knows,
-//! as panel.js draws them; the terminal behind CONNECT is its own step.
-//! PLUGINS shows the cards of the compiled-in plugins (`crate::plugins`); a
+//! as panel.js draws them, with the launch buttons (`launcher`) under them.
+//! PLUGINS shows the cards of the installed plugins (`crate::plugins`); a
 //! plugin with "Own tab" switched on has a tab of its own before it.
 
 pub mod console;
+pub mod launcher;
 pub mod link;
 
 use crate::ui::tip::HoverTr;
@@ -446,9 +447,34 @@ impl Panel {
         match self.active {
             Tab::Link => self.link.show(&mut child, content, state),
             Tab::Console => self.console.show(&mut child, content),
-            Tab::Ssh => self.ssh(&mut child, content),
+            Tab::Ssh => self.ssh(&mut child, content, state, plugins),
             Tab::Own(i) => plugins.show_own(&mut child, content, state, i),
             Tab::Plugins => plugins.show_cards(&mut child, content, state),
+        }
+    }
+
+    /// Brings a tab to the front, the panel with it.
+    pub fn open_tab_named(&mut self, name: &str) {
+        let tab = match name {
+            "link" => Tab::Link,
+            "console" if self.console_tab => Tab::Console,
+            "ssh" if self.ssh_tab => Tab::Ssh,
+            "plugins" => Tab::Plugins,
+            _ => return,
+        };
+        self.bring(tab);
+    }
+
+    /// Brings the tab of plugin `i` to the front.
+    pub fn open_own(&mut self, i: usize) {
+        self.bring(Tab::Own(i));
+    }
+
+    fn bring(&mut self, tab: Tab) {
+        self.active = tab;
+        if self.collapsed {
+            self.collapsed = false;
+            self.user_toggled = true;
         }
     }
 
@@ -613,7 +639,7 @@ impl Panel {
         }));
     }
 
-    fn ssh(&mut self, ui: &mut egui::Ui, rect: Rect) {
+    fn ssh(&mut self, ui: &mut egui::Ui, rect: Rect, state: &Value, plugins: &mut Registry) {
         if self.ssh_list.is_none() && self.ssh_loading.is_none() {
             self.load_ssh(ui.ctx());
         }
@@ -666,7 +692,6 @@ impl Panel {
             Pos2::new(header.right() - 12.0 - 28.0, header.center().y - 14.0),
             Vec2::splat(28.0),
         );
-        let painter = ui.painter().clone();
         // Adding a connection opens a dialog, which comes with the terminal.
         icons::paint(
             ui,
@@ -676,9 +701,35 @@ impl Panel {
         );
         ui.interact(add, ui.scope_id().with("sshadd"), egui::Sense::hover())
             .on_hover_tr("Add connection (not in this build yet)");
-        let mut y = header.bottom() + 12.0;
-        let x = rect.left() + 12.0;
-        let w = rect.width() - 24.0;
+        let body = Rect::from_min_max(Pos2::new(rect.left(), header.bottom()), rect.max);
+        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(body));
+        child.set_clip_rect(body.intersect(ui.clip_rect()));
+        egui::ScrollArea::vertical()
+            .id_salt("sshtab")
+            .auto_shrink([false, false])
+            .show(&mut child, |ui| {
+                let top = ui.max_rect().top();
+                let (x, w) = (body.left() + 12.0, body.width() - 24.0);
+                let mut y = self.ssh_connections(ui, x, top + 12.0, w);
+                if let Some(i) = plugins.index_of(launcher::ID) {
+                    let info = plugins.info(i);
+                    y += 22.0;
+                    let g = style::galley(ui, info.name, 12.0, Weight::W600, style::text_1(), 0.4);
+                    ui.painter().galley(Pos2::new(x, y), g.clone(), style::text_1());
+                    y += g.size().y + 4.0;
+                    let g = kit::wrapped_weight(ui, info.description, 11.5, Weight::W400, style::text_3(), w, 1.4);
+                    ui.painter().galley(Pos2::new(x, y), g.clone(), style::text_3());
+                    y += g.size().y + 10.0;
+                    let area = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, body.height()));
+                    y += plugins.show_part(ui, area, state, i);
+                }
+                ui.allocate_space(Vec2::new(w, y + 14.0 - top));
+            });
+    }
+
+    /// The saved connections; returns where they end.
+    fn ssh_connections(&mut self, ui: &mut egui::Ui, x: f32, mut y: f32, w: f32) -> f32 {
+        let painter = ui.painter().clone();
         let list = self.ssh_list.clone().unwrap_or(Value::Null);
         if list.get("failed").is_some() {
             let card = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, 13.0 * 2.0 + 18.0));
@@ -816,7 +867,9 @@ impl Panel {
                 .title("Adding a connection is not in this build yet");
             let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, b.height()));
             b.show(ui, r, "sshaddblock");
+            y = r.bottom();
         }
+        y
     }
 }
 

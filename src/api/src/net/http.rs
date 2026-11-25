@@ -30,11 +30,34 @@ pub fn read_line_capped<R: BufRead>(reader: &mut R, line: &mut String) -> io::Re
     Ok(n)
 }
 
+/// The header that carries the key of a Corvus server.
+pub const KEY_HEADER: &str = "X-Corvus-Key";
+
+/// What lets a client change things on a Corvus server. It is handed only to
+/// the window and its plugins, inside [`Server`], and never printed.
+#[derive(Clone, PartialEq, Eq)]
+pub struct Key(String);
+
+impl Key {
+    /// `None` for text that could not stand in a header line.
+    pub fn new(text: &str) -> Option<Key> {
+        let text = text.trim();
+        (!text.is_empty() && text.bytes().all(|b| b.is_ascii_graphic())).then(|| Key(text.to_string()))
+    }
+}
+
+impl std::fmt::Debug for Key {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Key(..)")
+    }
+}
+
 /// Where the server is: `http://host:port`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Server {
     pub host: String,
     pub port: u16,
+    pub key: Option<Key>,
 }
 
 impl Server {
@@ -62,7 +85,14 @@ impl Server {
                 None => (rest.to_string(), 80),
             }
         };
-        Ok(Server { host, port })
+        Ok(Server { host, port, key: None })
+    }
+
+    /// The header line that goes with every request to this server, or `""`.
+    pub fn key_line(&self) -> String {
+        self.key
+            .as_ref()
+            .map_or_else(String::new, |k| format!("{KEY_HEADER}: {}\r\n", k.0))
     }
 
     /// The server on the loopback interface at `port`.
@@ -70,6 +100,7 @@ impl Server {
         Server {
             host: "127.0.0.1".into(),
             port,
+            key: None,
         }
     }
 
@@ -139,6 +170,7 @@ pub fn request(
         "{method} {path} HTTP/1.1\r\nHost: {}:{}\r\nAccept: {accept}\r\nConnection: close\r\n",
         server.host, server.port
     );
+    head.push_str(&server.key_line());
     if let Some(b) = body {
         head.push_str(&format!(
             "Content-Type: application/json\r\nContent-Length: {}\r\n",
@@ -354,6 +386,18 @@ mod tests {
     }
 
     #[test]
+    fn the_key_goes_with_the_request_and_is_never_shown() {
+        let mut server = Server::local(1);
+        assert_eq!(server.key_line(), "");
+        server.key = Key::new(" s3cret-key ");
+        assert_eq!(server.key_line(), "X-Corvus-Key: s3cret-key\r\n");
+        assert!(!format!("{server:?}").contains("s3cret"));
+        for bad in ["", "  ", "a b", "a\r\nHost: x", "k\u{e4}"] {
+            assert!(Key::new(bad).is_none(), "{bad:?}");
+        }
+    }
+
+    #[test]
     fn loopback_hosts_are_this_computer() {
         for url in [
             "http://127.0.0.1:8080",
@@ -406,21 +450,24 @@ mod tests {
             Server::parse("http://gcs.local/").unwrap(),
             Server {
                 host: "gcs.local".into(),
-                port: 80
+                port: 80,
+                key: None
             }
         );
         assert_eq!(
             Server::parse("http://[::1]:9").unwrap(),
             Server {
                 host: "[::1]".into(),
-                port: 9
+                port: 9,
+                key: None
             }
         );
         assert_eq!(
             Server::parse("http://[::1]").unwrap(),
             Server {
                 host: "[::1]".into(),
-                port: 80
+                port: 80,
+                key: None
             }
         );
         assert!(Server::parse("https://x:1").is_err());

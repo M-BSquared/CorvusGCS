@@ -164,10 +164,12 @@ impl SettingsPage {
         form::section(ui, f, "Export and import", |ui, f| {
             let mut hit = None;
             form::card(ui, f, "", |ui, f| {
-                form::desc(
+                form::desc_info(
                     ui,
                     f,
                     "Save the settings of this station to one file, or load one saved here or on another station. You choose the parts, down to each plugin, which can travel with its settings or on its own.",
+                        2,
+                        "exportinfo",
                 );
                 f.skip(12.0);
                 hit = form::actions(

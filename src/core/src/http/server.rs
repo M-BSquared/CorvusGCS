@@ -7,7 +7,7 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use super::mcp::{self, McpHandle};
-use super::security::{self, SECURITY_HEADERS};
+use super::security::{self, ApiKey, SECURITY_HEADERS};
 use super::static_files::{http_date, serve};
 use crate::core::Core;
 use crate::module::{Module, Registry};
@@ -143,6 +143,10 @@ impl Module for Http {
 
     fn register(&self, reg: &mut Registry) {
         reg.service(self.info.clone());
+        match ApiKey::from_env_or_random() {
+            Ok(key) => reg.service(Arc::new(key)),
+            Err(e) => reg.errors.push(e),
+        }
     }
 
     fn start(&self, core: &Core) -> std::io::Result<()> {
@@ -315,8 +319,9 @@ fn now_secs() -> i64 {
 
 /// Status line and headers as the Python handler sends them: `Server` and
 /// `Date`, the route's headers, the CORS pair for JSON and event streams, and
-/// the hardening headers unless the route set them.
-fn head_bytes(resp: &Response, req_origin: Option<&str>, length: Option<usize>) -> Vec<u8> {
+/// the hardening headers unless the route set them. `allowed` is the request's
+/// origin when it is trusted ([`security::cors_allowed_origin`]).
+fn head_bytes(resp: &Response, allowed: Option<&str>, length: Option<usize>) -> Vec<u8> {
     let mut out = format!(
         "HTTP/1.0 {} {}\r\nServer: CorvusGCS\r\nDate: {}\r\n",
         resp.status,
@@ -333,8 +338,7 @@ fn head_bytes(resp: &Response, req_origin: Option<&str>, length: Option<usize>) 
     }
     let ctype = resp.header("content-type").unwrap_or("");
     if ctype == "application/json" || ctype == "text/event-stream" {
-        let allowed = security::cors_allowed_origin(req_origin.unwrap_or(""));
-        if !allowed.is_empty() {
+        if let Some(allowed) = allowed.filter(|a| !a.is_empty()) {
             out.push_str(&format!("Access-Control-Allow-Origin: {allowed}\r\n"));
         }
         out.push_str("Vary: Origin\r\n");
@@ -481,6 +485,8 @@ fn serve_connection(core: &Core, mut stream: TcpStream) {
         }
     };
     let origin = head.headers.get("Origin").map(str::to_string);
+    let cors = security::cors_allowed_origin(origin.as_deref().unwrap_or(""), head.headers.get("Host"));
+    let cors = (!cors.is_empty()).then_some(cors);
     let mut unread = head
         .headers
         .get("Content-Length")
@@ -491,7 +497,7 @@ fn serve_connection(core: &Core, mut stream: TcpStream) {
         write_response(
             &mut stream,
             plain(501, &format!("Unsupported method ('{}')", head.method)),
-            origin.as_deref(),
+            cors.as_deref(),
         );
         linger(&mut stream, core, unread);
         return;
@@ -507,46 +513,68 @@ fn serve_connection(core: &Core, mut stream: TcpStream) {
             req.headers.get("Host"),
             req.path
         );
+        write_response(&mut stream, Response::not_ok(403, "host not allowed"), cors.as_deref());
+        linger(&mut stream, core, unread);
+        return;
+    }
+    if method != Method::Get && !cross_site_allowed(&req) {
         write_response(
             &mut stream,
-            Response::not_ok(403, "host not allowed"),
-            origin.as_deref(),
+            Response::not_ok(403, "cross-site request forbidden"),
+            cors.as_deref(),
         );
         linger(&mut stream, core, unread);
         return;
     }
-    if method != Method::Get
-        && !security::mutating_allowed(req.headers.get("Origin"), req.headers.get("Sec-Fetch-Site"))
-    {
-        write_response(
-            &mut stream,
-            Response::not_ok(403, "cross-site request forbidden"),
-            origin.as_deref(),
-        );
+    if let Some(refusal) = refused(core, &req) {
+        write_response(&mut stream, refusal, cors.as_deref());
         linger(&mut stream, core, unread);
         return;
     }
 
-    let fetch_site = req.headers.get("Sec-Fetch-Site").map(str::to_string);
+    let upgrade_allowed = cross_site_allowed(&req);
     let response = route(core, &mut stream, req, head.rest, &mut unread);
     match response.body {
-        Body::Sse(_) => write_sse(&mut stream, core, response, origin.as_deref()),
+        Body::Sse(_) => write_sse(&mut stream, core, response, cors.as_deref()),
         Body::Upgrade(up) => {
-            if !security::mutating_allowed(origin.as_deref(), fetch_site.as_deref()) {
+            if !upgrade_allowed {
                 write_response(
                     &mut stream,
                     Response::not_ok(403, "cross-site request forbidden"),
-                    origin.as_deref(),
+                    cors.as_deref(),
                 );
             } else {
                 run_upgrade(stream, up);
             }
         }
         _ => {
-            write_response(&mut stream, response, origin.as_deref());
+            write_response(&mut stream, response, cors.as_deref());
             linger(&mut stream, core, unread);
         }
     }
+}
+
+fn cross_site_allowed(req: &Request) -> bool {
+    security::mutating_allowed(
+        req.headers.get("Origin"),
+        req.headers.get("Sec-Fetch-Site"),
+        req.headers.get("Host"),
+    )
+}
+
+/// Why this request may not go on to its route: asked from elsewhere for what
+/// stays on this computer, or without the key for what needs it.
+fn refused(core: &Core, req: &Request) -> Option<Response> {
+    if security::this_computer_only(&req.path) && !req.is_loopback() {
+        return Some(Response::not_ok(403, security::THIS_COMPUTER_ONLY));
+    }
+    if !security::needs_key(req.method, &req.path) {
+        return None;
+    }
+    let keyed = core
+        .service::<ApiKey>()
+        .is_some_and(|k| k.matches(req.headers.get(security::API_KEY_HEADER)));
+    (!keyed).then(|| Response::not_ok(401, security::NEEDS_KEY))
 }
 
 fn content_length(req: &Request) -> Result<usize, Response> {
@@ -758,6 +786,8 @@ mod tests {
                     Response::json(json!({"size": size, "in_memory": req.body.len()}))
                 },
             );
+            reg.get("/api/mcp", |_, _| Response::json(json!({"token": "secret"})));
+            reg.post("/api/ssh/send", |_, _| Response::json(json!({"ok": true})));
             reg.get("/api/ws", |core, req| {
                 let core = core.clone();
                 Response::upgrade(req, move |ws| {
@@ -815,6 +845,15 @@ mod tests {
         d
     }
 
+    thread_local! {
+        /// The key of the core this test started, as its window has it.
+        static KEY: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
+    }
+
+    fn keyed() -> String {
+        KEY.with(|k| format!("X-Corvus-Key: {}\r\n", k.borrow()))
+    }
+
     fn running(name: &str) -> (Core, SocketAddr, std::path::PathBuf) {
         let d = dir(name);
         std::fs::write(d.join("index.html"), "<html>hi</html>").unwrap();
@@ -830,6 +869,8 @@ mod tests {
             .unwrap();
         core.start().unwrap();
         let addr = core.service::<HttpInfo>().unwrap().addr().unwrap();
+        let key = core.service::<ApiKey>().unwrap().secret().to_string();
+        KEY.with(|k| *k.borrow_mut() = key);
         (core, addr, d)
     }
 
@@ -866,7 +907,12 @@ mod tests {
         )
     }
 
+    /// A POST of this Corvus' own window.
     fn post(addr: SocketAddr, path: &str, body: &str, extra: &str) -> (u16, Vec<(String, String)>, Vec<u8>) {
+        post_unkeyed(addr, path, body, &format!("{}{extra}", keyed()))
+    }
+
+    fn post_unkeyed(addr: SocketAddr, path: &str, body: &str, extra: &str) -> (u16, Vec<(String, String)>, Vec<u8>) {
         ask(
             addr,
             &format!(
@@ -901,8 +947,11 @@ mod tests {
         assert_eq!(header(&h, "vary"), Some("Origin"));
         assert!(header(&h, "access-control-allow-origin").is_none());
         assert!(header(&h, "date").unwrap().ends_with(" GMT"));
-        let (_, h, _) = get(addr, "/api/probe", "Origin: http://localhost:3000\r\n");
-        assert_eq!(header(&h, "access-control-allow-origin"), Some("http://localhost:3000"));
+        let own = format!("http://localhost:{}", addr.port());
+        let (_, h, _) = get(addr, "/api/probe", &format!("Origin: {own}\r\n"));
+        assert_eq!(header(&h, "access-control-allow-origin"), Some(own.as_str()));
+        let (_, h, _) = get(addr, "/api/probe", "Origin: http://localhost:3\r\n");
+        assert!(header(&h, "access-control-allow-origin").is_none(), "another port");
         assert_eq!(get(addr, "/api/version", "").0, 200);
         core.stop();
         std::fs::remove_dir_all(&d).unwrap();
@@ -921,7 +970,11 @@ mod tests {
         let (status, _, body) = post(addr, "/nowhere", "{}", "");
         assert_eq!((status, json_of(&body)), (404, json!({"error": "not found"})));
         assert_eq!(
-            ask(addr, "DELETE /api/probe HTTP/1.1\r\nHost: localhost\r\n\r\n").0,
+            ask(
+                addr,
+                &format!("DELETE /api/probe HTTP/1.1\r\nHost: localhost\r\n{}\r\n", keyed())
+            )
+            .0,
             405
         );
         assert_eq!(ask(addr, "PUT /api/probe HTTP/1.1\r\nHost: localhost\r\n\r\n").0, 501);
@@ -945,10 +998,90 @@ mod tests {
         );
         assert_eq!(post(addr, "/api/probe", "{}", "Sec-Fetch-Site: cross-site\r\n").0, 403);
         assert_eq!(
-            post(addr, "/api/probe", "{}", "Origin: http://localhost:8000\r\n").0,
-            200
+            post(addr, "/api/probe", "{}", "Origin: http://localhost:80\r\n").0,
+            200,
+            "its own origin"
+        );
+        assert_eq!(
+            post(addr, "/api/probe", "{}", "Origin: http://localhost:9999\r\n").0,
+            403,
+            "a page of another program on this computer, even with the key"
         );
         assert_eq!(post(addr, "/api/probe", "{}", "Sec-Fetch-Site: same-origin\r\n").0, 200);
+        core.stop();
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    #[test]
+    fn a_program_without_the_key_can_read_and_nothing_more() {
+        let (core, addr, d) = running("no-key");
+        let wrong = "X-Corvus-Key: wrong\r\n";
+        let own = "Origin: http://localhost:80\r\n";
+        for extra in ["", wrong, own, "Content-Type: text/plain\r\n"] {
+            for path in ["/api/probe", "/api/upload", "/api/spool", "/api/ssh/send"] {
+                let (status, _, body) = post_unkeyed(addr, path, "{}", extra);
+                assert_eq!(
+                    (status, json_of(&body)),
+                    (401, json!({"ok": false, "error": security::NEEDS_KEY})),
+                    "{path} {extra:?}"
+                );
+            }
+        }
+        let (status, _, body) = get(addr, "/api/mcp", "");
+        assert_eq!(status, 401);
+        assert!(!String::from_utf8_lossy(&body).contains("secret"), "no token");
+        assert_eq!(get(addr, "/api/mcp", &keyed()).0, 200);
+        assert_eq!(get(addr, "/api/probe", "").0, 200, "reading stays");
+        assert_eq!(post(addr, "/api/ssh/send", "{}", "").0, 200);
+        core.stop();
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// A socket from another computer cannot be made here, so the guard in
+    /// front of the routes is asked directly.
+    #[test]
+    fn from_the_network_the_key_still_does_not_reach_this_computers_own_routes() {
+        let (core, _, d) = running("network");
+        let key = core.service::<ApiKey>().unwrap().secret().to_string();
+        let ask_from = |peer: &str, method: Method, path: &str, with_key: bool| {
+            let mut r = Request::new(method, path);
+            r.peer = Some(peer.parse().unwrap());
+            if with_key {
+                r.headers.push(security::API_KEY_HEADER, &key);
+            }
+            refused(&core, &r).map(|a| a.status)
+        };
+        for (method, path) in [
+            (Method::Post, "/api/ssh/send"),
+            (Method::Get, "/api/ssh/ws"),
+            (Method::Get, "/api/ssh/stream"),
+            (Method::Get, "/api/ssh/sessions"),
+            (Method::Post, "/api/ssh/run"),
+            (Method::Post, "/api/local/run"),
+            (Method::Post, "/api/mcp/confirm"),
+            (Method::Get, "/api/mcp"),
+            (Method::Post, "/api/settings/import"),
+            (Method::Post, "/api/video/settings"),
+        ] {
+            assert_eq!(ask_from("192.168.1.20", method, path, true), Some(403), "{path}");
+            assert_eq!(ask_from("127.0.0.1", method, path, true), None, "{path}");
+        }
+        assert_eq!(
+            ask_from("192.168.1.20", Method::Post, "/api/mavlink/arm", true),
+            None,
+            "a second station with the key"
+        );
+        assert_eq!(
+            ask_from("192.168.1.20", Method::Post, "/api/mavlink/arm", false),
+            Some(401)
+        );
+        assert_eq!(ask_from("192.168.1.20", Method::Get, "/api/state", false), None);
+        for block in ["ssh_connections", "video"] {
+            let mut r = Request::new(Method::Post, "/api/config");
+            r.peer = Some("192.168.1.20".parse().unwrap());
+            r.body = format!("{{\"{block}\": []}}").into_bytes();
+            assert_eq!(core.dispatch(r).status, 403, "{block}");
+        }
         core.stop();
         std::fs::remove_dir_all(&d).unwrap();
     }
@@ -970,7 +1103,10 @@ mod tests {
         );
         let (status, _, body) = ask(
             addr,
-            "POST /api/probe HTTP/1.1\r\nHost: localhost\r\nContent-Length: abc\r\n\r\n",
+            &format!(
+                "POST /api/probe HTTP/1.1\r\nHost: localhost\r\nContent-Length: abc\r\n{}\r\n",
+                keyed()
+            ),
         );
         assert_eq!(
             (status, json_of(&body)),
@@ -978,17 +1114,26 @@ mod tests {
         );
         let (status, _, _) = ask(
             addr,
-            "POST /api/probe HTTP/1.1\r\nHost: localhost\r\nContent-Length: -1\r\n\r\n",
+            &format!(
+                "POST /api/probe HTTP/1.1\r\nHost: localhost\r\nContent-Length: -1\r\n{}\r\n",
+                keyed()
+            ),
         );
         assert_eq!(status, 400);
         let (status, _, body) = ask(
             addr,
-            "POST /api/probe HTTP/1.1\r\nHost: localhost\r\nContent-Length: 9999999999\r\n\r\n",
+            &format!(
+                "POST /api/probe HTTP/1.1\r\nHost: localhost\r\nContent-Length: 9999999999\r\n{}\r\n",
+                keyed()
+            ),
         );
         assert_eq!((status, json_of(&body)), (413, json!({"error": "request too large"})));
         let (status, _, body) = ask(
             addr,
-            "POST /api/probe HTTP/1.1\r\nHost: localhost\r\nContent-Length: 50\r\n\r\n{\"a\"",
+            &format!(
+                "POST /api/probe HTTP/1.1\r\nHost: localhost\r\nContent-Length: 50\r\n{}\r\n{{\"a\"",
+                keyed()
+            ),
         );
         assert_eq!(
             (status, json_of(&body)),
@@ -1029,7 +1174,8 @@ mod tests {
         ] {
             let mut s = TcpStream::connect(addr).unwrap();
             s.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
-            let head = format!("POST {path} HTTP/1.1\r\nHost: localhost\r\nContent-Length: {size}\r\n{extra}\r\n");
+            let key = keyed();
+            let head = format!("POST {path} HTTP/1.1\r\nHost: localhost\r\nContent-Length: {size}\r\n{key}{extra}\r\n");
             s.write_all(head.as_bytes()).unwrap();
             s.write_all(&vec![0u8; size])
                 .unwrap_or_else(|e| panic!("{path}: the body could not be sent: {e}"));
@@ -1049,8 +1195,11 @@ mod tests {
         let (core, addr, d) = running("linger-stop");
         let mut s = TcpStream::connect(addr).unwrap();
         s.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
-        s.write_all(b"POST /api/upload HTTP/1.1\r\nHost: localhost\r\nContent-Length: 1000\r\n\r\n")
-            .unwrap();
+        let head = format!(
+            "POST /api/upload HTTP/1.1\r\nHost: localhost\r\nContent-Length: 1000\r\n{}\r\n",
+            keyed()
+        );
+        s.write_all(head.as_bytes()).unwrap();
         let mut all = Vec::new();
         let began = Instant::now();
         s.read_to_end(&mut all).unwrap();

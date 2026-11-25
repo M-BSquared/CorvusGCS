@@ -17,10 +17,10 @@ use super::tools::{fmt, get, pick, tool, Run, Tool};
 use crate::json::Map;
 use crate::mission::MISSION_MAX_ITEMS;
 
-type ToolResult = Result<Value, ToolError>;
+pub(super) type ToolResult = Result<Value, ToolError>;
 
 /// The names of the tools here, in the order a client lists them.
-pub const NAMES: [&str; 31] = [
+pub const NAMES: [&str; 32] = [
     "resolve_place",
     "measure",
     "wait_for",
@@ -32,6 +32,7 @@ pub const NAMES: [&str; 31] = [
     "list_drawings",
     "remove_drawings",
     "show_on_map",
+    "open_page",
     "search_place",
     "notify_operator",
     "fly_pattern",
@@ -68,14 +69,14 @@ const ORBIT_TURNS_MAX: f64 = 10.0;
 const PATTERN_POINTS: usize = MISSION_MAX_ITEMS - 5;
 const IN_AIR: [i64; 3] = [2, 3, 4];
 
-fn err(text: impl Into<String>) -> ToolError {
+pub(super) fn err(text: impl Into<String>) -> ToolError {
     ToolError(text.into())
 }
 
 // ------------------------------------------------------------- the vehicle
 
 /// The vehicle a call is about: its state and abilities, read when needed.
-struct Craft<'a> {
+pub(super) struct Craft<'a> {
     svc: &'a McpService,
     id: Option<&'a str>,
     state: Option<Value>,
@@ -83,7 +84,7 @@ struct Craft<'a> {
 }
 
 impl<'a> Craft<'a> {
-    fn of(svc: &'a McpService, args: &'a Map) -> Craft<'a> {
+    pub(super) fn of(svc: &'a McpService, args: &'a Map) -> Craft<'a> {
         Craft {
             svc,
             id: args.get("vehicle").and_then(Value::as_str),
@@ -92,20 +93,20 @@ impl<'a> Craft<'a> {
         }
     }
 
-    fn get(&self, path: &str) -> ToolResult {
+    pub(super) fn get(&self, path: &str) -> ToolResult {
         self.svc.api("GET", path, None, self.id)
     }
 
-    fn post(&self, path: &str, body: Value) -> ToolResult {
+    pub(super) fn post(&self, path: &str, body: Value) -> ToolResult {
         self.svc.api("POST", path, Some(obj(body)), self.id)
     }
 
-    fn fresh(&mut self) -> Result<&Value, ToolError> {
+    pub(super) fn fresh(&mut self) -> Result<&Value, ToolError> {
         self.state = None;
         self.state()
     }
 
-    fn state(&mut self) -> Result<&Value, ToolError> {
+    pub(super) fn state(&mut self) -> Result<&Value, ToolError> {
         if self.state.is_none() {
             self.state = Some(self.get("/api/state")?);
         }
@@ -118,7 +119,7 @@ impl<'a> Craft<'a> {
     }
 
     /// A position of the state, which is kept longitude first.
-    fn spot(&mut self, key: &str) -> Result<Place, ToolError> {
+    pub(super) fn spot(&mut self, key: &str) -> Result<Place, ToolError> {
         let what = if key == "home" { "home" } else { "the vehicle" };
         let v = self.state()?.get(key).cloned().unwrap_or(Value::Null);
         match (v.get(0).and_then(Value::as_f64), v.get(1).and_then(Value::as_f64)) {
@@ -127,28 +128,28 @@ impl<'a> Craft<'a> {
         }
     }
 
-    fn number(&mut self, key: &str) -> Result<f64, ToolError> {
+    pub(super) fn number(&mut self, key: &str) -> Result<f64, ToolError> {
         let v = self.state()?.get(key).and_then(Value::as_f64);
         v.filter(|n| n.is_finite())
             .ok_or_else(|| err(format!("The vehicle has not reported its {key}.")))
     }
 
-    fn caps(&mut self) -> Result<&Value, ToolError> {
+    pub(super) fn caps(&mut self) -> Result<&Value, ToolError> {
         if self.caps.is_none() {
             self.caps = Some(self.get("/api/mavlink/capabilities")?);
         }
         Ok(self.caps.as_ref().unwrap_or(&Value::Null))
     }
 
-    fn ground(&mut self) -> bool {
+    pub(super) fn ground(&mut self) -> bool {
         self.caps().is_ok_and(|c| c.get("ground") == Some(&json!(true)))
     }
 
-    fn class_is(&mut self, class: &str) -> bool {
+    pub(super) fn class_is(&mut self, class: &str) -> bool {
         self.caps().is_ok_and(|c| c.get("vehicle") == Some(&json!(class)))
     }
 
-    fn takes(&mut self, command: &str) -> bool {
+    pub(super) fn takes(&mut self, command: &str) -> bool {
         self.caps().is_ok_and(|c| {
             c.get("commands")
                 .and_then(Value::as_array)
@@ -156,13 +157,13 @@ impl<'a> Craft<'a> {
         })
     }
 
-    fn airborne(&mut self) -> Result<bool, ToolError> {
+    pub(super) fn airborne(&mut self) -> Result<bool, ToolError> {
         let s = self.state()?;
         Ok(flying(s))
     }
 
     /// Nothing here starts a flight: a vehicle on the ground is told so.
-    fn must_fly(&mut self) -> Result<(), ToolError> {
+    pub(super) fn must_fly(&mut self) -> Result<(), ToolError> {
         if self.ground() || self.airborne()? {
             Ok(())
         } else {
@@ -170,12 +171,12 @@ impl<'a> Craft<'a> {
         }
     }
 
-    fn command(&self, command: &str, params: Value) -> ToolResult {
+    pub(super) fn command(&self, command: &str, params: Value) -> ToolResult {
         self.post("/api/mavlink/command", json!({"command": command, "params": params}))
     }
 
     /// One point or several in order; a height is left out for a rover.
-    fn go(&mut self, points: &[Place], alt: f64) -> ToolResult {
+    pub(super) fn go(&mut self, points: &[Place], alt: f64) -> ToolResult {
         let ground = self.ground();
         let wire: Vec<Value> = points
             .iter()
@@ -191,7 +192,7 @@ impl<'a> Craft<'a> {
     }
 }
 
-fn flying(s: &Value) -> bool {
+pub(super) fn flying(s: &Value) -> bool {
     let landed = s.get("landed_state").and_then(Value::as_i64).unwrap_or(0);
     let agl = s.get("altitude_agl").and_then(Value::as_f64).unwrap_or(0.0);
     let armed = s.get("armed") == Some(&json!(true));
@@ -217,7 +218,7 @@ fn brief(s: &Value) -> Map {
 
 // ----------------------------------------------------------------- places
 
-fn opt(v: &Map, key: &str) -> Result<Option<f64>, ToolError> {
+pub(super) fn opt(v: &Map, key: &str) -> Result<Option<f64>, ToolError> {
     match v.get(key) {
         None | Some(Value::Null) => Ok(None),
         Some(x) => x
@@ -228,10 +229,27 @@ fn opt(v: &Map, key: &str) -> Result<Option<f64>, ToolError> {
     }
 }
 
+/// A place written another way: `[lat, lon]`, "48.1, 11.6", "vehicle" or "home".
+fn spelled_place(v: &Value) -> Option<Map> {
+    let pair = |lat: f64, lon: f64| Some(obj(json!({"lat": lat, "lon": lon})));
+    match v {
+        Value::Array(l) if l.len() == 2 => pair(l[0].as_f64()?, l[1].as_f64()?),
+        Value::String(s) => match s.trim() {
+            from @ ("vehicle" | "home") => Some(obj(json!({"from": from}))),
+            text => {
+                let (lat, lon) = text.split_once(',')?;
+                pair(lat.trim().parse().ok()?, lon.trim().parse().ok()?)
+            }
+        },
+        _ => None,
+    }
+}
+
 /// A place: `lat` and `lon`, or the vehicle or home, and from there any of
 /// north and east, forward and right, or a bearing and a distance.
-fn place(craft: &mut Craft, v: &Value, what: &str) -> Result<Place, ToolError> {
-    let Some(v) = v.as_object() else {
+pub(super) fn place(craft: &mut Craft, v: &Value, what: &str) -> Result<Place, ToolError> {
+    let spelled = spelled_place(v);
+    let Some(v) = spelled.as_ref().or(v.as_object()) else {
         return Err(err(format!("{what} must be an object with lat and lon, or from")));
     };
     let from = v.get("from").and_then(Value::as_str);
@@ -280,7 +298,7 @@ fn moves(v: &Map) -> bool {
         .any(|k| v.get(*k).is_some_and(|x| !x.is_null()))
 }
 
-fn places(craft: &mut Craft, v: Option<&Value>, what: &str) -> Result<Vec<Place>, ToolError> {
+pub(super) fn places(craft: &mut Craft, v: Option<&Value>, what: &str) -> Result<Vec<Place>, ToolError> {
     let Some(list) = v.and_then(Value::as_array).filter(|l| !l.is_empty()) else {
         return Err(err(format!("{what} must be a non-empty list of places")));
     };
@@ -293,21 +311,21 @@ fn places(craft: &mut Craft, v: Option<&Value>, what: &str) -> Result<Vec<Place>
         .collect()
 }
 
-fn wire(p: Place) -> Value {
+pub(super) fn wire(p: Place) -> Value {
     json!({"lat": p[0], "lon": p[1]})
 }
 
-fn round(x: f64, digits: i32) -> f64 {
+pub(super) fn round(x: f64, digits: i32) -> f64 {
     let k = 10f64.powi(digits);
     (x * k).round() / k
 }
 
 /// A direction to a tenth of a degree, 0 and never 360.
-fn degrees(x: f64) -> f64 {
+pub(super) fn degrees(x: f64) -> f64 {
     round(x, 1).rem_euclid(360.0)
 }
 
-fn within(args: &Map, key: &str, default: Option<f64>, low: f64, high: f64) -> Result<f64, ToolError> {
+pub(super) fn within(args: &Map, key: &str, default: Option<f64>, low: f64, high: f64) -> Result<f64, ToolError> {
     let v = num(args, key, default)?;
     if (low..=high).contains(&v) {
         Ok(v)
@@ -429,7 +447,7 @@ impl Until {
     }
 }
 
-fn here(s: &Value) -> Option<Place> {
+pub(super) fn here(s: &Value) -> Option<Place> {
     let p = s.get("position")?;
     Some([p.get(1)?.as_f64()?, p.get(0)?.as_f64()?])
 }
@@ -463,15 +481,15 @@ fn wait_for(svc: &McpService, args: &Map) -> ToolResult {
 const PATTERNS: [&str; 4] = ["grid", "spiral", "circle", "line"];
 
 /// A pattern as a plan, with what is worth knowing about it.
-struct Pattern {
-    plan: Map,
-    path: Vec<Place>,
-    area: Vec<Place>,
-    length: f64,
-    speed: Option<f64>,
+pub(super) struct Pattern {
+    pub(super) plan: Map,
+    pub(super) path: Vec<Place>,
+    pub(super) area: Vec<Place>,
+    pub(super) length: f64,
+    pub(super) speed: Option<f64>,
 }
 
-fn pattern(svc: &McpService, args: &Map) -> Result<Pattern, ToolError> {
+pub(super) fn pattern(svc: &McpService, args: &Map) -> Result<Pattern, ToolError> {
     let mut craft = Craft::of(svc, args);
     let kind = req_str(args, "pattern")?;
     let ground = craft.ground();
@@ -583,7 +601,7 @@ fn preview(svc: &McpService, p: &Pattern) -> bool {
         .is_ok()
 }
 
-fn facts(p: &Pattern) -> Map {
+pub(super) fn facts(p: &Pattern) -> Map {
     let mut out = obj(json!({"points": p.path.len(), "length_m": round(p.length, 0)}));
     if let Some(s) = p.speed {
         out.insert("flight_time_s".into(), json!(round(p.length / s, 0)));
@@ -613,6 +631,20 @@ fn fly_pattern(svc: &McpService, args: &Map) -> ToolResult {
 
 // ------------------------------------------------------------------- map
 
+/// What a shape that does not name its kind is.
+fn likely_kind(raw: &Map) -> Option<&'static str> {
+    let has = |k: &str| raw.get(k).is_some_and(|v| !v.is_null());
+    if has("points") {
+        return Some("line");
+    }
+    Some(match (has("radius_m"), has("from_deg"), has("icon"), has("text")) {
+        (true, true, ..) => "sector",
+        (true, false, ..) => "circle",
+        (false, _, false, true) => "text",
+        _ => "marker",
+    })
+}
+
 fn draw_on_map(svc: &McpService, args: &Map) -> ToolResult {
     let mut craft = Craft::of(svc, args);
     let Some(list) = args.get("shapes").and_then(Value::as_array).filter(|l| !l.is_empty()) else {
@@ -627,6 +659,11 @@ fn draw_on_map(svc: &McpService, args: &Map) -> ToolResult {
             return Err(err(format!("shape {i} must be an object")));
         };
         let mut shape = raw.clone();
+        if !raw.contains_key("kind") {
+            if let Some(kind) = likely_kind(raw) {
+                shape.insert("kind".into(), kind.into());
+            }
+        }
         if raw.contains_key("points") {
             let points = places(&mut craft, raw.get("points"), &format!("shape {i} points"))?;
             shape.insert("points".into(), points.into_iter().map(wire).collect());
@@ -657,14 +694,37 @@ fn remove_drawings(svc: &McpService, args: &Map) -> ToolResult {
 
 fn show_on_map(svc: &McpService, args: &Map) -> ToolResult {
     let mut craft = Craft::of(svc, args);
-    let mut body = pick(args, &["ids"]);
-    let points = match args.get("points") {
-        Some(p) => places(&mut craft, Some(p), "points")?,
-        None if body.is_empty() => vec![craft.spot("position")?],
-        None => Vec::new(),
+    let mut body = pick(args, &["ids", "zoom", "open"]);
+    let query = match args.get("query") {
+        None | Some(Value::Null) => None,
+        Some(_) => Some(search_place(svc, args)?["results"][0].clone()),
+    };
+    let points = match (args.get("points"), &query) {
+        (_, Some(found)) => {
+            let at = |k: &str| found.get(k).and_then(Value::as_f64);
+            match (at("lat"), at("lon").or_else(|| at("lng"))) {
+                (Some(lat), Some(lon)) => vec![[lat, lon]],
+                _ => return Err(err("No place of that name was found.")),
+            }
+        }
+        (Some(p), _) => places(&mut craft, Some(p), "points")?,
+        (None, _) if !body.contains_key("ids") => vec![craft.spot("position")?],
+        (None, _) => Vec::new(),
     };
     body.insert("points".into(), points.into_iter().map(wire).collect());
-    svc.api("POST", "/api/map/show", Some(body), None)
+    svc.api("POST", "/api/map/show", Some(body), None)?;
+    Ok(match query {
+        Some(found) => json!({"ok": true, "shown": found}),
+        None => json!({"ok": true}),
+    })
+}
+
+fn open_page(svc: &McpService, args: &Map) -> ToolResult {
+    let page = req_str(args, "page")?;
+    if !svc.window_open() {
+        return Err(err("No Corvus window is open."));
+    }
+    svc.api("POST", "/api/window/open", Some(obj(json!({ "page": page }))), None)
 }
 
 fn search_place(svc: &McpService, args: &Map) -> ToolResult {
@@ -935,7 +995,7 @@ fn set_photo_distance(svc: &McpService, args: &Map) -> ToolResult {
 // ------------------------------------------------------------- the list
 
 /// The properties of a place, for a schema.
-fn place_props() -> Map {
+pub(super) fn place_props() -> Map {
     obj(json!({
         "lat": {"type": "number"}, "lon": {"type": "number"},
         "from": {"type": "string", "enum": ["vehicle", "home"]},
@@ -945,16 +1005,16 @@ fn place_props() -> Map {
     }))
 }
 
-fn place_schema(what: &str) -> Value {
+pub(super) fn place_schema(what: &str) -> Value {
     json!({"type": "object", "properties": place_props(),
-           "description": format!("{what}: lat and lon, or from vehicle or home, plus an offset if wanted (north_m and east_m, forward_m and right_m along the heading, or bearing_deg and distance_m)")})
+           "description": format!("{what}: lat and lon, or from vehicle or home with an offset")})
 }
 
-fn places_schema(what: &str) -> Value {
+pub(super) fn places_schema(what: &str) -> Value {
     json!({"type": "array", "items": place_schema("A place"), "description": what})
 }
 
-fn pattern_props() -> Map {
+pub(super) fn pattern_props() -> Map {
     obj(json!({
         "pattern": {"type": "string", "enum": PATTERNS, "description": "grid: back and forth over an area. spiral: an expanding square search. circle: once around. line: along the points"},
         "points": places_schema("The corners of a grid, or the points of a line"),
@@ -970,12 +1030,12 @@ fn pattern_props() -> Map {
     }))
 }
 
-fn say(a: &Map, key: &str) -> String {
+pub(super) fn say(a: &Map, key: &str) -> String {
     fmt(a.get(key)).chars().take(80).collect()
 }
 
 /// "48.1, 11.6" or "40 m north of the vehicle", for the question.
-fn where_text(v: Option<&Value>) -> String {
+pub(super) fn where_text(v: Option<&Value>) -> String {
     let Some(v) = v.and_then(Value::as_object) else {
         return "a place".into();
     };
@@ -1089,9 +1149,21 @@ pub fn tools() -> Vec<Tool> {
             obj(json!({"ids": {"type": "array", "items": {"type": "string"}}, "all": {"type": "boolean"}})), &[],
             Run::Built(remove_drawings), |_| Some("remove drawings".into()), false, false),
         tool("show_on_map", "map", "Show on the map",
-            "Move the operator's map so that these places and drawings are in view. Without any, the vehicle.",
-            obj(json!({"points": places_schema("Places to frame"), "ids": {"type": "array", "items": {"type": "string"}}})), &[],
-            Run::Built(show_on_map), |_| Some("move the map".into()), true, true),
+            "Move the operator's map to other places so that these, or drawings, are in view: anywhere on earth, by coordinates, relative to the vehicle or home, or by name with query. Without any, the vehicle.",
+            obj(json!({
+                "points": places_schema("Places to frame"), "ids": {"type": "array", "items": {"type": "string"}},
+                "query": {"type": "string", "description": "A place by its name or address, from OpenStreetMap. Needs internet"},
+                "zoom": {"type": "number", "minimum": 1, "maximum": 20, "description": "For one place: 4 a country, 10 a city, 16 a field"},
+                "open": {"type": "boolean", "default": false, "description": "Bring the map to the front when another page is open"},
+            })), &[],
+            Run::Built(show_on_map), |a| Some(match a.get("query").and_then(Value::as_str) {
+                Some(q) => format!("move the map to {}", q.chars().take(60).collect::<String>()),
+                None => "move the map".into(),
+            }), true, true),
+        tool("open_page", "pages", "Open a page",
+            "Bring a page of the Corvus window to the front: home, the mission planner, setup and its pages, analysis, logs, the settings and their tabs, the tabs of the side panel, the notifications, the flat or the 3D map, following the vehicle on it, or plugin:<id> for a plugin's view. It only opens it. Corvus stays where it is while a page with unfinished work is open and tells the operator.",
+            obj(json!({"page": {"type": "string", "description": format!("plugin:<id> or one of {}", crate::drawings::PAGES.join(", "))}})), &["page"],
+            Run::Built(open_page), |a| Some(format!("open the page {}", say(a, "page"))), false, false),
         tool("search_place", "map", "Search a place",
             "Coordinates of a place by its name or address, from OpenStreetMap. Needs internet.",
             obj(json!({"query": {"type": "string"}})), &["query"],
@@ -1106,15 +1178,15 @@ pub fn tools() -> Vec<Tool> {
             &["pattern", "altitude"], Run::Built(fly_pattern),
             |a| Some(format!("{} a {} pattern at {} m", if a.get("start") == Some(&json!(true)) { "upload and start" } else { "upload" }, say(a, "pattern"), say(a, "altitude"))), true, false),
         tool("save_mission", "mission", "Save a mission",
-            "Save a plan in Corvus under a name, replacing one of that name.",
-            obj(json!({"name": {"type": "string"}, "plan": {"type": "object", "description": "As upload_mission takes it"}})), &["name", "plan"],
-            Run::Post("/api/mission/plans/save", Some(|a| pick(a, &["name", "plan"]))),
+            "Save the plan in the mission planner under a name, or another plan, replacing one of that name.",
+            obj(json!({"name": {"type": "string"}, "plan": {"type": "object", "description": "As upload_mission takes it; without it the plan in the mission planner"}})), &["name"],
+            Run::Built(super::simple::save_mission),
             |a| Some(format!("save the mission {}", say(a, "name"))), false, false),
         tool("resume_mission", "mission", "Resume the mission",
             "Go on with the mission in the air, after a hold. hold is what pauses it.",
             none(), &[], Run::Built(resume_mission), |_| Some("resume the mission".into()), true, false),
         tool("set_mission_item", "mission", "Jump in the mission",
-            "Make this item the current one, counted as mission_seq in get_vehicle_state.",
+            "Make this item the current one, counted as mission_seq in get_vehicle_state and current_item in get_telemetry.",
             obj(json!({"item": {"type": "integer", "minimum": 0}})), &["item"],
             Run::Built(set_mission_item), |a| Some(format!("jump to mission item {}", say(a, "item"))), true, false),
         tool("set_speed", "flight", "Speed",

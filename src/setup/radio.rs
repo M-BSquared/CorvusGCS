@@ -24,7 +24,6 @@ use crate::setup::rc_transmitter::{self as tx, Glide, Store};
 use crate::setup::schema_form::{Field, FormState, Look, RowHook};
 use crate::ui::card;
 use crate::ui::chip::Chip;
-use crate::ui::icons;
 use crate::ui::kit::{self, Button, Choice, Variant};
 use crate::ui::pagekit;
 use crate::ui::style::{self, Weight};
@@ -727,32 +726,12 @@ impl RadioPage {
             self.start_detect(f);
         }
         if !dups.is_empty() {
-            let g = kit::wrapped_weight(
-                ui,
-                &model::conflict_text(&dups),
-                11.5,
-                Weight::W400,
-                style::critical_bright(),
-                w - 24.0 - 23.0,
-                1.5,
-            );
-            let r = Rect::from_min_size(Pos2::new(x, y - 14.0), Vec2::new(w, g.size().y + 20.0));
-            card::paint(
-                &painter,
-                r,
-                card::Look::custom(style::critical_dark(), style::critical(), 10),
-            );
-            icons::paint(
-                ui,
-                "triangle-alert",
-                Rect::from_min_size(Pos2::new(r.left() + 13.0, r.top() + 10.0), Vec2::splat(15.0)),
-                style::critical_bright(),
-            );
-            painter.galley(
-                Pos2::new(r.left() + 13.0 + 15.0 + 8.0, r.top() + 10.0),
-                g,
-                style::critical_bright(),
-            );
+            let text = model::conflict_text(&dups);
+            let r = crate::ui::message::NoticeBox::new(crate::ui::message::Tone::Err, &text)
+                .icon("triangle-alert")
+                .text_size(11.5, 1.5)
+                .pad_y(9.0)
+                .show(ui, x, y - 14.0, w);
             y = r.bottom() + 14.0;
         }
         y
@@ -1521,15 +1500,7 @@ impl RadioPage {
                 }
                 for t in warns {
                     cy += 10.0;
-                    let g = kit::wrapped_weight(ui, &t, 11.5, Weight::W400, style::critical_bright(), iw - 22.0, 1.5);
-                    let r = Rect::from_min_size(Pos2::new(ix, cy), Vec2::new(iw, g.size().y + 18.0));
-                    card::paint(
-                        &painter,
-                        r,
-                        card::Look::custom(style::critical_dark(), style::critical(), 9),
-                    );
-                    painter.galley(r.min + Vec2::new(11.0, 9.0), g, style::critical_bright());
-                    cy = r.bottom();
+                    cy = crate::ui::message::boxed(ui, ix, cy, iw, &t, crate::ui::message::Tone::Err);
                 }
             }
             card::fill(

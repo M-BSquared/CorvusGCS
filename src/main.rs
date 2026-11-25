@@ -117,7 +117,16 @@ fn main() -> ExitCode {
     let mut local = None;
     let server = match &args.server {
         Some(url) => match net::http::Server::parse(url) {
-            Ok(s) => s,
+            Ok(mut s) => {
+                s.key = net::backend::key_from_env();
+                if !net::backend::may_write(&s) {
+                    eprintln!(
+                        "corvus-gcs: {} takes no changes from this window, only reads. Set CORVUS_API_KEY to the same value on both sides.",
+                        s.url()
+                    );
+                }
+                s
+            }
             Err(e) => {
                 eprintln!("corvus-gcs: {e}");
                 return ExitCode::from(2);
@@ -125,6 +134,14 @@ fn main() -> ExitCode {
         },
         None => {
             if let Some(peer) = net::backend::running_peer() {
+                // A window whose buttons would all be refused is worse than none.
+                if !net::backend::may_write(&peer) {
+                    eprintln!(
+                        "corvus-gcs: Corvus is already running at {}. Use that window. To join it from a second one, start both with the same CORVUS_API_KEY.",
+                        peer.url()
+                    );
+                    return ExitCode::FAILURE;
+                }
                 eprintln!("corvus-gcs: Corvus is already running, joining it at {}", peer.url());
                 peer
             } else {

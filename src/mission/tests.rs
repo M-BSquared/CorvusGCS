@@ -325,3 +325,50 @@ fn the_bounds_include_an_orbits_ring() {
     assert!(w < 11.0 && e > 11.001 && s < 48.0 && n > 48.0, "{w} {s} {e} {n}");
     assert!(n - 48.0 > 0.0008, "the ring's 100 m reach north of the centre");
 }
+
+#[test]
+fn a_plan_of_an_ai_client_can_be_given_back_and_closes_a_question_about_the_old_one() {
+    use crate::mcp::drawings::Planned;
+    let route = |lat: f64, n: usize| {
+        let items: Vec<Value> = (0..n)
+            .map(|i| json!({"type": "waypoint", "lat": lat + i as f64 * 0.001, "lon": 11.0, "alt": 30.0}))
+            .collect();
+        json!({"version": 1, "name": "AI", "items": items})
+    };
+    let mut p = page();
+    p.plan.load_json(&route(47.0, 2), None, None);
+    let mine = p.plan.to_json();
+    p.dialog = Dialog::Upload {
+        fly: true,
+        warnings: Vec::new(),
+    };
+    let set = |p: &mut MissionPage, seq: u64, plan: Value| p.take_planned(Planned::Plan { seq, plan }, &json!({}));
+    assert!(set(&mut p, 1, route(48.0, 3)).is_some());
+    assert!(matches!(p.dialog, Dialog::None), "a yes would have flown another plan");
+    assert_eq!(p.plan.items.len(), 3);
+    let seen = |p: &mut MissionPage, e: f64| p.plan.home.as_mut().unwrap().elevation = Some(e);
+    let with_home = {
+        let mut r = route(48.0, 3);
+        r["home"] = json!({"lat": 48.0, "lon": 11.0});
+        r
+    };
+    p.plan.load_json(&route(47.0, 2), None, None);
+    assert!(set(&mut p, 2, with_home.clone()).is_some());
+    p.ai.mine = None;
+    seen(&mut p, 500.0);
+    assert!(set(&mut p, 3, with_home).is_some());
+    assert!(
+        p.ai.mine.is_none(),
+        "the ground found under the start is not the operator's work"
+    );
+    p.plan.load_json(&route(47.0, 2), None, None);
+    assert!(set(&mut p, 4, route(48.0, 4)).is_some());
+    assert!(set(&mut p, 1, route(48.0, 1)).is_none(), "an old one is not taken");
+    assert_eq!(p.plan.items.len(), 4);
+    p.take_mine_back();
+    assert_eq!(
+        p.plan.to_json(),
+        mine,
+        "the client's own steps are not what is given back"
+    );
+}

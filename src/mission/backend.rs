@@ -66,6 +66,10 @@ impl Calls {
         }
     }
 
+    pub fn server(&self) -> &Server {
+        &self.server
+    }
+
     pub fn start(&mut self, ctx: &egui::Context, job: Job, plan: &Value, name: &str) {
         let (path, body) = job.request(plan, name);
         let server = self.server.clone();

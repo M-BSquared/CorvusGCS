@@ -12,8 +12,8 @@ build = "build.rs"
 # made of (the API plugins build on and the plugins themselves), src/link (the
 # MAVLink crate) and src/tools (corvus-build, the repository's own tools, which
 # the build scripts run through cargo and no bundle carries).
-members = ["src/link", "src/package", "src/core", "src/api", "src/api/probe", "src/tools", "plugins/vibration", "plugins/ssh-launcher", "plugins/map-entities", "plugins/schwalby", "plugins/tak", "plugins/nuttx-console", "plugins/trajectory-viewer", "plugins/ai-chat", "plugins/remote-id-check"]
-default-members = [".", "src/package", "src/core", "src/api", "plugins/vibration", "plugins/ssh-launcher", "plugins/map-entities", "plugins/schwalby", "plugins/tak", "plugins/nuttx-console", "plugins/trajectory-viewer", "plugins/ai-chat", "plugins/remote-id-check"]
+members = ["src/link", "src/package", "src/core", "src/api", "src/api/probe", "src/tools", "src/scene", "plugins/vibration", "plugins/map-entities", "plugins/schwalby", "plugins/tak", "plugins/nuttx-console", "plugins/trajectory-viewer", "plugins/ai-chat", "plugins/remote-id-check"]
+default-members = [".", "src/package", "src/core", "src/api", "plugins/vibration", "plugins/map-entities", "plugins/schwalby", "plugins/tak", "plugins/nuttx-console", "plugins/trajectory-viewer", "plugins/ai-chat", "plugins/remote-id-check"]
 # Third party crates with a change of ours (see the README in each): not ours to lint or test.
 exclude = ["src/vendor"]
 
@@ -191,7 +191,6 @@ corvus_plugin_ai_chat = { path = "plugins/ai-chat" }
 corvus_plugin_remote_id_check = { path = "plugins/remote-id-check" }
 corvus_plugin_schwalby = { path = "plugins/schwalby" }
 corvus_plugin_map_entities = { path = "plugins/map-entities" }
-corvus_plugin_ssh_launcher = { path = "plugins/ssh-launcher" }
 
 [build-dependencies]
 # build.rs lists the plugin crates, and reads their Cargo.toml for it.

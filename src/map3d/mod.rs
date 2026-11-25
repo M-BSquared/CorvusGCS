@@ -282,6 +282,13 @@ impl Map3d {
         self.zoom_goal = None;
     }
 
+    /// Looks at a place from where it looks now: the same tilt and bearing.
+    pub fn look_at(&mut self, lng: f64, lat: f64, zoom: f64) {
+        self.cam.set_centre((lng, lat));
+        self.cam.zoom = zoom.clamp(crate::map3d::camera::MIN_ZOOM, self.closest_zoom());
+        self.zoom_goal = None;
+    }
+
     /// Tilts from the flat map to the 3D pitch over `TILT_MS`.
     pub fn tilt_in(&mut self) {
         self.cam.pitch = 0.0;

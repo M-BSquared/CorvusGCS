@@ -123,7 +123,10 @@ fn the_bundled_plugins_are_listed_as_python_lists_the_web_plugins() {
         v.sort();
         v
     };
-    for m in reg.discover() {
+    // The SSH Launcher is a part of the program now and keeps its settings under its old name.
+    let part = Path::new(env!("CARGO_MANIFEST_DIR")).join("../panel/launcher/mod.rs");
+    assert!(part.is_file());
+    for m in reg.discover().into_iter().filter(|m| m.id != "ssh-launcher") {
         assert!(
             crates.contains(&m.id),
             "{} is listed and no plugin of the repository",
