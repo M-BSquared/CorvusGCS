@@ -99,14 +99,23 @@ fn ask(server: &Server) -> Option<Due> {
     if !new && !plugins {
         return None;
     }
+    let config = http::get_json(server, "/api/config")
+        .map(|c| crate::app::unwrap_config(&c))
+        .unwrap_or(Value::Null);
+    let mut used = http::get_json(server, "/api/plugins")
+        .map(|a| model::used_before(&a))
+        .unwrap_or_default();
+    if !new {
+        let asked = config.get("ui").and_then(|u| u.get("plugin_setup")).and_then(Value::as_i64);
+        let native = crate::plugins::loader::native_dir()
+            .filter(|d| d.is_dir())
+            .map(|d| crate::plugins::loader::before(&d));
+        used = model::to_offer_again(asked, native, used);
+    }
     Some(Due {
-        config: http::get_json(server, "/api/config")
-            .map(|c| crate::app::unwrap_config(&c))
-            .unwrap_or(Value::Null),
+        config,
         plugins_only: !new,
-        used: http::get_json(server, "/api/plugins")
-            .map(|a| model::used_before(&a))
-            .unwrap_or_default(),
+        used,
     })
 }
 
@@ -225,7 +234,7 @@ impl Session {
                 Ok(()) => {
                     let wanted = self.wanted(store);
                     for id in &wanted {
-                        store.install(id);
+                        store.install_when_possible(id);
                     }
                     let n = wanted.len();
                     if self.plugins_only {
@@ -599,8 +608,9 @@ impl Session {
         }));
     }
 
-    /// What Finish downloads: the plugins switched on that are on offer and not installed as
-    /// they are offered. While the list is still being looked up, all that are on offer at all.
+    /// What Finish downloads: the plugins switched on that are not installed as they are
+    /// offered. One this computer used before is asked for even while it cannot be had: it
+    /// stays on the list and is downloaded at a later start.
     fn wanted(&self, store: &Store) -> Vec<String> {
         let loading = store.loading();
         let offered: Vec<&str> = store.offered().iter().map(|o| o.id).collect();
@@ -608,7 +618,10 @@ impl Session {
             .rows()
             .into_iter()
             .filter(|r| offered.contains(&r.id.as_str()) && self.picked.contains(&r.id))
-            .filter(|r| loading || (r.offer.is_some() && (r.installed.is_none() || r.update_available())))
+            .filter(|r| {
+                let missing = r.installed.is_none();
+                loading || (r.offer.is_some() && (missing || r.update_available())) || (missing && self.used.contains(&r.id))
+            })
             .map(|r| r.id)
             .collect()
     }
@@ -619,7 +632,7 @@ impl Session {
         form::desc_info(
             ui,
             f,
-            "Plugins add features such as TAK, AI Chat or a NuttX console. Each one is downloaded from its own repository on GitHub, which needs an internet connection now. Corvus GCS itself never needs one to fly. You can add or remove plugins later under Settings, Plugins.",
+            "Plugins add features such as TAK, AI Chat or a NuttX console. Each one is downloaded from its own repository on GitHub, which needs an internet connection. Corvus GCS itself never needs one to fly. You can add or remove plugins later under Settings, Plugins.",
             2,
             "welcomeplugins",
         );
@@ -652,18 +665,19 @@ impl Session {
         }
         if rows
             .iter()
-            .any(|r| r.offer.is_some() && r.installed.is_none() && self.used.contains(&r.id))
+            .any(|r| r.installed.is_none() && self.used.contains(&r.id))
         {
             form::desc(
                 ui,
                 f,
-                "Plugins this computer used before are already switched on. Their saved settings are kept.",
+                "Plugins this computer used before are already switched on. Their saved settings are kept. Without a connection they are downloaded at a later start that has one.",
             );
             f.skip(10.0);
         }
         for (i, row) in rows.iter().enumerate() {
             let installed = row.installed.is_some() && !row.update_available();
-            let available = !installed && row.offer.is_some();
+            let remembered = self.used.contains(&row.id);
+            let available = !installed && (row.offer.is_some() || remembered);
             let why = if installed {
                 "Already installed. Remove it under Settings, Plugins."
             } else if loading {

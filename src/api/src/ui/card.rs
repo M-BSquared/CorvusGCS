@@ -22,7 +22,7 @@
 //! surface is `reserve`d first (it paints under what comes next) and
 //! `fill`ed once the height is there.
 
-use eframe::egui::{self, Color32, Painter, Rect, Shape, Stroke};
+use egui::{self, Color32, Painter, Rect, Shape, Stroke};
 
 use crate::ui::message::Tone;
 use crate::ui::style;

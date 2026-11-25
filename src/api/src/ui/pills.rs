@@ -1,6 +1,6 @@
 //! `.settings-tab`: the row of icon pills of the Settings page.
 
-use eframe::egui::{self, Color32, Pos2, Rect, Vec2};
+use egui::{self, Color32, Pos2, Rect, Vec2};
 
 use crate::ui::card::{self, Look};
 use crate::ui::icons;

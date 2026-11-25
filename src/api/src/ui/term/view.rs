@@ -2,7 +2,7 @@
 //! rectangle, with the keyboard, the mouse wheel, selection and paste
 //! (`.ssh-term`, xterm.js in `python/src/js/ssh-term.js`).
 
-use eframe::egui::{self, Color32, Pos2, Rect, Stroke, Vec2};
+use egui::{self, Color32, Pos2, Rect, Stroke, Vec2};
 
 use super::emu::{Cell, Colour, Screen};
 use super::keys::key_bytes;

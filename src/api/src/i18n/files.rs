@@ -16,12 +16,16 @@ const MAX_NAME_CHARS: usize = 60;
 
 /// The languages that ship with the program, compiled in so the binary needs
 /// no folder beside it.
+#[cfg(not(target_family = "wasm"))]
 const BUNDLED: &[(&str, &str)] = &[
     ("en", include_str!("../../../lang/en.json")),
     ("de", include_str!("../../../lang/de.json")),
     ("fr", include_str!("../../../lang/fr.json")),
     ("dl", include_str!("../../../lang/dl.json")),
 ];
+/// A plugin gets the program's table handed to it (`i18n::adopt`).
+#[cfg(target_family = "wasm")]
+const BUNDLED: &[(&str, &str)] = &[];
 
 /// One language file, validated.
 #[derive(Debug, Clone)]

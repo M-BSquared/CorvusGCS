@@ -1,6 +1,6 @@
 //! `.ui-slider`: the stepped slider.
 
-use eframe::egui::{self, Pos2, Rect, Vec2};
+use egui::{self, Pos2, Rect, Vec2};
 
 use crate::ui::style::{self, Weight};
 

@@ -1,7 +1,7 @@
 //! The background of a row in a list: nothing at rest, the hover wash under
 //! the pointer, the navigation tint on the chosen one.
 
-use eframe::egui::{Painter, Rect};
+use egui::{Painter, Rect};
 
 use crate::ui::style;
 

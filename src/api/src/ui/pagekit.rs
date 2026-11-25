@@ -2,7 +2,7 @@
 //! `.page-section-title`, `.page-card`, `.tile`, `.setup-back`), which every
 //! page that is not the map is built from.
 
-use eframe::egui::{self, Color32, Pos2, Rect, Stroke, Vec2};
+use egui::{self, Color32, Pos2, Rect, Stroke, Vec2};
 
 use crate::ui::card::{self, Look};
 use crate::ui::icons;

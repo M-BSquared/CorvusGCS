@@ -41,6 +41,8 @@ const MISSED_MAX: usize = 6000;
 struct Active {
     table: table::Table,
     values: HashSet<String>,
+    /// What the table was made of, for the plugins.
+    strings: Vec<(String, String)>,
     cache: Mutex<HashMap<String, Option<String>>>,
 }
 
@@ -57,6 +59,7 @@ static STATE: Mutex<State> = Mutex::new(State {
 static ACTIVE: RwLock<Option<Arc<Active>>> = RwLock::new(None);
 static ON: AtomicBool = AtomicBool::new(false);
 static MISSED: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());
+static REVISION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 type Remote = fn(&str) -> Option<String>;
 
@@ -116,6 +119,7 @@ impl Active {
         Active {
             table,
             values,
+            strings: strings.into_iter().collect(),
             cache: Mutex::new(HashMap::new()),
         }
     }
@@ -235,6 +239,7 @@ fn apply(list: &[Language], code: &mut Option<String>, target: &str) {
         ON.store(active.is_some(), Ordering::Relaxed);
         *g = active;
     }
+    REVISION.fetch_add(1, Ordering::Relaxed);
     if let Ok(mut m) = MISSED.lock() {
         m.clear();
     }
@@ -255,6 +260,33 @@ pub fn set_language(wanted: &str) -> String {
         }
         target
     })
+}
+
+/// A number that changes whenever the table in force does.
+pub fn revision() -> u64 {
+    REVISION.load(Ordering::Relaxed)
+}
+
+/// The code in force and every entry of its table; none for English.
+pub fn table_in_force() -> (String, Vec<(String, String)>) {
+    let strings = current().map(|a| a.strings.clone()).unwrap_or_default();
+    (language(), strings)
+}
+
+/// In a plugin: takes over the language the program has in force. Its entries go over the
+/// plugin's own files of that language.
+pub fn adopt(code: &str, strings: Vec<(String, String)>) {
+    let lang = Language {
+        code: code.to_string(),
+        name: code.to_string(),
+        native_name: code.to_string(),
+        last: false,
+        strings: strings.into_iter().collect(),
+    };
+    with_languages(|list, current| {
+        *list = vec![lang];
+        apply(list, current, code);
+    });
 }
 
 /// Registers the language files a plugin carries (`lang/` of its crate) and

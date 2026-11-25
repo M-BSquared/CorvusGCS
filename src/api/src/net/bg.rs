@@ -1,27 +1,40 @@
-//! A request on a thread of its own, its answer picked up by the frame that
-//! finds it there. The interface never blocks on the network.
+//! A request under way, its answer picked up by the frame that finds it there.
+//! The interface never blocks on the network. In the program a thread does the
+//! work; in a plugin the program does it and delivers the answer.
 
 use std::sync::{Arc, Mutex};
-
-use eframe::egui;
 
 /// An answer still on its way.
 pub struct Pending<T>(Arc<Mutex<Option<T>>>);
 
+/// The other end of a [`Pending`] that no thread of its own fills.
+pub struct Filler<T>(Arc<Mutex<Option<T>>>);
+
+impl<T> Filler<T> {
+    pub fn fill(self, value: T) {
+        if let Ok(mut s) = self.0.lock() {
+            *s = Some(value);
+        }
+    }
+}
+
 impl<T: Send + 'static> Pending<T> {
     /// Runs `f` on a thread and repaints when it has answered.
+    #[cfg(not(target_family = "wasm"))]
     pub fn spawn(ctx: &egui::Context, f: impl FnOnce() -> T + Send + 'static) -> Pending<T> {
-        let slot = Arc::new(Mutex::new(None));
-        let out = slot.clone();
+        let (pending, filler) = Pending::slot();
         let ctx = ctx.clone();
         std::thread::spawn(move || {
-            let v = f();
-            if let Ok(mut s) = out.lock() {
-                *s = Some(v);
-            }
+            filler.fill(f());
             ctx.request_repaint();
         });
-        Pending(slot)
+        pending
+    }
+
+    /// An answer someone else brings.
+    pub fn slot() -> (Pending<T>, Filler<T>) {
+        let slot = Arc::new(Mutex::new(None));
+        (Pending(slot.clone()), Filler(slot))
     }
 
     /// An answer that is already here (tests build pages with it).
@@ -32,5 +45,18 @@ impl<T: Send + 'static> Pending<T> {
     /// The answer, once, when it is there.
     pub fn take(&self) -> Option<T> {
         self.0.lock().ok().and_then(|mut s| s.take())
+    }
+}
+
+/// For a [`Task`](crate::task::Task), which polls again after every delivery, so nobody is
+/// woken.
+impl<T: Send + 'static> std::future::Future for Pending<T> {
+    type Output = T;
+
+    fn poll(self: std::pin::Pin<&mut Self>, _cx: &mut std::task::Context<'_>) -> std::task::Poll<T> {
+        match self.take() {
+            Some(v) => std::task::Poll::Ready(v),
+            None => std::task::Poll::Pending,
+        }
     }
 }

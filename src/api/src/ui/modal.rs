@@ -1,7 +1,7 @@
 //! `.modal` (components.css): a centred card on a scrim, a title row with a
 //! close button, a body and a row of actions at the right.
 
-use eframe::egui::{self, Pos2, Rect, Vec2};
+use egui::{self, Pos2, Rect, Vec2};
 
 use crate::ui::card;
 use crate::ui::kit;

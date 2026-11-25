@@ -5,6 +5,10 @@
 
 use std::path::{Path, PathBuf};
 
+
+/// What [`read`] answers for a file larger than asked for.
+pub const TOO_LARGE: &str = "the file is too large";
+
 /// One kind of file the dialog offers: its label and extensions without dots.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Filter<'a> {
@@ -12,36 +16,67 @@ pub struct Filter<'a> {
     pub extensions: &'a [&'a str],
 }
 
-fn dialog(title: &str, start: Option<&Path>) -> rfd::FileDialog {
-    let mut d = rfd::FileDialog::new().set_title(crate::i18n::tr(title).as_ref());
-    if let Some(dir) = start {
-        d = d.set_directory(dir);
-    }
-    d
-}
+#[cfg(not(target_family = "wasm"))]
+mod system {
+    use std::path::{Path, PathBuf};
 
-/// Asks for one file; the title is the dialog's own. It opens in `start`.
-pub fn pick_file(title: &str, filter: Option<Filter<'_>>, start: Option<&Path>) -> Option<PathBuf> {
-    let mut d = dialog(title, start);
-    if let Some(f) = filter {
-        d = d.add_filter(crate::i18n::tr(f.name).as_ref(), f.extensions);
-    }
-    d.pick_file()
-}
+    use super::Filter;
 
-/// Asks for one folder. It opens in `start`.
-pub fn pick_folder(title: &str, start: Option<&Path>) -> Option<PathBuf> {
-    dialog(title, start).pick_folder()
-}
-
-/// Asks for the path of a file to write, suggesting `name`. It opens in `start`.
-pub fn save_file(title: &str, name: &str, filter: Option<Filter<'_>>, start: Option<&Path>) -> Option<PathBuf> {
-    let mut d = dialog(title, start).set_file_name(name);
-    if let Some(f) = filter {
-        d = d.add_filter(crate::i18n::tr(f.name).as_ref(), f.extensions);
+    fn dialog(title: &str, start: Option<&Path>) -> rfd::FileDialog {
+        let mut d = rfd::FileDialog::new().set_title(crate::i18n::tr(title).as_ref());
+        if let Some(dir) = start {
+            d = d.set_directory(dir);
+        }
+        d
     }
-    d.save_file()
+
+    /// Asks for one file; the title is the dialog's own. It opens in `start`.
+    pub fn pick_file(title: &str, filter: Option<Filter<'_>>, start: Option<&Path>) -> Option<PathBuf> {
+        let mut d = dialog(title, start);
+        if let Some(f) = filter {
+            d = d.add_filter(crate::i18n::tr(f.name).as_ref(), f.extensions);
+        }
+        d.pick_file()
+    }
+
+    /// Asks for one folder. It opens in `start`.
+    pub fn pick_folder(title: &str, start: Option<&Path>) -> Option<PathBuf> {
+        dialog(title, start).pick_folder()
+    }
+
+    /// Asks for the path of a file to write, suggesting `name`. It opens in `start`.
+    pub fn save_file(title: &str, name: &str, filter: Option<Filter<'_>>, start: Option<&Path>) -> Option<PathBuf> {
+        let mut d = dialog(title, start).set_file_name(name);
+        if let Some(f) = filter {
+            d = d.add_filter(crate::i18n::tr(f.name).as_ref(), f.extensions);
+        }
+        d.save_file()
+    }
+
+    /// The bytes of a file the operator picked, `max` of them at most.
+    pub fn read(path: &Path, max: u64) -> Result<Vec<u8>, String> {
+        use std::io::Read;
+        let cannot = |e: std::io::Error| format!("the file cannot be read: {e}");
+        let file = std::fs::File::open(path).map_err(cannot)?;
+        let meta = file.metadata().map_err(cannot)?;
+        if !meta.is_file() {
+            return Err("it is not a file".into());
+        }
+        if meta.len() > max {
+            return Err(super::TOO_LARGE.into());
+        }
+        let mut bytes = Vec::new();
+        file.take(max).read_to_end(&mut bytes).map_err(cannot)?;
+        Ok(bytes)
+    }
 }
+#[cfg(not(target_family = "wasm"))]
+pub use system::{pick_file, pick_folder, read, save_file};
+
+/// In a plugin the program shows the dialog, and the plugin can read what the
+/// operator picked there and nothing else.
+#[cfg(target_family = "wasm")]
+pub use crate::guest::files::{pick_file, pick_folder, read, save_file};
 
 /// The file's name as the backend stores it (`logo.png`), whatever the folder.
 pub fn file_name(path: &Path) -> String {

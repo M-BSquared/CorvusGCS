@@ -3,7 +3,7 @@
 //! description under it. The chosen one wears the accent border with a ring
 //! outside it.
 
-use eframe::egui::{self, Color32, Pos2, Rect, Stroke, Vec2};
+use egui::{self, Color32, Pos2, Rect, Stroke, Vec2};
 
 use crate::ui::card::{self, Look};
 use crate::ui::icons;

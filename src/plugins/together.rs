@@ -1,6 +1,6 @@
 //! Map Entities and TAK, the real plugins, through the real registry, over HTTP
 //! and SSE into a real core, out to a scripted TAK server on a loopback socket. TAK is
-//! the library the store installs, loaded as one; Map Entities is compiled in.
+//! both modules as the store installs them.
 //! No window, no hardware, no ATAK: what ATAK would receive is what the server
 //! here reads.
 
@@ -12,7 +12,7 @@ use corvus_core::tak::cot::{Event, Framer};
 use eframe::egui;
 use serde_json::{json, Value};
 
-use super::loader::testlib;
+use super::wasm::testlib;
 use super::Registry;
 use crate::net::http::{self, Server};
 
@@ -153,12 +153,13 @@ fn rig(tag: &str, only_tak: bool, shared: bool, sends: bool) -> Rig {
     assert!(answer["connection"]["id"].is_string(), "{answer}");
     let peer = Peer::accept(&listener);
     let ctx = egui::Context::default();
-    let packages = dir.join("plugin-packages");
+    let packages = dir.join("plugins-wasm");
+    std::fs::create_dir_all(&packages).unwrap();
     testlib::package(&packages, "tak", "corvus_plugin_tak");
     if !only_tak {
         testlib::package(&packages, "map-entities", "corvus_plugin_map_entities");
     }
-    let reg = Registry::with_packages(server, &ctx, &json!({}), Vec::new(), &packages);
+    let reg = Registry::with_packages(&testlib::sandbox(), server, &ctx, &json!({}), Vec::new(), &packages);
     assert_eq!(reg.refused, []);
     Rig {
         ctx,

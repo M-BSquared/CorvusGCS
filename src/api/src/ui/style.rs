@@ -3,7 +3,7 @@
 //! as the element it copies. One CSS pixel is one egui point: the web app is
 //! px-absolute at an interface scale of 1, and so is this.
 
-use eframe::egui::{self, text::LayoutJob, Color32, FontFamily, FontId, Galley, TextFormat};
+use egui::{self, text::LayoutJob, Color32, FontFamily, FontId, Galley, TextFormat};
 use std::sync::Arc;
 
 /// `#RRGGBB`.
@@ -23,7 +23,8 @@ pub fn rgba(rgb: u32, a: f32) -> Color32 {
 }
 
 /// One theme's tokens (the `--*` of python/src/css/themes.css), as `#RRGGBB`.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
 pub struct Palette {
     pub dark: bool,
     pub bg: u32,
@@ -74,6 +75,12 @@ pub struct Palette {
     /// `--blur-soft`: the Gaussian's CSS px, the saturate amount and the
     /// brightness the dark themes add.
     pub blur_soft: (f32, f32, f32),
+}
+
+impl Default for Palette {
+    fn default() -> Palette {
+        LIGHT
+    }
 }
 
 const LIGHT: Palette = Palette {
@@ -389,14 +396,14 @@ pub fn touch() -> bool {
 /// The area a finger presses for a control drawn in `rect`: at least a
 /// finger's target tall in tablet mode, the same centre, so the drawing
 /// stays as it is.
-pub fn finger(rect: eframe::egui::Rect) -> eframe::egui::Rect {
+pub fn finger(rect: egui::Rect) -> egui::Rect {
     finger_when(touch(), rect)
 }
 
-fn finger_when(on: bool, rect: eframe::egui::Rect) -> eframe::egui::Rect {
+fn finger_when(on: bool, rect: egui::Rect) -> egui::Rect {
     if on && rect.height() < TOUCH_TARGET {
         let grow = (TOUCH_TARGET - rect.height()) / 2.0;
-        rect.expand2(eframe::egui::vec2(0.0, grow))
+        rect.expand2(egui::vec2(0.0, grow))
     } else {
         rect
     }
@@ -617,7 +624,7 @@ mod tests {
         assert_eq!(target_when(false, 32.5), 32.5);
         assert_eq!(target_when(true, 32.5), TOUCH_TARGET);
         assert_eq!(target_when(true, 54.0), 54.0, "a tall control is not shrunk");
-        let r = eframe::egui::Rect::from_min_size(eframe::egui::pos2(10.0, 100.0), eframe::egui::vec2(38.0, 22.0));
+        let r = egui::Rect::from_min_size(egui::pos2(10.0, 100.0), egui::vec2(38.0, 22.0));
         assert_eq!(finger_when(false, r), r);
         let big = finger_when(true, r);
         assert_eq!((big.height(), big.width()), (TOUCH_TARGET, 38.0));

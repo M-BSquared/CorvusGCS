@@ -1,7 +1,7 @@
 //! The two-state controls: the checkbox (`.link-toggle`) and the switch
 //! (`.ui-toggle`).
 
-use eframe::egui::{self, Color32, Pos2, Rect, Stroke, Vec2};
+use egui::{self, Color32, Pos2, Rect, Stroke, Vec2};
 
 use crate::ui::card::{self, Look};
 use crate::ui::style::{self, Weight};

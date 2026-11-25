@@ -31,7 +31,7 @@ pub fn stamp(secs: i64, offset: i64, with_seconds: bool) -> String {
 }
 
 /// Seconds east of UTC on this machine now.
-#[cfg(unix)]
+#[cfg(all(unix, not(target_family = "wasm")))]
 pub fn local_offset() -> i64 {
     // SAFETY: localtime_r writes into the tm we hand it.
     unsafe {
@@ -43,9 +43,19 @@ pub fn local_offset() -> i64 {
 }
 
 /// Seconds east of UTC on this machine now.
-#[cfg(not(unix))]
+#[cfg(not(any(unix, target_family = "wasm")))]
 pub fn local_offset() -> i64 {
     0
+}
+
+/// In a plugin, what the program last said about the operator's computer.
+#[cfg(target_family = "wasm")]
+pub(crate) static OFFSET: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(0);
+
+/// Seconds east of UTC on the operator's computer.
+#[cfg(target_family = "wasm")]
+pub fn local_offset() -> i64 {
+    OFFSET.load(std::sync::atomic::Ordering::Relaxed)
 }
 
 #[cfg(test)]

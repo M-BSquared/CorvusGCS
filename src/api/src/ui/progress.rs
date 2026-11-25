@@ -2,7 +2,7 @@
 //! The corner is half the height, so 5 and 6 px bars round to 3 px and the
 //! 8 px bar to 4.
 
-use eframe::egui::{Color32, Painter, Rect, Vec2};
+use egui::{Color32, Painter, Rect, Vec2};
 
 use crate::ui::card::{self, Look};
 use crate::ui::style;

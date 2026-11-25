@@ -3,7 +3,7 @@
 //! `TextField`, so the focus ring, the padding, the fonts and the colours
 //! of the placeholder and the text come from one place.
 
-use eframe::egui::{self, Align2, Color32, Id, Pos2, Rect, Stroke, Vec2};
+use egui::{self, Align2, Color32, Id, Pos2, Rect, Stroke, Vec2};
 
 use crate::ui::card::{self, Look};
 use crate::ui::icons;

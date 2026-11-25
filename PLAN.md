@@ -81,6 +81,19 @@ be seen live, see 1.2):
 
 ---
 
+## Plugins as WebAssembly (branch `wasm-plugins`, started 2026-11-25)
+
+Replaces the native plugin libraries. Done when every box is ticked; then this section goes.
+
+- [ ] `corvus_api` builds natively and for `wasm32-wasip1`
+- [ ] Prototype: Vibration Monitor as wasm, measured (target under 2 ms per frame, text input and popups as before)
+- [ ] Protocol, host runtime and plugin SDK, with permissions enforced in the host
+- [ ] All eight plugins ported, AI Chat last
+- [ ] Upgrade from 2026.11.81, 2026.11.83 and 2026.11.93: used plugins preselected, downloads kept pending until they succeed
+- [ ] Store: `min_corvus` instead of the ABI stamp, `plugin.yml` for one build (not on `master` of origin before the release; the `abi-*` releases stay)
+- [ ] Build scripts, CI, docs, languages; native loader, `lock_closure.rs` and the vendored patches removed
+- [ ] A frozen `.wasm` fixture of the first protocol version loads in every later build
+
 ## 0. Rust port (state of 2026-11-11)
 
 The native interface (`src/`) runs the backend, `corvus_core` (`src/core`, how

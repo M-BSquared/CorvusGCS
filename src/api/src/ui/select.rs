@@ -1,7 +1,7 @@
 //! `.field-select` with the app's dropdown (`.ui-menu`): the one select.
 
 use crate::ui::tip::HoverTr;
-use eframe::egui::{self, Pos2, Rect, Stroke, Vec2};
+use egui::{self, Pos2, Rect, Stroke, Vec2};
 
 use crate::ui::card::{self, Look};
 use crate::ui::icons;

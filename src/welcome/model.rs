@@ -115,6 +115,34 @@ pub fn preview(base: &Value, c: &Choices) -> Value {
     cfg
 }
 
+/// The plugins that were part of the program itself up to 2026.11.83. No version before had
+/// them all and none left a trace of a plugin that was only looked at, so a station from that
+/// time is offered every one. (The SSH Launcher, one of them, is still part of the program.)
+pub const BUILT_IN_ONCE: [&str; 5] = [
+    "map-entities",
+    "nuttx-console",
+    "schwalby",
+    "trajectory-viewer",
+    "vibration",
+];
+
+/// The plugins to switch on to start with, for a station that was set up by an earlier version.
+///
+/// * `asked` is the round of the plugin question the station answered (`ui.plugin_setup`):
+///   none up to 2026.11.83, 1 for 2026.11.92, 2 for 2026.11.93.
+/// * `native` are the plugins installed as native libraries (2026.11.92 and 93), `None` where
+///   there never was a folder for them.
+/// * `used` are those with saved settings or a folder of their own ([`used_before`]).
+pub fn to_offer_again(asked: Option<i64>, native: Option<BTreeSet<String>>, used: BTreeSet<String>) -> BTreeSet<String> {
+    match (asked, native) {
+        // 2026.11.93: what was installed then, and nothing that was removed or never wanted.
+        (Some(round), native) if round >= 2 => native.unwrap_or_default(),
+        // Up to 2026.11.83: the plugins were in the program.
+        (None, None) => BUILT_IN_ONCE.iter().map(|id| id.to_string()).chain(used).collect(),
+        (_, native) => native.unwrap_or_default().into_iter().chain(used).collect(),
+    }
+}
+
 /// The plugins an earlier installation on this computer used, from the answer of
 /// `GET /api/plugins`: those with saved settings, and those whose folder an earlier version put
 /// into the operator's plugin folder. The setup switches them on, ready to be downloaded again.
@@ -183,6 +211,37 @@ mod tests {
         }));
         assert_eq!(used.into_iter().collect::<Vec<_>>(), ["nuttx-console", "schwalby"]);
         assert!(used_before(&Value::Null).is_empty());
+    }
+
+    fn set(ids: &[&str]) -> BTreeSet<String> {
+        ids.iter().map(|id| id.to_string()).collect()
+    }
+
+    #[test]
+    fn from_2026_11_81_and_83_every_plugin_that_was_built_in_is_offered() {
+        let got = to_offer_again(None, None, set(&["schwalby", "own-one"]));
+        let mut want = set(&BUILT_IN_ONCE);
+        want.insert("own-one".into());
+        assert_eq!(got, want);
+        assert_eq!(to_offer_again(None, None, set(&[])), set(&BUILT_IN_ONCE), "also with no trace");
+    }
+
+    #[test]
+    fn from_2026_11_93_exactly_what_was_installed_is_offered() {
+        let installed = set(&["tak", "vibration"]);
+        // Settings of a plugin that was removed are still there; it does not come back.
+        let got = to_offer_again(Some(2), Some(installed.clone()), set(&["schwalby", "tak"]));
+        assert_eq!(got, installed);
+        assert!(to_offer_again(Some(2), None, set(&["schwalby"])).is_empty());
+        assert!(to_offer_again(Some(2), Some(set(&[])), set(&["schwalby"])).is_empty());
+    }
+
+    #[test]
+    fn in_between_what_was_installed_and_what_was_used_are_offered() {
+        let got = to_offer_again(Some(1), Some(set(&["tak"])), set(&["schwalby"]));
+        assert_eq!(got, set(&["schwalby", "tak"]));
+        // A version with libraries that was closed before the question was answered.
+        assert_eq!(to_offer_again(None, Some(set(&["tak"])), set(&[])), set(&["tak"]));
     }
 
     #[test]

@@ -11,7 +11,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use eframe::egui::{self, Color32, Galley, Id, Pos2, Rect, Vec2};
+use egui::{self, Color32, Galley, Id, Pos2, Rect, Vec2};
 
 use crate::ui::icons;
 use crate::ui::kit;

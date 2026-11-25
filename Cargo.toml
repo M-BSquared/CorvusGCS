@@ -14,15 +14,11 @@ build = "build.rs"
 # the build scripts run through cargo and no bundle carries).
 members = ["src/link", "src/package", "src/core", "src/api", "src/api/probe", "src/tools", "src/scene", "plugins/vibration", "plugins/map-entities", "plugins/schwalby", "plugins/tak", "plugins/nuttx-console", "plugins/trajectory-viewer", "plugins/ai-chat", "plugins/remote-id-check"]
 default-members = [".", "src/package", "src/core", "src/api", "plugins/vibration", "plugins/map-entities", "plugins/schwalby", "plugins/tak", "plugins/nuttx-console", "plugins/trajectory-viewer", "plugins/ai-chat", "plugins/remote-id-check"]
-# Third party crates with a change of ours (see the README in each): not ours to lint or test.
-exclude = ["src/vendor"]
-
-[patch.crates-io]
-parking_lot_core = { path = "src/vendor/parking_lot_core" }
-epaint = { path = "src/vendor/epaint" }
 
 [workspace.dependencies]
 vte = "0.15.0"
+# The widgets of corvus_api, which build for the program and for the plugins (wasm32-wasip1).
+egui = { version = "0.37", default-features = false }
 # One place for the versions and features the crates share, so a feature added
 # in one crate cannot quietly widen what the others compile.
 #
@@ -38,7 +34,6 @@ serde_json = "1"
 regex = "1"
 rfd = "0.17"
 libc = "0.2"
-libloading = "0.8"
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 ctrlc = { version = "3", features = ["termination"] }
 # USB and Bluetooth gamepads for manual control (control/gamepad.rs). On Linux it
@@ -53,9 +48,11 @@ path = "src/main.rs"
 corvus_api = { path = "src/api" }
 # The backend, in this process.
 corvus_core = { path = "src/core" }
-# Loads the plugins the operator installed (src/plugins/loader.rs).
-libloading = { workspace = true }
 corvus_package = { path = "src/package" }
+# Runs the plugins (src/plugins/wasm): compiled to machine code with Cranelift, since a plugin
+# draws its view in there on every frame, which an interpreter is too slow for.
+wasmtime = { version = "51", default-features = false, features = ["cranelift", "runtime", "std", "parallel-compilation"] }
+getrandom = "0.3"
 # glow: the OpenGL renderer, whose paint callbacks can read what is already
 # drawn, which the frosted glass (frost.rs) needs; wgpu draws a frame in one
 # pass and cannot.
@@ -154,10 +151,26 @@ opt-level = 3
 [profile.dev.package.walkers]
 opt-level = 3
 
-# The checksum and the stamp of every installed plugin library are read at start.
+# The checksum of every installed plugin is read at start, and its module compiled: unoptimised,
+# the compiler (Cranelift) takes minutes for one plugin.
 [profile.dev.package.sha2]
 opt-level = 3
 [profile.dev.package.corvus_package]
+opt-level = 3
+
+[profile.dev.package.cranelift-codegen]
+opt-level = 3
+[profile.dev.package.cranelift-frontend]
+opt-level = 3
+[profile.dev.package.regalloc2]
+opt-level = 3
+[profile.dev.package.wasmtime]
+opt-level = 3
+[profile.dev.package.wasmtime-environ]
+opt-level = 3
+[profile.dev.package.wasmtime-internal-cranelift]
+opt-level = 3
+[profile.dev.package.wasmparser]
 opt-level = 3
 
 # Build scripts and proc macros run on the build machine once per build.
@@ -171,6 +184,16 @@ debug = false
 lto = "thin"
 codegen-units = 1
 
+# A plugin as it is published: a WebAssembly module (`cargo build --profile plugin
+# --target wasm32-wasip1`). Fast code first, then small.
+[profile.plugin]
+inherits = "release"
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"
+
 # `./build.sh --fast` and `./run.sh --fast`: release code without LTO, with
 # parallel codegen and incremental builds, for a local bundle in minutes.
 [profile.fast]
@@ -180,18 +203,8 @@ codegen-units = 16
 incremental = true
 
 [dev-dependencies]
-# The published plugins, so cargo builds their libraries for the tests that load them
-# (src/plugins/loader.rs, together.rs), and one made for those tests.
-corvus_plugin_probe = { path = "src/api/probe" }
-corvus_plugin_vibration = { path = "plugins/vibration" }
-corvus_plugin_tak = { path = "plugins/tak" }
-corvus_plugin_nuttx_console = { path = "plugins/nuttx-console" }
-corvus_plugin_trajectory_viewer = { path = "plugins/trajectory-viewer" }
-corvus_plugin_ai_chat = { path = "plugins/ai-chat" }
-corvus_plugin_remote_id_check = { path = "plugins/remote-id-check" }
-corvus_plugin_schwalby = { path = "plugins/schwalby" }
-corvus_plugin_map_entities = { path = "plugins/map-entities" }
 
 [build-dependencies]
-# build.rs lists the plugin crates, and reads their Cargo.toml for it.
+# build.rs lists the plugins, from their plugin.json and Cargo.toml.
 toml = "0.8"
+corvus_package = { path = "src/package" }

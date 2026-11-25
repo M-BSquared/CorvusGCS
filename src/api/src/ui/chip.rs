@@ -3,7 +3,7 @@
 //! `.calib-prep-item`). Drawn at a position and measured by the same code, so
 //! a row of them can be laid out before it is painted.
 
-use eframe::egui::{self, Color32, Pos2, Rect, Vec2};
+use egui::{self, Color32, Pos2, Rect, Vec2};
 
 use crate::ui::card::{self, Look};
 

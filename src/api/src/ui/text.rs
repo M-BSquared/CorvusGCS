@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use eframe::egui::{self, Color32, Galley, Pos2};
+use egui::{self, Color32, Galley, Pos2};
 
 use crate::ui::style::{self, Weight};
 

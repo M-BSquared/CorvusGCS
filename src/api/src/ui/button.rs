@@ -3,7 +3,7 @@
 use crate::ui::tip::HoverTr;
 use std::sync::Arc;
 
-use eframe::egui::{self, Color32, Galley, Pos2, Rect, Stroke, Vec2};
+use egui::{self, Color32, Galley, Pos2, Rect, Stroke, Vec2};
 
 use crate::ui::icons;
 use crate::ui::style::{self, Weight};

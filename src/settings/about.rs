@@ -397,7 +397,7 @@ fn plugin_row(ui: &mut egui::Ui, f: &mut Form, p: &Value, first: bool) -> bool {
     pressed
 }
 
-const STORE_INFO: &str = "Install what you need. A plugin comes from its own repository on GitHub over HTTPS, from the plugin folder beside the program, or from a file, and is checked before it is installed. A new plugin starts at once; an update or a removal takes effect the next time Corvus GCS starts. Corvus GCS never needs the network to fly.";
+const STORE_INFO: &str = "Install what you need. A plugin comes from its own repository on GitHub over HTTPS, from the plugin folder beside the program, or from a file, and is checked before it is installed. Under each one stands what it may do, and it can do nothing else. A new plugin starts at once; an update or a removal takes effect the next time Corvus GCS starts. Corvus GCS never needs the network to fly.";
 
 const PLUGIN_FILE: &str = "Install a plugin from a file";
 
@@ -420,6 +420,7 @@ impl SettingsPage {
             .filter(|r| r.update_available())
             .map(|r| r.id.clone())
             .collect();
+        let waiting = registry.store.waiting_for_download();
         let busy = registry.store.busy();
         let problem = registry.store.problem().map(str::to_string);
         let loading = registry.store.loading();
@@ -448,6 +449,7 @@ impl SettingsPage {
                         doing: doing[i],
                         looking: loading,
                         busy,
+                        waiting: row.installed.is_none() && waiting.contains(&row.id),
                     };
                     if let Some(install) = store_row(ui, f, row, &now, i == 0) {
                         act = Some((install, row.id.clone()));
@@ -500,7 +502,7 @@ impl SettingsPage {
         if file {
             let filter = crate::ui::filepicker::Filter {
                 name: "Corvus plugin",
-                extensions: &[corvus_package::library_extension()],
+                extensions: &[corvus_package::EXTENSION],
             };
             if let Some(path) = crate::ui::filepicker::pick_file(PLUGIN_FILE, Some(filter), None) {
                 registry.store.install_file(path);
@@ -519,9 +521,24 @@ impl SettingsPage {
     }
 }
 
+/// What the version on offer may do, in words, and what of that an update adds.
+fn permissions_line(row: &crate::plugins::store::Row) -> Option<String> {
+    use crate::plugins::wasm::permissions::says;
+    let new = row.new_permissions();
+    let (head, names): (&str, Vec<&str>) = if row.update_available() && !new.is_empty() {
+        ("New with this update:", new)
+    } else if row.permissions.is_empty() {
+        return None;
+    } else {
+        ("May:", row.permissions.iter().map(String::as_str).collect())
+    };
+    let list: Vec<String> = names.into_iter().map(says).collect();
+    Some(format!("{} {}", crate::i18n::tr(head), list.join(" \u{b7} ")))
+}
+
 /// What is going on with a plugin of the store.
 struct Now<'a> {
-    /// The checksum of the library it runs from.
+    /// The checksum of the module it runs from.
     running: Option<&'a str>,
     /// Why the installed one did not load.
     refused: Option<&'a str>,
@@ -530,6 +547,8 @@ struct Now<'a> {
     /// Where it can be had is still being looked up.
     looking: bool,
     busy: bool,
+    /// Asked for and not downloaded yet.
+    waiting: bool,
 }
 
 /// One plugin of the store. `Some(true)` when Install or Update was pressed, `Some(false)` for Remove.
@@ -554,6 +573,7 @@ fn store_row(
             Some((From::Beside, _)) => format!("{} \u{b7} on this computer", row.version),
             Some((From::Release, _)) => row.version.clone(),
             None if now.looking => "looking\u{2026}".to_string(),
+            None if now.waiting => "waiting for a download".to_string(),
             None => "not available".to_string(),
         },
         (Some(m), _) if row.update_available() && m.version != row.version => {
@@ -579,6 +599,9 @@ fn store_row(
     }
     if row.installed.is_some() {
         buttons.push((false, Button::new("Remove", Variant::Secondary).enabled(!busy)));
+    } else if now.waiting && now.doing.is_none() {
+        // Takes it off the list of what is downloaded later.
+        buttons.push((false, Button::new("Cancel", Variant::Secondary).enabled(!busy)));
     }
     let head_h = buttons.first().map_or(28.0, |(_, b)| b.height()).max(28.0);
     let bw: f32 = buttons.iter().map(|(_, b)| b.width(ui) + 8.0).sum();
@@ -603,17 +626,20 @@ fn store_row(
         x += w + 8.0;
     }
     let mut y = top + head_h;
-    let why = row
-        .installed
-        .as_ref()
-        .and(now.refused)
-        .map(|w| format!("Not loaded: {w}."));
-    for (i, text) in [Some(row.description.as_str()).filter(|d| !d.is_empty()), why.as_deref()]
+    let why = match (&row.installed, now.refused, &row.why_not) {
+        (Some(_), Some(w), _) => Some(format!("Not loaded: {w}.")),
+        (None, _, Some(w)) => Some(format!("Not available: {w}.")),
+        _ => None,
+    };
+    let may = permissions_line(row);
+    let description = Some(row.description.as_str()).filter(|d| !d.is_empty());
+    // What it may do is never cut short.
+    for (i, (text, lines)) in [(description, 2), (may.as_deref(), 12), (why.as_deref(), 3)]
         .into_iter()
-        .flatten()
+        .filter_map(|(text, lines)| Some((text?, lines)))
         .enumerate()
     {
-        y += 4.0 + form::desc_info_at(ui, f.x, y + 4.0, f.w, text, 2, ("storedesc", &row.id, i));
+        y += 4.0 + form::desc_info_at(ui, f.x, y + 4.0, f.w, text, lines, ("storedesc", &row.id, i));
     }
     if let Some(Doing::Installing(step)) = now.doing {
         y += 10.0;

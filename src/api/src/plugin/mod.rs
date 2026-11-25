@@ -8,16 +8,17 @@
 //! on nothing inside the program; how to write one is in `src/README.md`.
 
 pub mod bus;
-pub mod dynamic;
 pub mod options;
 pub mod shapes;
 pub mod ssh;
 
-use eframe::egui;
+use egui;
 use serde_json::{json, Map, Value};
 
 use crate::net::bg::Pending;
-use crate::net::http::{self, Server};
+#[cfg(not(target_family = "wasm"))]
+use crate::net::http;
+use crate::net::http::Server;
 use crate::net::stream::Stream;
 use bus::Bus;
 use options::{OptionSpec, OPTIONS_KEY};
@@ -195,6 +196,12 @@ impl<'a> Host<'a> {
 }
 
 impl Host<'_> {
+    /// What the plugins publish and which of them run.
+    #[doc(hidden)]
+    pub fn bus(&self) -> &Bus {
+        self.bus
+    }
+
     /// `api.map`: shapes on the Home map, under this plugin's own keys.
     pub fn map(&mut self) -> &mut ShapeSet {
         self.shapes
@@ -237,19 +244,32 @@ impl Host<'_> {
             merged.insert(OPTIONS_KEY.into(), o);
         }
         *self.saved = Value::Object(merged);
+        self.send_settings(own, replace)
+    }
+
+    #[cfg(not(target_family = "wasm"))]
+    fn send_settings(&self, own: Map<String, Value>, replace: bool) -> Reply {
         self.post(
             "/api/plugins/settings",
             json!({"id": self.id, "settings": own, "replace": replace}),
         )
     }
 
+    /// The program puts in whose settings they are.
+    #[cfg(target_family = "wasm")]
+    fn send_settings(&self, own: Map<String, Value>, replace: bool) -> Reply {
+        crate::guest::mail::save(Value::Object(own), replace)
+    }
+
     /// A GET on the backend, off the interface thread.
+    #[cfg(not(target_family = "wasm"))]
     pub fn get(&self, path: &str) -> Reply {
         let (server, path) = (self.server.clone(), path.to_string());
         Pending::spawn(self.ctx, move || http::get_json(&server, &path))
     }
 
     /// A POST that answers with its body; an HTTP error is the error text.
+    #[cfg(not(target_family = "wasm"))]
     pub fn post(&self, path: &str, body: Value) -> Reply {
         let (server, path) = (self.server.clone(), path.to_string());
         Pending::spawn(self.ctx, move || http::post_json(&server, &path, &body))
@@ -258,16 +278,18 @@ impl Host<'_> {
     /// `postJson`: a POST whose body is the answer even when it says
     /// `ok: false`, for endpoints whose failure detail is worth showing. The
     /// status comes with it.
+    #[cfg(not(target_family = "wasm"))]
     pub fn post_any(&self, path: &str, body: Value) -> Pending<Result<(u16, Value), String>> {
         let (server, path) = (self.server.clone(), path.to_string());
         Pending::spawn(self.ctx, move || http::post_json_any(&server, &path, &body))
     }
 
     /// `Corvus.events.subscribe`: follows push topics of the backend (comma
-    /// separated, for example "shell" or "console,params") on a thread of its
-    /// own until the returned stream is dropped. `on_event` gets the topic and
-    /// its data; a dropped connection arrives as the topic "error" and is
-    /// opened again by itself. The interface is repainted after every event.
+    /// separated, for example "shell" or "console,params") until the returned
+    /// stream is dropped. `on_event` gets the topic and its data; a dropped
+    /// connection arrives as the topic "error" and is opened again by itself.
+    /// The interface is repainted after every event.
+    #[cfg(not(target_family = "wasm"))]
     pub fn events(&self, topics: &str, mut on_event: impl FnMut(&str, &Value) + Send + 'static) -> Stream {
         let ctx = self.ctx.clone();
         let path = format!("/api/events?topics={}", http::encode_component(topics));
@@ -276,6 +298,26 @@ impl Host<'_> {
             on_event(&ev.name, &data);
             ctx.request_repaint();
         })
+    }
+
+    #[cfg(target_family = "wasm")]
+    pub fn get(&self, path: &str) -> Reply {
+        crate::guest::mail::request("GET", path, None)
+    }
+
+    #[cfg(target_family = "wasm")]
+    pub fn post(&self, path: &str, body: Value) -> Reply {
+        crate::guest::mail::request("POST", path, Some(body))
+    }
+
+    #[cfg(target_family = "wasm")]
+    pub fn post_any(&self, path: &str, body: Value) -> Pending<Result<(u16, Value), String>> {
+        crate::guest::mail::request_any("POST", path, Some(body))
+    }
+
+    #[cfg(target_family = "wasm")]
+    pub fn events(&self, topics: &str, on_event: impl FnMut(&str, &Value) + Send + 'static) -> Stream {
+        Stream::subscribe(topics, on_event)
     }
 
     /// `notification`: a toast and a line on the board, both marked with the
@@ -321,11 +363,21 @@ impl Host<'_> {
     /// It stays until it is published again or retracted, and vanishes with the
     /// plugin. False when it is too large (1 MiB).
     pub fn publish(&mut self, name: &str, value: Value) -> bool {
+        #[cfg(target_family = "wasm")]
+        crate::guest::mail::push(crate::wire::Effect::Publish(crate::wire::Publish {
+            name: name.to_string(),
+            value: value.clone(),
+        }));
         self.bus.publish(self.id, name, value)
     }
 
     /// Takes back what `publish` put under `name`.
     pub fn retract(&mut self, name: &str) {
+        #[cfg(target_family = "wasm")]
+        crate::guest::mail::push(crate::wire::Effect::Retract(crate::wire::Publish {
+            name: name.to_string(),
+            value: Value::Null,
+        }));
         self.bus.retract(self.id, name);
     }
 
@@ -348,7 +400,20 @@ impl Host<'_> {
     /// Drops `msg` into the mailbox of plugin `to`, which gets it in
     /// `Plugin::message` on the next frame. False when it is not running.
     pub fn send(&mut self, to: &str, msg: Value) -> bool {
+        #[cfg(not(target_family = "wasm"))]
         let sent = self.bus.send(self.id, to, msg);
+        // The other plugins are on the program's side.
+        #[cfg(target_family = "wasm")]
+        let sent = {
+            let there = to != self.id && self.bus.is_live(to);
+            if there {
+                crate::guest::mail::push(crate::wire::Effect::Send(crate::wire::SendTo {
+                    to: to.to_string(),
+                    msg,
+                }));
+            }
+            there
+        };
         if sent {
             self.ctx.request_repaint();
         }

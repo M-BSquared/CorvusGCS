@@ -109,6 +109,35 @@ impl Bus {
         true
     }
 
+    /// In a plugin: the bus as the program says it is. A topic that is not listed is gone, and
+    /// one listed without a value is as it was.
+    #[cfg(target_family = "wasm")]
+    pub(crate) fn mirror(&mut self, live: &[String], topics: Vec<(String, u64, Option<Value>)>) {
+        self.live = live.iter().cloned().collect();
+        let listed: HashSet<&str> = topics.iter().map(|t| t.0.as_str()).collect();
+        self.topics.retain(|k, _| listed.contains(k.as_str()));
+        for (key, rev, value) in topics {
+            if let Some(value) = value {
+                self.topics.insert(key, Topic { rev, value });
+            }
+        }
+    }
+
+    /// Every topic that can be read, with its revision.
+    pub fn topics(&self) -> impl Iterator<Item = (&str, u64, &Value)> {
+        self.topics
+            .iter()
+            .filter(|(k, _)| self.read(k).is_some())
+            .map(|(k, t)| (k.as_str(), t.rev, &t.value))
+    }
+
+    /// The plugins that run, sorted.
+    pub fn live(&self) -> Vec<String> {
+        let mut out: Vec<String> = self.live.iter().cloned().collect();
+        out.sort();
+        out
+    }
+
     /// The messages waiting for `id`, oldest first.
     pub fn take_mail(&mut self, id: &str) -> Vec<(String, Value)> {
         self.mail.remove(id).unwrap_or_default()

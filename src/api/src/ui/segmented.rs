@@ -3,7 +3,7 @@
 //! this one control: segments as wide as their content, or stretched to a
 //! given width with the content centred.
 
-use eframe::egui::{self, Pos2, Rect, Vec2};
+use egui::{self, Pos2, Rect, Vec2};
 
 use crate::ui::card::{self, Look};
 use crate::ui::icons;

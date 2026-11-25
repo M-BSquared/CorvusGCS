@@ -4,7 +4,7 @@
 //! caller's (`home::flight::fit_bar`); this paints one button.
 
 use crate::ui::tip::HoverTr;
-use eframe::egui::{self, Color32, Rect, Stroke, Vec2};
+use egui::{self, Color32, Rect, Stroke, Vec2};
 
 use crate::ui::icons;
 use crate::ui::style::{self, Weight};

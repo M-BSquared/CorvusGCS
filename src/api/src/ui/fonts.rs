@@ -8,7 +8,7 @@
 
 use std::sync::Arc;
 
-use eframe::egui::{self, epaint::text::VariationCoords, FontData, FontDefinitions, FontFamily, FontTweak};
+use egui::{self, epaint::text::VariationCoords, FontData, FontDefinitions, FontFamily, FontTweak};
 
 static INTER_LATIN: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/Inter-latin.ttf"));
 static INTER_LATIN_EXT: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/Inter-latin-ext.ttf"));

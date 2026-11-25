@@ -7,7 +7,7 @@
 //! * `text.rs`: `wrapped`, `wrapped_weight`, `dot`
 //! * `field.rs`: `text_field`, `text_field_padded` (`.field-input`)
 
-use eframe::egui;
+use egui;
 
 pub use crate::ui::button::{icon_btn, Button, Variant};
 pub use crate::ui::field::{text_field, text_field_padded};

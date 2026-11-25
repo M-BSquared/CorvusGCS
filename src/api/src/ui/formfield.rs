@@ -4,7 +4,7 @@
 //! plain form (RTK, the telemetry radio, Remote ID, Video) are built from
 //! these, so a caption, a box or a hint is the same on each of them.
 
-use eframe::egui::{self, Pos2, Rect, Vec2};
+use egui::{self, Pos2, Rect, Vec2};
 
 use crate::ui::field::TextField;
 use crate::ui::kit::{self, Choice};

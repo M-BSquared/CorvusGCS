@@ -6,7 +6,7 @@
 //! projection, so the flat map and the tilted 3D map draw the same set and
 //! both answer the pointer for markers and buttons.
 
-use eframe::egui::{self, Color32, Pos2, Rect, Shape as Paint, Stroke, StrokeKind, Vec2};
+use egui::{self, Color32, Pos2, Rect, Shape as Paint, Stroke, StrokeKind, Vec2};
 
 use crate::ui::style::{self, Weight};
 
@@ -379,6 +379,45 @@ impl ShapeSet {
         )
     }
 
+    /// A marker whose glyph arrives as path data, from a plugin (`bridge::shape_into`), held to what
+    /// [`marker`](Self::marker) allows. The paths end up in an SVG document, so anything that is not
+    /// path data is left out: markup in one could make the renderer read a file.
+    pub(crate) fn restore_marker(&mut self, key: &str, kind: Kind, style: Style) -> bool {
+        let Kind::Marker {
+            at,
+            mut icon,
+            text,
+            title,
+            size,
+            selected,
+            draggable,
+            clickable,
+        } = kind
+        else {
+            return false;
+        };
+        if clean_coords(&[at]).is_empty() {
+            return false;
+        }
+        icon.retain(|p| is_path_data(p));
+        let size = if size.is_finite() {
+            size.round().clamp(10.0, 48.0)
+        } else {
+            28.0
+        };
+        let kind = Kind::Marker {
+            at,
+            icon,
+            text: plain(&text),
+            title: title.chars().take(TEXT_MAX).collect(),
+            size,
+            selected,
+            draggable,
+            clickable,
+        };
+        self.put(key, kind, style, 0.0, true)
+    }
+
     pub fn remove(&mut self, key: &str) -> bool {
         let before = self.shapes.len();
         self.shapes.retain(|s| s.key != key);
@@ -434,6 +473,14 @@ pub const ICONS: &[(&str, &str, &[&str])] = &[
     ("water", "Water", &["M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z"]),
     ("plane", "Plane", &["M17.8 19.2L16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"]),
 ];
+
+/// Whether `text` is the `d` of an SVG path and nothing else.
+pub fn is_path_data(text: &str) -> bool {
+    text.len() <= 2048
+        && text
+            .chars()
+            .all(|c| c.is_ascii_digit() || " .,-+MmLlHhVvCcSsQqTtAaZzEe".contains(c))
+}
 
 /// The path strings of a named symbol.
 pub fn icon_paths(name: &str) -> Option<&'static [&'static str]> {

@@ -1,6 +1,6 @@
 //! The bytes a key sends to a shell, as a terminal does it.
 
-use eframe::egui;
+use egui;
 
 /// The bytes a key sends: `None` for one that sends nothing.
 pub fn key_bytes(key: egui::Key, mods: egui::Modifiers, app_cursor: bool) -> Option<String> {

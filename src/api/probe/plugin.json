@@ -1,0 +1,11 @@
+{
+  "id": "probe",
+  "name": "Probe",
+  "description": "A plugin for the tests",
+  "icon": "activity",
+  "version": "1.0.0",
+  "order": 99,
+  "can_tab": false,
+  "min_corvus": "2026.11.94",
+  "permissions": ["settings.read", "files", "ai.tools"]
+}

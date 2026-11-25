@@ -4,7 +4,7 @@
 //! tick labels, 10 px axis titles, auto ranged axes. Several lines, one of
 //! which may be dotted (a setpoint beside the response).
 
-use eframe::egui::{self, epaint::TextShape, Color32, Pos2, Rect, Shape, Stroke, Vec2};
+use egui::{self, epaint::TextShape, Color32, Pos2, Rect, Shape, Stroke, Vec2};
 
 use crate::ui::style;
 

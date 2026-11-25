@@ -7,7 +7,7 @@
 //! page reads top to bottom the way its markup does.
 
 use crate::ui::tip::HoverTr;
-use eframe::egui::{self, Color32, Pos2, Rect, Stroke, Vec2};
+use egui::{self, Color32, Pos2, Rect, Stroke, Vec2};
 
 use crate::ui::card::{self, Look};
 use crate::ui::formfield;

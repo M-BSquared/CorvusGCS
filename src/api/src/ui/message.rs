@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use eframe::egui::{self, Color32, Galley, Painter, Pos2, Rect, Stroke, Vec2};
+use egui::{self, Color32, Galley, Painter, Pos2, Rect, Stroke, Vec2};
 
 use crate::ui::card::{self, Look};
 use crate::ui::icons;

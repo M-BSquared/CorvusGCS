@@ -4,12 +4,11 @@ version = "0.0.0"
 edition = "2021"
 rust-version = "1.99"
 publish = false
-description = "A plugin library that does what the tests of the loader ask it to; never shipped"
+description = "A plugin that does what the tests of the plugin runtime ask it to; never shipped"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 corvus_api = { path = ".." }
-eframe = { workspace = true }
 serde_json = { workspace = true }

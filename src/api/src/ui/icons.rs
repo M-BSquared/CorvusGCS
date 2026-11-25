@@ -3,7 +3,7 @@
 //! `currentColor` tints them in CSS. Named as the web names them
 //! (`data-lucide="house"`).
 
-use eframe::egui::{self, Color32, Rect};
+use egui::{self, Color32, Rect};
 
 mod generated {
     include!(concat!(env!("OUT_DIR"), "/icons.rs"));

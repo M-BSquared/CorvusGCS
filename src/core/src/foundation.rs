@@ -144,8 +144,9 @@ fn api_config_update(core: &Core, req: &Request) -> Response {
 /// `ui.plugin_setup` (none counts as 0) is asked once, in the setup dialog, which plugins to download,
 /// and the answer, or Skip, stores this number. Raise it by one to ask every station again, after a
 /// change big enough that the question is worth asking twice. 2: nothing could be downloaded when
-/// 1 was asked (v2026.11.92).
-pub const PLUGIN_SETUP_REVISION: i64 = 2;
+/// 1 was asked (v2026.11.92). 3: the plugins became WebAssembly modules, so those of an earlier
+/// version, built in or native libraries, have to be downloaded once.
+pub const PLUGIN_SETUP_REVISION: i64 = 3;
 
 fn plugin_setup_pending(core: &Core) -> bool {
     let done = core

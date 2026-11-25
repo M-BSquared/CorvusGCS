@@ -1,6 +1,6 @@
 //! Polygons on the screen.
 
-use eframe::egui::Pos2;
+use egui::Pos2;
 
 /// Ear clipping: triangles that fill a simple polygon, convex or not.
 pub fn triangulate(pts: &[Pos2]) -> Vec<[usize; 3]> {
