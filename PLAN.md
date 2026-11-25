@@ -85,12 +85,15 @@ be seen live, see 1.2):
 
 Built: the runtime, protocol, permissions, store, all eight plugins and the upgrade from 2026.11.81,
 83 and 93 (`src/README.md`, "Plugins"). Seen in the real window on macOS: setup after an upgrade,
-PLUGINS cards, Vibration Monitor, typing into AI Chat. Open before the release:
+PLUGINS cards, all eight views, typing into AI Chat, Schwalby's shell shelf and its terminal window
+(inside the main window) with a local shell, and the companion dialog. `src/plugins/e2e.rs` runs each
+plugin's own work against the whole backend and a simulated PX4. Open before the release:
 
 - [ ] Run CI on Linux and Windows. Nothing of this has run there yet.
 - [ ] Check a bundle (`./build.sh`): the signed macOS app with the Cranelift JIT, and its size.
-- [ ] Look at the other plugins in the window against a vehicle or SITL (NuttX shell and terminal,
-      TAK, Schwalby with SSH, Map Entities on both maps, file dialogs), and at AI Chat with a model.
+- [ ] What the tests cannot stand in for: a real vehicle or SITL (NuttX console and terminal view),
+      Schwalby over real SSH, TAK with ATAK or a TAK server, Map Entities on both maps, the system's
+      file dialog, AI Chat with a real model, and a terminal window popped out as a window of its own.
 - [ ] Frame time with several visible plugins on a slow field laptop (measured: one, Apple Silicon).
 - [ ] Merge the plugin repositories' `wasm-plugins` branches, push `plugin.yml` to `master` only
       with the release, then run `./release.sh` in each plugin once the release is out. Keep the

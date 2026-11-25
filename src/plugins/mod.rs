@@ -14,6 +14,8 @@
 //! in one is caught here: that plugin is stopped for the session, its shapes
 //! leave the map and the operator is told, and everything else carries on.
 
+#[cfg(test)]
+mod e2e;
 pub mod layer;
 pub mod loader;
 mod preparing;

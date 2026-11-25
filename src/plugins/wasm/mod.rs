@@ -46,6 +46,20 @@ const REQUESTS_MAX: usize = 32;
 /// The most deliveries waiting for a plugin; the oldest events go first.
 const INBOX_MAX: usize = 2000;
 const STREAMS_MAX: usize = 16;
+/// What was refused to any module of this test run: `plugin: why`.
+#[cfg(test)]
+pub static REFUSED: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+/// A permission said no.
+fn refused(plugin: &str, why: &str) {
+    eprintln!("plugin {plugin}: {why}");
+    #[cfg(test)]
+    REFUSED
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .push(format!("{plugin}: {why}"));
+}
+
 const FETCHES_MAX: usize = 8;
 const FETCH_WAIT_MAX: Duration = Duration::from_secs(1800);
 const SHAPES_MAX: usize = 5000;
@@ -113,6 +127,8 @@ struct Inner {
     saves: Vec<(u64, Reply)>,
     /// Effects of a call that had no host to do them with.
     later: Vec<Effect>,
+    /// The program's window, to ask for the frame that does them.
+    window: Option<egui::Context>,
     view: view::View,
 }
 
@@ -189,6 +205,7 @@ impl WasmPlugin {
                 streams: HashMap::new(),
                 saves: Vec::new(),
                 later: Vec::new(),
+                window: None,
                 view: view::View::new(info.id),
             }),
         })
@@ -337,7 +354,18 @@ impl Inner {
         }
     }
 
+    fn keep_for_later(&mut self, effects: Vec<Effect>) {
+        if effects.is_empty() {
+            return;
+        }
+        self.later.extend(effects);
+        if let Some(window) = &self.window {
+            window.request_repaint();
+        }
+    }
+
     fn call(&mut self, id: &str, op: Op, h: &mut Host) -> Ret {
+        self.window = Some(h.ctx.clone());
         let call = wire::Call {
             env: self.told.env(h),
             deliveries: self.deliveries(),
@@ -362,7 +390,7 @@ impl Inner {
             ..wire::Call::default()
         };
         let (effects, ret) = self.exchange(call);
-        self.later.extend(effects);
+        self.keep_for_later(effects);
         ret
     }
 
@@ -372,7 +400,7 @@ impl Inner {
             .route(&ask.method, &ask.path)
             .and_then(|()| self.granted.body(&ask.path, ask.body.as_ref()));
         if let Err(why) = allowed {
-            eprintln!("{why}");
+            refused(self.view.plugin(), &why);
             push(&self.inbox, failed(ask.id, why));
             h.ctx.request_repaint();
             return;
@@ -411,6 +439,7 @@ impl Inner {
                 self.fetches.insert(ask.id, started);
             }
             Err(why) => {
+                refused(self.view.plugin(), &why);
                 push(&self.inbox, Delivery::Fetched(fetched(ask.id, Err(why))));
                 h.ctx.request_repaint();
             }
@@ -438,7 +467,7 @@ impl Inner {
         let allowed = self.granted.topics(&ask.topics);
         if allowed.is_err() || self.streams.len() >= STREAMS_MAX {
             if let Err(why) = allowed {
-                eprintln!("{why}");
+                refused(self.view.plugin(), &why);
             }
             push(
                 &self.inbox,
@@ -469,7 +498,8 @@ impl Inner {
             Effect::Notify(line) => h.notify(&line.level, &line.text),
             Effect::Console(line) => h.console(&line.text, &line.level),
             Effect::Terminal(t) => {
-                if self.granted.has(permissions::SSH) {
+                // The window shows a session over SSH or one on this computer.
+                if self.granted.has(permissions::SSH) || self.granted.has(permissions::LOCAL) {
                     h.terminal(t.session, t.reattach, t.existing_only);
                 }
             }
@@ -657,8 +687,9 @@ impl Plugin for WasmPlugin {
             now: h.now,
             op: Some(Maybe::Known(Op::McpTools(wire::Empty {}))),
         };
+        inner.window = Some(h.ctx.clone());
         let (effects, ret) = inner.exchange(call);
-        inner.later.extend(effects);
+        inner.keep_for_later(effects);
         match ret {
             Ret::McpTools(t) => t.tools.into_iter().map(bridge::tool_from).collect(),
             _ => Vec::new(),

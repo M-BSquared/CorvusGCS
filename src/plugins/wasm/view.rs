@@ -3,7 +3,8 @@
 //! renderer.
 //!
 //! The module gets the pointer only where its view is not covered by something
-//! of the program, and the keys only after it was clicked. While a text field
+//! of the program, and the keys only once it was opened or pressed, until the
+//! operator presses elsewhere. While a text field
 //! of its has the keyboard, a stand-in widget holds the program's focus: the
 //! keys that fly the vehicle are quiet then, as they are for every text field.
 
@@ -30,8 +31,13 @@ pub struct View {
     /// The module's popups of the last frame, which lie over everything.
     overlays: Vec<Rect>,
     wants_keyboard: bool,
-    /// The last press was on the module's.
+    /// The keys are the module's business: the operator's last press was on it, or it has just
+    /// been opened and has not been pressed beside.
     keyboard: bool,
+    /// The view is about to be shown for the first time since it was closed.
+    fresh: bool,
+    /// A press beside the module is being told to it, so a field of its lets go.
+    leaving: bool,
     /// A button pressed on the module is still down: it keeps the pointer.
     captured: bool,
     /// The module believes the pointer is over it.
@@ -49,11 +55,17 @@ impl View {
             overlays: Vec::new(),
             wants_keyboard: false,
             keyboard: false,
+            fresh: true,
+            leaving: false,
             captured: false,
             pointer_in: false,
             over: false,
             acted: false,
         }
+    }
+
+    pub fn plugin(&self) -> &'static str {
+        self.plugin
     }
 
     fn id(&self) -> Id {
@@ -71,6 +83,8 @@ impl View {
         self.overlays.clear();
         self.wants_keyboard = false;
         self.keyboard = false;
+        self.fresh = true;
+        self.leaving = false;
         self.captured = false;
         self.pointer_in = false;
     }
@@ -80,6 +94,11 @@ impl View {
         let ctx = ui.ctx().clone();
         let id = self.id();
         let clip = ui.clip_rect();
+        // Opening a view is meant for it: a field it puts the cursor into by itself gets the
+        // keys, until the operator presses somewhere else.
+        if std::mem::take(&mut self.fresh) {
+            self.keyboard = true;
+        }
         let stand_in = ui.interact(clip, id, Sense::click_and_drag());
         let mut over = stand_in.contains_pointer();
         for (n, rect) in self.overlays.iter().enumerate() {
@@ -119,11 +138,14 @@ impl View {
                 egui::Event::PointerButton { pressed: true, .. } => {
                     self.keyboard = over;
                     self.captured |= over;
+                    // A press elsewhere takes the cursor out of a field of the module's, which
+                    // may only then take what was typed into it.
+                    self.leaving = !over && self.wants_keyboard;
                     // A press beside a popup closes it.
-                    over || popups
+                    over || popups || self.leaving
                 }
                 egui::Event::PointerButton { pressed: false, .. } => {
-                    let mine = self.captured || over || popups;
+                    let mine = self.captured || over || popups || std::mem::take(&mut self.leaving);
                     self.acted |= self.captured || over;
                     mine
                 }

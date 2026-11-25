@@ -13,7 +13,9 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use corvus_api::ui::filepicker::{self, Filter};
+use corvus_api::ui::filepicker;
+#[cfg(not(test))]
+use corvus_api::ui::filepicker::Filter;
 use corvus_api::wire;
 use wasmtime::{
     Caller, Config, Engine, Extern, ExternType, Linker, Memory, Module, Store, StoreLimits, StoreLimitsBuilder, Trap,
@@ -86,6 +88,23 @@ impl Drop for Sandbox {
 /// How the system's file dialog is asked; a test answers by itself.
 pub type Picker = Box<dyn FnMut(&wire::PickPath) -> Option<PathBuf>>;
 
+/// The folder the dialog opens in, from the value a plugin handed on: its `~` is the
+/// operator's home, and a file stands for its folder.
+fn start_of(ask: &wire::PickPath) -> Option<PathBuf> {
+    ask.start.as_deref().and_then(filepicker::start_folder)
+}
+
+/// A test never opens a dialog: it names the file that is "picked", by plugin.
+#[cfg(test)]
+pub static TEST_PICKS: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
+
+#[cfg(test)]
+fn system_picker(ask: &wire::PickPath) -> Option<PathBuf> {
+    let _ = start_of(ask);
+    TEST_PICKS.lock().unwrap_or_else(|p| p.into_inner()).pop()
+}
+
+#[cfg(not(test))]
 fn system_picker(ask: &wire::PickPath) -> Option<PathBuf> {
     let extensions: Vec<&str> = ask
         .filter
@@ -96,7 +115,7 @@ fn system_picker(ask: &wire::PickPath) -> Option<PathBuf> {
         name,
         extensions: &extensions,
     });
-    let start = ask.start.as_ref().map(PathBuf::from);
+    let start = start_of(ask);
     match ask.mode.as_str() {
         "folder" => filepicker::pick_folder(&ask.title, start.as_deref()),
         "save" => filepicker::save_file(&ask.title, &ask.name, filter, start.as_deref()),
@@ -518,5 +537,28 @@ impl Instance {
             Some(trap) => format!("the plugin crashed: {trap}"),
             None => format!("the plugin crashed: {error}"),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_dialog_a_plugin_asks_for_starts_where_its_value_is() {
+        let ask = |start: Option<&str>| {
+            start_of(&wire::PickPath {
+                start: start.map(str::to_string),
+                ..wire::PickPath::default()
+            })
+        };
+        let tmp = std::env::temp_dir();
+        let file = tmp.join("corvus-no-such-key");
+        assert_eq!(ask(Some(&file.to_string_lossy())), Some(tmp));
+        if let Some(home) = std::env::var_os("HOME") {
+            assert_eq!(ask(Some("~/no-such-folder-here")), Some(PathBuf::from(home)));
+        }
+        assert_eq!(ask(Some("  ")), None);
+        assert_eq!(ask(None), None);
     }
 }

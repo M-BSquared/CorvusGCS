@@ -1,5 +1,8 @@
 //! One plugin and everything it is handed for a call.
 
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
 use serde_json::{json, Map, Value};
 
 use egui::{self, LayerId, Order};
@@ -45,15 +48,41 @@ impl Surroundings {
     }
 }
 
+/// The soonest a plugin asked its egui for another frame since the last look. Outside a pass
+/// that request moves nothing by itself: the window is the program's, so it is told.
+#[derive(Clone, Default)]
+struct Wanted(Arc<Mutex<Option<Duration>>>);
+
+impl Wanted {
+    fn take(&self) -> Option<Duration> {
+        self.0.lock().unwrap_or_else(|p| p.into_inner()).take()
+    }
+
+    /// Passes on what was asked for.
+    fn pass_on(&self) {
+        if let Some(after) = self.take() {
+            super::mail::push(Effect::Repaint(wire::Repaint {
+                after_ms: u64::try_from(after.as_millis()).unwrap_or(u64::MAX),
+            }));
+        }
+    }
+}
+
 pub(super) struct Runtime {
     plugin: Box<dyn Plugin>,
+    wanted: Wanted,
     lang: &'static [(&'static str, &'static str)],
     s: Surroundings,
     max_texture_side: u32,
 }
 
-fn new_context() -> egui::Context {
+fn new_context(wanted: &Wanted) -> egui::Context {
     let ctx = egui::Context::default();
+    let asked = wanted.0.clone();
+    ctx.set_repaint_observer(move |info| {
+        let mut soonest = asked.lock().unwrap_or_else(|p| p.into_inner());
+        *soonest = Some(soonest.map_or(info.delay, |s| s.min(info.delay)));
+    });
     egui_extras::install_image_loaders(&ctx);
     fonts::install(&ctx);
     style::apply(&ctx);
@@ -64,10 +93,11 @@ impl Runtime {
     pub(super) fn new(plugin: Box<dyn Plugin>, lang: &'static [(&'static str, &'static str)]) -> Runtime {
         crate::i18n::register_plugin_files(lang);
         let info = plugin.info();
+        let wanted = Wanted::default();
         Runtime {
             s: Surroundings {
                 info,
-                ctx: new_context(),
+                ctx: new_context(&wanted),
                 server: Server::local(0),
                 state: json!({}),
                 saved: json!({}),
@@ -80,6 +110,7 @@ impl Runtime {
             plugin,
             lang,
             max_texture_side: 2048,
+            wanted,
         }
     }
 
@@ -115,6 +146,8 @@ impl Runtime {
     pub(super) fn handle(&mut self, call: wire::Call) -> wire::Reply {
         self.s.now = call.now;
         self.take_env(call.env);
+        // What setting up this side asked for is nobody's wish.
+        self.wanted.take();
         for delivery in wire::known(call.deliveries) {
             super::mail::deliver(delivery);
         }
@@ -122,6 +155,7 @@ impl Runtime {
             Some(op) => self.run(op),
             None => Ret::Unsupported(wire::Empty {}),
         };
+        self.wanted.pass_on();
         self.flush();
         wire::Reply {
             effects: super::mail::take().into_iter().map(Maybe::Known).collect(),
@@ -149,7 +183,13 @@ impl Runtime {
             Op::Open(_) => plugin.open(&mut s.host()),
             Op::Close(_) => plugin.close(&mut s.host()),
             Op::OptionsChanged(_) => plugin.options_changed(&mut s.host()),
-            Op::Show(input) => return Ret::Show(Box::new(self.show(*input))),
+            Op::Show(input) => {
+                // A frame says itself when the next is wanted.
+                self.wanted.pass_on();
+                let out = self.show(*input);
+                self.wanted.take();
+                return Ret::Show(Box::new(out));
+            }
             Op::MapEvent(e) => match bridge::map_event_from(e) {
                 Some(e) => plugin.map_event(e, &mut s.host()),
                 None => return Ret::Unsupported(wire::Empty {}),
@@ -233,7 +273,7 @@ impl Runtime {
     /// One frame of the view in this side's egui, as triangles.
     fn show(&mut self, input: wire::ShowInput) -> wire::ShowOutput {
         if input.textures_lost {
-            self.s.ctx = new_context();
+            self.s.ctx = new_context(&self.wanted);
         }
         let screen = bridge::rect_from(input.screen);
         let area = bridge::rect_from(input.area);

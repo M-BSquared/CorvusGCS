@@ -374,7 +374,11 @@ go in as MessagePack, effects come out.
   pointer and keys that are its business and gets back triangles and textures, which it paints.
   Popups, menus and dialogs come back apart from the view and are painted over the window. While a
   text field of a plugin has the keyboard, a stand-in widget holds the program's focus, so the keys
-  that fly the vehicle stay quiet. The frosted glass is a marker in the paint list that the program
+  that fly the vehicle stay quiet. A view that was just opened gets the
+  keys, so a plugin can put the cursor into its own field, until a press elsewhere; that press is
+  also passed to the module, so the field lets go and a value kept on leaving it is saved. A
+  repaint a module asks for outside its view (a timer while it is closed) reaches the window too:
+  the guest watches its own egui for it. The frosted glass is a marker in the paint list that the program
   draws with its own shader. A visible plugin takes about a fifth of a millisecond a frame on an
   Apple Silicon laptop (measured on the Vibration Monitor).
 * **The sandbox** (`wasm/runtime.rs`, wasmtime with Cranelift). No file system, no sockets, no
@@ -541,6 +545,12 @@ for markers, buttons and `pick_point`.
 Rules go in a `model.rs` beside the plugin, with no `egui` in it, and their
 tests quote what the web helper answered (run the plugin's `.js` under `node`
 with a stub `window.Corvus` and print the result, as the existing tests did).
+
+`src/plugins/e2e.rs` builds the eight plugins of this repository and has each do its work against
+the whole backend and a simulated PX4 over real UDP (the AI Chat against a scripted model). It also
+goes the whole way of MCP: a client at `/mcp`, the server, the window, a plugin's tool and back,
+and the AI Chat using a tool of another plugin once the operator allows it. It fails if one of the
+eight is refused a request. A new plugin goes on its list.
 
 ### What is not ported
 

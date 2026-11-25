@@ -112,6 +112,7 @@ pub fn expand_home(path: &str) -> String {
 /// The folder a dialog should open in for the path now held: the folder
 /// itself, or the folder of a file, or the nearest one that exists above a
 /// path that is not there yet. Nothing for an empty or unusable value.
+#[cfg(not(target_family = "wasm"))]
 pub fn start_folder(value: &str) -> Option<PathBuf> {
     let value = value.trim().trim_matches('"');
     if value.is_empty() {
@@ -125,6 +126,13 @@ pub fn start_folder(value: &str) -> Option<PathBuf> {
         .skip(1)
         .find(|a| !a.as_os_str().is_empty() && a.is_dir())
         .map(Path::to_path_buf)
+}
+
+/// A plugin sees no folders: it hands the value on as it is, and the program, which shows the
+/// dialog, works out the folder ([`system_start`]).
+#[cfg(target_family = "wasm")]
+pub fn start_folder(value: &str) -> Option<PathBuf> {
+    Some(value.trim()).filter(|v| !v.is_empty()).map(PathBuf::from)
 }
 
 #[cfg(test)]

@@ -125,9 +125,19 @@ fn a_plugin_reads_the_file_the_operator_picked() {
     std::fs::write(&file, b"waypoints").unwrap();
     let mut rig = probe();
     let chosen = file.clone();
-    rig.plugin.set_picker(Box::new(move |_| Some(chosen.clone())));
-    rig.tell("pick", "");
+    let asked = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let into = asked.clone();
+    rig.plugin.set_picker(Box::new(move |ask| {
+        *into.lock().unwrap() = ask.start.clone();
+        Some(chosen.clone())
+    }));
+    rig.tell("pick", "~/.ssh/id_ed25519");
     assert_eq!(rig.await_published("pick"), json!({"ok": "waypoints"}));
+    assert_eq!(
+        asked.lock().unwrap().as_deref(),
+        Some("~/.ssh/id_ed25519"),
+        "the value is handed on"
+    );
     std::fs::remove_file(file).unwrap();
 }
 
@@ -245,4 +255,88 @@ fn a_plugin_built_with_the_first_protocol_still_works() {
     rig.tell("draw", "");
     assert_eq!(rig.shapes.shapes().len(), 2);
     assert_eq!(rig.with(|p, h| p.mcp_tools(h)).len(), 1);
+}
+
+/// Every delay the program's window was asked to draw again after.
+fn frames_asked_for(rig: &Rig) -> std::sync::Arc<std::sync::Mutex<Vec<std::time::Duration>>> {
+    let asked = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let into = asked.clone();
+    rig.ctx
+        .set_repaint_observer(move |info| into.lock().unwrap().push(info.delay));
+    asked
+}
+
+#[test]
+fn a_timer_a_plugin_sets_while_it_is_not_shown_wakes_the_window() {
+    let mut rig = probe();
+    rig.tick();
+    let asked = frames_asked_for(&rig);
+    let later = std::time::Duration::from_millis(4321);
+    rig.tell("wake", "4321");
+    assert!(asked.lock().unwrap().contains(&later), "{:?}", asked.lock().unwrap());
+    // And again and again from its ticks, though no frame of its own is ever drawn.
+    rig.tell("every", "1234");
+    for _ in 0..3 {
+        asked.lock().unwrap().clear();
+        rig.tick();
+        assert!(asked.lock().unwrap().contains(&std::time::Duration::from_millis(1234)));
+    }
+    // A longer wait than an earlier one is passed on as well.
+    rig.tell("every", "60000");
+    asked.lock().unwrap().clear();
+    rig.tick();
+    assert!(asked.lock().unwrap().contains(&std::time::Duration::from_secs(60)));
+}
+
+#[test]
+fn a_plugin_that_puts_the_cursor_into_its_field_gets_the_keys_until_a_press_elsewhere() {
+    let mut rig = probe();
+    rig.with(|p, h| p.open(h));
+    rig.frames(2);
+    // As a console does once its shell is up: nothing of it was pressed.
+    rig.tell("focus", "");
+    rig.frames(3);
+    assert!(rig.wants_keyboard);
+    rig.frame(vec![egui::Event::Text("ls".into())]);
+    rig.frames(2);
+    assert_eq!(rig.published("typed"), Some(json!("ls")));
+    assert_eq!(rig.published("focused"), Some(json!(true)));
+
+    // A press elsewhere reaches the field too: it lets go, and may take what it holds.
+    rig.click(pos2(50.0, 50.0));
+    assert_eq!(rig.published("focused"), Some(json!(false)));
+    assert!(!rig.wants_keyboard);
+
+    // From then on it cannot take the keys by itself: they fly the vehicle.
+    rig.tell("focus", "");
+    rig.frames(4);
+    assert!(!rig.wants_keyboard, "the operator's last press was elsewhere");
+    rig.frame(vec![egui::Event::Text("w".into())]);
+    rig.frames(2);
+    assert_eq!(rig.published("typed"), Some(json!("ls")));
+
+    // Closed and opened again, it is the operator's wish once more.
+    rig.with(|p, h| p.close(h));
+    rig.with(|p, h| p.open(h));
+    rig.tell("focus", "");
+    rig.frames(4);
+    assert!(rig.wants_keyboard);
+}
+
+#[test]
+fn a_terminal_window_opens_for_a_plugin_with_either_kind_of_session() {
+    use corvus_package::Manifest;
+    let bytes = super::testlib::module("corvus_plugin_probe");
+    let base = Manifest::of_module(&bytes).unwrap();
+    for (permission, opens) in [("ssh", true), ("local", true), ("shell", false)] {
+        let mut manifest = base.clone();
+        manifest.permissions = vec![permission.to_string()];
+        let plugin = super::WasmPlugin::load(&super::testlib::sandbox(), &manifest, &bytes, None).unwrap();
+        let mut rig = Rig::new(plugin);
+        rig.tell("terminal", "this computer");
+        assert_eq!(rig.out.terminals.len(), usize::from(opens), "{permission}");
+        if opens {
+            assert_eq!(rig.out.terminals[0].0["name"], json!("s1"));
+        }
+    }
 }

@@ -27,6 +27,11 @@ struct Probe {
     asked: Vec<(String, Reply)>,
     stream: Option<corvus_api::net::stream::Stream>,
     mcp: Option<u64>,
+    /// To put the cursor into the field at the next frame.
+    focus: bool,
+    focused: bool,
+    /// Asks for another frame this long after every tick.
+    every: Option<u64>,
 }
 
 impl Probe {
@@ -59,6 +64,9 @@ impl Plugin for Probe {
     }
 
     fn tick(&mut self, h: &mut Host) {
+        if let Some(ms) = self.every {
+            h.ctx.request_repaint_after(std::time::Duration::from_millis(ms));
+        }
         let mut answered = Vec::new();
         self.asked.retain(|(name, reply)| match reply.take() {
             Some(r) => {
@@ -98,7 +106,8 @@ impl Plugin for Probe {
                 self.stream = Some(h.events(&arg, |_, _| {}));
             }
             "pick" => {
-                let path = filepicker::pick_file("Probe pick", None, None);
+                let start = filepicker::start_folder(&arg);
+                let path = filepicker::pick_file("Probe pick", None, start.as_deref());
                 let read = path.as_deref().map(|p| filepicker::read(p, 1 << 20));
                 h.publish(
                     "pick",
@@ -139,6 +148,13 @@ impl Plugin for Probe {
                 self.asked.push(("saved".into(), reply));
             }
             "notify" => h.notify("warning", &arg),
+            // A timer, as a plugin sets one while its view is not shown.
+            "wake" => h
+                .ctx
+                .request_repaint_after(std::time::Duration::from_millis(arg.parse().unwrap_or(0))),
+            "every" => self.every = arg.parse().ok(),
+            "focus" => self.focus = true,
+            "terminal" => h.terminal(json!({"name": "s1", "title": "One", "host": arg}), false, false),
             "draw" => {
                 let style = corvus_api::plugin::shapes::Style::default();
                 h.map().line("a", &[[11.0, 48.0], [11.1, 48.1]], style, None, true);
@@ -160,7 +176,14 @@ impl Plugin for Probe {
         let field = Rect::from_min_size(area.min, Vec2::new(200.0, 30.0));
         let mut text = self.typed.clone();
         let edit = egui::TextEdit::singleline(&mut text).id(egui::Id::unique("probe-field"));
-        ui.put(field, edit);
+        let shown = ui.put(field, edit);
+        if std::mem::take(&mut self.focus) {
+            shown.request_focus();
+        }
+        if shown.has_focus() != self.focused {
+            self.focused = shown.has_focus();
+            h.publish("focused", json!(self.focused));
+        }
         if text != self.typed {
             self.typed = text;
             h.publish("typed", json!(self.typed));

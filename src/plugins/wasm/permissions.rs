@@ -28,6 +28,7 @@ pub const ASSISTANT: &str = "assistant";
 const MCP: &str = "/api/mcp";
 const MCP_SETTINGS: &str = "/api/mcp/settings";
 pub const SSH: &str = "ssh";
+pub const LOCAL: &str = "local";
 
 pub const ALL: &[Permission] = &[
     Permission {
