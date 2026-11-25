@@ -5,7 +5,7 @@ use eframe::egui::{self, Pos2, Rect, Stroke, Vec2};
 use serde_json::{json, Value};
 
 use super::{credits, model, Dialog, SettingsPage};
-use crate::plugins::store::From;
+use crate::plugins::store::{Doing, From};
 use crate::plugins::Registry;
 use crate::ui::form::{self, Form};
 use crate::ui::kit::{Button, Variant};
@@ -411,7 +411,7 @@ impl SettingsPage {
             .iter()
             .map(|r| registry.package_of(&r.id).map(str::to_string))
             .collect();
-        let working: Vec<bool> = rows.iter().map(|r| registry.store.working_on(&r.id)).collect();
+        let doing: Vec<Option<Doing>> = rows.iter().map(|r| registry.store.doing(&r.id)).collect();
         let refused: Vec<Option<String>> = rows
             .iter()
             .map(|r| registry.refused.iter().find(|x| x.id == r.id).map(|x| x.why.clone()))
@@ -425,7 +425,7 @@ impl SettingsPage {
         let busy = registry.store.busy();
         let problem = registry.store.problem().map(str::to_string);
         let loading = registry.store.loading();
-        let message = registry.store.message.clone();
+        let message = registry.store.message().cloned();
         let mut act: Option<(bool, String)> = None;
         let (mut refresh, mut update_all, mut file) = (false, false, false);
         form::section(ui, f, "Available plugins", |ui, f| {
@@ -445,7 +445,7 @@ impl SettingsPage {
                     let now = Now {
                         running: running[i].as_deref(),
                         refused: refused[i].as_deref(),
-                        working: working[i],
+                        doing: doing[i],
                         looking: loading,
                         busy,
                     };
@@ -525,7 +525,8 @@ struct Now<'a> {
     running: Option<&'a str>,
     /// Why the installed one did not load.
     refused: Option<&'a str>,
-    working: bool,
+    /// What is being done for it.
+    doing: Option<Doing>,
     /// Where it can be had is still being looked up.
     looking: bool,
     busy: bool,
@@ -543,7 +544,11 @@ fn store_row(
     let n = style::galley(ui, &row.name, 13.0, Weight::W500, style::text_1(), 0.0);
     let busy = now.busy;
     let state = match (&row.installed, now.running) {
-        _ if now.working => "working\u{2026}".to_string(),
+        _ if now.doing.is_some() => match now.doing {
+            Some(Doing::Installing(step)) => step.words(),
+            Some(Doing::Removing) => "removing\u{2026}".to_string(),
+            _ => "waiting\u{2026}".to_string(),
+        },
         (None, Some(_)) => "removed, runs until the next start".to_string(),
         (None, None) => match row.offer {
             Some((From::Beside, _)) => format!("{} \u{b7} on this computer", row.version),
@@ -611,6 +616,12 @@ fn store_row(
         let h = g.size().y;
         ui.painter().galley(Pos2::new(f.x, y + 4.0), g, style::text_3());
         y += 4.0 + h;
+    }
+    if let Some(Doing::Installing(step)) = now.doing {
+        y += 10.0;
+        let bar = Rect::from_min_size(Pos2::new(f.x, y), Vec2::new(f.w, 6.0));
+        crate::notify::overlay::bar(ui, bar, step.fraction());
+        y += 6.0;
     }
     y += 14.0;
     ui.painter().hline(

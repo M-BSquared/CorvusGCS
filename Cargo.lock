@@ -995,7 +995,6 @@ dependencies = [
  "libc",
  "lzma-rs",
  "memmap2 0.9.12",
- "remoteid",
  "rusqlite",
  "russh",
  "rustls",
@@ -4550,12 +4549,6 @@ name = "regex-syntax"
 version = "0.8.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
-
-[[package]]
-name = "remoteid"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ace3b39cb3084118745a149b6e3ccdf15ab920da4f80ebf3cc459880fe76342b"
 
 [[package]]
 name = "renderdoc-sys"

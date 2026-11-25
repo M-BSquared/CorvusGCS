@@ -78,8 +78,6 @@ jobs:
       # program uses. The optional one, wss (tls), is checked on its own.
       - name: clippy, corvus_link with TLS
         run: cargo clippy -p corvus_link --all-targets --features tls --locked -- -D warnings
-      - name: clippy and test, corvus_core with the remoteid model
-        run: cargo clippy -p corvus_core --all-targets --features remoteid-model --locked -- -D warnings && cargo test -p corvus_core --lib --features remoteid-model --locked remote_id
       - name: cargo test
         run: cargo test --workspace --locked --no-fail-fast
 

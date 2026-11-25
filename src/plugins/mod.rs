@@ -216,7 +216,7 @@ impl Registry {
                 } else {
                     format!("{id} {version} is installed. Restart Corvus GCS to load it.")
                 };
-                self.store.message = Some((text, true));
+                self.store.say(text, true);
                 continue;
             }
             match loader::load_package(&dir, &id) {
@@ -233,7 +233,7 @@ impl Registry {
                     }
                     self.entries.push(e);
                     self.shapes_dirty = true;
-                    self.store.message = Some((format!("{id} {version} is installed and ready."), true));
+                    self.store.say(format!("{id} {version} is installed and ready."), true);
                 }
                 Err(r) => {
                     // Its stamp was the right one, so it is this program that is another.
@@ -242,7 +242,8 @@ impl Registry {
                     } else {
                         &r.why
                     };
-                    self.store.message = Some((format!("{id}: {why}."), false));
+                    let text = format!("{id}: {why}.");
+                    self.store.say(text, false);
                     self.refused.push(r);
                 }
             }

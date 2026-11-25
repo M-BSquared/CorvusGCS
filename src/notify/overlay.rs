@@ -11,6 +11,7 @@ use crate::notify::{Board, Notification, Summary};
 use crate::ui::icons;
 use crate::ui::kit;
 use crate::ui::listrow::{self, Mark};
+use crate::ui::progress::Bar;
 use crate::ui::style::{self, Weight};
 
 const GUTTER: f32 = 9.0;
@@ -396,6 +397,77 @@ pub fn board(ctx: &egui::Context, screen: Rect, top: f32, board: &mut Board, now
     if close || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
         board.set_open(false, now);
     }
+    bottom
+}
+
+/// A progress bar with the share that is done, or one that runs while that is not known.
+pub fn bar(ui: &egui::Ui, rect: Rect, share: Option<f32>) {
+    let bar = match share {
+        Some(s) => Bar::new(s),
+        None => {
+            ui.ctx().request_repaint_after(std::time::Duration::from_millis(33));
+            Bar::indeterminate((ui.input(|i| i.time) / 1.5).fract() as f32)
+        }
+    };
+    bar.show(ui.painter(), rect);
+}
+
+/// The plugin that is being installed, as a card at the head of the toast stack while the page
+/// that shows it is not open. Returns where the toasts go.
+pub fn install(ctx: &egui::Context, screen: Rect, top: f32, p: &crate::plugins::store::Progress) -> f32 {
+    use crate::i18n::{tr_fmt, tr_joined};
+    let pos = Pos2::new(screen.right() - 12.0 - WIDTH, top);
+    let mut bottom = top;
+    egui::Area::new(egui::Id::NULL.with("plugininstall-area"))
+        .order(egui::Order::Foreground)
+        .fixed_pos(pos)
+        .show(ctx, |ui| {
+            let painter = ui.painter().clone();
+            let title = tr_fmt("Installing {name}", &[("name", &p.name)]);
+            let count = if p.of > 1 {
+                format!("{} of {}", p.nth, p.of)
+            } else {
+                String::new()
+            };
+            let x = pos.x + GUTTER + ICON + GAP;
+            let w = WIDTH - GUTTER - ICON - GAP - PAD_RIGHT;
+            let c = style::galley(ui, &count, 12.0, Weight::W400, style::text_3(), 0.0);
+            let room = w - c.size().x - 8.0;
+            let t = crate::ui::text::clamped(ui, &title, 12.0, Weight::W600, style::text_1(), 0.0, room, 1, None);
+            let s = style::galley(
+                ui,
+                &tr_joined(&p.step.words()),
+                12.0,
+                Weight::W400,
+                style::text_2(),
+                0.0,
+            );
+            let h = PAD_Y * 2.0 + t.size().y + 1.0 + s.size().y + 8.0 + 6.0;
+            let r = Rect::from_min_size(pos, Vec2::new(WIDTH, h));
+            style::glass_panel(&painter, "plugininstall", r, style::RADIUS, 0.6);
+            ui.allocate_rect(r, egui::Sense::hover());
+            icons::paint(
+                ui,
+                "download",
+                Rect::from_center_size(
+                    Pos2::new(r.left() + GUTTER + ICON / 2.0, r.center().y),
+                    Vec2::splat(ICON_SVG),
+                ),
+                style::accent(),
+            );
+            let mut y = r.top() + PAD_Y;
+            painter.galley(Pos2::new(x + w - c.size().x, y), c, style::text_3());
+            painter.galley(Pos2::new(x, y), t.clone(), style::text_1());
+            y += t.size().y + 1.0;
+            painter.galley(Pos2::new(x, y), s.clone(), style::text_2());
+            y += s.size().y + 8.0;
+            bar(
+                ui,
+                Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, 6.0)),
+                p.step.fraction(),
+            );
+            bottom = r.bottom() + 8.0;
+        });
     bottom
 }
 

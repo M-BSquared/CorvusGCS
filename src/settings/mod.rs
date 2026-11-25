@@ -255,6 +255,11 @@ impl SettingsPage {
         }
     }
 
+    /// Whether the plugins are the part of the page that is open.
+    pub fn shows_plugins(&self) -> bool {
+        TABS[self.tab].0 == "plugins"
+    }
+
     /// Errors for the notification board.
     pub fn take_errors(&mut self) -> Vec<String> {
         std::mem::take(&mut self.errors)

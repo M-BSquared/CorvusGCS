@@ -562,7 +562,7 @@ mod tests {
         }
         let end = Instant::now() + Duration::from_secs(60);
         while reg.len() < crate::plugins::OFFERED.len() || !reg.loaded {
-            assert!(Instant::now() < end, "{:?} {:?}", reg.store.message, reg.refused);
+            assert!(Instant::now() < end, "{:?} {:?}", reg.store.message(), reg.refused);
             reg.update(&ctx, &json!({}));
             std::thread::sleep(Duration::from_millis(5));
         }

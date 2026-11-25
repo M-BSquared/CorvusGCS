@@ -41,9 +41,7 @@ const REGIONS: [&str; 2] = ["faa", "eu"];
 pub const BROADCAST_FRESH_S: f64 = 5.0;
 
 /// The accepted enum codes and the ODID epoch, as a frozen copy of the standard.
-/// This is what the broadcast uses unless the `remoteid-model` feature is on.
-#[cfg_attr(feature = "remoteid-model", cfg(test))]
-mod frozen {
+mod spans {
     use std::ops::RangeInclusive;
 
     pub const ODID_EPOCH_UNIX: f64 = 1_546_300_800.0;
@@ -82,45 +80,6 @@ mod frozen {
         CLASSES_EU.contains(&v)
     }
 }
-
-/// The same spans as the `remoteid` crate names them (an opt in build only).
-#[cfg(feature = "remoteid-model")]
-mod model {
-    use remoteid::{CategoryEu, ClassEu, ClassificationType, DescriptionType, IdType, OperatorLocationType, UaType};
-
-    pub const ODID_EPOCH_UNIX: f64 = remoteid::EPOCH_2019_UNIX as f64;
-
-    pub fn id_type(v: i64) -> bool {
-        u8::try_from(v).is_ok_and(|b| !matches!(IdType::from(b), IdType::Other(_)))
-    }
-    pub fn ua_type(v: i64) -> bool {
-        u8::try_from(v).is_ok_and(|b| !matches!(UaType::from(b), UaType::Other(_)))
-    }
-    pub fn description_type(v: i64) -> bool {
-        u8::try_from(v).is_ok_and(|b| !matches!(DescriptionType::from(b), DescriptionType::Other(_)))
-    }
-    pub fn location_type(v: i64) -> bool {
-        u8::try_from(v).is_ok_and(|b| !matches!(OperatorLocationType::from(b), OperatorLocationType::Other(_)))
-    }
-    pub fn classification_type(v: i64) -> bool {
-        u8::try_from(v).is_ok_and(|b| !matches!(ClassificationType::from(b), ClassificationType::Other(_)))
-    }
-    pub fn category_eu(v: i64) -> bool {
-        u8::try_from(v).is_ok_and(|b| !matches!(CategoryEu::from(b), CategoryEu::Other(_)))
-    }
-    pub fn class_eu(v: i64) -> bool {
-        u8::try_from(v).is_ok_and(|b| !matches!(ClassEu::from(b), ClassEu::Other(_)))
-    }
-    /// The Operator ID message has no sub type field: 0 is its only valid code.
-    pub fn operator_id_type(v: i64) -> bool {
-        v == 0
-    }
-}
-
-#[cfg(not(feature = "remoteid-model"))]
-use frozen as spans;
-#[cfg(feature = "remoteid-model")]
-use model as spans;
 
 use spans::ODID_EPOCH_UNIX;
 
@@ -585,38 +544,8 @@ mod tests {
 
     #[test]
     fn system_timestamp_counts_from_the_odid_epoch() {
-        assert_eq!(frozen::ODID_EPOCH_UNIX, 1_546_300_800.0);
+        assert_eq!(ODID_EPOCH_UNIX, 1_546_300_800.0);
         assert_eq!(system_timestamp(ODID_EPOCH_UNIX), 0);
         assert_eq!(system_timestamp(ODID_EPOCH_UNIX + 10.0), 10);
-    }
-
-    /// The guard for the opt in build: the crate and the frozen copy must agree on
-    /// every code. A crate release that moves a span fails here, not on the air.
-    #[cfg(feature = "remoteid-model")]
-    #[test]
-    fn remoteid_model_matches_the_frozen_spans() {
-        assert_eq!(model::ODID_EPOCH_UNIX, frozen::ODID_EPOCH_UNIX);
-        for v in -300..=300_i64 {
-            assert_eq!(model::id_type(v), frozen::id_type(v), "id_type {v}");
-            assert_eq!(model::ua_type(v), frozen::ua_type(v), "ua_type {v}");
-            assert_eq!(
-                model::operator_id_type(v),
-                frozen::operator_id_type(v),
-                "operator_id_type {v}"
-            );
-            assert_eq!(
-                model::description_type(v),
-                frozen::description_type(v),
-                "description_type {v}"
-            );
-            assert_eq!(model::location_type(v), frozen::location_type(v), "location_type {v}");
-            assert_eq!(
-                model::classification_type(v),
-                frozen::classification_type(v),
-                "classification_type {v}"
-            );
-            assert_eq!(model::category_eu(v), frozen::category_eu(v), "category_eu {v}");
-            assert_eq!(model::class_eu(v), frozen::class_eu(v), "class_eu {v}");
-        }
     }
 }

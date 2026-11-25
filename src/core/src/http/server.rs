@@ -20,6 +20,8 @@ use crate::ws::{self, WebSocket};
 const IDLE_LIMIT: Duration = Duration::from_secs(120);
 /// How often a blocked wait looks at whether the core is stopping.
 const SLICE: Duration = Duration::from_millis(200);
+/// How long a refusal waits for the client to stop sending the body it refused.
+const LINGER: Duration = Duration::from_secs(2);
 const MAX_HEAD: usize = 64 * 1024;
 /// How many consecutive ports a launch tries (`PORT_SEARCH_SPAN`).
 pub const PORT_SEARCH_SPAN: u16 = 20;
@@ -438,6 +440,29 @@ fn run_upgrade(stream: TcpStream, up: crate::response::Upgrade) {
     }
 }
 
+/// Takes in the body a refusal left unread. Closing on unread bytes resets the
+/// connection, and a client that is still sending loses the reason with it.
+fn linger(stream: &mut TcpStream, core: &Core, mut unread: usize) {
+    if unread == 0 || stream.shutdown(std::net::Shutdown::Write).is_err() {
+        return;
+    }
+    let _ = stream.set_read_timeout(Some(SLICE));
+    let until = Instant::now() + LINGER;
+    let mut chunk = [0u8; 16384];
+    while unread > 0 && !core.is_stopping() && Instant::now() < until {
+        match stream.read(&mut chunk) {
+            Ok(0) => return,
+            Ok(n) => unread = unread.saturating_sub(n),
+            Err(e)
+                if matches!(
+                    e.kind(),
+                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut | std::io::ErrorKind::Interrupted
+                ) => {}
+            Err(_) => return,
+        }
+    }
+}
+
 fn plain(status: u16, text: &str) -> Response {
     Response::bytes(status, "text/html;charset=utf-8", format!("<!DOCTYPE HTML><html><head><title>Error response</title></head><body><h1>Error response</h1><p>Error code: {status}</p><p>Message: {text}.</p></body></html>").into_bytes())
 }
@@ -449,16 +474,26 @@ fn serve_connection(core: &Core, mut stream: TcpStream) {
         Err(HeadError::Gone) => return,
         Err(HeadError::Bad(status, text)) => {
             write_response(&mut stream, plain(status, text), None);
+            if status == 431 {
+                linger(&mut stream, core, usize::MAX);
+            }
             return;
         }
     };
     let origin = head.headers.get("Origin").map(str::to_string);
+    let mut unread = head
+        .headers
+        .get("Content-Length")
+        .and_then(|v| v.trim().parse::<usize>().ok())
+        .unwrap_or(0)
+        .saturating_sub(head.rest.len());
     let Some(method) = Method::parse(&head.method) else {
         write_response(
             &mut stream,
             plain(501, &format!("Unsupported method ('{}')", head.method)),
             origin.as_deref(),
         );
+        linger(&mut stream, core, unread);
         return;
     };
     let mut req = Request::new(method, &head.target);
@@ -477,6 +512,7 @@ fn serve_connection(core: &Core, mut stream: TcpStream) {
             Response::not_ok(403, "host not allowed"),
             origin.as_deref(),
         );
+        linger(&mut stream, core, unread);
         return;
     }
     if method != Method::Get
@@ -487,11 +523,12 @@ fn serve_connection(core: &Core, mut stream: TcpStream) {
             Response::not_ok(403, "cross-site request forbidden"),
             origin.as_deref(),
         );
+        linger(&mut stream, core, unread);
         return;
     }
 
     let fetch_site = req.headers.get("Sec-Fetch-Site").map(str::to_string);
-    let response = route(core, &mut stream, req, head.rest);
+    let response = route(core, &mut stream, req, head.rest, &mut unread);
     match response.body {
         Body::Sse(_) => write_sse(&mut stream, core, response, origin.as_deref()),
         Body::Upgrade(up) => {
@@ -505,7 +542,10 @@ fn serve_connection(core: &Core, mut stream: TcpStream) {
                 run_upgrade(stream, up);
             }
         }
-        _ => write_response(&mut stream, response, origin.as_deref()),
+        _ => {
+            write_response(&mut stream, response, origin.as_deref());
+            linger(&mut stream, core, unread);
+        }
     }
 }
 
@@ -533,6 +573,7 @@ fn read_body(
     req: &Request,
     mut rest: Vec<u8>,
     limit: usize,
+    unread: &mut usize,
 ) -> Result<Vec<u8>, Response> {
     let length = content_length(req)?;
     if length > limit {
@@ -541,6 +582,7 @@ fn read_body(
     if length == 0 {
         return Ok(Vec::new());
     }
+    *unread = 0;
     read_more(stream, core, &mut rest, |b| b.len() >= length);
     if rest.len() < length {
         return Err(Response::error(400, "request body was cut short"));
@@ -557,6 +599,7 @@ fn spool_body(
     req: &Request,
     rest: Vec<u8>,
     options: router::RouteOptions,
+    unread: &mut usize,
 ) -> Result<Option<std::path::PathBuf>, Response> {
     let length = content_length(req)?;
     if length > options.max_body {
@@ -575,6 +618,7 @@ fn spool_body(
         COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     ));
     let mut file = std::fs::File::create(&path).map_err(|_| cut())?;
+    *unread = 0;
     let mut written = 0usize;
     let mut failed = false;
     let mut put = |chunk: &[u8], written: &mut usize| -> bool {
@@ -609,17 +653,18 @@ fn spool_body(
     }
     drop(file);
     if failed || written < length {
+        *unread = length.saturating_sub(written);
         let _ = std::fs::remove_file(&path);
         return Err(cut());
     }
     Ok(Some(path))
 }
 
-fn route(core: &Core, stream: &mut TcpStream, mut req: Request, rest: Vec<u8>) -> Response {
+fn route(core: &Core, stream: &mut TcpStream, mut req: Request, rest: Vec<u8>, unread: &mut usize) -> Response {
     let path = req.path.clone();
     if path == "/mcp" {
         if req.method == Method::Post {
-            match read_body(stream, core, &req, rest, mcp::MAX_MCP_BODY_BYTES + 1) {
+            match read_body(stream, core, &req, rest, mcp::MAX_MCP_BODY_BYTES + 1, unread) {
                 Ok(b) => req.body = b,
                 Err(_) => {
                     let r = Response::json_status(
@@ -647,7 +692,7 @@ fn route(core: &Core, stream: &mut TcpStream, mut req: Request, rest: Vec<u8>) -
     if req.method == Method::Post {
         let options = core.router().options_for(Method::Post, &path);
         if let Some(o) = options.filter(|o| o.spool) {
-            match spool_body(stream, core, &req, rest, o) {
+            match spool_body(stream, core, &req, rest, o, unread) {
                 Ok(file) => req.body_file = file,
                 Err(r) => return r,
             }
@@ -658,7 +703,7 @@ fn route(core: &Core, stream: &mut TcpStream, mut req: Request, rest: Vec<u8>) -
             return response;
         }
         let limit = options.map_or(router::MAX_JSON_BODY, |o| o.max_body);
-        match read_body(stream, core, &req, rest, limit) {
+        match read_body(stream, core, &req, rest, limit, unread) {
             Ok(b) => req.body = b,
             Err(r) if r.status == 413 => return too_large(options),
             Err(r) => return r,
@@ -964,6 +1009,60 @@ mod tests {
         let spooled = std::fs::read_dir(core.paths().join("spool")).map_or(0, Iterator::count);
         assert_eq!(spooled, 0, "the spool file is removed after the handler");
         core.stop();
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    #[test]
+    fn a_refused_upload_still_gets_its_reason() {
+        let (core, addr, d) = running("linger");
+        let size = 8 * 1024 * 1024;
+        for (path, extra, status, text) in [
+            ("/api/upload", "", 413, "request too large"),
+            ("/api/spool", "", 413, "too big for the spool"),
+            ("/nowhere", "", 404, "not found"),
+            (
+                "/api/probe",
+                "Origin: http://evil.example\r\n",
+                403,
+                "cross-site request forbidden",
+            ),
+        ] {
+            let mut s = TcpStream::connect(addr).unwrap();
+            s.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
+            let head = format!("POST {path} HTTP/1.1\r\nHost: localhost\r\nContent-Length: {size}\r\n{extra}\r\n");
+            s.write_all(head.as_bytes()).unwrap();
+            s.write_all(&vec![0u8; size])
+                .unwrap_or_else(|e| panic!("{path}: the body could not be sent: {e}"));
+            let mut all = Vec::new();
+            s.read_to_end(&mut all)
+                .unwrap_or_else(|e| panic!("{path}: the answer was lost: {e}"));
+            let answer = String::from_utf8_lossy(&all);
+            assert!(answer.starts_with(&format!("HTTP/1.0 {status} ")), "{path}: {answer}");
+            assert!(answer.contains(text), "{path}: {answer}");
+        }
+        core.stop();
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    #[test]
+    fn a_client_that_never_sends_its_refused_body_does_not_hold_the_shutdown() {
+        let (core, addr, d) = running("linger-stop");
+        let mut s = TcpStream::connect(addr).unwrap();
+        s.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
+        s.write_all(b"POST /api/upload HTTP/1.1\r\nHost: localhost\r\nContent-Length: 1000\r\n\r\n")
+            .unwrap();
+        let mut all = Vec::new();
+        let began = Instant::now();
+        s.read_to_end(&mut all).unwrap();
+        assert!(all.starts_with(b"HTTP/1.0 413 "));
+        assert!(began.elapsed() < LINGER, "the answer does not wait for the body");
+        let began = Instant::now();
+        core.stop();
+        assert!(
+            began.elapsed() < Duration::from_secs(2),
+            "stop took {:?}",
+            began.elapsed()
+        );
         std::fs::remove_dir_all(&d).unwrap();
     }
 

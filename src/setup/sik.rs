@@ -821,8 +821,8 @@ mod tests {
         let status = status.to_string();
         let h = std::thread::spawn(move || {
             let (mut s, _) = l.accept().unwrap();
-            // The head and the body can arrive in two segments: read until quiet.
-            s.set_read_timeout(Some(std::time::Duration::from_millis(150))).unwrap();
+            // The head and the body can arrive in two segments.
+            s.set_read_timeout(Some(std::time::Duration::from_secs(5))).unwrap();
             let mut got = Vec::new();
             let mut buf = [0u8; 4096];
             while let Ok(n) = s.read(&mut buf) {
@@ -830,8 +830,15 @@ mod tests {
                     break;
                 }
                 got.extend_from_slice(&buf[..n]);
-                if String::from_utf8_lossy(&got).contains("\r\n\r\n") && got.len() > 60 {
-                    s.set_read_timeout(Some(std::time::Duration::from_millis(30))).unwrap();
+                let text = String::from_utf8_lossy(&got);
+                if let Some((head, body)) = text.split_once("\r\n\r\n") {
+                    let want = head
+                        .lines()
+                        .find_map(|l| l.strip_prefix("Content-Length: ")?.parse().ok())
+                        .unwrap_or(0);
+                    if body.len() >= want {
+                        break;
+                    }
                 }
             }
             let req = String::from_utf8_lossy(&got).to_string();

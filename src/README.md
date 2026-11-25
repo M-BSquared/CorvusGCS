@@ -364,7 +364,10 @@ network. A library comes from (`src/plugins/store.rs`):
 * **the plugin's repository**: the release `corvus-<version>` there, its `plugins-index.json` over
   HTTPS (a redirect to plain http is refused) when the page is opened; size and SHA-256 of a
   library are checked against it. All repositories are asked at once and each answers for itself.
-  There is no signing key: what is trusted is the plugin's repository on GitHub.
+  There is no signing key: what is trusted is the plugin's repository on GitHub. `Meter` carries
+  how much has arrived to the window (a bar on the plugin's line, and on a card at the head of
+  the toasts while that page is not open); a broken download is tried once more, a server that
+  is silent for 30 s is given up, and a plugin that fails holds up no other.
 * **a file** the operator picks. The plugin it is stands in it (`CORVUS_PLUGIN_CRATE`).
 
 Only a library with this program's stamp is taken, wherever it is from. It goes to

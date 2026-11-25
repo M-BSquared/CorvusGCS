@@ -688,6 +688,14 @@ impl App {
         let below =
             crate::notify::overlay::board(ui.ctx(), screen, screen.top() + vw.top_height(), &mut self.board, now);
         let toasts_top = below.map_or(screen.top() + vw.top_height() + 10.0, |b| b + 10.0);
+        for (text, ok) in self.plugins.store.take_notes() {
+            self.board.add_local(if ok { "info" } else { "warning" }, &text, now);
+        }
+        let on_page = self.page == Page::Settings && self.settings.shows_plugins();
+        let toasts_top = match self.plugins.store.progress().filter(|_| !on_page) {
+            Some(p) => crate::notify::overlay::install(ui.ctx(), screen, toasts_top, &p),
+            None => toasts_top,
+        };
         crate::notify::overlay::toasts(ui.ctx(), screen, toasts_top, &mut self.board);
         // The flight clock ticks while airborne, and toasts expire.
         ui.ctx().request_repaint_after(std::time::Duration::from_millis(250));

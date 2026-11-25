@@ -29,6 +29,7 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, UNIX_EPOCH};
 
 use corvus_core::plugins::http_client;
@@ -42,8 +43,10 @@ use crate::net::bg::Pending;
 const INDEX_CAP: usize = 1024 * 1024;
 const LIBRARY_CAP: usize = 96 * 1024 * 1024;
 const LIST_TIMEOUT: Duration = Duration::from_secs(30);
-/// For a whole library: 6 MB over a 25 kB/s link.
-const LIBRARY_TIMEOUT: Duration = Duration::from_secs(300);
+/// For a whole library over a slow link. A server that falls silent is given up on much earlier.
+const LIBRARY_TIMEOUT: Duration = Duration::from_secs(1800);
+const NOTES_MAX: usize = 32;
+const UNREACHED: &str = "could not reach the server";
 
 /// The folder beside the program that libraries are taken from.
 pub const BESIDE: &str = "corvus-plugins";
@@ -202,13 +205,12 @@ fn read_library(path: &Path) -> Result<Vec<u8>, String> {
     Ok(bytes)
 }
 
-fn get(url: &str, cap: usize, timeout: Duration) -> Result<Vec<u8>, String> {
+fn get(url: &str, cap: usize, timeout: Duration, seen: http_client::Seen) -> Result<Vec<u8>, String> {
     if !cfg!(debug_assertions) && !url.starts_with("https://") {
         return Err("plugins are only fetched over HTTPS".into());
     }
     let ua = format!("CorvusGCS/{}", corvus_core::version::version());
-    let reply =
-        http_client::get(url, &ua, "*/*", timeout, cap).map_err(|e| format!("could not reach the server ({e})"))?;
+    let reply = http_client::get_seen(url, &ua, "*/*", timeout, cap, seen).map_err(|e| format!("{UNREACHED} ({e})"))?;
     if reply.status == 404 {
         return Err("there is nothing published for this version of Corvus GCS".into());
     }
@@ -231,7 +233,12 @@ fn release_of(src: &Source, o: &Offered) -> String {
 
 /// What the repository of plugin `o` offers for this program and this computer.
 pub fn fetch(src: &Source, o: &Offered) -> Result<Entry, String> {
-    let list = get(&format!("{}/{INDEX_FILE}", release_of(src, o)), INDEX_CAP, LIST_TIMEOUT)?;
+    let list = get(
+        &format!("{}/{INDEX_FILE}", release_of(src, o)),
+        INDEX_CAP,
+        LIST_TIMEOUT,
+        &mut |_, _| (),
+    )?;
     let index = Index::parse(&list)?;
     if index.abi != src.abi {
         return Err("the published plugins were built for another build of Corvus GCS".into());
@@ -263,10 +270,70 @@ pub fn fetch_all(src: &Source, wanted: &[Offered]) -> Answers {
 /// A plugin that was installed: its id and version.
 pub type Done = (String, String);
 
+/// How far an install has come.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Step {
+    /// Asking where the library is.
+    #[default]
+    Connecting,
+    Downloading {
+        got: u64,
+        total: u64,
+    },
+    /// Checking the library and writing it to the disk.
+    Installing,
+}
+
+impl Step {
+    /// The share that has arrived, 0 to 1, when that can be said.
+    pub fn fraction(self) -> Option<f32> {
+        match self {
+            Step::Connecting => None,
+            Step::Downloading { got, total } => Some((got as f64 / total.max(1) as f64).min(1.0) as f32),
+            Step::Installing => Some(1.0),
+        }
+    }
+
+    /// In words, for a line beside the bar.
+    pub fn words(self) -> String {
+        match self {
+            Step::Connecting => "connecting\u{2026}".into(),
+            Step::Downloading { got, total } => {
+                let mb = |n: u64| format!("{:.1} MB", n as f64 / 1e6);
+                // Not 100 before all of it is there.
+                let percent = got.min(total) * 100 / total.max(1);
+                format!("{} of {} \u{b7} {percent}%", mb(got), mb(total))
+            }
+            Step::Installing => "installing\u{2026}".into(),
+        }
+    }
+}
+
+/// Where an install on its thread says how far it is, for the window to show.
+#[derive(Default)]
+pub struct Meter {
+    step: Mutex<Step>,
+    ctx: Option<egui::Context>,
+}
+
+impl Meter {
+    fn set(&self, step: Step) {
+        *self.step.lock().unwrap_or_else(|p| p.into_inner()) = step;
+        if let Some(ctx) = &self.ctx {
+            ctx.request_repaint_after(Duration::from_millis(33));
+        }
+    }
+
+    fn now(&self) -> Step {
+        *self.step.lock().unwrap_or_else(|p| p.into_inner())
+    }
+}
+
 /// Installs plugin `id`: the library beside the program, else the one of the release.
-pub fn install(src: &Source, id: &str) -> Result<Done, String> {
+pub fn install(src: &Source, id: &str, meter: &Meter) -> Result<Done, String> {
     let o = src.offered.iter().find(|o| o.id == id);
     if let Some(l) = o.and_then(|o| find_beside(src, o)) {
+        meter.set(Step::Installing);
         return install_file(src, &l.path);
     }
     let o = o.ok_or("this plugin is not offered for this computer")?;
@@ -275,7 +342,17 @@ pub fn install(src: &Source, id: &str) -> Result<Done, String> {
         .file_for(&src.platform)
         .ok_or("this plugin is not offered for this computer")?;
     let cap = usize::try_from(file.size).unwrap_or(LIBRARY_CAP).min(LIBRARY_CAP);
-    let bytes = get(&format!("{}/{}", release_of(src, o), file.file), cap, LIBRARY_TIMEOUT)?;
+    let total = file.size;
+    let url = format!("{}/{}", release_of(src, o), file.file);
+    let download = || {
+        meter.set(Step::Downloading { got: 0, total });
+        get(&url, cap, LIBRARY_TIMEOUT, &mut |got, _| {
+            meter.set(Step::Downloading { got: got as u64, total })
+        })
+    };
+    // A link that broke once often holds the next time.
+    let bytes = download().or_else(|e| if e.starts_with(UNREACHED) { download() } else { Err(e) })?;
+    meter.set(Step::Installing);
     if bytes.len() as u64 != file.size || corvus_package::sha256_hex(&bytes) != file.sha256 {
         return Err("the download does not match the list and was thrown away".into());
     }
@@ -472,8 +549,28 @@ impl Act {
     }
 }
 
+/// What is being done for a plugin, for its line in the list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Doing {
+    Waiting,
+    Installing(Step),
+    Removing,
+}
+
+/// The install under way, for the window.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Progress {
+    /// What the operator knows the plugin by.
+    pub name: String,
+    pub step: Step,
+    /// Which one it is of how many that were asked for together.
+    pub nth: usize,
+    pub of: usize,
+}
+
 struct Job {
     act: Act,
+    meter: Arc<Meter>,
     answer: Pending<Result<Done, String>>,
 }
 
@@ -487,8 +584,13 @@ pub struct Store {
     have: BTreeMap<String, Manifest>,
     job: Option<Job>,
     waiting: VecDeque<Act>,
+    /// Of what was asked for since nothing was under way: how many, and how many are over.
+    asked: usize,
+    over: usize,
+    /// Results for the notification board, until [`Store::take_notes`].
+    notes: Vec<(String, bool)>,
     /// The last result for the operator, and whether it went well.
-    pub message: Option<(String, bool)>,
+    message: Option<(String, bool)>,
     /// Installs that have finished: `(id, version)`, until [`Store::take_installed`].
     done: VecDeque<Done>,
 }
@@ -508,6 +610,9 @@ impl Store {
             have: BTreeMap::new(),
             job: None,
             waiting: VecDeque::new(),
+            asked: 0,
+            over: 0,
+            notes: Vec::new(),
             message: None,
             done: VecDeque::new(),
         }
@@ -552,16 +657,13 @@ impl Store {
         }
         if let Some(r) = self.job.as_ref().and_then(|j| j.answer.take()) {
             if let Some(Job { act, .. }) = self.job.take() {
+                self.over += 1;
                 match (r, &act) {
                     (Ok((id, _)), Act::Remove(_)) => {
-                        self.message = Some((format!("{id} was removed. Restart Corvus GCS to finish."), true))
+                        self.say(format!("{id} was removed. Restart Corvus GCS to finish."), true)
                     }
                     (Ok(done), _) => self.done.push_back(done),
-                    (Err(e), _) => {
-                        self.message = Some((format!("{}: {e}.", act.subject()), false));
-                        // The same cause would fail the rest too.
-                        self.waiting.clear();
-                    }
+                    (Err(e), _) => self.say(format!("{}: {e}.", act.subject()), false),
                 }
                 self.look();
             }
@@ -569,12 +671,20 @@ impl Store {
         if self.job.is_none() {
             if let (Some(act), Some(src)) = (self.waiting.pop_front(), self.source.clone()) {
                 let what = act.clone();
+                let meter = Arc::new(Meter {
+                    step: Mutex::new(match act {
+                        Act::File(_) => Step::Installing,
+                        _ => Step::Connecting,
+                    }),
+                    ctx: Some(ctx.clone()),
+                });
+                let m = meter.clone();
                 let answer = Pending::spawn(ctx, move || match what {
-                    Act::Install(id) => install(&src, &id),
+                    Act::Install(id) => install(&src, &id, &m),
                     Act::File(path) => install_file(&src, &path),
                     Act::Remove(id) => remove(&src.dir, &id).map(|()| (id, String::new())),
                 });
-                self.job = Some(Job { act, answer });
+                self.job = Some(Job { act, meter, answer });
             }
         }
     }
@@ -618,6 +728,52 @@ impl Store {
             .map(|j| &j.act)
             .chain(&self.waiting)
             .any(|a| matches!(a, Act::Install(x) | Act::Remove(x) if x == id))
+    }
+
+    /// What is being done for plugin `id`.
+    pub fn doing(&self, id: &str) -> Option<Doing> {
+        let about = |a: &Act| matches!(a, Act::Install(x) | Act::Remove(x) if x == id);
+        match &self.job {
+            Some(j) if about(&j.act) => Some(match j.act {
+                Act::Remove(_) => Doing::Removing,
+                _ => Doing::Installing(j.meter.now()),
+            }),
+            _ => self.waiting.iter().any(about).then_some(Doing::Waiting),
+        }
+    }
+
+    /// The install under way, when one is.
+    pub fn progress(&self) -> Option<Progress> {
+        let j = self.job.as_ref().filter(|j| !matches!(j.act, Act::Remove(_)))?;
+        let subject = j.act.subject();
+        let name = self.offered().iter().find(|o| o.id == subject);
+        Some(Progress {
+            name: name.map_or(subject, |o| o.name.to_string()),
+            step: j.meter.now(),
+            nth: self.over + 1,
+            of: self.asked,
+        })
+    }
+
+    /// Tells the operator how something went. A failure stays until something else is asked for,
+    /// so a plugin that came after it does not hide it.
+    pub fn say(&mut self, text: String, ok: bool) {
+        if self.notes.len() < NOTES_MAX {
+            self.notes.push((text.clone(), ok));
+        }
+        if !ok || self.message.as_ref().is_none_or(|(_, was_ok)| *was_ok) {
+            self.message = Some((text, ok));
+        }
+    }
+
+    /// The last result, and whether it went well.
+    pub fn message(&self) -> Option<&(String, bool)> {
+        self.message.as_ref()
+    }
+
+    /// The results since the last time, for the notification board.
+    pub fn take_notes(&mut self) -> Vec<(String, bool)> {
+        std::mem::take(&mut self.notes)
     }
 
     /// Why a plugin of the list cannot be had, when one cannot.
@@ -696,7 +852,11 @@ impl Store {
     }
 
     fn queue(&mut self, act: Act) {
-        self.message = None;
+        if self.job.is_none() && self.waiting.is_empty() {
+            (self.asked, self.over) = (0, 0);
+            self.message = None;
+        }
+        self.asked += 1;
         self.waiting.push_back(act);
     }
 }
@@ -714,7 +874,6 @@ mod tests {
     use std::collections::HashMap;
     use std::io::Read;
     use std::net::TcpListener;
-    use std::sync::Arc;
 
     const LIB: &[u8] = b"pretend this is a library";
 
@@ -806,7 +965,10 @@ mod tests {
     fn a_listed_plugin_is_installed_found_and_removed() {
         let (files, platform) = release(LIB, None);
         let src = source(serve(files), platform, "ok");
-        assert_eq!(install(&src, "vibration"), Ok(("vibration".into(), "1.0.0".into())));
+        assert_eq!(
+            install(&src, "vibration", &Meter::default()),
+            Ok(("vibration".into(), "1.0.0".into()))
+        );
         let folder = src.dir.join("vibration");
         let manifest: Value = serde_json::from_slice(&std::fs::read(folder.join("manifest.json")).unwrap()).unwrap();
         assert_eq!(manifest["sha256"], corvus_package::sha256_hex(LIB));
@@ -816,7 +978,7 @@ mod tests {
         let files = || std::fs::read_dir(&folder).unwrap().count();
         assert_eq!(files(), 2, "nothing half written stays");
         std::fs::write(folder.join(loader::TRIAL), b"").unwrap();
-        install(&src, "vibration").expect("installing it again");
+        install(&src, "vibration", &Meter::default()).expect("installing it again");
         assert_eq!(
             files(),
             2,
@@ -836,7 +998,7 @@ mod tests {
         ] {
             let (files, platform) = release(LIB, Some(text));
             let src = source(serve(files), platform, tag);
-            assert!(install(&src, "vibration").is_err(), "{tag}");
+            assert!(install(&src, "vibration", &Meter::default()).is_err(), "{tag}");
             assert!(!src.dir.exists(), "{tag}");
         }
     }
@@ -850,7 +1012,9 @@ mod tests {
         );
         let (files, platform) = release(LIB, Some(&text));
         let src = source(serve(files), platform, "evil");
-        assert!(install(&src, "vibration").unwrap_err().contains("not valid"));
+        assert!(install(&src, "vibration", &Meter::default())
+            .unwrap_err()
+            .contains("not valid"));
         assert!(!src.dir.exists());
     }
 
@@ -859,12 +1023,14 @@ mod tests {
         let (files, platform) = release(b"PRETEND THIS IS A LIBRARY", None);
         assert_eq!(LIB.len(), 25);
         let src = source(serve(files), platform, "lib");
-        let err = install(&src, "vibration").unwrap_err();
+        let err = install(&src, "vibration", &Meter::default()).unwrap_err();
         assert!(err.contains("does not match"), "{err}");
         assert!(installed(&src.dir).is_empty());
         let (files, platform) = release(b"pretend this is another, longer library", None);
         let src = source(serve(files), platform, "long");
-        assert!(install(&src, "vibration").unwrap_err().contains("larger than expected"));
+        assert!(install(&src, "vibration", &Meter::default())
+            .unwrap_err()
+            .contains("larger than expected"));
         assert!(installed(&src.dir).is_empty());
     }
 
@@ -928,6 +1094,115 @@ mod tests {
         let _ = std::fs::remove_dir_all(src.dir.parent().unwrap());
     }
 
+    /// Serves `files`, the library in two halves with a wait for `go` between them, and only
+    /// half of it the first `broken` times it is asked for.
+    fn serve_slowly(files: HashMap<String, Vec<u8>>, broken: usize, go: std::sync::mpsc::Receiver<()>) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            let mut broken = broken;
+            for mut conn in listener.incoming().flatten() {
+                let mut got = Vec::new();
+                let mut buf = [0u8; 2048];
+                while !got.windows(4).any(|w| w == b"\r\n\r\n") {
+                    match conn.read(&mut buf) {
+                        Ok(n) if n > 0 => got.extend_from_slice(&buf[..n]),
+                        _ => break,
+                    }
+                }
+                let text = String::from_utf8_lossy(&got).to_string();
+                let path = text.split_whitespace().nth(1).unwrap_or("/").to_string();
+                let Some(body) = files.get(&path) else {
+                    let _ = conn.write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n");
+                    continue;
+                };
+                let head = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n", body.len());
+                let _ = conn.write_all(head.as_bytes());
+                if !path.ends_with(".lib") {
+                    let _ = conn.write_all(body);
+                    continue;
+                }
+                let (a, b) = body.split_at(body.len() / 2);
+                let _ = conn.write_all(a);
+                if broken > 0 {
+                    broken -= 1;
+                    continue;
+                }
+                let _ = go.recv_timeout(Duration::from_secs(10));
+                let _ = conn.write_all(b);
+            }
+        });
+        format!("http://127.0.0.1:{port}")
+    }
+
+    fn until(store: &mut Store, ctx: &egui::Context, what: &str, f: impl Fn(&Store) -> bool) {
+        for _ in 0..1000 {
+            store.poll(ctx);
+            if f(store) {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        panic!("never: {what}");
+    }
+
+    #[test]
+    fn a_download_says_how_far_it_is_and_a_broken_one_is_tried_again() {
+        let (files, platform) = release(LIB, None);
+        let (go, gate) = std::sync::mpsc::channel();
+        let src = source(serve_slowly(files, 1, gate), platform, "meter");
+        let ctx = egui::Context::default();
+        let mut store = Store::with_source(Some(src.clone()));
+        assert_eq!((store.progress(), store.doing("vibration")), (None, None));
+        store.install("vibration");
+        store.install_file(src.dir.join("not-there.lib"));
+        assert_eq!(store.doing("vibration"), Some(Doing::Waiting));
+        let half = Step::Downloading { got: 12, total: 25 };
+        until(&mut store, &ctx, "half of the library", |s| {
+            s.progress().is_some_and(|p| p.step == half)
+        });
+        assert_eq!(store.doing("vibration"), Some(Doing::Installing(half)));
+        let p = store.progress().unwrap();
+        assert_eq!((p.name.as_str(), p.nth, p.of), ("Vibration Monitor", 1, 2));
+        assert_eq!(p.step.fraction(), Some(0.48));
+        assert_eq!(p.step.words(), "0.0 MB of 0.0 MB \u{b7} 48%");
+        go.send(()).unwrap();
+        until(&mut store, &ctx, "the end", |s| !s.busy());
+        assert_eq!(store.take_installed(), Some(("vibration".into(), "1.0.0".into())));
+        assert_eq!((store.progress(), store.doing("vibration")), (None, None));
+        let _ = std::fs::remove_dir_all(src.dir.parent().unwrap());
+    }
+
+    #[test]
+    fn a_failure_holds_up_no_other_install_and_stays_in_sight() {
+        let (files, platform) = release(LIB, None);
+        let src = source(serve(files), platform, "goes-on");
+        let ctx = egui::Context::default();
+        let mut store = Store::with_source(Some(src.clone()));
+        store.install("nothing-of-that-name");
+        store.install("vibration");
+        until(&mut store, &ctx, "the end", |s| !s.busy());
+        assert_eq!(store.take_installed(), Some(("vibration".into(), "1.0.0".into())));
+        store.say("vibration is ready.".into(), true);
+        assert!(store.message().is_some_and(|(_, ok)| !ok), "{:?}", store.message());
+        let notes = store.take_notes();
+        assert_eq!(notes.iter().map(|n| n.1).collect::<Vec<_>>(), [false, true]);
+        assert!(store.take_notes().is_empty());
+        store.remove("vibration");
+        assert_eq!(store.message(), None, "what is asked for next starts afresh");
+        until(&mut store, &ctx, "the removal", |s| !s.busy());
+        let _ = std::fs::remove_dir_all(src.dir.parent().unwrap());
+    }
+
+    #[test]
+    fn notes_nobody_takes_do_not_pile_up() {
+        let mut store = Store::with_source(None);
+        for i in 0..1000 {
+            store.say(format!("{i}"), true);
+        }
+        assert_eq!(store.take_notes().len(), NOTES_MAX);
+    }
+
     fn library(abi: &str, package: &str, rest: &str) -> Vec<u8> {
         format!("\0CORVUS-PLUGIN\0{abi}\0CORVUS-CRATE\0{package}\0{rest}").into_bytes()
     }
@@ -949,7 +1224,10 @@ mod tests {
             };
             let lib = library("abi-1", "corvus_plugin_vibration", "");
             std::fs::write(src.beside[0].join(name), &lib).unwrap();
-            assert_eq!(install(&src, "vibration"), Ok(("vibration".into(), "1.0.0".into())));
+            assert_eq!(
+                install(&src, "vibration", &Meter::default()),
+                Ok(("vibration".into(), "1.0.0".into()))
+            );
             assert_eq!(
                 installed(&src.dir)["vibration"].sha256,
                 corvus_package::sha256_hex(&lib)
@@ -1001,7 +1279,7 @@ mod tests {
         let src = local("follow");
         let path = src.beside[0].join(corvus_package::built_name("corvus_plugin_vibration"));
         std::fs::write(&path, library("abi-1", "corvus_plugin_vibration", "old")).unwrap();
-        install(&src, "vibration").unwrap();
+        install(&src, "vibration", &Meter::default()).unwrap();
         let sha = |src: &Source| installed(&src.dir)["vibration"].sha256.clone();
         let first = sha(&src);
         follow_beside(&src);
