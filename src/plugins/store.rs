@@ -1380,6 +1380,7 @@ mod tests {
             "ai-chat",
             "map-entities",
             "nuttx-console",
+            "remote-id-check",
             "schwalby",
             "ssh-launcher",
             "tak",

@@ -1018,6 +1018,7 @@ dependencies = [
  "corvus_plugin_map_entities",
  "corvus_plugin_nuttx_console",
  "corvus_plugin_probe",
+ "corvus_plugin_remote_id_check",
  "corvus_plugin_schwalby",
  "corvus_plugin_ssh_launcher",
  "corvus_plugin_tak",
@@ -1098,6 +1099,15 @@ dependencies = [
 
 [[package]]
 name = "corvus_plugin_probe"
+version = "0.0.0"
+dependencies = [
+ "corvus_api",
+ "eframe",
+ "serde_json",
+]
+
+[[package]]
+name = "corvus_plugin_remote_id_check"
 version = "0.0.0"
 dependencies = [
  "corvus_api",

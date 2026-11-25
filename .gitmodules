@@ -22,3 +22,6 @@
 [submodule "plugins/vibration"]
 	path = plugins/vibration
 	url = https://github.com/M-BSquared/corvus-vibration.git
+[submodule "plugins/remote-id-check"]
+	path = plugins/remote-id-check
+	url = https://github.com/M-BSquared/corvus-remote-id-check.git
