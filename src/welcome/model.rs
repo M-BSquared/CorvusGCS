@@ -2,6 +2,8 @@
 //! `python/src/js/welcome.js`): what the steps start from, and the one
 //! `POST /api/config` body Finish writes.
 
+use std::collections::BTreeSet;
+
 use serde_json::{json, Value};
 
 use crate::settings::model;
@@ -18,6 +20,15 @@ pub const STEPS: [(&str, &str); 5] = [
 
 /// The index of the plugins page in [`STEPS`].
 pub const PLUGINS_STEP: i32 = STEPS.len() as i32 - 1;
+
+/// The language the setup does not offer. Settings lists it as every other.
+const NOT_IN_SETUP: &str = "dl";
+
+/// Whether the setup offers language `code`. The one in force is offered whatever it is, so that
+/// the list never stands empty over it.
+pub fn offers_language(code: &str, current: &str) -> bool {
+    code != NOT_IN_SETUP || code == current
+}
 
 /// What the operator chose so far.
 #[derive(Debug, Clone, PartialEq)]
@@ -104,6 +115,27 @@ pub fn preview(base: &Value, c: &Choices) -> Value {
     cfg
 }
 
+/// The plugins an earlier installation on this computer used, from the answer of
+/// `GET /api/plugins`: those with saved settings, and those whose folder an earlier version put
+/// into the operator's plugin folder. The setup switches them on, ready to be downloaded again.
+pub fn used_before(answer: &Value) -> BTreeSet<String> {
+    let saved = answer
+        .get("settings")
+        .and_then(Value::as_object)
+        .into_iter()
+        .flatten()
+        .filter(|(_, v)| v.as_object().is_some_and(|o| !o.is_empty()))
+        .map(|(id, _)| id.clone());
+    let folders = answer
+        .get("plugins")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|p| p.get("source").and_then(Value::as_str) == Some("user"))
+        .filter_map(|p| p.get("id").and_then(Value::as_str).map(str::to_string));
+    saved.chain(folders).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -138,6 +170,26 @@ mod tests {
         assert!(c.virtual_joystick && c.wasd_keys && !c.gamepad && !c.arrow_keys);
         assert_eq!(c.sensitivity, "strict");
         assert!(!c.updates);
+    }
+
+    #[test]
+    fn what_an_earlier_installation_used_is_known_from_its_settings_and_folders() {
+        let used = used_before(&json!({
+            "settings": {"schwalby": {"buttons": []}, "vibration": {}},
+            "plugins": [
+                {"id": "nuttx-console", "source": "user"},
+                {"id": "map-entities", "source": "bundled"},
+            ],
+        }));
+        assert_eq!(used.into_iter().collect::<Vec<_>>(), ["nuttx-console", "schwalby"]);
+        assert!(used_before(&Value::Null).is_empty());
+    }
+
+    #[test]
+    fn the_setup_leaves_drachensprech_to_the_settings() {
+        assert!(!offers_language("dl", "en"));
+        assert!(offers_language("de", "en") && offers_language("en", "de"));
+        assert!(offers_language("dl", "dl"));
     }
 
     #[test]

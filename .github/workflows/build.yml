@@ -142,6 +142,10 @@ jobs:
       # published by their own repositories (plugin.yml), not here.
       - name: Pack the plugins and load them in the finished program
         run: .github/scripts/plugins.sh "$RUNNER_TEMP/squashfs-root/usr/bin/corvus-gcs-ui"
+      # Goes on the release: the plugins' repositories read there under which name
+      # this program looks for their libraries (plugin.yml).
+      - name: Name the plugin interface of this program
+        run: cargo run -q --release --locked -p corvus_tools --bin corvus-build -- plugin-tag dist/plugins > dist/plugin-abi.txt
       - name: Read version
         id: ver
         run: echo "version=$(cat VERSION)" >> "$GITHUB_OUTPUT"
@@ -151,6 +155,7 @@ jobs:
           path: |
             dist/Corvus_GCS-*-x86_64.AppImage
             dist/Corvus_GCS-*-amd64.deb
+            dist/plugin-abi.txt
           if-no-files-found: error
           retention-days: 30
 

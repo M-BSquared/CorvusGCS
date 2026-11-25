@@ -1,13 +1,15 @@
 //! What a plugin package is, as the program that installs it and the tool that
 //! builds it both need to agree.
 //!
-//! Each plugin is a repository of its own. Its release for a version of Corvus GCS
-//! (`corvus-<version>`) carries one `plugins-index.json` and, beside it, one library
-//! per platform. The index lists the plugin with the file name, size and SHA-256 of
-//! its library for every platform it was built for. The program reads the index over
-//! HTTPS from the release for its own version and checks the size and hash of every file it downloads before it writes
-//! anything where a library could be loaded from. There is no signing key: what
-//! is trusted is the plugin's repository on GitHub.
+//! Each plugin is a repository of its own. A release of it is named after what its
+//! libraries fit ([`release_tag`]) and not after a version of Corvus GCS, so every
+//! version with the same plugin interface finds it. It carries one `plugins-index.json`
+//! and, beside it, one library per platform. The index lists the plugin with the file
+//! name, size and SHA-256 of its library for every platform it was built for. The
+//! program reads the index over HTTPS from the release for its own interface and checks
+//! the size and hash of every file it downloads before it writes anything where a
+//! library could be loaded from. There is no signing key: what is trusted is the
+//! plugin's repository on GitHub.
 
 use std::collections::BTreeMap;
 use std::io::Read;
@@ -21,6 +23,13 @@ pub const INDEX_FORMAT: u64 = 1;
 
 /// The file name of the index in a release.
 pub const INDEX_FILE: &str = "plugins-index.json";
+
+/// The release of a plugin's repository that holds the libraries for programs of stamp `abi`.
+/// A new version of Corvus GCS with the same stamp loads what is there already.
+pub fn release_tag(abi: &str) -> String {
+    let sum = sha256_hex(abi.as_bytes());
+    format!("abi-{}", &sum[..16])
+}
 
 /// What this computer is called in an index: `macos-aarch64`, `windows-x86_64`, `linux-x86_64`.
 pub fn platform() -> String {
@@ -323,6 +332,14 @@ mod tests {
         assert!(!is_published_name(&name, "ta", "linux-x86_64"));
         assert!(!is_published_name(&name, "tak", "linux"));
         assert!(!is_published_name("tak-linux-x86_64.entry.json", "tak", "linux-x86_64"));
+    }
+
+    #[test]
+    fn a_release_is_named_after_the_stamp_alone() {
+        let tag = release_tag("1|rustc 1.99.0|00ff");
+        assert!(tag.starts_with("abi-") && tag.len() == 20, "{tag}");
+        assert_eq!(tag, release_tag("1|rustc 1.99.0|00ff"));
+        assert_ne!(tag, release_tag("1|rustc 1.99.0|0100"));
     }
 
     #[test]

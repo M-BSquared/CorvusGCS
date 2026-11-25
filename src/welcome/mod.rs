@@ -12,7 +12,9 @@
 //! A station that is already set up is asked once more, with the plugins page
 //! alone in the same window, whenever the core's `PLUGIN_SETUP_REVISION` is
 //! higher than the `ui.plugin_setup` its config holds. The plugins chosen are
-//! handed to the store, which downloads them in the background.
+//! handed to the store, which downloads them in the background. Those an earlier
+//! installation used (`model::used_before`), and installed ones that need an
+//! update, are switched on to start with.
 
 pub mod model;
 
@@ -63,6 +65,10 @@ struct Session {
     plugins_only: bool,
     /// The plugins the operator wants downloaded.
     picked: BTreeSet<String>,
+    /// What an earlier installation used, switched on to start with.
+    used: BTreeSet<String>,
+    /// Whether the installed plugins that need an update have been added to `picked`.
+    updates_picked: bool,
     languages: Vec<Choice>,
     message: Option<String>,
     saving: Option<Pending<Result<(), String>>>,
@@ -74,6 +80,8 @@ struct Due {
     config: Value,
     /// The station is not new: only the plugin question is open.
     plugins_only: bool,
+    /// What an earlier installation used.
+    used: BTreeSet<String>,
 }
 
 /// The dialog and the check that decides whether it opens.
@@ -96,6 +104,9 @@ fn ask(server: &Server) -> Option<Due> {
             .map(|c| crate::app::unwrap_config(&c))
             .unwrap_or(Value::Null),
         plugins_only: !new,
+        used: http::get_json(server, "/api/plugins")
+            .map(|a| model::used_before(&a))
+            .unwrap_or_default(),
     })
 }
 
@@ -151,7 +162,10 @@ impl Welcome {
         if let Some(due) = self.check.as_ref().and_then(Pending::take) {
             self.check = None;
             if let Some(due) = due.filter(|_| self.session.is_none()) {
-                self.session = Some(Session::new(server, due.config, due.plugins_only));
+                let mut session = Session::new(server, due.config, due.plugins_only);
+                session.picked = due.used.clone();
+                session.used = due.used;
+                self.session = Some(session);
             }
         }
         let Some(s) = self.session.as_mut() else {
@@ -171,6 +185,11 @@ impl Welcome {
 impl Session {
     fn new(server: &Server, base: Value, plugins_only: bool) -> Session {
         let initial = model::choices_from(&base);
+        let languages = crate::i18n::languages()
+            .into_iter()
+            .filter(|l| model::offers_language(&l.code, &initial.language))
+            .map(|l| Choice::new(l.code, l.label))
+            .collect();
         Session {
             server: server.clone(),
             base,
@@ -179,10 +198,9 @@ impl Session {
             step: if plugins_only { model::PLUGINS_STEP } else { -1 },
             plugins_only,
             picked: BTreeSet::new(),
-            languages: crate::i18n::languages()
-                .into_iter()
-                .map(|l| Choice::new(l.code, l.label))
-                .collect(),
+            used: BTreeSet::new(),
+            updates_picked: false,
+            languages,
             message: None,
             saving: None,
             height: 300.0,
@@ -205,10 +223,11 @@ impl Session {
             self.saving = None;
             match r {
                 Ok(()) => {
-                    for id in &self.picked {
+                    let wanted = self.wanted(store);
+                    for id in &wanted {
                         store.install(id);
                     }
-                    let n = self.picked.len();
+                    let n = wanted.len();
                     if self.plugins_only {
                         return Event::Plugins(n);
                     }
@@ -523,6 +542,7 @@ impl Session {
         y += 18.0;
         let last = self.step == model::PLUGINS_STEP;
         let busy = self.saving.is_some();
+        let nothing = self.wanted(store).is_empty();
         let (hit, bottom) = crate::ui::modal::actions(
             ui,
             x,
@@ -531,12 +551,9 @@ impl Session {
             if self.plugins_only {
                 vec![
                     Button::new("Skip", Variant::Secondary).enabled(!busy),
-                    Button::new(
-                        if self.picked.is_empty() { "Done" } else { "Download" },
-                        Variant::Primary,
-                    )
-                    .icon("download")
-                    .enabled(!busy),
+                    Button::new(if nothing { "Done" } else { "Download" }, Variant::Primary)
+                        .icon("download")
+                        .enabled(!busy),
                 ]
             } else {
                 vec![
@@ -582,6 +599,20 @@ impl Session {
         }));
     }
 
+    /// What Finish downloads: the plugins switched on that are on offer and not installed as
+    /// they are offered. While the list is still being looked up, all that are on offer at all.
+    fn wanted(&self, store: &Store) -> Vec<String> {
+        let loading = store.loading();
+        let offered: Vec<&str> = store.offered().iter().map(|o| o.id).collect();
+        store
+            .rows()
+            .into_iter()
+            .filter(|r| offered.contains(&r.id.as_str()) && self.picked.contains(&r.id))
+            .filter(|r| loading || (r.offer.is_some() && (r.installed.is_none() || r.update_available())))
+            .map(|r| r.id)
+            .collect()
+    }
+
     /// The plugins on offer, each with a switch. Nothing is downloaded before Finish.
     fn plugins(&mut self, ui: &mut egui::Ui, f: &mut Form, store: &mut Store) {
         store.want(ui.ctx());
@@ -614,8 +645,24 @@ impl Session {
         if rows.is_empty() && !loading {
             form::desc(ui, f, "There is no folder to install plugins to.");
         }
+        if !loading && !self.updates_picked {
+            self.updates_picked = true;
+            self.picked
+                .extend(rows.iter().filter(|r| r.update_available()).map(|r| r.id.clone()));
+        }
+        if rows
+            .iter()
+            .any(|r| r.offer.is_some() && r.installed.is_none() && self.used.contains(&r.id))
+        {
+            form::desc(
+                ui,
+                f,
+                "Plugins this computer used before are already switched on. Their saved settings are kept.",
+            );
+            f.skip(10.0);
+        }
         for (i, row) in rows.iter().enumerate() {
-            let installed = row.installed.is_some();
+            let installed = row.installed.is_some() && !row.update_available();
             let available = !installed && row.offer.is_some();
             let why = if installed {
                 "Already installed. Remove it under Settings, Plugins."
@@ -624,7 +671,7 @@ impl Session {
             } else {
                 "Not available to download now."
             };
-            let on = installed || self.picked.contains(&row.id);
+            let on = installed || (available && self.picked.contains(&row.id));
             let painter = ui.painter().clone();
             let room = f.w - 38.0 - 16.0;
             let name = style::galley(ui, &row.name, 12.5, Weight::W500, style::text_1(), 0.0);

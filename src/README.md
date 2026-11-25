@@ -342,16 +342,35 @@ types are not its own. `.github/scripts/plugins.sh PROGRAM` packs the libraries
 (`corvus-gcs --check-plugins DIR`, no window); the job fails when one is refused. Nothing is
 published there.
 
-**Publishing.** A plugin is published by pushing to `main` of its repository. Its workflow
+**Publishing.** Each plugin is published on its own, from its repository: `./release.sh` in its
+folder (the same file in every one) tests it and pushes `main`, or starts the build when there is
+nothing to push. Its workflow
 (`.github/workflows/build.yml` there, a few lines) calls `.github/workflows/plugin.yml` of this
 repository: it checks out the newest published Corvus GCS, puts the plugin's commit at
 `plugins/<id>`, makes the same cargo call on Linux, macOS and Windows
 (`.github/scripts/plugin-package.sh`), lets the **published** program load the result, and
-attaches the libraries and `plugins-index.json` to the release `corvus-<version>` of the plugin's
-repository. A library built apart from the program fits it, because the identity of a type
-follows from source, lock file, features and profile and not from the folder or the computer;
-the check says so each time. A new Corvus GCS needs every plugin again: the schedule of each
-plugin does that within hours, `gh workflow run build.yml --repo M-BSquared/corvus-<id>` at once. `--locked`: a plugin uses what
+attaches the libraries and `plugins-index.json` to a release of the plugin's repository named
+`abi-<sum>` (`corvus_package::release_tag`, a checksum of the stamp). The release job of
+`build.yml` puts that name on every release of Corvus GCS as `plugin-abi.txt`, which is where
+`plugin.yml` reads it. Versions from before that file asked for `corvus-<version>`, and the
+workflow still publishes under that name for them. A library built apart from the program fits
+it, because the identity of a type follows from source, lock file, features and profile and not
+from the folder or the computer; the check says so each time. A new Corvus GCS with the same
+stamp loads the published and the installed plugins as they are. One with a new stamp needs every
+plugin again: the schedule of each plugin does that within hours, and
+`gh workflow run build.yml --repo M-BSquared/corvus-<id>` at once.
+
+**What keeps old plugins good.** The stamp covers the compiler, `rust-toolchain.toml`, the
+sources of `src/api/src` and `src/vendor`, and the part of `Cargo.lock` that `corvus_api` is
+built from (`src/api/lock_closure.rs`). A release that changes only the core, the pages or
+their dependencies leaves it alone. Rust has no stable binary interface, so a change inside
+that set cannot be bridged: the older library is refused with a reason, none of its code runs,
+and **Update** fetches the new one. What a plugin saved is not tied to any of this
+(`~/.corvus/plugins/<id>/config.json`), so a plugin must go on reading what its earlier
+versions wrote. A change to a route of the core that plugins call has to keep the old callers
+working, because a published plugin may be older or newer than the program.
+
+`--locked`: a plugin uses what
 `Cargo.lock` holds. A dependency that is not there, and a new plugin, need a release of Corvus
 GCS first.
 
@@ -364,7 +383,7 @@ network. A library comes from (`src/plugins/store.rs`):
   AppImage. The build scripts leave `dist/corvus-plugins`. Taken first; with all of them there no
   release is asked. A plugin installed from there is brought up to date at the next start when
   the file changed (`follow_beside`), so a rebuilt program goes on with rebuilt plugins.
-* **the plugin's repository**: the release `corvus-<version>` there, its `plugins-index.json` over
+* **the plugin's repository**: the release `abi-<sum>` there, its `plugins-index.json` over
   HTTPS (a redirect to plain http is refused) when the page is opened; size and SHA-256 of a
   library are checked against it. All repositories are asked at once and each answers for itself.
   There is no signing key: what is trusted is the plugin's repository on GitHub. `Meter` carries

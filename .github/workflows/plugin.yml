@@ -6,12 +6,15 @@
 # of the program that loads it, so this checks out the newest published version
 # of Corvus GCS, puts the plugin's commit at plugins/<id>, builds both on every
 # system, and lets the published program load the result. Only then are the
-# libraries and their list attached to the release `corvus-<version>` of the
-# plugin's repository, which is where Corvus GCS of that version looks for them.
+# libraries and their list attached to a release of the plugin's repository named
+# after the plugin interface of that program (`abi-<sum>`, read from the
+# `plugin-abi.txt` of its release), which is where Corvus GCS looks for them.
+# Versions of Corvus GCS from before that file look under `corvus-<version>`.
 #
-# A push to the plugin publishes it for the newest Corvus GCS. A new Corvus GCS
-# needs every plugin again: the plugin's schedule does that within hours, and
-# `gh workflow run build.yml --repo M-BSquared/corvus-<id>` at once.
+# A push to the plugin publishes it for the interface of the newest Corvus GCS. A
+# new Corvus GCS with the same interface finds what is there already. One with a
+# new interface needs every plugin again: the plugin's schedule does that within
+# hours, and `gh workflow run build.yml --repo M-BSquared/corvus-<id>` at once.
 # =============================================================================
 name: plugin
 
@@ -33,6 +36,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.which.outputs.tag }}
+      release: ${{ steps.which.outputs.release }}
       build: ${{ steps.which.outputs.build }}
     steps:
       - id: which
@@ -46,6 +50,13 @@ jobs:
           [ -n "$tag" ] || tag="$(gh api repos/M-BSquared/CorvusGCS/releases/latest --jq .tag_name)"
           case "$tag" in v[0-9]*) ;; *) echo "not a tag of Corvus GCS: $tag" >&2; exit 1 ;; esac
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          release="corvus-${tag#v}"
+          assets="$(gh release view "$tag" --repo M-BSquared/CorvusGCS --json assets --jq '.assets[].name')"
+          if grep -Fxq plugin-abi.txt <<<"$assets"; then
+            release="$(gh release download "$tag" --repo M-BSquared/CorvusGCS --pattern plugin-abi.txt --output - | tr -d '[:space:]')"
+            [[ "$release" =~ ^abi-[0-9a-f]{16}$ ]] || { echo "not a plugin interface: $release" >&2; exit 1; }
+          fi
+          echo "release=$release" >> "$GITHUB_OUTPUT"
           build=true
           # Versions from before the plugins were repositories of their own cannot load one.
           if ! gh api "repos/M-BSquared/CorvusGCS/contents/.github/scripts/plugin-package.sh?ref=$tag" >/dev/null 2>&1 \
@@ -55,7 +66,7 @@ jobs:
           fi
           # The schedule only fills in what is missing.
           if [ "$build" = true ] && [ "$GITHUB_EVENT_NAME" = schedule ]; then
-            notes="$(gh release view "corvus-${tag#v}" --repo "$GITHUB_REPOSITORY" --json body --jq .body 2>/dev/null || true)"
+            notes="$(gh release view "$release" --repo "$GITHUB_REPOSITORY" --json body --jq .body 2>/dev/null || true)"
             case "$notes" in *"$GITHUB_SHA"*) build=false ;; esac
           fi
           echo "build=$build" >> "$GITHUB_OUTPUT"
@@ -136,21 +147,31 @@ jobs:
           path: artifacts
           merge-multiple: true
       - name: Write the list
+        env:
+          RELEASE: ${{ needs.which.outputs.release }}
         run: |
           set -euo pipefail
-          cargo run -q --release --locked -p corvus_tools --bin corvus-build -- plugin-index --out artifacts
+          tools() { cargo run -q --release --locked -p corvus_tools --bin corvus-build -- "$@"; }
+          tools plugin-index --out artifacts
+          if [[ "$RELEASE" == abi-* ]]; then
+            built="$(tools plugin-tag artifacts)"
+            [ "$built" = "$RELEASE" ] || { echo "built for $built, the program asks for $RELEASE" >&2; exit 1; }
+          fi
           rm -f artifacts/*.entry.json
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           TAG: ${{ needs.which.outputs.tag }}
+          RELEASE: ${{ needs.which.outputs.release }}
         run: |
           set -euo pipefail
-          release="corvus-${TAG#v}"
-          notes="For Corvus GCS ${TAG#v}, built from $GITHUB_SHA. Install it in Corvus GCS under Settings, Plugins."
+          release="$RELEASE"
+          title="For Corvus GCS ${TAG#v}"
+          [[ "$release" != abi-* ]] || title="For Corvus GCS ${TAG#v} and others with $release"
+          notes="$title, built from $GITHUB_SHA. Install it in Corvus GCS under Settings, Plugins."
           gh release view "$release" >/dev/null 2>&1 \
-            || gh release create "$release" --target "$GITHUB_SHA" --title "For Corvus GCS ${TAG#v}" --notes "$notes"
+            || gh release create "$release" --target "$GITHUB_SHA" --title "$title" --notes "$notes"
           upload() {
             for attempt in 1 2 3 4 5; do
               gh release upload "$release" "$1" --clobber && return 0
@@ -164,7 +185,7 @@ jobs:
             [ "$(basename "$f")" = plugins-index.json ] || upload "$f"
           done
           upload artifacts/plugins-index.json
-          gh release edit "$release" --notes "$notes"
+          gh release edit "$release" --title "$title" --notes "$notes"
           # What the list no longer names.
           gh release view "$release" --json assets --jq '.assets[].name' | while read -r name; do
             [ -f "artifacts/$name" ] || gh release delete-asset "$release" "$name" --yes

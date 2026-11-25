@@ -19,6 +19,7 @@
 //! | `plugin-pack [--build] [--only ID] [--target DIR] [--out DIR]` | the built plugin libraries of this platform (signed ad hoc on macOS, as the system asks), with their entries |
 //! | `plugin-unpack OUT DIR` | install what `plugin-pack` left in OUT into DIR, for `corvus-gcs --check-plugins DIR` |
 //! | `plugin-index [--out DIR]` | merge the platforms in DIR into `plugins-index.json` |
+//! | `plugin-tag DIR` | print the release the libraries packed in DIR are published under |
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -30,7 +31,7 @@ fn usage() -> ExitCode {
         "usage: corvus-build appimage-libs bundle|check APPDIR | icon IN OUT SIZE | png-size FILE | \
          squashfs APPIMAGE OUT | elf-static FILE | bundle-check BUNDLE [--require REL ...] | \
          guide [--check] | i18n check|fmt|new CODE NAME NATIVE [--force] | \
-         plugin-pack [--build] [--only ID] [--target DIR] [--out DIR] | plugin-unpack OUT DIR | plugin-index [--out DIR] | soak [--binary B] [--minutes M] \
+         plugin-pack [--build] [--only ID] [--target DIR] [--out DIR] | plugin-unpack OUT DIR | plugin-index [--out DIR] | plugin-tag DIR | soak [--binary B] [--minutes M] \
          [--every S] [--step S] [--mode 1|3d] [--at LNG,LAT] [--home DIR] [--csv FILE] [--max-mb MB]"
     );
     ExitCode::from(2)
@@ -223,6 +224,13 @@ fn main() -> ExitCode {
                 Err(e) => fail(e),
             }
         }
+        ["plugin-tag", dir] => match corvus_tools::plugins::merge(Path::new(dir)) {
+            Ok(index) => {
+                println!("{}", corvus_package::release_tag(&index.abi));
+                ExitCode::SUCCESS
+            }
+            Err(e) => fail(e),
+        },
         ["soak", rest @ ..] => {
             let mut o = soak::Options {
                 binary: repo_root().join("target/release/corvus-gcs"),

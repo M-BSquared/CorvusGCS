@@ -143,8 +143,9 @@ fn api_config_update(core: &Core, req: &Request) -> Response {
 /// Which round of the plugin question this program asks. Every station whose config holds a lower
 /// `ui.plugin_setup` (none counts as 0) is asked once, in the setup dialog, which plugins to download,
 /// and the answer, or Skip, stores this number. Raise it by one to ask every station again, after a
-/// change big enough that the question is worth asking twice.
-pub const PLUGIN_SETUP_REVISION: i64 = 1;
+/// change big enough that the question is worth asking twice. 2: nothing could be downloaded when
+/// 1 was asked (v2026.11.92).
+pub const PLUGIN_SETUP_REVISION: i64 = 2;
 
 fn plugin_setup_pending(core: &Core) -> bool {
     let done = core

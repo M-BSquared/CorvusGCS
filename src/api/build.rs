@@ -167,24 +167,35 @@ const ICONS: &[(&str, &str)] = &[
     ("wrench", "Wrench"),
 ];
 
-/// What a plugin library must carry to be loaded: the compiler, the target, and a hash of
-/// everything that decides how the types that cross the boundary are laid out and what they do.
+include!("lock_closure.rs");
+
+/// What a plugin library must carry to be loaded: the compiler, and a hash of everything that
+/// decides how the types that cross the boundary are laid out and what they do: this crate, the
+/// vendored crates, the toolchain and the part of `Cargo.lock` this crate is built from.
 /// Not the program's version: a library stays good for as long as none of this changes.
 fn abi_stamp() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     println!("cargo:rerun-if-env-changed=RUSTC");
-    let mut files = vec![root.join("Cargo.lock"), root.join("rust-toolchain.toml")];
+    let lock = root.join("Cargo.lock");
+    println!("cargo:rerun-if-changed={}", lock.display());
+    println!("cargo:rerun-if-changed=lock_closure.rs");
+    let lock = std::fs::read_to_string(&lock).unwrap_or_else(|e| panic!("{}: {e}", lock.display()));
+    let mut files = vec![root.join("rust-toolchain.toml")];
     for dir in ["src/api/src", "src/vendor"] {
         println!("cargo:rerun-if-changed={}", root.join(dir).display());
         source_files(&root.join(dir), &mut files);
     }
     let mut hash = 0xcbf2_9ce4_8422_2325_u64;
+    let mut add = |bytes: &[u8]| {
+        // A checkout on Windows may end its lines differently; the stamp must not.
+        for b in bytes.iter().filter(|b| **b != b'\r') {
+            hash = (hash ^ u64::from(*b)).wrapping_mul(0x0100_0000_01b3);
+        }
+    };
+    add(lock_closure(&lock, "corvus_api").as_bytes());
     for f in &files {
         println!("cargo:rerun-if-changed={}", f.display());
-        // A checkout on Windows may end its lines differently; the stamp must not.
-        for b in std::fs::read(f).unwrap_or_default().into_iter().filter(|b| *b != b'\r') {
-            hash = (hash ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3);
-        }
+        add(&std::fs::read(f).unwrap_or_default());
     }
     let rustc = std::env::var("RUSTC").unwrap_or_else(|_| "rustc".into());
     let compiler = std::process::Command::new(rustc)

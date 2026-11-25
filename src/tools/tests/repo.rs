@@ -133,7 +133,15 @@ fn every_plugin_is_a_repository_that_publishes_itself() {
     let modules = text(".gitmodules");
     let workspace = text("Cargo.toml");
     let called = text(".github/workflows/plugin.yml");
-    assert!(called.contains("workflow_call:") && called.contains("release=\"corvus-${TAG#v}\""));
+    assert!(called.contains("workflow_call:") && called.contains("release=\"$RELEASE\""));
+    // The name the program asks under travels with its release: build.yml writes it there, and
+    // the plugins' repositories publish under it.
+    assert!(called.contains("--pattern plugin-abi.txt"));
+    let build = text(".github/workflows/build.yml");
+    assert!(
+        build.contains("plugin-tag dist/plugins > dist/plugin-abi.txt")
+            && build.contains("\n            dist/plugin-abi.txt\n")
+    );
     let mut n = 0;
     for e in std::fs::read_dir(root().join("plugins")).unwrap().flatten() {
         if !e.path().join("Cargo.toml").is_file() {
@@ -163,6 +171,12 @@ fn every_plugin_is_a_repository_that_publishes_itself() {
             own.contains("uses: M-BSquared/CorvusGCS/.github/workflows/plugin.yml@master")
                 && own.contains(&format!("\n      id: {id}\n")),
             "{id}: its workflow"
+        );
+        // The same script in every one, so that a fix to it is a fix to all.
+        assert_eq!(
+            text(&format!("plugins/{id}/release.sh")),
+            text("plugins/vibration/release.sh"),
+            "{id}: release.sh"
         );
         for file in ["LICENSE.md", "README.md", ".gitignore"] {
             assert!(root().join("plugins").join(&id).join(file).is_file(), "{id}: {file}");

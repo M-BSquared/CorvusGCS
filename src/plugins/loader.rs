@@ -548,7 +548,6 @@ mod tests {
         let ctx = egui::Context::default();
         fonts::install(&ctx);
         let source = Source {
-            version: "0".into(),
             base: Some("http://127.0.0.1:9".into()),
             abi: dynamic::ABI.into(),
             platform: corvus_package::platform(),

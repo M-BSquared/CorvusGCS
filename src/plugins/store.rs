@@ -6,8 +6,9 @@
 //!
 //! * Beside the program: the folder `corvus-plugins` next to it, or the folder a build left it in
 //!   (`./run.sh`). Needs no network, and is taken first.
-//! * The plugin's own repository on GitHub: its release for the running version of the program
-//!   (`corvus-<version>`), whose `plugins-index.json` (see `corvus_package`) names the library for
+//! * The plugin's own repository on GitHub: its release for the plugin interface of this program
+//!   (`corvus_package::release_tag`), which every version of Corvus GCS with that interface
+//!   shares, whose `plugins-index.json` (see `corvus_package`) names the library for
 //!   each system. Read over HTTPS when the operator opens the page and the plugin is not there
 //!   beside the program. A library is written only after its size and SHA-256 match the list.
 //!   There is no signing key: what is trusted is the plugin's repository on GitHub.
@@ -47,6 +48,8 @@ const LIST_TIMEOUT: Duration = Duration::from_secs(30);
 const LIBRARY_TIMEOUT: Duration = Duration::from_secs(1800);
 const NOTES_MAX: usize = 32;
 const UNREACHED: &str = "could not reach the server";
+const NOT_PUBLISHED: &str =
+    "no plugin that fits this version of Corvus GCS is published yet. A new version gets its plugins within a few hours";
 
 /// What the operator reads wherever plugins are installed.
 pub const RISK: &str = "A plugin is code that runs inside Corvus GCS with your rights: it can run programs, read files and steer the aircraft, and it may use third party libraries. Its download is checked against its repository, but not every plugin has been reviewed. Install only what you trust. You do so at your own risk.";
@@ -80,8 +83,6 @@ fn of_package(package: &str, offered: &[Offered]) -> (String, String) {
 /// Where the plugins come from and go to.
 #[derive(Clone)]
 pub struct Source {
-    /// The version of the program, which the releases are named after.
-    pub version: String,
     /// Releases from somewhere else: a folder per plugin there.
     pub base: Option<String>,
     /// What a library must have been built from.
@@ -99,7 +100,6 @@ impl Source {
     pub fn real() -> Option<Source> {
         #[cfg_attr(not(debug_assertions), allow(unused_mut))]
         let mut src = Source {
-            version: corvus_core::version::version().to_string(),
             base: None,
             abi: corvus_api::plugin::dynamic::ABI.to_string(),
             platform: corvus_package::platform(),
@@ -215,7 +215,7 @@ fn get(url: &str, cap: usize, timeout: Duration, seen: http_client::Seen) -> Res
     let ua = format!("CorvusGCS/{}", corvus_core::version::version());
     let reply = http_client::get_seen(url, &ua, "*/*", timeout, cap, seen).map_err(|e| format!("{UNREACHED} ({e})"))?;
     if reply.status == 404 {
-        return Err("there is nothing published for this version of Corvus GCS".into());
+        return Err(NOT_PUBLISHED.into());
     }
     if reply.status != 200 {
         return Err(format!("the server answered HTTP {}", reply.status));
@@ -226,11 +226,15 @@ fn get(url: &str, cap: usize, timeout: Duration, seen: http_client::Seen) -> Res
     Ok(reply.body)
 }
 
-/// The folder the files of plugin `o` are in, for this version of the program.
+/// The folder the files of plugin `o` are in, for the plugin interface of this program.
 fn release_of(src: &Source, o: &Offered) -> String {
     match &src.base {
         Some(base) => format!("{base}/{}", o.id),
-        None => format!("{}/releases/download/corvus-{}", o.repository, src.version),
+        None => format!(
+            "{}/releases/download/{}",
+            o.repository,
+            corvus_package::release_tag(&src.abi)
+        ),
     }
 }
 
@@ -963,7 +967,6 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("corvus-store-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         Source {
-            version: "2026.11.90".into(),
             base: Some(base),
             abi: "abi-1".into(),
             platform,
@@ -971,6 +974,19 @@ mod tests {
             dir: dir.join("packages"),
             offered: OFFERED,
         }
+    }
+
+    #[test]
+    fn a_release_is_asked_for_by_the_interface_and_not_by_the_version() {
+        let mut src = source(String::new(), "linux-x86_64".into(), "release-of");
+        src.base = None;
+        assert_eq!(
+            release_of(&src, &OFFERED[0]),
+            format!(
+                "https://github.com/M-BSquared/corvus-vibration/releases/download/{}",
+                corvus_package::release_tag("abi-1")
+            )
+        );
     }
 
     #[test]
@@ -1059,7 +1075,7 @@ mod tests {
         let (files, platform) = release(LIB, None);
         let mut src = source(serve(files), platform, "gone");
         src.base = src.base.map(|b| b + "/missing");
-        assert!(fetch(&src, &OFFERED[0]).unwrap_err().contains("nothing published"));
+        assert!(fetch(&src, &OFFERED[0]).unwrap_err().contains("is published yet"));
     }
 
     #[test]
@@ -1383,12 +1399,6 @@ mod tests {
 
     #[test]
     fn a_plugin_is_asked_for_in_its_own_repository() {
-        let mut src = source(String::new(), "linux-x86_64".into(), "own");
-        src.base = None;
-        assert_eq!(
-            release_of(&src, &OFFERED[0]),
-            "https://github.com/M-BSquared/corvus-vibration/releases/download/corvus-2026.11.90"
-        );
         for o in crate::plugins::OFFERED {
             let want = format!("https://github.com/M-BSquared/corvus-{}", o.id);
             assert_eq!(o.repository, want, "{}", o.id);
@@ -1404,7 +1414,7 @@ mod tests {
             ..OFFERED[0]
         };
         let got = fetch_all(&src, &[other, OFFERED[0]]);
-        assert!(got["tak"].as_ref().unwrap_err().contains("nothing published"));
+        assert!(got["tak"].as_ref().unwrap_err().contains("is published yet"));
         assert_eq!(got["vibration"].as_ref().unwrap().version, "1.0.0");
     }
 
