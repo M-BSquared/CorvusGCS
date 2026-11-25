@@ -16,8 +16,12 @@ fn root() -> PathBuf {
     repo_root()
 }
 
+/// The file as one line ending reads it: the plugins are repositories of their own, so this
+/// repository's `.gitattributes` does not reach them and a Windows checkout turns them into CRLF.
 fn text(rel: &str) -> String {
-    std::fs::read_to_string(root().join(rel)).unwrap_or_else(|e| panic!("{rel}: {e}"))
+    std::fs::read_to_string(root().join(rel))
+        .unwrap_or_else(|e| panic!("{rel}: {e}"))
+        .replace("\r\n", "\n")
 }
 
 const BUILDS: &[&str] = &["build-appimage.sh", "build-macos-app.sh", "build-windows.ps1"];
