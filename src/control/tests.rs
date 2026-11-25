@@ -42,10 +42,18 @@ fn backend() -> (Server, Arc<Mutex<Vec<String>>>) {
     (Server::local(port), got)
 }
 
+/// A pad at its default place: the station's own `joystick.json` (a folded pad
+/// takes no input) must neither steer a test nor be written by one.
+fn control(server: Server, cfg: Config) -> Control {
+    let mut c = Control::new(server, cfg);
+    c.place = Placement::from_path(None);
+    c
+}
+
 #[test]
 fn a_pad_with_no_surface_streams_nothing() {
     let (server, got) = backend();
-    let mut c = Control::new(server, Config::default());
+    let mut c = control(server, Config::default());
     let ctx = egui::Context::default();
     c.update(&ctx, &json!({"connected": true}), &Default::default(), true, 0.0);
     std::thread::sleep(Duration::from_millis(500));
@@ -60,7 +68,7 @@ fn the_stream_sends_neutral_frames_while_the_link_is_up_and_stops_on_shutdown() 
         sticks: true,
         ..Config::default()
     };
-    let mut c = Control::new(server, cfg);
+    let mut c = control(server, cfg);
     let ctx = egui::Context::default();
     c.update(&ctx, &json!({"connected": true}), &Default::default(), true, 0.0);
     std::thread::sleep(Duration::from_millis(700));
@@ -80,7 +88,7 @@ fn the_stream_sends_neutral_frames_while_the_link_is_up_and_stops_on_shutdown() 
 #[test]
 fn no_link_sends_nothing() {
     let (server, got) = backend();
-    let mut c = Control::new(
+    let mut c = control(
         server,
         Config {
             sticks: true,
@@ -97,7 +105,7 @@ fn no_link_sends_nothing() {
 #[test]
 fn a_gamepad_pushed_forward_flies_and_the_arm_gesture_asks_once() {
     let (server, got) = backend();
-    let mut c = Control::new(
+    let mut c = control(
         server,
         Config {
             gamepad: true,
@@ -114,7 +122,7 @@ fn a_gamepad_pushed_forward_flies_and_the_arm_gesture_asks_once() {
     let _ = got;
     // Disarmed, both sticks inward for a second: one arm request.
     let (server, got) = backend();
-    let mut c = Control::new(
+    let mut c = control(
         server,
         Config {
             gamepad: true,
@@ -175,7 +183,7 @@ fn frame_with(c: &mut Control, ctx: &egui::Context, events: Vec<egui::Event>, no
 #[test]
 fn the_keyboard_is_locked_until_shift_w_twice_and_escape_locks_it_again() {
     let (server, _) = backend();
-    let mut c = Control::new(
+    let mut c = control(
         server,
         Config {
             keys: true,
@@ -214,7 +222,7 @@ fn the_keyboard_is_locked_until_shift_w_twice_and_escape_locks_it_again() {
 #[test]
 fn a_second_press_too_late_does_not_unlock() {
     let (server, _) = backend();
-    let mut c = Control::new(
+    let mut c = control(
         server,
         Config {
             wasd: true,
@@ -232,7 +240,7 @@ fn a_second_press_too_late_does_not_unlock() {
 #[test]
 fn a_new_config_locks_the_keyboard_and_lets_go_of_everything() {
     let (server, _) = backend();
-    let mut c = Control::new(
+    let mut c = control(
         server,
         Config {
             keys: true,
