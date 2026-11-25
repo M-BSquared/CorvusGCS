@@ -241,14 +241,13 @@ fn each_plugin_works_alone_and_nothing_is_sent_unless_both_agree() {
 fn a_contact_handed_over_becomes_a_saved_entity_and_goes_back_out_as_a_marker() {
     let mut r = rig("handover", false, true, true);
     r.pump("the first markers", |p| uids(p).len() == 3);
-    let contact = corvus_plugin_tak::model::Contact::from_json(&json!({
-        "uid": "ANDROID-9", "callsign": "HOSTILE 1", "type": "a-h-G", "class": "unit", "affiliation": "hostile",
-        "dimension": "ground", "lat": 48.0765, "lon": 11.6441, "remarks": "by the road"}))
-    .unwrap();
+    // What the TAK plugin's `entity_for_contact` makes of a hostile unit. The crate itself is not linked
+    // here: two plugin rlibs in one binary export the same `CORVUS_PLUGIN` symbols.
     assert!(r.reg.bus.send(
         "tak",
         "map-entities",
-        corvus_plugin_tak::model::entity_for_contact(&contact)
+        json!({"op": "add", "kind": "target", "name": "HOSTILE 1", "lng": 11.6441, "lat": 48.0765,
+            "note": "From TAK, a-h-G. by the road"})
     ));
     r.pump("a fourth marker", |p| uids(p).len() == 4);
     let new = uids(&r.peer)

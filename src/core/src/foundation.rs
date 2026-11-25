@@ -128,14 +128,41 @@ fn api_config_update(core: &Core, req: &Request) -> Response {
     }
 }
 
-fn api_welcome(core: &Core, _req: &Request) -> Response {
-    Response::json(json!({"pending": core.settings().first_start_pending()}))
+/// Which round of the plugin question this program asks. Every station whose config holds a lower
+/// `ui.plugin_setup` (none counts as 0) is asked once, in the setup dialog, which plugins to download,
+/// and the answer, or Skip, stores this number. Raise it by one to ask every station again, after a
+/// change big enough that the question is worth asking twice.
+pub const PLUGIN_SETUP_REVISION: i64 = 1;
+
+fn plugin_setup_pending(core: &Core) -> bool {
+    let done = core
+        .settings()
+        .get()
+        .block("ui")
+        .and_then(|ui| ui.get("plugin_setup"))
+        .and_then(Value::as_i64)
+        .unwrap_or(0);
+    done < PLUGIN_SETUP_REVISION
 }
 
+fn api_welcome(core: &Core, _req: &Request) -> Response {
+    Response::json(json!({
+        "pending": core.settings().first_start_pending(),
+        "plugins": plugin_setup_pending(core),
+    }))
+}
+
+/// The setup dialog was finished or skipped, the plugin question with it.
 fn api_welcome_done(core: &Core, _req: &Request) -> Response {
     let settings = core.settings();
     settings.finish_first_start();
-    let saved = settings.save().is_ok();
+    let saved = settings
+        .update(core, |cfg| {
+            let mut ui = cfg.block("ui").cloned().unwrap_or_default();
+            ui.insert("plugin_setup".into(), PLUGIN_SETUP_REVISION.into());
+            cfg.set("ui", Some(Value::Object(ui)));
+        })
+        .is_ok();
     Response::json(json!({"ok": true, "saved": saved}))
 }
 
@@ -471,22 +498,67 @@ mod tests {
     fn the_first_start_is_pending_until_it_is_finished() {
         let dir = state_dir("welcome");
         let c = started(&dir);
-        assert_eq!(c.internal_call("GET", "/api/welcome", None).1, json!({"pending": true}));
+        assert_eq!(
+            c.internal_call("GET", "/api/welcome", None).1,
+            json!({"pending": true, "plugins": true})
+        );
         assert_eq!(
             c.internal_call("POST", "/api/welcome", None).1,
             json!({"ok": true, "saved": true})
         );
         assert_eq!(
             c.internal_call("GET", "/api/welcome", None).1,
-            json!({"pending": false})
+            json!({"pending": false, "plugins": false})
         );
         c.stop();
         let again = started(&dir);
         assert_eq!(
             again.internal_call("GET", "/api/welcome", None).1,
-            json!({"pending": false})
+            json!({"pending": false, "plugins": false})
         );
         again.stop();
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_station_set_up_before_the_plugin_question_is_asked_it_once() {
+        let dir = state_dir("welcome-plugins");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("config.json"), r#"{"language": "de", "ui": {"scale": 1.25}}"#).unwrap();
+        let c = started(&dir);
+        assert_eq!(
+            c.internal_call("GET", "/api/welcome", None).1,
+            json!({"pending": false, "plugins": true}),
+            "the station is not new, only the plugin question is open"
+        );
+        c.internal_call("POST", "/api/welcome", None);
+        assert_eq!(
+            c.internal_call("GET", "/api/welcome", None).1,
+            json!({"pending": false, "plugins": false})
+        );
+        c.stop();
+        let again = started(&dir);
+        assert_eq!(
+            again.internal_call("GET", "/api/welcome", None).1["plugins"],
+            false,
+            "the answer is in the config file"
+        );
+        let saved: Value = serde_json::from_str(&std::fs::read_to_string(dir.join("config.json")).unwrap()).unwrap();
+        assert_eq!(saved["ui"]["plugin_setup"], PLUGIN_SETUP_REVISION);
+        assert_eq!(saved["ui"]["scale"], 1.25, "the rest of the ui block is kept");
+        again.stop();
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_lower_revision_in_the_config_is_asked_again() {
+        let dir = state_dir("welcome-revision");
+        std::fs::create_dir_all(&dir).unwrap();
+        let older = format!(r#"{{"ui": {{"plugin_setup": {}}}}}"#, PLUGIN_SETUP_REVISION - 1);
+        std::fs::write(dir.join("config.json"), older).unwrap();
+        let c = started(&dir);
+        assert_eq!(c.internal_call("GET", "/api/welcome", None).1["plugins"], true);
+        c.stop();
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

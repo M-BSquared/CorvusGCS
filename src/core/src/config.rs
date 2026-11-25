@@ -517,6 +517,9 @@ fn coerce_ui(raw: &Value) -> Option<Map> {
     if let Some(s) = number(raw.get("scale")).filter(|s| s.is_finite()) {
         out.insert("scale".into(), Value::from(s.clamp(0.5, 3.0)));
     }
+    if let Some(n) = raw.get("plugin_setup").and_then(Value::as_i64).filter(|n| *n >= 0) {
+        out.insert("plugin_setup".into(), n.into());
+    }
     for k in UI_BOOLS {
         if let Some(b) = json::bool_of(raw, k) {
             out.insert((*k).into(), b.into());

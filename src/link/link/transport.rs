@@ -584,6 +584,7 @@ impl Serial {
     /// `open_held` that also takes an exclusive lock on the port, refusing it
     /// when another process holds it. A vehicle link uses this; a service that
     /// talks to a device it was told to share does not.
+    #[cfg(unix)]
     pub fn open_exclusive(
         device: &str,
         baud: u32,

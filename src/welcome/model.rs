@@ -6,13 +6,18 @@ use serde_json::{json, Value};
 
 use crate::settings::model;
 
-/// The four steps after the start page.
-pub const STEPS: [(&str, &str); 4] = [
+/// The steps after the start page. The last one, the plugins, is also the only page of the dialog
+/// for a station that was set up before the plugin question existed.
+pub const STEPS: [(&str, &str); 5] = [
     ("look", "Look"),
     ("units", "Units"),
     ("workspace", "Workspace"),
     ("controls", "Controls"),
+    ("plugins", "Plugins"),
 ];
+
+/// The index of the plugins page in [`STEPS`].
+pub const PLUGINS_STEP: i32 = STEPS.len() as i32 - 1;
 
 /// What the operator chose so far.
 #[derive(Debug, Clone, PartialEq)]
@@ -133,6 +138,12 @@ mod tests {
         assert!(c.virtual_joystick && c.wasd_keys && !c.gamepad && !c.arrow_keys);
         assert_eq!(c.sensitivity, "strict");
         assert!(!c.updates);
+    }
+
+    #[test]
+    fn the_plugins_page_is_the_last_step() {
+        assert_eq!(STEPS[PLUGINS_STEP as usize].0, "plugins");
+        assert_eq!(PLUGINS_STEP as usize, STEPS.len() - 1);
     }
 
     #[test]

@@ -603,18 +603,29 @@ impl App {
         for e in self.fleet.take_errors() {
             self.board.add_local("critical", &e, now);
         }
-        match self.welcome.show(ui.ctx(), &self.server, &self.logo) {
+        match self
+            .welcome
+            .show(ui.ctx(), &self.server, &self.logo, &mut self.plugins.store)
+        {
             crate::welcome::Event::None => {}
             crate::welcome::Event::Preview(cfg) | crate::welcome::Event::Restore(cfg) => {
                 self.apply_effects(ui.ctx(), settings::Effects::of(&cfg));
             }
-            crate::welcome::Event::Done(cfg) => {
+            crate::welcome::Event::Done(cfg, plugins) => {
                 self.apply_effects(ui.ctx(), settings::Effects::of(&cfg));
                 self.board.add_local(
                     "info",
                     "Corvus GCS is set up. Everything can be changed under Settings.",
                     now,
                 );
+                if plugins > 0 {
+                    self.board.add_local("info", PLUGINS_COMING, now);
+                }
+            }
+            crate::welcome::Event::Plugins(plugins) => {
+                if plugins > 0 {
+                    self.board.add_local("info", PLUGINS_COMING, now);
+                }
             }
             crate::welcome::Event::Import => {
                 self.page = Page::Settings;
@@ -709,6 +720,8 @@ impl App {
 }
 
 const WHEEL_GAIN: f32 = 0.5;
+
+const PLUGINS_COMING: &str = "The chosen plugins are being downloaded. Progress is under Settings, Plugins.";
 
 impl eframe::App for App {
     fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
@@ -986,8 +999,8 @@ pub fn run(
                 updates_on: config.get("updates").and_then(|u| u.get("check")) != Some(&Value::Bool(false)),
                 welcome: {
                     let mut w = crate::welcome::Welcome::start(&server, &ctx);
-                    if page == Some("welcome") {
-                        w.open_now(&server, config.clone());
+                    if matches!(page, Some("welcome" | "welcome-plugins")) {
+                        w.open_now(&server, config.clone(), page == Some("welcome-plugins"));
                     }
                     w
                 },

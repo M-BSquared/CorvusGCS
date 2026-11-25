@@ -1,21 +1,29 @@
 //! The first start setup (`python/src/js/welcome.js`, `.welcome` of
 //! `main.css`). It opens once, on a station that had no config file when
 //! Corvus started (`GET /api/welcome`). Its first page has three ways out:
-//! set the station up in four short steps (look, units and flight review,
-//! workspace, controls), take the settings from a file exported on another
-//! station, or skip straight to the map with the defaults.
+//! set the station up in five short steps (look, units and flight review,
+//! workspace, controls, plugins), take the settings from a file exported on
+//! another station, or skip straight to the map with the defaults.
 //!
 //! Every choice previews live, and nothing is written until Finish: the
 //! config is posted once, then `POST /api/welcome` marks the setup done.
 //! Skip puts back what was showing and marks it done as well.
+//!
+//! A station that is already set up is asked once more, with the plugins page
+//! alone in the same window, whenever the core's `PLUGIN_SETUP_REVISION` is
+//! higher than the `ui.plugin_setup` its config holds. The plugins chosen are
+//! handed to the store, which downloads them in the background.
 
 pub mod model;
+
+use std::collections::BTreeSet;
 
 use eframe::egui::{self, Pos2, Rect, Stroke, Vec2};
 use serde_json::{json, Value};
 
 use crate::net::bg::Pending;
 use crate::net::http::{self, Server};
+use crate::plugins::store::Store;
 use crate::settings::model as smodel;
 use crate::ui::form::{self, Form, Switch};
 use crate::ui::icons;
@@ -23,6 +31,7 @@ use crate::ui::kit::{self, Button, Choice, Variant};
 use crate::ui::message::Tone;
 use crate::ui::optioncards::Card;
 use crate::ui::style::{self, Weight};
+use crate::ui::tip::HoverTr;
 use model::{Choices, STEPS};
 
 /// What the window must do after a frame of the dialog.
@@ -33,8 +42,12 @@ pub enum Event {
     Preview(Value),
     /// Skip: put the screen back to this config.
     Restore(Value),
-    /// Finished: the config now in force, to show and to announce.
-    Done(Value),
+    /// Finished: the config now in force, to show and to announce, and how many plugins were
+    /// handed to the store.
+    Done(Value, usize),
+    /// The plugin question of a station that was already set up is answered: how many plugins were
+    /// handed to the store.
+    Plugins(usize),
     /// Import settings from another station: the Settings page takes over.
     Import,
 }
@@ -46,30 +59,44 @@ struct Session {
     choices: Choices,
     /// -1 is the start page.
     step: i32,
+    /// Only the plugins page, for a station that is not new.
+    plugins_only: bool,
+    /// The plugins the operator wants downloaded.
+    picked: BTreeSet<String>,
     languages: Vec<Choice>,
     message: Option<String>,
     saving: Option<Pending<Result<(), String>>>,
     height: f32,
 }
 
+/// What the backend says is due, and the config it holds.
+struct Due {
+    config: Value,
+    /// The station is not new: only the plugin question is open.
+    plugins_only: bool,
+}
+
 /// The dialog and the check that decides whether it opens.
 #[derive(Default)]
 pub struct Welcome {
-    check: Option<Pending<Option<Value>>>,
+    check: Option<Pending<Option<Due>>>,
     session: Option<Session>,
 }
 
-/// Whether the backend says this station is new, and the config it holds.
-fn ask(server: &Server) -> Option<Value> {
+/// Whether the backend says this station is new, or has not been asked about plugins yet.
+fn ask(server: &Server) -> Option<Due> {
     let state = http::get_json(server, "/api/welcome").ok()?;
-    if state.get("pending") != Some(&Value::Bool(true)) {
+    let new = state.get("pending") == Some(&Value::Bool(true));
+    let plugins = state.get("plugins") == Some(&Value::Bool(true));
+    if !new && !plugins {
         return None;
     }
-    Some(
-        http::get_json(server, "/api/config")
+    Some(Due {
+        config: http::get_json(server, "/api/config")
             .map(|c| crate::app::unwrap_config(&c))
             .unwrap_or(Value::Null),
-    )
+        plugins_only: !new,
+    })
 }
 
 fn mark_done(server: &Server) -> Result<(), String> {
@@ -101,9 +128,10 @@ impl Welcome {
         }
     }
 
-    /// Opens the dialog at once, whatever the backend says (`--page welcome`).
-    pub fn open_now(&mut self, server: &Server, cfg: Value) {
-        self.session = Some(Session::new(server, cfg));
+    /// Opens the dialog at once, whatever the backend says (`--page welcome`, and
+    /// `--page welcome-plugins` for the plugins page alone).
+    pub fn open_now(&mut self, server: &Server, cfg: Value, plugins_only: bool) {
+        self.session = Some(Session::new(server, cfg, plugins_only));
     }
 
     /// Whether the dialog is up or about to be: the update notice waits for
@@ -113,18 +141,27 @@ impl Welcome {
     }
 
     /// Draws the dialog when it is open; returns what the window must do.
-    pub fn show(&mut self, ctx: &egui::Context, server: &Server, logo: &egui::ImageSource<'static>) -> Event {
-        if let Some(cfg) = self.check.as_ref().and_then(Pending::take) {
+    pub fn show(
+        &mut self,
+        ctx: &egui::Context,
+        server: &Server,
+        logo: &egui::ImageSource<'static>,
+        store: &mut Store,
+    ) -> Event {
+        if let Some(due) = self.check.as_ref().and_then(Pending::take) {
             self.check = None;
-            if let Some(cfg) = cfg {
-                self.session = Some(Session::new(server, cfg));
+            if let Some(due) = due.filter(|_| self.session.is_none()) {
+                self.session = Some(Session::new(server, due.config, due.plugins_only));
             }
         }
         let Some(s) = self.session.as_mut() else {
             return Event::None;
         };
-        let event = s.show(ctx, server, logo);
-        if matches!(event, Event::Done(_) | Event::Restore(_) | Event::Import) {
+        let event = s.show(ctx, server, logo, store);
+        if matches!(
+            event,
+            Event::Done(..) | Event::Plugins(_) | Event::Restore(_) | Event::Import
+        ) {
             self.session = None;
         }
         event
@@ -132,14 +169,16 @@ impl Welcome {
 }
 
 impl Session {
-    fn new(server: &Server, base: Value) -> Session {
+    fn new(server: &Server, base: Value, plugins_only: bool) -> Session {
         let initial = model::choices_from(&base);
         Session {
             server: server.clone(),
             base,
             choices: initial.clone(),
             initial,
-            step: -1,
+            step: if plugins_only { model::PLUGINS_STEP } else { -1 },
+            plugins_only,
+            picked: BTreeSet::new(),
             languages: crate::i18n::languages()
                 .into_iter()
                 .map(|l| Choice::new(l.code, l.label))
@@ -154,15 +193,28 @@ impl Session {
         Event::Preview(model::preview(&self.base, &self.choices))
     }
 
-    fn show(&mut self, ctx: &egui::Context, server: &Server, logo: &egui::ImageSource<'static>) -> Event {
+    fn show(
+        &mut self,
+        ctx: &egui::Context,
+        server: &Server,
+        logo: &egui::ImageSource<'static>,
+        store: &mut Store,
+    ) -> Event {
         let mut event = Event::None;
         if let Some(r) = self.saving.as_ref().and_then(Pending::take) {
             self.saving = None;
             match r {
                 Ok(()) => {
+                    for id in &self.picked {
+                        store.install(id);
+                    }
+                    let n = self.picked.len();
+                    if self.plugins_only {
+                        return Event::Plugins(n);
+                    }
                     let mut cfg = self.base.clone();
                     smodel::merge(&mut cfg, &model::config_patch(&self.choices));
-                    return Event::Done(cfg);
+                    return Event::Done(cfg, n);
                 }
                 Err(e) => {
                     self.message = Some(if e.is_empty() {
@@ -174,7 +226,7 @@ impl Session {
             }
         }
         let screen = ctx.content_rect();
-        let width = 560.0f32.min(screen.width() - 32.0);
+        let width = 620.0f32.min(screen.width() - 32.0);
         let top = ((screen.height() - self.height) / 2.0).max(16.0);
         let panel = Rect::from_min_size(
             Pos2::new(screen.center().x - width / 2.0, top),
@@ -194,7 +246,7 @@ impl Session {
                 let bottom = if self.step < 0 {
                     self.start_page(ui, ix, y, iw, logo, &mut event)
                 } else {
-                    self.step_page(ui, server, ix, y, iw, &mut event)
+                    self.step_page(ui, server, store, Pos2::new(ix, y), iw, &mut event)
                 };
                 let rect = Rect::from_min_max(panel.min, Pos2::new(panel.right(), bottom + 26.0));
                 height = rect.height();
@@ -282,7 +334,7 @@ impl Session {
         let t = style::galley(ui, "Set up this station", 16.0, Weight::W600, style::text_1(), 0.0);
         let d = kit::wrapped(
             ui,
-            "Colour theme, units, flight review, workspace and controls.",
+            "Colour theme, units, flight review, workspace, controls and plugins.",
             12.0,
             style::text_2(),
             go.left() - 16.0 - tx,
@@ -370,18 +422,33 @@ impl Session {
         Event::Restore(self.base.clone())
     }
 
-    /// A page of the four steps: the numbered pills, the page, the message and
-    /// Back and Next.
-    fn step_page(&mut self, ui: &mut egui::Ui, server: &Server, x: f32, y: f32, w: f32, event: &mut Event) -> f32 {
+    /// A page of the steps: the numbered pills, the page, the message and Back and
+    /// Next. For a station that is not new it is the plugins page alone, with Skip
+    /// and Download.
+    fn step_page(
+        &mut self,
+        ui: &mut egui::Ui,
+        server: &Server,
+        store: &mut Store,
+        at: Pos2,
+        w: f32,
+        event: &mut Event,
+    ) -> f32 {
+        let (x, y) = (at.x, at.y);
         let painter = ui.painter().clone();
-        let title = style::galley(ui, "Set up Corvus GCS", 15.0, Weight::W700, style::text_1(), 0.3);
+        let heading = if self.plugins_only {
+            "Choose plugins"
+        } else {
+            "Set up Corvus GCS"
+        };
+        let title = style::galley(ui, heading, 15.0, Weight::W700, style::text_1(), 0.3);
         painter.galley(Pos2::new(x, y), title.clone(), style::text_1());
         let mut y = y + title.size().y.max(28.0) + 16.0;
 
         // The pills.
         let n = STEPS.len() as f32;
         let pw = (w - 6.0 * (n - 1.0)) / n;
-        for (i, (_, label)) in STEPS.iter().enumerate() {
+        for (i, (_, label)) in STEPS.iter().enumerate().filter(|_| !self.plugins_only) {
             let r = Rect::from_min_size(Pos2::new(x + i as f32 * (pw + 6.0), y), Vec2::new(pw, 32.0));
             let active = i as i32 == self.step;
             let done = (i as i32) < self.step;
@@ -428,14 +495,20 @@ impl Session {
             let g = style::galley(ui, label, 11.5, Weight::W600, color, 0.0);
             painter.galley(Pos2::new(c.x + 9.0 + 8.0, r.center().y - g.size().y / 2.0), g, color);
         }
-        y += 32.0 + 16.0;
+        if !self.plugins_only {
+            y += 32.0 + 16.0;
+        }
 
         let mut f = Form::new(x, y, w);
         let changed = match self.step {
             0 => self.look(ui, &mut f),
             1 => self.units(ui, &mut f),
             2 => self.workspace(ui, &mut f),
-            _ => self.controls(ui, &mut f),
+            3 => self.controls(ui, &mut f),
+            _ => {
+                self.plugins(ui, &mut f, store);
+                false
+            }
         };
         if changed {
             *event = self.preview();
@@ -448,21 +521,37 @@ impl Session {
             y = f.y;
         }
         y += 18.0;
-        let last = self.step as usize == STEPS.len() - 1;
+        let last = self.step == model::PLUGINS_STEP;
         let busy = self.saving.is_some();
         let (hit, bottom) = crate::ui::modal::actions(
             ui,
             x,
             y,
             w,
-            vec![
-                Button::new("Back", Variant::Secondary)
-                    .icon("arrow-left")
+            if self.plugins_only {
+                vec![
+                    Button::new("Skip", Variant::Secondary).enabled(!busy),
+                    Button::new(
+                        if self.picked.is_empty() { "Done" } else { "Download" },
+                        Variant::Primary,
+                    )
+                    .icon("download")
                     .enabled(!busy),
-                Button::new(if last { "Finish" } else { "Next" }, Variant::Primary).enabled(!busy),
-            ],
+                ]
+            } else {
+                vec![
+                    Button::new("Back", Variant::Secondary)
+                        .icon("arrow-left")
+                        .enabled(!busy),
+                    Button::new(if last { "Finish" } else { "Next" }, Variant::Primary).enabled(!busy),
+                ]
+            },
         );
         match hit {
+            Some(0) if self.plugins_only => {
+                self.picked.clear();
+                self.save(ui.ctx(), server);
+            }
             Some(0) => {
                 self.step -= 1;
                 self.message = None;
@@ -471,21 +560,110 @@ impl Session {
                 self.step += 1;
                 self.message = None;
             }
-            Some(_) => {
-                self.message = None;
-                let s = server.clone();
-                let patch = model::config_patch(&self.choices);
-                self.saving = Some(Pending::spawn(ui.ctx(), move || {
-                    let answer = http::post_json(&s, "/api/config", &patch);
-                    if let Some(e) = refused(&answer, "The settings could not be saved.") {
-                        return Err(e);
-                    }
-                    mark_done(&s)
-                }));
-            }
+            Some(_) => self.save(ui.ctx(), server),
             None => {}
         }
         bottom
+    }
+
+    /// Writes the choices (a station that is not new has none to write) and marks the setup done.
+    fn save(&mut self, ctx: &egui::Context, server: &Server) {
+        self.message = None;
+        let s = server.clone();
+        let patch = (!self.plugins_only).then(|| model::config_patch(&self.choices));
+        self.saving = Some(Pending::spawn(ctx, move || {
+            if let Some(patch) = patch {
+                let answer = http::post_json(&s, "/api/config", &patch);
+                if let Some(e) = refused(&answer, "The settings could not be saved.") {
+                    return Err(e);
+                }
+            }
+            mark_done(&s)
+        }));
+    }
+
+    /// The plugins on offer, each with a switch. Nothing is downloaded before Finish.
+    fn plugins(&mut self, ui: &mut egui::Ui, f: &mut Form, store: &mut Store) {
+        store.want(ui.ctx());
+        form::desc(
+            ui,
+            f,
+            "Plugins add features such as TAK, AI Chat or a NuttX console. Each one is downloaded from its own repository on GitHub, which needs an internet connection now. Corvus GCS itself never needs one to fly. You can add or remove plugins later under Settings, Plugins.",
+        );
+        f.skip(12.0);
+        let ids: Vec<&str> = store.offered().iter().map(|o| o.id).collect();
+        let rows: Vec<_> = store
+            .rows()
+            .into_iter()
+            .filter(|r| ids.contains(&r.id.as_str()))
+            .collect();
+        let loading = store.loading();
+        if let Some(why) = store.problem().filter(|_| rows.iter().any(|r| r.offer.is_none())) {
+            form::message(
+                ui,
+                f,
+                &format!("Some plugins cannot be downloaded now: {why}."),
+                Tone::Warn,
+            );
+            f.skip(10.0);
+        }
+        if rows.is_empty() && !loading {
+            form::desc(ui, f, "There is no folder to install plugins to.");
+        }
+        for (i, row) in rows.iter().enumerate() {
+            let installed = row.installed.is_some();
+            let available = !installed && row.offer.is_some();
+            let why = if installed {
+                "Already installed. Remove it under Settings, Plugins."
+            } else if loading {
+                "Looking up what can be downloaded."
+            } else {
+                "Not available to download now."
+            };
+            let on = installed || self.picked.contains(&row.id);
+            let painter = ui.painter().clone();
+            let room = f.w - 38.0 - 16.0;
+            let name = style::galley(ui, &row.name, 12.5, Weight::W500, style::text_1(), 0.0);
+            let desc = crate::ui::text::clamped(
+                ui,
+                &row.description,
+                11.5,
+                Weight::W400,
+                style::text_3(),
+                0.0,
+                room,
+                1,
+                None,
+            );
+            if i > 0 {
+                painter.hline(
+                    egui::Rangef::new(f.x, f.x + f.w),
+                    f.y + 0.5,
+                    Stroke::new(1.0, style::border_soft()),
+                );
+                f.y += 9.0;
+            }
+            let h = (name.size().y + 2.0 + desc.size().y).max(24.0);
+            painter.galley(Pos2::new(f.x, f.y), name.clone(), style::text_1());
+            painter.galley(Pos2::new(f.x, f.y + name.size().y + 2.0), desc, style::text_3());
+            let at = Pos2::new(f.x + f.w - 38.0, f.y + (h - 22.0) / 2.0);
+            let pressed = kit::switch(ui, at, on, available, ("welcomeplugin", &row.id));
+            if !available {
+                ui.interact(
+                    Rect::from_min_size(at, Vec2::new(38.0, 22.0)),
+                    ui.scope_id().with(("welcomeplugintip", &row.id)),
+                    egui::Sense::hover(),
+                )
+                .on_hover_tr(why);
+            } else if pressed {
+                if on {
+                    self.picked.remove(&row.id);
+                } else {
+                    self.picked.insert(row.id.clone());
+                }
+            }
+            f.y += h + 9.0;
+        }
     }
 
     fn look(&mut self, ui: &mut egui::Ui, f: &mut Form) -> bool {
