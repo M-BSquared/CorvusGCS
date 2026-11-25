@@ -241,6 +241,9 @@ impl Runtime {
                 existing_only,
             }));
         }
+        for (path, title) in out.files {
+            super::mail::push(Effect::ShowFile(wire::ShowFile { path, title }));
+        }
         for (_, tag, need) in out.ssh_setups {
             super::mail::push(Effect::SshSetup(wire::SshSetup {
                 tag,

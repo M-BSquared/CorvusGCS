@@ -119,6 +119,7 @@ const ICONS: &[(&str, &str)] = &[
     ("cloud-upload", "CloudUpload"),
     ("cloud-download", "CloudDownload"),
     ("folder-open", "FolderOpen"),
+    ("file-image", "FileImage"),
     ("circle-alert", "CircleAlert"),
     ("circle", "Circle"),
     ("database", "Database"),

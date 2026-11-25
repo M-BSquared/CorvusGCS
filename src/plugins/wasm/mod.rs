@@ -61,6 +61,8 @@ fn refused(plugin: &str, why: &str) {
 }
 
 const FETCHES_MAX: usize = 8;
+/// The most of a title a plugin gives a window of the program.
+const TITLE_MAX: usize = 120;
 const FETCH_WAIT_MAX: Duration = Duration::from_secs(1800);
 const SHAPES_MAX: usize = 5000;
 /// The most of an answer that is handed to a plugin.
@@ -501,6 +503,11 @@ impl Inner {
                 // The window shows a session over SSH or one on this computer.
                 if self.granted.has(permissions::SSH) || self.granted.has(permissions::LOCAL) {
                     h.terminal(t.session, t.reattach, t.existing_only);
+                }
+            }
+            Effect::ShowFile(f) => {
+                if self.granted.has(permissions::FILES) {
+                    h.show_file(&f.path, &f.title.chars().take(TITLE_MAX).collect::<String>());
                 }
             }
             Effect::SshSetup(s) => {

@@ -340,3 +340,19 @@ fn a_terminal_window_opens_for_a_plugin_with_either_kind_of_session() {
         }
     }
 }
+
+#[test]
+fn only_a_plugin_with_files_has_one_shown_in_a_card() {
+    use corvus_package::Manifest;
+    let bytes = super::testlib::module("corvus_plugin_probe");
+    let base = Manifest::of_module(&bytes).unwrap();
+    for (permission, shown) in [("files", true), ("settings.read", false)] {
+        let mut manifest = base.clone();
+        manifest.permissions = vec![permission.to_string()];
+        let plugin = super::WasmPlugin::load(&super::testlib::sandbox(), &manifest, &bytes, None).unwrap();
+        let mut rig = Rig::new(plugin);
+        rig.tell("media", "/home/pilot/a.jpg");
+        let want = shown.then(|| ("/home/pilot/a.jpg".to_string(), "From the probe".to_string()));
+        assert_eq!(rig.out.files, Vec::from_iter(want), "{permission}");
+    }
+}

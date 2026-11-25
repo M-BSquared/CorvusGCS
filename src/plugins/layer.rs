@@ -17,6 +17,8 @@ pub struct Layer {
     /// The plugin waiting for a click on the map.
     pub pick: Option<&'static str>,
     events: Vec<(&'static str, MapEvent)>,
+    /// The pointer was on a marker or button of a plugin at the last paint.
+    hovering: bool,
 }
 
 impl Layer {
@@ -35,6 +37,11 @@ impl Layer {
 
     pub fn shapes(&self) -> &[Shape] {
         &self.shapes
+    }
+
+    /// Whether a double click now would be a marker's, so the map must not zoom on it.
+    pub fn hovering(&self) -> bool {
+        self.hovering
     }
 
     /// What happened since the last call, for the registry to hand on.
@@ -127,9 +134,13 @@ impl Layer {
                 taken = true;
             } else if h.clicked() {
                 self.events.push((s.owner, MapEvent::Click(s.key.clone())));
+                if h.double_clicked() {
+                    self.events.push((s.owner, MapEvent::DoubleClick(s.key.clone())));
+                }
                 taken = true;
             }
         }
+        self.hovering = hot.is_some();
         shapes::paint_marks(ui, &ui.painter_at(rect), project, &self.shapes, hot.as_deref());
         if let Some(owner) = self.pick {
             if ui.rect_contains_pointer(rect) {
@@ -153,4 +164,70 @@ impl Layer {
 fn to_screen(projector: &Projector, _rect: Rect, p: [f64; 2]) -> Pos2 {
     let v = projector.project(walkers::lon_lat(p[0], p[1]));
     v.to_pos2().clamp(Pos2::new(-1e6, -1e6), Pos2::new(1e6, 1e6))
+}
+
+#[cfg(test)]
+mod tests {
+    use eframe::egui::{self, Pos2, Rect, Vec2};
+
+    use super::*;
+    use crate::plugins::shapes::{ShapeSet, Style};
+
+    #[test]
+    fn a_double_click_on_a_marker_is_said_after_the_clicks() {
+        let ctx = egui::Context::default();
+        egui_extras::install_image_loaders(&ctx);
+        crate::ui::fonts::install(&ctx);
+        let mut set = ShapeSet::new("map-entities");
+        set.marker(
+            "e1-m",
+            [11.0, 48.0],
+            "file",
+            "",
+            "",
+            Style::default(),
+            None,
+            false,
+            false,
+            true,
+        );
+        let mut layer = Layer::default();
+        layer.set(set.shapes().to_vec());
+        let at = Pos2::new(300.0, 200.0);
+        let mut time = 0.0;
+        let mut frame = |layer: &mut Layer, events: Vec<egui::Event>| {
+            time += 1.0 / 60.0;
+            let raw = egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(600.0, 400.0))),
+                time: Some(time),
+                events,
+                ..egui::RawInput::default()
+            };
+            let mut out = ctx.run_ui(raw, |ui| {
+                let rect = ui.max_rect();
+                layer.marks_with(ui, rect, &|_| Some(at), &|_| Some([11.0, 48.0]), None, false);
+            });
+            out.textures_delta.set.clear();
+            out.textures_delta.free.clear();
+        };
+        let button = |pressed| egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        frame(&mut layer, vec![egui::Event::PointerMoved(at)]);
+        frame(&mut layer, Vec::new());
+        assert!(layer.hovering(), "the map must know before the second press");
+        for _ in 0..2 {
+            frame(&mut layer, vec![button(true)]);
+            frame(&mut layer, vec![button(false)]);
+        }
+        let said: Vec<MapEvent> = layer.take_events().into_iter().map(|(_, e)| e).collect();
+        let click = MapEvent::Click("e1-m".into());
+        assert_eq!(said, [click.clone(), click, MapEvent::DoubleClick("e1-m".into())]);
+        frame(&mut layer, vec![egui::Event::PointerMoved(Pos2::new(20.0, 20.0))]);
+        frame(&mut layer, Vec::new());
+        assert!(!layer.hovering());
+    }
 }

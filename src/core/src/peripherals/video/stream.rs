@@ -156,8 +156,8 @@ pub struct FrameStatus {
     pub seq: u64,
 }
 
-fn signal_term(child: &Arc<Mutex<Child>>) {
-    let mut c = lock(child);
+/// Asks a child that still runs to end: SIGTERM, and on Windows, which has none, a kill.
+pub fn ask_to_end(c: &mut Child) {
     if matches!(c.try_wait(), Ok(None)) {
         #[cfg(unix)]
         // SAFETY: a signal to a child this process started; failure is ignored.
@@ -167,6 +167,10 @@ fn signal_term(child: &Arc<Mutex<Child>>) {
         #[cfg(not(unix))]
         let _ = c.kill();
     }
+}
+
+fn signal_term(child: &Arc<Mutex<Child>>) {
+    ask_to_end(&mut lock(child));
 }
 
 /// SIGTERM, then SIGKILL after the term timeout. Never panics.

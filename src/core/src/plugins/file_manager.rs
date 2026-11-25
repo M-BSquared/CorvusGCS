@@ -247,17 +247,29 @@ pub fn open_url(url: &str) -> bool {
     if !matches!(scheme_of(url).as_deref(), Some("http" | "https")) {
         return false;
     }
+    launch(url)
+}
+
+/// Opens a file with the program the system has for it; whether a launcher was
+/// started. The caller decides which files may go there: the opener runs what
+/// the kind of the file says, and some kinds are programs.
+pub fn open_file(path: &Path) -> bool {
+    path.is_absolute() && path.is_file() && launch(&path.to_string_lossy())
+}
+
+/// Hands `target` to the opener of the desktop.
+fn launch(target: &str) -> bool {
     let mut c = if cfg!(target_os = "macos") {
-        command("open", url)
+        command("open", target)
     } else if cfg!(windows) {
         let mut c = Command::new("rundll32");
         c.arg("url.dll,FileProtocolHandler")
-            .arg(url)
+            .arg(target)
             .env_clear()
             .envs(child_env());
         c
     } else {
-        command("xdg-open", url)
+        command("xdg-open", target)
     };
     c.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
     #[cfg(unix)]
@@ -272,7 +284,7 @@ pub fn open_url(url: &str) -> bool {
             true
         }
         Err(e) => {
-            eprintln!("corvus: could not open {url} in a browser: {e}");
+            eprintln!("corvus: could not open {target}: {e}");
             false
         }
     }

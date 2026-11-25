@@ -17,6 +17,7 @@ mod logs;
 mod map;
 mod map3d;
 mod mcp;
+mod media;
 mod mission;
 mod net;
 mod notify;

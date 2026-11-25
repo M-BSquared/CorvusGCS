@@ -16,6 +16,7 @@ use eframe::egui;
 use serde_json::{json, Value};
 
 use super::wasm::{runtime, testlib, REFUSED};
+use super::MapEvent;
 use super::Registry;
 use crate::net::http::{self, Server};
 
@@ -628,6 +629,41 @@ fn map_entities_places_changes_and_removes_what_a_model_asks_for() {
         .unwrap();
     let list = w.call(&station, "map-entities", "list_entities", json!({})).unwrap();
     assert!(!list.to_string().contains("Old oak"), "{list}");
+
+    // A picture taken at a place: the client sets the marker with its path, and a double
+    // click on it asks the program to show the file.
+    let photo = station.dir.join("DJI_0001.png");
+    image::RgbaImage::from_pixel(32, 24, image::Rgba([1, 2, 3, 255]))
+        .save(&photo)
+        .unwrap();
+    let photo = photo.to_string_lossy().into_owned();
+    let placed = w
+        .call(
+            &station,
+            "map-entities",
+            "add_entity",
+            json!({"kind": "file", "lat": 48.0763, "lon": 11.6433, "path": photo, "note": "14:02:11"}),
+        )
+        .unwrap();
+    assert_eq!(placed["path"], json!(photo), "{placed}");
+    let kept = station.get("/api/plugins");
+    assert!(
+        kept["settings"]["map-entities"].to_string().contains("DJI_0001.png"),
+        "{kept}"
+    );
+    let id = placed["id"].as_str().unwrap();
+    let _ = w.reg.take_out();
+    let state = station.state();
+    let key = format!("{id}-m");
+    w.reg
+        .dispatch(&w.ctx, &state, "map-entities", MapEvent::DoubleClick(key));
+    let mut asked = Vec::new();
+    w.pump(&station, "the file to be asked for", |w| {
+        asked.extend(w.reg.take_out().files);
+        !asked.is_empty()
+    });
+    assert_eq!(asked, [(photo, "File 1".to_string())]);
+    assert_eq!(w.reg.failure(w.index("map-entities")), None);
     nothing_was_refused();
 }
 

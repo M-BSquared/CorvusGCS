@@ -404,6 +404,7 @@ pub fn texture_from(t: &wire::Texture, max_side: u32) -> Option<(egui::ColorImag
 pub fn map_event_to(e: &MapEvent) -> wire::MapEvent {
     let (kind, key, at) = match e {
         MapEvent::Click(k) => ("click", k.clone(), [0.0; 2]),
+        MapEvent::DoubleClick(k) => ("double_click", k.clone(), [0.0; 2]),
         MapEvent::Drag(k, at) => ("drag", k.clone(), *at),
         MapEvent::DragEnd(k, at) => ("drag_end", k.clone(), *at),
         MapEvent::Picked(at) => ("picked", String::new(), *at),
@@ -419,6 +420,7 @@ pub fn map_event_to(e: &MapEvent) -> wire::MapEvent {
 pub fn map_event_from(e: wire::MapEvent) -> Option<MapEvent> {
     Some(match e.kind.as_str() {
         "click" => MapEvent::Click(e.key),
+        "double_click" => MapEvent::DoubleClick(e.key),
         "drag" => MapEvent::Drag(e.key, e.at),
         "drag_end" => MapEvent::DragEnd(e.key, e.at),
         "picked" => MapEvent::Picked(e.at),

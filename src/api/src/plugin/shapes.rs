@@ -464,6 +464,7 @@ pub const ICONS: &[(&str, &str, &[&str])] = &[
     ("target", "Target", &["M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16z", "M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z", "M12 1v4", "M12 19v4", "M1 12h4", "M19 12h4"]),
     ("pad", "Landing pad", &["M4 4h16v16H4z", "M9 8v8", "M15 8v8", "M9 12h6"]),
     ("flag", "Flag", &["M5 21V4", "M5 4h12l-2 4 2 4H5"]),
+    ("file", "File", &["M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z", "M14 2v5a1 1 0 0 0 1 1h5", "M10 10a2 2 0 1 0 0 4 2 2 0 0 0 0-4z", "m20 17-1.296-1.296a2.41 2.41 0 0 0-3.408 0L9 22"]),
     ("pin", "Pin", &["M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z", "M12 7.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5z"]),
     ("home", "Home", &["M3 11l9-8 9 8", "M5 10v11h14V10", "M10 21v-6h4v6"]),
     ("drone", "Drone", &["M12 10a2 2 0 1 0 0 4 2 2 0 0 0 0-4z", "M10.5 10.5L6 6", "M13.5 10.5L18 6", "M10.5 13.5L6 18", "M13.5 13.5L18 18", "M4 4.5h4", "M16 4.5h4", "M4 19.5h4", "M16 19.5h4"]),
@@ -917,7 +918,7 @@ mod tests {
 
     #[test]
     fn every_symbol_has_paths_and_a_name_the_web_uses() {
-        assert_eq!(ICONS.len(), 22);
+        assert_eq!(ICONS.len(), 23);
         assert!(icon_paths("tree").is_some());
         assert!(icon_paths("nope").is_none());
         assert_eq!(hex("#7BD389"), Some(Color32::from_rgb(0x7B, 0xD3, 0x89)));

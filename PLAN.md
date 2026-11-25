@@ -104,6 +104,8 @@ plugin's own work against the whole backend and a simulated PX4. Open before the
       telemetry stay smooth meanwhile. The release program grew by 9.3 MB (40.5 to 49.8 MB, macOS
       arm64).
 - [ ] A module is about 6.5 MB (2.2 MB compressed). Look at what in it can go.
+- [ ] Media cards with real drone footage (large H.265 files), HEIC photos, and on Windows and Linux
+      (tried on macOS with generated pictures and an H.264 video).
 - [ ] The manual's picture of Settings, Plugins shows no permission lines yet.
 
 ## 0. Rust port (state of 2026-11-11)

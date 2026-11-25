@@ -47,6 +47,8 @@ pub struct Info {
 pub enum MapEvent {
     /// A marker or button was pressed.
     Click(String),
+    /// The second press of a double click on one, after the `Click` of each.
+    DoubleClick(String),
     /// A marker is being dragged, now over this point.
     Drag(String, [f64; 2]),
     /// A dragged marker was let go over this point.
@@ -138,6 +140,8 @@ pub struct Outbox {
     /// whether the window is made again (`reattach`) and whether none is
     /// opened when there is not one already (`existing_only`).
     pub terminals: Vec<(Value, bool, bool)>,
+    /// Files to show in a media card: `(path, title)`.
+    pub files: Vec<(String, String)>,
     /// Login dialogs asked for: `(plugin, tag, what is missing)`.
     pub ssh_setups: Vec<(&'static str, u64, ssh::SshNeed)>,
     /// Frame these `[lng, lat]` on the Home map.
@@ -350,6 +354,12 @@ impl Host<'_> {
     /// opening one.
     pub fn terminal(&mut self, session: Value, reattach: bool, existing_only: bool) {
         self.out.terminals.push((session, reattach, existing_only));
+    }
+
+    /// Shows the picture or video at `path`, a file on the computer the window runs
+    /// on, in a card headed `title`. The program reads the file; the plugin does not.
+    pub fn show_file(&mut self, path: &str, title: &str) {
+        self.out.files.push((path.to_string(), title.to_string()));
     }
 
     /// `sshSetup`: asks the operator for what a failed connect or run said a

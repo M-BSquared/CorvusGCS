@@ -186,7 +186,9 @@
   MAVLink shell</em> or <em>Connect to other servers on the network and the internet</em>. Corvus
   refuses everything else. Beyond what is listed a plugin can draw in its own view and on the map,
   read the telemetry, keep its own settings and show notifications. It has no access to the disk
-  of its own: it reads only a file you pick for it. An update that wants more says what is new
+  of its own: it reads only a file you pick for it. With <em>Open files that you pick, and show
+  pictures and videos</em> it may also have Corvus show a picture or video file; Corvus reads that
+  file, the plugin does not. An update that wants more says what is new
   before you press <strong>Update</strong>, and a download never gets more than was shown.
 </p>
 <p>
@@ -288,7 +290,7 @@
   A tactical layer for the Home map. You place things by hand, at an exact
   coordinate, and the plugin watches the aircraft against them: trees and
   gates first, but also people, vehicles, an explosion, a radar or a camera with
-  the area it covers. It is laid out like the Mission planner's side panel: a
+  the area it covers, and where a picture or a video was recorded. It is laid out like the Mission planner's side panel: a
   row of figures, the list of what is on the map, and the editor for the one
   you picked.
 </p>
@@ -322,7 +324,36 @@
   <dd>A mark with a radius, drawn as a dashed, lightly filled circle: a radar's reach, the area a camera sees, a blast's danger zone. Set the radius to 0 for none. Set <strong>Angle</strong> below 360 for a sector instead of a full circle, a camera's field of view or a radar that only looks one way. <strong>Direction</strong> says where it faces, in degrees with 0 as north, or press the crosshair beside it and click the map to aim it at that point.</dd>
   <dt>Person, vehicle, building, hazard, target, landing pad, flag</dt>
   <dd>A mark with a name and a note, and a radius if you want one.</dd>
+  <dt>File</dt>
+  <dd>A small mark where a picture or a video was recorded. Choose the file with the folder button in the editor, or type or paste its full path. A double click on the mark (or on its row in the list, or <strong>Open the file</strong>) shows it in a card over the window.</dd>
 </dl>
+<h3 id="entities-files">Pictures and videos</h3>
+<p>
+  The card shows PNG, JPEG and WebP pictures by itself, the way the camera held
+  them. Videos (such as MP4, MOV, MKV and AVI), GIF, TIFF, BMP and HEIC need
+  <a href="video.html">ffmpeg</a> on the computer, as the camera streams do; HEIC
+  also needs an ffmpeg that reads it. A video can be paused and moved along its
+  bar, and plays without sound. The buttons in the card's bar open the file's
+  folder or hand the file to the system's own program. Up to four cards are open
+  at once. The marks are not part of the track checks, and the card does not
+  open files from network addresses.
+</p>
+<p>
+  Corvus keeps the path, not a copy: a file you move or delete is no longer shown,
+  and the card says so. The path stays on this computer: it is not shared with
+  other plugins, so it does not go out over TAK.
+</p>
+<p>
+  An AI client that can read your files can do this for you: it takes the
+  position and the time from each picture's metadata and places a file mark with
+  the path, once <strong>AI clients may place things</strong> is on (see
+  <a href="mcp.html#permissions">What the AI client may do</a>). Corvus itself
+  does not read the metadata, and the AI Chat inside Corvus cannot read files, so
+  this is for a client such as one that runs on this computer with access to the
+  folder. The paths must be those of the computer Corvus runs on. A client may
+  place up to 400 entities, and the map holds 500 in all. Of the files you chose
+  yourself it learns only the name, not the folder.
+</p>
 <h3 id="entities-checking">What it checks</h3>
 <p>
   While the aircraft is armed, every step of its track is compared with every

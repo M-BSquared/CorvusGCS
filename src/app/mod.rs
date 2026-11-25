@@ -84,6 +84,8 @@ struct App {
     mission: MissionPage,
     mission_page: bool,
     panel: Panel,
+    /// Pictures and videos a plugin asked to show.
+    media: crate::media::MediaCards,
     rail: MapRail,
     plugins: Registry,
 }
@@ -322,6 +324,9 @@ impl App {
         }
         for (conn, reattach, existing_only) in out.terminals {
             self.panel.open_terminal_window(ctx, &conn, reattach, existing_only);
+        }
+        for (path, title) in out.files {
+            self.media.open(ctx, &path, &title);
         }
         if let Some(coords) = out.fit {
             self.page = Page::Home;
@@ -720,6 +725,7 @@ impl App {
                 panel_ui.set_clip_rect(panel);
                 self.panel.show(&mut panel_ui, panel, &state, &mut self.plugins);
                 self.panel.windows(ui.ctx());
+                self.media.show(ui.ctx());
                 self.setup.windows(ui.ctx());
             });
         if let Some(id) = self.map.take_vehicle_click() {
@@ -891,7 +897,7 @@ impl eframe::App for App {
             ctx.request_repaint_after(std::time::Duration::from_millis(100));
         }
         // CORVUS_GUI_CLICK="x,y;rx,y;enter;esc" presses at each point in turn (a leading r
-        // is a right click), the
+        // is a right click, a leading d a double click), the
         // first at 6 s and one more every half second, for a menu or a drawn
         // shape to look at; `enter` presses the Enter key.
         // CORVUS_GUI_TEXT="..." types that text once the clicks are done, with a line break at its
@@ -921,9 +927,13 @@ impl eframe::App for App {
             let t = raw_input.time.unwrap_or(0.0);
             let k = (self.click_stage / 2) as usize;
             if let Some(step) = steps.get(k) {
+                let (twice, step) = match step.strip_prefix('d') {
+                    Some(rest) => (true, rest),
+                    None => (false, *step),
+                };
                 let (button, step) = match step.strip_prefix('r') {
                     Some(rest) => (egui::PointerButton::Secondary, rest),
-                    None => (egui::PointerButton::Primary, *step),
+                    None => (egui::PointerButton::Primary, step),
                 };
                 let point = step
                     .split_once(',')
@@ -957,12 +967,18 @@ impl eframe::App for App {
                 } else if self.click_stage % 2 == 1 {
                     self.click_stage += 1;
                     match point {
-                        Some(p) => raw_input.events.push(egui::Event::PointerButton {
-                            pos: p,
-                            button,
-                            pressed: false,
-                            modifiers: Default::default(),
-                        }),
+                        Some(p) => {
+                            let one = |pressed| egui::Event::PointerButton {
+                                pos: p,
+                                button,
+                                pressed,
+                                modifiers: Default::default(),
+                            };
+                            raw_input.events.push(one(false));
+                            if twice {
+                                raw_input.events.extend([one(true), one(false)]);
+                            }
+                        }
                         None => raw_input.events.push(egui::Event::Key {
                             key,
                             physical_key: Some(key),
@@ -1010,6 +1026,7 @@ impl eframe::App for App {
         self.control.shut_down();
         self.mcp.shut_down();
         self.drawings.shut_down();
+        self.media.shut_down();
         self.panel.shut_down();
         self.map.shut_down();
     }
@@ -1246,6 +1263,7 @@ pub fn run(
                 },
                 mission_page,
                 panel,
+                media: crate::media::MediaCards::new(server.clone()),
                 rail,
                 plugins,
             }))

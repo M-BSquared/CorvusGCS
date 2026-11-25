@@ -58,7 +58,7 @@ CORVUS_GUI_SHOT=out.png cargo run -- --page motors     # save the window's own p
 CORVUS_GUI_SIZE=700,812 cargo run                      # open at that size, below the usual floor too
 CORVUS_GUI_HOVER=600,50 cargo run                      # hold the pointer there (a hover card, a hint)
 CORVUS_GUI_CLICK=560,310 cargo run -- --page motors    # press there once, at 6 s (an open menu)
-CORVUS_GUI_CLICK="178,472;400,200;enter" cargo run    # several presses, half a second apart; enter is the key, a leading r is a right click ("r600,400")
+CORVUS_GUI_CLICK="178,472;400,200;enter" cargo run    # several presses, half a second apart; enter is the key, a leading r is a right click ("r600,400"), a leading d a double click ("d452,411")
 CORVUS_GUI_3D=11.5,47.4,13,200,82 cargo run             # open the 3D map, here: lng,lat,zoom[,bearing[,pitch]]; 1 alone keeps the view
 CORVUS_GUI_3D_PANEL=1 CORVUS_GUI_3D=1 cargo run         # with the 3D panel (buildings, elevation models) open
 CORVUS_GUI_SCENE=file.json cargo run                     # a picture's staging: the frame, steps at their times (src/app/scene.rs, made by src/scene)
@@ -132,6 +132,7 @@ deleted (`src/core/tests/data`).
 | `src/data/units.rs` | display units from the config's `ui.units`, rounded the way the web interface rounds |
 | `src/home/company.rs` | the company logo at the far right of the top bar: fetched from `/api/branding/logo`, sized as `.tb-company-logo`, a PNG header read for its shape |
 | `src/home/topbar.rs` | the status bar, word for word the web interface's (`python/src/js/topbar.js`) |
+| `src/media/` | the media cards of `Host::show_file`: a picture decoded on a thread, a video as JPEG frames from an ffmpeg child that is ended and joined with its card |
 | `src/map/mod.rs` | the map (walkers) on the backend's tile proxy, vehicle and home markers |
 | `src/map/rail.rs` | the rail and the two buttons beside it: zoom, centre, layers, downloaded areas, measure, the clear track disc |
 | `src/map/regions.rs` | the downloaded areas of `/api/tiles/regions`, merged as the web map merges them (`map.js`) |
@@ -520,7 +521,7 @@ folder name of the plugin's settings, so it must be a safe name (`[A-Za-z0-9][A-
 | `open(h)`, `close(h)` | the view is about to be shown, and gone (`init` and `destroy`): leave nothing behind |
 | `show(ui, area, h)` | draws the view; the registry gives it a scrolling area 14 px from the sides |
 | `options_changed(h)` | the operator changed an option; every value is in `h.options()` |
-| `map_event(event, h)` | the pointer did something to one of its shapes: `Click`, `Drag`, `DragEnd`, or the `Picked` point of `h.pick_point()` (`PickCancelled` on Escape or a right click) |
+| `map_event(event, h)` | the pointer did something to one of its shapes: `Click`, `DoubleClick` (after the clicks; the map does not zoom on it), `Drag`, `DragEnd`, or the `Picked` point of `h.pick_point()` (`PickCancelled` on Escape or a right click) |
 | `message(from, msg, h)` | another plugin dropped a message in this plugin's mailbox with `h.send(to, msg)`; one it does not understand is ignored |
 | `ssh_setup_done(tag, saved, h)` | the login dialog asked for with `h.ssh_setup(need, tag)` was answered |
 
@@ -534,7 +535,10 @@ replaces it), `h.settings()` and `h.save_settings()`, `h.get`, `h.post` and
 thread of their own and picked up by polling the returned `Reply`, `h.notify`
 (a toast and a line on the board, both marked with the plugin's name),
 `h.console`, `h.terminal` (a terminal window on a saved SSH session),
-`h.fit` (frame points on the Home map) and `h.pick_point`.
+`h.fit` (frame points on the Home map), `h.pick_point` and `h.show_file` (a
+picture or video of this computer in a media card, `src/media`: the program
+reads the file, pictures itself and videos through ffmpeg; it needs the `files`
+permission).
 
 UI is built from `src/api/src/ui/` like any page: `form::Form` is a cursor and
 `form::field`, `form::switch_field`, `kit::select`, `kit::Button` and

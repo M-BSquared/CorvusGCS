@@ -533,6 +533,8 @@ pub enum Effect {
     Send(SendTo),
     /// Draw a frame again soon, after this many milliseconds.
     Repaint(Repaint),
+    /// Shows a picture or video file in a card of the program.
+    ShowFile(ShowFile),
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -548,6 +550,13 @@ pub struct Terminal {
     pub session: Value,
     pub reattach: bool,
     pub existing_only: bool,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ShowFile {
+    pub path: String,
+    pub title: String,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

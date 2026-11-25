@@ -809,7 +809,8 @@ impl Map {
             return;
         }
         let outline = fence_outline(&self.env.get());
-        let double_click_zoom = !overlay.as_ref().is_some_and(|o| o.takes_double_click());
+        // A double click on a plugin's marker opens something of its: the map stays.
+        let double_click_zoom = !overlay.as_ref().is_some_and(|o| o.takes_double_click()) && !self.plugins.hovering();
         let layers = Layers {
             planner: self.planner,
             plugins: &mut self.plugins,
