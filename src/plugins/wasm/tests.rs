@@ -255,6 +255,31 @@ fn a_plugin_built_with_the_first_protocol_still_works() {
     rig.tell("draw", "");
     assert_eq!(rig.shapes.shapes().len(), 2);
     assert_eq!(rig.with(|p, h| p.mcp_tools(h)).len(), 1);
+    // A file to show, a double click on the map, and a folder the program reads.
+    rig.tell("media", "/home/pilot/a.jpg");
+    let shown = ("/home/pilot/a.jpg".to_string(), "From the probe".to_string());
+    assert_eq!(rig.out.files, [shown]);
+    rig.with(|p, h| p.map_event(corvus_api::plugin::MapEvent::DoubleClick("m".into()), h));
+    assert_eq!(rig.await_published("event"), json!("DoubleClick(\"m\")"));
+    let card = std::env::temp_dir().join(format!("corvus-frozen-card-{}", std::process::id()));
+    std::fs::create_dir_all(&card).unwrap();
+    let block = crate::media::exif::tests::block(
+        true,
+        ("N", [48, 4, 35040]),
+        ("E", [11, 38, 34800]),
+        5205,
+        "2026:11:25 14:02:11",
+    );
+    let photo = card.join("a.jpg");
+    std::fs::write(&photo, crate::media::exif::tests::jpeg(&block)).unwrap();
+    let picked = card.clone();
+    rig.plugin.set_picker(Box::new(move |_| Some(picked.clone())));
+    rig.tell("scan", "");
+    let got = rig.await_published("scanned");
+    assert_eq!((&got["tag"], &got["found"]["files"]), (&json!(7), &json!(1)), "{got}");
+    assert_eq!(got["found"]["first"][0], json!(photo.to_string_lossy()), "{got}");
+    assert_eq!(got["found"]["first"][3], "2026-11-25 14:02:11", "{got}");
+    std::fs::remove_dir_all(card).unwrap();
 }
 
 /// Every delay the program's window was asked to draw again after.

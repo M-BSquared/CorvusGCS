@@ -11,7 +11,9 @@ grows, add a second file for the new version beside it.
 Until the first release that carries WebAssembly plugins is out, the protocol may still change,
 and this file with it:
 
+The paths of the computer that builds it are replaced, since they would be published with the file:
+
 ```bash
-cargo build --locked --target wasm32-wasip1 --profile plugin -p corvus_plugin_probe
+RUSTFLAGS="--remap-path-prefix=$HOME=/build" cargo build --locked --target wasm32-wasip1 --profile plugin -p corvus_plugin_probe
 gzip -9 -n -c target/wasm32-wasip1/plugin/corvus_plugin_probe.wasm > src/plugins/wasm/fixtures/protocol-1.wasm.gz
 ```

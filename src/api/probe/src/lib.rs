@@ -84,6 +84,10 @@ impl Plugin for Probe {
         }
     }
 
+    fn map_event(&mut self, e: corvus_api::plugin::MapEvent, h: &mut Host) {
+        h.publish("event", json!(format!("{e:?}")));
+    }
+
     fn media_scanned(&mut self, tag: u64, scan: Option<corvus_api::plugin::FolderScan>, h: &mut Host) {
         let found = scan.map(|s| {
             let first = s.files.first().map(|f| json!([f.path, f.lat, f.lng, f.taken]));

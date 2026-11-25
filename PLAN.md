@@ -98,7 +98,8 @@ plugin's own work against the whole backend and a simulated PX4. Open before the
 - [ ] Merge the plugin repositories' `wasm-plugins` branches, push `plugin.yml` to `master` only
       with the release, then run `./release.sh` in each plugin once the release is out. Keep the
       `abi-*` releases for 2026.11.93.
-- [ ] Make `protocol-1.wasm.gz` again if the protocol changed since, then never again.
+- [ ] `protocol-1.wasm.gz` was made again on 2026-11-26, with the media card, the folder read and
+      the double click. If the protocol changes before the release, make it once more, then never again.
 - [ ] Compiling in the background uses every core for a few seconds after an update of the runtime
       (all eight: 7.6 s on an Apple Silicon Mac). See on a slow field laptop that the window and the
       telemetry stay smooth meanwhile. The release program grew by 9.3 MB (40.5 to 49.8 MB, macOS
