@@ -113,6 +113,10 @@ pub trait Plugin {
     /// `ssh_setup`: `saved` is whether a login was saved under that name.
     fn ssh_setup_done(&mut self, _tag: u64, _saved: bool, _h: &mut Host) {}
 
+    /// The folder asked for with `Host::scan_media_folder` was read, under the same
+    /// `tag`. `None` when the operator picked none.
+    fn media_scanned(&mut self, _tag: u64, _scan: Option<FolderScan>, _h: &mut Host) {}
+
     /// The tools an AI client may use right now (`mcpTools`); they follow the
     /// plugin's options, so they are asked for again when those change.
     fn mcp_tools(&self, _h: &Host) -> Vec<McpTool> {
@@ -129,9 +133,39 @@ pub trait Plugin {
     }
 }
 
+/// A picture or a video, and where it was taken, as the program read it from the file.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Placed {
+    /// On the computer the window runs on.
+    pub path: String,
+    pub lat: f64,
+    pub lng: f64,
+    /// Metres above sea level.
+    pub alt: Option<f64>,
+    /// `2026-11-25 14:02:11` by the camera's clock (a video's ends in ` UTC`), or empty.
+    pub taken: String,
+}
+
+/// What reading a folder came to.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct FolderScan {
+    /// The files that say where they were taken, by their paths in order.
+    pub files: Vec<Placed>,
+    /// Pictures and videos that say no place.
+    pub without_place: u32,
+    /// Videos that were not read, since there is no ffmpeg.
+    pub videos_unread: u32,
+    /// The folder holds more than was read or is handed on.
+    pub cut: bool,
+    /// Why the folder could not be read, in words for the operator.
+    pub error: Option<String>,
+}
+
 /// What the plugins asked of the app during a frame.
 #[derive(Default)]
 pub struct Outbox {
+    /// Folders of pictures to be picked and read: `(plugin, tag)`.
+    pub scans: Vec<(&'static str, u64)>,
     /// `(plugin name, level, text)`: a toast and a line on the board.
     pub notices: Vec<(String, &'static str, String)>,
     /// `(level, text)` lines for the console.
@@ -360,6 +394,13 @@ impl Host<'_> {
     /// on, in a card headed `title`. The program reads the file; the plugin does not.
     pub fn show_file(&mut self, path: &str, title: &str) {
         self.out.files.push((path.to_string(), title.to_string()));
+    }
+
+    /// Has the operator pick a folder, and the program read where and when each
+    /// picture and video in it was taken. The answer comes to `media_scanned` with
+    /// the same `tag`; the plugin is told nothing about other files.
+    pub fn scan_media_folder(&mut self, tag: u64) {
+        self.out.scans.push((self.id, tag));
     }
 
     /// `sshSetup`: asks the operator for what a failed connect or run said a

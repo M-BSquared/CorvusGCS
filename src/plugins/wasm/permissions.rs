@@ -87,7 +87,7 @@ pub const ALL: &[Permission] = &[
     },
     Permission {
         name: FILES,
-        says: "Open files that you pick, and show pictures and videos",
+        says: "Open files and folders that you pick, and show pictures and videos",
         routes: &[],
         topics: &[],
     },

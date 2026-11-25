@@ -36,6 +36,7 @@ use eframe::egui;
 use serde_json::{json, Value};
 use wasmtime::Module;
 
+use crate::media::scan;
 use crate::net::http::{self, Server};
 use crate::net::stream::Stream;
 use permissions::Granted;
@@ -63,6 +64,11 @@ fn refused(plugin: &str, why: &str) {
 const FETCHES_MAX: usize = 8;
 /// The most of a title a plugin gives a window of the program.
 const TITLE_MAX: usize = 120;
+const SCAN_TITLE: &str = "Choose a folder of pictures and videos";
+
+fn scanned(tag: u64, scan: Option<corvus_api::plugin::FolderScan>) -> Delivery {
+    Delivery::Scanned(bridge::scanned_to(tag, scan))
+}
 const FETCH_WAIT_MAX: Duration = Duration::from_secs(1800);
 const SHAPES_MAX: usize = 5000;
 /// The most of an answer that is handed to a plugin.
@@ -117,6 +123,8 @@ struct Told {
 
 struct Inner {
     instance: Instance,
+    /// A folder of pictures being read, under the plugin's tag.
+    scan: Option<(u64, scan::Scan)>,
     /// Connections to other servers under way, under the module's numbers.
     fetches: HashMap<u64, Fetch>,
     granted: Granted,
@@ -203,6 +211,7 @@ impl WasmPlugin {
                 told: Told::default(),
                 inbox: Shared::default(),
                 in_flight: Arc::default(),
+                scan: None,
                 fetches: HashMap::new(),
                 streams: HashMap::new(),
                 saves: Vec::new(),
@@ -326,6 +335,10 @@ impl Inner {
                 false
             }
         });
+        if let Some((tag, done)) = self.scan.as_ref().and_then(|(tag, s)| Some((*tag, s.take()?))) {
+            self.scan = None;
+            out.push(Maybe::Known(scanned(tag, Some(done))));
+        }
         self.fetches.retain(|id, fetch| match fetch.take() {
             None => true,
             Some(answer) => {
@@ -351,6 +364,7 @@ impl Inner {
             Err(why) => {
                 self.streams.clear();
                 self.fetches.clear();
+                self.scan = None;
                 panic!("{why}");
             }
         }
@@ -426,6 +440,28 @@ impl Inner {
     /// Another server for a plugin that may connect to one, or the station's own `/mcp` for
     /// the assistant. The station is not reached by the first: a connection from this computer
     /// to the backend could read what no permission gave. No key goes with either.
+    /// The operator picks a folder, and the program reads where its pictures were
+    /// taken. One at a time.
+    fn scan_folder(&mut self, tag: u64, h: &Host) {
+        let allowed = self.granted.has(permissions::FILES);
+        if !allowed {
+            refused(self.view.plugin(), "This plugin is not allowed to open files");
+        }
+        let picked = (allowed && self.scan.is_none())
+            .then(|| self.instance.ask_for_folder(SCAN_TITLE))
+            .flatten();
+        match picked {
+            Some(folder) => {
+                let find = crate::media::finder(h.server);
+                self.scan = Some((tag, scan::Scan::start(h.ctx, folder, find)));
+            }
+            None => {
+                push(&self.inbox, scanned(tag, None));
+                h.ctx.request_repaint();
+            }
+        }
+    }
+
     fn fetch(&mut self, ask: wire::Fetch, h: &Host) {
         match self.allowed_fetch(&ask, h.server) {
             Ok((url, station)) => {
@@ -505,6 +541,7 @@ impl Inner {
                     h.terminal(t.session, t.reattach, t.existing_only);
                 }
             }
+            Effect::ScanFolder(s) => self.scan_folder(s.tag, h),
             Effect::ShowFile(f) => {
                 if self.granted.has(permissions::FILES) {
                     h.show_file(&f.path, &f.title.chars().take(TITLE_MAX).collect::<String>());

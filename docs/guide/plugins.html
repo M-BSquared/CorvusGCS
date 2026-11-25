@@ -343,8 +343,25 @@
   and the card says so. The path stays on this computer: it is not shared with
   other plugins, so it does not go out over TAK.
 </p>
+<h3 id="entities-import">Import from a folder</h3>
 <p>
-  An AI client that can read your files can do this for you: it takes the
+  The marks can also be placed without any AI. Switch on <strong>Import photos from
+  a folder</strong> in the plugin's gear; it is off at first. Under the kinds then
+  stands <strong>Import from a folder…</strong>. Choose a folder, a memory card for
+  instance: Corvus reads every picture and video in it and in its folders, and
+  places a file mark for each at the position saved in the file, named after the
+  file, with the time and the height in the note. The map is then framed on them.
+</p>
+<ul>
+  <li>Positions are read from the EXIF data of JPEG, HEIC, TIFF, PNG and WebP pictures, and from the location written into MP4 and MOV videos, which needs ffmpeg. A drone that keeps the positions of a video only in a separate subtitle file is not covered.</li>
+  <li>A file without a position is left out and counted, as is one that is on the map already: reading a folder twice adds nothing twice.</li>
+  <li>The map holds 500 entities in all. What does not fit is counted too.</li>
+  <li><strong>Remove them again</strong> takes back what the last import placed.</li>
+  <li>The time is the camera's own clock for pictures and UTC for videos. Corvus reads the folder itself; the plugin is told only the path, position and time of the files that have a position.</li>
+</ul>
+<p>
+  An AI client that can read your files can do this for you:
+ it takes the
   position and the time from each picture's metadata and places a file mark with
   the path, once <strong>AI clients may place things</strong> is on (see
   <a href="mcp.html#permissions">What the AI client may do</a>). Corvus itself

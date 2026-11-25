@@ -106,6 +106,9 @@ plugin's own work against the whole backend and a simulated PX4. Open before the
 - [ ] A module is about 6.5 MB (2.2 MB compressed). Look at what in it can go.
 - [ ] Media cards with real drone footage (large H.265 files), HEIC photos, and on Windows and Linux
       (tried on macOS with generated pictures and an H.264 video).
+- [ ] The folder import with files straight from a drone and a phone. Tried: JPEG, HEIC, TIFF and PNG
+      written by macOS ImageIO and an MP4 with a location written by ffmpeg. Positions a DJI keeps
+      only in the `.SRT` beside a video are not read.
 - [ ] The manual's picture of Settings, Plugins shows no permission lines yet.
 
 ## 0. Rust port (state of 2026-11-11)

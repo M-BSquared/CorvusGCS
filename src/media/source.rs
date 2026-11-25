@@ -215,33 +215,33 @@ impl Player {
         let frames = self.shared.relock().frames;
         self.start.at + frames.saturating_sub(1) as f64 / f64::from(FPS)
     }
-
-    /// Tells ffmpeg to end without waiting for it.
-    fn ask_to_end(&self) {
-        self.stop.store(true, Ordering::SeqCst);
-        if let Some(c) = self.child.relock().as_mut() {
-            stream::ask_to_end(c);
-        }
-    }
 }
 
 impl Drop for Player {
     fn drop(&mut self) {
-        self.ask_to_end();
-        // The thread goes on draining the pipe, so ffmpeg is not stuck writing to it.
-        let end = Instant::now() + TERM;
-        while self.thread.as_ref().is_some_and(|t| !t.is_finished()) && Instant::now() < end {
-            std::thread::sleep(Duration::from_millis(2));
-        }
-        if self.thread.as_ref().is_some_and(|t| !t.is_finished()) {
-            if let Some(c) = self.child.relock().as_mut() {
-                let _ = c.kill();
-            }
-        }
-        if let Some(t) = self.thread.take() {
-            let _ = t.join();
+        end(&self.stop, &self.child, self.thread.take());
+    }
+}
+
+/// Tells the thread that runs ffmpeg to stop and waits for it: ffmpeg is asked to
+/// end, killed if it has not after a moment, and reaped by the thread.
+pub fn end(stop: &AtomicBool, child: &Mutex<Option<Child>>, thread: Option<JoinHandle<()>>) {
+    stop.store(true, Ordering::SeqCst);
+    if let Some(c) = child.relock().as_mut() {
+        stream::ask_to_end(c);
+    }
+    let Some(thread) = thread else { return };
+    // The thread goes on draining the pipe, so ffmpeg is not stuck writing to it.
+    let end = Instant::now() + TERM;
+    while !thread.is_finished() && Instant::now() < end {
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    if !thread.is_finished() {
+        if let Some(c) = child.relock().as_mut() {
+            let _ = c.kill();
         }
     }
+    let _ = thread.join();
 }
 
 /// Runs one ffmpeg: what it writes goes to `out`, and the end of what it says comes back
@@ -307,6 +307,19 @@ fn run(
     Ok((good, said.join().unwrap_or_default()))
 }
 
+/// What ffmpeg says about a file: its length and what is written into it.
+pub fn says(
+    ffmpeg: &str,
+    path: &Path,
+    stop: &AtomicBool,
+    child: &Mutex<Option<Child>>,
+) -> Result<String, &'static str> {
+    let mut args = vec!["-hide_banner".to_string(), "-nostdin".to_string()];
+    args.extend(input(path));
+    // Without an output ffmpeg only says what the file is, and "fails".
+    run(ffmpeg, &args, stop, child, |_| {}).map(|(_, said)| said)
+}
+
 /// The file as ffmpeg is to open it: from the disk and nothing else, whatever the
 /// file itself may name.
 fn input(path: &Path) -> [String; 4] {
@@ -332,10 +345,7 @@ fn play(
     }
     let words = |list: &[&str]| list.iter().map(|s| s.to_string()).collect::<Vec<_>>();
     if start.duration.is_none() && !start.still {
-        let mut args = words(&["-hide_banner", "-nostdin"]);
-        args.extend(input(path));
-        // Without an output ffmpeg only says what the file is, and "fails".
-        let (_, said) = run(ffmpeg, &args, stop, child, |_| {})?;
+        let said = says(ffmpeg, path, stop, child)?;
         shared.relock().duration = duration_of(&said);
     }
     if stop.load(Ordering::SeqCst) {

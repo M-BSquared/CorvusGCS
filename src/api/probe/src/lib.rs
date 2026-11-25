@@ -84,6 +84,14 @@ impl Plugin for Probe {
         }
     }
 
+    fn media_scanned(&mut self, tag: u64, scan: Option<corvus_api::plugin::FolderScan>, h: &mut Host) {
+        let found = scan.map(|s| {
+            let first = s.files.first().map(|f| json!([f.path, f.lat, f.lng, f.taken]));
+            json!({"files": s.files.len(), "first": first, "without": s.without_place, "error": s.error})
+        });
+        h.publish("scanned", json!({"tag": tag, "found": found}));
+    }
+
     fn message(&mut self, _from: &str, msg: &Value, h: &mut Host) {
         let arg = msg.get("arg").and_then(Value::as_str).unwrap_or("").to_string();
         match msg.get("do").and_then(Value::as_str).unwrap_or_default() {
@@ -156,6 +164,7 @@ impl Plugin for Probe {
             "focus" => self.focus = true,
             "terminal" => h.terminal(json!({"name": "s1", "title": "One", "host": arg}), false, false),
             "media" => h.show_file(&arg, "From the probe"),
+            "scan" => h.scan_media_folder(7),
             "draw" => {
                 let style = corvus_api::plugin::shapes::Style::default();
                 h.map().line("a", &[[11.0, 48.0], [11.1, 48.1]], style, None, true);

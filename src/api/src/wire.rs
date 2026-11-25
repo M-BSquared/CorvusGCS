@@ -317,6 +317,31 @@ pub enum Delivery {
     Event(BackendEvent),
     /// The answer of an [`Effect::Fetch`].
     Fetched(Fetched),
+    /// The answer of an [`Effect::ScanFolder`].
+    Scanned(Scanned),
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Scanned {
+    pub tag: u64,
+    /// The operator picked no folder.
+    pub cancelled: bool,
+    pub files: Vec<PlacedFile>,
+    pub without_place: u32,
+    pub videos_unread: u32,
+    pub cut: bool,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PlacedFile {
+    pub path: String,
+    pub lat: f64,
+    pub lng: f64,
+    pub alt: Option<f64>,
+    pub taken: String,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -535,6 +560,8 @@ pub enum Effect {
     Repaint(Repaint),
     /// Shows a picture or video file in a card of the program.
     ShowFile(ShowFile),
+    /// Has the operator pick a folder, and the pictures and videos in it read.
+    ScanFolder(ScanFolder),
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -550,6 +577,12 @@ pub struct Terminal {
     pub session: Value,
     pub reattach: bool,
     pub existing_only: bool,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ScanFolder {
+    pub tag: u64,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

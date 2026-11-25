@@ -149,7 +149,15 @@ impl Runtime {
         // What setting up this side asked for is nobody's wish.
         self.wanted.take();
         for delivery in wire::known(call.deliveries) {
-            super::mail::deliver(delivery);
+            match delivery {
+                // The plugin itself takes this one, not somebody who waits.
+                wire::Delivery::Scanned(scanned) => {
+                    let (tag, scan) = bridge::scanned_from(scanned);
+                    let Runtime { plugin, s, .. } = self;
+                    plugin.media_scanned(tag, scan, &mut s.host());
+                }
+                other => super::mail::deliver(other),
+            }
         }
         let ret = match call.op.and_then(Maybe::known) {
             Some(op) => self.run(op),
@@ -240,6 +248,9 @@ impl Runtime {
                 reattach,
                 existing_only,
             }));
+        }
+        for (_, tag) in out.scans {
+            super::mail::push(Effect::ScanFolder(wire::ScanFolder { tag }));
         }
         for (path, title) in out.files {
             super::mail::push(Effect::ShowFile(wire::ShowFile { path, title }));

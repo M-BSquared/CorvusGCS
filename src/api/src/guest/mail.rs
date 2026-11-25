@@ -149,6 +149,8 @@ impl Drop for Stream {
 /// a handler may ask for the next thing.
 pub fn deliver(delivery: wire::Delivery) {
     match delivery {
+        // Handed to the plugin by the runtime.
+        wire::Delivery::Scanned(_) => {}
         wire::Delivery::Answer(a) => {
             if let Some(f) = with(|m| m.answers.remove(&a.id)) {
                 f(a);

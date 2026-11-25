@@ -667,6 +667,88 @@ fn map_entities_places_changes_and_removes_what_a_model_asks_for() {
     nothing_was_refused();
 }
 
+/// The import without any AI client: the switch in the gear, the button in the view,
+/// a folder, and a file mark for every picture that says where it was taken.
+#[test]
+fn map_entities_places_the_photos_of_a_folder_once_its_switch_is_on() {
+    use std::sync::atomic::AtomicUsize;
+    let station = Station::start("import");
+    let card = station.dir.join("card/DCIM");
+    std::fs::create_dir_all(&card).unwrap();
+    for (name, seconds) in [("DJI_0001.JPG", 35040), ("DJI_0002.JPG", 36000)] {
+        let block = crate::media::exif::tests::block(
+            true,
+            ("N", [48, 4, seconds]),
+            ("E", [11, 38, 34800]),
+            5205,
+            "2026:11:25 14:02:11",
+        );
+        std::fs::write(card.join(name), crate::media::exif::tests::jpeg(&block)).unwrap();
+    }
+    std::fs::write(card.join("no_gps.jpg"), [0xff, 0xd8, 0xff, 0xd9]).unwrap();
+    let (_, mut plugin) = testlib::load("corvus_plugin_map_entities");
+    let asked = Arc::new(AtomicUsize::new(0));
+    let (count, answer) = (asked.clone(), station.dir.join("card"));
+    plugin.set_picker(Box::new(move |_| {
+        count.fetch_add(1, Ordering::SeqCst);
+        Some(answer.clone())
+    }));
+    let mut r = testlib::Rig::new(plugin);
+    r.backend.server = station.server.clone();
+    r.with(|p, h| {
+        use corvus_api::plugin::Plugin;
+        p.start(h);
+        p.open(h);
+    });
+    r.frames(10);
+    // Presses down the middle of the view, over where the button stands once it is there.
+    let sweep = |r: &mut testlib::Rig, until: &dyn Fn() -> bool| {
+        let mut y = testlib::AREA.top() + 400.0;
+        while !until() && y < testlib::AREA.bottom() {
+            r.click(egui::pos2(testlib::AREA.center().x, y));
+            r.with(|p, h| {
+                use corvus_api::plugin::Plugin;
+                p.map_event(MapEvent::PickCancelled, h);
+            });
+            y += 12.0;
+        }
+    };
+    sweep(&mut r, &|| asked.load(Ordering::SeqCst) > 0);
+    assert_eq!(
+        asked.load(Ordering::SeqCst),
+        0,
+        "there is no button while the switch is off"
+    );
+
+    r.options.insert("photoImport".into(), json!(true));
+    r.with(|p, h| {
+        use corvus_api::plugin::Plugin;
+        p.options_changed(h);
+    });
+    r.frames(5);
+    sweep(&mut r, &|| asked.load(Ordering::SeqCst) > 0);
+    assert_eq!(asked.load(Ordering::SeqCst), 1, "no button asked for a folder");
+    let end = Instant::now() + Duration::from_secs(20);
+    while r.out.fit.is_none() {
+        assert!(Instant::now() < end, "nothing was placed: {}", r.saved);
+        r.frames(1);
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let placed = r.saved["entities"].as_array().unwrap_or_else(|| panic!("{}", r.saved));
+    let names: Vec<&str> = placed.iter().filter_map(|e| e["name"].as_str()).collect();
+    assert_eq!(names, ["DJI_0001.JPG", "DJI_0002.JPG"], "{}", r.saved);
+    assert_eq!(placed[0]["kind"], "file");
+    assert!(
+        (placed[0]["lat"].as_f64().unwrap() - 48.0764).abs() < 1e-6,
+        "{}",
+        r.saved
+    );
+    assert!(placed[0]["path"].as_str().unwrap().ends_with("DJI_0001.JPG"));
+    assert!(placed[0].get("by_ai").is_none());
+    assert_eq!(r.shapes.shapes().len(), 2);
+    nothing_was_refused();
+}
+
 #[test]
 fn the_vibration_monitor_asks_the_vehicle_for_its_stream_and_gives_it_back() {
     let station = Station::start("vibration");

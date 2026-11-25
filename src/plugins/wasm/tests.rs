@@ -356,3 +356,61 @@ fn only_a_plugin_with_files_has_one_shown_in_a_card() {
         assert_eq!(rig.out.files, Vec::from_iter(want), "{permission}");
     }
 }
+
+#[test]
+fn a_folder_is_read_for_a_plugin_only_when_the_operator_picks_it_and_it_may_not_read_in_it() {
+    use corvus_package::Manifest;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+    let card = std::env::temp_dir().join(format!("corvus-probe-card-{}", std::process::id()));
+    std::fs::create_dir_all(&card).unwrap();
+    let block = crate::media::exif::tests::block(
+        true,
+        ("N", [48, 4, 35040]),
+        ("E", [11, 38, 34800]),
+        5205,
+        "2026:11:25 14:02:11",
+    );
+    let photo = card.join("a.jpg");
+    std::fs::write(&photo, crate::media::exif::tests::jpeg(&block)).unwrap();
+    std::fs::write(card.join("none.png"), b"x").unwrap();
+    let bytes = super::testlib::module("corvus_plugin_probe");
+    let base = Manifest::of_module(&bytes).unwrap();
+    let rig_with = |permission: &str, answer: Option<std::path::PathBuf>| {
+        let mut manifest = base.clone();
+        manifest.permissions = vec![permission.to_string()];
+        let mut plugin = super::WasmPlugin::load(&super::testlib::sandbox(), &manifest, &bytes, None).unwrap();
+        let asked = Arc::new(AtomicUsize::new(0));
+        let count = asked.clone();
+        plugin.set_picker(Box::new(move |ask| {
+            assert_eq!(ask.mode, "folder");
+            count.fetch_add(1, Ordering::SeqCst);
+            answer.clone()
+        }));
+        (Rig::new(plugin), asked)
+    };
+
+    // Without the permission no dialog opens at all.
+    let (mut rig, asked) = rig_with("settings.read", Some(card.clone()));
+    rig.tell("scan", "");
+    assert_eq!(rig.await_published("scanned"), json!({"tag": 7, "found": null}));
+    assert_eq!(asked.load(Ordering::SeqCst), 0);
+
+    // The operator gives the dialog up.
+    let (mut rig, asked) = rig_with("files", None);
+    rig.tell("scan", "");
+    assert_eq!(rig.await_published("scanned"), json!({"tag": 7, "found": null}));
+    assert_eq!(asked.load(Ordering::SeqCst), 1);
+
+    let (mut rig, _) = rig_with("files", Some(card.clone()));
+    rig.tell("scan", "");
+    let got = rig.await_published("scanned");
+    assert_eq!(got["found"]["files"], 1, "{got}");
+    assert_eq!(got["found"]["without"], 1, "{got}");
+    assert_eq!(got["found"]["first"][0], json!(photo.to_string_lossy()), "{got}");
+    assert_eq!(got["found"]["first"][3], "2026-11-25 14:02:11", "{got}");
+    // What the program read for it is still not the plugin's to read.
+    rig.tell("peek", &photo.to_string_lossy());
+    assert_eq!(rig.await_published("peek"), json!({"picked": false, "direct": false}));
+    std::fs::remove_dir_all(card).unwrap();
+}

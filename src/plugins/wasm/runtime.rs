@@ -106,6 +106,11 @@ fn system_picker(ask: &wire::PickPath) -> Option<PathBuf> {
 
 #[cfg(not(test))]
 fn system_picker(ask: &wire::PickPath) -> Option<PathBuf> {
+    // A development build can be told what is "picked", to look at what comes of it.
+    #[cfg(debug_assertions)]
+    if let Some(path) = std::env::var_os("CORVUS_GUI_PICK") {
+        return Some(PathBuf::from(path));
+    }
     let extensions: Vec<&str> = ask
         .filter
         .iter()
@@ -487,6 +492,17 @@ impl Instance {
             calls: 0,
             dead: false,
         })
+    }
+
+    /// Asks the operator for a folder, for the program to read itself. The plugin
+    /// is not handed it, so it cannot read in it.
+    pub fn ask_for_folder(&mut self, title: &str) -> Option<PathBuf> {
+        let ask = wire::PickPath {
+            mode: "folder".into(),
+            title: title.into(),
+            ..wire::PickPath::default()
+        };
+        (self.store.data_mut().picker)(&ask)
     }
 
     /// Answers the file dialog by itself, for a test.

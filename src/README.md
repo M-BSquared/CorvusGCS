@@ -58,6 +58,7 @@ CORVUS_GUI_SHOT=out.png cargo run -- --page motors     # save the window's own p
 CORVUS_GUI_SIZE=700,812 cargo run                      # open at that size, below the usual floor too
 CORVUS_GUI_HOVER=600,50 cargo run                      # hold the pointer there (a hover card, a hint)
 CORVUS_GUI_CLICK=560,310 cargo run -- --page motors    # press there once, at 6 s (an open menu)
+CORVUS_GUI_PICK=~/card cargo run                      # development builds: a plugin's file dialog answers with this path
 CORVUS_GUI_CLICK="178,472;400,200;enter" cargo run    # several presses, half a second apart; enter is the key, a leading r is a right click ("r600,400"), a leading d a double click ("d452,411")
 CORVUS_GUI_3D=11.5,47.4,13,200,82 cargo run             # open the 3D map, here: lng,lat,zoom[,bearing[,pitch]]; 1 alone keeps the view
 CORVUS_GUI_3D_PANEL=1 CORVUS_GUI_3D=1 cargo run         # with the 3D panel (buildings, elevation models) open
@@ -523,6 +524,7 @@ folder name of the plugin's settings, so it must be a safe name (`[A-Za-z0-9][A-
 | `options_changed(h)` | the operator changed an option; every value is in `h.options()` |
 | `map_event(event, h)` | the pointer did something to one of its shapes: `Click`, `DoubleClick` (after the clicks; the map does not zoom on it), `Drag`, `DragEnd`, or the `Picked` point of `h.pick_point()` (`PickCancelled` on Escape or a right click) |
 | `message(from, msg, h)` | another plugin dropped a message in this plugin's mailbox with `h.send(to, msg)`; one it does not understand is ignored |
+| `media_scanned(tag, scan, h)` | the folder asked for with `h.scan_media_folder(tag)` was read: the pictures and videos that say where they were taken, or `None` when the operator picked none |
 | `ssh_setup_done(tag, saved, h)` | the login dialog asked for with `h.ssh_setup(need, tag)` was answered |
 
 Plugins never link against each other. To cooperate they use the bus of `corvus_api::plugin::bus`: `h.publish(name, value)` and `h.retract(name)` offer a value as `<own id>/<name>` (at most 1 MiB, gone when the plugin stops), `h.read(topic)` and `h.revision(topic)` read what another plugin offers, `h.present(id)` says whether a plugin runs and `h.send(id, msg)` leaves it a message (`Plugin::message`). Every one is a quiet no-op when the other side is missing, so a plugin guards the feature behind an option and works the same without the other (Map Entities publishes `map-entities/shared`, TAK sends it as markers and hands contacts back with `{"op": "add"}`).
@@ -538,7 +540,10 @@ thread of their own and picked up by polling the returned `Reply`, `h.notify`
 `h.fit` (frame points on the Home map), `h.pick_point` and `h.show_file` (a
 picture or video of this computer in a media card, `src/media`: the program
 reads the file, pictures itself and videos through ffmpeg; it needs the `files`
-permission).
+permission). `h.scan_media_folder` needs it too: the operator picks the folder,
+the program reads it (`src/media/scan.rs`, positions from EXIF in `exif.rs` and
+from ffmpeg for videos), and the plugin gets paths, places and times, never a
+right to read the files.
 
 UI is built from `src/api/src/ui/` like any page: `form::Form` is a cursor and
 `form::field`, `form::switch_field`, `kit::select`, `kit::Button` and

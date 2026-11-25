@@ -3,6 +3,8 @@
 //! for what was recorded at a place); the program reads the file, the plugin
 //! never sees its bytes.
 
+pub mod exif;
+pub mod scan;
 pub mod source;
 
 use std::path::PathBuf;
@@ -94,7 +96,7 @@ pub fn clock(seconds: f64) -> String {
     }
 }
 
-fn finder(server: &Server) -> source::Find {
+pub fn finder(server: &Server) -> source::Find {
     let server = server.clone();
     Box::new(move || {
         // The ffmpeg the operator set for the cameras, or the one found.

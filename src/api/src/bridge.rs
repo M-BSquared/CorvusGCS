@@ -6,7 +6,7 @@ use serde_bytes::ByteBuf;
 
 use crate::plugin::options::{Kind, OptionSpec};
 use crate::plugin::shapes::{self, Shape};
-use crate::plugin::{MapEvent, McpTool};
+use crate::plugin::{FolderScan, MapEvent, McpTool, Placed};
 use crate::wire;
 
 pub fn rect_to(r: Rect) -> [f32; 4] {
@@ -415,6 +415,53 @@ pub fn map_event_to(e: &MapEvent) -> wire::MapEvent {
         key,
         at,
     }
+}
+
+/// What the program read of a folder, for the plugin that asked; `None` when the
+/// operator picked none.
+pub fn scanned_to(tag: u64, scan: Option<FolderScan>) -> wire::Scanned {
+    let cancelled = scan.is_none();
+    let scan = scan.unwrap_or_default();
+    wire::Scanned {
+        tag,
+        cancelled,
+        files: scan
+            .files
+            .into_iter()
+            .map(|f| wire::PlacedFile {
+                path: f.path,
+                lat: f.lat,
+                lng: f.lng,
+                alt: f.alt,
+                taken: f.taken,
+            })
+            .collect(),
+        without_place: scan.without_place,
+        videos_unread: scan.videos_unread,
+        cut: scan.cut,
+        error: scan.error,
+    }
+}
+
+pub fn scanned_from(s: wire::Scanned) -> (u64, Option<FolderScan>) {
+    let scan = (!s.cancelled).then(|| FolderScan {
+        files: s
+            .files
+            .into_iter()
+            .map(|f| Placed {
+                path: f.path,
+                lat: f.lat,
+                lng: f.lng,
+                alt: f.alt,
+                taken: f.taken,
+            })
+            .collect(),
+        without_place: s.without_place,
+        videos_unread: s.videos_unread,
+        cut: s.cut,
+        error: s.error,
+    });
+    (s.tag, scan)
 }
 
 pub fn map_event_from(e: wire::MapEvent) -> Option<MapEvent> {
