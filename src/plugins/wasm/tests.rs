@@ -119,6 +119,14 @@ fn a_module_has_no_disk_no_network_and_no_environment_of_its_own() {
     std::fs::remove_file(secret).unwrap();
 }
 
+/// A module follows Unix rules; the paths it is handed on Windows do not.
+#[test]
+fn a_plugin_names_a_file_of_windows_by_its_name_alone() {
+    let mut rig = probe();
+    rig.tell("name", r"C:\Users\pilot\AppData\Local\Temp\path.csv");
+    assert_eq!(rig.await_published("name"), json!("path.csv"));
+}
+
 #[test]
 fn a_plugin_reads_the_file_the_operator_picked() {
     let file = std::env::temp_dir().join(format!("corvus-picked-{}", std::process::id()));

@@ -79,8 +79,20 @@ pub use crate::guest::files::{pick_file, pick_folder, read, save_file};
 
 /// The file's name as the backend stores it (`logo.png`), whatever the folder.
 pub fn file_name(path: &Path) -> String {
+    // A plugin splits paths by Unix rules, which take the `\` of a Windows path
+    // for a letter of the name.
+    let text = path.to_string_lossy();
+    if is_windows_path(&text) {
+        return text.rsplit(['\\', '/']).next().unwrap_or_default().to_string();
+    }
     path.file_name()
         .map_or(String::new(), |n| n.to_string_lossy().into_owned())
+}
+
+/// Whether a path begins as one of Windows does: `C:\` or `\\server`.
+fn is_windows_path(text: &str) -> bool {
+    let b = text.as_bytes();
+    text.starts_with("\\\\") || (b.len() > 2 && b[0].is_ascii_alphabetic() && b[1] == b':' && b[2] == b'\\')
 }
 
 /// `~/rest` with the home folder written out; any other path as it is.
@@ -146,6 +158,19 @@ mod tests {
             "acme logo.png"
         );
         assert_eq!(file_name(Path::new("")), "");
+    }
+
+    /// A plugin splits paths by Unix rules wherever the program runs.
+    #[test]
+    fn the_name_of_a_windows_path_is_found_by_any_rules() {
+        let name = |p: &str| file_name(Path::new(p));
+        assert_eq!(name(r"C:\Users\pilot\Temp\path.csv"), "path.csv");
+        assert_eq!(name(r"d:\logs/flight 1.ulg"), "flight 1.ulg");
+        assert_eq!(name(r"\\server\share\a.csv"), "a.csv");
+        assert_eq!(name("C:/Users/pilot/a.csv"), "a.csv");
+        // Elsewhere a backslash is a letter of the name.
+        #[cfg(not(windows))]
+        assert_eq!(name(r"/home/pilot/odd\name.csv"), r"odd\name.csv");
     }
 
     #[test]

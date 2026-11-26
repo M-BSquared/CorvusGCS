@@ -664,7 +664,9 @@ mod tests {
         cards.open(&ctx, &path, "Gate 1");
         assert_eq!(cards.len(), 1);
         for n in 0..CARDS_MAX + 2 {
-            cards.open(&ctx, &format!("/no/such/file-{n}.png"), "");
+            // A full path on every system, to a file that is not there.
+            let gone = std::env::temp_dir().join(format!("corvus-no-such-file-{n}.png"));
+            cards.open(&ctx, &gone.to_string_lossy(), "");
             frame(&mut cards, &ctx, &mut time);
         }
         assert_eq!(cards.len(), CARDS_MAX);

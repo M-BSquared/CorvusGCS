@@ -169,6 +169,10 @@ impl Plugin for Probe {
             "terminal" => h.terminal(json!({"name": "s1", "title": "One", "host": arg}), false, false),
             "media" => h.show_file(&arg, "From the probe"),
             "scan" => h.scan_media_folder(7),
+            "name" => {
+                let name = filepicker::file_name(std::path::Path::new(&arg));
+                h.publish("name", json!(name));
+            }
             "draw" => {
                 let style = corvus_api::plugin::shapes::Style::default();
                 h.map().line("a", &[[11.0, 48.0], [11.1, 48.1]], style, None, true);
