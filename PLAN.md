@@ -81,36 +81,51 @@ be seen live, see 1.2):
 
 ---
 
-## Plugins as WebAssembly (branch `wasm-plugins`, since 2026-11-25)
+## Plugins as WebAssembly (released with v2026.11.101 on 2026-11-26)
 
-Built: the runtime, protocol, permissions, store, all eight plugins and the upgrade from 2026.11.81,
-83 and 93 (`src/README.md`, "Plugins"). Seen in the real window on macOS: setup after an upgrade,
-PLUGINS cards, all eight views, typing into AI Chat, Schwalby's shell shelf and its terminal window
-(inside the main window) with a local shell, and the companion dialog. `src/plugins/e2e.rs` runs each
-plugin's own work against the whole backend and a simulated PX4. Open before the release:
+Released: the runtime, protocol, permissions, store, the upgrade from 2026.11.81, 83 and 93, and all
+eight plugins, each published from its own repository (`src/README.md`, "Plugins"). CI built every
+package and tested on Linux and Windows, and on Linux, macOS and Windows the finished program loaded
+all eight without opening a window. The release grew against 2026.11.93: AppImage 19.9 to 23.7 MB,
+`.dmg` 12.2 to 15.4 MB, Windows zip 18.0 to 22.2 MB. Seen in the real window on macOS: the upgrade
+from a 2026.11.93 state with all eight downloaded from GitHub (a local build of the released commit,
+checksums as published, settings kept), all eight views, typing into AI Chat, Schwalby's shell shelf
+and its terminal window (inside the main window) with a local shell, the companion dialog, the media
+card and the folder import. `src/plugins/e2e.rs` runs each plugin's own work against the whole
+backend and a simulated PX4.
 
-- [ ] Run CI on Linux and Windows. Nothing of this has run there yet.
-- [ ] Check a bundle (`./build.sh`): the signed macOS app with the Cranelift JIT, and its size.
+From here on the plugin protocol only grows, a permission never loses a route and
+`protocol-1.wasm.gz` is not built again. Keep the `abi-*` releases, which 2026.11.93 reads. A plugin
+that needs something new raises its `min_corvus` and is published after that Corvus GCS is released.
+
+Open:
+
+- [ ] Start the downloaded packages by hand on each system and set the plugins up from them.
+- [ ] Go back from the new release to 2026.11.93 on a station. Its plugin folders are left in place;
+      starting it there again was not tried.
 - [ ] What the tests cannot stand in for: a real vehicle or SITL (NuttX console and terminal view),
       Schwalby over real SSH, TAK with ATAK or a TAK server, Map Entities on both maps, the system's
       file dialog, AI Chat with a real model, and a terminal window popped out as a window of its own.
-- [ ] Frame time with several visible plugins on a slow field laptop (measured: one, Apple Silicon).
-- [ ] Merge the plugin repositories' `wasm-plugins` branches, push `plugin.yml` to `master` only
-      with the release, then run `./release.sh` in each plugin once the release is out. Keep the
-      `abi-*` releases for 2026.11.93.
-- [ ] `protocol-1.wasm.gz` was made again on 2026-11-26, with the media card, the folder read and
-      the double click. If the protocol changes before the release, make it once more, then never again.
-- [ ] Compiling in the background uses every core for a few seconds after an update of the runtime
-      (all eight: 7.6 s on an Apple Silicon Mac). See on a slow field laptop that the window and the
-      telemetry stay smooth meanwhile. The release program grew by 9.3 MB (40.5 to 49.8 MB, macOS
-      arm64).
-- [ ] A module is about 6.5 MB (2.2 MB compressed). Look at what in it can go.
 - [ ] Media cards with real drone footage (large H.265 files), HEIC photos, and on Windows and Linux
       (tried on macOS with generated pictures and an H.264 video).
 - [ ] The folder import with files straight from a drone and a phone. Tried: JPEG, HEIC, TIFF and PNG
       written by macOS ImageIO and an MP4 with a location written by ffmpeg. Positions a DJI keeps
       only in the `.SRT` beside a video are not read.
+- [ ] Frame time with several visible plugins on a slow field laptop (measured: one, Apple Silicon).
+- [ ] Compiling in the background uses every core for a few seconds after an update of the runtime
+      (all eight: 7.6 s on an Apple Silicon Mac). See on a slow field laptop that the window and the
+      telemetry stay smooth meanwhile.
+- [ ] A module is about 6.5 MB (2.2 MB compressed). Look at what in it can go.
+- [ ] The setup shows "Remote ID Check" in English before the download, while the other plugins'
+      names are translated.
+- [ ] Right after the downloads in the setup one picture showed a light veil over the map. Probably
+      the page fade (`kit::enter`), which starts again after 0.3 s without a frame and is unchanged
+      since 2026.11.93. See whether it flashes in normal use.
 - [ ] The manual's picture of Settings, Plugins shows no permission lines yet.
+- [ ] `src/plugins/wasm/fixtures/README.md` still says the frozen module may change until the first
+      release. Take that part out.
+- [ ] Delete the branches `wasm-plugins` here and in the eight plugin repositories. Each `main` holds
+      their commits.
 
 ## 0. Rust port (state of 2026-11-11)
 
